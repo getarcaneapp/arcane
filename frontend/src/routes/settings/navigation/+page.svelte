@@ -88,9 +88,11 @@
 		await settingsForm
 			.updateSettings(data)
 			.then(() => toast.success(m.navigation_settings_saved()))
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error('Failed to save navigation settings:', error);
-				toast.error('Failed to save navigation settings. Please try again.');
+				const errorMessage =
+					error?.response?.data?.error || error?.message || 'Failed to save navigation settings. Please try again.';
+				toast.error(errorMessage);
 			})
 			.finally(() => settingsForm.setLoading(false));
 	}

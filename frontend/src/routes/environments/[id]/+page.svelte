@@ -16,6 +16,21 @@
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
+	function cronToHumanReadable(expr: string | null): string {
+		if (!expr || expr.trim() === '') return m.cron_immediate();
+
+		const presets: Record<string, () => string> = {
+			'0 2 * * 6,0': () => m.cron_weekends_at({ hour: '2am' }),
+			'0 3 * * 1-5': () => m.cron_weekdays_at({ hour: '3am' }),
+			'0 0 * * *': () => m.cron_daily_at({ time: 'midnight' }),
+			'0 2 * * *': () => m.cron_daily_at({ time: '2am' }),
+			'0 */6 * * *': () => m.cron_every_n_hours({ hours: '6' }),
+			'0 */12 * * *': () => m.cron_every_n_hours({ hours: '12' })
+		};
+
+		return presets[expr.trim()]?.() ?? expr.trim();
+	}
+
 	let { data } = $props();
 	let { environment, settings } = $derived(data);
 
@@ -264,7 +279,7 @@
 											{#if settings.autoUpdate}
 												<div>
 													<Label class="text-muted-foreground text-sm font-medium">{m.docker_auto_update_interval_label()}</Label>
-													<div class="mt-1 text-sm">{settings.autoUpdateInterval} min</div>
+													<div class="mt-1 text-sm">{cronToHumanReadable(settings.autoUpdateCron)}</div>
 												</div>
 											{/if}
 											<div>

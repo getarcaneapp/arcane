@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v2/pkg/api"
+	"github.com/ofkm/arcane-backend/internal/models"
 )
 
 var ComposeFileCandidates = []string{
@@ -37,7 +39,7 @@ func DetectComposeFile(dir string) (string, error) {
 	return compose, nil
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string) (*composetypes.Project, error) {
+func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, settings *models.ProjectSettings) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -63,22 +65,24 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	project, err := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+	composeProject, err := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 		opts.SetProjectName(projectName, true)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	project = project.WithoutUnnecessaryResources()
+	composeProject = composeProject.WithoutUnnecessaryResources()
 
-	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
+	injectServiceConfiguration(composeProject, injectionVars, workdir, composeFile, settings)
 
-	project.ComposeFiles = []string{composeFile}
-	return project, nil
+	composeProject.ComposeFiles = []string{composeFile}
+	return composeProject, nil
 }
 
-func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string) {
+const UpdaterLabel = "com.ofkm.arcane.updater"
+
+func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string, settings *models.ProjectSettings) {
 	for i, s := range project.Services {
 		// Initialize environment if nil
 		if s.Environment == nil {
@@ -103,6 +107,12 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 		s.CustomLabels[api.WorkingDirLabel] = workdir
 		s.CustomLabels[api.ConfigFilesLabel] = composeFile
 
+		if _, hasManualLabel := s.CustomLabels[UpdaterLabel]; !hasManualLabel {
+			if settings != nil && settings.AutoUpdate != nil {
+				s.CustomLabels[UpdaterLabel] = strconv.FormatBool(*settings.AutoUpdate)
+			}
+		}
+
 		project.Services[i] = s
 	}
 }
@@ -117,7 +127,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		projectsDirectory = filepath.Dir(dir)
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, nil)
 	if err != nil {
 		return nil, "", err
 	}

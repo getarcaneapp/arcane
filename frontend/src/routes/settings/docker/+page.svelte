@@ -19,6 +19,7 @@
 	import BoxesIcon from '@lucide/svelte/icons/boxes';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
+	import CronScheduleSelect from '$lib/components/cron-schedule-select.svelte';
 
 	let { data } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -28,7 +29,24 @@
 		pollingEnabled: z.boolean(),
 		pollingInterval: z.number().int().min(5).max(10080),
 		autoUpdate: z.boolean(),
-		autoUpdateInterval: z.number().int(),
+		autoUpdateCron: z
+			.string()
+			.nullable()
+			.default(null)
+			.refine(
+				(val) => {
+					if (!val || val.trim() === '') return true; // Empty is valid (immediate)
+
+					// Basic 5-part cron regex: minute hour day month weekday
+					const cronRegex =
+						/^(\*|[0-5]?\d|[0-5]?\d-[0-5]?\d|[0-5]?\d\/[0-5]?\d|\*\/[0-5]?\d|[0-5]?\d(,[0-5]?\d)+)\s+(\*|[01]?\d|2[0-3]|[01]?\d-[01]?\d|[01]?\d\/[01]?\d|\*\/[01]?\d|[01]?\d(,[01]?\d)+)\s+(\*|[1-9]|[12]\d|3[01]|[1-9]-[1-9]|[1-9]\/[1-9]|\*\/[1-9]|[1-9](,[1-9])+)\s+(\*|[1-9]|1[0-2]|[1-9]-[1-9]|[1-9]\/[1-9]|\*\/[1-9]|[1-9](,[1-9])+)\s+(\*|[0-6]|[0-6]-[0-6]|[0-6]\/[0-6]|\*\/[0-6]|[0-6](,[0-6])+)$/;
+
+					return cronRegex.test(val.trim());
+				},
+				{
+					message: 'Invalid cron expression format. Expected 5 fields: minute hour day month weekday'
+				}
+			),
 		dockerPruneMode: z.enum(['all', 'dangling']),
 		defaultShell: z.string()
 	});
@@ -109,9 +127,9 @@
 			$formInputs.pollingEnabled.value !== currentSettings.pollingEnabled ||
 			$formInputs.pollingInterval.value !== currentSettings.pollingInterval ||
 			$formInputs.autoUpdate.value !== currentSettings.autoUpdate ||
-			$formInputs.autoUpdateInterval.value != currentSettings.autoUpdateInterval ||
-			$formInputs.dockerPruneMode.value != currentSettings.dockerPruneMode ||
-			$formInputs.defaultShell.value != currentSettings.defaultShell
+			$formInputs.autoUpdateCron.value !== currentSettings.autoUpdateCron ||
+			$formInputs.dockerPruneMode.value !== currentSettings.dockerPruneMode ||
+			$formInputs.defaultShell.value !== currentSettings.defaultShell
 	});
 
 	$effect(() => {
@@ -135,11 +153,16 @@
 		settingsForm.setLoading(true);
 
 		await settingsForm
-			.updateSettings(data)
+			.updateSettings({
+				...data,
+				autoUpdateCron: data.autoUpdateCron === null ? '' : data.autoUpdateCron
+			})
 			.then(() => toast.success(m.general_settings_saved()))
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error('Failed to save Docker settings:', error);
-				toast.error('Failed to save Docker settings. Please try again.');
+				const errorMessage =
+					error?.response?.data?.error || error?.message || 'Failed to save Docker settings. Please try again.';
+				toast.error(errorMessage);
 			})
 			.finally(() => settingsForm.setLoading(false));
 	}
@@ -147,7 +170,7 @@
 		$formInputs.pollingEnabled.value = currentSettings.pollingEnabled;
 		$formInputs.pollingInterval.value = currentSettings.pollingInterval;
 		$formInputs.autoUpdate.value = currentSettings.autoUpdate;
-		$formInputs.autoUpdateInterval.value = currentSettings.autoUpdateInterval;
+		$formInputs.autoUpdateCron.value = currentSettings.autoUpdateCron;
 		$formInputs.dockerPruneMode.value = currentSettings.dockerPruneMode;
 		$formInputs.defaultShell.value = currentSettings.defaultShell;
 	}
@@ -238,15 +261,8 @@
 								/>
 
 								{#if $formInputs.autoUpdate.value}
-									<div class="border-primary/20 border-l-2 pl-3">
-										<TextInputWithLabel
-											bind:value={$formInputs.autoUpdateInterval.value}
-											error={$formInputs.autoUpdateInterval.error}
-											label={m.docker_auto_update_interval_label()}
-											placeholder={m.docker_auto_update_interval_placeholder()}
-											helpText={m.docker_auto_update_interval_description()}
-											type="number"
-										/>
+									<div class="border-primary/20 space-y-3 border-l-2 pl-3">
+										<CronScheduleSelect bind:value={$formInputs.autoUpdateCron.value} error={$formInputs.autoUpdateCron.error} />
 									</div>
 								{/if}
 							</div>

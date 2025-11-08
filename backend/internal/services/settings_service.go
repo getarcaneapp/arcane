@@ -22,6 +22,7 @@ import (
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/models"
 	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/ofkm/arcane-backend/internal/utils/cron"
 )
 
 type SettingsService struct {
@@ -79,7 +80,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		ProjectsDirectory:          models.SettingVariable{Value: "data/projects"},
 		DiskUsagePath:              models.SettingVariable{Value: "data/projects"},
 		AutoUpdate:                 models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
+		AutoUpdateCron:             models.SettingVariable{Value: ""},
 		PollingEnabled:             models.SettingVariable{Value: "true"},
 		PollingInterval:            models.SettingVariable{Value: "60"},
 		PruneMode:                  models.SettingVariable{Value: "dangling"},
@@ -316,6 +317,13 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.Update
 			value = fieldValue.Elem().String()
 		}
 
+		// Validate cron expression if this is the autoUpdateCron field
+		if key == "autoUpdateCron" && value != "" {
+			if err := cron.ValidateCronExpression(value); err != nil {
+				return nil, err
+			}
+		}
+
 		// Determine the actual value to use and save
 		var valueToSave string
 		var err error
@@ -347,7 +355,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.Update
 		switch key {
 		case "pollingEnabled", "pollingInterval":
 			changedPolling = true
-		case "autoUpdate", "autoUpdateInterval":
+		case "autoUpdate", "autoUpdateCron":
 			changedAutoUpdate = true
 		}
 	}

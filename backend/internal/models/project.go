@@ -12,6 +12,11 @@ const (
 	ProjectStatusRestarting       ProjectStatus = "restarting"
 )
 
+type ProjectSettings struct {
+	AutoUpdate     *bool   `json:"auto_update"`      // NULL = follow global
+	AutoUpdateCron *string `json:"auto_update_cron"` // NULL = immediate
+}
+
 type Project struct {
 	Name         string        `json:"name" sortable:"true"`
 	DirName      *string       `json:"dir_name"`
@@ -20,6 +25,8 @@ type Project struct {
 	StatusReason *string       `json:"status_reason"`
 	ServiceCount int           `json:"service_count" sortable:"true"`
 	RunningCount int           `json:"running_count" sortable:"true"`
+
+	ProjectSettings
 
 	BaseModel
 }

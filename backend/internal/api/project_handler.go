@@ -62,7 +62,6 @@ func NewProjectHandler(group *gin.RouterGroup, projectService *services.ProjectS
 		apiGroup.PUT("/:projectId", handler.UpdateProject)
 		apiGroup.POST("/:projectId/restart", handler.RestartProject)
 		apiGroup.GET("/:projectId/logs/ws", handler.GetProjectLogsWS)
-
 	}
 }
 
@@ -163,6 +162,10 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	response.DirName = utils.DerefString(proj.DirName)
+	response.Settings = dto.ProjectSettingsDto{
+		AutoUpdate:     proj.AutoUpdate,
+		AutoUpdateCron: proj.AutoUpdateCron,
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
@@ -276,7 +279,7 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.projectService.UpdateProject(c.Request.Context(), projectID, req.Name, req.ComposeContent, req.EnvContent); err != nil {
+	if _, err := h.projectService.UpdateProject(c.Request.Context(), projectID, req.Name, req.ComposeContent, req.EnvContent, req.Settings); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}

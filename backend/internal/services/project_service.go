@@ -17,6 +17,7 @@ import (
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/models"
 	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/ofkm/arcane-backend/internal/utils/cron"
 	"github.com/ofkm/arcane-backend/internal/utils/fs"
 	"github.com/ofkm/arcane-backend/internal/utils/pagination"
 	"github.com/ofkm/arcane-backend/internal/utils/projects"
@@ -130,7 +131,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		projectsDirectory = "data/projects"
 	}
 
-	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projectFromDb.Name, projectsDirectory)
+	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projectFromDb.Name, projectsDirectory, &projectFromDb.ProjectSettings)
 	if loadErr != nil {
 		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
@@ -219,6 +220,10 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.ServiceCount = serviceCount
 	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
+	resp.Settings = dto.ProjectSettingsDto{
+		AutoUpdate:     proj.AutoUpdate,
+		AutoUpdateCron: proj.AutoUpdateCron,
+	}
 	if serr == nil && services != nil {
 		raw := make([]any, len(services))
 		for i := range services {
@@ -503,7 +508,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		projectsDirectory = "data/projects"
 	}
 
-	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projectFromDb.Name, projectsDirectory)
+	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projectFromDb.Name, projectsDirectory, &projectFromDb.ProjectSettings)
 	if loadErr != nil {
 		return fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
@@ -759,7 +764,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
 }
 
-func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, settings *dto.ProjectSettingsDto) (*models.Project, error) {
 	var proj models.Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -774,12 +779,25 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
+	// Update name if provided
 	if name != nil {
 		if newName := strings.TrimSpace(*name); newName != "" && proj.Name != newName {
 			proj.Name = newName
 		}
 	}
 
+	// Update settings if provided
+	if settings != nil {
+		if settings.AutoUpdateCron != nil && *settings.AutoUpdateCron != "" {
+			if err := cron.ValidateCronExpression(*settings.AutoUpdateCron); err != nil {
+				return nil, err
+			}
+		}
+		proj.AutoUpdate = settings.AutoUpdate
+		proj.AutoUpdateCron = settings.AutoUpdateCron
+	}
+
+	// Update compose/env files if provided
 	switch {
 	case composeContent != nil:
 		if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, proj.Path, *composeContent, envContent); err != nil {
@@ -975,6 +993,10 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 					RunningCount: displayRunningCount,
 					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
 					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
+					Settings: dto.ProjectSettingsDto{
+						AutoUpdate:     proj.AutoUpdate,
+						AutoUpdateCron: proj.AutoUpdateCron,
+					},
 				},
 			}
 		}(i, project)
@@ -1007,6 +1029,10 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 					RunningCount: proj.RunningCount,
 					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
 					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
+					Settings: dto.ProjectSettingsDto{
+						AutoUpdate:     proj.AutoUpdate,
+						AutoUpdateCron: proj.AutoUpdateCron,
+					},
 				}
 			}
 			return results

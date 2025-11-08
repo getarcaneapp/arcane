@@ -137,9 +137,9 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 
 	updatedSettings, err := h.settingsService.UpdateSettings(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to update settings"},
+			"error":   err.Error(),
 		})
 		return
 	}

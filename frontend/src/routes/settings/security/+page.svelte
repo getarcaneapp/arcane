@@ -107,7 +107,8 @@
 			.then(() => toast.success(m.security_settings_saved()))
 			.catch((error: any) => {
 				console.error('Failed to save settings:', error);
-				toast.error('Failed to save settings. Please try again.');
+				const errorMessage = error?.response?.data?.error || error?.message || 'Failed to save settings. Please try again.';
+				toast.error(errorMessage);
 			})
 			.finally(() => settingsForm.setLoading(false));
 	}

@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -26,7 +27,6 @@ func NewAutoUpdateJob(scheduler *Scheduler, updaterService *services.UpdaterServ
 func (j *AutoUpdateJob) Register(ctx context.Context) error {
 	autoUpdateEnabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
 	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
-	autoUpdateInterval := j.settingsService.GetIntSetting(ctx, "autoUpdateInterval", 1440)
 
 	if !autoUpdateEnabled || !pollingEnabled {
 		slog.InfoContext(ctx, "auto-update disabled or polling disabled; job not registered",
@@ -34,20 +34,28 @@ func (j *AutoUpdateJob) Register(ctx context.Context) error {
 		return nil
 	}
 
-	interval := time.Duration(autoUpdateInterval) * time.Minute
-	if interval < 5*time.Minute {
-		slog.WarnContext(ctx, "auto-update interval too low; using default",
-			"requested_minutes", autoUpdateInterval,
-			"effective_interval", "60m")
-		interval = 60 * time.Minute
-	}
-
-	slog.InfoContext(ctx, "registering auto-update job", "interval", interval.String())
+	autoUpdateCron := j.settingsService.GetStringSetting(ctx, "autoUpdateCron", "")
+	autoUpdateCron = strings.TrimSpace(autoUpdateCron)
 
 	// ensure single instance
 	j.scheduler.RemoveJobByName("auto-update")
 
-	jobDefinition := gocron.DurationJob(interval)
+	var jobDefinition gocron.JobDefinition
+	var scheduleDesc string
+
+	if autoUpdateCron == "" {
+		// Immediate mode: check for updates frequently (every 5 minutes)
+		jobDefinition = gocron.DurationJob(5 * time.Minute)
+		scheduleDesc = "immediate (every 5 minutes)"
+	} else {
+		// Cron-based scheduling
+		// Note: gocron.CronJob may panic on invalid cron, but we'll let the scheduler handle it
+		jobDefinition = gocron.CronJob(autoUpdateCron, false)
+		scheduleDesc = autoUpdateCron
+	}
+
+	slog.InfoContext(ctx, "registering auto-update job", "schedule", scheduleDesc)
+
 	return j.scheduler.RegisterJob(
 		ctx,
 		"auto-update",
@@ -87,7 +95,6 @@ func (j *AutoUpdateJob) Execute(ctx context.Context) error {
 func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
 	autoUpdateEnabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
 	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
-	autoUpdateInterval := j.settingsService.GetIntSetting(ctx, "autoUpdateInterval", 1440)
 
 	if !autoUpdateEnabled || !pollingEnabled {
 		j.scheduler.RemoveJobByName("auto-update")
@@ -96,11 +103,33 @@ func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
 		return nil
 	}
 
-	interval := time.Duration(autoUpdateInterval) * time.Minute
-	if interval < 5*time.Minute {
-		interval = 60 * time.Minute
-	}
-	slog.InfoContext(ctx, "auto-update settings changed; rescheduling", "interval", interval.String())
+	autoUpdateCron := j.settingsService.GetStringSetting(ctx, "autoUpdateCron", "")
+	autoUpdateCron = strings.TrimSpace(autoUpdateCron)
 
-	return j.scheduler.RescheduleDurationJobByName(ctx, "auto-update", interval, j.Execute, false)
+	// Remove existing job
+	j.scheduler.RemoveJobByName("auto-update")
+
+	var jobDefinition gocron.JobDefinition
+	var scheduleDesc string
+
+	if autoUpdateCron == "" {
+		// Immediate mode: check for updates frequently (every 5 minutes)
+		jobDefinition = gocron.DurationJob(5 * time.Minute)
+		scheduleDesc = "immediate (every 5 minutes)"
+	} else {
+		// Cron-based scheduling
+		// Note: gocron.CronJob may panic on invalid cron, but we'll let the scheduler handle it
+		jobDefinition = gocron.CronJob(autoUpdateCron, false)
+		scheduleDesc = autoUpdateCron
+	}
+
+	slog.InfoContext(ctx, "auto-update settings changed; rescheduling", "schedule", scheduleDesc)
+
+	return j.scheduler.RegisterJob(
+		ctx,
+		"auto-update",
+		jobDefinition,
+		j.Execute,
+		false,
+	)
 }

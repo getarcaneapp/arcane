@@ -66,7 +66,8 @@ export type Action =
 	| 'cancel'
 	| 'save'
 	| 'create'
-	| 'template';
+	| 'template'
+	| 'reset';
 
 export type IconCtor = typeof PlayIcon;
 
@@ -152,5 +153,11 @@ export const actionConfigs: Record<Action, ActionConfig> = {
 		tone: 'ghost',
 		loadingLabel: m.common_action_fetching_logs()
 	},
-	cancel: { defaultLabel: m.common_cancel(), IconComponent: XIcon, tone: 'ghost', loadingLabel: m.common_action_cancelling() }
+	cancel: { defaultLabel: m.common_cancel(), IconComponent: XIcon, tone: 'ghost', loadingLabel: m.common_action_cancelling() },
+	reset: {
+		defaultLabel: m.common_reset(),
+		IconComponent: RotateCcwIcon,
+		tone: 'outline-primary',
+		loadingLabel: m.common_resetting()
+	}
 };

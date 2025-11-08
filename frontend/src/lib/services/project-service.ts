@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
+import type { Project, ProjectSettings, ProjectStatusCounts } from '$lib/types/project.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
@@ -48,13 +48,22 @@ export class ProjectService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async updateProject(projectId: string, name: string, composeContent: string, envContent?: string): Promise<Project> {
+	async updateProject(
+		projectId: string,
+		name?: string,
+		composeContent?: string,
+		envContent?: string,
+		settings?: Partial<ProjectSettings>
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload = {
-			name,
-			composeContent,
-			envContent
-		};
+		const payload: any = {};
+		
+		// Only include fields that are provided (not undefined)
+		if (name !== undefined) payload.name = name;
+		if (composeContent !== undefined) payload.composeContent = composeContent;
+		if (envContent !== undefined) payload.envContent = envContent;
+		if (settings !== undefined) payload.settings = settings;
+		
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}
 

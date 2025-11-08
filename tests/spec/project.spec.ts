@@ -272,8 +272,8 @@ test.describe('Project Detail Page', () => {
 
     await page.getByRole('tab', { name: /Configuration|Config/i }).click();
 
-    await expect(page.getByText(/Compose File/i)).toBeVisible();
-    await expect(page.getByText(/Environment\s*\(.env\)/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Docker Compose File/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Environment.*\.env/i })).toBeVisible();
   });
 
   test('should show logs tab for running projects', async ({ page }) => {

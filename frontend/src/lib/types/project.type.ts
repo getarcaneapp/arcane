@@ -36,10 +36,16 @@ export interface Project {
 	services?: ProjectService[];
 	composeContent?: string;
 	envContent?: string;
+	settings: ProjectSettings;
 }
 
 export interface ProjectStatusCounts {
 	runningProjects: number;
 	stoppedProjects: number;
 	totalProjects: number;
+}
+
+export interface ProjectSettings {
+	autoUpdate: boolean | null;
+	autoUpdateCron: string | null;
 }

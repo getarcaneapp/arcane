@@ -11,7 +11,7 @@ export type Settings = {
 	projectsDirectory: string;
 	diskUsagePath: string;
 	autoUpdate: boolean;
-	autoUpdateInterval: number;
+	autoUpdateCron: string | null;
 	pollingEnabled: boolean;
 	pollingInterval: number;
 	dockerPruneMode: 'all' | 'dangling';

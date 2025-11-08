@@ -6,10 +6,10 @@
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -223,7 +223,7 @@
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: ActivityIcon }] : []),
 		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
-		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
+		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SquarePenIcon }] : []),
 		...(hasNetworks ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworkIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: DatabaseIcon }] : [])
 	]);

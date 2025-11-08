@@ -10,7 +10,8 @@ export const load: PageLoad = async ({ params }) => {
 		envContent: project.envContent || '',
 		originalName: project.name || '',
 		originalComposeContent: project.composeContent || '',
-		originalEnvContent: project.envContent || ''
+		originalEnvContent: project.envContent || '',
+		originalSettings: project.settings || { autoUpdate: null, autoUpdateCron: null }
 	};
 
 	return {

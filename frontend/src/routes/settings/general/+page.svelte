@@ -54,9 +54,10 @@
 		await settingsForm
 			.updateSettings(data)
 			.then(() => toast.success(m.general_settings_saved()))
-			.catch((error) => {
+			.catch((error: any) => {
 				console.error('Failed to save settings:', error);
-				toast.error('Failed to save settings. Please try again.');
+				const errorMessage = error?.response?.data?.error || error?.message || 'Failed to save settings. Please try again.';
+				toast.error(errorMessage);
 			})
 			.finally(() => settingsForm.setLoading(false));
 	}
@@ -161,7 +162,7 @@
 					<Card.Content class="px-3 py-4 sm:px-6">
 						<div class="flex items-start gap-3 rounded-lg border p-3 sm:p-4">
 							<div
-								class="bg-primary/10 text-primary ring-primary/20 flex size-7 flex-shrink-0 items-center justify-center rounded-lg ring-1 sm:size-8"
+								class="bg-primary/10 text-primary ring-primary/20 flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-8"
 							>
 								<SparklesIcon class="size-3 sm:size-4" />
 							</div>

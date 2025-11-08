@@ -15,7 +15,7 @@ type UpdateSettingsDto struct {
 	ProjectsDirectory          *string `json:"projectsDirectory,omitempty"`
 	DiskUsagePath              *string `json:"diskUsagePath,omitempty"`
 	AutoUpdate                 *string `json:"autoUpdate,omitempty"`
-	AutoUpdateInterval         *string `json:"autoUpdateInterval,omitempty"`
+	AutoUpdateCron             *string `json:"autoUpdateCron,omitempty"`
 	PollingEnabled             *string `json:"pollingEnabled,omitempty"`
 	PollingInterval            *string `json:"pollingInterval,omitempty"`
 	PruneMode                  *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
