@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -26,6 +27,7 @@ import (
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/models"
 	"github.com/ofkm/arcane-backend/internal/services"
+	"github.com/ofkm/arcane-backend/internal/utils"
 	httputil "github.com/ofkm/arcane-backend/internal/utils/http"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -183,6 +185,28 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 		return
 	}
 
+	cpuCount := info.NCPU
+	var memTotal uint64
+	if info.MemTotal > 0 {
+		memTotal = uint64(info.MemTotal)
+	}
+
+	// Check for cgroup limits (LXC, Docker, etc.)
+	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
+		// Use cgroup memory limit if available and smaller than host value
+		if limit := cgroupLimits.MemoryLimit; limit > 0 {
+			limitUint := uint64(limit)
+			if memTotal == 0 || limitUint < memTotal {
+				memTotal = limitUint
+			}
+		}
+
+		// Use cgroup CPU count if available
+		if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+			cpuCount = cgroupLimits.CPUCount
+		}
+	}
+
 	dockerInfo := dto.DockerInfoDto{
 		Success:           true,
 		Version:           version.Version,
@@ -206,8 +230,8 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 		OSVersion:         info.OSVersion,
 		ServerVersion:     info.ServerVersion,
 		Architecture:      info.Architecture,
-		CPUs:              info.NCPU,
-		MemTotal:          info.MemTotal,
+		CPUs:              cpuCount,
+		MemTotal:          safeUint64ToInt64(memTotal),
 	}
 
 	c.JSON(http.StatusOK, dockerInfo)
@@ -263,6 +287,13 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 		"message": "Pruning completed",
 		"data":    result,
 	})
+}
+
+func safeUint64ToInt64(value uint64) int64 {
+	if value > uint64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(value)
 }
 
 func (h *SystemHandler) StartAllContainers(c *gin.Context) {
@@ -408,6 +439,26 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 		if memInfo != nil {
 			memUsed = memInfo.Used
 			memTotal = memInfo.Total
+		}
+
+		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
+			// Use cgroup memory limits if available and smaller than host values
+			if limit := cgroupLimits.MemoryLimit; limit > 0 {
+				limitUint := uint64(limit)
+				if memTotal == 0 || limitUint < memTotal {
+					memTotal = limitUint
+				}
+			}
+
+			// Use actual cgroup memory usage if available
+			if usage := cgroupLimits.MemoryUsage; usage > 0 {
+				memUsed = uint64(usage)
+			}
+
+			// Use cgroup CPU count if available
+			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+				cpuCount = cgroupLimits.CPUCount
+			}
 		}
 
 		diskUsagePath := h.getDiskUsagePath(ctx)
