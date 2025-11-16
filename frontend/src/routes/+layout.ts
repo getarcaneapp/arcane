@@ -48,10 +48,13 @@ export const load = async () => {
 		const info = await versionService.getVersionInformation();
 		versionInformation = {
 			currentVersion: info.currentVersion,
+			currentTag: info.currentTag,
+			currentDigest: info.currentDigest,
 			displayVersion: info.displayVersion,
 			revision: info.revision,
 			isSemverVersion: info.isSemverVersion,
 			newestVersion: info.newestVersion,
+			newestDigest: info.newestDigest,
 			updateAvailable: info.updateAvailable,
 			releaseUrl: info.releaseUrl
 		};

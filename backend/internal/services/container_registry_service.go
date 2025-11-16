@@ -2,23 +2,43 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ofkm/arcane-backend/internal/database"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/models"
 	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/ofkm/arcane-backend/internal/utils/cache"
 	"github.com/ofkm/arcane-backend/internal/utils/pagination"
 )
 
+const (
+	registryCheckTimeout = 10 * time.Second
+	registryCacheTTL     = 30 * time.Minute
+)
+
 type ContainerRegistryService struct {
-	db *database.DB
+	db         *database.DB
+	httpClient *http.Client
+	cache      map[string]*cache.Cache[string] // imageRef -> digest cache
+	cacheMu    sync.RWMutex
 }
 
 func NewContainerRegistryService(db *database.DB) *ContainerRegistryService {
-	return &ContainerRegistryService{db: db}
+	return &ContainerRegistryService{
+		db: db,
+		httpClient: &http.Client{
+			Timeout: registryCheckTimeout,
+		},
+		cache: make(map[string]*cache.Cache[string]),
+	}
 }
 
 func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
@@ -174,4 +194,282 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
 	}
 	return registries, nil
+}
+
+// GetImageDigest fetches the current digest for an image:tag from the registry
+// This is used for digest-based update detection for non-semver tags
+func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef string) (string, error) {
+	repository, tag := parseImageReference(imageRef)
+	if repository == "" || tag == "" {
+		return "", fmt.Errorf("invalid image reference: %s", imageRef)
+	}
+
+	// Build a cache key from the full image reference
+	cacheKey := fmt.Sprintf("%s:%s", repository, tag)
+
+	// Get or create a cache for this specific image reference
+	s.cacheMu.RLock()
+	imageCache, exists := s.cache[cacheKey]
+	s.cacheMu.RUnlock()
+
+	if !exists {
+		s.cacheMu.Lock()
+		if imageCache, exists = s.cache[cacheKey]; !exists {
+			imageCache = cache.New[string](registryCacheTTL)
+			s.cache[cacheKey] = imageCache
+		}
+		s.cacheMu.Unlock()
+	}
+
+	digest, err := imageCache.GetOrFetch(ctx, func(ctx context.Context) (string, error) {
+		return s.fetchDigestFromRegistry(ctx, repository, tag)
+	})
+
+	var staleErr *cache.ErrStale
+	if err != nil && !errors.As(err, &staleErr) {
+		return "", err
+	}
+
+	return digest, nil
+}
+
+// fetchDigestFromRegistry queries the Docker registry API for the image digest
+func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, repository, tag string) (string, error) {
+	registryURL, repoPath := parseRegistryAndRepo(repository)
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repoPath, tag)
+
+	reqCtx, cancel := context.WithTimeout(ctx, registryCheckTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, manifestURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create registry request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json")
+
+	// Try to find stored credentials for this registry
+	creds := s.findCredentialsForRegistry(ctx, registryURL)
+	if creds != nil {
+		req.SetBasicAuth(creds.Username, creds.Token)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("registry request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return s.fetchWithTokenAuth(ctx, repository, tag, resp.Header.Get("Www-Authenticate"), creds)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("registry returned status %d", resp.StatusCode)
+	}
+
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		digest = strings.Trim(resp.Header.Get("Etag"), "\"")
+	}
+
+	if digest == "" {
+		return "", fmt.Errorf("no digest found in registry response")
+	}
+
+	return digest, nil
+}
+
+// findCredentialsForRegistry finds stored credentials for a registry URL
+func (s *ContainerRegistryService) findCredentialsForRegistry(ctx context.Context, registryURL string) *struct{ Username, Token string } {
+	registries, err := s.GetEnabledRegistries(ctx)
+	if err != nil {
+		return nil
+	}
+
+	// Normalize registry URL for comparison
+	normalizedURL := strings.TrimPrefix(registryURL, "https://")
+	normalizedURL = strings.TrimPrefix(normalizedURL, "http://")
+
+	for _, reg := range registries {
+		regURL := strings.TrimPrefix(reg.URL, "https://")
+		regURL = strings.TrimPrefix(regURL, "http://")
+
+		if strings.Contains(normalizedURL, regURL) || strings.Contains(regURL, normalizedURL) {
+			token, err := utils.Decrypt(reg.Token)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt registry token", "registry", reg.URL, "error", err)
+				continue
+			}
+			return &struct{ Username, Token string }{Username: reg.Username, Token: token}
+		}
+	}
+
+	return nil
+}
+
+// fetchWithTokenAuth handles token-based authentication for registries
+func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repository, tag, wwwAuth string, creds *struct{ Username, Token string }) (string, error) {
+	realm, service := parseWWWAuth(wwwAuth)
+	if realm == "" {
+		return "", fmt.Errorf("no auth realm found")
+	}
+
+	tokenURL := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, repository)
+
+	reqCtx, cancel := context.WithTimeout(ctx, registryCheckTimeout)
+	defer cancel()
+
+	tokenReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, tokenURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create token request: %w", err)
+	}
+
+	if creds != nil {
+		tokenReq.SetBasicAuth(creds.Username, creds.Token)
+	}
+
+	tokenResp, err := s.httpClient.Do(tokenReq)
+	if err != nil {
+		return "", fmt.Errorf("token request failed: %w", err)
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token request returned status %d", tokenResp.StatusCode)
+	}
+
+	var tokenData struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+
+	token := tokenData.Token
+	if token == "" {
+		token = tokenData.AccessToken
+	}
+	if token == "" {
+		return "", fmt.Errorf("no token in response")
+	}
+
+	// Retry with token
+	registryURL, repoPath := parseRegistryAndRepo(repository)
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repoPath, tag)
+
+	reqCtx2, cancel2 := context.WithTimeout(ctx, registryCheckTimeout)
+	defer cancel2()
+
+	req, err := http.NewRequestWithContext(reqCtx2, http.MethodHead, manifestURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create authenticated request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("authenticated request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("authenticated request returned status %d", resp.StatusCode)
+	}
+
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		digest = strings.Trim(resp.Header.Get("Etag"), "\"")
+	}
+
+	if digest == "" {
+		return "", fmt.Errorf("no digest found in authenticated response")
+	}
+
+	return digest, nil
+}
+
+// parseImageReference splits an image reference into repository and tag
+func parseImageReference(imageRef string) (repository, tag string) {
+	if idx := strings.Index(imageRef, "@"); idx != -1 {
+		imageRef = imageRef[:idx]
+	}
+
+	lastSlash := strings.LastIndex(imageRef, "/")
+	lastColon := strings.LastIndex(imageRef, ":")
+
+	if lastColon > lastSlash && lastColon != -1 {
+		repository = imageRef[:lastColon]
+		tag = imageRef[lastColon+1:]
+	} else {
+		repository = imageRef
+		tag = "latest"
+	}
+
+	return repository, tag
+}
+
+// parseRegistryAndRepo splits a repository into registry URL and repo path
+func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
+	parts := strings.SplitN(repository, "/", 2)
+
+	if len(parts) == 1 {
+		return "https://registry-1.docker.io", "library/" + parts[0]
+	}
+
+	registry := parts[0]
+	repoPath = parts[1]
+
+	switch registry {
+	case "docker.io":
+		registryURL = "https://registry-1.docker.io"
+	case "ghcr.io":
+		registryURL = "https://ghcr.io"
+	case "gcr.io":
+		registryURL = "https://gcr.io"
+	case "quay.io":
+		registryURL = "https://quay.io"
+	default:
+		if strings.Contains(registry, ".") || strings.Contains(registry, ":") {
+			registryURL = "https://" + registry
+		} else {
+			registryURL = "https://registry-1.docker.io"
+			repoPath = repository
+		}
+	}
+
+	return registryURL, repoPath
+}
+
+// parseWWWAuth parses the WWW-Authenticate header
+func parseWWWAuth(header string) (realm, service string) {
+	if !strings.HasPrefix(header, "Bearer ") {
+		return "", ""
+	}
+
+	header = strings.TrimPrefix(header, "Bearer ")
+	parts := strings.Split(header, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(kv[0])
+		value := strings.Trim(strings.TrimSpace(kv[1]), "\"")
+
+		switch key {
+		case "realm":
+			realm = value
+		case "service":
+			service = value
+		}
+	}
+
+	return realm, service
 }

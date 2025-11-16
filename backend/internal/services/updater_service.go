@@ -146,6 +146,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 	}
 
 	// Pull images with ImageService (waits for completion)
+	newImageIDs := map[string][]string{} // newRef -> []imageIDs after pull
+
 	for _, p := range plans {
 		item := dto.UpdaterItem{
 			ResourceID:   p.oldRef,
@@ -181,6 +183,15 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 			item.Status = "updated"
 			item.UpdateApplied = true
 			out.Updated++
+			newIDs, _ := s.resolveLocalImageIDsForRef(ctx, p.newRef)
+			if len(newIDs) > 0 {
+				newImageIDs[p.newRef] = newIDs
+				for _, newID := range newIDs {
+					if newID != "" {
+						oldIDToNewRef[newID] = p.newRef
+					}
+				}
+			}
 		}
 		out.Items = append(out.Items, item)
 		_ = s.recordRun(ctx, item)

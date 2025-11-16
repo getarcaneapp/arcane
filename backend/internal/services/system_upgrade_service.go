@@ -85,24 +85,29 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
 
+	// Detect the current image tag to preserve it during upgrade
+	currentImageTag := s.detectCurrentImageTag(ctx, currentContainer)
+
 	// Log upgrade event
 	metadata := models.JSON{
 		"action":        "system_upgrade_cli",
 		"containerId":   containerId,
 		"containerName": containerName,
+		"currentTag":    currentImageTag,
 		"method":        "cli",
 	}
 	if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, user.ID, user.Username, metadata); err != nil {
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
 
-	// Use the official Arcane image for the upgrader container
-	// This ensures we always use the packaged CLI from the official image
-	upgraderImage := "ghcr.io/ofkm/arcane:latest"
+	// Use the same tag as currently running for the upgrader container
+	// This ensures users on different tracks (latest, next, etc.) stay on their track
+	upgraderImage := currentImageTag
 
 	slog.Info("Spawning upgrade CLI command",
 		"containerName", containerName,
 		"upgraderImage", upgraderImage,
+		"detectedTag", currentImageTag,
 	)
 
 	// Spawn the upgrade command in a detached container
@@ -243,7 +248,7 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 
 	// Fallback: search for containers with arcane image
 	filter := filters.NewArgs()
-	filter.Add("ancestor", "ofkm/arcane")
+	filter.Add("ancestor", "ghcr.io/getarcaneapp/arcane")
 
 	containers, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{
 		All:     true,
@@ -272,4 +277,71 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 	}
 
 	return containertypes.InspectResponse{}, ErrContainerNotFound
+}
+
+// detectCurrentImageTag extracts the image tag from the current container
+func (s *SystemUpgradeService) detectCurrentImageTag(ctx context.Context, container containertypes.InspectResponse) string {
+	// Extract image reference from container config
+	imageRef := container.Config.Image
+
+	// Remove digest if present
+	if idx := strings.Index(imageRef, "@"); idx != -1 {
+		imageRef = imageRef[:idx]
+	}
+
+	// If no explicit tag in config, try to infer from image inspect
+	if !s.hasExplicitTag(imageRef) {
+		dockerClient, err := s.dockerService.CreateConnection(ctx)
+		if err == nil {
+			defer dockerClient.Close()
+
+			imageInspect, err := dockerClient.ImageInspect(ctx, container.Image)
+			if err == nil {
+				// Look for non-latest tags first
+				var arcaneNonLatest string
+				var arcaneAny string
+
+				for _, tag := range imageInspect.RepoTags {
+					if tag == "" || tag == "<none>:<none>" {
+						continue
+					}
+
+					if strings.Contains(strings.ToLower(tag), "arcane") {
+						if arcaneAny == "" {
+							arcaneAny = tag
+						}
+						if !strings.HasSuffix(tag, ":latest") && arcaneNonLatest == "" {
+							arcaneNonLatest = tag
+						}
+					}
+				}
+
+				// Prefer non-latest tags
+				if arcaneNonLatest != "" {
+					return arcaneNonLatest
+				}
+				if arcaneAny != "" {
+					return arcaneAny
+				}
+			}
+		}
+	}
+
+	// If we have a tag in the reference, return it
+	if s.hasExplicitTag(imageRef) {
+		return imageRef
+	}
+
+	// Default to latest
+	return "ghcr.io/getarcaneapp/arcane:latest"
+}
+
+// hasExplicitTag checks if an image reference has a tag
+func (s *SystemUpgradeService) hasExplicitTag(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	return lastColon > lastSlash
 }

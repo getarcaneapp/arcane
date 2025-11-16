@@ -13,20 +13,26 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 		});
 		const data = res.data as {
 			currentVersion?: string;
+			currentTag?: string;
+			currentDigest?: string;
 			displayVersion?: string;
 			revision?: string;
 			isSemverVersion?: boolean;
 			newestVersion?: string;
+			newestDigest?: string;
 			updateAvailable?: boolean;
 			releaseUrl?: string;
 		};
 
 		return {
 			currentVersion: data.currentVersion || getCurrentVersion(),
+			currentTag: data.currentTag,
+			currentDigest: data.currentDigest,
 			displayVersion: data.displayVersion || data.currentVersion || getCurrentVersion(),
 			revision: data.revision || 'unknown',
 			isSemverVersion: data.isSemverVersion || false,
 			newestVersion: data.newestVersion,
+			newestDigest: data.newestDigest,
 			updateAvailable: data.updateAvailable || false,
 			releaseUrl: data.releaseUrl
 		};
