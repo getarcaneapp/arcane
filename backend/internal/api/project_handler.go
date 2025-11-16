@@ -248,6 +248,11 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 		return
 	}
 
+	var req dto.ProjectImagePullDto
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req = dto.ProjectImagePullDto{}
+	}
+
 	c.Writer.Header().Set("Content-Type", "application/x-json-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -255,7 +260,7 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 
 	_, _ = fmt.Fprintln(c.Writer, `{"status":"starting project image pull"}`)
 
-	if err := h.projectService.PullProjectImages(c.Request.Context(), projectID, c.Writer); err != nil {
+	if err := h.projectService.PullProjectImages(c.Request.Context(), projectID, c.Writer, req.Credentials); err != nil {
 		_, _ = fmt.Fprintf(c.Writer, `{"error":%q}`+"\n", err.Error())
 		return
 	}

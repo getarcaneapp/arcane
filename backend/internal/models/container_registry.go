@@ -37,3 +37,17 @@ type UpdateContainerRegistryRequest struct {
 	Insecure    *bool   `json:"insecure"`
 	Enabled     *bool   `json:"enabled"`
 }
+
+type SyncRegistriesRequest struct {
+	Registries []SyncRegistryItem `json:"registries" binding:"required"`
+}
+
+type SyncRegistryItem struct {
+	ID          string  `json:"id" binding:"required"`
+	URL         string  `json:"url" binding:"required"`
+	Username    string  `json:"username" binding:"required"`
+	Token       string  `json:"token" binding:"required"`
+	Description *string `json:"description"`
+	Insecure    bool    `json:"insecure"`
+	Enabled     bool    `json:"enabled"`
+}

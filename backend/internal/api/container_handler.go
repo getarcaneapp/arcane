@@ -466,6 +466,8 @@ func (h *ContainerHandler) Create(c *gin.Context) {
 		return
 	}
 
+	credentials := req.Credentials
+
 	config := &container.Config{
 		Image:        req.Image,
 		Cmd:          req.Command,
@@ -535,6 +537,7 @@ func (h *ContainerHandler) Create(c *gin.Context) {
 		networkingConfig,
 		req.Name,
 		*currentUser,
+		credentials,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

@@ -99,6 +99,15 @@ function createEnvironmentManagementStore() {
 			if (_selectedEnvironment?.id !== environment.id) {
 				_selectedEnvironment = environment;
 				selectedEnvironmentId.current = environment.id;
+				
+				// Trigger registry sync on environment selection (non-blocking)
+				if (environment.id !== LOCAL_DOCKER_ENVIRONMENT_ID) {
+					import('$lib/services/env-mgmt-service').then(({ environmentManagementService }) => {
+						environmentManagementService.selectEnvironment(environment.id)
+							.catch(err => console.warn('Failed to trigger registry sync on environment selection:', err));
+					});
+				}
+				
 				await invalidateAll();
 			}
 		},

@@ -28,6 +28,7 @@ func NewContainerRegistryHandler(group *gin.RouterGroup, registryService *servic
 	{
 		apiGroup.GET("", handler.GetRegistries)
 		apiGroup.POST("", handler.CreateRegistry)
+		apiGroup.POST("/sync", handler.SyncRegistries)
 		apiGroup.GET("/:id", handler.GetRegistry)
 		apiGroup.PUT("/:id", handler.UpdateRegistry)
 		apiGroup.DELETE("/:id", handler.DeleteRegistry)
@@ -200,15 +201,41 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	testResult, err := h.performRegistryTest(c.Request.Context(), registry, decryptedToken)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
+			"success": false,
 			"data":    gin.H{"message": err.Error()},
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": false,
+		"success": true,
 		"data":    testResult,
+	})
+}
+
+func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
+	var req models.SyncRegistriesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiErr := models.NewValidationError("Invalid request data", err)
+		c.JSON(apiErr.HTTPStatus(), gin.H{
+			"success": false,
+			"data":    gin.H{"error": apiErr.Message},
+		})
+		return
+	}
+
+	if err := h.registryService.SyncRegistries(c.Request.Context(), req.Registries); err != nil {
+		apiErr := models.ToAPIError(err)
+		c.JSON(apiErr.HTTPStatus(), gin.H{
+			"success": false,
+			"data":    gin.H{"error": apiErr.Message},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"message": "Registries synced successfully"},
 	})
 }
 
