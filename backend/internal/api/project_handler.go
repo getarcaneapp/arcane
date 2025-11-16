@@ -60,6 +60,7 @@ func NewProjectHandler(group *gin.RouterGroup, projectService *services.ProjectS
 		apiGroup.POST("/:projectId/redeploy", handler.RedeployProject)
 		apiGroup.DELETE("/:projectId/destroy", handler.DestroyProject)
 		apiGroup.PUT("/:projectId", handler.UpdateProject)
+		apiGroup.PUT("/:projectId/includes", handler.UpdateProjectInclude)
 		apiGroup.POST("/:projectId/restart", handler.RestartProject)
 		apiGroup.GET("/:projectId/logs/ws", handler.GetProjectLogsWS)
 
@@ -277,6 +278,36 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	}
 
 	if _, err := h.projectService.UpdateProject(c.Request.Context(), projectID, req.Name, req.ComposeContent, req.EnvContent); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	details, err := h.projectService.GetProjectDetails(c.Request.Context(), projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to fetch updated project details"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    details,
+	})
+}
+
+func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
+	projectID := c.Param("projectId")
+	if projectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Project ID is required"})
+		return
+	}
+
+	var req dto.UpdateProjectIncludeDto
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request format"})
+		return
+	}
+
+	if err := h.projectService.UpdateProjectIncludeFile(c.Request.Context(), projectID, req.RelativePath, req.Content); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}

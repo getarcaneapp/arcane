@@ -2,12 +2,14 @@
 	import type { Project } from '$lib/types/project.type';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import FileStackIcon from '@lucide/svelte/icons/file-stack';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import LogsIcon from '@lucide/svelte/icons/logs';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -48,6 +50,8 @@
 	let originalName = $state(data.editorState.originalName);
 	let originalComposeContent = $state(data.editorState.originalComposeContent);
 	let originalEnvContent = $state(data.editorState.originalEnvContent || '');
+	let includeFilesState = $state<Record<string, string>>({});
+	let originalIncludeFiles = $state<Record<string, string>>({});
 
 	const formSchema = z.object({
 		name: z
@@ -69,7 +73,8 @@
 	let hasChanges = $derived(
 		$inputs.name.value !== originalName ||
 			$inputs.composeContent.value !== originalComposeContent ||
-			$inputs.envContent.value !== originalEnvContent
+			$inputs.envContent.value !== originalEnvContent ||
+			JSON.stringify(includeFilesState) !== JSON.stringify(originalIncludeFiles)
 	);
 
 	let canEditName = $derived(!isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running');
@@ -79,6 +84,8 @@
 	let selectedTab = $state<'services' | 'compose' | 'logs'>('compose');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let includeFilesPanelStates = $state<Record<string, boolean>>({});
+	let selectedFile = $state<'compose' | 'env' | string>('compose');
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -129,6 +136,19 @@
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
+
+		// Initialize include file states
+		if (project?.includeFiles) {
+			const newIncludeState: Record<string, string> = {};
+			project.includeFiles.forEach((file) => {
+				newIncludeState[file.relativePath] = file.content;
+				if (!(file.relativePath in includeFilesPanelStates)) {
+					includeFilesPanelStates[file.relativePath] = true;
+				}
+			});
+			includeFilesState = newIncludeState;
+			originalIncludeFiles = { ...newIncludeState };
+		}
 	});
 
 	async function handleSaveChanges() {
@@ -139,15 +159,30 @@
 
 		const { name, composeContent, envContent } = validated;
 
+		// First update the main project files
 		handleApiResultWithCallbacks({
 			result: await tryCatch(projectService.updateProject(projectId, name, composeContent, envContent)),
 			message: 'Failed to Save Project',
 			setLoadingState: (value) => (isLoading.saving = value),
 			onSuccess: async (updatedStack: Project) => {
+				// Then update any changed include files
+				for (const relativePath of Object.keys(includeFilesState)) {
+					if (includeFilesState[relativePath] !== originalIncludeFiles[relativePath]) {
+						const includeResult = await tryCatch(
+							projectService.updateProjectIncludeFile(projectId, relativePath, includeFilesState[relativePath])
+						);
+						if (includeResult.error) {
+							toast.error(`Failed to update ${relativePath}: ${includeResult.error.message || 'Unknown error'}`);
+							return;
+						}
+					}
+				}
+
 				toast.success('Project updated successfully!');
 				originalName = updatedStack.name;
 				originalComposeContent = $inputs.composeContent.value;
 				originalEnvContent = $inputs.envContent.value;
+				originalIncludeFiles = { ...includeFilesState };
 				await new Promise((resolve) => setTimeout(resolve, 200));
 				await invalidateAll();
 			}
@@ -254,27 +289,85 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full">
-				<div class="grid h-full grid-cols-1 gap-4 lg:grid-cols-5 lg:items-stretch" style="grid-template-rows: 1fr;">
-					<div class="flex h-full flex-col lg:col-span-3">
-						<CodePanel
-							bind:open={composeOpen}
-							title={m.compose_compose_file_title()}
-							language="yaml"
-							bind:value={$inputs.composeContent.value}
-							placeholder={m.compose_compose_placeholder()}
-							error={$inputs.composeContent.error ?? undefined}
-						/>
+				<div class="flex h-full flex-col gap-4 lg:flex-row">
+					<div
+						class="border-border bg-card flex w-full flex-col overflow-y-auto rounded-lg border lg:h-full lg:w-fit lg:max-w-xs lg:min-w-48"
+					>
+						<div class="border-border border-b p-3">
+							<h3 class="text-sm font-medium">Project Files</h3>
+						</div>
+						<div class="p-2">
+							<TreeView.Root class="p-2">
+								<TreeView.File
+									name="compose.yaml"
+									onclick={() => (selectedFile = 'compose')}
+									class={selectedFile === 'compose' ? 'bg-accent' : ''}
+								>
+									{#snippet icon()}
+										<FileTextIcon class="size-4 text-blue-500" />
+									{/snippet}
+								</TreeView.File>
+
+								<TreeView.File
+									name=".env"
+									onclick={() => (selectedFile = 'env')}
+									class={selectedFile === 'env' ? 'bg-accent' : ''}
+								>
+									{#snippet icon()}
+										<FileTextIcon class="size-4 text-green-500" />
+									{/snippet}
+								</TreeView.File>
+
+								{#if project?.includeFiles && project.includeFiles.length > 0}
+									<TreeView.Folder name="Includes">
+										{#each project.includeFiles as includeFile}
+											<TreeView.File
+												name={includeFile.relativePath}
+												onclick={() => (selectedFile = includeFile.relativePath)}
+												class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
+											>
+												{#snippet icon()}
+													<FileTextIcon class="size-4 text-amber-500" />
+												{/snippet}
+											</TreeView.File>
+										{/each}
+									</TreeView.Folder>
+								{/if}
+							</TreeView.Root>
+						</div>
 					</div>
 
-					<div class="flex h-full flex-col lg:col-span-2">
-						<CodePanel
-							bind:open={envOpen}
-							title={m.compose_env_title()}
-							language="env"
-							bind:value={$inputs.envContent.value}
-							placeholder={m.compose_env_placeholder()}
-							error={$inputs.envContent.error ?? undefined}
-						/>
+					<div class="flex h-full flex-1 flex-col">
+						{#if selectedFile === 'compose'}
+							<CodePanel
+								bind:open={composeOpen}
+								title="compose.yaml"
+								language="yaml"
+								bind:value={$inputs.composeContent.value}
+								placeholder={m.compose_compose_placeholder()}
+								error={$inputs.composeContent.error ?? undefined}
+							/>
+						{:else if selectedFile === 'env'}
+							<CodePanel
+								bind:open={envOpen}
+								title=".env"
+								language="env"
+								bind:value={$inputs.envContent.value}
+								placeholder={m.compose_env_placeholder()}
+								error={$inputs.envContent.error ?? undefined}
+							/>
+						{:else}
+							{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+							{#if includeFile}
+								<CodePanel
+									bind:open={includeFilesPanelStates[includeFile.relativePath]}
+									title={includeFile.relativePath}
+									language="yaml"
+									bind:value={includeFilesState[includeFile.relativePath]}
+									placeholder="# Include file content"
+								/>
+							{/if}
+						{/if}
 					</div>
 				</div>
 			</Tabs.Content>

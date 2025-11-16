@@ -22,7 +22,7 @@
 	} = $props();
 </script>
 
-<Card.Root class="flex flex-col lg:h-full">
+<Card.Root class="flex h-full flex-col">
 	<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 		<Card.Title>
 			<h2>
@@ -30,7 +30,7 @@
 			</h2>
 		</Card.Title>
 	</Card.Header>
-	<Card.Content class="min-h-[500px] flex-grow p-0 lg:h-full">
+	<Card.Content class="flex-grow p-0">
 		<div class="h-full [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
 			<CodeEditor bind:value {language} {placeholder} />
 			{#if error}

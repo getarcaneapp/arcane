@@ -204,6 +204,27 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
 
+	// Parse include files from the compose file
+	var includeFiles []dto.IncludeFileDto
+	composeFile, detectErr := projects.DetectComposeFile(proj.Path)
+	if detectErr == nil {
+		includes, parseErr := projects.ParseIncludes(composeFile)
+		if parseErr == nil {
+			slog.InfoContext(ctx, "Parsed includes", "count", len(includes), "projectID", projectID)
+			for _, inc := range includes {
+				includeFiles = append(includeFiles, dto.IncludeFileDto{
+					Path:         inc.Path,
+					RelativePath: inc.RelativePath,
+					Content:      inc.Content,
+				})
+			}
+		} else {
+			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "projectID", projectID)
+		}
+	} else {
+		slog.WarnContext(ctx, "Failed to detect compose file", "error", detectErr, "projectID", projectID, "path", proj.Path)
+	}
+
 	services, serr := s.GetProjectServices(ctx, projectID)
 
 	var serviceCount, runningCount int
@@ -228,6 +249,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.ComposeContent = composeContent
 	resp.EnvContent = envContent
+	resp.IncludeFiles = includeFiles
 	resp.ServiceCount = serviceCount
 	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
@@ -863,6 +885,20 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil
+}
+
+func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	if err := projects.WriteIncludeFile(proj.Path, relativePath, content); err != nil {
+		return fmt.Errorf("failed to update include file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)
+	return nil
 }
 
 func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {

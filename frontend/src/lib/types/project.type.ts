@@ -23,6 +23,12 @@ export interface ProjectService {
 	networkSettings?: NetworkSettings;
 }
 
+export interface IncludeFile {
+	path: string;
+	relativePath: string;
+	content: string;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -36,6 +42,7 @@ export interface Project {
 	services?: ProjectService[];
 	composeContent?: string;
 	envContent?: string;
+	includeFiles?: IncludeFile[];
 }
 
 export interface ProjectStatusCounts {

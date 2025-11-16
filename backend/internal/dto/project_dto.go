@@ -1,5 +1,11 @@
 package dto
 
+type IncludeFileDto struct {
+	Path         string `json:"path"`
+	RelativePath string `json:"relativePath"`
+	Content      string `json:"content"`
+}
+
 type CreateProjectDto struct {
 	Name           string  `json:"name" binding:"required"`
 	ComposeContent string  `json:"composeContent" binding:"required"`
@@ -10,6 +16,11 @@ type UpdateProjectDto struct {
 	Name           *string `json:"name,omitempty"`
 	ComposeContent *string `json:"composeContent,omitempty"`
 	EnvContent     *string `json:"envContent,omitempty"`
+}
+
+type UpdateProjectIncludeDto struct {
+	RelativePath string `json:"relativePath" binding:"required"`
+	Content      string `json:"content" binding:"required"`
 }
 
 type CreateProjectReponseDto struct {
@@ -26,19 +37,20 @@ type CreateProjectReponseDto struct {
 }
 
 type ProjectDetailsDto struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	DirName        string  `json:"dirName,omitempty"`
-	Path           string  `json:"path"`
-	ComposeContent string  `json:"composeContent,omitempty"`
-	EnvContent     string  `json:"envContent,omitempty"`
-	Status         string  `json:"status"`
-	StatusReason   *string `json:"statusReason,omitempty"`
-	ServiceCount   int     `json:"serviceCount"`
-	RunningCount   int     `json:"runningCount"`
-	CreatedAt      string  `json:"createdAt"`
-	UpdatedAt      string  `json:"updatedAt"`
-	Services       []any   `json:"services,omitempty"`
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	DirName        string           `json:"dirName,omitempty"`
+	Path           string           `json:"path"`
+	ComposeContent string           `json:"composeContent,omitempty"`
+	EnvContent     string           `json:"envContent,omitempty"`
+	IncludeFiles   []IncludeFileDto `json:"includeFiles,omitempty"`
+	Status         string           `json:"status"`
+	StatusReason   *string          `json:"statusReason,omitempty"`
+	ServiceCount   int              `json:"serviceCount"`
+	RunningCount   int              `json:"runningCount"`
+	CreatedAt      string           `json:"createdAt"`
+	UpdatedAt      string           `json:"updatedAt"`
+	Services       []any            `json:"services,omitempty"`
 }
 
 type DestroyProjectDto struct {
