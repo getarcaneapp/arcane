@@ -16,6 +16,7 @@
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
@@ -37,6 +38,18 @@
 
 	// Get max upload size from settings (default 500MB)
 	const maxUploadSizeMB = $derived(parseInt(String(data.settings?.maxImageUploadSize || '500'), 10));
+
+	// Listen for command palette events
+	onMount(() => {
+		const handlePullImage = () => {
+			isPullDialogOpen = true;
+		};
+		window.addEventListener('command:pull-image', handlePullImage);
+
+		return () => {
+			window.removeEventListener('command:pull-image', handlePullImage);
+		};
+	});
 
 	async function handlePruneImages() {
 		isLoading.pruning = true;

@@ -10,6 +10,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { imageService } from '$lib/services/image-service';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
@@ -82,6 +83,18 @@
 			lastEnvId = env.id;
 			refreshContainers();
 		}
+	});
+
+	// Listen for command palette events
+	onMount(() => {
+		const handleCreateContainer = () => {
+			isCreateDialogOpen = true;
+		};
+		window.addEventListener('command:create-container', handleCreateContainer);
+
+		return () => {
+			window.removeEventListener('command:create-container', handleCreateContainer);
+		};
 	});
 
 	const actionButtons: ActionButton[] = $derived.by(() => [

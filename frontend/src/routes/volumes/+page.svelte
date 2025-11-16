@@ -12,6 +12,7 @@
 	import { volumeService } from '$lib/services/volume-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
@@ -19,6 +20,18 @@
 
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
+
+	// Listen for command palette events
+	onMount(() => {
+		const handleCreateVolume = () => {
+			isCreateDialogOpen = true;
+		};
+		window.addEventListener('command:create-volume', handleCreateVolume);
+
+		return () => {
+			window.removeEventListener('command:create-volume', handleCreateVolume);
+		};
+	});
 
 	let isLoading = $state({
 		creating: false,
