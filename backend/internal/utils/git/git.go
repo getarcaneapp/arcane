@@ -13,7 +13,7 @@ import (
 func TestConnection(ctx context.Context, repoURL, branch, username, token string) error {
 	// Use git ls-remote to test connection without cloning
 	authenticatedURL := buildAuthenticatedURL(repoURL, username, token)
-	
+
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", authenticatedURL, branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -31,10 +31,10 @@ func TestConnection(ctx context.Context, repoURL, branch, username, token string
 // SyncRepository clones or pulls a git repository
 func SyncRepository(ctx context.Context, repoURL, branch, username, token, composePath string) error {
 	authenticatedURL := buildAuthenticatedURL(repoURL, username, token)
-	
+
 	// Generate a unique directory name based on repository URL
 	repoDir := getRepositoryDir(repoURL)
-	
+
 	// Check if repository already exists
 	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
 		// Clone the repository

@@ -5,20 +5,20 @@ import (
 )
 
 type GitOpsRepository struct {
-	URL               string    `json:"url" sortable:"true"`
-	Branch            string    `json:"branch" sortable:"true"`
-	Username          string    `json:"username" sortable:"true"`
-	Token             string    `json:"token"`
-	ComposePath       string    `json:"composePath" sortable:"true"`
-	Description       *string   `json:"description,omitempty" sortable:"true"`
-	AutoSync          bool      `json:"autoSync" sortable:"true"`
-	SyncInterval      int       `json:"syncInterval" sortable:"true"` // in minutes
-	Enabled           bool      `json:"enabled" sortable:"true"`
-	LastSyncedAt      *time.Time `json:"lastSyncedAt,omitempty" sortable:"true"`
-	LastSyncStatus    *string   `json:"lastSyncStatus,omitempty"`
-	LastSyncError     *string   `json:"lastSyncError,omitempty"`
-	CreatedAt         time.Time `json:"createdAt" sortable:"true"`
-	UpdatedAt         time.Time `json:"updatedAt" sortable:"true"`
+	URL            string     `json:"url" sortable:"true"`
+	Branch         string     `json:"branch" sortable:"true"`
+	Username       string     `json:"username" sortable:"true"`
+	Token          string     `json:"token"`
+	ComposePath    string     `json:"composePath" sortable:"true"`
+	Description    *string    `json:"description,omitempty" sortable:"true"`
+	AutoSync       bool       `json:"autoSync" sortable:"true"`
+	SyncInterval   int        `json:"syncInterval" sortable:"true"` // in minutes
+	Enabled        bool       `json:"enabled" sortable:"true"`
+	LastSyncedAt   *time.Time `json:"lastSyncedAt,omitempty" sortable:"true"`
+	LastSyncStatus *string    `json:"lastSyncStatus,omitempty"`
+	LastSyncError  *string    `json:"lastSyncError,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt" sortable:"true"`
+	UpdatedAt      time.Time  `json:"updatedAt" sortable:"true"`
 	BaseModel
 }
 
