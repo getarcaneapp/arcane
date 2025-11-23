@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/ofkm/arcane-backend/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -130,72 +130,11 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 
 // getSelfContainerID attempts to detect the container ID if running in Docker
 func getSelfContainerID() string {
-	data, err := os.ReadFile("/proc/self/cgroup")
+	id, err := utils.GetContainerID()
 	if err != nil {
 		return ""
 	}
-
-	content := string(data)
-	for _, line := range strings.Split(content, "\n") {
-		// cgroup v1: 12:pids:/docker/abc123...
-		if id := extractCgroupV1ID(line); id != "" {
-			return id
-		}
-		// cgroup v2: 0::/system.slice/docker-abc123....scope
-		if id := extractCgroupV2ID(line); id != "" {
-			return id
-		}
-	}
-
-	return ""
-}
-
-// extractCgroupV1ID extracts container ID from cgroup v1 format
-func extractCgroupV1ID(line string) string {
-	if !strings.Contains(line, "/docker/") {
-		return ""
-	}
-
-	parts := strings.Split(line, "/docker/")
-	if len(parts) <= 1 {
-		return ""
-	}
-
-	id := strings.TrimSpace(parts[1])
-	if idx := strings.Index(id, "/"); idx != -1 {
-		id = id[:idx]
-	}
-
-	if len(id) >= 12 {
-		return id[:12]
-	}
-
-	return ""
-}
-
-// extractCgroupV2ID extracts container ID from cgroup v2 format
-func extractCgroupV2ID(line string) string {
-	if !strings.Contains(line, "docker-") || !strings.Contains(line, ".scope") {
-		return ""
-	}
-
-	start := strings.Index(line, "docker-")
-	if start == -1 {
-		return ""
-	}
-
-	start += 7 // len("docker-")
-	end := strings.Index(line[start:], ".scope")
-	if end == -1 {
-		return ""
-	}
-
-	id := line[start : start+end]
-	if len(id) >= 12 {
-		return id[:12]
-	}
-
-	return ""
+	return id
 }
 
 // shouldSkipContainer determines if a container should be skipped during search

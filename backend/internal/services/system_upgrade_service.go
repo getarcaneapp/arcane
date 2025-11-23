@@ -13,6 +13,7 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/ofkm/arcane-backend/internal/models"
+	"github.com/ofkm/arcane-backend/internal/utils"
 )
 
 var (
@@ -150,7 +151,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 // getCurrentContainerID detects if we're running in Docker and returns container ID
 func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
 	// Try reading from /proc/self/cgroup (Linux)
-	if id, err := s.getContainerIDFromCgroup(); err == nil {
+	if id, err := utils.GetContainerID(); err == nil {
 		return id, nil
 	}
 
@@ -165,29 +166,6 @@ func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
 	}
 
 	return "", ErrNotRunningInDocker
-}
-
-// getContainerIDFromCgroup reads container ID from /proc/self/cgroup
-func (s *SystemUpgradeService) getContainerIDFromCgroup() (string, error) {
-	data, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "docker") || strings.Contains(line, "containerd") {
-			parts := strings.Split(line, "/")
-			if len(parts) > 0 {
-				id := strings.TrimSpace(parts[len(parts)-1])
-				if len(id) >= 12 {
-					return id, nil
-				}
-			}
-		}
-	}
-
-	return "", errors.New("container ID not found in cgroup")
 }
 
 // getContainerIDFromMountinfo reads container ID from /proc/self/mountinfo

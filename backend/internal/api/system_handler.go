@@ -192,18 +192,17 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 		memTotal = uint64(info.MemTotal)
 	}
 
-	// Check for cgroup limits (LXC, Docker, etc.)
-	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
-		// Use cgroup memory limit if available and smaller than host value
+	// Check if we're in a cgroup with explicit restrictive limits
+	// Only override Docker info values if cgroup limits are smaller (actually restrictive)
+	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil && cgroupLimits != nil {
 		if limit := cgroupLimits.MemoryLimit; limit > 0 {
 			limitUint := uint64(limit)
-			if memTotal == 0 || limitUint < memTotal {
+			if limitUint < memTotal {
 				memTotal = limitUint
 			}
 		}
 
-		// Use cgroup CPU count if available
-		if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+		if cgroupLimits.CPUCount > 0 && cgroupLimits.CPUCount < cpuCount {
 			cpuCount = cgroupLimits.CPUCount
 		}
 	}
@@ -442,22 +441,20 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 			memTotal = memInfo.Total
 		}
 
-		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
-			// Use cgroup memory limits if available and smaller than host values
+		// Check if we're in a cgroup with explicit restrictive limits
+		// Only override host values if cgroup limits are smaller (actually restrictive)
+		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil && cgroupLimits != nil {
 			if limit := cgroupLimits.MemoryLimit; limit > 0 {
 				limitUint := uint64(limit)
-				if memTotal == 0 || limitUint < memTotal {
+				if limitUint < memTotal {
 					memTotal = limitUint
+					if usage := cgroupLimits.MemoryUsage; usage > 0 {
+						memUsed = uint64(usage)
+					}
 				}
 			}
 
-			// Use actual cgroup memory usage if available
-			if usage := cgroupLimits.MemoryUsage; usage > 0 {
-				memUsed = uint64(usage)
-			}
-
-			// Use cgroup CPU count if available
-			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+			if cgroupLimits.CPUCount > 0 && cgroupLimits.CPUCount < cpuCount {
 				cpuCount = cgroupLimits.CPUCount
 			}
 		}
