@@ -87,6 +87,8 @@ jobs:
       - name: Build frontend
         if: matrix.needs-frontend
         run: pnpm --filter arcane-frontend build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Build binaries
         run: bash scripts/github/build-binaries.sh ${{ matrix.build-flags }}

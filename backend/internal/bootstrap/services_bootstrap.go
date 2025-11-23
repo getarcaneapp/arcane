@@ -29,6 +29,7 @@ type Services struct {
 	Docker            *services.DockerClientService
 	Template          *services.TemplateService
 	ContainerRegistry *services.ContainerRegistryService
+	GitOpsRepository  *services.GitOpsRepositoryService
 	System            *services.SystemService
 	SystemUpgrade     *services.SystemUpgradeService
 	Updater           *services.UpdaterService
@@ -53,6 +54,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
+	svcs.GitOpsRepository = services.NewGitOpsRepositoryService(db)
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
