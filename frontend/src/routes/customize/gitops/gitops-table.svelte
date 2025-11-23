@@ -13,14 +13,14 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { GitOpsRepository } from '$lib/types/gitops-repository.type';
+	import type { GitOpsRepository } from '$lib/types/gitops.type';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
-	import { gitopsRepositoryService } from '$lib/services/gitops-repository-service';
+	import { gitopsRepositoryService } from '$lib/services/gitops-service';
 
 	let {
 		repositories = $bindable(),
@@ -44,8 +44,8 @@
 		if (!ids?.length) return;
 
 		openConfirmDialog({
-			title: `Remove ${ids.length} GitOps ${ids.length === 1 ? 'Repository' : 'Repositories'}?`,
-			message: `Are you sure you want to remove ${ids.length} selected ${ids.length === 1 ? 'repository' : 'repositories'}?`,
+			title: m.gitops_remove_selected_title({ count: ids.length }),
+			message: m.gitops_remove_selected_message({ count: ids.length }),
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
@@ -69,7 +69,8 @@
 						toast.success(`Successfully removed ${successCount} ${successCount === 1 ? 'repository' : 'repositories'}`);
 						repositories = await gitopsRepositoryService.getRepositories(requestOptions);
 					}
-					if (failureCount > 0) toast.error(`Failed to remove ${failureCount} ${failureCount === 1 ? 'repository' : 'repositories'}`);
+					if (failureCount > 0)
+						toast.error(`Failed to remove ${failureCount} ${failureCount === 1 ? 'repository' : 'repositories'}`);
 
 					selectedIds = [];
 					isLoading.removing = false;
@@ -81,8 +82,8 @@
 	async function handleDeleteOne(id: string, url: string) {
 		const safeUrl = url ?? m.common_unknown();
 		openConfirmDialog({
-			title: 'Remove GitOps Repository?',
-			message: `Are you sure you want to remove "${safeUrl}"?`,
+			title: m.gitops_remove_repository_title(),
+			message: m.gitops_remove_repository_message({ url: safeUrl }),
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
@@ -112,13 +113,11 @@
 		const result = await tryCatch(gitopsRepositoryService.testRepository(id));
 		handleApiResultWithCallbacks({
 			result,
-			message: `Connection test failed for ${safeUrl}`,
+			message: m.gitops_test_failed({ url: safeUrl }),
 			setLoadingState: () => {},
 			onSuccess: (resp) => {
-				const msg = typeof resp === 'object' && resp !== null && 'message' in resp 
-					? String(resp.message) 
-					: m.common_unknown();
-				toast.success(`${safeUrl}: ${msg}`);
+				const msg = typeof resp === 'object' && resp !== null && 'message' in resp ? String(resp.message) : m.common_unknown();
+				toast.success(m.gitops_test_success({ url: safeUrl, message: msg }));
 			}
 		});
 		isLoading.testing = false;
@@ -130,13 +129,11 @@
 		const result = await tryCatch(gitopsRepositoryService.syncRepositoryNow(id));
 		handleApiResultWithCallbacks({
 			result,
-			message: `Sync failed for ${safeUrl}`,
+			message: m.gitops_sync_failed({ url: safeUrl }),
 			setLoadingState: () => {},
 			onSuccess: (resp) => {
-				const msg = typeof resp === 'object' && resp !== null && 'message' in resp 
-					? String(resp.message) 
-					: 'Synced successfully';
-				toast.success(`${safeUrl}: ${msg}`);
+				const msg = typeof resp === 'object' && resp !== null && 'message' in resp ? String(resp.message) : 'Synced successfully';
+				toast.success(m.gitops_sync_success({ url: safeUrl, message: msg }));
 				// Refresh the list
 				gitopsRepositoryService.getRepositories(requestOptions).then((newRepos) => {
 					repositories = newRepos;
@@ -150,24 +147,24 @@
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{
 			accessorKey: 'url',
-			title: 'Repository URL',
+			title: m.gitops_repository_url(),
 			sortable: true,
 			cell: UrlCell
 		},
 		{
 			accessorKey: 'branch',
-			title: 'Branch',
+			title: m.gitops_branch(),
 			sortable: true,
 			cell: BranchCell
 		},
 		{
 			accessorKey: 'composePath',
-			title: 'Compose Path',
+			title: m.gitops_compose_path(),
 			sortable: true
 		},
 		{
 			accessorKey: 'autoSync',
-			title: 'Auto Sync',
+			title: m.gitops_auto_sync(),
 			sortable: true,
 			cell: AutoSyncCell
 		},
@@ -179,127 +176,146 @@
 		},
 		{
 			accessorKey: 'lastSyncedAt',
-			title: 'Last Synced',
+			title: m.gitops_last_synced(),
 			sortable: true,
 			cell: LastSyncedCell
 		},
 		{
 			accessorKey: 'createdAt',
-			title: m.common_created_at(),
+			title: m.common_created(),
 			sortable: true,
 			cell: CreatedAtCell
-		},
-		{
-			accessorKey: 'actions',
-			title: '',
-			sortable: false,
-			cell: ActionsCell
 		}
 	] satisfies ColumnSpec<GitOpsRepository>[];
+
+	const mobileFields = [
+		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'url', label: m.gitops_repository_url(), defaultVisible: true },
+		{ id: 'branch', label: m.gitops_branch(), defaultVisible: true },
+		{ id: 'composePath', label: m.gitops_compose_path(), defaultVisible: true },
+		{ id: 'autoSync', label: m.gitops_auto_sync(), defaultVisible: true },
+		{ id: 'lastSyncedAt', label: m.gitops_last_synced(), defaultVisible: true }
+	];
+
+	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet UrlCell(row: GitOpsRepository)}
+{#snippet UrlCell({ item }: { item: GitOpsRepository })}
 	<div class="flex items-center gap-2">
-		<LinkIcon class="size-4 text-muted-foreground" />
-		<span class="font-mono text-sm">{row.url}</span>
+		<LinkIcon class="text-muted-foreground size-4" />
+		<span class="font-mono text-sm">{item.url}</span>
 	</div>
 {/snippet}
 
-{#snippet BranchCell(row: GitOpsRepository)}
+{#snippet BranchCell({ item }: { item: GitOpsRepository })}
 	<div class="flex items-center gap-2">
-		<GitBranchIcon class="size-4 text-muted-foreground" />
-		<span class="font-mono text-sm">{row.branch}</span>
+		<GitBranchIcon class="text-muted-foreground size-4" />
+		<span class="font-mono text-sm">{item.branch}</span>
 	</div>
 {/snippet}
 
-{#snippet AutoSyncCell(row: GitOpsRepository)}
-	<StatusBadge status={row.autoSync ? 'running' : 'stopped'}>
-		{row.autoSync ? 'Enabled' : 'Disabled'}
-	</StatusBadge>
+{#snippet AutoSyncCell({ item }: { item: GitOpsRepository })}
+	<StatusBadge variant={item.autoSync ? 'green' : 'red'} text={item.autoSync ? 'Enabled' : 'Disabled'} />
 {/snippet}
 
-{#snippet EnabledCell(row: GitOpsRepository)}
-	<StatusBadge status={row.enabled ? 'running' : 'stopped'}>
-		{row.enabled ? m.common_enabled() : m.common_disabled()}
-	</StatusBadge>
+{#snippet EnabledCell({ item }: { item: GitOpsRepository })}
+	<StatusBadge variant={item.enabled ? 'green' : 'red'} text={item.enabled ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
-{#snippet LastSyncedCell(row: GitOpsRepository)}
-	{#if row.lastSyncedAt}
-		<span class="text-sm">{format(new Date(row.lastSyncedAt), 'MMM d, yyyy HH:mm')}</span>
+{#snippet LastSyncedCell({ item }: { item: GitOpsRepository })}
+	{#if item.lastSyncedAt}
+		<span class="text-sm">{format(new Date(item.lastSyncedAt), 'MMM d, yyyy HH:mm')}</span>
 	{:else}
 		<span class="text-muted-foreground text-sm">Never</span>
 	{/if}
 {/snippet}
 
-{#snippet CreatedAtCell(row: GitOpsRepository)}
-	<span class="text-sm">{format(new Date(row.createdAt), 'MMM d, yyyy HH:mm')}</span>
+{#snippet CreatedAtCell({ item }: { item: GitOpsRepository })}
+	<span class="text-sm">{format(new Date(item.createdAt), 'MMM d, yyyy HH:mm')}</span>
 {/snippet}
 
-{#snippet ActionsCell(row: GitOpsRepository)}
-	<div class="flex items-center justify-end gap-2">
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger asChild let:builder>
-				<Button builders={[builder]} variant="ghost" size="icon" class="size-8">
-					<EllipsisIcon class="size-4" />
+{#snippet RowActions({ item }: { item: GitOpsRepository })}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon />
 				</Button>
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end">
-				<DropdownMenu.Item onclick={() => onEditRepository(row)}>
-					<PencilIcon class="mr-2 size-4" />
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={isLoading.testing}>
+					<TestTubeIcon class="size-4" />
+					{m.gitops_test_connection()}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => handleSyncNow(item.id, item.url)} disabled={isLoading.syncing}>
+					<RefreshCwIcon class="size-4" />
+					{m.gitops_sync_now()}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+					<PencilIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => handleTest(row.id, row.url)}>
-					<TestTubeIcon class="mr-2 size-4" />
-					Test Connection
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => handleSyncNow(row.id, row.url)}>
-					<RefreshCwIcon class="mr-2 size-4" />
-					Sync Now
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item class="text-destructive" onclick={() => handleDeleteOne(row.id, row.url)}>
-					<Trash2Icon class="mr-2 size-4" />
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteOne(item.id, item.url)} disabled={isLoading.removing}>
+					<Trash2Icon class="size-4" />
 					{m.common_remove()}
 				</DropdownMenu.Item>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
-	</div>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
-{#snippet MobileCard(row: GitOpsRepository)}
+{#snippet GitOpsMobileCardSnippet({
+	item,
+	mobileFieldVisibility
+}: {
+	item: GitOpsRepository;
+	mobileFieldVisibility: Record<string, boolean>;
+})}
 	<UniversalMobileCard
-		id={row.id}
-		title={row.url}
-		subtitle={`Branch: ${row.branch}`}
-		icon={GitBranchIcon}
-		status={row.enabled ? 'running' : 'stopped'}
-		statusText={row.enabled ? m.common_enabled() : m.common_disabled()}
-		bind:selectedIds
-		onEdit={() => onEditRepository(row)}
-		onDelete={() => handleDeleteOne(row.id, row.url)}
-		{...{
-			sections: [
-				{ label: 'Compose Path', value: row.composePath },
-				{ label: 'Auto Sync', value: row.autoSync ? 'Enabled' : 'Disabled' },
-				{ label: 'Last Synced', value: row.lastSyncedAt ? format(new Date(row.lastSyncedAt), 'MMM d, yyyy HH:mm') : 'Never' }
-			],
-			actions: [
-				{ label: 'Test Connection', icon: TestTubeIcon, onClick: () => handleTest(row.id, row.url) },
-				{ label: 'Sync Now', icon: RefreshCwIcon, onClick: () => handleSyncNow(row.id, row.url) }
-			]
-		}}
+		{item}
+		icon={{ component: GitBranchIcon, variant: 'blue' as const }}
+		title={(item) => item.url}
+		subtitle={(item) => ((mobileFieldVisibility.branch ?? true) ? `Branch: ${item.branch}` : null)}
+		badges={[{ variant: 'blue' as const, text: 'GitOps' }]}
+		fields={[
+			{
+				label: m.gitops_compose_path(),
+				getValue: (item: GitOpsRepository) => item.composePath,
+				icon: LinkIcon,
+				iconVariant: 'gray' as const,
+				show: (mobileFieldVisibility.composePath ?? true) && item.composePath !== undefined
+			},
+			{
+				label: m.gitops_auto_sync(),
+				getValue: (item: GitOpsRepository) => (item.autoSync ? 'Enabled' : 'Disabled'),
+				show: mobileFieldVisibility.autoSync ?? true
+			},
+			{
+				label: m.gitops_last_synced(),
+				getValue: (item: GitOpsRepository) =>
+					item.lastSyncedAt ? format(new Date(item.lastSyncedAt), 'MMM d, yyyy HH:mm') : 'Never',
+				show: mobileFieldVisibility.lastSyncedAt ?? true
+			}
+		]}
+		rowActions={RowActions}
 	/>
 {/snippet}
 
-<ArcaneTable
-	bind:data={repositories}
-	bind:selectedIds
-	bind:requestOptions
-	{columns}
-	enableSelection={true}
-	enableFilters={true}
-	enableSearch={true}
-	mobileCardSnippet={MobileCard}
-	onDeleteSelected={handleDeleteSelected}
-/>
+<div>
+	<ArcaneTable
+		persistKey="arcane-gitops-table"
+		items={repositories}
+		bind:requestOptions
+		bind:selectedIds
+		bind:mobileFieldVisibility
+		onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+		onRefresh={async (options) => (repositories = await gitopsRepositoryService.getRepositories(options))}
+		{columns}
+		{mobileFields}
+		rowActions={RowActions}
+		mobileCard={GitOpsMobileCardSnippet}
+	/>
+</div>

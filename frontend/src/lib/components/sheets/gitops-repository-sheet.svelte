@@ -5,8 +5,8 @@
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
-	import type { GitOpsRepository } from '$lib/types/gitops-repository.type';
-	import type { GitOpsRepositoryCreateDto, GitOpsRepositoryUpdateDto } from '$lib/types/gitops-repository.type';
+	import type { GitOpsRepository } from '$lib/types/gitops.type';
+	import type { GitOpsRepositoryCreateDto, GitOpsRepositoryUpdateDto } from '$lib/types/gitops.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
@@ -67,7 +67,9 @@
 						{isEditMode ? 'Edit GitOps Repository' : 'Add GitOps Repository'}
 					</Sheet.Title>
 					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{isEditMode ? 'Update the GitOps repository configuration' : 'Configure a Git repository containing Docker Compose files'}
+						{isEditMode
+							? 'Update the GitOps repository configuration'
+							: 'Configure a Git repository containing Docker Compose files'}
 					</Sheet.Description>
 				</div>
 			</div>

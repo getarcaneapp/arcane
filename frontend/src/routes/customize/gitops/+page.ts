@@ -1,12 +1,12 @@
-import { gitopsRepositoryService } from '$lib/services/gitops-repository-service';
+import { gitopsRepositoryService } from '$lib/services/gitops-service';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 
 export const load = async () => {
 	const repositoryRequestOptions: SearchPaginationSortRequest = {
-		page: 1,
-		perPage: 10,
-		sortBy: 'createdAt',
-		sortOrder: 'desc'
+		sort: {
+			column: 'createdAt',
+			direction: 'desc' as const
+		}
 	};
 
 	const repositories = await gitopsRepositoryService.getRepositories(repositoryRequestOptions);
