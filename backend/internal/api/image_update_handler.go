@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/services"
@@ -33,7 +34,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	if imageRef == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "imageRef query parameter is required",
+			"error":   (&common.ImageRefRequiredError{}).Error(),
 		})
 		return
 	}
@@ -42,7 +43,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to check image update: " + err.Error(),
+			"error":   (&common.ImageUpdateCheckError{Err: err}).Error(),
 		})
 		return
 	}
@@ -58,7 +59,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	if imageID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "imageId parameter is required",
+			"error":   (&common.ImageIDRequiredError{}).Error(),
 		})
 		return
 	}
@@ -67,7 +68,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to check image update: " + err.Error(),
+			"error":   (&common.ImageUpdateCheckError{Err: err}).Error(),
 		})
 		return
 	}
@@ -83,7 +84,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "Invalid request format",
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -91,7 +92,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	if len(req.ImageRefs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "At least one imageRef is required",
+			"error":   (&common.ImageRefListRequiredError{}).Error(),
 		})
 		return
 	}
@@ -100,7 +101,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to check image updates: " + err.Error(),
+			"error":   (&common.BatchImageUpdateCheckError{Err: err}).Error(),
 		})
 		return
 	}
@@ -121,7 +122,7 @@ func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to check all images: " + err.Error(),
+			"error":   (&common.AllImageUpdateCheckError{Err: err}).Error(),
 		})
 		return
 	}
@@ -139,7 +140,7 @@ func (h *ImageUpdateHandler) GetUpdateSummary(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to get update summary: " + err.Error(),
+			"error":   (&common.UpdateSummaryError{Err: err}).Error(),
 		})
 		return
 	}

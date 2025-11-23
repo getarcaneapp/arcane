@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/models"
@@ -43,7 +44,7 @@ func (h *ContainerRegistryHandler) GetRegistries(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to list registries: " + err.Error()},
+			"data":    gin.H{"error": (&common.RegistryListError{Err: err}).Error()},
 		})
 		return
 	}
@@ -63,7 +64,7 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistryRetrievalError{Err: err}).Error()},
 		})
 		return
 	}
@@ -72,7 +73,7 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map registry"},
+			"data":    gin.H{"error": (&common.RegistryMappingError{Err: mapErr}).Error()},
 		})
 		return
 	}
@@ -86,10 +87,9 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 	var req models.CreateContainerRegistryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiErr := models.NewValidationError("Invalid request data", err)
-		c.JSON(apiErr.HTTPStatus(), gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -99,7 +99,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistryCreationError{Err: err}).Error()},
 		})
 		return
 	}
@@ -108,7 +108,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map registry"},
+			"data":    gin.H{"error": (&common.RegistryMappingError{Err: mapErr}).Error()},
 		})
 		return
 	}
@@ -124,10 +124,9 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 
 	var req models.UpdateContainerRegistryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiErr := models.NewValidationError("Invalid request data", err)
-		c.JSON(apiErr.HTTPStatus(), gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -137,7 +136,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistryUpdateError{Err: err}).Error()},
 		})
 		return
 	}
@@ -146,7 +145,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map registry"},
+			"data":    gin.H{"error": (&common.RegistryMappingError{Err: mapErr}).Error()},
 		})
 		return
 	}
@@ -164,7 +163,7 @@ func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistryDeletionError{Err: err}).Error()},
 		})
 		return
 	}
@@ -183,17 +182,16 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistryRetrievalError{Err: err}).Error()},
 		})
 		return
 	}
 
 	decryptedToken, err := utils.Decrypt(registry.Token)
 	if err != nil {
-		apiErr := models.NewInternalServerError("Failed to decrypt token")
-		c.JSON(apiErr.HTTPStatus(), gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.TokenDecryptionError{Err: err}).Error()},
 		})
 		return
 	}
@@ -202,7 +200,7 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"data":    gin.H{"message": err.Error()},
+			"data":    gin.H{"message": (&common.RegistryTestError{Err: err}).Error()},
 		})
 		return
 	}
@@ -216,10 +214,9 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
 	var req dto.SyncRegistriesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiErr := models.NewValidationError("Invalid request data", err)
-		c.JSON(apiErr.HTTPStatus(), gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -228,7 +225,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
 		apiErr := models.ToAPIError(err)
 		c.JSON(apiErr.HTTPStatus(), gin.H{
 			"success": false,
-			"data":    gin.H{"error": apiErr.Message},
+			"data":    gin.H{"error": (&common.RegistrySyncError{Err: err}).Error()},
 		})
 		return
 	}

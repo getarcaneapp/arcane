@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/models"
@@ -39,7 +40,7 @@ func NewNotificationHandler(group *gin.RouterGroup, notificationService *service
 func (h *NotificationHandler) GetAllSettings(c *gin.Context) {
 	settings, err := h.notificationService.GetAllSettings(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.NotificationSettingsListError{Err: err}).Error()})
 		return
 	}
 
@@ -64,13 +65,13 @@ func (h *NotificationHandler) GetSettings(c *gin.Context) {
 	switch provider {
 	case models.NotificationProviderDiscord, models.NotificationProviderEmail:
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidNotificationProviderError{}).Error()})
 		return
 	}
 
 	settings, err := h.notificationService.GetSettingsByProvider(c.Request.Context(), provider)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Settings not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": (&common.NotificationSettingsNotFoundError{}).Error()})
 		return
 	}
 
@@ -87,7 +88,7 @@ func (h *NotificationHandler) GetSettings(c *gin.Context) {
 func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 	var req dto.NotificationSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
 	}
 
@@ -98,7 +99,7 @@ func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 		req.Config,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.NotificationSettingsUpdateError{Err: err}).Error()})
 		return
 	}
 
@@ -119,12 +120,12 @@ func (h *NotificationHandler) DeleteSettings(c *gin.Context) {
 	switch provider {
 	case models.NotificationProviderDiscord, models.NotificationProviderEmail:
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidNotificationProviderError{}).Error()})
 		return
 	}
 
 	if err := h.notificationService.DeleteSettings(c.Request.Context(), provider); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.NotificationSettingsDeletionError{Err: err}).Error()})
 		return
 	}
 
@@ -138,14 +139,14 @@ func (h *NotificationHandler) TestNotification(c *gin.Context) {
 	switch provider {
 	case models.NotificationProviderDiscord, models.NotificationProviderEmail:
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidNotificationProviderError{}).Error()})
 		return
 	}
 
 	testType := c.DefaultQuery("type", "simple") // "simple" or "image-update"
 
 	if err := h.notificationService.TestNotification(c.Request.Context(), provider, testType); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.NotificationTestError{Err: err}).Error()})
 		return
 	}
 
@@ -155,7 +156,7 @@ func (h *NotificationHandler) TestNotification(c *gin.Context) {
 func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 	settings, err := h.appriseService.GetSettings(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Apprise settings not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": (&common.AppriseSettingsNotFoundError{}).Error()})
 		return
 	}
 
@@ -173,7 +174,7 @@ func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 	var req dto.AppriseSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
 	}
 
@@ -185,7 +186,7 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 		req.ContainerUpdateTag,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AppriseSettingsUpdateError{Err: err}).Error()})
 		return
 	}
 
@@ -202,7 +203,7 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 
 func (h *NotificationHandler) TestAppriseNotification(c *gin.Context) {
 	if err := h.appriseService.TestNotification(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AppriseTestError{Err: err}).Error()})
 		return
 	}
 
