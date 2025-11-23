@@ -1599,5 +1599,8 @@
 	"gitops_refresh_failed": "Failed to refresh GitOps repositories",
 	"gitops_refresh_success": "GitOps repositories refreshed",
 	"gitops_card_title": "GitOps Repositories",
-	"gitops_card_description": "Configure Git repositories containing Docker Compose files for automatic deployment"
+	"gitops_card_description": "Configure Git repositories containing Docker Compose files for automatic deployment",
+	"gitops_create_success": "GitOps repository created successfully",
+	"gitops_update_success": "GitOps repository updated successfully",
+	"gitops_save_failed": "Failed to save GitOps repository"
 }

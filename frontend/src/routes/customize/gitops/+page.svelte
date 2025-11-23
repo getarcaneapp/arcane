@@ -60,17 +60,17 @@
 		try {
 			if (isEditMode && repositoryToEdit?.id) {
 				await gitopsRepositoryService.updateRepository(repositoryToEdit.id, repository as GitOpsRepositoryUpdateDto);
-				toast.success('GitOps repository updated successfully');
+				toast.success(m.gitops_update_success());
 			} else {
 				await gitopsRepositoryService.createRepository(repository as GitOpsRepositoryCreateDto);
-				toast.success('GitOps repository created successfully');
+				toast.success(m.gitops_create_success());
 			}
 
 			repositories = await gitopsRepositoryService.getRepositories(requestOptions);
 			isRepositoryDialogOpen = false;
 		} catch (error) {
 			console.error('Error saving repository:', error);
-			toast.error(error instanceof Error ? error.message : 'Failed to save GitOps repository');
+			toast.error(error instanceof Error ? error.message : m.gitops_save_failed());
 		} finally {
 			isLoading[loadingKey] = false;
 		}

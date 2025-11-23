@@ -26,7 +26,7 @@ on:
 jobs:
   type-check:
     name: Run Svelte Check
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-8
     permissions:
       contents: read
       checks: write
@@ -53,6 +53,8 @@ jobs:
 
       - name: Build frontend
         run: pnpm --filter arcane-frontend build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Run svelte-check
         run: pnpm --filter arcane-frontend check
