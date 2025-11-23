@@ -11,14 +11,26 @@
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { Environment } from '$lib/types/environment.type';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
 	let { networks, networkUsageCounts, networkRequestOptions: requestOptions } = $state(data);
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
+
+	// Listen for command palette events
+	onMount(() => {
+		const handleCreateNetwork = () => {
+			isCreateDialogOpen = true;
+		};
+		window.addEventListener('command:create-network', handleCreateNetwork);
+
+		return () => {
+			window.removeEventListener('command:create-network', handleCreateNetwork);
+		};
+	});
 
 	let isLoading = $state({
 		create: false,

@@ -23,6 +23,7 @@
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
+	import * as CommandPallette from '$lib/components/command-palette';
 
 	let {
 		data,
@@ -35,6 +36,44 @@
 	onMount(() => {
 		if (!dev && browser && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
+		}
+
+		// Initialize command palette system
+		if (browser) {
+			// Register all commands
+			const unregisterCommands = CommandPallette.commandRegistry.registerMany([
+				...CommandPallette.createNavigationCommands(),
+				...CommandPallette.createProjectCommands(),
+				...CommandPallette.createContainerCommands(),
+				...CommandPallette.createImageCommands(),
+				...CommandPallette.createVolumeCommands(),
+				...CommandPallette.createNetworkCommands(),
+				...CommandPallette.createSystemCommands(),
+				...CommandPallette.createHelpCommands()
+			]);
+
+			// Register the toggle command
+			const unregisterToggleCommand = CommandPallette.commandRegistry.register({
+				id: 'toggle-command-palette',
+				label: 'Toggle Command Palette',
+				description: 'Open or close the command palette',
+				category: 'System',
+				keywords: ['command', 'palette', 'search'],
+				keybind: 'Meta+K',
+				action: () => {
+					CommandPallette.commandPaletteStore.toggle();
+				}
+			});
+
+			// Start listening for keybinds
+			CommandPallette.keybindRegistry.startListening();
+
+			// Cleanup on unmount
+			return () => {
+				unregisterCommands();
+				unregisterToggleCommand();
+				CommandPallette.keybindRegistry.stopListening();
+			};
 		}
 	});
 
@@ -163,3 +202,6 @@
 <ConfirmDialog />
 <LoadingIndicator active={isNavigating} thickness="h-1.5" />
 <FirstLoginPasswordDialog bind:open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
+{#if !isLoginPage}
+	<CommandPallette.CommandPalette />
+{/if}
