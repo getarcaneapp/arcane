@@ -53,8 +53,20 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 		slog.WarnContext(ctx, "Failed to load environment", "error", err)
 	}
 
-	// Pass full environment to compose-go for interpolation
-	// compose-go will use this for ${VAR} expansion in the compose file
+	// Set PWD
+	if absWorkdir, absErr := filepath.Abs(workdir); absErr == nil {
+		fullEnvMap["PWD"] = absWorkdir
+	} else {
+		slog.WarnContext(ctx, "Failed to set PWD environment variable", "workdir", workdir, "error", absErr)
+	}
+
+	// Debug: Log all environment variables being passed to compose
+	slog.DebugContext(ctx, "Environment variables for compose interpolation", "count", len(fullEnvMap))
+	for k, v := range fullEnvMap {
+		slog.DebugContext(ctx, "Env var", "key", k, "value", v)
+	}
+
+	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
 	cfg := composetypes.ConfigDetails{
 		WorkingDir: workdir,
 		ConfigFiles: []composetypes.ConfigFile{
@@ -71,6 +83,9 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	}
 
 	project = project.WithoutUnnecessaryResources()
+
+	// Resolve relative paths for bind mounts, secrets, and configs
+	resolveRelativeProjectPaths(project, workdir)
 
 	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
 
@@ -123,4 +138,53 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 	}
 
 	return proj, composeFile, nil
+}
+
+func resolveRelativeProjectPaths(project *composetypes.Project, workdir string) {
+	if project == nil || workdir == "" {
+		return
+	}
+
+	for si := range project.Services {
+		service := project.Services[si]
+		for vi := range service.Volumes {
+			volume := service.Volumes[vi]
+			if volume.Type != composetypes.VolumeTypeBind {
+				continue
+			}
+			if resolved, ok := resolvePathRelative(workdir, volume.Source); ok {
+				volume.Source = resolved
+				service.Volumes[vi] = volume
+			}
+		}
+		project.Services[si] = service
+	}
+
+	for name, secret := range project.Secrets {
+		if resolved, ok := resolvePathRelative(workdir, secret.File); ok {
+			secret.File = resolved
+			project.Secrets[name] = secret
+		}
+	}
+
+	for name, config := range project.Configs {
+		if resolved, ok := resolvePathRelative(workdir, config.File); ok {
+			config.File = resolved
+			project.Configs[name] = config
+		}
+	}
+}
+
+func resolvePathRelative(workdir, candidate string) (string, bool) {
+	if candidate == "" {
+		return candidate, false
+	}
+	if filepath.IsAbs(candidate) {
+		return filepath.Clean(candidate), false
+	}
+	if workdir == "" {
+		return candidate, false
+	}
+	resolved := filepath.Join(workdir, candidate)
+	return filepath.Clean(resolved), true
 }
