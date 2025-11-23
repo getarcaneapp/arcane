@@ -115,7 +115,9 @@
 			message: `Connection test failed for ${safeUrl}`,
 			setLoadingState: () => {},
 			onSuccess: (resp) => {
-				const msg = (resp as any)?.message ?? m.common_unknown();
+				const msg = typeof resp === 'object' && resp !== null && 'message' in resp 
+					? String(resp.message) 
+					: m.common_unknown();
 				toast.success(`${safeUrl}: ${msg}`);
 			}
 		});
@@ -131,7 +133,9 @@
 			message: `Sync failed for ${safeUrl}`,
 			setLoadingState: () => {},
 			onSuccess: (resp) => {
-				const msg = (resp as any)?.message ?? 'Synced successfully';
+				const msg = typeof resp === 'object' && resp !== null && 'message' in resp 
+					? String(resp.message) 
+					: 'Synced successfully';
 				toast.success(`${safeUrl}: ${msg}`);
 				// Refresh the list
 				gitopsRepositoryService.getRepositories(requestOptions).then((newRepos) => {

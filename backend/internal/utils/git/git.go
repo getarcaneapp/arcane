@@ -135,9 +135,15 @@ func getRepositoryDir(repoURL string) string {
 	dirName = strings.TrimSuffix(dirName, ".git")
 
 	// Use a base directory for all git repositories
+	// Priority: GITOPS_REPOS_DIR env var, then DATA_DIR/gitops-repos, then fallback
 	baseDir := os.Getenv("GITOPS_REPOS_DIR")
 	if baseDir == "" {
-		baseDir = "/app/data/gitops-repos"
+		dataDir := os.Getenv("DATA_DIR")
+		if dataDir != "" {
+			baseDir = filepath.Join(dataDir, "gitops-repos")
+		} else {
+			baseDir = "data/gitops-repos"
+		}
 	}
 
 	return filepath.Join(baseDir, dirName)
