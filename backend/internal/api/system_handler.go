@@ -167,7 +167,7 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	}
 
 	cpuCount := info.NCPU
-	var memTotal int64 = info.MemTotal
+	memTotal := info.MemTotal
 
 	// Check for cgroup limits (LXC, Docker, etc.)
 	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
