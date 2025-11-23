@@ -44,8 +44,10 @@
 				{:else}
 					<div class="flex flex-1 flex-col gap-1.5">
 						<div class="flex items-center gap-2">
-							<span class="text-foreground text-sm font-semibold">{m.docker_engine_title()}</span>
-							<Badge variant="outline" class="text-xs">{dockerInfo?.version ?? '-'}</Badge>
+							<span class="text-foreground text-sm font-semibold"
+								>{m.docker_engine_title({ engine: dockerInfo?.Name ?? 'Docker Engine' })}</span
+							>
+							<Badge variant="outline" class="text-xs">{dockerInfo?.ServerVersion ?? '-'}</Badge>
 						</div>
 						<div class="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
 							<span class="flex items-center gap-1.5">
@@ -62,7 +64,7 @@
 							</span>
 							<span class="text-muted-foreground/50">•</span>
 							<span class="font-mono">
-								{dockerInfo?.os ?? '-'} / {dockerInfo?.architecture ?? '-'}
+								{dockerInfo?.OperatingSystem ?? '-'} / {dockerInfo?.Architecture ?? '-'}
 							</span>
 						</div>
 					</div>
