@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -18,8 +17,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/ofkm/arcane-backend/internal/common"
@@ -166,37 +163,16 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 		return
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   (&common.DockerContainerListError{Err: err}).Error(),
-		})
-		return
-	}
-
-	images, err := dockerClient.ImageList(ctx, image.ListOptions{})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   (&common.DockerImageListError{Err: err}).Error(),
-		})
-		return
-	}
-
 	cpuCount := info.NCPU
-	var memTotal uint64
-	if info.MemTotal > 0 {
-		memTotal = uint64(info.MemTotal)
-	}
+	memTotal := info.MemTotal
 
 	// Check for cgroup limits (LXC, Docker, etc.)
 	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
 		// Use cgroup memory limit if available and smaller than host value
 		if limit := cgroupLimits.MemoryLimit; limit > 0 {
-			limitUint := uint64(limit)
-			if memTotal == 0 || limitUint < memTotal {
-				memTotal = limitUint
+			limitInt := int64(limit)
+			if memTotal == 0 || limitInt < memTotal {
+				memTotal = limitInt
 			}
 		}
 
@@ -206,31 +182,19 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 		}
 	}
 
+	// Update info with cgroup limits
+	info.NCPU = cpuCount
+	info.MemTotal = memTotal
+
 	dockerInfo := dto.DockerInfoDto{
-		Success:           true,
-		Version:           version.Version,
-		APIVersion:        version.APIVersion,
-		GitCommit:         version.GitCommit,
-		GoVersion:         version.GoVersion,
-		OS:                version.Os,
-		Arch:              version.Arch,
-		BuildTime:         version.BuildTime,
-		Containers:        len(containers),
-		ContainersRunning: info.ContainersRunning,
-		ContainersPaused:  info.ContainersPaused,
-		ContainersStopped: info.ContainersStopped,
-		Images:            len(images),
-		StorageDriver:     info.Driver,
-		LoggingDriver:     info.LoggingDriver,
-		CgroupDriver:      info.CgroupDriver,
-		CgroupVersion:     info.CgroupVersion,
-		KernelVersion:     info.KernelVersion,
-		OperatingSystem:   info.OperatingSystem,
-		OSVersion:         info.OSVersion,
-		ServerVersion:     info.ServerVersion,
-		Architecture:      info.Architecture,
-		CPUs:              cpuCount,
-		MemTotal:          safeUint64ToInt64(memTotal),
+		Success:    true,
+		APIVersion: version.APIVersion,
+		GitCommit:  version.GitCommit,
+		GoVersion:  version.GoVersion,
+		Os:         version.Os,
+		Arch:       version.Arch,
+		BuildTime:  version.BuildTime,
+		Info:       info,
 	}
 
 	c.JSON(http.StatusOK, dockerInfo)
@@ -286,13 +250,6 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 		"message": "Pruning completed",
 		"data":    result,
 	})
-}
-
-func safeUint64ToInt64(value uint64) int64 {
-	if value > uint64(math.MaxInt64) {
-		return math.MaxInt64
-	}
-	return int64(value)
 }
 
 func (h *SystemHandler) StartAllContainers(c *gin.Context) {
