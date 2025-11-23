@@ -63,29 +63,6 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 	return envMap, injectionVars, nil
 }
 
-// LoadGlobalEnvironment loads only global environment variables:
-// 1. Process environment
-// 2. Global .env.global file (from projects directory)
-// This allows compose-go to load project-specific .env files and do interpolation
-func (l *EnvLoader) LoadGlobalEnvironment(ctx context.Context) (envMap EnvMap, injectionVars EnvMap, err error) {
-	envMap = l.loadProcessEnv()
-	injectionVars = make(EnvMap)
-
-	globalEnvPath := filepath.Join(l.projectsDir, globalEnvFileName)
-	if err := l.ensureGlobalEnvFile(ctx, globalEnvPath); err != nil {
-		slog.WarnContext(ctx, "Failed to ensure global env file", "path", globalEnvPath, "error", err)
-	}
-
-	if err := l.loadAndMergeGlobalEnv(ctx, globalEnvPath, envMap, injectionVars); err != nil {
-		slog.WarnContext(ctx, "Failed to load global env", "path", globalEnvPath, "error", err)
-	}
-
-	// Note: Project-specific .env file is NOT loaded here
-	// compose-go loader will load it automatically and handle interpolation
-
-	return envMap, injectionVars, nil
-}
-
 func (l *EnvLoader) loadProcessEnv() EnvMap {
 	envMap := make(EnvMap)
 	for _, kv := range os.Environ() {

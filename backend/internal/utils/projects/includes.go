@@ -112,15 +112,6 @@ func parseIncludeItem(item interface{}, baseDir string) (IncludeFile, error) {
 	}, nil
 }
 
-// ValidateIncludePathForRead validates that an include path is safe to read
-// Allows reading from anywhere (Docker Compose includes can reference external files)
-func ValidateIncludePathForRead(includePath string) error {
-	if includePath == "" {
-		return fmt.Errorf("include path cannot be empty")
-	}
-	return nil
-}
-
 // ValidateIncludePathForWrite ensures the include path is safe for write operations
 // Returns the validated absolute path to prevent recomputation after validation
 // Only allows writing within the project directory
@@ -246,22 +237,6 @@ func WriteIncludeFile(projectDir, includePath, content string) error {
 
 	if err := os.WriteFile(validatedPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write include file: %w", err)
-	}
-
-	return nil
-}
-
-// DeleteIncludeFile removes an include file
-func DeleteIncludeFile(projectDir, includePath string) error {
-	// Get validated absolute path - only allows deletes within project
-	validatedPath, err := ValidateIncludePathForWrite(projectDir, includePath)
-	if err != nil {
-		return err
-	}
-
-	// Use the validated path for the operation
-	if err := os.Remove(validatedPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete include file: %w", err)
 	}
 
 	return nil

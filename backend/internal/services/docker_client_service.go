@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -18,6 +19,8 @@ import (
 type DockerClientService struct {
 	db     *database.DB
 	config *config.Config
+	client *client.Client
+	mu     sync.Mutex
 }
 
 func NewDockerClientService(db *database.DB, cfg *config.Config) *DockerClientService {
@@ -27,25 +30,38 @@ func NewDockerClientService(db *database.DB, cfg *config.Config) *DockerClientSe
 	}
 }
 
-func (s *DockerClientService) CreateConnection(ctx context.Context) (*client.Client, error) {
+// GetClient returns a singleton Docker client instance.
+// It initializes the client on the first call.
+func (s *DockerClientService) GetClient() (*client.Client, error) {
+	if s.client != nil {
+		return s.client, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Double-check locking
+	if s.client != nil {
+		return s.client, nil
+	}
+
 	cli, err := client.NewClientWithOpts(
 		client.WithHost(s.config.DockerHost),
 		client.WithAPIVersionNegotiation(),
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
-	return cli, nil
+	s.client = cli
+	return s.client, nil
 }
 
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
-	dockerClient, err := s.CreateConnection(ctx)
+	dockerClient, err := s.GetClient()
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
@@ -66,11 +82,10 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 }
 
 func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, int, int, int, error) {
-	dockerClient, err := s.CreateConnection(ctx)
+	dockerClient, err := s.GetClient()
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	images, err := dockerClient.ImageList(ctx, image.ListOptions{All: true})
 	if err != nil {
@@ -91,11 +106,10 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 }
 
 func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, totalNetworks int, inuseNetworks int, unusedNetworks int, error error) {
-	dockerClient, err := s.CreateConnection(ctx)
+	dockerClient, err := s.GetClient()
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
@@ -140,11 +154,10 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 }
 
 func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volume, int, int, int, error) {
-	dockerClient, err := s.CreateConnection(ctx)
+	dockerClient, err := s.GetClient()
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {

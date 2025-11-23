@@ -131,30 +131,15 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	if err := s.db.WithContext(ctx).Create(user).Error; err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-	return user, nil
-}
-
-func (s *UserService) CreateUserWithPassword(username, password, email, role string, displayName string) (*models.User, error) {
-	hashedPassword, err := s.hashPassword(password)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, err
 	}
-
-	user := &models.User{
-		Username:     username,
-		Email:        &email,
-		DisplayName:  &displayName,
-		PasswordHash: hashedPassword,
-		Roles:        models.StringSlice{role},
-	}
-
-	if err := s.db.Create(user).Error; err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-
 	return user, nil
 }
 
@@ -203,8 +188,14 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	if err := s.db.WithContext(ctx).Save(user).Error; err != nil {
-		return nil, fmt.Errorf("failed to update user: %w", err)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(user).Error; err != nil {
+			return fmt.Errorf("failed to update user: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return user, nil
 }
@@ -213,6 +204,9 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 // It uses a row lock (FOR UPDATE) to prevent concurrent merges from racing and validates that the
 // user isn't already linked to a different subject. The provided updateFn can mutate the user (e.g.,
 // roles, display name, tokens, last login) before persisting.
+//
+// Note: The clause.Locking{Strength: "UPDATE"} statement is used to acquire a row-level lock.
+// This MUST be done inside a transaction to ensure the lock is held until the update is committed.
 func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *models.User)) (*models.User, error) {
 	var out *models.User
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -255,49 +249,55 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 	return out, nil
 }
 
-func (s *UserService) CountUsers() (int64, error) {
-	var count int64
-	if err := s.db.Model(&models.User{}).Count(&count).Error; err != nil {
-		return 0, err
-	}
-	return count, nil
-}
-
-func (s *UserService) CreateDefaultAdmin() error {
-	count, err := s.CountUsers()
+func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
+	// Hash password outside transaction to minimize lock time
+	hashedPassword, err := s.hashPassword("arcane-admin")
 	if err != nil {
-		return fmt.Errorf("failed to count users: %w", err)
+		return fmt.Errorf("failed to hash default admin password: %w", err)
 	}
 
-	if count > 0 {
-		slog.Warn("Users already exist, skipping default admin creation")
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("failed to count users: %w", err)
+		}
+
+		if count > 0 {
+			slog.WarnContext(ctx, "Users already exist, skipping default admin creation")
+			return nil
+		}
+
+		email := "admin@localhost"
+		displayName := "Arcane Admin"
+		user := &models.User{
+			Username:               "arcane",
+			Email:                  &email,
+			DisplayName:            &displayName,
+			PasswordHash:           hashedPassword,
+			Roles:                  models.StringSlice{"admin"},
+			RequiresPasswordChange: true,
+		}
+
+		if err := tx.Create(user).Error; err != nil {
+			return fmt.Errorf("failed to create default admin user: %w", err)
+		}
+
+		slog.InfoContext(ctx, "👑 Default admin user created!")
+		slog.InfoContext(ctx, "🔑 Username: arcane")
+		slog.InfoContext(ctx, "🔑 Password: arcane-admin")
+		slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+
 		return nil
-	}
-
-	user, err := s.CreateUserWithPassword("arcane", "arcane-admin", "admin@localhost", "admin", "Arcane Admin")
-	if err != nil {
-		return fmt.Errorf("failed to create default admin user: %w", err)
-	}
-
-	// Mark this user as requiring password change on first login
-	user.RequiresPasswordChange = true
-	if err := s.db.Save(user).Error; err != nil {
-		slog.Warn("Failed to mark default admin for password change", "error", err)
-	}
-
-	slog.Info("👑 Default admin user created!")
-	slog.Info("🔑 Username: arcane")
-	slog.Info("🔑 Password: arcane-admin")
-	slog.Info("⚠️  User will be prompted to change password on first login")
-
-	return nil
+	})
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
-	if err := s.db.WithContext(ctx).Delete(&models.User{}, "id = ?", id).Error; err != nil {
-		return fmt.Errorf("failed to delete user: %w", err)
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
+			return fmt.Errorf("failed to delete user: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *UserService) HashPassword(password string) (string, error) {
@@ -314,9 +314,14 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 		return fmt.Errorf("failed to create new hash: %w", err)
 	}
 
-	return s.db.WithContext(ctx).Model(&models.User{}).
-		Where("id = ?", userID).
-		Update("password_hash", newHash).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			Update("password_hash", newHash).Error; err != nil {
+			return fmt.Errorf("failed to update password hash: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.UserResponseDto, pagination.Response, error) {

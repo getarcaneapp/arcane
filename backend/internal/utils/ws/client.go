@@ -15,7 +15,8 @@ const (
 	pongWait   = 60 * time.Second
 	pingPeriod = pongWait * 9 / 10
 
-	maxMessageSize = 64 * 1024
+	maxMessageSize   = 64 * 1024
+	clientSendBuffer = 256
 )
 
 // Client represents a single WebSocket connection.
@@ -37,7 +38,7 @@ func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 // ServeClient registers the client with the hub and starts read/write pumps.
 // Caller is responsible for creating/closing the websocket.Conn.
 func ServeClient(ctx context.Context, hub *Hub, conn *websocket.Conn) {
-	c := NewClient(conn, 256)
+	c := NewClient(conn, clientSendBuffer)
 	hub.register <- c
 
 	go c.writePump(ctx, hub)

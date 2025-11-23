@@ -72,12 +72,6 @@ func InvalidateVolumeUsageCache() {
 	volumeUsageCacheTime = time.Time{}
 }
 
-func SetVolumeUsageCacheTTL(ttl time.Duration) {
-	volumeUsageCacheMutex.Lock()
-	defer volumeUsageCacheMutex.Unlock()
-	volumeUsageCacheTTL = ttl
-}
-
 func GetContainersUsingVolume(ctx context.Context, dockerClient *client.Client, volumeName string) ([]string, error) {
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {

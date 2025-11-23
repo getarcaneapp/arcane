@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strconv"
 
+	"github.com/ofkm/arcane-backend/internal/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -16,14 +17,14 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (
 		sortDirection = "asc"
 	}
 
-	capitalizedSortColumn := capitalizeFirstLetter(sortColumn)
+	capitalizedSortColumn := utils.CapitalizeFirstLetter(sortColumn)
 	sortField, sortFieldFound := reflect.TypeOf(result).Elem().Elem().FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
 	sortDirection = normalizeSortDirection(sortDirection)
 
 	if sortFieldFound && isSortable {
-		columnName := camelCaseToSnakeCase(sortColumn)
+		columnName := utils.CamelCaseToSnakeCase(sortColumn)
 		query = query.Clauses(clause.OrderBy{
 			Columns: []clause.OrderByColumn{
 				{Column: clause.Column{Name: columnName}, Desc: sortDirection == "desc"},
@@ -80,26 +81,4 @@ func normalizeSortDirection(direction string) string {
 		return "asc"
 	}
 	return direction
-}
-
-func capitalizeFirstLetter(str string) string {
-	if len(str) == 0 {
-		return str
-	}
-	return string(str[0]-32) + str[1:]
-}
-
-func camelCaseToSnakeCase(str string) string {
-	var result []rune
-	for i, r := range str {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result = append(result, '_')
-		}
-		if r >= 'A' && r <= 'Z' {
-			result = append(result, r+32)
-		} else {
-			result = append(result, r)
-		}
-	}
-	return string(result)
 }

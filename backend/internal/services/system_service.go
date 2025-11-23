@@ -6,14 +6,17 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/docker/docker/api/types/build"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/goccy/go-yaml"
 	"github.com/ofkm/arcane-backend/internal/database"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/models"
 	"github.com/ofkm/arcane-backend/internal/utils/converter"
+	"golang.org/x/sync/errgroup"
 )
 
 type SystemService struct {
@@ -60,7 +63,9 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 		slog.Bool("dangling", req.Dangling))
 
 	result := &dto.PruneAllResult{Success: true}
+	var mu sync.Mutex
 
+	// 1. Prune Containers first (sequential) as it may free up other resources
 	if req.Containers {
 		slog.InfoContext(ctx, "Pruning stopped containers...")
 		if err := s.pruneContainers(ctx, result); err != nil {
@@ -69,43 +74,90 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 		}
 	}
 
-	danglingOnly := req.Dangling
-	if settingsDangling, _ := s.getDanglingModeFromSettings(ctx); settingsDangling != danglingOnly {
-		slog.DebugContext(ctx, "Prune request overriding stored image prune mode",
-			slog.Bool("settings_dangling_only", settingsDangling),
-			slog.Bool("request_dangling_only", danglingOnly))
-	}
-	slog.DebugContext(ctx, "Resolved image prune mode", slog.Bool("dangling_only", danglingOnly))
+	// 2. Prune other resources in parallel
+	g, ctx := errgroup.WithContext(ctx)
 
 	if req.Images {
-		slog.InfoContext(ctx, "Pruning images...", slog.Bool("dangling_only", danglingOnly))
-		if err := s.pruneImages(ctx, danglingOnly, result); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
-			result.Success = false
-		}
+		g.Go(func() error {
+			danglingOnly := req.Dangling
+			if settingsDangling, _ := s.getDanglingModeFromSettings(ctx); settingsDangling != danglingOnly {
+				slog.DebugContext(ctx, "Prune request overriding stored image prune mode",
+					slog.Bool("settings_dangling_only", settingsDangling),
+					slog.Bool("request_dangling_only", danglingOnly))
+			}
+
+			slog.InfoContext(ctx, "Pruning images...", slog.Bool("dangling_only", danglingOnly))
+			localResult := &dto.PruneAllResult{}
+			if err := s.pruneImages(ctx, danglingOnly, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.ImagesDeleted = append(result.ImagesDeleted, localResult.ImagesDeleted...)
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
 	}
 
 	if req.BuildCache {
-		slog.InfoContext(ctx, "Pruning build cache...")
-		if buildCacheErr := s.pruneBuildCache(ctx, result, !danglingOnly); buildCacheErr != nil {
-			slog.WarnContext(ctx, "Build cache pruning encountered an error", slog.String("error", buildCacheErr.Error()))
-		}
+		g.Go(func() error {
+			slog.InfoContext(ctx, "Pruning build cache...")
+			localResult := &dto.PruneAllResult{}
+			if err := s.pruneBuildCache(ctx, localResult, !req.Dangling); err != nil {
+				slog.WarnContext(ctx, "Build cache pruning encountered an error", slog.String("error", err.Error()))
+				// Build cache errors are often non-critical, but we log them
+			} else {
+				mu.Lock()
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
 	}
 
 	if req.Volumes {
-		slog.InfoContext(ctx, "Pruning unused volumes (not referenced by any container)...")
-		if err := s.pruneVolumes(ctx, result); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
-			result.Success = false
-		}
+		g.Go(func() error {
+			slog.InfoContext(ctx, "Pruning unused volumes...")
+			localResult := &dto.PruneAllResult{}
+			if err := s.pruneVolumes(ctx, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.VolumesDeleted = append(result.VolumesDeleted, localResult.VolumesDeleted...)
+				result.SpaceReclaimed += localResult.SpaceReclaimed
+				mu.Unlock()
+			}
+			return nil
+		})
 	}
 
 	if req.Networks {
-		slog.InfoContext(ctx, "Pruning unused networks (not connected to any container)...")
-		if err := s.pruneNetworks(ctx, result); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
-			result.Success = false
-		}
+		g.Go(func() error {
+			slog.InfoContext(ctx, "Pruning unused networks...")
+			localResult := &dto.PruneAllResult{}
+			if err := s.pruneNetworks(ctx, localResult); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.NetworksDeleted = append(result.NetworksDeleted, localResult.NetworksDeleted...)
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		slog.ErrorContext(ctx, "Prune operations failed", "error", err)
 	}
 
 	slog.InfoContext(ctx, "Selective prune operation completed",
@@ -133,95 +185,101 @@ func (s *SystemService) getDanglingModeFromSettings(ctx context.Context) (bool, 
 	}
 }
 
-func (s *SystemService) StartAllContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
-	result := &dto.ContainerActionResult{
-		Success: true,
-	}
+func (s *SystemService) performBatchContainerAction(ctx context.Context, containers []container.Summary, actionName string, shouldProcess func(container.Summary) bool, action func(context.Context, string) error) *dto.ContainerActionResult {
+	result := &dto.ContainerActionResult{Success: true}
+	var mu sync.Mutex
 
-	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
-	if err != nil {
-		result.Success = false
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to list containers: %v", err))
-		return result, err
-	}
+	g, ctx := errgroup.WithContext(ctx)
+	// Limit concurrency to avoid overwhelming Docker daemon
+	g.SetLimit(5)
 
 	for _, container := range containers {
-		if container.State != "running" {
-			if err := s.containerService.StartContainer(ctx, container.ID, systemUser); err != nil {
-				result.Failed = append(result.Failed, container.ID)
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to start container %s: %v", container.ID, err))
+		c := container // capture loop var
+		if !shouldProcess(c) {
+			continue
+		}
+
+		g.Go(func() error {
+			err := action(ctx, c.ID)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				result.Failed = append(result.Failed, c.ID)
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed to %s container %s: %v", actionName, c.ID, err))
 				result.Success = false
 			} else {
-				result.Started = append(result.Started, container.ID)
+				if actionName == "start" {
+					result.Started = append(result.Started, c.ID)
+				} else {
+					result.Stopped = append(result.Stopped, c.ID)
+				}
 			}
-		}
+			return nil
+		})
 	}
 
-	return result, nil
+	_ = g.Wait()
+	return result
+}
+
+func (s *SystemService) StartAllContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
+	if err != nil {
+		return &dto.ContainerActionResult{
+			Success: false,
+			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
+		}, err
+	}
+
+	return s.performBatchContainerAction(ctx, containers, "start",
+		func(c container.Summary) bool { return c.State != "running" },
+		func(ctx context.Context, id string) error {
+			return s.containerService.StartContainer(ctx, id, systemUser)
+		}), nil
 }
 
 func (s *SystemService) StartAllStoppedContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
-	result := &dto.ContainerActionResult{
-		Success: true,
-	}
-
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		result.Success = false
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to list containers: %v", err))
-		return result, err
+		return &dto.ContainerActionResult{
+			Success: false,
+			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
+		}, err
 	}
 
-	for _, container := range containers {
-		if container.State == "exited" {
-			if err := s.containerService.StartContainer(ctx, container.ID, systemUser); err != nil {
-				result.Failed = append(result.Failed, container.ID)
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to start container %s: %v", container.ID, err))
-				result.Success = false
-			} else {
-				result.Started = append(result.Started, container.ID)
-			}
-		}
-	}
-
-	return result, nil
+	return s.performBatchContainerAction(ctx, containers, "start",
+		func(c container.Summary) bool { return c.State == "exited" },
+		func(ctx context.Context, id string) error {
+			return s.containerService.StartContainer(ctx, id, systemUser)
+		}), nil
 }
 
 func (s *SystemService) StopAllContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
-	result := &dto.ContainerActionResult{
-		Success: true,
-	}
-
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		result.Success = false
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to list containers: %v", err))
-		return result, err
+		return &dto.ContainerActionResult{
+			Success: false,
+			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
+		}, err
 	}
 
-	for _, cont := range containers {
-		// Skip Arcane server container
-		if cont.Labels != nil && cont.Labels["com.ofkm.arcane.server"] == "true" {
-			continue
-		}
-		if err := s.containerService.StopContainer(ctx, cont.ID, systemUser); err != nil {
-			result.Failed = append(result.Failed, cont.ID)
-			result.Errors = append(result.Errors, fmt.Sprintf("Failed to stop container %s: %v", cont.ID, err))
-			result.Success = false
-		} else {
-			result.Stopped = append(result.Stopped, cont.ID)
-		}
-	}
-
-	return result, nil
+	return s.performBatchContainerAction(ctx, containers, "stop",
+		func(c container.Summary) bool {
+			// Skip Arcane server container
+			return c.Labels == nil || c.Labels["com.ofkm.arcane.server"] != "true"
+		},
+		func(ctx context.Context, id string) error {
+			return s.containerService.StopContainer(ctx, id, systemUser)
+		}), nil
 }
 
 func (s *SystemService) pruneContainers(ctx context.Context, result *dto.PruneAllResult) error {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	filterArgs := filters.NewArgs()
 
@@ -238,11 +296,10 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *dto.PruneAl
 func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, result *dto.PruneAllResult) error {
 	slog.DebugContext(ctx, "Starting image pruning", slog.Bool("dangling_only", danglingOnly))
 
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	var filterArgs filters.Args
 
@@ -263,45 +320,37 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 		slog.Int("images_deleted", len(report.ImagesDeleted)),
 		slog.Uint64("bytes_reclaimed", report.SpaceReclaimed))
 
-	// Clean up update records for pruned images
+	// Collect IDs to delete from DB
+	var idsToDelete []string
 	for _, imgReport := range report.ImagesDeleted {
-		var prunedDockerID string
 		if imgReport.Deleted != "" {
-			prunedDockerID = imgReport.Deleted
+			idsToDelete = append(idsToDelete, imgReport.Deleted)
 		} else if imgReport.Untagged != "" {
-			prunedDockerID = imgReport.Untagged
-		}
-
-		if prunedDockerID != "" && s.db != nil {
-			// Only delete the update record
-			if err := s.db.WithContext(ctx).Delete(&models.ImageUpdateRecord{}, "id = ?", prunedDockerID).Error; err != nil {
-				slog.WarnContext(ctx, "Failed to delete image update record",
-					slog.String("imageId", prunedDockerID),
-					slog.String("error", err.Error()))
-			}
+			idsToDelete = append(idsToDelete, imgReport.Untagged)
 		}
 	}
 
-	result.ImagesDeleted = make([]string, 0, len(report.ImagesDeleted))
-	for _, img := range report.ImagesDeleted {
-		if img.Deleted != "" {
-			result.ImagesDeleted = append(result.ImagesDeleted, img.Deleted)
-		} else if img.Untagged != "" {
-			result.ImagesDeleted = append(result.ImagesDeleted, img.Untagged)
+	// Batch delete update records
+	if len(idsToDelete) > 0 && s.db != nil {
+		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error; err != nil {
+			slog.WarnContext(ctx, "Failed to delete image update records",
+				slog.Int("count", len(idsToDelete)),
+				slog.String("error", err.Error()))
 		}
 	}
+
+	result.ImagesDeleted = idsToDelete
 	result.SpaceReclaimed += report.SpaceReclaimed
 	return nil
 }
 
 func (s *SystemService) pruneBuildCache(ctx context.Context, result *dto.PruneAllResult, pruneAllCache bool) error {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed (connection): %w", err).Error())
 		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", slog.String("error", err.Error()))
 		return fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
 	}
-	defer dockerClient.Close()
 
 	options := build.CachePruneOptions{
 		All: pruneAllCache,

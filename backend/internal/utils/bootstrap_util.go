@@ -66,12 +66,12 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func() error, syncOidcFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, syncOidcFunc func(context.Context) error) {
 	if cfg.AgentMode {
 		return
 	}
 
-	if err := createAdminFunc(); err != nil {
+	if err := createAdminFunc(ctx); err != nil {
 		slog.WarnContext(ctx, "Failed to create default admin user",
 			slog.String("error", err.Error()))
 	}

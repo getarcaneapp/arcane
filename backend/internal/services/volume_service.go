@@ -33,11 +33,10 @@ func NewVolumeService(db *database.DB, dockerService *DockerClientService, event
 }
 
 func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*dto.VolumeDto, error) {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	vol, err := dockerClient.VolumeInspect(ctx, name)
 	if err != nil {
@@ -79,12 +78,11 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*dto.
 }
 
 func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateOptions, user models.User) (*dto.VolumeDto, error) {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
@@ -116,12 +114,11 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 }
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	if err := dockerClient.VolumeRemove(ctx, name, force); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
@@ -146,11 +143,10 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*dto.VolumePruneRepor
 }
 
 func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (*dto.VolumePruneReportDto, error) {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	// Docker's VolumesPrune behavior (API v1.42+):
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
@@ -191,11 +187,10 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 }
 
 func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, []string, error) {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	vol, err := dockerClient.VolumeInspect(ctx, name)
 	if err != nil {
@@ -370,11 +365,10 @@ func (s *VolumeService) buildPaginationResponse(result pagination.FilterResult[d
 }
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.VolumeDto, pagination.Response, dto.VolumeUsageCounts, error) {
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, dto.VolumeUsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
 	if err != nil {

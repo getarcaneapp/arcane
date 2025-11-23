@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -108,7 +109,6 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 }
 
 func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *database.DB) (*models.Settings, error) {
-
 	if config.Load().UIConfigurationDisabled || config.Load().AgentMode {
 		slog.DebugContext(ctx, "loadDatabaseSettingsInternal: using env path", "UIConfigurationDisabled", config.Load().UIConfigurationDisabled, "AgentMode", config.Load().AgentMode, "Environment", config.Load().Environment)
 		return s.loadDatabaseConfigFromEnv(ctx, db)
@@ -138,28 +138,39 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	s.applyEnvOverrides(ctx, dest)
 
 	return dest, nil
-
 }
 
 func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*models.Settings, error) {
 	dest := s.getDefaultSettings()
+
+	// Fetch all settings once to avoid N+1 queries for internal keys
+	var allSettings []models.SettingVariable
+	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
+		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
+	}
+	settingsMap := make(map[string]string, len(allSettings))
+	for _, s := range allSettings {
+		settingsMap[s.Key] = s.Value
+	}
 
 	rt := reflect.ValueOf(dest).Elem().Type()
 	rv := reflect.ValueOf(dest).Elem()
 	for i := range rt.NumField() {
 		field := rt.Field(i)
 
-		key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
+		tagParts := strings.Split(field.Tag.Get("key"), ",")
+		key := tagParts[0]
+		isInternal := false
+		for _, attr := range tagParts[1:] {
+			if attr == "internal" {
+				isInternal = true
+				break
+			}
+		}
 
-		if attrs == "internal" {
-			var value string
-			err := db.WithContext(ctx).
-				Model(&models.SettingVariable{}).
-				Where("key = ?", key).
-				Select("value").
-				First(&value).Error
-			if err == nil {
-				rv.Field(i).FieldByName("Value").SetString(value)
+		if isInternal {
+			if val, ok := settingsMap[key]; ok {
+				rv.Field(i).FieldByName("Value").SetString(val)
 			}
 			continue
 		}
@@ -278,15 +289,15 @@ func (s *SettingsService) SyncOidcEnvToDatabase(ctx context.Context) ([]models.S
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
-	settingVar := &models.SettingVariable{
-		Key:   key,
-		Value: value,
-	}
-
-	return s.db.WithContext(ctx).Save(settingVar).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		settingVar := &models.SettingVariable{
+			Key:   key,
+			Value: value,
+		}
+		return tx.Save(settingVar).Error
+	})
 }
 
-//nolint:gocognit
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.UpdateSettingsDto) ([]models.SettingVariable, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg, err := s.GetSettings(ctx)
@@ -294,110 +305,17 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.Update
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	rt := reflect.TypeOf(updates)
-	rv := reflect.ValueOf(updates)
-	valuesToUpdate := make([]models.SettingVariable, 0)
-
-	changedPolling := false
-	changedAutoUpdate := false
-
-	// Iterate through fields using reflection
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
-		fieldValue := rv.Field(i)
-
-		// Skip if the field is nil (not provided in request)
-		if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
-			continue
-		}
-
-		// Get the value and json key
-		key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		var value string
-		if fieldValue.Kind() == reflect.Ptr {
-			value = fieldValue.Elem().String()
-		}
-
-		// Determine the actual value to use and save
-		var valueToSave string
-		var err error
-
-		if value == "" {
-			// Use default value for empty strings
-			defaultValue, _, _, _ := defaultCfg.FieldByKey(key)
-			valueToSave = defaultValue
-			err = cfg.UpdateField(key, defaultValue, true)
-		} else {
-			// Use the provided value
-			valueToSave = value
-			err = cfg.UpdateField(key, value, true)
-		}
-
-		// Handle internal field errors
-		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
-			continue
-		} else if err != nil {
-			return nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
-		}
-
-		// Save the correct value to database
-		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
-			Key:   key,
-			Value: valueToSave,
-		})
-
-		switch key {
-		case "pollingEnabled", "pollingInterval":
-			changedPolling = true
-		case "autoUpdate", "autoUpdateInterval":
-			changedAutoUpdate = true
-		}
-	}
-
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, setting := range valuesToUpdate {
-			if err := tx.Save(&setting).Error; err != nil {
-				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
-			}
-		}
-		return nil
-	})
+	valuesToUpdate, changedPolling, changedAutoUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Merge OIDC config to avoid clearing secret when not provided
-	if updates.AuthOidcConfig != nil {
-		newCfgStr := *updates.AuthOidcConfig
+	if err := s.persistSettings(ctx, valuesToUpdate); err != nil {
+		return nil, err
+	}
 
-		var incoming models.OidcConfig
-		if err := json.Unmarshal([]byte(newCfgStr), &incoming); err != nil {
-			return nil, fmt.Errorf("invalid authOidcConfig JSON: %w", err)
-		}
-
-		// Get current settings to preserve existing secret if empty
-		current, err := s.GetSettings(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load current settings: %w", err)
-		}
-
-		if current.AuthOidcConfig.Value != "" {
-			var existing models.OidcConfig
-			if err := json.Unmarshal([]byte(current.AuthOidcConfig.Value), &existing); err == nil {
-				if incoming.ClientSecret == "" {
-					incoming.ClientSecret = existing.ClientSecret
-				}
-			}
-		}
-
-		mergedBytes, err := json.Marshal(incoming)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal merged OIDC config: %w", err)
-		}
-
-		if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
-			return nil, fmt.Errorf("failed to update authOidcConfig: %w", err)
-		}
+	if err := s.handleOidcConfigUpdate(ctx, updates); err != nil {
+		return nil, err
 	}
 
 	if changedPolling && s.OnImagePollingSettingsChanged != nil {
@@ -415,6 +333,110 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.Update
 	s.config.Store(settings)
 
 	return settings.ToSettingVariableSlice(false, false), nil
+}
+
+func (s *SettingsService) prepareUpdateValues(updates dto.UpdateSettingsDto, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
+	rt := reflect.TypeOf(updates)
+	rv := reflect.ValueOf(updates)
+	valuesToUpdate := make([]models.SettingVariable, 0)
+
+	changedPolling := false
+	changedAutoUpdate := false
+
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		fieldValue := rv.Field(i)
+
+		if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+			continue
+		}
+
+		key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		var value string
+		if fieldValue.Kind() == reflect.Ptr {
+			value = fieldValue.Elem().String()
+		}
+
+		var valueToSave string
+		var err error
+
+		if value == "" {
+			defaultValue, _, _, _ := defaultCfg.FieldByKey(key)
+			valueToSave = defaultValue
+			err = cfg.UpdateField(key, defaultValue, true)
+		} else {
+			valueToSave = value
+			err = cfg.UpdateField(key, value, true)
+		}
+
+		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
+			continue
+		} else if err != nil {
+			return nil, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+		}
+
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
+			Key:   key,
+			Value: valueToSave,
+		})
+
+		switch key {
+		case "pollingEnabled", "pollingInterval":
+			changedPolling = true
+		case "autoUpdate", "autoUpdateInterval":
+			changedAutoUpdate = true
+		}
+	}
+
+	return valuesToUpdate, changedPolling, changedAutoUpdate, nil
+}
+
+func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, setting := range values {
+			if err := tx.Save(&setting).Error; err != nil {
+				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates dto.UpdateSettingsDto) error {
+	if updates.AuthOidcConfig == nil {
+		return nil
+	}
+
+	newCfgStr := *updates.AuthOidcConfig
+	var incoming models.OidcConfig
+	if err := json.Unmarshal([]byte(newCfgStr), &incoming); err != nil {
+		return fmt.Errorf("invalid authOidcConfig JSON: %w", err)
+	}
+
+	current, err := s.GetSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load current settings: %w", err)
+	}
+
+	if current.AuthOidcConfig.Value != "" {
+		var existing models.OidcConfig
+		if err := json.Unmarshal([]byte(current.AuthOidcConfig.Value), &existing); err == nil {
+			if incoming.ClientSecret == "" {
+				incoming.ClientSecret = existing.ClientSecret
+			}
+		}
+	}
+
+	mergedBytes, err := json.Marshal(incoming)
+	if err != nil {
+		return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
+	}
+
+	if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
+		return fmt.Errorf("failed to update authOidcConfig: %w", err)
+	}
+
+	return nil
 }
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
@@ -534,30 +556,38 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	var sv models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
+	cfg := s.GetSettingsConfig()
+	val, _, _, err := cfg.FieldByKey(key)
+	if err != nil || val == "" {
+		return defaultValue
+	}
+	b, err := strconv.ParseBool(val)
 	if err != nil {
 		return defaultValue
 	}
-	return sv.IsTrue()
+	return b
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	var sv models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
+	cfg := s.GetSettingsConfig()
+	val, _, _, err := cfg.FieldByKey(key)
+	if err != nil || val == "" {
+		return defaultValue
+	}
+	i, err := strconv.Atoi(val)
 	if err != nil {
 		return defaultValue
 	}
-	return sv.AsInt()
+	return i
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	var sv models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
-	if err != nil {
+	cfg := s.GetSettingsConfig()
+	val, _, _, err := cfg.FieldByKey(key)
+	if err != nil || val == "" {
 		return defaultValue
 	}
-	return sv.Value
+	return val
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
@@ -593,45 +623,51 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
 	const keyName = "encryptionKey"
+	var key string
 
-	var sv models.SettingVariable
-	err := s.db.WithContext(ctx).
-		Where("key = ?", keyName).
-		First(&sv).Error
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sv models.SettingVariable
+		err := tx.Where("key = ?", keyName).First(&sv).Error
 
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", fmt.Errorf("failed to load encryption key: %w", err)
-	}
-
-	// If already present and non-empty, return it
-	if sv.Value != "" {
-		return sv.Value, nil
-	}
-
-	notFound := errors.Is(err, gorm.ErrRecordNotFound)
-
-	// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
-	u, genErr := uuid.GenerateUUID()
-	if genErr != nil {
-		return "", fmt.Errorf("failed to generate encryption key: %w", genErr)
-	}
-	sum := sha256.Sum256([]byte(u))
-	key := base64.StdEncoding.EncodeToString(sum[:])
-
-	if notFound {
-		if createErr := s.db.WithContext(ctx).
-			Create(&models.SettingVariable{Key: keyName, Value: key}).Error; createErr != nil {
-			return "", fmt.Errorf("failed to persist encryption key: %w", createErr)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed to load encryption key: %w", err)
 		}
-		return key, nil
-	}
 
-	// Record existed but empty value; update it
-	if updErr := s.db.WithContext(ctx).
-		Model(&models.SettingVariable{}).
-		Where("key = ?", keyName).
-		Update("value", key).Error; updErr != nil {
-		return "", fmt.Errorf("failed to update encryption key: %w", updErr)
+		// If already present and non-empty, return it
+		if sv.Value != "" {
+			key = sv.Value
+			return nil
+		}
+
+		notFound := errors.Is(err, gorm.ErrRecordNotFound)
+
+		// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
+		u, genErr := uuid.GenerateUUID()
+		if genErr != nil {
+			return fmt.Errorf("failed to generate encryption key: %w", genErr)
+		}
+		sum := sha256.Sum256([]byte(u))
+		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
+		key = generatedKey
+
+		if notFound {
+			if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
+				return fmt.Errorf("failed to persist encryption key: %w", createErr)
+			}
+			return nil
+		}
+
+		// Record existed but empty value; update it
+		if updErr := tx.Model(&models.SettingVariable{}).
+			Where("key = ?", keyName).
+			Update("value", generatedKey).Error; updErr != nil {
+			return fmt.Errorf("failed to update encryption key: %w", updErr)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
 	}
 
 	return key, nil

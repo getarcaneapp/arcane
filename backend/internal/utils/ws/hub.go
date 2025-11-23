@@ -38,10 +38,11 @@ func (h *Hub) SetOnEmpty(fn func()) {
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	defer h.closeAll()
+
 	for {
 		select {
 		case <-ctx.Done():
-			h.closeAll()
 			return
 		case c := <-h.register:
 			h.mu.Lock()
@@ -50,12 +51,16 @@ func (h *Hub) Run(ctx context.Context) {
 		case c := <-h.unregister:
 			h.remove(c)
 			if h.ClientCount() == 0 {
+				// Run onEmpty callback in a separate goroutine to avoid blocking the hub
 				go func() {
+					// Yield to allow other goroutines to run
 					runtime.Gosched()
+
 					h.mu.RLock()
 					empty := len(h.clients) == 0
 					onEmpty := h.onEmpty
 					h.mu.RUnlock()
+
 					if empty && onEmpty != nil {
 						onEmpty()
 					}
@@ -63,15 +68,21 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 		case msg := <-h.broadcast:
 			h.mu.RLock()
+			var slowClients []*Client
 			for c := range h.clients {
 				select {
 				case c.send <- msg:
 				default:
 					// backpressure: drop slow client
-					go h.remove(c)
+					// Collect them to remove outside the lock to avoid spawning goroutines
+					slowClients = append(slowClients, c)
 				}
 			}
 			h.mu.RUnlock()
+
+			for _, c := range slowClients {
+				h.remove(c)
+			}
 		}
 	}
 }
@@ -81,6 +92,7 @@ func (h *Hub) Broadcast(msg []byte) {
 	case h.broadcast <- msg:
 	default:
 		// prevent global stall if hub buffer fills
+		// This indicates the hub is not processing messages fast enough
 		slog.Warn("websocket hub broadcast buffer full; dropping message")
 	}
 }
