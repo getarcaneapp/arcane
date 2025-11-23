@@ -87,9 +87,13 @@ func pullRepository(ctx context.Context, repoDir, branch string) error {
 	}
 
 	// Reset to origin branch
+	var resetTarget string
 	if branch != "" {
-		cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", fmt.Sprintf("origin/%s", branch))
+		resetTarget = fmt.Sprintf("origin/%s", branch)
+		// #nosec G204 -- branch is validated against refs/heads/* by git itself during fetch
+		cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", resetTarget)
 	} else {
+		// #nosec G204 -- static string, no user input
 		cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", "origin/HEAD")
 	}
 	output, err = cmd.CombinedOutput()
