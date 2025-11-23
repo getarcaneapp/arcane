@@ -80,6 +80,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	api.NewOidcHandler(apiGroup, appServices.Auth, appServices.Oidc)
 	api.NewEnvironmentHandler(apiGroup, appServices.Environment, appServices.Settings, authMiddleware, cfg)
 	api.NewContainerRegistryHandler(apiGroup, appServices.ContainerRegistry, authMiddleware)
+	api.NewGitOpsRepositoryHandler(apiGroup, appServices.GitOpsRepository, authMiddleware)
 	api.NewTemplateHandler(apiGroup, appServices.Template, authMiddleware)
 
 	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
