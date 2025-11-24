@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS gitops_repositories (
     username TEXT NOT NULL DEFAULT '',
     token TEXT NOT NULL DEFAULT '',
     compose_path TEXT NOT NULL,
+    project_name TEXT,
     description TEXT,
     auto_sync BOOLEAN NOT NULL DEFAULT false,
     sync_interval INTEGER NOT NULL DEFAULT 60,
@@ -19,3 +20,4 @@ CREATE TABLE IF NOT EXISTS gitops_repositories (
 CREATE INDEX IF NOT EXISTS idx_gitops_repositories_enabled ON gitops_repositories(enabled);
 CREATE INDEX IF NOT EXISTS idx_gitops_repositories_auto_sync ON gitops_repositories(auto_sync);
 CREATE INDEX IF NOT EXISTS idx_gitops_repositories_created_at ON gitops_repositories(created_at);
+CREATE INDEX IF NOT EXISTS idx_gitops_repositories_project_name ON gitops_repositories(project_name);

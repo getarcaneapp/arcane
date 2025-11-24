@@ -10,6 +10,7 @@ type GitOpsRepository struct {
 	Username       string     `json:"username" sortable:"true"`
 	Token          string     `json:"token"`
 	ComposePath    string     `json:"composePath" sortable:"true"`
+	ProjectName    *string    `json:"projectName,omitempty" sortable:"true"`
 	Description    *string    `json:"description,omitempty" sortable:"true"`
 	AutoSync       bool       `json:"autoSync" sortable:"true"`
 	SyncInterval   int        `json:"syncInterval" sortable:"true"` // in minutes
@@ -32,6 +33,7 @@ type CreateGitOpsRepositoryRequest struct {
 	Username     string  `json:"username"`
 	Token        string  `json:"token"`
 	ComposePath  string  `json:"composePath" binding:"required"`
+	ProjectName  *string `json:"projectName"`
 	Description  *string `json:"description"`
 	AutoSync     *bool   `json:"autoSync"`
 	SyncInterval *int    `json:"syncInterval"`
@@ -44,6 +46,7 @@ type UpdateGitOpsRepositoryRequest struct {
 	Username     *string `json:"username"`
 	Token        *string `json:"token"`
 	ComposePath  *string `json:"composePath"`
+	ProjectName  *string `json:"projectName"`
 	Description  *string `json:"description"`
 	AutoSync     *bool   `json:"autoSync"`
 	SyncInterval *int    `json:"syncInterval"`

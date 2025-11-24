@@ -32,23 +32,18 @@ func TestConnection(ctx context.Context, repoURL, branch, username, token string
 func SyncRepository(ctx context.Context, repoURL, branch, username, token, composePath string) error {
 	authenticatedURL := buildAuthenticatedURL(repoURL, username, token)
 
-	// Generate a unique directory name based on repository URL
 	repoDir := getRepositoryDir(repoURL)
 
-	// Check if repository already exists
 	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
-		// Clone the repository
 		if err := cloneRepository(ctx, authenticatedURL, branch, repoDir); err != nil {
 			return err
 		}
 	} else {
-		// Pull latest changes
 		if err := pullRepository(ctx, repoDir, branch); err != nil {
 			return err
 		}
 	}
 
-	// Verify compose file exists
 	composeFile := filepath.Join(repoDir, composePath)
 	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
 		return fmt.Errorf("compose file not found at path: %s", composePath)

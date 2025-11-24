@@ -46,6 +46,11 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", slog.Any("error", err))
 	}
 
+	gitOpsSyncJob := job.NewGitOpsSyncJob(scheduler, appServices.GitOpsRepository, appServices.Settings)
+	if err := gitOpsSyncJob.Register(appCtx); err != nil {
+		slog.ErrorContext(appCtx, "Failed to register GitOps sync job", slog.Any("error", err))
+	}
+
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", slog.Any("error", err))

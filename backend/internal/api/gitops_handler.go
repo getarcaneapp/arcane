@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ofkm/arcane-backend/internal/common"
@@ -18,10 +19,14 @@ import (
 
 type GitOpsRepositoryHandler struct {
 	repositoryService *services.GitOpsRepositoryService
+	projectService    *services.ProjectService
 }
 
-func NewGitOpsRepositoryHandler(group *gin.RouterGroup, repositoryService *services.GitOpsRepositoryService, authMiddleware *middleware.AuthMiddleware) {
-	handler := &GitOpsRepositoryHandler{repositoryService: repositoryService}
+func NewGitOpsRepositoryHandler(group *gin.RouterGroup, repositoryService *services.GitOpsRepositoryService, projectService *services.ProjectService, authMiddleware *middleware.AuthMiddleware) {
+	handler := &GitOpsRepositoryHandler{
+		repositoryService: repositoryService,
+		projectService:    projectService,
+	}
 
 	apiGroup := group.Group("/gitops")
 
@@ -295,13 +300,48 @@ func (h *GitOpsRepositoryHandler) performRepositoryTest(ctx context.Context, rep
 }
 
 func (h *GitOpsRepositoryHandler) performRepositorySync(ctx context.Context, repository *models.GitOpsRepository, decryptedToken string) (map[string]interface{}, error) {
-	// Perform git clone/pull operation
-	err := git.SyncRepository(ctx, repository.URL, repository.Branch, repository.Username, decryptedToken, repository.ComposePath)
+	results, err := h.repositoryService.SyncAllEnabledRepositories(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to sync repositories: %w", err)
+	}
+	
+	var targetResult *services.GitOpsSyncResult
+	for i := range results {
+		if results[i].RepositoryID == repository.ID {
+			targetResult = &results[i]
+			break
+		}
 	}
 
-	return map[string]interface{}{
-		"message": "Repository synced successfully",
-	}, nil
+	if targetResult == nil {
+		return nil, fmt.Errorf("repository not found in sync results - ensure repository is enabled")
+	}
+
+	if !targetResult.Success {
+		return nil, fmt.Errorf("%s", targetResult.Error)
+	}
+
+	projectName := h.deriveProjectName(repository)
+	
+	response := map[string]interface{}{
+		"message":         "Repository synced successfully and project created/updated",
+		"gitops_path":     targetResult.ProjectPath,
+		"project_name":    projectName,
+	}
+
+	return response, nil
+}
+
+func (h *GitOpsRepositoryHandler) deriveProjectName(repo *models.GitOpsRepository) string {
+	if repo.ProjectName != nil && strings.TrimSpace(*repo.ProjectName) != "" {
+		return strings.TrimSpace(*repo.ProjectName)
+	}
+
+	repoURL := strings.TrimSuffix(repo.URL, ".git")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) > 0 {
+		repoName := parts[len(parts)-1]
+		return fmt.Sprintf("gitops_%s", repoName)
+	}
+	return "gitops-project"
 }

@@ -28,6 +28,7 @@
 		username: z.string().optional(),
 		token: z.string().optional(),
 		composePath: z.string().min(1, 'Compose file path is required'),
+		projectName: z.string().optional(),
 		description: z.string().optional(),
 		autoSync: z.boolean().default(false),
 		syncInterval: z.number().min(1).optional(),
@@ -40,6 +41,7 @@
 		username: open && repositoryToEdit ? repositoryToEdit.username : '',
 		token: '',
 		composePath: open && repositoryToEdit ? repositoryToEdit.composePath : 'docker-compose.yml',
+		projectName: open && repositoryToEdit ? repositoryToEdit.projectName || '' : '',
 		description: open && repositoryToEdit ? repositoryToEdit.description || '' : '',
 		autoSync: open && repositoryToEdit ? (repositoryToEdit.autoSync ?? false) : false,
 		syncInterval: open && repositoryToEdit ? repositoryToEdit.syncInterval : 60,
@@ -95,6 +97,13 @@
 				placeholder="docker-compose.yml"
 				description="Path to the Docker Compose file in the repository"
 				bind:input={$inputs.composePath}
+			/>
+			<FormInput
+				label={m.gitops_project_name()}
+				type="text"
+				placeholder={m.gitops_project_name_placeholder()}
+				description={m.gitops_project_name_description()}
+				bind:input={$inputs.projectName}
 			/>
 			<FormInput
 				label={m.common_username()}

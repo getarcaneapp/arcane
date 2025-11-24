@@ -4,6 +4,7 @@ export interface GitOpsRepository {
 	branch: string;
 	username: string;
 	composePath: string;
+	projectName?: string;
 	description?: string;
 	autoSync: boolean;
 	syncInterval: number;
@@ -21,6 +22,7 @@ export interface GitOpsRepositoryCreateDto {
 	username?: string;
 	token?: string;
 	composePath: string;
+	projectName?: string;
 	description?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
@@ -33,6 +35,7 @@ export interface GitOpsRepositoryUpdateDto {
 	username?: string;
 	token?: string;
 	composePath?: string;
+	projectName?: string;
 	description?: string;
 	autoSync?: boolean;
 	syncInterval?: number;

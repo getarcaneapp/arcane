@@ -54,12 +54,12 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
-	svcs.GitOpsRepository = services.NewGitOpsRepositoryService(db)
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Event)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image)
+	svcs.GitOpsRepository = services.NewGitOpsRepositoryService(db, svcs.Settings, svcs.Project)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker)
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event)
