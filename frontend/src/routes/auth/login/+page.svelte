@@ -240,7 +240,7 @@
 </div>
 
 <div class="fixed right-0 bottom-4 left-0 p-4">
-	<div class="text-muted-foreground flex items-center justify-center">
+	<div class="text-muted-foreground flex flex-col items-center justify-center gap-2">
 		<a
 			href="https://github.com/ofkm/arcane"
 			target="_blank"
@@ -249,6 +249,9 @@
 		>
 			{m.common_view_on_github()}
 		</a>
+		{#if data.versionInformation?.displayVersion}
+			<span class="text-xs opacity-50">{data.versionInformation.displayVersion}</span>
+		{/if}
 	</div>
 </div>
 

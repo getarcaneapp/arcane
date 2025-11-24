@@ -31,7 +31,7 @@ jobs:
       id-token: write
     runs-on: depot-ubuntu-24.04-16
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
@@ -80,7 +80,7 @@ jobs:
             port: 3002
     name: E2E Tests (${{ matrix.database.name }})
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

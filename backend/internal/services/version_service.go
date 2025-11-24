@@ -71,7 +71,7 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("GitHub API returned empty tag name")
 		}
 
-		return strings.TrimPrefix(payload.TagName, "v"), nil
+		return payload.TagName, nil
 	})
 
 	var staleErr *cache.ErrStale
@@ -101,7 +101,11 @@ func (s *VersionService) ReleaseURL(version string) string {
 	if strings.TrimSpace(version) == "" {
 		return "https://github.com/ofkm/arcane/releases/latest"
 	}
-	return "https://github.com/ofkm/arcane/releases/tag/v" + version
+	v := strings.TrimSpace(version)
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return "https://github.com/ofkm/arcane/releases/tag/" + v
 }
 
 type VersionInformation struct {
@@ -112,7 +116,13 @@ type VersionInformation struct {
 }
 
 func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*VersionInformation, error) {
-	cur := strings.TrimPrefix(strings.TrimSpace(currentVersion), "v")
+	if currentVersion == "" {
+		currentVersion = s.version
+	}
+	cur := strings.TrimSpace(currentVersion)
+	if !strings.HasPrefix(cur, "v") && len(cur) > 0 && cur[0] >= '0' && cur[0] <= '9' {
+		cur = "v" + cur
+	}
 
 	if s.disabled {
 		return &VersionInformation{
@@ -180,12 +190,18 @@ func (s *VersionService) getDisplayVersion() string {
 	if strings.Contains(strings.ToLower(version), "next") && s.revision != "" && s.revision != "unknown" {
 		return fmt.Sprintf("next-%s", s.revision)
 	}
+	if s.isSemverVersion() {
+		return "v" + version
+	}
 	return version
 }
 
 // GetAppVersionInfo returns application version information including display version
 func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfoDto {
-	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
+	version := strings.TrimSpace(s.version)
+	if s.isSemverVersion() && !strings.HasPrefix(version, "v") {
+		version = "v" + version
+	}
 	displayVersion := s.getDisplayVersion()
 	isSemver := s.isSemverVersion()
 

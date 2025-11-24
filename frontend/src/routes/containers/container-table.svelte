@@ -35,6 +35,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	let {
 		containers = $bindable(),
@@ -140,7 +141,7 @@
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: true, cell: StateCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: true },
+		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'status', title: m.common_status() },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
@@ -216,6 +217,17 @@
 		variant={item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber'}
 		text={capitalizeFirstLetter(item.state)}
 	/>
+{/snippet}
+
+{#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
+	<Tooltip.Root>
+		<Tooltip.Trigger class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+			{item.image}
+		</Tooltip.Trigger>
+		<Tooltip.Content>
+			<p>{item.image}</p>
+		</Tooltip.Content>
+	</Tooltip.Root>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}

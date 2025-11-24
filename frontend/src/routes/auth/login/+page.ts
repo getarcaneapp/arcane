@@ -14,6 +14,7 @@ export const load = async ({ parent, url }) => {
 	return {
 		settings: data.settings,
 		redirectTo,
-		error
+		error,
+		versionInformation: data.versionInformation
 	};
 };

@@ -5,6 +5,7 @@ import (
 
 	"github.com/docker/docker/api/types/network"
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/services"
@@ -42,7 +43,7 @@ func (h *NetworkHandler) List(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to list networks: " + err.Error()},
+			"data":    gin.H{"error": (&common.NetworkListError{Err: err}).Error()},
 		})
 		return
 	}
@@ -67,14 +68,14 @@ func (h *NetworkHandler) GetByID(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.NetworkNotFoundError{Err: err}).Error()},
 		})
 		return
 	}
 
 	out, mapErr := dto.MapOne[network.Inspect, dto.NetworkInspectDto](*networkInspect)
 	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": dto.MessageDto{Message: mapErr.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return
 	}
 
@@ -93,7 +94,7 @@ func (h *NetworkHandler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -107,14 +108,14 @@ func (h *NetworkHandler) Create(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.NetworkCreationError{Err: err}).Error()},
 		})
 		return
 	}
 
 	out, mapErr := dto.MapOne[network.CreateResponse, dto.NetworkCreateResponseDto](*response)
 	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": dto.MessageDto{Message: mapErr.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return
 	}
 
@@ -135,14 +136,14 @@ func (h *NetworkHandler) Remove(c *gin.Context) {
 	if err := h.networkService.RemoveNetwork(c.Request.Context(), id, *currentUser); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.NetworkRemovalError{Err: err}).Error()},
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    dto.MessageDto{Message: "Network removed successfully"},
+		"data":    gin.H{"message": "Network removed successfully"},
 	})
 }
 
@@ -151,7 +152,7 @@ func (h *NetworkHandler) GetNetworkUsageCounts(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to get network counts: " + err.Error()},
+			"data":    gin.H{"error": (&common.NetworkUsageCountsError{Err: err}).Error()},
 		})
 		return
 	}
@@ -173,14 +174,14 @@ func (h *NetworkHandler) Prune(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.NetworkPruneError{Err: err}).Error()},
 		})
 		return
 	}
 
 	out, mapErr := dto.MapOne[network.PruneReport, dto.NetworkPruneReportDto](*report)
 	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": dto.MessageDto{Message: mapErr.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return
 	}
 

@@ -7,14 +7,13 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
+	import type { DockerInfo } from '$lib/types/docker-info.type';
 
 	type IsLoadingFlags = {
 		starting: boolean;
 		stopping: boolean;
 		pruning: boolean;
 	};
-
-	type DockerInfo = { containersRunning?: number } | null | undefined;
 
 	let {
 		dockerInfo,
@@ -30,7 +29,7 @@
 		compact = false,
 		class: className
 	}: {
-		dockerInfo: DockerInfo;
+		dockerInfo: DockerInfo | null;
 		stoppedContainers: number;
 		runningContainers: number;
 		loadingDockerInfo?: boolean;
@@ -76,7 +75,7 @@
 				<button
 					class="ring-offset-background focus-visible:ring-ring bg-card/60 hover:bg-card/90 group bubble-shadow hover-lift inline-flex h-9 items-center gap-2 rounded-lg border border-sky-500/20 px-3 py-1.5 text-xs backdrop-blur-sm transition-all hover:border-sky-500/40 hover:bg-sky-500/10 hover:backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 					disabled={!dockerInfo ||
-						(dockerInfo?.containersRunning ?? 0) === 0 ||
+						(dockerInfo?.ContainersRunning ?? 0) === 0 ||
 						isLoading.starting ||
 						isLoading.stopping ||
 						isLoading.pruning}
@@ -143,7 +142,7 @@
 						<DropdownMenu.Item
 							onclick={onStopAll}
 							disabled={!dockerInfo ||
-								(dockerInfo?.containersRunning ?? 0) === 0 ||
+								(dockerInfo?.ContainersRunning ?? 0) === 0 ||
 								isLoading.starting ||
 								isLoading.stopping ||
 								isLoading.pruning}
@@ -217,7 +216,7 @@
 					<button
 						class="ring-offset-background focus-visible:ring-ring bg-card/90 bubble bubble-shadow flex min-h-14 w-full items-center gap-3 rounded-2xl border p-3 backdrop-blur-sm transition-all hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 						disabled={!dockerInfo ||
-							(dockerInfo?.containersRunning ?? 0) === 0 ||
+							(dockerInfo?.ContainersRunning ?? 0) === 0 ||
 							isLoading.starting ||
 							isLoading.stopping ||
 							isLoading.pruning}

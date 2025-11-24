@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/config"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
@@ -41,7 +42,7 @@ func (h *SettingsHandler) Search(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Invalid request format"},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -49,7 +50,7 @@ func (h *SettingsHandler) Search(c *gin.Context) {
 	if strings.TrimSpace(req.Query) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Query parameter is required"},
+			"data":    gin.H{"error": (&common.QueryParameterRequiredError{}).Error()},
 		})
 		return
 	}
@@ -75,7 +76,7 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to map settings"},
+			"data":    gin.H{"error": (&common.SettingsMappingError{Err: err}).Error()},
 		})
 		return
 	}
@@ -97,7 +98,7 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to map settings"},
+			"data":    gin.H{"error": (&common.SettingsMappingError{Err: err}).Error()},
 		})
 		return
 	}
@@ -118,7 +119,7 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Invalid request format"},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -129,7 +130,7 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 			req.AuthOidcConfig != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
-				"data":    dto.MessageDto{Message: "Authentication settings can only be updated from the main environment"},
+				"data":    gin.H{"error": (&common.AuthSettingsUpdateError{}).Error()},
 			})
 			return
 		}
@@ -139,7 +140,7 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to update settings"},
+			"data":    gin.H{"error": (&common.SettingsUpdateError{Err: err}).Error()},
 		})
 		return
 	}
