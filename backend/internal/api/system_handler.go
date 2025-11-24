@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,7 +19,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/hertg/gopci/pkg/pci"
 	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/config"
 	"github.com/ofkm/arcane-backend/internal/dto"
@@ -840,188 +837,39 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 	return stats, nil
 }
 
-// getIntelStats collects Intel GPU statistics using gopci library
+// getIntelStats collects Intel GPU statistics using intel_gpu_top
 func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	// Scan for VGA-compatible devices (class 0x03)
-	gpuClassFilter := func(d *pci.Device) bool {
-		return d.Class.Class() == 0x03 && d.Vendor.ID == 0x8086 // Intel vendor ID
-	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 
-	devices, err := pci.Scan(gpuClassFilter)
+	// intel_gpu_top requires running with -o - for single sample JSON output
+	cmd := exec.CommandContext(ctx, "intel_gpu_top", "-J", "-o", "-")
+	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to scan PCI devices",
-			slog.String("error", err.Error()))
-		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+		slog.WarnContext(ctx, "Failed to execute intel_gpu_top", slog.String("error", err.Error()))
+		return nil, fmt.Errorf("intel_gpu_top execution failed: %w", err)
 	}
 
-	if len(devices) == 0 {
-		slog.DebugContext(ctx, "No Intel GPU devices found via PCI scan")
-		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
-	}
-
-	var stats []GPUStats
-	for i, device := range devices {
-		gpuName := fmt.Sprintf("Intel %s", device.Product.Label)
-		if strings.Contains(gpuName, "Device ") {
-			gpuName = fmt.Sprintf("Intel GPU (0x%04x)", device.Product.ID)
-		}
-
-		// Try to read VRAM from sysfs using device address
-		// Note: Intel integrated GPUs use system RAM and typically don't expose
-		// mem_info_vram_* files. Only discrete GPUs (like Intel Arc) have these.
-		var memUsed, memTotal float64
-		sysfsPath := device.SysfsPath()
-
-		// Check for discrete GPU VRAM info
-		if totalData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_total")); err == nil {
-			memTotal, _ = strconv.ParseFloat(strings.TrimSpace(string(totalData)), 64)
-			if usedData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_used")); err == nil {
-				memUsed, _ = strconv.ParseFloat(strings.TrimSpace(string(usedData)), 64)
-			}
-		} else {
-			// For integrated GPUs, try reading from i915 gem_objects if available
-			// This requires debugfs access which may not be available in containers
-			i915Path := "/sys/kernel/debug/dri/0/i915_gem_objects"
-			if data, err := os.ReadFile(i915Path); err == nil {
-				// Parse i915_gem_objects output for memory usage
-				// Format contains lines like: "123456 objects, 234567890 bytes"
-				lines := strings.Split(string(data), "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "bytes") && strings.Contains(line, "objects") {
-						fields := strings.Fields(line)
-						if len(fields) >= 3 {
-							if bytes, err := strconv.ParseFloat(fields[2], 64); err == nil {
-								memUsed = bytes
-								break
-							}
-						}
-					}
-				}
-			}
-		}
-
-		stats = append(stats, GPUStats{
-			Name:        gpuName,
-			Index:       i,
-			MemoryUsed:  memUsed,
-			MemoryTotal: memTotal,
-		})
-
-		slog.DebugContext(ctx, "Collected Intel GPU stats via gopci",
-			slog.String("name", gpuName),
-			slog.String("address", device.Address.Hex()),
-			slog.Float64("memory_used_bytes", memUsed),
-			slog.Float64("memory_total_bytes", memTotal))
-	}
-
-	return stats, nil
-}
-
-func readIntelVRAMInfo() (float64, float64, error) {
-	matches, err := filepath.Glob("/sys/class/drm/card*/device/mem_info_vram_total")
-	if err != nil {
-		return 0, 0, fmt.Errorf("glob mem_info_vram_total: %w", err)
-	}
-	for _, totalPath := range matches {
-		total, err := readFloatFromFile(totalPath)
-		if err != nil {
-			continue
-		}
-		usedPath := strings.Replace(totalPath, "mem_info_vram_total", "mem_info_vram_used", 1)
-		used, err := readFloatFromFile(usedPath)
-		if err != nil {
-			// Some drivers may not expose used metrics
-			used = 0
-		}
-		return used, total, nil
-	}
-	return 0, 0, fmt.Errorf("mem_info_vram_total not found")
-}
-
-func readFloatFromFile(path string) (float64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	value, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
-	if err != nil {
-		return 0, err
-	}
-	return value, nil
-}
-
-// IntelGPUTopOutput represents the JSON structure from intel_gpu_top
-type IntelGPUTopOutput struct {
-	Period struct {
-		Duration float64 `json:"duration"`
-		Unit     string  `json:"unit"`
-	} `json:"period"`
-	Frequency struct {
-		Requested float64 `json:"requested"`
-		Actual    float64 `json:"actual"`
-		Unit      string  `json:"unit"`
-	} `json:"frequency"`
-	Interrupts struct {
-		Count float64 `json:"count"`
-		Unit  string  `json:"unit"`
-	} `json:"interrupts"`
-	RC6 struct {
-		Value float64 `json:"value"`
-		Unit  string  `json:"unit"`
-	} `json:"rc6"`
-	Power struct {
-		GPU     float64 `json:"GPU"`
-		Package float64 `json:"Package"`
-		Unit    string  `json:"unit"`
-	} `json:"power"`
-	IMCBandwidth struct {
-		Reads  float64 `json:"reads"`
-		Writes float64 `json:"writes"`
-		Unit   string  `json:"unit"`
-	} `json:"imc-bandwidth"`
-	Engines map[string]struct {
-		Busy float64 `json:"busy"`
-		Sema float64 `json:"sema"`
-		Wait float64 `json:"wait"`
-		Unit string  `json:"unit"`
-	} `json:"engines"`
+	return h.parseIntelOutput(ctx, output)
 }
 
 // parseIntelOutput parses JSON output from intel_gpu_top
 func (h *SystemHandler) parseIntelOutput(ctx context.Context, output []byte) ([]GPUStats, error) {
-	var intelData IntelGPUTopOutput
-	if err := json.Unmarshal(output, &intelData); err != nil {
-		slog.WarnContext(ctx, "Failed to parse intel_gpu_top JSON",
-			slog.String("error", err.Error()))
-		return nil, fmt.Errorf("failed to parse intel_gpu_top output: %w", err)
-	}
+	// intel_gpu_top doesn't provide straightforward total memory info
+	// This is a simplified implementation - for MVP we'll return basic info
 
-	// Get VRAM info from sysfs
-	usedBytes, totalBytes, err := readIntelVRAMInfo()
-	if err != nil {
-		slog.DebugContext(ctx, "VRAM info not available from sysfs",
-			slog.String("error", err.Error()))
-		usedBytes = 0
-		totalBytes = 0
-	}
-
-	slog.DebugContext(ctx, "Collected Intel GPU stats",
-		slog.Float64("frequency_mhz", intelData.Frequency.Actual),
-		slog.Float64("power_gpu_w", intelData.Power.GPU),
-		slog.Float64("power_package_w", intelData.Power.Package),
-		slog.Float64("rc6_percent", intelData.RC6.Value),
-		slog.Float64("memory_used_bytes", usedBytes),
-		slog.Float64("memory_total_bytes", totalBytes))
-
+	// For now, return a placeholder indicating Intel GPU detected
+	// A more complete implementation would parse /sys/class/drm/card*/device/mem_info_vram_total
 	stats := []GPUStats{
 		{
 			Name:        "Intel GPU",
 			Index:       0,
-			MemoryUsed:  usedBytes,
-			MemoryTotal: totalBytes,
+			MemoryUsed:  0,
+			MemoryTotal: 0,
 		},
 	}
 
+	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
 	return stats, nil
 }
 
