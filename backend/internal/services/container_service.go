@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -23,10 +24,11 @@ type ContainerService struct {
 	db            *database.DB
 	dockerService *DockerClientService
 	eventService  *EventService
+	imageService  *ImageService
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService) *ContainerService {
-	return &ContainerService{db: db, eventService: eventService, dockerService: dockerService}
+func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService) *ContainerService {
+	return &ContainerService{db: db, eventService: eventService, dockerService: dockerService, imageService: imageService}
 }
 
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
@@ -176,7 +178,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	return nil
 }
 
-func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User) (*container.InspectResponse, error) {
+func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User, credentials []dto.ContainerRegistryCredential) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.CreateConnection(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image})
@@ -186,7 +188,16 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 
 	_, err = dockerClient.ImageInspect(ctx, config.Image)
 	if err != nil {
-		reader, pullErr := dockerClient.ImagePull(ctx, config.Image, image.PullOptions{})
+		// Image not found locally, need to pull it
+		pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, config.Image, credentials)
+		if authErr != nil {
+			slog.WarnContext(ctx, "Failed to get registry authentication for container image; proceeding without auth",
+				"image", config.Image,
+				"error", authErr.Error())
+			pullOptions = image.PullOptions{}
+		}
+
+		reader, pullErr := dockerClient.ImagePull(ctx, config.Image, pullOptions)
 		if pullErr != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
 			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)

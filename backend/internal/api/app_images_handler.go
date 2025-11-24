@@ -1,10 +1,12 @@
 package api
 
 import (
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/services"
 	apphttp "github.com/ofkm/arcane-backend/internal/utils/http"
 )
@@ -44,7 +46,7 @@ func (c *ApplicationImagesHandler) getDefaultProfile(ctx *gin.Context) {
 func (c *ApplicationImagesHandler) getImage(ctx *gin.Context, name string) {
 	imageData, mimeType, err := c.appImagesService.GetImage(name)
 	if err != nil {
-		_ = ctx.Error(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.ImageRetrievalError{Err: err}).Error()}})
 		return
 	}
 

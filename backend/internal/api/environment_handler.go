@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/config"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
@@ -52,6 +53,7 @@ func NewEnvironmentHandler(
 		apiGroup.POST("/:id/test", h.TestConnection)
 		apiGroup.POST("/:id/heartbeat", h.UpdateHeartbeat)
 		apiGroup.POST("/:id/agent/pair", h.PairAgent)
+		apiGroup.POST("/:id/sync-registries", h.SyncRegistries)
 	}
 }
 
@@ -72,7 +74,7 @@ func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 
 	// Persist token on the agent so it survives restarts
 	if err := h.settingsService.SetStringSetting(c.Request.Context(), "agentToken", h.cfg.AgentToken); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to persist agent token"}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.AgentTokenPersistenceError{Err: err}).Error()}})
 		return
 	}
 
@@ -88,7 +90,10 @@ func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 	var req dto.CreateEnvironmentDto
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": "Invalid request format: " + err.Error()}})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
+		})
 		return
 	}
 
@@ -107,13 +112,13 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 		token, err := h.environmentService.PairAgentWithBootstrap(c.Request.Context(), req.ApiUrl, *req.BootstrapToken)
 		if err != nil {
 			slog.ErrorContext(c.Request.Context(), "Failed to pair with agent",
-				slog.String("apiUrl", req.ApiUrl),
-				slog.String("error", err.Error()))
+				"apiUrl", req.ApiUrl,
+				"error", err.Error())
 
 			c.JSON(http.StatusBadGateway, gin.H{
 				"success": false,
 				"data": gin.H{
-					"error": "Agent pairing failed: " + err.Error(),
+					"error": (&common.AgentPairingError{Err: err}).Error(),
 					"hint":  "Ensure the agent is running and the bootstrap token matches AGENT_BOOTSTRAP_TOKEN",
 				},
 			})
@@ -126,13 +131,30 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 
 	created, err := h.environmentService.CreateEnvironment(c.Request.Context(), env)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to create environment: " + err.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentCreationError{Err: err}).Error()}})
 		return
+	}
+
+	// Sync registries to the new environment in the background
+	if created.AccessToken != nil && *created.AccessToken != "" {
+		go func() {
+			ctx := context.Background()
+			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, created.ID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync registries to new environment",
+					"environmentID", created.ID,
+					"environmentName", created.Name,
+					"error", err.Error())
+			} else {
+				slog.InfoContext(ctx, "Successfully synced registries to new environment",
+					"environmentID", created.ID,
+					"environmentName", created.Name)
+			}
+		}()
 	}
 
 	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](created)
 	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to map environment"}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return
 	}
 
@@ -144,7 +166,7 @@ func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 
 	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(c.Request.Context(), params)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to fetch environments"}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentListError{Err: err}).Error()}})
 		return
 	}
 
@@ -161,13 +183,13 @@ func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 
 	environment, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": "Environment not found"}})
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentNotFoundError{}).Error()}})
 		return
 	}
 
 	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](environment)
 	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to map environment"}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return
 	}
 
@@ -184,11 +206,40 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 
 	var req dto.UpdateEnvironmentDto
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": "Invalid request body"}})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
+		})
 		return
 	}
 
-	updates := map[string]interface{}{}
+	updates := h.buildUpdateMapInternal(&req, isLocalEnv)
+
+	pairingSucceeded, err := h.handleEnvironmentPairingInternal(c.Request.Context(), environmentID, &req, updates, isLocalEnv)
+	if err != nil {
+		c.JSON(err.statusCode, gin.H{"success": false, "data": gin.H{"error": err.message}})
+		return
+	}
+
+	updated, updateErr := h.environmentService.UpdateEnvironment(c.Request.Context(), environmentID, updates)
+	if updateErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentUpdateError{Err: updateErr}).Error()}})
+		return
+	}
+
+	h.triggerPostUpdateTasksInternal(environmentID, updated, pairingSucceeded, &req)
+
+	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](updated)
+	if mapErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
+func (h *EnvironmentHandler) buildUpdateMapInternal(req *dto.UpdateEnvironmentDto, isLocalEnv bool) map[string]any {
+	updates := map[string]any{}
 
 	// For local environment, only allow name
 	if !isLocalEnv {
@@ -204,35 +255,53 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 		updates["name"] = *req.Name
 	}
 
+	return updates
+}
+
+type updateError struct {
+	statusCode int
+	message    string
+}
+
+func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Context, environmentID string, req *dto.UpdateEnvironmentDto, updates map[string]any, isLocalEnv bool) (bool, *updateError) {
+	pairingSucceeded := false
+
 	// Local environment cannot be paired or have access token updated
-	if !isLocalEnv {
-		// If caller asked to pair (bootstrapToken present) and no accessToken provided in the request,
-		// resolve apiUrl (current or updated) and let the service pair and persist the token.
-		if (req.AccessToken == nil) && req.BootstrapToken != nil && *req.BootstrapToken != "" {
-			current, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
-			if err != nil || current == nil {
-				c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": "Environment not found"}})
-				return
+	if isLocalEnv {
+		return pairingSucceeded, nil
+	}
+
+	// If caller asked to pair (bootstrapToken present) and no accessToken provided in the request,
+	// resolve apiUrl (current or updated) and let the service pair and persist the token.
+	if (req.AccessToken == nil) && req.BootstrapToken != nil && *req.BootstrapToken != "" {
+		current, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
+		if err != nil || current == nil {
+			return false, &updateError{
+				statusCode: http.StatusNotFound,
+				message:    "Environment not found",
 			}
-			apiUrl := current.ApiUrl
-			if req.ApiUrl != nil && *req.ApiUrl != "" {
-				apiUrl = *req.ApiUrl
-			}
-			if _, err := h.environmentService.PairAndPersistAgentToken(c.Request.Context(), environmentID, apiUrl, *req.BootstrapToken); err != nil {
-				c.JSON(http.StatusBadGateway, gin.H{"success": false, "data": gin.H{"error": "Agent pairing failed: " + err.Error()}})
-				return
-			}
-		} else if req.AccessToken != nil {
-			updates["access_token"] = *req.AccessToken
 		}
+
+		apiUrl := current.ApiUrl
+		if req.ApiUrl != nil && *req.ApiUrl != "" {
+			apiUrl = *req.ApiUrl
+		}
+
+		if _, err := h.environmentService.PairAndPersistAgentToken(ctx, environmentID, apiUrl, *req.BootstrapToken); err != nil {
+			return false, &updateError{
+				statusCode: http.StatusBadGateway,
+				message:    "Agent pairing failed: " + err.Error(),
+			}
+		}
+		pairingSucceeded = true
+	} else if req.AccessToken != nil {
+		updates["access_token"] = *req.AccessToken
 	}
 
-	updated, err := h.environmentService.UpdateEnvironment(c.Request.Context(), environmentID, updates)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to update environment"}})
-		return
-	}
+	return pairingSucceeded, nil
+}
 
+func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string, updated *models.Environment, pairingSucceeded bool, req *dto.UpdateEnvironmentDto) {
 	// Trigger health check after update to verify new configuration
 	// This runs in background and doesn't block the response
 	if updated.Enabled {
@@ -247,13 +316,22 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 		}()
 	}
 
-	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](updated)
-	if mapErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to map environment"}})
-		return
+	// Sync registries if pairing succeeded or if access token was updated
+	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
+		go func() {
+			ctx := context.Background()
+			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync registries after environment update",
+					"environmentID", environmentID,
+					"environmentName", updated.Name,
+					"error", err.Error())
+			} else {
+				slog.InfoContext(ctx, "Successfully synced registries after environment update",
+					"environmentID", environmentID,
+					"environmentName", updated.Name)
+			}
+		}()
 	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
 
 // Delete
@@ -262,13 +340,13 @@ func (h *EnvironmentHandler) DeleteEnvironment(c *gin.Context) {
 
 	// Prevent deletion of local environment
 	if environmentID == LOCAL_DOCKER_ENVIRONMENT_ID {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": "Cannot delete local environment"}})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.LocalEnvironmentDeletionError{}).Error()}})
 		return
 	}
 
 	err := h.environmentService.DeleteEnvironment(c.Request.Context(), environmentID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": "Failed to delete environment: " + err.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentDeletionError{Err: err}).Error()}})
 		return
 	}
 
@@ -313,7 +391,7 @@ func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to update heartbeat",
+			"error":   (&common.HeartbeatUpdateError{Err: err}).Error(),
 		})
 		return
 	}
@@ -321,5 +399,23 @@ func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Heartbeat updated successfully",
+	})
+}
+
+func (h *EnvironmentHandler) SyncRegistries(c *gin.Context) {
+	environmentID := c.Param("id")
+
+	err := h.environmentService.SyncRegistriesToEnvironment(c.Request.Context(), environmentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"data":    gin.H{"error": (&common.RegistrySyncError{Err: err}).Error()},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"message": "Registries synced successfully"},
 	})
 }

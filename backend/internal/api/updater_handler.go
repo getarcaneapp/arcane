@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/services"
@@ -32,7 +33,7 @@ func (h *UpdaterHandler) Run(c *gin.Context) {
 
 	out, err := h.updaterService.ApplyPending(c.Request.Context(), req.DryRun)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.UpdaterRunError{Err: err}).Error()})
 		return
 	}
 
@@ -54,7 +55,7 @@ func (h *UpdaterHandler) History(c *gin.Context) {
 
 	history, err := h.updaterService.GetHistory(c.Request.Context(), limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.UpdaterHistoryError{Err: err}).Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": history})

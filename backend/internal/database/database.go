@@ -35,8 +35,8 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
-func Initialize(databaseURL string, environment string) (*DB, error) {
-	db, err := connectDatabase(databaseURL, environment)
+func Initialize(databaseURL string) (*DB, error) {
+	db, err := connectDatabase(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -86,7 +86,7 @@ func Initialize(databaseURL string, environment string) (*DB, error) {
 	return db, nil
 }
 
-func connectDatabase(databaseURL string, environment string) (*DB, error) {
+func connectDatabase(databaseURL string) (*DB, error) {
 	var dialector gorm.Dialector
 
 	switch {

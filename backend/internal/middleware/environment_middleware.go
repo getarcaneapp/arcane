@@ -175,12 +175,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 }
 
 func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
-	var bodyReader io.Reader
-	if c.Request.Body != nil {
-		bodyReader = c.Request.Body
-	}
-
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, bodyReader)
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -190,14 +185,6 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 	remenv.SetAuthHeader(req, c)
 	remenv.SetAgentToken(req, accessToken)
 	remenv.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
-
-	if remenv.NeedsCredentialInjection(target) {
-		if err := remenv.InjectRegistryCredentials(c.Request.Context(), req, m.envService); err != nil {
-			slog.WarnContext(c.Request.Context(), "Failed to inject registry credentials",
-				slog.String("error", err.Error()),
-				slog.String("target", target))
-		}
-	}
 
 	return req, nil
 }

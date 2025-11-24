@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/services"
 )
 
@@ -28,7 +29,7 @@ func SetupPlaywrightRoutes(api *gin.RouterGroup, playwrightService *services.Pla
 
 func (ph *PlaywrightHandler) SkipOnboardingHandler(c *gin.Context) {
 	if err := ph.PlaywrightService.SkipOnboarding(c.Request.Context()); err != nil {
-		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.SkipOnboardingError{Err: err}).Error()})
 		return
 	}
 
@@ -37,7 +38,7 @@ func (ph *PlaywrightHandler) SkipOnboardingHandler(c *gin.Context) {
 
 func (ph *PlaywrightHandler) ResetOnboardingHandler(c *gin.Context) {
 	if err := ph.PlaywrightService.ResetOnboarding(c.Request.Context()); err != nil {
-		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.ResetOnboardingError{Err: err}).Error()})
 		return
 	}
 

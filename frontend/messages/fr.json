@@ -45,6 +45,7 @@
 	"common_save_changes": "Enregistrer les modifications",
 	"common_remove_selected": "Remove Selected ({count})",
 	"common_registry_url_required": "L'URL du Registre est requise",
+	"sync_registries": "Synchroniser les registres",
 	"common_update_available": "Mise à jour disponible",
 	"common_restart_policy": "Redémarrer la politique",
 	"common_gateway": "Passerelle",

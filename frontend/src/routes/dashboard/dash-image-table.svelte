@@ -57,7 +57,11 @@
 	let lastFetchedLimit = $state(5);
 
 	$effect(() => {
-		if (calculatedLimit !== lastFetchedLimit && requestOptions.pagination) {
+		const currentLimit = images.pagination?.itemsPerPage;
+		if (
+			requestOptions.pagination &&
+			(calculatedLimit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== calculatedLimit))
+		) {
 			lastFetchedLimit = calculatedLimit;
 			requestOptions.pagination.limit = calculatedLimit;
 			imageService.getImages(requestOptions).then((result) => (images = result));
@@ -152,7 +156,7 @@
 		</Card.Header>
 		<Card.Content class="relative flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
-				items={images}
+				items={{ ...images, data: images.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (images = await imageService.getImages(options))}

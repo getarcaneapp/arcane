@@ -1,9 +1,5 @@
-# Development Dockerfile with hot reload support
-ARG NODE_VERSION="24"
-
-# Stage 1: Frontend Development
-FROM node:${NODE_VERSION}-alpine AS frontend-dev
-RUN corepack enable
+FROM node:25-alpine AS frontend-dev
+RUN npm install -g --force corepack && corepack enable
 WORKDIR /app
 
 # Copy package configuration files and install dependencies

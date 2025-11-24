@@ -45,6 +45,7 @@
 	"common_save_changes": "Konservi ŝanĝojn",
 	"common_remove_selected": "Remove Selected ({count})",
 	"common_registry_url_required": "Registreja ligilo bezonata",
+	"sync_registries": "Sync Registries",
 	"common_update_available": "Disponebla ĝisdato",
 	"common_restart_policy": "Regulo de rekomenco",
 	"common_gateway": "Kluzo",

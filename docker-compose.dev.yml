@@ -5,17 +5,15 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
       target: frontend-dev
-      args:
-        NODE_VERSION: "24"
     container_name: arcane-frontend-dev
     ports:
       - "3000:3000"
     volumes:
       # Source code mounting for hot reload
-      - ./frontend:/app/frontend:cached
-      - ./package.json:/app/package.json:ro
-      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
-      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      - ${HOST_PROJECT_ROOT:-.}/frontend:/app/frontend:cached
+      - ${HOST_PROJECT_ROOT:-.}/package.json:/app/package.json:ro
+      - ${HOST_PROJECT_ROOT:-.}/pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
+      - ${HOST_PROJECT_ROOT:-.}/pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
       # Anonymous volumes for node_modules to avoid conflicts
       - /app/node_modules
       - /app/frontend/node_modules
@@ -52,8 +50,8 @@ services:
       - "3552:3552"
     volumes:
       # Source code mounting for hot reload
-      - ./backend:/app:cached
-      - ./backend/.air.toml:/app/.air.toml:ro
+      - ${HOST_PROJECT_ROOT:-.}/backend:/app:cached
+      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/.air.toml:ro
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
       # Persistent data storage
@@ -102,8 +100,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-dev-data:/app/data
       # Optional: hot-reload the agent too (same as backend dev)
-      - ./backend:/app:cached
-      - ./backend/.air.toml:/app/.air.toml:ro
+      - ${HOST_PROJECT_ROOT:-.}/backend:/app:cached
+      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/.air.toml:ro
       # Shared Go build cache with backend for consistency
       - go-build-cache:/go/cache
       - go-mod-cache:/go/pkg/mod

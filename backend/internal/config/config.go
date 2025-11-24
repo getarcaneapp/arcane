@@ -6,15 +6,20 @@ import (
 	"strings"
 )
 
+type AppEnvironment string
+
 const (
-	defaultSqliteString string = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
+	AppEnvironmentProduction  AppEnvironment = "production"
+	AppEnvironmentDevelopment AppEnvironment = "development"
+	AppEnvironmentTest        AppEnvironment = "test"
+	defaultSqliteString       string         = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
 )
 
 type Config struct {
 	AppUrl        string
 	DatabaseURL   string
 	Port          string
-	Environment   string
+	Environment   AppEnvironment
 	JWTSecret     string
 	EncryptionKey string
 
@@ -42,7 +47,7 @@ func Load() *Config {
 		AppUrl:        getEnvOrDefault("APP_URL", "http://localhost:3552"),
 		DatabaseURL:   getEnvOrDefault("DATABASE_URL", defaultSqliteString),
 		Port:          getEnvOrDefault("PORT", "3552"),
-		Environment:   getEnvOrDefault("ENVIRONMENT", "production"),
+		Environment:   getEnvOrDefault("ENVIRONMENT", AppEnvironmentProduction),
 		JWTSecret:     getEnvOrDefault("JWT_SECRET", "default-jwt-secret-change-me"),
 		EncryptionKey: getEnvOrDefault("ENCRYPTION_KEY", "arcane-dev-key-32-characters!!!"),
 
@@ -66,16 +71,19 @@ func Load() *Config {
 	}
 }
 
-func (c *Config) GetOidcRedirectURI() string {
-	baseUrl := strings.TrimSuffix(c.AppUrl, "/")
-	return baseUrl + "/auth/oidc/callback"
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
+func getEnvOrDefault[T interface{ ~string }](key string, defaultValue T) T {
 	if value := os.Getenv(key); value != "" {
-		return value
+		return T(value)
 	}
 	return defaultValue
+}
+
+func (a AppEnvironment) IsProdEnvironment() bool {
+	return a == AppEnvironmentProduction
+}
+
+func (a AppEnvironment) IsTestEnvironment() bool {
+	return a == AppEnvironmentTest
 }
 
 func getBoolEnvOrDefault(key string, defaultValue bool) bool {

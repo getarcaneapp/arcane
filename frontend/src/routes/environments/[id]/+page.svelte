@@ -10,6 +10,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import SaveIcon from '@lucide/svelte/icons/save';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -22,6 +23,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
 
 	let { data } = $props();
 	let { environment, settings } = $derived(data);
@@ -34,6 +36,7 @@
 	let isTestingConnection = $state(false);
 	let isPairing = $state(false);
 	let isSaving = $state(false);
+	let isSyncingRegistries = $state(false);
 	let bootstrapToken = $state('');
 
 	// Form state
@@ -74,6 +77,20 @@
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
 		} finally {
 			isRefreshing = false;
+		}
+	}
+
+	async function syncRegistries() {
+		if (isSyncingRegistries) return;
+		try {
+			isSyncingRegistries = true;
+			await environmentManagementService.syncRegistries(environment.id);
+			toast.success('Registries synced successfully');
+		} catch (error) {
+			console.error('Failed to sync registries:', error);
+			toast.error('Failed to sync registries');
+		} finally {
+			isSyncingRegistries = false;
 		}
 	}
 
@@ -213,6 +230,17 @@
 						{m.common_save()}
 					{/if}
 				</Button>
+
+				{#if environment.id !== '0'}
+					<Button variant="outline" onclick={syncRegistries} disabled={isSyncingRegistries}>
+						{#if isSyncingRegistries}
+							<Spinner />
+						{:else}
+							<DatabaseIcon class="mr-2 size-4" />
+						{/if}
+						{m.sync_registries()}
+					</Button>
+				{/if}
 
 				<Button variant="outline" onclick={refreshEnvironment} disabled={isRefreshing}>
 					{#if isRefreshing}

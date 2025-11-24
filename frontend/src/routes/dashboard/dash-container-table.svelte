@@ -58,7 +58,11 @@
 	let lastFetchedLimit = $state(5);
 
 	$effect(() => {
-		if (calculatedLimit !== lastFetchedLimit && requestOptions.pagination) {
+		const currentLimit = containers.pagination?.itemsPerPage;
+		if (
+			requestOptions.pagination &&
+			(calculatedLimit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== calculatedLimit))
+		) {
 			lastFetchedLimit = calculatedLimit;
 			requestOptions.pagination.limit = calculatedLimit;
 			containerService.getContainers(requestOptions).then((result) => (containers = result));
@@ -139,7 +143,7 @@
 		</Card.Header>
 		<Card.Content class="relative flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
-				items={containers}
+				items={{ ...containers, data: containers.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (containers = await containerService.getContainers(options))}

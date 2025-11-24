@@ -49,7 +49,7 @@ func NewAnalyticsJob(
 }
 
 func (j *AnalyticsJob) Register(ctx context.Context) error {
-	if j.cfg.AnalyticsDisabled || !j.isProduction() {
+	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
 		slog.InfoContext(ctx, "analytics disabled or not in production; heartbeat job not registered",
 			"analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
 		return nil
@@ -71,7 +71,7 @@ func (j *AnalyticsJob) Register(ctx context.Context) error {
 }
 
 func (j *AnalyticsJob) Execute(parentCtx context.Context) error {
-	if j.cfg.AnalyticsDisabled || !j.isProduction() {
+	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
 		slog.InfoContext(parentCtx, "analytics disabled or not in production; skipping heartbeat",
 			"analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
 		return nil
@@ -129,11 +129,6 @@ func (j *AnalyticsJob) Execute(parentCtx context.Context) error {
 
 	slog.InfoContext(parentCtx, "analytics heartbeat sent successfully", "jobName", AnalyticsJobName)
 	return nil
-}
-
-func (j *AnalyticsJob) isProduction() bool {
-	env := strings.ToLower(strings.TrimSpace(j.cfg.Environment))
-	return env == "production" || env == "prod"
 }
 
 func getVersion() string {

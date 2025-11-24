@@ -34,6 +34,10 @@ export default class EnvironmentManagementService extends BaseAPIService {
 		const res = await this.api.post(`/environments/${environmentId}/test`, apiUrl ? { apiUrl } : undefined);
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
+
+	async syncRegistries(environmentId: string): Promise<void> {
+		await this.api.post(`/environments/${environmentId}/sync-registries`);
+	}
 }
 
 export const environmentManagementService = new EnvironmentManagementService();

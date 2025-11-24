@@ -44,3 +44,5 @@ frontend/bun.lock
 tests/bun.lock
 tests/package-lock.json
 /.idea/**
+.pnpm-store/**
+.pnpm-store

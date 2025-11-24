@@ -45,6 +45,7 @@
 	"common_save_changes": "Wijzigingen opslaan",
 	"common_remove_selected": "Verwijder geselecteerde ({count})",
 	"common_registry_url_required": "Register URL is vereist",
+	"sync_registries": "Synchroniseer registraties",
 	"common_update_available": "Update beschikbaar",
 	"common_restart_policy": "Herstart beleid",
 	"common_gateway": "Gateway",

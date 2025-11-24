@@ -66,3 +66,8 @@ updates:
     directory: '/docker'
     schedule:
       interval: 'daily'
+
+  - package-ecosystem: 'devcontainers'
+    directory: '/'
+    schedule:
+      interval: 'daily'

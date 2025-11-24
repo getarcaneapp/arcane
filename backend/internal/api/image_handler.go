@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/services"
@@ -51,7 +52,7 @@ func (h *ImageHandler) List(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Failed to list images: " + err.Error()},
+			"data":    gin.H{"error": (&common.ImageListError{Err: err}).Error()},
 		})
 		return
 	}
@@ -74,7 +75,7 @@ func (h *ImageHandler) GetByID(c *gin.Context) {
 
 	img, err := h.imageService.GetImageByID(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": dto.MessageDto{Message: err.Error()}})
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.ImageNotFoundError{Err: err}).Error()}})
 		return
 	}
 
@@ -97,29 +98,27 @@ func (h *ImageHandler) Remove(c *gin.Context) {
 	if err := h.imageService.RemoveImage(c.Request.Context(), id, force, *currentUser); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.ImageRemovalError{Err: err}).Error()},
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    dto.MessageDto{Message: "Image removed successfully"},
+		"data":    gin.H{"message": "Image removed successfully"},
 	})
 }
 
 func (h *ImageHandler) Pull(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.ImagePullDto
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Invalid request body: " + err.Error()},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
-
 	c.Writer.Header().Set("Content-Type", "application/x-json-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -133,7 +132,7 @@ func (h *ImageHandler) Pull(c *gin.Context) {
 	if err := h.imageService.PullImage(ctx, req.ImageName, c.Writer, *currentUser, req.Credentials); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: fmt.Sprintf("Failed to pull image '%s': %s", req.ImageName, err.Error())},
+			"data":    gin.H{"error": (&common.ImagePullError{ImageName: req.ImageName, Err: err}).Error()},
 		})
 		return
 	}
@@ -160,6 +159,13 @@ func (h *ImageHandler) Prune(c *gin.Context) {
 				}
 			}
 		}
+	} else if c.Request.ContentLength > 0 {
+		// Only return error if body was provided but invalid
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
+		})
+		return
 	}
 
 	slog.DebugContext(c.Request.Context(), "Image prune request", slog.Bool("dangling_only", dangling))
@@ -168,7 +174,7 @@ func (h *ImageHandler) Prune(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: err.Error()},
+			"data":    gin.H{"error": (&common.ImagePruneError{Err: err}).Error()},
 		})
 		return
 	}
@@ -203,7 +209,7 @@ func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 	if len(errs) > 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: errors.Join(errs...).Error()},
+			"data":    gin.H{"error": (&common.ImageUsageCountsError{Err: errors.Join(errs...)}).Error()},
 		})
 		return
 	}
@@ -234,7 +240,7 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    dto.MessageDto{Message: "Invalid multipart form: " + err.Error()},
+			"data":    gin.H{"error": (&common.InvalidMultipartFormError{Err: err}).Error()},
 		})
 		return
 	}
@@ -251,7 +257,7 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": dto.MessageDto{Message: "Failed to read upload: " + err.Error()}})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.FileUploadReadError{Err: err}).Error()}})
 			return
 		}
 		// Only consider file parts (have a filename)
@@ -266,7 +272,7 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 	}
 
 	if !found || part == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": dto.MessageDto{Message: "No file uploaded"}})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.NoFileUploadedError{}).Error()}})
 		return
 	}
 	defer part.Close()
@@ -278,7 +284,7 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 	// We allow .tar, .tar.gz, .tgz, .tar.xz
 	lowerName := strings.ToLower(fileName)
 	if !strings.HasSuffix(lowerName, ".tar") && !strings.HasSuffix(lowerName, ".tar.gz") && !strings.HasSuffix(lowerName, ".tgz") && !strings.HasSuffix(lowerName, ".tar.xz") {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": dto.MessageDto{Message: "Invalid file format. Only Docker image tar archives are allowed (.tar, .tar.gz, .tgz, .tar.xz)"}})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidFileFormatError{}).Error()}})
 		return
 	}
 
@@ -286,10 +292,10 @@ func (h *ImageHandler) Upload(c *gin.Context) {
 	if err != nil {
 		// Check if it's a size limit error
 		if strings.Contains(err.Error(), "exceeds maximum allowed size") {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "data": dto.MessageDto{Message: err.Error()}})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "data": gin.H{"error": err.Error()}})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": dto.MessageDto{Message: "Failed to load image: " + err.Error()}})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.ImageLoadError{Err: err}).Error()}})
 		return
 	}
 

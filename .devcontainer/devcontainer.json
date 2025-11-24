@@ -1,0 +1,44 @@
+{
+  "name": "Arcane Dev Container",
+  "dockerComposeFile": "compose.yaml",
+  "service": "arcane-dev-container",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.25"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "25",
+      "pnpm": "10.22.0"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true",
+      "moby": "true"
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "configureZshAsDefaultShell": "true",
+      "installOhMyZsh": "true",
+      "upgradePackages": "true"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "svelte.svelte-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker",
+        "GitHub.copilot-chat",
+        "GitHub.copilot",
+        "ms-vscode.vscode-typescript-next",
+        "actboy168.tasks"
+      ]
+    }
+  },
+  "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
+  "remoteUser": "vscode"
+}

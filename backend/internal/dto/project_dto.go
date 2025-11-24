@@ -63,3 +63,7 @@ type ProjectStatusCounts struct {
 	StoppedProjects int `json:"stoppedProjects"`
 	TotalProjects   int `json:"totalProjects"`
 }
+
+type ProjectImagePullDto struct {
+	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
+}

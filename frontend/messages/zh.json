@@ -45,6 +45,7 @@
 	"common_save_changes": "保存更改",
 	"common_remove_selected": "移除所选（{count}）",
 	"common_registry_url_required": "Registry URL是必填项",
+	"sync_registries": "同步寄存器",
 	"common_update_available": "有可用更新",
 	"common_restart_policy": "重启策略",
 	"common_gateway": "网关",
