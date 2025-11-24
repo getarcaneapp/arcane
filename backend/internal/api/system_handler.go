@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -841,27 +842,71 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 
 // getIntelStats collects Intel GPU statistics using intel_gpu_top
 func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	usedBytes, totalBytes, err := readIntelVRAMInfo()
+	// Create a context with timeout for the entire operation
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	// Start intel_gpu_top in JSON mode, let it run briefly, then terminate
+	cmd := exec.CommandContext(ctx, "intel_gpu_top", "-J", "-o", "-")
+
+	// Set up pipes to capture output
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to read Intel VRAM info",
+		slog.WarnContext(ctx, "Failed to create stdout pipe for intel_gpu_top",
 			slog.String("error", err.Error()))
-	}
-	if err == nil {
-		slog.DebugContext(ctx, "Collected Intel GPU VRAM stats",
-			slog.Float64("memory_used_bytes", usedBytes),
-			slog.Float64("memory_total_bytes", totalBytes))
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
 	}
 
-	stats := []GPUStats{
-		{
-			Name:        "Intel GPU",
-			Index:       0,
-			MemoryUsed:  usedBytes,
-			MemoryTotal: totalBytes,
-		},
+	// Start the process
+	if err := cmd.Start(); err != nil {
+		slog.WarnContext(ctx, "Failed to start intel_gpu_top",
+			slog.String("error", err.Error()))
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
 	}
 
-	return stats, nil
+	// Read output with a timeout
+	outputChan := make(chan []byte, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		var buf bytes.Buffer
+		// Read up to 100KB of output
+		limited := &io.LimitedReader{R: stdout, N: 100 * 1024}
+		_, err := buf.ReadFrom(limited)
+		if err != nil && err != io.EOF {
+			errChan <- err
+			return
+		}
+		outputChan <- buf.Bytes()
+	}()
+
+	// Wait for output or timeout
+	var output []byte
+	select {
+	case output = <-outputChan:
+		// Got output, kill the process
+		_ = cmd.Process.Kill()
+	case err := <-errChan:
+		slog.WarnContext(ctx, "Error reading intel_gpu_top output",
+			slog.String("error", err.Error()))
+		_ = cmd.Process.Kill()
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+	case <-time.After(2 * time.Second):
+		// Timeout, kill process
+		_ = cmd.Process.Kill()
+		slog.WarnContext(ctx, "intel_gpu_top timed out after 2 seconds")
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+	}
+
+	// Wait for process to exit (should be quick since we killed it)
+	_ = cmd.Wait()
+
+	// Parse the output
+	if len(output) == 0 {
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+	}
+
+	return h.parseIntelOutput(ctx, output)
 }
 
 func readIntelVRAMInfo() (float64, float64, error) {
@@ -897,23 +942,78 @@ func readFloatFromFile(path string) (float64, error) {
 	return value, nil
 }
 
+// IntelGPUTopOutput represents the JSON structure from intel_gpu_top
+type IntelGPUTopOutput struct {
+	Period struct {
+		Duration float64 `json:"duration"`
+		Unit     string  `json:"unit"`
+	} `json:"period"`
+	Frequency struct {
+		Requested float64 `json:"requested"`
+		Actual    float64 `json:"actual"`
+		Unit      string  `json:"unit"`
+	} `json:"frequency"`
+	Interrupts struct {
+		Count float64 `json:"count"`
+		Unit  string  `json:"unit"`
+	} `json:"interrupts"`
+	RC6 struct {
+		Value float64 `json:"value"`
+		Unit  string  `json:"unit"`
+	} `json:"rc6"`
+	Power struct {
+		GPU     float64 `json:"GPU"`
+		Package float64 `json:"Package"`
+		Unit    string  `json:"unit"`
+	} `json:"power"`
+	IMCBandwidth struct {
+		Reads  float64 `json:"reads"`
+		Writes float64 `json:"writes"`
+		Unit   string  `json:"unit"`
+	} `json:"imc-bandwidth"`
+	Engines map[string]struct {
+		Busy float64 `json:"busy"`
+		Sema float64 `json:"sema"`
+		Wait float64 `json:"wait"`
+		Unit string  `json:"unit"`
+	} `json:"engines"`
+}
+
 // parseIntelOutput parses JSON output from intel_gpu_top
 func (h *SystemHandler) parseIntelOutput(ctx context.Context, output []byte) ([]GPUStats, error) {
-	// intel_gpu_top doesn't provide straightforward total memory info
-	// This is a simplified implementation - for MVP we'll return basic info
+	var intelData IntelGPUTopOutput
+	if err := json.Unmarshal(output, &intelData); err != nil {
+		slog.WarnContext(ctx, "Failed to parse intel_gpu_top JSON",
+			slog.String("error", err.Error()))
+		return nil, fmt.Errorf("failed to parse intel_gpu_top output: %w", err)
+	}
 
-	// For now, return a placeholder indicating Intel GPU detected
-	// A more complete implementation would parse /sys/class/drm/card*/device/mem_info_vram_total
+	// Get VRAM info from sysfs
+	usedBytes, totalBytes, err := readIntelVRAMInfo()
+	if err != nil {
+		slog.DebugContext(ctx, "VRAM info not available from sysfs",
+			slog.String("error", err.Error()))
+		usedBytes = 0
+		totalBytes = 0
+	}
+
+	slog.DebugContext(ctx, "Collected Intel GPU stats",
+		slog.Float64("frequency_mhz", intelData.Frequency.Actual),
+		slog.Float64("power_gpu_w", intelData.Power.GPU),
+		slog.Float64("power_package_w", intelData.Power.Package),
+		slog.Float64("rc6_percent", intelData.RC6.Value),
+		slog.Float64("memory_used_bytes", usedBytes),
+		slog.Float64("memory_total_bytes", totalBytes))
+
 	stats := []GPUStats{
 		{
 			Name:        "Intel GPU",
 			Index:       0,
-			MemoryUsed:  0,
-			MemoryTotal: 0,
+			MemoryUsed:  usedBytes,
+			MemoryTotal: totalBytes,
 		},
 	}
 
-	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
 	return stats, nil
 }
 
