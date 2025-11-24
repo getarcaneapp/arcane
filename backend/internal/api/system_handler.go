@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/hertg/gopci/pkg/pci"
 	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/config"
 	"github.com/ofkm/arcane-backend/internal/dto"
@@ -840,73 +840,57 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 	return stats, nil
 }
 
-// getIntelStats collects Intel GPU statistics using intel_gpu_top
+// getIntelStats collects Intel GPU statistics using gopci library
 func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	// Create a context with timeout for the entire operation
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
+	// Scan for VGA-compatible devices (class 0x03)
+	gpuClassFilter := func(d *pci.Device) bool {
+		return d.Class.Class() == 0x03 && d.Vendor.ID == 0x8086 // Intel vendor ID
+	}
 
-	// Start intel_gpu_top in JSON mode, let it run briefly, then terminate
-	cmd := exec.CommandContext(ctx, "intel_gpu_top", "-J", "-o", "-")
-
-	// Set up pipes to capture output
-	stdout, err := cmd.StdoutPipe()
+	devices, err := pci.Scan(gpuClassFilter)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to create stdout pipe for intel_gpu_top",
+		slog.WarnContext(ctx, "Failed to scan PCI devices",
 			slog.String("error", err.Error()))
 		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
 	}
 
-	// Start the process
-	if err := cmd.Start(); err != nil {
-		slog.WarnContext(ctx, "Failed to start intel_gpu_top",
-			slog.String("error", err.Error()))
+	if len(devices) == 0 {
+		slog.DebugContext(ctx, "No Intel GPU devices found via PCI scan")
 		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
 	}
 
-	// Read output with a timeout
-	outputChan := make(chan []byte, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		var buf bytes.Buffer
-		// Read up to 100KB of output
-		limited := &io.LimitedReader{R: stdout, N: 100 * 1024}
-		_, err := buf.ReadFrom(limited)
-		if err != nil && err != io.EOF {
-			errChan <- err
-			return
+	var stats []GPUStats
+	for i, device := range devices {
+		gpuName := fmt.Sprintf("Intel %s", device.Product.Label)
+		if strings.Contains(gpuName, "Device ") {
+			gpuName = fmt.Sprintf("Intel GPU (0x%04x)", device.Product.ID)
 		}
-		outputChan <- buf.Bytes()
-	}()
 
-	// Wait for output or timeout
-	var output []byte
-	select {
-	case output = <-outputChan:
-		// Got output, kill the process
-		_ = cmd.Process.Kill()
-	case err := <-errChan:
-		slog.WarnContext(ctx, "Error reading intel_gpu_top output",
-			slog.String("error", err.Error()))
-		_ = cmd.Process.Kill()
-		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
-	case <-time.After(2 * time.Second):
-		// Timeout, kill process
-		_ = cmd.Process.Kill()
-		slog.WarnContext(ctx, "intel_gpu_top timed out after 2 seconds")
-		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+		// Try to read VRAM from sysfs using device address
+		var memUsed, memTotal float64
+		sysfsPath := device.SysfsPath()
+		if totalData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_total")); err == nil {
+			memTotal, _ = strconv.ParseFloat(strings.TrimSpace(string(totalData)), 64)
+			if usedData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_used")); err == nil {
+				memUsed, _ = strconv.ParseFloat(strings.TrimSpace(string(usedData)), 64)
+			}
+		}
+
+		stats = append(stats, GPUStats{
+			Name:        gpuName,
+			Index:       i,
+			MemoryUsed:  memUsed,
+			MemoryTotal: memTotal,
+		})
+
+		slog.DebugContext(ctx, "Collected Intel GPU stats via gopci",
+			slog.String("name", gpuName),
+			slog.String("address", device.Address.Hex()),
+			slog.Float64("memory_used_bytes", memUsed),
+			slog.Float64("memory_total_bytes", memTotal))
 	}
 
-	// Wait for process to exit (should be quick since we killed it)
-	_ = cmd.Wait()
-
-	// Parse the output
-	if len(output) == 0 {
-		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
-	}
-
-	return h.parseIntelOutput(ctx, output)
+	return stats, nil
 }
 
 func readIntelVRAMInfo() (float64, float64, error) {
