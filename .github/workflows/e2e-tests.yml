@@ -23,6 +23,7 @@ concurrency:
 
 jobs:
   build:
+    name: E2E Tests - Build Image
     if: ${{ github.event_name != 'pull_request' || github.head_ref != 'l10n_crowdin' }}
     timeout-minutes: 20
     permissions:
