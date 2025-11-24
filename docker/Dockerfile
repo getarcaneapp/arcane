@@ -1,6 +1,4 @@
 # syntax=docker/dockerfile:1
-
-# Tags passed to "go build"
 ARG BUILD_TAGS=""
 
 # Stage 1: Build Frontend
@@ -20,7 +18,9 @@ FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-builder
 ARG TARGETARCH
 ARG BUILD_TAGS
 WORKDIR /build
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata \ 
+&& apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY ./.version ./VERSION
 COPY ./backend/go.mod ./backend/go.sum ./
@@ -40,21 +40,35 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 # Stage 3: Production Image
 FROM debian:trixie-slim AS runner
+ARG TARGETARCH
 ARG VERSION="dev"
 ARG REVISION="unknown"
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates curl tzdata && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+    vainfo clinfo \
+    && if [ "$TARGETARCH" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-gpu-tools; \
+    fi \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ENV GIN_MODE=release
 ENV PORT=3552
 ENV ENVIRONMENT=production
-# Multi-distro, multi-arch library path for GPU support
-# Includes paths for: NVIDIA runtime mounts, Debian/Ubuntu (AMD64/ARM64), RHEL/CentOS/Fedora, Arch, and standard fallbacks
-# Covers: NVIDIA GPUs (all distros/architectures), future AMD ROCm support, and Intel GPU support
-ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    ROCR_VISIBLE_DEVICES=all \
+    HIP_VISIBLE_DEVICES=all \
+    ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
+
+
 WORKDIR /app
 RUN mkdir -p /app/data
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
+
 LABEL org.opencontainers.image.authors="OFKM Technologies" \
 org.opencontainers.image.url="https://github.com/getarcaneapp/arcane" \
 org.opencontainers.image.documentation="https://github.com/getarcaneapp/arcane/blob/main/README.md" \

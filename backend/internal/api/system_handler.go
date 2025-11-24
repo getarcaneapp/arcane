@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -839,18 +841,60 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 
 // getIntelStats collects Intel GPU statistics using intel_gpu_top
 func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	// intel_gpu_top requires running with -o - for single sample JSON output
-	cmd := exec.CommandContext(ctx, "intel_gpu_top", "-J", "-o", "-")
-	output, err := cmd.Output()
+	usedBytes, totalBytes, err := readIntelVRAMInfo()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute intel_gpu_top", slog.String("error", err.Error()))
-		return nil, fmt.Errorf("intel_gpu_top execution failed: %w", err)
+		slog.WarnContext(ctx, "Failed to read Intel VRAM info",
+			slog.String("error", err.Error()))
+	}
+	if err == nil {
+		slog.DebugContext(ctx, "Collected Intel GPU VRAM stats",
+			slog.Float64("memory_used_bytes", usedBytes),
+			slog.Float64("memory_total_bytes", totalBytes))
 	}
 
-	return h.parseIntelOutput(ctx, output)
+	stats := []GPUStats{
+		{
+			Name:        "Intel GPU",
+			Index:       0,
+			MemoryUsed:  usedBytes,
+			MemoryTotal: totalBytes,
+		},
+	}
+
+	return stats, nil
+}
+
+func readIntelVRAMInfo() (float64, float64, error) {
+	matches, err := filepath.Glob("/sys/class/drm/card*/device/mem_info_vram_total")
+	if err != nil {
+		return 0, 0, fmt.Errorf("glob mem_info_vram_total: %w", err)
+	}
+	for _, totalPath := range matches {
+		total, err := readFloatFromFile(totalPath)
+		if err != nil {
+			continue
+		}
+		usedPath := strings.Replace(totalPath, "mem_info_vram_total", "mem_info_vram_used", 1)
+		used, err := readFloatFromFile(usedPath)
+		if err != nil {
+			// Some drivers may not expose used metrics
+			used = 0
+		}
+		return used, total, nil
+	}
+	return 0, 0, fmt.Errorf("mem_info_vram_total not found")
+}
+
+func readFloatFromFile(path string) (float64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 // parseIntelOutput parses JSON output from intel_gpu_top
