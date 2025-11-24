@@ -867,12 +867,36 @@ func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
 		}
 
 		// Try to read VRAM from sysfs using device address
+		// Note: Intel integrated GPUs use system RAM and typically don't expose
+		// mem_info_vram_* files. Only discrete GPUs (like Intel Arc) have these.
 		var memUsed, memTotal float64
 		sysfsPath := device.SysfsPath()
+
+		// Check for discrete GPU VRAM info
 		if totalData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_total")); err == nil {
 			memTotal, _ = strconv.ParseFloat(strings.TrimSpace(string(totalData)), 64)
 			if usedData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_used")); err == nil {
 				memUsed, _ = strconv.ParseFloat(strings.TrimSpace(string(usedData)), 64)
+			}
+		} else {
+			// For integrated GPUs, try reading from i915 gem_objects if available
+			// This requires debugfs access which may not be available in containers
+			i915Path := "/sys/kernel/debug/dri/0/i915_gem_objects"
+			if data, err := os.ReadFile(i915Path); err == nil {
+				// Parse i915_gem_objects output for memory usage
+				// Format contains lines like: "123456 objects, 234567890 bytes"
+				lines := strings.Split(string(data), "\n")
+				for _, line := range lines {
+					if strings.Contains(line, "bytes") && strings.Contains(line, "objects") {
+						fields := strings.Fields(line)
+						if len(fields) >= 3 {
+							if bytes, err := strconv.ParseFloat(fields[2], 64); err == nil {
+								memUsed = bytes
+								break
+							}
+						}
+					}
+				}
 			}
 		}
 
