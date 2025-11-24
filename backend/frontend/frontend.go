@@ -17,6 +17,8 @@ import (
 //go:embed all:dist/*
 var frontendFS embed.FS
 
+const indexHtmlFileConstant = "index.html"
+
 func RegisterFrontend(router *gin.Engine) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
@@ -39,7 +41,7 @@ func RegisterFrontend(router *gin.Engine) error {
 
 		requestedPath := strings.TrimPrefix(path, "/")
 		if requestedPath == "" {
-			requestedPath = "index.html"
+			requestedPath = indexHtmlFileConstant
 		}
 
 		if _, err := fs.Stat(distFS, requestedPath); os.IsNotExist(err) {
@@ -73,7 +75,7 @@ func NewFileServerWithCaching(root http.FileSystem, maxAge int) *FileServerWithC
 func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
-		path = "index.html"
+		path = indexHtmlFileConstant
 	}
 
 	// Service worker needs correct MIME type and no caching for PWA updates
@@ -97,7 +99,7 @@ func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	// Never cache index.html - it needs to be fresh to detect updates
-	if path == "index.html" {
+	if path == indexHtmlFileConstant {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		w.Header().Set("Pragma", "no-cache")
 		w.Header().Set("Expires", "0")

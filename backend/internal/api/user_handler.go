@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/middleware"
 	"github.com/ofkm/arcane-backend/internal/models"
@@ -38,7 +39,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to list users: " + err.Error()},
+			"data":    gin.H{"error": (&common.UserListError{Err: err}).Error()},
 		})
 		return
 	}
@@ -55,7 +56,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Invalid request format"},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -64,7 +65,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to hash password"},
+			"data":    gin.H{"error": (&common.PasswordHashError{Err: err}).Error()},
 		})
 		return
 	}
@@ -89,7 +90,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to create user"},
+			"data":    gin.H{"error": (&common.UserCreationError{Err: err}).Error()},
 		})
 		return
 	}
@@ -98,7 +99,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map user"},
+			"data":    gin.H{"error": (&common.UserMappingError{Err: err}).Error()},
 		})
 		return
 	}
@@ -116,7 +117,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "User not found"},
+			"data":    gin.H{"error": (&common.UserNotFoundError{}).Error()},
 		})
 		return
 	}
@@ -125,7 +126,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map user"},
+			"data":    gin.H{"error": (&common.UserMappingError{Err: err}).Error()},
 		})
 		return
 	}
@@ -143,7 +144,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Invalid request format"},
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
 		})
 		return
 	}
@@ -152,7 +153,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "User not found"},
+			"data":    gin.H{"error": (&common.UserNotFoundError{}).Error()},
 		})
 		return
 	}
@@ -175,7 +176,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"data":    gin.H{"error": "Failed to hash password"},
+				"data":    gin.H{"error": (&common.PasswordHashError{Err: err}).Error()},
 			})
 			return
 		}
@@ -189,7 +190,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to update user"},
+			"data":    gin.H{"error": (&common.UserUpdateError{Err: err}).Error()},
 		})
 		return
 	}
@@ -198,7 +199,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to map user"},
+			"data":    gin.H{"error": (&common.UserMappingError{Err: err}).Error()},
 		})
 		return
 	}
@@ -216,7 +217,7 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to delete user"},
+			"data":    gin.H{"error": (&common.UserDeletionError{Err: err}).Error()},
 		})
 		return
 	}

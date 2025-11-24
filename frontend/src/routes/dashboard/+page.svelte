@@ -105,7 +105,7 @@
 		if (stats.gpus && stats.gpus.length > 0) {
 			// Track average GPU memory usage percentage across all GPUs
 			// Filter out GPUs with zero total memory to avoid invalid calculations
-			const validGpus = stats.gpus.filter(gpu => gpu.memoryTotal > 0);
+			const validGpus = stats.gpus.filter((gpu) => gpu.memoryTotal > 0);
 
 			if (validGpus.length > 0) {
 				const totalGpuPercent = validGpus.reduce((sum, gpu) => {
@@ -119,7 +119,7 @@
 			}
 		}
 
-		historicalData.containers.push({ date: now, value: dockerInfo!.containersRunning });
+		historicalData.containers.push({ date: now, value: dockerInfo!.ContainersRunning });
 		if (historicalData.containers.length > maxPoints) {
 			historicalData.containers = historicalData.containers.slice(-maxPoints);
 		}
@@ -226,7 +226,7 @@
 	}
 
 	async function handleStopAll() {
-		if (isLoading.stopping || !dashboardStates.dockerInfo || dockerInfo?.containersRunning === 0) return;
+		if (isLoading.stopping || !dashboardStates.dockerInfo || dockerInfo?.ContainersRunning === 0) return;
 		openConfirmDialog({
 			title: m.dashboard_stop_all_title(),
 			message: m.dashboard_stop_all_confirm(),
@@ -323,7 +323,11 @@
 			{/if}
 		</div>
 		<div class="space-y-3">
-			<div class="grid grid-cols-2 gap-3 sm:grid-cols-2 {currentStats?.gpuCount && currentStats.gpuCount > 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}">
+			<div
+				class="grid grid-cols-2 gap-3 sm:grid-cols-2 {currentStats?.gpuCount && currentStats.gpuCount > 0
+					? 'lg:grid-cols-4'
+					: 'lg:grid-cols-3'}"
+			>
 				<MeterMetric
 					title={m.dashboard_meter_cpu()}
 					icon={CpuIcon}
@@ -363,10 +367,7 @@
 				/>
 
 				{#if currentStats?.gpuCount && currentStats.gpuCount > 0}
-					<GpuMeter
-						gpus={currentStats?.gpus}
-						loading={isLoading.loadingStats || !hasInitialStatsLoaded}
-					/>
+					<GpuMeter gpus={currentStats?.gpus} loading={isLoading.loadingStats || !hasInitialStatsLoaded} />
 				{/if}
 			</div>
 

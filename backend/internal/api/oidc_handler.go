@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ofkm/arcane-backend/internal/common"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/services"
 	"github.com/ofkm/arcane-backend/internal/utils/cookie"
@@ -33,7 +34,7 @@ func (h *OidcHandler) GetOidcStatus(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to retrieve OIDC status: " + err.Error(),
+			"error":   (&common.OidcStatusError{Err: err}).Error(),
 		})
 		return
 	}
@@ -42,25 +43,27 @@ func (h *OidcHandler) GetOidcStatus(c *gin.Context) {
 
 func (h *OidcHandler) GetOidcAuthUrl(c *gin.Context) {
 	var req dto.OidcAuthUrlRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request format"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
+		})
 		return
 	}
 
 	enabled, err := h.authService.IsOidcEnabled(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to check OIDC status"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.OidcStatusCheckError{}).Error()})
 		return
 	}
 	if !enabled {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "OIDC authentication is disabled"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.OidcDisabledError{}).Error()})
 		return
 	}
 
 	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(c.Request.Context(), req.RedirectUri)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to generate OIDC auth URL: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.OidcAuthUrlGenerationError{Err: err}).Error()})
 		return
 	}
 
@@ -78,26 +81,26 @@ func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
 	}
 
 	encodedStateFromCookie, err := cookie.GetOidcStateCookie(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Missing or invalid OIDC state cookie"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.OidcStateCookieError{}).Error()})
 		return
 	}
 	cookie.ClearOidcStateCookie(c)
 
 	userInfo, tokenResp, err := h.oidcService.HandleCallback(c.Request.Context(), req.Code, req.State, encodedStateFromCookie)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.OidcCallbackError{Err: err}).Error()})
 		return
 	}
 
 	user, tokenPair, err := h.authService.OidcLogin(c.Request.Context(), *userInfo, tokenResp)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AuthFailedError{Err: err}).Error()})
 		return
 	}
 
@@ -131,7 +134,7 @@ func (h *OidcHandler) GetOidcConfig(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "Failed to get OIDC configuration",
+			"error":   (&common.OidcConfigError{}).Error(),
 		})
 		return
 	}
