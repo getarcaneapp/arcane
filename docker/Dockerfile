@@ -4,8 +4,8 @@
 ARG BUILD_TAGS=""
 
 # Stage 1: Build Frontend
-FROM node:25-alpine AS frontend-builder
-RUN npm install -g --force corepack && corepack enable
+FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
+RUN npm install -g --force corepack@v0.34.5 && corepack enable
 WORKDIR /build
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY frontend/package.json ./frontend/package.json
@@ -16,10 +16,11 @@ ENV BUILD_PATH=dist
 RUN pnpm -C frontend build
 
 # Stage 2: Build Backend
-FROM golang:1.25-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-builder
+ARG TARGETARCH
 ARG BUILD_TAGS
 WORKDIR /build
-RUN apk add --no-cache ca-certificates curl git tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata && rm -rf /var/lib/apt/lists/*
 
 COPY ./.version ./VERSION
 COPY ./backend/go.mod ./backend/go.sum ./
@@ -29,7 +30,7 @@ COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
     VERSION=$(cat VERSION | tr -d '[:space:]') && \
     REVISION=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") && \
-    CGO_ENABLED=0 GOOS=linux \
+    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
     -tags "${BUILD_TAGS}" \
     -ldflags "-w -s -X github.com/ofkm/arcane-backend/internal/config.Version=${VERSION} -X github.com/ofkm/arcane-backend/internal/config.Revision=${REVISION}" \
@@ -38,10 +39,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     ./cmd/main.go
 
 # Stage 3: Production Image
-FROM alpine:3 AS runner
+FROM debian:trixie-slim AS runner
 ARG VERSION="dev"
 ARG REVISION="unknown"
-RUN apk upgrade && apk --no-cache add ca-certificates curl tzdata gcompat
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates curl tzdata && rm -rf /var/lib/apt/lists/*
 ENV GIN_MODE=release
 ENV PORT=3552
 ENV ENVIRONMENT=production
@@ -66,4 +67,5 @@ org.opencontainers.image.title="Arcane" \
 org.opencontainers.image.description="Modern Docker Management, Made for Everyone" \
 com.ofkm.arcane.updater="false" \
 com.ofkm.arcane.server="true"
+
 CMD ["./arcane"]
