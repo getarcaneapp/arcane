@@ -1,8 +1,27 @@
 import { PersistedState } from 'runed';
-import { invalidateAll } from '$app/navigation';
+import { goto, invalidateAll } from '$app/navigation';
+import { page } from '$app/state';
 import type { Environment } from '$lib/types/environment.type';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
+
+function getResourceListPage(): string | null {
+	const routeId = page.route?.id;
+	if (!routeId) return null;
+
+	// Check if route has a dynamic segment (contains [...] pattern)
+	// and is a resource detail page (not settings, environments management, etc.)
+	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes'];
+
+	for (const prefix of resourcePrefixes) {
+		// Match routes like /containers/[containerId] but not /containers or /containers/components/...
+		if (routeId.startsWith(prefix + '/[') && !routeId.includes('/components/')) {
+			return prefix;
+		}
+	}
+
+	return null;
+}
 
 function createEnvironmentManagementStore() {
 	const selectedEnvironmentId = new PersistedState<string | null>('selectedEnvironmentId', null);
@@ -99,7 +118,16 @@ function createEnvironmentManagementStore() {
 			if (_selectedEnvironment?.id !== environment.id) {
 				_selectedEnvironment = environment;
 				selectedEnvironmentId.current = environment.id;
-				await invalidateAll();
+
+				// Check if we're on a resource detail page (e.g., /containers/abc123)
+				// These pages show environment-specific resources that won't exist in the new environment
+				// Navigate to the corresponding list page to avoid 500 errors
+				const listPage = getResourceListPage();
+				if (listPage) {
+					await goto(listPage);
+				} else {
+					await invalidateAll();
+				}
 			}
 		},
 		isInitialized: () => _initialized,

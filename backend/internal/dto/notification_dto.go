@@ -16,7 +16,7 @@ type NotificationSettingsResponse struct {
 }
 
 type AppriseSettingsRequest struct {
-	APIURL             string `json:"apiUrl" binding:"required"`
+	APIURL             string `json:"apiUrl"`
 	Enabled            bool   `json:"enabled"`
 	ImageUpdateTag     string `json:"imageUpdateTag"`
 	ContainerUpdateTag string `json:"containerUpdateTag"`

@@ -178,6 +178,11 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 		return
 	}
 
+	if req.Enabled && req.APIURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API URL is required when Apprise is enabled"})
+		return
+	}
+
 	settings, err := h.appriseService.CreateOrUpdateSettings(
 		c.Request.Context(),
 		req.APIURL,

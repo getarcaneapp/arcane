@@ -1,11 +1,11 @@
-FROM alpine:3
+FROM debian:trixie-slim
 
 ARG TARGETARCH
 ARG VERSION="dev"
 ARG REVISION="unknown"
 
 WORKDIR /app
-RUN apk upgrade && apk --no-cache add ca-certificates tzdata curl gcompat
+RUN apt-get update && apt-get upgrade -y && apt-get install --no-install-recommends -y ca-certificates tzdata curl && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data
 
 COPY ./backend/.bin/arcane-linux-${TARGETARCH} ./arcane
