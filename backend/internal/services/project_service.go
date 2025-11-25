@@ -404,7 +404,11 @@ func (s *ProjectService) ListAllProjects(ctx context.Context) ([]models.Project,
 func formatPorts(publishers []api.PortPublisher) []string {
 	var ports []string
 	for _, pub := range publishers {
-		ports = append(ports, fmt.Sprintf("%d:%d/%s", pub.PublishedPort, pub.TargetPort, pub.Protocol))
+		if pub.PublishedPort > 0 {
+			ports = append(ports, fmt.Sprintf("%d:%d/%s", pub.PublishedPort, pub.TargetPort, pub.Protocol))
+		} else {
+			ports = append(ports, fmt.Sprintf("%d/%s", pub.TargetPort, pub.Protocol))
+		}
 	}
 	return ports
 }
