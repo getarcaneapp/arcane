@@ -322,11 +322,11 @@ func (h *GitOpsRepositoryHandler) performRepositorySync(ctx context.Context, rep
 	}
 
 	projectName := h.deriveProjectName(repository)
-	
+
 	response := map[string]interface{}{
-		"message":         "Repository synced successfully and project created/updated",
-		"gitops_path":     targetResult.ProjectPath,
-		"project_name":    projectName,
+		"message":      "Repository synced successfully and project created/updated",
+		"gitops_path":  targetResult.ProjectPath,
+		"project_name": projectName,
 	}
 
 	return response, nil
