@@ -29,6 +29,13 @@ export interface IncludeFile {
 	content: string;
 }
 
+export interface GitOpsInfo {
+	repositoryId: string;
+	url: string;
+	branch: string;
+	autoSync: boolean;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -43,6 +50,7 @@ export interface Project {
 	composeContent?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
+	gitOps?: GitOpsInfo;
 }
 
 export interface ProjectStatusCounts {

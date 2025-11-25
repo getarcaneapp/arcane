@@ -304,7 +304,7 @@ func (h *GitOpsRepositoryHandler) performRepositorySync(ctx context.Context, rep
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync repositories: %w", err)
 	}
-	
+
 	var targetResult *services.GitOpsSyncResult
 	for i := range results {
 		if results[i].RepositoryID == repository.ID {

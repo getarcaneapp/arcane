@@ -18,9 +18,13 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import LinkIcon from '@lucide/svelte/icons/link';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
+	import XCircleIcon from '@lucide/svelte/icons/x-circle';
+	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { gitopsRepositoryService } from '$lib/services/gitops-service';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	let {
 		repositories = $bindable(),
@@ -146,6 +150,11 @@
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{
+			accessorKey: 'lastSyncStatus',
+			title: 'Status',
+			cell: StatusCell
+		},
+		{
 			accessorKey: 'url',
 			title: m.gitops_repository_url(),
 			sortable: true,
@@ -190,6 +199,7 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'lastSyncStatus', label: 'Status', defaultVisible: true },
 		{ id: 'url', label: m.gitops_repository_url(), defaultVisible: true },
 		{ id: 'branch', label: m.gitops_branch(), defaultVisible: true },
 		{ id: 'composePath', label: m.gitops_compose_path(), defaultVisible: true },
@@ -199,6 +209,28 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
+
+{#snippet StatusCell({ item }: { item: GitOpsRepository })}
+	{#if !item.lastSyncStatus || item.lastSyncStatus === 'pending'}
+		<StatusBadge variant="gray" text="Pending" />
+	{:else if item.lastSyncStatus === 'success'}
+		<StatusBadge variant="green" text="Healthy" />
+	{:else if item.lastSyncStatus === 'failed' || item.lastSyncStatus === 'error'}
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<div class="flex items-center gap-1">
+					<StatusBadge variant="red" text="Failed" />
+					<AlertCircleIcon class="text-destructive size-4" />
+				</div>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<p class="max-w-xs text-sm">{item.lastSyncError || 'Unknown error'}</p>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	{:else}
+		<StatusBadge variant="gray" text={item.lastSyncStatus} />
+	{/if}
+{/snippet}
 
 {#snippet UrlCell({ item }: { item: GitOpsRepository })}
 	<div class="flex items-center gap-2">
@@ -279,7 +311,23 @@
 		icon={{ component: GitBranchIcon, variant: 'blue' as const }}
 		title={(item) => item.url}
 		subtitle={(item) => ((mobileFieldVisibility.branch ?? true) ? `Branch: ${item.branch}` : null)}
-		badges={[{ variant: 'blue' as const, text: 'GitOps' }]}
+		badges={[
+			{ variant: 'blue' as const, text: 'GitOps' },
+			{
+				variant:
+					!item.lastSyncStatus || item.lastSyncStatus === 'pending'
+						? 'gray'
+						: item.lastSyncStatus === 'success'
+							? 'green'
+							: 'red',
+				text:
+					!item.lastSyncStatus || item.lastSyncStatus === 'pending'
+						? 'Pending'
+						: item.lastSyncStatus === 'success'
+							? 'Healthy'
+							: 'Failed'
+			}
+		]}
 		fields={[
 			{
 				label: m.gitops_compose_path(),

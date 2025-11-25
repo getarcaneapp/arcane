@@ -971,8 +971,24 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	slog.DebugContext(ctx, "Retrieved projects from database",
 		"count", len(projectsArray))
 
+	// Fetch all GitOps repos to map them to projects
+	var gitOpsRepos []models.GitOpsRepository
+	gitOpsMap := make(map[string]dto.GitOpsDto)
+	if err := s.db.WithContext(ctx).Find(&gitOpsRepos).Error; err == nil {
+		for _, repo := range gitOpsRepos {
+			if repo.ProjectName != nil {
+				gitOpsMap[*repo.ProjectName] = dto.GitOpsDto{
+					RepositoryID: repo.ID,
+					URL:          repo.URL,
+					Branch:       repo.Branch,
+					AutoSync:     repo.AutoSync,
+				}
+			}
+		}
+	}
+
 	// Fetch live status concurrently for all projects
-	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	result := s.fetchProjectStatusConcurrently(ctx, projectsArray, gitOpsMap)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
@@ -981,7 +997,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projects []models.Project) []dto.ProjectDetailsDto {
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projects []models.Project, gitOpsMap map[string]dto.GitOpsDto) []dto.ProjectDetailsDto {
 	type projectResult struct {
 		index int
 		dto   dto.ProjectDetailsDto
@@ -1057,6 +1073,11 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 				}
 			}
 
+			var gitOpsDto *dto.GitOpsDto
+			if val, ok := gitOpsMap[proj.Name]; ok {
+				gitOpsDto = &val
+			}
+
 			resultChan <- projectResult{
 				index: idx,
 				dto: dto.ProjectDetailsDto{
@@ -1070,6 +1091,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 					RunningCount: displayRunningCount,
 					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
 					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
+					GitOps:       gitOpsDto,
 				},
 			}
 		}(i, project)
@@ -1091,6 +1113,11 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 
 			for j := i; j < len(projects); j++ {
 				proj := projects[j]
+				var gitOpsDto *dto.GitOpsDto
+				if val, ok := gitOpsMap[proj.Name]; ok {
+					gitOpsDto = &val
+				}
+
 				results[j] = dto.ProjectDetailsDto{
 					ID:           proj.ID,
 					Name:         proj.Name,
@@ -1102,6 +1129,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 					RunningCount: proj.RunningCount,
 					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
 					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
+					GitOps:       gitOpsDto,
 				}
 			}
 			return results

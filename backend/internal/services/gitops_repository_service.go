@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -484,7 +485,7 @@ func (s *GitOpsRepositoryService) createProjectFromGitOpsRepo(ctx context.Contex
 		return nil
 	}
 
-	if !strings.Contains(err.Error(), "record not found") && err != gorm.ErrRecordNotFound {
+	if !strings.Contains(err.Error(), "record not found") && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("failed to query project: %w", err)
 	}
 
