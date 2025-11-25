@@ -399,8 +399,14 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 			memTotal = memInfo.Total
 		}
 
+		// Only apply cgroup limits for memory total and CPU count, NOT for memory usage.
+		// Memory usage from cgroups reflects only the Arcane container's usage when running
+		// inside Docker, not the entire system. We want system-wide stats from /proc/meminfo
+		// (via gopsutil) which correctly shows total VM/host memory usage.
+		// The cgroup memory limit is still useful to cap the total if we're in a limited container.
 		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
-			// Use cgroup memory limits if available and smaller than host values
+			// Use cgroup memory limit if available and smaller than host values
+			// This helps when running in an LXC or memory-limited container
 			if limit := cgroupLimits.MemoryLimit; limit > 0 {
 				limitUint := uint64(limit)
 				if memTotal == 0 || limitUint < memTotal {
@@ -408,10 +414,11 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 				}
 			}
 
-			// Use actual cgroup memory usage if available
-			if usage := cgroupLimits.MemoryUsage; usage > 0 {
-				memUsed = uint64(usage)
-			}
+			// NOTE: We intentionally do NOT override memUsed with cgroupLimits.MemoryUsage
+			// because when running in Docker, cgroup memory.current only reflects the
+			// Arcane container's memory, not total system memory usage.
+			// gopsutil's mem.VirtualMemory().Used reads from /proc/meminfo which correctly
+			// reports the entire VM/host memory usage.
 
 			// Use cgroup CPU count if available
 			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {

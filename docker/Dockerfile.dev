@@ -1,4 +1,4 @@
-FROM node:25-alpine AS frontend-dev
+FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-dev
 RUN npm install -g --force corepack && corepack enable
 WORKDIR /app
 
@@ -18,14 +18,15 @@ EXPOSE 3000
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development
-FROM golang:1.25-alpine AS backend-dev
+FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-dev
 
 # Install development tools and dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     git \
     tzdata && \
+    rm -rf /var/lib/apt/lists/* && \
     go install github.com/air-verse/air@latest
 
 # Set development environment variables
