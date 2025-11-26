@@ -261,3 +261,26 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	}
 	require.True(t, found, "projectsDirectory setting not found in cached list")
 }
+
+func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {
+	// Set env + disable flag
+	t.Setenv("UI_CONFIGURATION_DISABLED", "true")
+
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	// Pre-populate an internal setting in the DB
+	internalKey := "instanceId"
+	internalVal := "test-instance-id"
+	require.NoError(t, db.DB.Create(&models.SettingVariable{Key: internalKey, Value: internalVal}).Error)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// Reload explicitly to trigger the env loading path
+	require.NoError(t, svc.LoadDatabaseSettings(ctx))
+
+	cfg := svc.GetSettingsConfig()
+	// Should have loaded the internal setting from DB even in env mode
+	require.Equal(t, internalVal, cfg.InstanceID.Value)
+}

@@ -57,8 +57,8 @@ func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage
 		ForwardLogJSON(ctx, hub, logs)
 		return
 	}
-	t := time.NewTimer(flushInterval)
-	defer t.Stop()
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
 
 	buf := make([]LogMessage, 0, maxBatch)
 
@@ -89,14 +89,9 @@ func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage
 			buf = append(buf, m)
 			if len(buf) >= maxBatch {
 				flush()
-				if !t.Stop() {
-					<-t.C
-				}
-				t.Reset(flushInterval)
 			}
-		case <-t.C:
+		case <-ticker.C:
 			flush()
-			t.Reset(flushInterval)
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/ofkm/arcane-backend/internal/config"
 	"github.com/ofkm/arcane-backend/internal/dto"
@@ -29,6 +30,7 @@ type OidcService struct {
 	providerCache *oidc.Provider
 	providerMutex sync.RWMutex
 	cachedIssuer  string
+	sfGroup       singleflight.Group
 }
 
 type OidcState struct {
@@ -43,10 +45,16 @@ func NewOidcService(authService *AuthService, cfg *config.Config, httpClient *ht
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+
+	// Create a copy of the client to avoid modifying the shared one
+	// and remove the timeout so we can control it via context
+	oidcClient := *httpClient
+	oidcClient.Timeout = 0
+
 	return &OidcService{
 		authService: authService,
 		config:      cfg,
-		httpClient:  httpClient,
+		httpClient:  &oidcClient,
 	}
 }
 
@@ -75,6 +83,22 @@ func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
 	return scopes
 }
 
+func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider) oauth2.Config {
+	scopes := strings.Fields(cfg.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{"email", "profile"}
+	}
+	scopes = s.ensureOpenIDScope(scopes)
+
+	return oauth2.Config{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		Endpoint:     provider.Endpoint(),
+		RedirectURL:  s.GetOidcRedirectURL(),
+		Scopes:       scopes,
+	}
+}
+
 func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (string, string, error) {
 	config, err := s.getEffectiveConfig(ctx)
 	if err != nil {
@@ -92,19 +116,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (s
 	nonce := utils.GenerateRandomString(32)
 	codeVerifier := utils.GenerateRandomString(128)
 
-	scopes := strings.Fields(config.Scopes)
-	if len(scopes) == 0 {
-		scopes = []string{"email", "profile"}
-	}
-	scopes = s.ensureOpenIDScope(scopes)
-
-	oauth2Config := oauth2.Config{
-		ClientID:     config.ClientID,
-		ClientSecret: config.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  s.GetOidcRedirectURL(),
-		Scopes:       scopes,
-	}
+	oauth2Config := s.getOauth2Config(config, provider)
 
 	authURL := oauth2Config.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
@@ -126,7 +138,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (s
 	}
 	encodedState := base64.URLEncoding.EncodeToString(stateJSON)
 
-	slog.Debug("GenerateAuthURL: generated authorization URL", "issuer", config.IssuerURL, "scopes", scopes)
+	slog.Debug("GenerateAuthURL: generated authorization URL", "issuer", config.IssuerURL, "scopes", oauth2Config.Scopes)
 	return authURL, encodedState, nil
 }
 
@@ -144,41 +156,50 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, issuer string) 
 	}
 	s.providerMutex.RUnlock()
 
-	s.providerMutex.Lock()
-	defer s.providerMutex.Unlock()
+	// Use singleflight to prevent thundering herd
+	v, err, _ := s.sfGroup.Do(issuer, func() (interface{}, error) {
+		// Double check inside the lock/singleflight
+		s.providerMutex.RLock()
+		if s.providerCache != nil && s.cachedIssuer == issuer {
+			provider := s.providerCache
+			s.providerMutex.RUnlock()
+			return provider, nil
+		}
+		s.providerMutex.RUnlock()
 
-	if s.providerCache != nil && s.cachedIssuer == issuer {
-		return s.providerCache, nil
-	}
+		// Create a context with a longer timeout for discovery
+		// We use context.WithoutCancel(ctx) as the parent because we don't want the discovery
+		// to be cancelled if the incoming request context is cancelled (e.g. client disconnect).
+		// This ensures the provider is cached for subsequent requests.
+		discoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 
-	providerCtx := oidc.ClientContext(ctx, s.httpClient)
-	provider, err := oidc.NewProvider(providerCtx, issuer)
+		// Use the custom HTTP client with the new context
+		providerCtx := oidc.ClientContext(discoveryCtx, s.httpClient)
+		provider, err := oidc.NewProvider(providerCtx, issuer)
+		if err != nil {
+			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "error", err)
+			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
+		}
+
+		s.providerMutex.Lock()
+		s.providerCache = provider
+		s.cachedIssuer = issuer
+		s.providerMutex.Unlock()
+
+		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer)
+		return provider, nil
+	})
+
 	if err != nil {
-		slog.Error("getOrDiscoverProvider: discovery failed", "issuer", issuer, "error", err)
-		return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
+		return nil, err
 	}
 
-	s.providerCache = provider
-	s.cachedIssuer = issuer
-	slog.Debug("getOrDiscoverProvider: provider cached", "issuer", issuer)
-
-	return provider, nil
+	return v.(*oidc.Provider), nil
 }
 
 func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string) (*oauth2.Token, error) {
-	scopes := strings.Fields(cfg.Scopes)
-	if len(scopes) == 0 {
-		scopes = []string{"email", "profile"}
-	}
-	scopes = s.ensureOpenIDScope(scopes)
-
-	oauth2Config := oauth2.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  s.GetOidcRedirectURL(),
-		Scopes:       scopes,
-	}
+	oauth2Config := s.getOauth2Config(cfg, provider)
 
 	providerCtx := oidc.ClientContext(ctx, s.httpClient)
 	token, err := oauth2Config.Exchange(providerCtx, code, oauth2.VerifierOption(verifier))
@@ -238,20 +259,9 @@ func (s *OidcService) fetchClaims(ctx context.Context, provider *oidc.Provider, 
 func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState string) (*dto.OidcUserInfo, *dto.OidcTokenResponse, error) {
 	slog.Debug("HandleCallback: processing callback", "code_present", code != "", "state_present", state != "")
 
-	stateData, err := s.decodeState(storedState)
+	stateData, err := s.validateState(state, storedState)
 	if err != nil {
-		slog.Error("HandleCallback: failed to decode stored state", "error", err)
-		return nil, nil, fmt.Errorf("invalid state parameter: %w", err)
-	}
-
-	if state != stateData.State {
-		slog.Error("HandleCallback: state mismatch", "received_len", len(state), "expected_len", len(stateData.State))
-		return nil, nil, errors.New("state parameter mismatch")
-	}
-
-	if time.Since(stateData.CreatedAt) > 10*time.Minute {
-		slog.Error("HandleCallback: state expired", "age", time.Since(stateData.CreatedAt))
-		return nil, nil, errors.New("authentication state has expired")
+		return nil, nil, err
 	}
 
 	cfg, err := s.getEffectiveConfig(ctx)
@@ -270,6 +280,34 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
+	idToken, rawIDToken, err := s.verifyIDToken(ctx, provider, cfg, token, stateData.Nonce)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return s.buildUserInfo(ctx, provider, token, idToken, rawIDToken)
+}
+
+func (s *OidcService) validateState(state, storedState string) (*OidcState, error) {
+	stateData, err := s.decodeState(storedState)
+	if err != nil {
+		slog.Error("HandleCallback: failed to decode stored state", "error", err)
+		return nil, fmt.Errorf("invalid state parameter: %w", err)
+	}
+
+	if state != stateData.State {
+		slog.Error("HandleCallback: state mismatch", "received_len", len(state), "expected_len", len(stateData.State))
+		return nil, errors.New("state parameter mismatch")
+	}
+
+	if time.Since(stateData.CreatedAt) > 10*time.Minute {
+		slog.Error("HandleCallback: state expired", "age", time.Since(stateData.CreatedAt))
+		return nil, errors.New("authentication state has expired")
+	}
+	return stateData, nil
+}
+
+func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider, cfg *models.OidcConfig, token *oauth2.Token, nonce string) (*oidc.IDToken, string, error) {
 	var rawIDToken string
 	if idTokenValue := token.Extra("id_token"); idTokenValue != nil {
 		if idTokenStr, ok := idTokenValue.(string); ok {
@@ -277,44 +315,47 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		}
 	}
 
-	var idToken *oidc.IDToken
 	if rawIDToken == "" {
 		slog.Warn("HandleCallback: no ID token in response (non-compliant OIDC response)")
-	} else {
-		verifierConfig := &oidc.Config{
-			ClientID: cfg.ClientID,
-		}
-
-		if stateData.Nonce != "" {
-			verifierConfig.Now = time.Now
-		}
-
-		verifier := provider.Verifier(verifierConfig)
-		providerCtx := oidc.ClientContext(ctx, s.httpClient)
-
-		idToken, err = verifier.Verify(providerCtx, rawIDToken)
-		if err != nil {
-			slog.Error("HandleCallback: ID token verification failed", "error", err)
-			return nil, nil, fmt.Errorf("failed to verify ID token: %w", err)
-		}
-
-		if stateData.Nonce != "" {
-			var claims struct {
-				Nonce string `json:"nonce"`
-			}
-			if err := idToken.Claims(&claims); err != nil {
-				slog.Error("HandleCallback: failed to extract nonce from ID token", "error", err)
-				return nil, nil, fmt.Errorf("failed to verify nonce: %w", err)
-			}
-			if claims.Nonce != stateData.Nonce {
-				slog.Error("HandleCallback: nonce mismatch", "expected", stateData.Nonce, "got", claims.Nonce)
-				return nil, nil, errors.New("nonce verification failed")
-			}
-		}
-
-		slog.Debug("HandleCallback: ID token verified successfully", "subject", idToken.Subject, "issuer", idToken.Issuer)
+		return nil, "", nil
 	}
 
+	verifierConfig := &oidc.Config{
+		ClientID: cfg.ClientID,
+	}
+
+	if nonce != "" {
+		verifierConfig.Now = time.Now
+	}
+
+	verifier := provider.Verifier(verifierConfig)
+	providerCtx := oidc.ClientContext(ctx, s.httpClient)
+
+	idToken, err := verifier.Verify(providerCtx, rawIDToken)
+	if err != nil {
+		slog.Error("HandleCallback: ID token verification failed", "error", err)
+		return nil, "", fmt.Errorf("failed to verify ID token: %w", err)
+	}
+
+	if nonce != "" {
+		var claims struct {
+			Nonce string `json:"nonce"`
+		}
+		if err := idToken.Claims(&claims); err != nil {
+			slog.Error("HandleCallback: failed to extract nonce from ID token", "error", err)
+			return nil, "", fmt.Errorf("failed to verify nonce: %w", err)
+		}
+		if claims.Nonce != nonce {
+			slog.Error("HandleCallback: nonce mismatch", "expected", nonce, "got", claims.Nonce)
+			return nil, "", errors.New("nonce verification failed")
+		}
+	}
+
+	slog.Debug("HandleCallback: ID token verified successfully", "subject", idToken.Subject, "issuer", idToken.Issuer)
+	return idToken, rawIDToken, nil
+}
+
+func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*dto.OidcUserInfo, *dto.OidcTokenResponse, error) {
 	claims, err := s.fetchClaims(ctx, provider, token, idToken)
 	if err != nil {
 		slog.Error("HandleCallback: failed to fetch claims", "error", err)
@@ -362,85 +403,6 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 
 	slog.Info("HandleCallback: authentication successful", "subject", userInfoDto.Subject, "email", userInfoDto.Email)
 	return &userInfoDto, tokenResp, nil
-}
-
-func (s *OidcService) RefreshToken(ctx context.Context, refreshToken string) (*dto.OidcTokenResponse, error) {
-	if refreshToken == "" {
-		return nil, errors.New("refresh token is required")
-	}
-
-	cfg, err := s.getEffectiveConfig(ctx)
-	if err != nil {
-		slog.Error("RefreshToken: failed to get OIDC config", "error", err)
-		return nil, err
-	}
-
-	provider, err := s.getOrDiscoverProvider(ctx, cfg.IssuerURL)
-	if err != nil {
-		return nil, err
-	}
-
-	scopes := strings.Fields(cfg.Scopes)
-	if len(scopes) == 0 {
-		scopes = []string{"email", "profile"}
-	}
-	scopes = s.ensureOpenIDScope(scopes)
-
-	oauth2Config := oauth2.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  s.GetOidcRedirectURL(),
-		Scopes:       scopes,
-	}
-
-	oldToken := &oauth2.Token{
-		RefreshToken: refreshToken,
-	}
-
-	providerCtx := oidc.ClientContext(ctx, s.httpClient)
-	tokenSource := oauth2Config.TokenSource(providerCtx, oldToken)
-
-	newToken, err := tokenSource.Token()
-	if err != nil {
-		slog.Error("RefreshToken: token refresh failed", "error", err)
-		return nil, fmt.Errorf("failed to refresh access token: %w", err)
-	}
-
-	tokenType := newToken.TokenType
-	if tokenType == "" {
-		tokenType = "Bearer"
-	}
-
-	var rawIDToken string
-	if idTokenValue := newToken.Extra("id_token"); idTokenValue != nil {
-		if idTokenStr, ok := idTokenValue.(string); ok {
-			rawIDToken = idTokenStr
-		}
-	}
-
-	tokenResp := &dto.OidcTokenResponse{
-		AccessToken:  newToken.AccessToken,
-		TokenType:    tokenType,
-		RefreshToken: newToken.RefreshToken,
-		IDToken:      rawIDToken,
-	}
-
-	if !newToken.Expiry.IsZero() {
-		expiresIn := int(time.Until(newToken.Expiry).Seconds())
-		if expiresIn < 0 {
-			expiresIn = 0
-		}
-		tokenResp.ExpiresIn = expiresIn
-	}
-
-	if tokenResp.RefreshToken == "" {
-		tokenResp.RefreshToken = refreshToken
-		slog.Debug("RefreshToken: no new refresh token issued, reusing existing")
-	}
-
-	slog.Info("RefreshToken: token refresh successful", "has_new_refresh_token", newToken.RefreshToken != "")
-	return tokenResp, nil
 }
 
 func (s *OidcService) decodeState(encodedState string) (*OidcState, error) {

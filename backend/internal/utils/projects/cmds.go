@@ -6,6 +6,8 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 )
 
 func ComposeRestart(ctx context.Context, proj *types.Project, services []string) error {
@@ -64,4 +66,21 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 	defer c.Close()
 
 	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail})
+}
+
+func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, error) {
+	c, err := NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+
+	cli := c.dockerCli.Client()
+	filter := filters.NewArgs()
+	filter.Add("label", "com.docker.compose.project")
+
+	return cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filter,
+	})
 }

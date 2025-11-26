@@ -1,0 +1,20 @@
+name: SonarQube
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build:
+        name: Codegate analyze
+        runs-on: depot-ubuntu-24.04-8
+
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+            - uses: SonarSource/sonarqube-scan-action@v6
+              env:
+                  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+                  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
