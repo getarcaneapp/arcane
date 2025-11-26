@@ -34,6 +34,7 @@ jobs:
                   CGO_ENABLED: "1"
               run: |
                   go test -tags=exclude_frontend ./... -race -coverprofile=coverage.out -covermode=atomic -json > test-report.out
+                  sed -i 's|github.com/ofkm/arcane-backend|backend|g' coverage.out
                   mv coverage.out ../coverage.out
                   mv test-report.out ../test-report.out
             - uses: SonarSource/sonarqube-scan-action@v6
