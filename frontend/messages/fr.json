@@ -1529,5 +1529,6 @@
 	"upgrade_status_complete": "Mise à jour terminée !",
 	"upgrade_status_checking": "Vérification de la nouvelle version...",
 	"upgrade_status_detected": "Nouvelle version détectée !",
-	"upgrade_wait_info": "Cela peut prendre 30 à 60 secondes. La page se rechargera automatiquement quand elle sera prête."
+	"upgrade_wait_info": "Cela peut prendre 30 à 60 secondes. La page se rechargera automatiquement quand elle sera prête.",
+	"auto_start": "Démarrage automatique"
 }
