@@ -1529,5 +1529,6 @@
 	"upgrade_status_complete": "Upgrade abgeschlossen!",
 	"upgrade_status_checking": "Suche nach neuer Version...",
 	"upgrade_status_detected": "Neue Version erkannt!",
-	"upgrade_wait_info": "Dies kann 30-60 Sekunden dauern. Die Seite wird automatisch neu geladen, wenn sie bereit ist."
+	"upgrade_wait_info": "Dies kann 30-60 Sekunden dauern. Die Seite wird automatisch neu geladen, wenn sie bereit ist.",
+	"auto_start": "Auto-start"
 }
