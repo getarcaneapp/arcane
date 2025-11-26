@@ -1570,5 +1570,6 @@
 	"upgrade_status_complete": "Upgrade complete!",
 	"upgrade_status_checking": "Checking for new version...",
 	"upgrade_status_detected": "New version detected!",
-	"upgrade_wait_info": "This may take 30-60 seconds. The page will reload automatically when ready."
+	"upgrade_wait_info": "This may take 30-60 seconds. The page will reload automatically when ready.",
+    "auto_start": "Auto-start"
 }
