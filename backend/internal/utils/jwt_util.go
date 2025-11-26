@@ -161,13 +161,3 @@ func EvalMatch(v any, want []string) bool {
 		return false
 	}
 }
-
-func SliceContainsFold(ss []string, want string) bool {
-	want = strings.ToLower(want)
-	for _, s := range ss {
-		if strings.ToLower(s) == want {
-			return true
-		}
-	}
-	return false
-}

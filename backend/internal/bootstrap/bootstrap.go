@@ -59,12 +59,12 @@ func Bootstrap(ctx context.Context) error {
 	}
 
 	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
-		dockerClient, err := dockerClientService.CreateConnection(ctx)
+		dockerClient, err := dockerClientService.GetClient()
 		if err != nil {
 			return err
 		}
-		dockerClient.Close()
-		return nil
+		_, err = dockerClient.Ping(ctx)
+		return err
 	})
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,

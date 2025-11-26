@@ -2,7 +2,6 @@ package utils
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"regexp"
 	"strings"
@@ -42,9 +41,4 @@ func GenerateRandomString(length int) string {
 		panic(err)
 	}
 	return base64.URLEncoding.EncodeToString(bytes)[:length]
-}
-
-func GenerateCodeChallenge(verifier string) string {
-	hash := sha256.Sum256([]byte(verifier))
-	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(hash[:])
 }

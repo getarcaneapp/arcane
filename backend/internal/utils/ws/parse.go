@@ -14,36 +14,51 @@ var (
 // NormalizeContainerLine parses a raw container log line into level + cleaned message.
 // It extracts Docker's timestamp if present (when timestamps=true in Docker API).
 func NormalizeContainerLine(raw string) (level string, msg string, timestamp string) {
-	line := strings.TrimRight(raw, "\r\n")
+	// Fast trim right for common cases to avoid scanning the whole string
+	end := len(raw)
+	for end > 0 {
+		c := raw[end-1]
+		if c != '\n' && c != '\r' {
+			break
+		}
+		end--
+	}
+	line := raw[:end]
 
 	level = "stdout"
+	// Check prefixes using slicing for performance
 	switch {
 	case strings.HasPrefix(line, "[STDERR] "):
 		level = "stderr"
-		line = strings.TrimPrefix(line, "[STDERR] ")
+		line = line[9:]
 	case strings.HasPrefix(line, "stderr:"):
 		level = "stderr"
-		line = strings.TrimPrefix(line, "stderr:")
+		line = line[7:]
 	case strings.HasPrefix(line, "stdout:"):
 		level = "stdout"
-		line = strings.TrimPrefix(line, "stdout:")
+		line = line[7:]
 	}
 
 	// Extract and strip Docker's RFC3339 timestamp (when timestamps=true)
-	timestamp = ""
-	if match := dockerTimestamp.FindString(line); match != "" {
-		trimmed := strings.TrimSpace(match)
-		if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
-			timestamp = parsed.UTC().Format(time.RFC3339Nano)
-		} else if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
-			timestamp = parsed.UTC().Format(time.RFC3339Nano)
+	// Optimization: Check if it looks like a timestamp before running regex
+	if len(line) > 20 && line[0] >= '0' && line[0] <= '9' {
+		if loc := dockerTimestamp.FindStringIndex(line); loc != nil {
+			// loc[0] is start, loc[1] is end
+			matchStr := line[loc[0]:loc[1]]
+			trimmed := strings.TrimSpace(matchStr)
+
+			if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+				timestamp = parsed.UTC().Format(time.RFC3339Nano)
+			} else if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+				timestamp = parsed.UTC().Format(time.RFC3339Nano)
+			}
+
+			// Strip the timestamp from the line
+			line = line[loc[1]:]
 		}
-		line = strings.TrimPrefix(line, match)
 	}
 
 	// Return the message as-is (including any application-level timestamps)
-	// The frontend will display Docker's timestamp, and applications can
-	// include their own timestamps in the message if they want
 	return level, strings.TrimSpace(line), timestamp
 }
 

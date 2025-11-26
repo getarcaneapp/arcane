@@ -8,8 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"path"
 	"strings"
 	"time"
 
@@ -205,12 +203,11 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	dockerClient, err := s.dockerService.CreateConnection(reqCtx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		return "offline", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
 
 	_, err = dockerClient.Ping(reqCtx)
 	if err != nil {
@@ -296,111 +293,6 @@ func (s *EnvironmentService) PairAndPersistAgentToken(ctx context.Context, envir
 		return "", fmt.Errorf("failed to persist agent token: %w", err)
 	}
 	return token, nil
-}
-
-func (s *EnvironmentService) BuildWSAuthHeadersFromRequest(req *http.Request, agentToken string) http.Header {
-	h := http.Header{}
-	if auth := req.Header.Get("Authorization"); auth != "" {
-		h.Set("Authorization", auth)
-	} else if c, err := req.Cookie("token"); err == nil && c != nil && c.Value != "" {
-		h.Set("Authorization", "Bearer "+c.Value)
-	}
-
-	// If no Authorization header was set, forward original cookies (needed for external SSO like Authelia).
-	if h.Get("Authorization") == "" {
-		if cookieHeader := req.Header.Get("Cookie"); cookieHeader != "" {
-			// Pass through all cookies so upstream auth (Authelia) still sees its session.
-			h.Set("Cookie", cookieHeader)
-		}
-	}
-
-	if agentToken != "" {
-		h.Set("X-Arcane-Agent-Token", agentToken)
-	}
-	return h
-}
-
-func wsScheme(req *http.Request) string {
-	// Prefer explicit headers set by reverse proxies.
-	check := func(v string) string {
-		v = strings.TrimSpace(strings.ToLower(v))
-		if v == "" {
-			return ""
-		}
-		if strings.HasPrefix(v, "https") {
-			return "wss"
-		}
-		if strings.HasPrefix(v, "http") {
-			return "ws"
-		}
-		return ""
-	}
-
-	if s := check(req.Header.Get("X-Forwarded-Proto")); s != "" {
-		return s
-	}
-	if s := check(req.Header.Get("X-Forwarded-Scheme")); s != "" {
-		return s
-	}
-
-	// Parse standardized Forwarded header: Forwarded: proto=https; host=...
-	if fwd := req.Header.Get("Forwarded"); fwd != "" {
-		// naive parse: split by ; and ,
-		parts := strings.Split(fwd, ";")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if strings.HasPrefix(strings.ToLower(p), "proto=") {
-				if s := check(strings.TrimPrefix(p, "proto=")); s != "" {
-					return s
-				}
-			}
-		}
-	}
-
-	// Fallback: infer from Origin
-	if origin := req.Header.Get("Origin"); strings.HasPrefix(strings.ToLower(origin), "https://") {
-		return "wss"
-	}
-
-	// Direct TLS?
-	if req.TLS != nil {
-		return "wss"
-	}
-	return "ws"
-}
-
-func (s *EnvironmentService) BuildLocalWSTarget(req *http.Request, absolutePath string, agentToken string) (string, http.Header) {
-	u := &url.URL{
-		Scheme:   wsScheme(req),
-		Host:     req.Host,
-		Path:     absolutePath,
-		RawQuery: req.URL.RawQuery,
-	}
-	h := s.BuildWSAuthHeadersFromRequest(req, agentToken)
-	return u.String(), h
-}
-
-// BuildRemoteWSTarget returns ws URL and headers for a remote environment.
-// absolutePath should be the full API path (e.g. "/api/environments/0/stats/ws").
-func (s *EnvironmentService) BuildRemoteWSTarget(environment *models.Environment, absolutePath string, req *http.Request) (string, http.Header, error) {
-	base, err := url.Parse(strings.TrimRight(environment.ApiUrl, "/"))
-	if err != nil {
-		return "", nil, fmt.Errorf("invalid environment url: %w", err)
-	}
-	if base.Scheme == "https" {
-		base.Scheme = "wss"
-	} else {
-		base.Scheme = "ws"
-	}
-	base.Path = path.Join(base.Path, absolutePath)
-	base.RawQuery = req.URL.RawQuery
-
-	agentToken := ""
-	if environment.AccessToken != nil {
-		agentToken = *environment.AccessToken
-	}
-	h := s.BuildWSAuthHeadersFromRequest(req, agentToken)
-	return base.String(), h, nil
 }
 
 func (s *EnvironmentService) GetDB() *database.DB {

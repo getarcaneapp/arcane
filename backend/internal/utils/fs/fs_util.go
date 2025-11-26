@@ -11,21 +11,6 @@ import (
 	"github.com/ofkm/arcane-backend/internal/utils/projects"
 )
 
-func CountSubdirectories(path string) (int, error) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	count := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			count++
-		}
-	}
-	return count, nil
-}
-
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := projectsDir
 	if projectsDirectory == "" {

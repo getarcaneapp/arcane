@@ -88,7 +88,8 @@ type Settings struct {
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
-	InstanceID SettingVariable `key:"instanceId,internal" meta:"label=Instance ID;type=text;keywords=instance,id,uuid,identifier;category=internal;description=Unique instance identifier"`
+	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
+	InstanceID SettingVariable `key:"instanceId,internal"`
 }
 
 func (SettingVariable) TableName() string {
