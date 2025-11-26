@@ -1530,5 +1530,5 @@
 	"upgrade_status_checking": "Buscando nueva versión...",
 	"upgrade_status_detected": "¡Nueva versión detectada!",
 	"upgrade_wait_info": "Esto puede tardar entre 30 y 60 segundos. La página se recargará automáticamente cuando esté lista.",
-	"auto_start": "Auto-start"
+	"auto_start": "Autoiniciar"
 }
