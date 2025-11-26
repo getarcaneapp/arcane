@@ -69,7 +69,7 @@
 
 	<label class="flex items-center gap-2">
 		<input type="checkbox" bind:checked={autoStartLogs} class="size-4" />
-		<span class="text-sm font-medium">Auto-start</span>
+		<span class="text-sm font-medium">{m.auto_start()}</span>
 	</label>
 
 	<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>
