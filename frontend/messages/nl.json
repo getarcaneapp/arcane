@@ -1529,5 +1529,6 @@
 	"upgrade_status_complete": "Upgrade voltooid!",
 	"upgrade_status_checking": "Controleren op nieuwe versie...",
 	"upgrade_status_detected": "Nieuwe versie gedetecteerd!",
-	"upgrade_wait_info": "Dit kan 30-60 seconden duren. De pagina wordt automatisch herladen als u klaar bent."
+	"upgrade_wait_info": "Dit kan 30-60 seconden duren. De pagina wordt automatisch herladen als u klaar bent.",
+	"auto_start": "Auto-start"
 }

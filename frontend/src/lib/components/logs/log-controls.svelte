@@ -8,6 +8,7 @@
 	let {
 		autoScroll = $bindable(),
 		tailLines = $bindable(100),
+		autoStartLogs = $bindable(false),
 		isStreaming = false,
 		disabled = false,
 		onStart,
@@ -17,6 +18,7 @@
 	}: {
 		autoScroll: boolean;
 		tailLines?: number;
+		autoStartLogs?: boolean;
 		isStreaming?: boolean;
 		disabled?: boolean;
 		onStart?: () => void;
@@ -35,6 +37,7 @@
 	];
 
 	const persistedTailLines = new PersistedState('arcane_log_tail_lines', '100');
+	const persistedAutoStart = new PersistedState('arcane_log_auto_start', 'false');
 
 	let selectedTail = $state<string>(persistedTailLines.current);
 
@@ -47,6 +50,14 @@
 		}
 	});
 
+	$effect(() => {
+		autoStartLogs = persistedAutoStart.current === 'true';
+	});
+
+	$effect(() => {
+		persistedAutoStart.current = autoStartLogs ? 'true' : 'false';
+	});
+
 	const selectedLabel = $derived(tailOptions.find((o) => o.value === selectedTail)?.label ?? m.log_tail_100_lines());
 </script>
 
@@ -54,6 +65,11 @@
 	<label class="flex items-center gap-2">
 		<input type="checkbox" bind:checked={autoScroll} class="size-4" />
 		<span class="text-sm font-medium">{m.common_autoscroll()}</span>
+	</label>
+
+	<label class="flex items-center gap-2">
+		<input type="checkbox" bind:checked={autoStartLogs} class="size-4" />
+		<span class="text-sm font-medium">{m.auto_start()}</span>
 	</label>
 
 	<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>

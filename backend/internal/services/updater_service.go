@@ -393,6 +393,15 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// recreate with new image ref
 	cfg := inspect.Config
 	cfg.Image = newRef
+
+	// Fix for "conflicting options: hostname and the network mode"
+	// When network mode is "host" or "container:...", Hostname must be empty
+	nm := string(inspect.HostConfig.NetworkMode)
+	if nm == "host" || strings.HasPrefix(nm, "container:") {
+		cfg.Hostname = ""
+		cfg.Domainname = ""
+	}
+
 	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}, nil, inspect.Name)
 	if err != nil {
 		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", inspect.Name, "err", err)

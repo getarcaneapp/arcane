@@ -5,10 +5,7 @@ cd backend
 mkdir -p .bin
 
 HOST_OS="$(go env GOHOSTOS)"
-
-# Read version from repo root .version (trim whitespace), fallback to "dev"
-
-VERSION=${VERSION:-$(cat ../.version | sed 's/^\s*\|\s*$//g')}
+VERSION=${VERSION:-$(sed 's/^\s*\|\s*$//g' ../.version)}
 REVISION=${REVISION:-$(cat ../.revision 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
 
 LDFLAGS="-w -s -buildid=${VERSION} \

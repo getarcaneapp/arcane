@@ -1529,5 +1529,6 @@
 	"upgrade_status_complete": "升级完成！",
 	"upgrade_status_checking": "正在检查新版本...",
 	"upgrade_status_detected": "检测到新版本！",
-	"upgrade_wait_info": "这可能需要30-60秒。准备好后将自动重新加载页面。"
+	"upgrade_wait_info": "这可能需要30-60秒。准备好后将自动重新加载页面。",
+	"auto_start": "自动启动"
 }

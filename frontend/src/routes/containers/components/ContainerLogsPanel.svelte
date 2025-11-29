@@ -23,6 +23,8 @@
 
 	let isStreaming = $state(false);
 	let viewer = $state<LogViewer>();
+	let autoStartLogs = $state(false);
+	let hasAutoStarted = $state(false);
 
 	function handleStart() {
 		viewer?.startLogStream();
@@ -54,6 +56,19 @@
 		isStreaming = false;
 		onStop();
 	}
+
+	$effect(() => {
+		if (containerId) {
+			hasAutoStarted = false;
+		}
+	});
+
+	$effect(() => {
+		if (autoStartLogs && !hasAutoStarted && !isStreaming && containerId) {
+			hasAutoStarted = true;
+			handleStart();
+		}
+	});
 </script>
 
 <Card.Root>
@@ -75,15 +90,16 @@
 				</div>
 				<Card.Description>{m.containers_logs_description()}</Card.Description>
 			</div>
-			<LogControls
-				bind:autoScroll
-				{isStreaming}
-				disabled={!containerId}
-				onStart={handleStart}
-				onStop={handleStop}
-				onClear={handleClear}
-				onRefresh={handleRefresh}
-			/>
+		<LogControls
+			bind:autoScroll
+			bind:autoStartLogs
+			{isStreaming}
+			disabled={!containerId}
+			onStart={handleStart}
+			onStop={handleStop}
+			onClear={handleClear}
+			onRefresh={handleRefresh}
+		/>
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">

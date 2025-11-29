@@ -1571,9 +1571,8 @@
 	"upgrade_status_checking": "Checking for new version...",
 	"upgrade_status_detected": "New version detected!",
 	"upgrade_wait_info": "This may take 30-60 seconds. The page will reload automatically when ready.",
+  "auto_start": "Auto-start",
 	"git_repos_title": "Git Repositories",
-
-	"_comment_gitops": "=== GITOPS ===",
 	"gitops_repositories_title": "GitOps Repositories",
 	"gitops_repositories_subtitle": "Manage Git repositories for Docker Compose projects",
 	"gitops_add_repository": "Add GitOps Repository",

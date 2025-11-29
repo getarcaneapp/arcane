@@ -582,7 +582,7 @@
 	"volume_name_required": "Volume name is required",
 	"volume_driver_required": "Driver is required",
 	"volumes_remove_confirm_message": "Sind Sie sicher, dass Sie Volume {name} entfernen möchten?",
-	"volumes_remove_failed": "Fehler beim Entfernen der Lautstärke {name}",
+	"volumes_remove_failed": "Fehler beim Entfernen der Laufwerke {name}",
 	"volumes_remove_success": "Datenträger {name} erfolgreich entfernt",
 	"_comment_networks": "=== NETWORKS ===",
 	"networks_title": "Networks",
@@ -1529,5 +1529,6 @@
 	"upgrade_status_complete": "Upgrade abgeschlossen!",
 	"upgrade_status_checking": "Suche nach neuer Version...",
 	"upgrade_status_detected": "Neue Version erkannt!",
-	"upgrade_wait_info": "Dies kann 30-60 Sekunden dauern. Die Seite wird automatisch neu geladen, wenn sie bereit ist."
+	"upgrade_wait_info": "Dies kann 30-60 Sekunden dauern. Die Seite wird automatisch neu geladen, wenn sie bereit ist.",
+	"auto_start": "Auto-Start"
 }

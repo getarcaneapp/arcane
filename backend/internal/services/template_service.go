@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -965,10 +964,6 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.Variabl
 		return nil, fmt.Errorf("error reading global variables file: %w", err)
 	}
 
-	sort.Slice(vars, func(i, j int) bool {
-		return vars[i].Key < vars[j].Key
-	})
-
 	return vars, nil
 }
 
@@ -988,13 +983,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []dto.
 	builder.WriteString("# These variables are available to all projects\n")
 	builder.WriteString("# Last updated: " + time.Now().Format(time.RFC3339) + "\n\n")
 
-	sortedVars := make([]dto.VariableDto, len(vars))
-	copy(sortedVars, vars)
-	sort.Slice(sortedVars, func(i, j int) bool {
-		return sortedVars[i].Key < sortedVars[j].Key
-	})
-
-	for _, v := range sortedVars {
+	for _, v := range vars {
 		if strings.TrimSpace(v.Key) == "" {
 			continue
 		}
@@ -1015,7 +1004,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []dto.
 
 	slog.InfoContext(ctx, "Updated global variables",
 		"path", envPath,
-		"count", len(sortedVars))
+		"count", len(vars))
 
 	return nil
 }
