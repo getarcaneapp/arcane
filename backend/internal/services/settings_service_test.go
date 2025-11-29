@@ -434,7 +434,7 @@ func TestSettingsService_MigrateOidcConfigToFields_EmptyConfig(t *testing.T) {
 	// Verify fields remain empty
 	var clientId models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
-	require.Equal(t, "", clientId.Value)
+	require.Empty(t, clientId.Value)
 }
 
 func TestSettingsService_MigrateOidcConfigToFields_InvalidJSON(t *testing.T) {
@@ -453,7 +453,7 @@ func TestSettingsService_MigrateOidcConfigToFields_InvalidJSON(t *testing.T) {
 	// Verify fields remain empty
 	var clientId models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
-	require.Equal(t, "", clientId.Value)
+	require.Empty(t, clientId.Value)
 }
 
 func TestSettingsService_MigrateOidcConfigToFields_DefaultScopes(t *testing.T) {
