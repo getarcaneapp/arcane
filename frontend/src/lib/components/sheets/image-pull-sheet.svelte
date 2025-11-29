@@ -2,13 +2,29 @@
 	import * as Sheet from '$lib/components/ui/sheet/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Progress } from '$lib/components/ui/progress/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import DownloadIcon from '@lucide/svelte/icons/download';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { toast } from 'svelte-sonner';
-	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { cn } from '$lib/utils.js';
+	import {
+		type LayerProgress,
+		type PullPhase,
+		calculateOverallProgress,
+		areAllLayersComplete,
+		updateLayerFromStreamData,
+		extractErrorMessage,
+		getLayerStats,
+		getPullPhase,
+		showImageLayersState,
+		isIndeterminatePhase
+	} from '$lib/utils/pull-progress';
 
 	type ImagePullFormProps = {
 		open: boolean;
@@ -33,7 +49,28 @@
 	let pullProgress = $state(0);
 	let pullStatusText = $state('');
 	let pullError = $state('');
-	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
+	let layerProgress = $state<Record<string, LayerProgress>>({});
+	let hasReachedComplete = $state(false);
+	let currentImageName = $state('');
+
+	const layerStats = $derived(getLayerStats(layerProgress, hasReachedComplete));
+	const showPullUI = $derived(isPulling || hasReachedComplete || !!pullError);
+	const isIndeterminate = $derived(isIndeterminatePhase(layerProgress, pullProgress));
+	let prevOpen = $state(false);
+
+	$effect(() => {
+		if (prevOpen && !open && !isPulling) {
+			// Sheet just closed, reset state and form
+			resetState();
+			$inputs.imageRef.value = '';
+			$inputs.tag.value = 'latest';
+		}
+		prevOpen = open;
+	});
+
+	function getLayerPhase(status: string): PullPhase {
+		return getPullPhase(status, false, false);
+	}
 
 	function resetState() {
 		isPulling = false;
@@ -41,32 +78,12 @@
 		pullStatusText = '';
 		pullError = '';
 		layerProgress = {};
+		hasReachedComplete = false;
+		currentImageName = '';
 	}
 
-	function calculateOverallProgress() {
-		let totalCurrentBytes = 0;
-		let totalExpectedBytes = 0;
-		let activeLayers = 0;
-
-		for (const id in layerProgress) {
-			const layer = layerProgress[id];
-			if (layer.total > 0) {
-				totalCurrentBytes += layer.current;
-				totalExpectedBytes += layer.total;
-				activeLayers++;
-			}
-		}
-
-		if (totalExpectedBytes > 0) {
-			pullProgress = (totalCurrentBytes / totalExpectedBytes) * 100;
-		} else if (activeLayers > 0 && totalCurrentBytes > 0) {
-			pullProgress = 5;
-		} else if (Object.keys(layerProgress).length > 0 && activeLayers === 0) {
-			const allDone = Object.values(layerProgress).every(
-				(l) => l.status && (l.status.toLowerCase().includes('pull complete') || l.status.toLowerCase().includes('already exists'))
-			);
-			if (allDone) pullProgress = 100;
-		}
+	function updateProgress() {
+		pullProgress = calculateOverallProgress(layerProgress);
 	}
 
 	async function handleSubmit() {
@@ -91,8 +108,9 @@
 		}
 
 		const fullImageName = `${imageName}:${imageTag}`;
+		currentImageName = fullImageName;
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		pullStatusText = `${m.common_action_pulling()} ${fullImageName}`;
+		pullStatusText = m.images_pull_initiating();
 
 		try {
 			const response = await fetch(`/api/environments/${envId}/images/pull`, {
@@ -137,57 +155,43 @@
 					try {
 						const data = JSON.parse(line);
 
-						if (data.error) {
-							console.error('Error in stream:', data.error);
-							pullError = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
+						const errorMsg = extractErrorMessage(data, m.images_pull_stream_error());
+						if (errorMsg) {
+							console.error('Error in stream:', errorMsg);
+							pullError = errorMsg;
 							pullStatusText = m.images_pull_failed_with_error({ error: pullError });
 							continue;
 						}
 
-						pullStatusText = data.status || pullStatusText;
-						if (data.id) {
-							const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
-							currentLayer.status = data.status || currentLayer.status;
-
-							if (data.progressDetail) {
-								currentLayer.current = data.progressDetail.current || currentLayer.current;
-								currentLayer.total = data.progressDetail.total || currentLayer.total;
-							}
-							layerProgress[data.id] = currentLayer;
-						}
-						calculateOverallProgress();
+						if (data.status) pullStatusText = data.status;
+						layerProgress = updateLayerFromStreamData(layerProgress, data);
+						updateProgress();
 					} catch (e: any) {
 						console.warn('Failed to parse stream line or process data:', line, e);
 					}
 				}
 			}
 
-			calculateOverallProgress();
-			if (!pullError && pullProgress < 100) {
-				const allLayersCompleteOrExisting = Object.values(layerProgress).every(
-					(l) =>
-						l.status &&
-						(l.status.toLowerCase().includes('complete') ||
-							l.status.toLowerCase().includes('already exists') ||
-							l.status.toLowerCase().includes('downloaded newer image'))
-				);
-				if (allLayersCompleteOrExisting && Object.keys(layerProgress).length > 0) {
-					pullProgress = 100;
-				}
+			updateProgress();
+			if (!pullError && pullProgress < 100 && areAllLayersComplete(layerProgress)) {
+				pullProgress = 100;
 			}
 
 			if (pullError) {
 				throw new Error(pullError);
 			}
 
+			hasReachedComplete = true;
+			pullProgress = 100;
 			pullStatusText = m.images_pull_success({ repoTag: fullImageName });
 			toast.success(m.images_pull_success({ repoTag: fullImageName }));
 			onPullFinished(true, fullImageName);
 
-			// Reset form and close sheet
-			$inputs.imageRef.value = '';
-			$inputs.tag.value = 'latest';
-			open = false;
+			// Close sheet after a brief delay to show success state
+			// State will be reset by handleOpenChange when sheet closes
+			setTimeout(() => {
+				open = false;
+			}, 1500);
 		} catch (error: any) {
 			console.error('Pull image error:', error);
 			const message = error.message || m.images_pull_unexpected_error();
@@ -208,16 +212,17 @@
 		}
 
 		open = newOpenState;
-		if (!newOpenState && !isPulling) {
+		if (!newOpenState) {
+			// Reset when closing (if we get here, isPulling is false)
+			resetState();
+			$inputs.imageRef.value = '';
+			$inputs.tag.value = 'latest';
+		} else {
+			// Also reset when opening to ensure clean state
 			resetState();
 			$inputs.imageRef.value = '';
 			$inputs.tag.value = 'latest';
 		}
-	}
-
-	function getCurrentEnvironmentId(): string {
-		const env = environmentStore.selected;
-		return env?.id || LOCAL_DOCKER_ENVIRONMENT_ID;
 	}
 </script>
 
@@ -225,76 +230,152 @@
 	<Sheet.Content class="p-6">
 		<Sheet.Header class="space-y-3 border-b pb-6">
 			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<DownloadIcon class="text-primary size-5" />
+				<div
+					class={cn(
+						'flex size-10 shrink-0 items-center justify-center rounded-lg',
+						pullError && 'bg-destructive/10 text-destructive',
+						hasReachedComplete && !pullError && 'bg-green-500/10 text-green-500',
+						!showPullUI && 'bg-primary/10 text-primary',
+						isPulling && !pullError && !hasReachedComplete && 'bg-primary/10 text-primary'
+					)}
+				>
+					{#if hasReachedComplete && !pullError}
+						<CheckCircleIcon class="size-5" />
+					{:else}
+						<DownloadIcon class={cn('size-5', isPulling && 'animate-pulse')} />
+					{/if}
 				</div>
-				<div>
+				<div class="min-w-0 flex-1">
 					<Sheet.Title class="text-xl font-semibold">{m.images_pull_image()}</Sheet.Title>
 					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{m.images_pull_description()}
-						{#if pullError}
-							<p class="text-destructive mt-2 text-sm">{pullError}</p>
+						{#if showPullUI && currentImageName}
+							<span class="block truncate" title={currentImageName}>{currentImageName}</span>
+						{:else}
+							{m.images_pull_description()}
 						{/if}
 					</Sheet.Description>
 				</div>
 			</div>
 		</Sheet.Header>
 
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<FormInput
-				label={m.images_image_name_label()}
-				type="text"
-				placeholder={m.images_image_name_placeholder()}
-				description={m.images_image_name_description()}
-				disabled={isPulling}
-				bind:input={$inputs.imageRef}
-			/>
-			<FormInput
-				label={m.images_tag()}
-				type="text"
-				placeholder={m.images_tag_latest()}
-				description={m.images_tag_description()}
-				disabled={isPulling}
-				bind:input={$inputs.tag}
-			/>
+		{#if showPullUI}
+			<!-- Pull progress UI -->
+			<div class="space-y-4 py-6">
+				{#if pullError}
+					<div class="bg-destructive/10 text-destructive rounded-lg p-4">
+						<p class="text-sm font-medium">{m.image_update_error_label()}</p>
+						<p class="mt-1 text-xs">{pullError}</p>
+					</div>
+				{:else}
+					<!-- Progress status -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<p class="text-sm font-medium">
+								{#if hasReachedComplete}
+									{m.progress_pull_completed()}
+								{:else if layerStats.total > 0}
+									{m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
+								{:else}
+									{pullStatusText || m.common_action_pulling()}
+								{/if}
+							</p>
+							{#if !isIndeterminate || hasReachedComplete}
+								<p class="text-muted-foreground text-sm">{Math.round(hasReachedComplete ? 100 : pullProgress)}%</p>
+							{/if}
+						</div>
+						<Progress
+							value={hasReachedComplete || isIndeterminate ? 100 : pullProgress}
+							max={100}
+							class="h-2 w-full"
+							indeterminate={isIndeterminate && !hasReachedComplete}
+						/>
+					</div>
 
-			{#if isPulling || pullStatusText}
-				<div class="mt-4">
-					{#if isPulling}
-						<div class="mb-1 flex justify-between text-xs">
-							<span>{pullStatusText || m.common_action_pulling()}</span>
-							<span>{Math.round(pullProgress)}%</span>
-						</div>
-						<div class="bg-secondary h-2 w-full overflow-hidden rounded-full">
-							<div class="bg-primary h-full transition-all duration-150 ease-linear" style="width: {pullProgress}%"></div>
-						</div>
-					{:else if pullStatusText && !pullError}
-						<p class="mt-1 text-xs text-green-600">{pullStatusText}</p>
+					{#if Object.keys(layerProgress).length > 0}
+						<Collapsible.Root bind:open={showImageLayersState.current}>
+							<Collapsible.Trigger
+								class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
+							>
+								{m.progress_show_layers()}
+								<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+							</Collapsible.Trigger>
+							<Collapsible.Content>
+								<div class="mt-2 space-y-1.5">
+									{#each Object.entries(layerProgress) as [id, layer] (id)}
+										{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layer.status)}
+										{@const layerPercent =
+											phase === 'complete' ? 100 : layer.total > 0 ? Math.round((layer.current / layer.total) * 100) : 0}
+										<div class="bg-muted/30 rounded-md px-2 py-1.5">
+											<div class="flex items-center justify-between gap-2">
+												<span class="text-muted-foreground truncate font-mono text-[10px]">{id.slice(0, 12)}</span>
+												<span
+													class={cn(
+														'shrink-0 text-[10px] font-medium',
+														phase === 'complete' && 'text-green-500',
+														phase === 'downloading' && 'text-blue-500',
+														phase === 'extracting' && 'text-amber-500'
+													)}
+												>
+													{#if phase === 'complete'}
+														✓
+													{:else if layer.total > 0}
+														{layerPercent}%
+													{:else}
+														{layer.status}
+													{/if}
+												</span>
+											</div>
+											<Progress value={layerPercent} max={100} class="mt-1 h-1" />
+										</div>
+									{/each}
+								</div>
+							</Collapsible.Content>
+						</Collapsible.Root>
 					{/if}
+
 					{#if isPulling}
-						<p class="text-muted-foreground mt-1 text-xs">{m.images_pull_wait_message()}</p>
+						<p class="text-muted-foreground text-xs">{m.images_pull_wait_message()}</p>
 					{/if}
-				</div>
+				{/if}
+			</div>
+
+			{#if pullError}
+				<Sheet.Footer class="flex flex-row gap-2">
+					<Button type="button" class="flex-1" variant="outline" onclick={() => resetState()}>
+						{m.common_retry()}
+					</Button>
+					<Button type="button" class="flex-1" onclick={() => (open = false)}>
+						{m.common_close()}
+					</Button>
+				</Sheet.Footer>
 			{/if}
+		{:else}
+			<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+				<FormInput
+					label={m.images_image_name_label()}
+					type="text"
+					placeholder={m.images_image_name_placeholder()}
+					description={m.images_image_name_description()}
+					bind:input={$inputs.imageRef}
+				/>
+				<FormInput
+					label={m.images_tag()}
+					type="text"
+					placeholder={m.images_tag_latest()}
+					description={m.images_tag_description()}
+					bind:input={$inputs.tag}
+				/>
 
-			<Sheet.Footer class="flex flex-row gap-2">
-				<Button
-					type="button"
-					class="arcane-button-cancel flex-1"
-					variant="outline"
-					onclick={() => (open = false)}
-					disabled={isPulling}>{m.common_cancel()}</Button
-				>
-				<Button type="submit" class="arcane-button-create flex-1" disabled={isPulling}>
-					{#if isPulling}
-						<Spinner class="mr-2 size-4" />
-						<span class="opacity-0">{m.images_pull_image()}</span>
-					{:else}
+				<Sheet.Footer class="flex flex-row gap-2">
+					<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)}>
+						{m.common_cancel()}
+					</Button>
+					<Button type="submit" class="arcane-button-create flex-1">
 						<DownloadIcon class="mr-2 size-4" />
 						{m.images_pull_image()}
-					{/if}
-				</Button>
-			</Sheet.Footer>
-		</form>
+					</Button>
+				</Sheet.Footer>
+			</form>
+		{/if}
 	</Sheet.Content>
 </Sheet.Root>
