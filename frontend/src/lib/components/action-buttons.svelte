@@ -12,6 +12,12 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
+	import {
+		type LayerProgress,
+		isDownloadingLine,
+		calculateOverallProgress,
+		areAllLayersComplete
+	} from '$lib/utils/pull-progress';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -108,30 +114,8 @@
 		layerProgress = {};
 	}
 
-	function calculateOverallProgress() {
-		let totalCurrentBytes = 0;
-		let totalExpectedBytes = 0;
-		let activeLayers = 0;
-
-		for (const id in layerProgress) {
-			const layer = layerProgress[id];
-			if (layer.total > 0) {
-				totalCurrentBytes += layer.current;
-				totalExpectedBytes += layer.total;
-				activeLayers++;
-			}
-		}
-
-		if (totalExpectedBytes > 0) {
-			pullProgress = (totalCurrentBytes / totalExpectedBytes) * 100;
-		} else if (activeLayers > 0 && totalCurrentBytes > 0) {
-			pullProgress = 5;
-		} else if (Object.keys(layerProgress).length > 0 && activeLayers === 0) {
-			const allDone = Object.values(layerProgress).every(
-				(l) => l.status && (l.status.toLowerCase().includes('pull complete') || l.status.toLowerCase().includes('already exists'))
-			);
-			if (allDone) pullProgress = 100;
-		}
+	function updatePullProgress() {
+		pullProgress = calculateOverallProgress(layerProgress);
 	}
 
 	async function handleRefresh() {
@@ -142,20 +126,6 @@
 		} finally {
 			setLoading('refresh', false);
 		}
-	}
-
-	function isDownloadingLine(data: any): boolean {
-		const status = String(data?.status ?? '').toLowerCase();
-		const pd = data?.progressDetail;
-		// Open if we see byte progress or any of the common pull statuses
-		if (pd && (typeof pd.total === 'number' || typeof pd.current === 'number')) return true;
-		return (
-			status.includes('downloading') ||
-			status.includes('extracting') ||
-			status.includes('pulling fs layer') ||
-			status.includes('download complete') ||
-			status.includes('pull complete')
-		);
 	}
 
 	function confirmAction(action: string) {
@@ -281,25 +251,16 @@
 					layerProgress[data.id] = currentLayer;
 				}
 
-				calculateOverallProgress();
+				updatePullProgress();
 			});
 
 			// If popover was shown, finish/close it nicely
 			if (openedPopover) {
-				calculateOverallProgress();
+				updatePullProgress();
 				if (hadError) throw new Error(pullError || m.images_pull_failed());
 
-				if (pullProgress < 100) {
-					const allDone = Object.values(layerProgress).every(
-						(l) =>
-							l.status &&
-							(l.status.toLowerCase().includes('complete') ||
-								l.status.toLowerCase().includes('already exists') ||
-								l.status.toLowerCase().includes('downloaded newer image'))
-					);
-					if (allDone && Object.keys(layerProgress).length > 0) {
-						pullProgress = 100;
-					}
+				if (pullProgress < 100 && areAllLayersComplete(layerProgress)) {
+					pullProgress = 100;
 				}
 				pullStatusText = m.images_pulled_success();
 				toast.success(m.images_pulled_success());
@@ -390,22 +351,13 @@
 					layerProgress[data.id] = currentLayer;
 				}
 
-				calculateOverallProgress();
+				updatePullProgress();
 			});
 
 			// Stream finished
-			calculateOverallProgress();
-			if (!pullError && pullProgress < 100) {
-				const allDone = Object.values(layerProgress).every(
-					(l) =>
-						l.status &&
-						(l.status.toLowerCase().includes('complete') ||
-							l.status.toLowerCase().includes('already exists') ||
-							l.status.toLowerCase().includes('downloaded newer image'))
-				);
-				if (allDone && Object.keys(layerProgress).length > 0) {
-					pullProgress = 100;
-				}
+			updatePullProgress();
+			if (!pullError && pullProgress < 100 && areAllLayersComplete(layerProgress)) {
+				pullProgress = 100;
 			}
 
 			if (pullError) throw new Error(pullError);
@@ -448,6 +400,7 @@
 					error={pullError}
 					loading={deployPulling}
 					icon={DownloadIcon}
+					layers={layerProgress}
 				>
 					<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
 				</ProgressPopover>
@@ -478,6 +431,7 @@
 					error={pullError}
 					loading={projectPulling}
 					icon={DownloadIcon}
+					layers={layerProgress}
 				>
 					<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
 				</ProgressPopover>
