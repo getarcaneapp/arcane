@@ -77,23 +77,30 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:          models.SettingVariable{Value: "data/projects"},
-		DiskUsagePath:              models.SettingVariable{Value: "data/projects"},
-		AutoUpdate:                 models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
-		PollingEnabled:             models.SettingVariable{Value: "true"},
-		PollingInterval:            models.SettingVariable{Value: "60"},
-		PruneMode:                  models.SettingVariable{Value: "dangling"},
-		BaseServerURL:              models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:             models.SettingVariable{Value: "true"},
-		DefaultShell:               models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:                 models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		AuthLocalEnabled:           models.SettingVariable{Value: "true"},
-		AuthOidcEnabled:            models.SettingVariable{Value: "false"},
-		AuthOidcMergeAccounts:      models.SettingVariable{Value: "false"},
-		AuthSessionTimeout:         models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:         models.SettingVariable{Value: "strong"},
+		ProjectsDirectory:  models.SettingVariable{Value: "data/projects"},
+		DiskUsagePath:      models.SettingVariable{Value: "data/projects"},
+		AutoUpdate:         models.SettingVariable{Value: "false"},
+		AutoUpdateInterval: models.SettingVariable{Value: "1440"},
+		PollingEnabled:     models.SettingVariable{Value: "true"},
+		PollingInterval:    models.SettingVariable{Value: "60"},
+		PruneMode:          models.SettingVariable{Value: "dangling"},
+		BaseServerURL:      models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:     models.SettingVariable{Value: "true"},
+		DefaultShell:       models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:         models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		AuthLocalEnabled:   models.SettingVariable{Value: "true"},
+		AuthSessionTimeout: models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy: models.SettingVariable{Value: "strong"},
+		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
+		OidcEnabled:                models.SettingVariable{Value: "false"},
+		OidcClientId:               models.SettingVariable{Value: ""},
+		OidcClientSecret:           models.SettingVariable{Value: ""},
+		OidcIssuerUrl:              models.SettingVariable{Value: ""},
+		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
+		OidcAdminClaim:             models.SettingVariable{Value: ""},
+		OidcAdminValue:             models.SettingVariable{Value: ""},
+		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
 		OnboardingCompleted:        models.SettingVariable{Value: "false"},
 		OnboardingSteps:            models.SettingVariable{Value: "[]"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
@@ -266,25 +273,127 @@ func (s *SettingsService) SyncOidcEnvToDatabase(ctx context.Context) ([]models.S
 		return nil, errors.New("missing OIDC_CLIENT_ID or OIDC_ISSUER_URL")
 	}
 
-	envOidc := models.OidcConfig{
-		ClientID:     cfg.OidcClientID,
-		ClientSecret: cfg.OidcClientSecret,
-		IssuerURL:    cfg.OidcIssuerURL,
-		Scopes:       cfg.OidcScopes,
-		AdminClaim:   cfg.OidcAdminClaim,
-		AdminValue:   cfg.OidcAdminValue,
-	}
-	b, err := json.Marshal(envOidc)
-	if err != nil {
-		return nil, fmt.Errorf("marshal oidc config: %w", err)
-	}
-
 	trueStr := "true"
-	cfgStr := string(b)
+	scopes := cfg.OidcScopes
+	if scopes == "" {
+		scopes = "openid email profile"
+	}
 
 	return s.UpdateSettings(ctx, dto.UpdateSettingsDto{
-		AuthOidcEnabled: &trueStr,
-		AuthOidcConfig:  &cfgStr,
+		OidcEnabled:      &trueStr,
+		OidcClientId:     &cfg.OidcClientID,
+		OidcClientSecret: &cfg.OidcClientSecret,
+		OidcIssuerUrl:    &cfg.OidcIssuerURL,
+		OidcScopes:       &scopes,
+		OidcAdminClaim:   &cfg.OidcAdminClaim,
+		OidcAdminValue:   &cfg.OidcAdminValue,
+	})
+}
+
+// MigrateOidcConfigToFields migrates the legacy JSON authOidcConfig to individual fields,
+// and renames legacy auth* keys to their new oidc* names.
+// This should be called during bootstrap to ensure existing configurations are preserved.
+func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get settings for OIDC migration: %w", err)
+	}
+
+	// Migrate legacy key names (authOidcEnabled -> oidcEnabled, authOidcMergeAccounts -> oidcMergeAccounts)
+	if err := s.migrateOidcKeyNames(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to migrate OIDC key names", "error", err)
+		// Continue with JSON migration even if key rename fails
+	}
+
+	// Check if migration is needed: if we have authOidcConfig but no oidcClientId
+	if settings.AuthOidcConfig.Value == "" || settings.AuthOidcConfig.Value == "{}" {
+		slog.DebugContext(ctx, "No OIDC config to migrate")
+		return nil
+	}
+
+	// If individual fields are already populated, skip migration
+	if settings.OidcClientId.Value != "" {
+		slog.DebugContext(ctx, "OIDC fields already populated, skipping migration")
+		return nil
+	}
+
+	var oidcConfig models.OidcConfig
+	if err := json.Unmarshal([]byte(settings.AuthOidcConfig.Value), &oidcConfig); err != nil {
+		slog.WarnContext(ctx, "Failed to parse legacy OIDC config for migration", "error", err)
+		return nil
+	}
+
+	// Only migrate if there's actual data
+	if oidcConfig.ClientID == "" && oidcConfig.IssuerURL == "" {
+		slog.DebugContext(ctx, "Legacy OIDC config is empty, skipping migration")
+		return nil
+	}
+
+	slog.InfoContext(ctx, "Migrating legacy OIDC config to individual fields")
+
+	scopes := oidcConfig.Scopes
+	if scopes == "" {
+		scopes = "openid email profile"
+	}
+
+	_, err = s.UpdateSettings(ctx, dto.UpdateSettingsDto{
+		OidcClientId:     &oidcConfig.ClientID,
+		OidcClientSecret: &oidcConfig.ClientSecret,
+		OidcIssuerUrl:    &oidcConfig.IssuerURL,
+		OidcScopes:       &scopes,
+		OidcAdminClaim:   &oidcConfig.AdminClaim,
+		OidcAdminValue:   &oidcConfig.AdminValue,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to migrate OIDC config: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Successfully migrated OIDC config to individual fields")
+	return nil
+}
+
+// migrateOidcKeyNames renames legacy authOidc* keys to new oidc* keys in the database.
+func (s *SettingsService) migrateOidcKeyNames(ctx context.Context) error {
+	keyMappings := map[string]string{
+		"authOidcEnabled":       "oidcEnabled",
+		"authOidcMergeAccounts": "oidcMergeAccounts",
+		"authOidcClientId":      "oidcClientId",
+		"authOidcClientSecret":  "oidcClientSecret",
+		"authOidcIssuerUrl":     "oidcIssuerUrl",
+		"authOidcScopes":        "oidcScopes",
+		"authOidcAdminClaim":    "oidcAdminClaim",
+		"authOidcAdminValue":    "oidcAdminValue",
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for oldKey, newKey := range keyMappings {
+			// Check if old key exists
+			var oldSetting models.SettingVariable
+			if err := tx.Where("key = ?", oldKey).First(&oldSetting).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					continue // Old key doesn't exist, nothing to migrate
+				}
+				return fmt.Errorf("failed to check old key %s: %w", oldKey, err)
+			}
+
+			// Check if new key already exists
+			var newSetting models.SettingVariable
+			if err := tx.Where("key = ?", newKey).First(&newSetting).Error; err == nil {
+				// New key already exists, delete the old one
+				if err := tx.Delete(&oldSetting).Error; err != nil {
+					return fmt.Errorf("failed to delete old key %s: %w", oldKey, err)
+				}
+				slog.DebugContext(ctx, "Deleted duplicate legacy key", "oldKey", oldKey, "newKey", newKey)
+				continue
+			}
+
+			// Rename: update key from old to new
+			if err := tx.Model(&oldSetting).Update("key", newKey).Error; err != nil {
+				return fmt.Errorf("failed to rename key %s to %s: %w", oldKey, newKey, err)
+			}
+			slog.InfoContext(ctx, "Migrated OIDC setting key", "oldKey", oldKey, "newKey", newKey)
+		}
+		return nil
 	})
 }
 
@@ -403,37 +512,57 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 }
 
 func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates dto.UpdateSettingsDto) error {
-	if updates.AuthOidcConfig == nil {
-		return nil
-	}
+	// Handle legacy JSON config format (for backward compatibility during migration)
+	if updates.AuthOidcConfig != nil {
+		newCfgStr := *updates.AuthOidcConfig
+		var incoming models.OidcConfig
+		if err := json.Unmarshal([]byte(newCfgStr), &incoming); err != nil {
+			return fmt.Errorf("invalid authOidcConfig JSON: %w", err)
+		}
 
-	newCfgStr := *updates.AuthOidcConfig
-	var incoming models.OidcConfig
-	if err := json.Unmarshal([]byte(newCfgStr), &incoming); err != nil {
-		return fmt.Errorf("invalid authOidcConfig JSON: %w", err)
-	}
+		current, err := s.GetSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load current settings: %w", err)
+		}
 
-	current, err := s.GetSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load current settings: %w", err)
-	}
-
-	if current.AuthOidcConfig.Value != "" {
-		var existing models.OidcConfig
-		if err := json.Unmarshal([]byte(current.AuthOidcConfig.Value), &existing); err == nil {
-			if incoming.ClientSecret == "" {
-				incoming.ClientSecret = existing.ClientSecret
+		if current.AuthOidcConfig.Value != "" {
+			var existing models.OidcConfig
+			if err := json.Unmarshal([]byte(current.AuthOidcConfig.Value), &existing); err == nil {
+				if incoming.ClientSecret == "" {
+					incoming.ClientSecret = existing.ClientSecret
+				}
 			}
+		}
+
+		mergedBytes, err := json.Marshal(incoming)
+		if err != nil {
+			return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
+		}
+
+		if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
+			return fmt.Errorf("failed to update authOidcConfig: %w", err)
 		}
 	}
 
-	mergedBytes, err := json.Marshal(incoming)
-	if err != nil {
-		return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
-	}
+	// Handle new individual field for client secret (sensitive field)
+	if updates.OidcClientSecret != nil {
+		secret := *updates.OidcClientSecret
 
-	if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
-		return fmt.Errorf("failed to update authOidcConfig: %w", err)
+		// If empty secret provided, preserve existing secret
+		if secret == "" {
+			current, err := s.GetSettings(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to load current settings for secret: %w", err)
+			}
+			if current.OidcClientSecret.Value != "" {
+				// Keep existing secret, don't update
+				return nil
+			}
+		}
+
+		if err := s.UpdateSetting(ctx, "oidcClientSecret", secret); err != nil {
+			return fmt.Errorf("failed to update oidcClientSecret: %w", err)
+		}
 	}
 
 	return nil

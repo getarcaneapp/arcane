@@ -72,7 +72,8 @@ func Bootstrap(ctx context.Context) error {
 		func(ctx context.Context) error {
 			_, err := appServices.Settings.SyncOidcEnvToDatabase(ctx)
 			return err
-		})
+		},
+		appServices.Settings.MigrateOidcConfigToFields)
 
 	scheduler, err := initializeScheduler()
 	if err != nil {

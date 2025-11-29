@@ -25,7 +25,7 @@
 	// Make logo URL reactive to accent color changes
 	let logoUrl = $derived(getApplicationLogo());
 
-	const oidcEnabledBySettings = data.settings?.authOidcEnabled === true;
+	const oidcEnabledBySettings = data.settings?.oidcEnabled === true;
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
 
 	const localAuthEnabledBySettings = data.settings?.authLocalEnabled !== false;

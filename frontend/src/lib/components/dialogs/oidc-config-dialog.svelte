@@ -44,14 +44,14 @@
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
 
 	const parsedConfig = $derived.by(() => {
-		if (!currentSettings.authOidcConfig) return DEFAULT_CONFIG;
-
-		try {
-			return JSON.parse(currentSettings.authOidcConfig) as OidcConfig;
-		} catch (error) {
-			console.warn('Failed to parse OIDC config:', error);
-			return DEFAULT_CONFIG;
-		}
+		return {
+			clientId: currentSettings.oidcClientId || '',
+			clientSecret: '', // Never expose client secret
+			issuerUrl: currentSettings.oidcIssuerUrl || '',
+			scopes: currentSettings.oidcScopes || 'openid email profile',
+			adminClaim: currentSettings.oidcAdminClaim || '',
+			adminValue: currentSettings.oidcAdminValue || ''
+		} as OidcConfig;
 	});
 
 	const dialogTitle = $derived(
@@ -117,7 +117,7 @@
 		<h3 class="text-base font-semibold">{m.oidc_server_env_config_title()}</h3>
 		<p class="text-muted-foreground mt-1 mb-4 text-sm">{m.oidc_server_env_config_description()}</p>
 
-		{#if currentSettings.authOidcEnabled}
+		{#if currentSettings.oidcEnabled}
 			<div class="divide-border/60 divide-y text-sm">
 				{@render configRow(m.oidc_client_id_label(), parsedConfig.clientId)}
 				{@render configRow(m.oidc_issuer_url_label(), parsedConfig.issuerUrl)}

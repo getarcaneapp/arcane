@@ -125,7 +125,7 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if environmentID != "0" {
-		if req.AuthLocalEnabled != nil || req.AuthOidcEnabled != nil ||
+		if req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 			req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
 			req.AuthOidcConfig != nil {
 			c.JSON(http.StatusForbidden, gin.H{

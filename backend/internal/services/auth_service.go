@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,14 +79,22 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	authSettings := &AuthSettings{
 		LocalAuthEnabled: settings.AuthLocalEnabled.IsTrue(),
-		OidcEnabled:      settings.AuthOidcEnabled.IsTrue(),
+		OidcEnabled:      settings.OidcEnabled.IsTrue(),
 		SessionTimeout:   timeoutMinutes,
 	}
 
-	if authSettings.OidcEnabled && settings.AuthOidcConfig.Value != "" {
-		var oidcConfig models.OidcConfig
-		if err := json.Unmarshal([]byte(settings.AuthOidcConfig.Value), &oidcConfig); err == nil {
-			authSettings.Oidc = &oidcConfig
+	if authSettings.OidcEnabled {
+		oidcConfig := &models.OidcConfig{
+			ClientID:     settings.OidcClientId.Value,
+			ClientSecret: settings.OidcClientSecret.Value,
+			IssuerURL:    settings.OidcIssuerUrl.Value,
+			Scopes:       settings.OidcScopes.Value,
+			AdminClaim:   settings.OidcAdminClaim.Value,
+			AdminValue:   settings.OidcAdminValue.Value,
+		}
+
+		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {
+			authSettings.Oidc = oidcConfig
 		}
 	}
 
@@ -103,7 +110,7 @@ func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*dto.Oidc
 				_ = recover()
 			}()
 			if settings, err := s.settingsService.GetSettings(ctx); err == nil {
-				mergeAccounts = settings.AuthOidcMergeAccounts.IsTrue()
+				mergeAccounts = settings.OidcMergeAccounts.IsTrue()
 			}
 		}()
 	}
@@ -151,7 +158,7 @@ func (s *AuthService) IsOidcEnabled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return settings.AuthOidcEnabled.IsTrue(), nil
+	return settings.OidcEnabled.IsTrue(), nil
 }
 
 func (s *AuthService) GetOidcConfig(ctx context.Context) (*models.OidcConfig, error) {
@@ -273,7 +280,7 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo dto.Oid
 	if user == nil {
 		// Check if merge accounts is enabled in settings
 		settings, settingsErr := s.settingsService.GetSettings(ctx)
-		mergeEnabled := settingsErr == nil && settings.AuthOidcMergeAccounts.IsTrue()
+		mergeEnabled := settingsErr == nil && settings.OidcMergeAccounts.IsTrue()
 
 		// If merge accounts is enabled, try to find existing user by email
 		if mergeEnabled && userInfo.Email != "" {

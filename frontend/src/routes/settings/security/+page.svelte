@@ -27,8 +27,8 @@
 	const formSchema = z
 		.object({
 			authLocalEnabled: z.boolean(),
-			authOidcEnabled: z.boolean(),
-			authOidcMergeAccounts: z.boolean(),
+			oidcEnabled: z.boolean(),
+			oidcMergeAccounts: z.boolean(),
 			authSessionTimeout: z
 				.number(m.security_session_timeout_required())
 				.int(m.security_session_timeout_integer())
@@ -39,7 +39,7 @@
 		.superRefine((formData, ctx) => {
 			// If server forces OIDC, the constraint is already satisfied
 			if (data.oidcStatus.envForced) return;
-			if (!formData.authLocalEnabled && !formData.authOidcEnabled) {
+			if (!formData.authLocalEnabled && !formData.oidcEnabled) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: m.security_enable_one_provider(),
@@ -60,19 +60,26 @@
 		adminValue: ''
 	});
 
+	// Keep OIDC form in sync with settings (but preserve user edits to clientSecret)
+	$effect(() => {
+		oidcConfigForm.clientId = currentSettings.oidcClientId || '';
+		oidcConfigForm.issuerUrl = currentSettings.oidcIssuerUrl || '';
+		oidcConfigForm.scopes = currentSettings.oidcScopes || 'openid email profile';
+		oidcConfigForm.adminClaim = currentSettings.oidcAdminClaim || '';
+		oidcConfigForm.adminValue = currentSettings.oidcAdminValue || '';
+	});
+
 	let { inputs: formInputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, currentSettings));
 
 	const settingsForm = new UseSettingsForm({
 		hasChangesChecker: () =>
 			$formInputs.authLocalEnabled.value !== currentSettings.authLocalEnabled ||
-			$formInputs.authOidcEnabled.value !== currentSettings.authOidcEnabled ||
-			$formInputs.authOidcMergeAccounts.value !== currentSettings.authOidcMergeAccounts ||
+			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
+			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy
 	});
-
-	// Helper: treat OIDC as active if forced by server or enabled in form
-	const isOidcActive = () => $formInputs.authOidcEnabled.value || data.oidcStatus.envForced;
+	const isOidcActive = () => $formInputs.oidcEnabled.value || data.oidcStatus.envForced;
 
 	async function onSubmit() {
 		const formData = form.validate();
@@ -83,26 +90,13 @@
 
 		settingsForm.setLoading(true);
 
-		let authOidcConfig = currentSettings.authOidcConfig;
-		if (formData.authOidcEnabled && !data.oidcStatus.envForced) {
-			authOidcConfig = JSON.stringify({
-				clientId: oidcConfigForm.clientId,
-				clientSecret: oidcConfigForm.clientSecret || '',
-				issuerUrl: oidcConfigForm.issuerUrl,
-				scopes: oidcConfigForm.scopes,
-				adminClaim: oidcConfigForm.adminClaim || '',
-				adminValue: oidcConfigForm.adminValue || ''
-			});
-		}
-
 		await settingsForm
 			.updateSettings({
 				authLocalEnabled: formData.authLocalEnabled,
-				authOidcEnabled: formData.authOidcEnabled,
-				authOidcMergeAccounts: formData.authOidcMergeAccounts,
+				oidcEnabled: formData.oidcEnabled,
+				oidcMergeAccounts: formData.oidcMergeAccounts,
 				authSessionTimeout: formData.authSessionTimeout,
-				authPasswordPolicy: formData.authPasswordPolicy,
-				...(formData.authOidcEnabled && !data.oidcStatus.envForced && { authOidcConfig })
+				authPasswordPolicy: formData.authPasswordPolicy
 			})
 			.then(() => toast.success(m.security_settings_saved()))
 			.catch((error: any) => {
@@ -114,15 +108,15 @@
 
 	function resetForm() {
 		$formInputs.authLocalEnabled.value = currentSettings.authLocalEnabled;
-		$formInputs.authOidcEnabled.value = currentSettings.authOidcEnabled;
-		$formInputs.authOidcMergeAccounts.value = currentSettings.authOidcMergeAccounts;
+		$formInputs.oidcEnabled.value = currentSettings.oidcEnabled;
+		$formInputs.oidcMergeAccounts.value = currentSettings.oidcMergeAccounts;
 		$formInputs.authSessionTimeout.value = currentSettings.authSessionTimeout;
 		$formInputs.authPasswordPolicy.value = currentSettings.authPasswordPolicy;
 	}
 
 	// Only depend on envForced; open config when enabling and not forced
 	function handleOidcSwitchChange(checked: boolean) {
-		$formInputs.authOidcEnabled.value = checked;
+		$formInputs.oidcEnabled.value = checked;
 
 		if (!checked && !$formInputs.authLocalEnabled.value && !data.oidcStatus.envForced) {
 			$formInputs.authLocalEnabled.value = true;
@@ -144,32 +138,24 @@
 	}
 
 	function handleMergeAccountsChange(checked: boolean) {
-		if (checked && !currentSettings.authOidcMergeAccounts) {
+		if (checked && !currentSettings.oidcMergeAccounts) {
 			showMergeAccountsAlert = true;
 		} else {
-			$formInputs.authOidcMergeAccounts.value = checked;
+			$formInputs.oidcMergeAccounts.value = checked;
 		}
 	}
 
 	function confirmMergeAccounts() {
-		$formInputs.authOidcMergeAccounts.value = true;
+		$formInputs.oidcMergeAccounts.value = true;
 		showMergeAccountsAlert = false;
 	}
 
 	function cancelMergeAccounts() {
-		$formInputs.authOidcMergeAccounts.value = false;
+		$formInputs.oidcMergeAccounts.value = false;
 		showMergeAccountsAlert = false;
 	}
 
 	function openOidcDialog() {
-		if (currentSettings.authOidcConfig) {
-			const cfg = JSON.parse(currentSettings.authOidcConfig);
-			oidcConfigForm.clientId = cfg.clientId || '';
-			oidcConfigForm.issuerUrl = cfg.issuerUrl || '';
-			oidcConfigForm.scopes = cfg.scopes || 'openid email profile';
-			oidcConfigForm.adminClaim = cfg.adminClaim || '';
-			oidcConfigForm.adminValue = cfg.adminValue || '';
-		}
 		oidcConfigForm.clientSecret = '';
 		showOidcConfigDialog = true;
 	}
@@ -177,7 +163,7 @@
 	async function handleSaveOidcConfig() {
 		try {
 			settingsForm.setLoading(true);
-			$formInputs.authOidcEnabled.value = true;
+			$formInputs.oidcEnabled.value = true;
 
 			const formData = form.validate();
 			if (!formData) {
@@ -185,18 +171,14 @@
 				return;
 			}
 
-			const authOidcConfig = JSON.stringify({
-				clientId: oidcConfigForm.clientId,
-				clientSecret: oidcConfigForm.clientSecret || '',
-				issuerUrl: oidcConfigForm.issuerUrl,
-				scopes: oidcConfigForm.scopes,
-				adminClaim: oidcConfigForm.adminClaim || '',
-				adminValue: oidcConfigForm.adminValue || ''
-			});
-
 			await settingsForm.updateSettings({
-				authOidcEnabled: true,
-				authOidcConfig
+				oidcEnabled: true,
+				oidcClientId: oidcConfigForm.clientId,
+				oidcIssuerUrl: oidcConfigForm.issuerUrl,
+				oidcScopes: oidcConfigForm.scopes,
+				oidcAdminClaim: oidcConfigForm.adminClaim || '',
+				oidcAdminValue: oidcConfigForm.adminValue || '',
+				...(oidcConfigForm.clientSecret && { oidcClientSecret: oidcConfigForm.clientSecret })
 			});
 
 			toast.success(m.security_oidc_saved());
@@ -245,9 +227,9 @@
 									description={data.oidcStatus.envForced
 										? m.security_oidc_auth_description_forced()
 										: m.security_oidc_auth_description()}
-									error={$formInputs.authOidcEnabled.error}
+									error={$formInputs.oidcEnabled.error}
 									disabled={data.oidcStatus.envForced}
-									bind:checked={$formInputs.authOidcEnabled.value}
+									bind:checked={$formInputs.oidcEnabled.value}
 									onCheckedChange={handleOidcSwitchChange}
 								/>
 
@@ -282,7 +264,7 @@
 										id="oidcMergeAccountsSwitch"
 										label={m.security_oidc_merge_accounts_label()}
 										description={m.security_oidc_merge_accounts_description()}
-										bind:checked={$formInputs.authOidcMergeAccounts.value}
+										bind:checked={$formInputs.oidcMergeAccounts.value}
 										onCheckedChange={handleMergeAccountsChange}
 									/>
 								</div>
