@@ -4,25 +4,49 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 // TestConnection tests if the git repository is accessible
 func TestConnection(ctx context.Context, repoURL, branch, username, token string) error {
-	// Use git ls-remote to test connection without cloning
-	authenticatedURL := buildAuthenticatedURL(repoURL, username, token)
+	// Use git ls-remote equivalent to test connection without cloning
+	remote := gogit.NewRemote(nil, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{repoURL},
+	})
 
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", authenticatedURL, branch)
-	output, err := cmd.CombinedOutput()
+	listOpts := &gogit.ListOptions{}
+	if username != "" || token != "" {
+		listOpts.Auth = &http.BasicAuth{
+			Username: username,
+			Password: token,
+		}
+	}
+
+	refs, err := remote.ListContext(ctx, listOpts)
 	if err != nil {
-		return fmt.Errorf("failed to connect to repository: %w (output: %s)", err, string(output))
+		return fmt.Errorf("failed to connect to repository: %w", err)
 	}
 
 	// Check if the branch exists
-	if branch != "" && !strings.Contains(string(output), branch) {
-		return fmt.Errorf("branch '%s' not found in repository", branch)
+	if branch != "" {
+		branchRef := fmt.Sprintf("refs/heads/%s", branch)
+		found := false
+		for _, ref := range refs {
+			if ref.Name().String() == branchRef {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("branch '%s' not found in repository", branch)
+		}
 	}
 
 	return nil
@@ -30,16 +54,16 @@ func TestConnection(ctx context.Context, repoURL, branch, username, token string
 
 // SyncRepository clones or pulls a git repository
 func SyncRepository(ctx context.Context, repoURL, branch, username, token, composePath string) error {
-	authenticatedURL := buildAuthenticatedURL(repoURL, username, token)
-
 	repoDir := getRepositoryDir(repoURL)
 
+	auth := buildAuth(username, token)
+
 	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
-		if err := cloneRepository(ctx, authenticatedURL, branch, repoDir); err != nil {
+		if err := cloneRepository(ctx, repoURL, branch, repoDir, auth); err != nil {
 			return err
 		}
 	} else {
-		if err := pullRepository(ctx, repoDir, branch); err != nil {
+		if err := pullRepository(ctx, repoDir, branch, auth); err != nil {
 			return err
 		}
 	}
@@ -57,69 +81,74 @@ func GetRepositoryPath(repoURL string) string {
 	return getRepositoryDir(repoURL)
 }
 
-func cloneRepository(ctx context.Context, authenticatedURL, branch, targetDir string) error {
-	args := []string{"clone"}
-	if branch != "" {
-		args = append(args, "--branch", branch)
-	}
-	args = append(args, "--depth", "1", authenticatedURL, targetDir)
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to clone repository: %w (output: %s)", err, string(output))
-	}
-
-	return nil
-}
-
-func pullRepository(ctx context.Context, repoDir, branch string) error {
-	// Fetch latest changes
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "fetch", "origin")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to fetch repository: %w (output: %s)", err, string(output))
-	}
-
-	// Reset to origin branch
-	var resetTarget string
-	if branch != "" {
-		resetTarget = fmt.Sprintf("origin/%s", branch)
-		// #nosec G204 -- branch is validated against refs/heads/* by git itself during fetch
-		cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", resetTarget)
-	} else {
-		// #nosec G204 -- static string, no user input
-		cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", "origin/HEAD")
-	}
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to reset repository: %w (output: %s)", err, string(output))
-	}
-
-	return nil
-}
-
-func buildAuthenticatedURL(repoURL, username, token string) string {
-	// If no credentials provided, return original URL
+func buildAuth(username, token string) *http.BasicAuth {
 	if username == "" && token == "" {
-		return repoURL
+		return nil
+	}
+	// For GitHub PATs, username can be anything non-empty
+	if username == "" {
+		username = "git"
+	}
+	return &http.BasicAuth{
+		Username: username,
+		Password: token,
+	}
+}
+
+func cloneRepository(ctx context.Context, repoURL, branch, targetDir string, auth *http.BasicAuth) error {
+	cloneOpts := &gogit.CloneOptions{
+		URL:   repoURL,
+		Depth: 1,
 	}
 
-	// Parse the URL and inject credentials
-	// Support for https://github.com/user/repo.git format
-	if strings.HasPrefix(repoURL, "https://") {
-		url := strings.TrimPrefix(repoURL, "https://")
-		if token != "" {
-			// GitHub personal access tokens can be used as username with empty password
-			// or as password with username
-			if username != "" {
-				return fmt.Sprintf("https://%s:%s@%s", username, token, url)
-			}
-			return fmt.Sprintf("https://%s@%s", token, url)
-		}
+	if auth != nil {
+		cloneOpts.Auth = auth
 	}
 
-	return repoURL
+	if branch != "" {
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(branch)
+		cloneOpts.SingleBranch = true
+	}
+
+	_, err := gogit.PlainCloneContext(ctx, targetDir, false, cloneOpts)
+	if err != nil {
+		return fmt.Errorf("failed to clone repository: %w", err)
+	}
+
+	return nil
+}
+
+func pullRepository(ctx context.Context, repoDir, branch string, auth *http.BasicAuth) error {
+	repo, err := gogit.PlainOpen(repoDir)
+	if err != nil {
+		return fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("failed to get worktree: %w", err)
+	}
+
+	pullOpts := &gogit.PullOptions{
+		RemoteName: "origin",
+		Force:      true,
+	}
+
+	if auth != nil {
+		pullOpts.Auth = auth
+	}
+
+	if branch != "" {
+		pullOpts.ReferenceName = plumbing.NewBranchReferenceName(branch)
+		pullOpts.SingleBranch = true
+	}
+
+	err = worktree.PullContext(ctx, pullOpts)
+	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+		return fmt.Errorf("failed to pull repository: %w", err)
+	}
+
+	return nil
 }
 
 func getRepositoryDir(repoURL string) string {

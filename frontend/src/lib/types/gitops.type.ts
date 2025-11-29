@@ -41,3 +41,13 @@ export interface GitOpsRepositoryUpdateDto {
 	syncInterval?: number;
 	enabled?: boolean;
 }
+
+export interface GitOpsTestResponse {
+	message: string;
+}
+
+export interface GitOpsSyncResponse {
+	message: string;
+	gitops_path: string;
+	project_name: string;
+}

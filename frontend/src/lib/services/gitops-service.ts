@@ -1,6 +1,11 @@
 import BaseAPIService from './api-service';
-import type { GitOpsRepositoryCreateDto, GitOpsRepositoryUpdateDto } from '$lib/types/gitops.type';
-import type { GitOpsRepository } from '$lib/types/gitops.type';
+import type {
+	GitOpsRepository,
+	GitOpsRepositoryCreateDto,
+	GitOpsRepositoryUpdateDto,
+	GitOpsTestResponse,
+	GitOpsSyncResponse
+} from '$lib/types/gitops.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
@@ -27,11 +32,11 @@ export default class GitOpsRepositoryService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/gitops/${id}`));
 	}
 
-	async testRepository(id: string): Promise<any> {
+	async testRepository(id: string): Promise<GitOpsTestResponse> {
 		return this.handleResponse(this.api.post(`/gitops/${id}/test`));
 	}
 
-	async syncRepositoryNow(id: string): Promise<any> {
+	async syncRepositoryNow(id: string): Promise<GitOpsSyncResponse> {
 		return this.handleResponse(this.api.post(`/gitops/${id}/sync-now`));
 	}
 }
