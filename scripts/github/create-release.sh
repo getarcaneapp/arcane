@@ -137,7 +137,7 @@ git tag "v$NEW_VERSION"
 
 # Push the commit and the tag to the repository
 git push
-git push --tags
+git push origin "v$NEW_VERSION"
 
 # Extract the changelog content for the latest release
 echo "Extracting changelog content for version $NEW_VERSION..."

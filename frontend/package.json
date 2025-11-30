@@ -1,11 +1,11 @@
 {
 	"name": "arcane-frontend",
 	"private": true,
-	"version": "1.9.0",
+	"version": "1.10.0",
 	"type": "module",
-	"packageManager": "pnpm@10.22.0",
+	"packageManager": "pnpm@10.24.0",
 	"engines": {
-		"node": ">=24"
+		"node": ">=25"
 	},
 	"scripts": {
 		"dev": "vite dev --port 3000 --host",
