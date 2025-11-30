@@ -727,7 +727,7 @@
 	"environments_refreshing": "更新中…",
 	"environments_name_placeholder": "My Lab Server",
 	"environments_name_too_long": "名称太长(最多25个字符)",
-	"environments_api_url_placeholder": "http://192.168.1.100:3553",
+	"environments_api_url_placeholder": "192.168.1.100:3553",
 	"environments_api_url_description": "Arcane服务器终端的的完整URL",
 	"environments_name_required": "必须输入环境名",
 	"environments_server_url_required": "必须输入服务器的URL",
