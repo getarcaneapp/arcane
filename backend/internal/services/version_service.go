@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
+	ref "go.podman.io/image/v5/docker/reference"
 )
 
 const (

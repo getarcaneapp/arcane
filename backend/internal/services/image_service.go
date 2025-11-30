@@ -13,7 +13,6 @@ import (
 
 	"log/slog"
 
-	ref "github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -22,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )

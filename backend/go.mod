@@ -6,7 +6,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/compose-spec/compose-go/v2 v2.9.1
 	github.com/coreos/go-oidc/v3 v3.17.0
-	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v28.5.2+incompatible
 	github.com/docker/compose/v2 v2.40.3
 	github.com/docker/distribution v2.8.3+incompatible
@@ -33,6 +32,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.10
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
+	go.podman.io/image/v5 v5.38.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/oauth2 v0.33.0
 	golang.org/x/sync v0.18.0
@@ -79,9 +79,10 @@ require (
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/buildx v0.29.1 // indirect
 	github.com/docker/cli-docs-tool v0.10.0 // indirect
-	github.com/docker/docker-credential-helpers v0.9.3 // indirect
+	github.com/docker/docker-credential-helpers v0.9.4 // indirect
 	github.com/docker/go v1.5.1-1.0.20160303222718-d30aec9fd63c // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -230,6 +231,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.8.0 // indirect
+	go.podman.io/storage v1.61.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

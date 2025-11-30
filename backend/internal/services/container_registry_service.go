@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -19,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	ref "go.podman.io/image/v5/docker/reference"
 )
 
 const (

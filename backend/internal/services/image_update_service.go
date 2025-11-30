@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	ref "github.com/distribution/reference"
 	"github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )

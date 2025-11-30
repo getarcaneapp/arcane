@@ -1,6 +1,6 @@
 package registry
 
-import ref "github.com/distribution/reference"
+import ref "go.podman.io/image/v5/docker/reference"
 
 func GetRegistryAddress(imageRef string) (string, error) {
 	named, err := ref.ParseNormalizedNamed(imageRef)
