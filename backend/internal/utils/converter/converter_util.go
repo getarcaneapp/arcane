@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ofkm/arcane-backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
 
 func ParseTokens(tokens []string, result *models.DockerRunCommand) error {

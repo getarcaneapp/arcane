@@ -21,7 +21,7 @@ echo "  VERSION: ${VERSION}"
 echo "  REVISION: ${REVISION}"
 echo ""
 
-docker build "${PULL_ARGS[@]}" --rm \
+depot build "${PULL_ARGS[@]}" --rm \
   -f 'docker/Dockerfile' \
   --build-arg VERSION="${VERSION}" \
   --build-arg REVISION="${REVISION}" \

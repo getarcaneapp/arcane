@@ -13,7 +13,7 @@
 
 	const classes = $derived(
 		cn(
-			"bg-muted shadow-xs flex items-center gap-2 rounded-md border px-4 text-sm font-medium [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none",
+			"bg-input/80 shadow-xs flex items-center gap-2 rounded-lg border px-4 text-sm font-medium backdrop-blur-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none",
 			className
 		)
 	);

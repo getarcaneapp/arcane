@@ -3,6 +3,7 @@
 	import * as Sheet from '$lib/components/ui/sheet/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
+	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import * as Card from '$lib/components/ui/card';
@@ -21,9 +22,22 @@
 
 	let isSubmitting = $state(false);
 
+	let urlProtocol = $state<'https' | 'http'>('https');
+	let urlHost = $state('');
+
+	$effect(() => {
+		if (open) {
+			urlProtocol = 'https';
+			urlHost = '';
+			formData.name = '';
+			formData.apiUrl = '';
+			formData.bootstrapToken = '';
+		}
+	});
+
 	const formSchema = z.object({
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long()),
-		apiUrl: z.url(m.common_invalid_url()).min(1, m.environments_server_url_required()),
+		apiUrl: z.string().min(1, m.environments_server_url_required()),
 		bootstrapToken: z.string()
 	});
 
@@ -31,6 +45,10 @@
 		name: '',
 		apiUrl: '',
 		bootstrapToken: ''
+	});
+
+	$effect(() => {
+		formData.apiUrl = urlHost;
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -42,9 +60,12 @@
 		try {
 			isSubmitting = true;
 
+			// Construct full URL from protocol and host
+			const fullUrl = `${urlProtocol}://${urlHost}`;
+
 			const dto: CreateEnvironmentDTO = {
 				name: data.name,
-				apiUrl: data.apiUrl,
+				apiUrl: fullUrl,
 				bootstrapToken: data.bootstrapToken
 			};
 
@@ -100,12 +121,16 @@
 					<form onsubmit={preventDefault(handleSubmit)} class="space-y-4">
 						<FormInput label={m.common_name()} placeholder={m.environments_name_placeholder()} bind:input={$inputs.name} />
 
-						<FormInput
+						<UrlInput
+							id="environment-api-url"
 							label={m.environments_api_url()}
-							type="text"
 							placeholder={m.environments_api_url_placeholder()}
 							description={m.environments_api_url_description()}
-							bind:input={$inputs.apiUrl}
+							bind:value={urlHost}
+							bind:protocol={urlProtocol}
+							disabled={isSubmitting}
+							required
+							error={$inputs.apiUrl.error ?? undefined}
 						/>
 
 						<FormInput

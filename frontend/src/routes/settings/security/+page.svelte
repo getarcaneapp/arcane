@@ -5,8 +5,10 @@
 	import { onMount } from 'svelte';
 	import { createForm } from '$lib/utils/form.utils';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import OidcConfigDialog from '$lib/components/dialogs/oidc-config-dialog.svelte';
+	import DropdownCard from '$lib/components/dropdown-card.svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
@@ -15,10 +17,14 @@
 	import LockIcon from '@lucide/svelte/icons/lock';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import KeyIcon from '@lucide/svelte/icons/key';
+	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import InfoIcon from '@lucide/svelte/icons/info';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
+	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -27,115 +33,131 @@
 	const formSchema = z
 		.object({
 			authLocalEnabled: z.boolean(),
-			authOidcEnabled: z.boolean(),
-			authOidcMergeAccounts: z.boolean(),
 			authSessionTimeout: z
 				.number(m.security_session_timeout_required())
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
 				.max(1440, m.security_session_timeout_max()),
-			authPasswordPolicy: z.enum(['basic', 'standard', 'strong'])
+			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
+			oidcEnabled: z.boolean(),
+			oidcMergeAccounts: z.boolean(),
+			oidcClientId: z.string(),
+			oidcClientSecret: z.string(),
+			oidcIssuerUrl: z.string(),
+			oidcScopes: z.string(),
+			oidcAdminClaim: z.string(),
+			oidcAdminValue: z.string()
 		})
 		.superRefine((formData, ctx) => {
-			// If server forces OIDC, the constraint is already satisfied
-			if (data.oidcStatus.envForced) return;
-			if (!formData.authLocalEnabled && !formData.authOidcEnabled) {
+			// If server forces OIDC or OIDC is enabled, local auth can be disabled
+			if (data.oidcStatus.envForced || formData.oidcEnabled) return;
+			if (!formData.authLocalEnabled) {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: 'custom',
 					message: m.security_enable_one_provider(),
 					path: ['authLocalEnabled']
 				});
 			}
 		});
 
-	let showOidcConfigDialog = $state(false);
 	let showMergeAccountsAlert = $state(false);
 
-	let oidcConfigForm = $state({
-		clientId: '',
-		clientSecret: '',
-		issuerUrl: '',
-		scopes: 'openid email profile',
-		adminClaim: '',
-		adminValue: ''
+	// Form initial values with OIDC defaults
+	const formDefaults = $derived({
+		authLocalEnabled: currentSettings.authLocalEnabled,
+		authSessionTimeout: currentSettings.authSessionTimeout,
+		authPasswordPolicy: currentSettings.authPasswordPolicy,
+		oidcEnabled: currentSettings.oidcEnabled,
+		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
+		oidcClientId: currentSettings.oidcClientId,
+		oidcClientSecret: '',
+		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
+		oidcScopes: currentSettings.oidcScopes,
+		oidcAdminClaim: currentSettings.oidcAdminClaim,
+		oidcAdminValue: currentSettings.oidcAdminValue
 	});
 
-	let { inputs: formInputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, currentSettings));
+	let { inputs: formInputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formDefaults));
 
 	const settingsForm = new UseSettingsForm({
 		hasChangesChecker: () =>
 			$formInputs.authLocalEnabled.value !== currentSettings.authLocalEnabled ||
-			$formInputs.authOidcEnabled.value !== currentSettings.authOidcEnabled ||
-			$formInputs.authOidcMergeAccounts.value !== currentSettings.authOidcMergeAccounts ||
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
-			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy
+			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
+			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
+			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
+			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
+			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
+			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
+			$formInputs.oidcAdminClaim.value !== currentSettings.oidcAdminClaim ||
+			$formInputs.oidcAdminValue.value !== currentSettings.oidcAdminValue ||
+			$formInputs.oidcClientSecret.value !== ''
 	});
 
-	// Helper: treat OIDC as active if forced by server or enabled in form
-	const isOidcActive = () => $formInputs.authOidcEnabled.value || data.oidcStatus.envForced;
+	const clipboard = new UseClipboard();
+	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
+	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
 
 	async function onSubmit() {
 		const formData = form.validate();
 		if (!formData) {
-			toast.error('Please check the form for errors');
+			toast.error(m.security_form_validation_error());
 			return;
+		}
+
+		// Validate OIDC required fields when enabling
+		if (formData.oidcEnabled && !isOidcEnvForced) {
+			if (!formData.oidcClientId || !formData.oidcIssuerUrl) {
+				toast.error(m.security_oidc_required_fields());
+				return;
+			}
 		}
 
 		settingsForm.setLoading(true);
 
-		let authOidcConfig = currentSettings.authOidcConfig;
-		if (formData.authOidcEnabled && !data.oidcStatus.envForced) {
-			authOidcConfig = JSON.stringify({
-				clientId: oidcConfigForm.clientId,
-				clientSecret: oidcConfigForm.clientSecret || '',
-				issuerUrl: oidcConfigForm.issuerUrl,
-				scopes: oidcConfigForm.scopes,
-				adminClaim: oidcConfigForm.adminClaim || '',
-				adminValue: oidcConfigForm.adminValue || ''
-			});
-		}
-
-		await settingsForm
-			.updateSettings({
+		try {
+			await settingsForm.updateSettings({
 				authLocalEnabled: formData.authLocalEnabled,
-				authOidcEnabled: formData.authOidcEnabled,
-				authOidcMergeAccounts: formData.authOidcMergeAccounts,
 				authSessionTimeout: formData.authSessionTimeout,
 				authPasswordPolicy: formData.authPasswordPolicy,
-				...(formData.authOidcEnabled && !data.oidcStatus.envForced && { authOidcConfig })
-			})
-			.then(() => toast.success(m.security_settings_saved()))
-			.catch((error: any) => {
-				console.error('Failed to save settings:', error);
-				toast.error('Failed to save settings. Please try again.');
-			})
-			.finally(() => settingsForm.setLoading(false));
+				oidcEnabled: formData.oidcEnabled,
+				oidcMergeAccounts: formData.oidcMergeAccounts,
+				oidcClientId: formData.oidcClientId,
+				oidcIssuerUrl: formData.oidcIssuerUrl,
+				oidcScopes: formData.oidcScopes,
+				oidcAdminClaim: formData.oidcAdminClaim,
+				oidcAdminValue: formData.oidcAdminValue,
+				...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
+			});
+
+			// Clear the secret field after save
+			$formInputs.oidcClientSecret.value = '';
+			toast.success(m.security_settings_saved());
+		} catch (error: any) {
+			console.error('Failed to save settings:', error);
+			toast.error(m.security_settings_save_failed());
+		} finally {
+			settingsForm.setLoading(false);
+		}
 	}
 
 	function resetForm() {
 		$formInputs.authLocalEnabled.value = currentSettings.authLocalEnabled;
-		$formInputs.authOidcEnabled.value = currentSettings.authOidcEnabled;
-		$formInputs.authOidcMergeAccounts.value = currentSettings.authOidcMergeAccounts;
 		$formInputs.authSessionTimeout.value = currentSettings.authSessionTimeout;
 		$formInputs.authPasswordPolicy.value = currentSettings.authPasswordPolicy;
-	}
-
-	// Only depend on envForced; open config when enabling and not forced
-	function handleOidcSwitchChange(checked: boolean) {
-		$formInputs.authOidcEnabled.value = checked;
-
-		if (!checked && !$formInputs.authLocalEnabled.value && !data.oidcStatus.envForced) {
-			$formInputs.authLocalEnabled.value = true;
-			toast.info(m.security_local_enabled_info());
-		}
-
-		if (checked && !data.oidcStatus.envForced) {
-			showOidcConfigDialog = true;
-		}
+		$formInputs.oidcEnabled.value = currentSettings.oidcEnabled;
+		$formInputs.oidcMergeAccounts.value = currentSettings.oidcMergeAccounts;
+		$formInputs.oidcClientId.value = currentSettings.oidcClientId;
+		$formInputs.oidcClientSecret.value = '';
+		$formInputs.oidcIssuerUrl.value = currentSettings.oidcIssuerUrl;
+		$formInputs.oidcScopes.value = currentSettings.oidcScopes;
+		$formInputs.oidcAdminClaim.value = currentSettings.oidcAdminClaim;
+		$formInputs.oidcAdminValue.value = currentSettings.oidcAdminValue;
 	}
 
 	function handleLocalSwitchChange(checked: boolean) {
-		if (!checked && !isOidcActive()) {
+		// If trying to disable local auth, check if OIDC is enabled
+		if (!checked && !$formInputs.oidcEnabled.value && !data.oidcStatus.envForced) {
 			$formInputs.authLocalEnabled.value = true;
 			toast.error(m.security_enable_one_provider_error());
 			return;
@@ -143,67 +165,36 @@
 		$formInputs.authLocalEnabled.value = checked;
 	}
 
+	function handleOidcEnabledChange(checked: boolean) {
+		// If trying to disable OIDC and local auth is also disabled
+		if (!checked && !$formInputs.authLocalEnabled.value && !data.oidcStatus.envForced) {
+			$formInputs.authLocalEnabled.value = true;
+			toast.info(m.security_local_enabled_info());
+		}
+		$formInputs.oidcEnabled.value = checked;
+	}
+
 	function handleMergeAccountsChange(checked: boolean) {
-		if (checked && !currentSettings.authOidcMergeAccounts) {
+		if (checked && !currentSettings.oidcMergeAccounts) {
 			showMergeAccountsAlert = true;
 		} else {
-			$formInputs.authOidcMergeAccounts.value = checked;
+			$formInputs.oidcMergeAccounts.value = checked;
 		}
 	}
 
 	function confirmMergeAccounts() {
-		$formInputs.authOidcMergeAccounts.value = true;
+		$formInputs.oidcMergeAccounts.value = true;
 		showMergeAccountsAlert = false;
 	}
 
 	function cancelMergeAccounts() {
-		$formInputs.authOidcMergeAccounts.value = false;
+		$formInputs.oidcMergeAccounts.value = false;
 		showMergeAccountsAlert = false;
 	}
 
-	function openOidcDialog() {
-		if (currentSettings.authOidcConfig) {
-			const cfg = JSON.parse(currentSettings.authOidcConfig);
-			oidcConfigForm.clientId = cfg.clientId || '';
-			oidcConfigForm.issuerUrl = cfg.issuerUrl || '';
-			oidcConfigForm.scopes = cfg.scopes || 'openid email profile';
-			oidcConfigForm.adminClaim = cfg.adminClaim || '';
-			oidcConfigForm.adminValue = cfg.adminValue || '';
-		}
-		oidcConfigForm.clientSecret = '';
-		showOidcConfigDialog = true;
-	}
-
-	async function handleSaveOidcConfig() {
-		try {
-			settingsForm.setLoading(true);
-			$formInputs.authOidcEnabled.value = true;
-
-			const formData = form.validate();
-			if (!formData) {
-				settingsForm.setLoading(false);
-				return;
-			}
-
-			const authOidcConfig = JSON.stringify({
-				clientId: oidcConfigForm.clientId,
-				clientSecret: oidcConfigForm.clientSecret || '',
-				issuerUrl: oidcConfigForm.issuerUrl,
-				scopes: oidcConfigForm.scopes,
-				adminClaim: oidcConfigForm.adminClaim || '',
-				adminValue: oidcConfigForm.adminValue || ''
-			});
-
-			await settingsForm.updateSettings({
-				authOidcEnabled: true,
-				authOidcConfig
-			});
-
-			toast.success(m.security_oidc_saved());
-			showOidcConfigDialog = false;
-		} finally {
-			settingsForm.setLoading(false);
-		}
+	function handleCopy(text?: string) {
+		if (!text) return;
+		clipboard.copy(text);
 	}
 
 	onMount(() => {
@@ -228,68 +219,157 @@
 						</div>
 					</Card.Header>
 					<Card.Content class="px-3 py-4 sm:px-6">
-						<div class="space-y-3">
-							<SwitchWithLabel
-								id="localAuthSwitch"
-								label={m.security_local_auth_label()}
-								description={m.security_local_auth_description()}
-								error={$formInputs.authLocalEnabled.error}
-								bind:checked={$formInputs.authLocalEnabled.value}
-								onCheckedChange={handleLocalSwitchChange}
-							/>
-
-							<div class="space-y-2">
-								<SwitchWithLabel
-									id="oidcAuthSwitch"
-									label={m.security_oidc_auth_label()}
-									description={data.oidcStatus.envForced
-										? m.security_oidc_auth_description_forced()
-										: m.security_oidc_auth_description()}
-									error={$formInputs.authOidcEnabled.error}
-									disabled={data.oidcStatus.envForced}
-									bind:checked={$formInputs.authOidcEnabled.value}
-									onCheckedChange={handleOidcSwitchChange}
-								/>
-
-								{#if isOidcActive()}
-									<div class="pl-8 sm:pl-11">
-										{#if data.oidcStatus.envForced}
-											{#if !data.oidcStatus.envConfigured}
-												<Button
-													variant="link"
-													class="text-destructive h-auto p-0 text-xs hover:underline"
-													onclick={openOidcDialog}
-												>
-													{m.security_server_forces_oidc_missing_env()}
-												</Button>
-											{:else}
-												<Button variant="link" class="h-auto p-0 text-xs text-sky-600 hover:underline" onclick={openOidcDialog}>
-													{m.security_oidc_configured_forced_view()}
-												</Button>
-											{/if}
-										{:else}
-											<Button variant="link" class="h-auto p-0 text-xs text-sky-600 hover:underline" onclick={openOidcDialog}>
-												{m.security_manage_oidc_config()}
-											</Button>
-										{/if}
-									</div>
-								{/if}
-							</div>
-
-							{#if isOidcActive()}
-								<div class="mt-3">
-									<SwitchWithLabel
-										id="oidcMergeAccountsSwitch"
-										label={m.security_oidc_merge_accounts_label()}
-										description={m.security_oidc_merge_accounts_description()}
-										bind:checked={$formInputs.authOidcMergeAccounts.value}
-										onCheckedChange={handleMergeAccountsChange}
-									/>
-								</div>
-							{/if}
-						</div>
+						<SwitchWithLabel
+							id="localAuthSwitch"
+							label={m.security_local_auth_label()}
+							description={m.security_local_auth_description()}
+							error={$formInputs.authLocalEnabled.error}
+							bind:checked={$formInputs.authLocalEnabled.value}
+							onCheckedChange={handleLocalSwitchChange}
+						/>
 					</Card.Content>
 				</Card.Root>
+
+				<DropdownCard
+					id="oidc-settings"
+					title={m.security_oidc_auth_label()}
+					description={m.security_oidc_auth_description()}
+					icon={ShieldCheckIcon}
+					defaultExpanded={currentSettings.oidcEnabled || isOidcEnvForced}
+				>
+					{#snippet badge()}
+						{#if isOidcEnvForced}
+							<span
+								class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
+							>
+								{m.security_server_configured()}
+							</span>
+						{/if}
+					{/snippet}
+					<div class="space-y-4">
+						<SwitchWithLabel
+							id="oidcEnabledSwitch"
+							label={m.security_oidc_enabled_label()}
+							description={m.security_oidc_enabled_description()}
+							disabled={isOidcEnvForced}
+							bind:checked={$formInputs.oidcEnabled.value}
+							onCheckedChange={handleOidcEnabledChange}
+						/>
+
+						<div class="space-y-4 border-t pt-4">
+							<div class="space-y-2">
+								<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>
+								<Input
+									id="oidcClientId"
+									type="text"
+									placeholder={m.oidc_client_id_placeholder()}
+									disabled={isOidcEnvForced}
+									bind:value={$formInputs.oidcClientId.value}
+									class="font-mono text-sm"
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="oidcClientSecret" class="text-sm font-medium">{m.oidc_client_secret_label()}</Label>
+								<Input
+									id="oidcClientSecret"
+									type="password"
+									placeholder={m.oidc_client_secret_placeholder()}
+									disabled={isOidcEnvForced}
+									bind:value={$formInputs.oidcClientSecret.value}
+									class="font-mono text-sm"
+								/>
+								<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="oidcIssuerUrl" class="text-sm font-medium">{m.oidc_issuer_url_label()}</Label>
+								<Input
+									id="oidcIssuerUrl"
+									type="text"
+									placeholder={m.oidc_issuer_url_placeholder()}
+									disabled={isOidcEnvForced}
+									bind:value={$formInputs.oidcIssuerUrl.value}
+									class="font-mono text-sm"
+								/>
+								<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
+								<Input
+									id="oidcScopes"
+									type="text"
+									placeholder={m.oidc_scopes_placeholder()}
+									disabled={isOidcEnvForced}
+									bind:value={$formInputs.oidcScopes.value}
+									class="font-mono text-sm"
+								/>
+							</div>
+
+							<div class="border-t pt-4">
+								<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
+								<p class="text-muted-foreground mb-3 text-xs">{m.oidc_admin_role_mapping_description()}</p>
+								<div class="grid gap-3 sm:grid-cols-2">
+									<div class="space-y-2">
+										<Label for="oidcAdminClaim" class="text-sm font-medium">{m.oidc_admin_claim_label()}</Label>
+										<Input
+											id="oidcAdminClaim"
+											type="text"
+											placeholder={m.oidc_admin_claim_placeholder()}
+											disabled={isOidcEnvForced}
+											bind:value={$formInputs.oidcAdminClaim.value}
+											class="font-mono text-sm"
+										/>
+									</div>
+									<div class="space-y-2">
+										<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
+										<Input
+											id="oidcAdminValue"
+											type="text"
+											placeholder={m.oidc_admin_value_placeholder()}
+											disabled={isOidcEnvForced}
+											bind:value={$formInputs.oidcAdminValue.value}
+											class="font-mono text-sm"
+										/>
+										<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
+									</div>
+								</div>
+							</div>
+
+							<div class="border-t pt-4">
+								<SwitchWithLabel
+									id="oidcMergeAccountsSwitch"
+									label={m.security_oidc_merge_accounts_label()}
+									description={m.security_oidc_merge_accounts_description()}
+									disabled={isOidcEnvForced}
+									bind:checked={$formInputs.oidcMergeAccounts.value}
+									onCheckedChange={handleMergeAccountsChange}
+								/>
+							</div>
+						</div>
+
+						<div class="bg-muted/30 rounded-lg border p-4">
+							<div class="mb-2 flex items-center gap-2">
+								<InfoIcon class="size-4 text-blue-600" />
+								<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
+							</div>
+							<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
+							<div class="flex items-center gap-2">
+								<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => handleCopy(redirectUri)}
+									class="shrink-0"
+									title={m.common_copy()}
+								>
+									<CopyIcon class="size-3" />
+								</Button>
+							</div>
+						</div>
+					</div></DropdownCard
+				>
 
 				<Card.Root>
 					<Card.Header icon={ClockIcon} class="items-start">
@@ -313,7 +393,7 @@
 					<Card.Header icon={KeyIcon} class="items-start">
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>{m.security_password_policy_label()}</Card.Title>
-							<Card.Description>Set password strength requirements</Card.Description>
+							<Card.Description>{m.security_password_policy_description()}</Card.Description>
 						</div>
 					</Card.Header>
 					<Card.Content class="px-3 py-4 sm:px-6">
@@ -371,14 +451,6 @@
 		</fieldset>
 	{/snippet}
 	{#snippet additionalContent()}
-		<OidcConfigDialog
-			bind:open={showOidcConfigDialog}
-			{currentSettings}
-			oidcStatus={data.oidcStatus}
-			bind:oidcForm={oidcConfigForm}
-			onSave={handleSaveOidcConfig}
-		/>
-
 		<AlertDialog.Root bind:open={showMergeAccountsAlert}>
 			<AlertDialog.Content>
 				<AlertDialog.Header>

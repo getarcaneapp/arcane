@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"strings"
 
-	"github.com/ofkm/arcane-backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
 )
 
 // ParseEnvContent parses environment variables from .env file content

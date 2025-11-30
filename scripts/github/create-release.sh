@@ -67,7 +67,8 @@ done
 if [ "$FORCE_MAJOR" == true ]; then
     RELEASE_TYPE="major"
 else
-    LATEST_TAG=$(git describe --tags --abbrev=0 || echo "")
+    # Get the latest version tag (v*), ignoring non-version tags like 'next'
+    LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "")
     if [ -z "$LATEST_TAG" ]; then
         RELEASE_TYPE="minor"
     else

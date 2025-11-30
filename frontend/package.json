@@ -14,7 +14,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"format": "prettier --write ./src",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"knip": "knip"
 	},
 	"dependencies": {
 		"@codemirror/commands": "^6.10.0",
@@ -54,6 +55,7 @@
 		"@types/bytes": "^3.1.5",
 		"@types/dockerode": "^3.3.47",
 		"@types/js-yaml": "^4.0.9",
+		"@types/node": "^24.10.1",
 		"bits-ui": "^2.14.4",
 		"bytes": "^3.1.2",
 		"clsx": "^2.1.1",
@@ -62,6 +64,7 @@
 		"formsnap": "^2.0.1",
 		"globals": "^16.4.0",
 		"isomorphic-dompurify": "^2.33.0",
+		"knip": "^5.70.2",
 		"mode-watcher": "^1.1.0",
 		"paneforge": "^1.0.2",
 		"runed": "0.34.0",

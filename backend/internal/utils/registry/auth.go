@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	ref "github.com/distribution/reference"
+	ref "go.podman.io/image/v5/docker/reference"
 
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 )
 
 type Credentials struct {

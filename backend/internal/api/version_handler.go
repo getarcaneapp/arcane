@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/services"
 )
 
 type VersionHandler struct {

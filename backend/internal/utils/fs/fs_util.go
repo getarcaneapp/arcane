@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ofkm/arcane-backend/internal/utils/projects"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 )
 
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {

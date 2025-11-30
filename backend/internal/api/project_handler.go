@@ -10,17 +10,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/ofkm/arcane-backend/internal/common"
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/middleware"
-	"github.com/ofkm/arcane-backend/internal/services"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	httputil "github.com/ofkm/arcane-backend/internal/utils/http"
-	"github.com/ofkm/arcane-backend/internal/utils/pagination"
-	ws "github.com/ofkm/arcane-backend/internal/utils/ws"
 )
 
 type ProjectHandler struct {

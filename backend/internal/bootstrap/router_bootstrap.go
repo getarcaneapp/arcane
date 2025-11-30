@@ -9,10 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 	sloggin "github.com/samber/slog-gin"
 
-	"github.com/ofkm/arcane-backend/frontend"
-	"github.com/ofkm/arcane-backend/internal/api"
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/frontend"
+	"github.com/getarcaneapp/arcane/backend/internal/api"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 )
 
 var registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)

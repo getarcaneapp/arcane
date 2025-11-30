@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	gen "github.com/ofkm/arcane-backend/internal/cli/generate"
+	gen "github.com/getarcaneapp/arcane/backend/internal/cli/generate"
 )
 
 // captureOutput captures stdout produced by fn and returns it as a string.

@@ -18,6 +18,7 @@
     "test:down": "docker compose -f tests/setup/compose.yaml down",
     "test": "pnpm test:up && pnpm --filter arcane-tests test && pnpm test:down",
     "format": "pnpm --filter arcane-frontend format",
-    "check": "pnpm --filter arcane-frontend check"
+    "check": "pnpm --filter arcane-frontend check",
+    "knip": "pnpm --filter arcane-frontend knip"
   }
 }

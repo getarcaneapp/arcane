@@ -14,13 +14,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	"github.com/ofkm/arcane-backend/internal/utils/notifications"
-	"github.com/ofkm/arcane-backend/resources"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
 type NotificationService struct {
@@ -394,7 +394,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 
 func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *dto.ImageUpdateResponse) (string, string, error) {
 	data := map[string]interface{}{
-		"LogoURL":       "https://raw.githubusercontent.com/ofkm/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL":       "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
 		"AppURL":        s.config.AppUrl,
 		"ImageRef":      imageRef,
 		"HasUpdate":     updateInfo.HasUpdate,
@@ -990,7 +990,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 
 func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*dto.ImageUpdateResponse) (string, string, error) {
 	data := map[string]interface{}{
-		"LogoURL":     "https://raw.githubusercontent.com/ofkm/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL":     "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
 		"AppURL":      s.config.AppUrl,
 		"UpdateCount": len(updates),
 		"CheckTime":   time.Now().Format(time.RFC1123),

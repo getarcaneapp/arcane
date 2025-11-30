@@ -13,6 +13,7 @@
 		description,
 		defaultExpanded = false,
 		icon,
+		badge,
 		children
 	}: {
 		id: string;
@@ -20,6 +21,7 @@
 		description?: string;
 		defaultExpanded?: boolean;
 		icon?: typeof IconType;
+		badge?: Snippet;
 		children: Snippet;
 	} = $props();
 
@@ -73,7 +75,12 @@
 		onkeydown={onHeaderKeydown}
 	>
 		<div>
-			<Card.Title>{title}</Card.Title>
+			<div class="flex items-center gap-2">
+				<Card.Title>{title}</Card.Title>
+				{#if badge}
+					{@render badge()}
+				{/if}
+			</div>
 			{#if description}
 				<Card.Description class="mt-1">{description}</Card.Description>
 			{/if}
@@ -92,7 +99,7 @@
 	</Card.Header>
 	{#if expanded}
 		<div transition:slide={{ duration: 200 }}>
-			<Card.Content class="pt-4">
+			<Card.Content class="pt-4 pb-6">
 				{@render children()}
 			</Card.Content>
 		</div>

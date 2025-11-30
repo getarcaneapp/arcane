@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
 
 func setupSettingsTestDB(t *testing.T) *database.DB {
@@ -138,20 +138,33 @@ func TestSettingsService_SyncOidcEnvToDatabase(t *testing.T) {
 	require.NotEmpty(t, vars)
 
 	var enabled models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "authOidcEnabled").First(&enabled).Error)
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcEnabled").First(&enabled).Error)
 	require.Equal(t, "true", enabled.Value)
 
-	var cfgVar models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "authOidcConfig").First(&cfgVar).Error)
+	// Check individual OIDC fields (new approach)
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Equal(t, "cid", clientId.Value)
 
-	var oc models.OidcConfig
-	require.NoError(t, json.Unmarshal([]byte(cfgVar.Value), &oc))
-	require.Equal(t, "cid", oc.ClientID)
-	require.Equal(t, "csec", oc.ClientSecret)
-	require.Equal(t, "https://issuer.example", oc.IssuerURL)
-	require.Equal(t, "openid profile email", oc.Scopes)
-	require.Equal(t, "roles", oc.AdminClaim)
-	require.Equal(t, "admin", oc.AdminValue)
+	var clientSecret models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&clientSecret).Error)
+	require.Equal(t, "csec", clientSecret.Value)
+
+	var issuerUrl models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcIssuerUrl").First(&issuerUrl).Error)
+	require.Equal(t, "https://issuer.example", issuerUrl.Value)
+
+	var scopes models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
+	require.Equal(t, "openid profile email", scopes.Value)
+
+	var adminClaim models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminClaim").First(&adminClaim).Error)
+	require.Equal(t, "roles", adminClaim.Value)
+
+	var adminValue models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminValue").First(&adminValue).Error)
+	require.Equal(t, "admin", adminValue.Value)
 }
 
 func TestSettingsService_UpdateSettings_MergeOidcSecret(t *testing.T) {
@@ -283,4 +296,181 @@ func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T)
 	cfg := svc.GetSettingsConfig()
 	// Should have loaded the internal setting from DB even in env mode
 	require.Equal(t, internalVal, cfg.InstanceID.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Seed legacy OIDC JSON config
+	legacyConfig := models.OidcConfig{
+		ClientID:     "legacy-client-id",
+		ClientSecret: "legacy-secret",
+		IssuerURL:    "https://legacy-issuer.example",
+		Scopes:       "openid email profile",
+		AdminClaim:   "groups",
+		AdminValue:   "admin",
+	}
+	b, err := json.Marshal(legacyConfig)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", string(b)))
+
+	// Run migration
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err)
+
+	// Verify individual fields were populated
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Equal(t, "legacy-client-id", clientId.Value)
+
+	var clientSecret models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&clientSecret).Error)
+	require.Equal(t, "legacy-secret", clientSecret.Value)
+
+	var issuerUrl models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcIssuerUrl").First(&issuerUrl).Error)
+	require.Equal(t, "https://legacy-issuer.example", issuerUrl.Value)
+
+	var scopes models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
+	require.Equal(t, "openid email profile", scopes.Value)
+
+	var adminClaim models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminClaim").First(&adminClaim).Error)
+	require.Equal(t, "groups", adminClaim.Value)
+
+	var adminValue models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminValue").First(&adminValue).Error)
+	require.Equal(t, "admin", adminValue.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields_SkipsIfAlreadyMigrated(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Pre-populate individual field
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientId", "already-migrated"))
+
+	// Seed legacy config too
+	legacyConfig := models.OidcConfig{
+		ClientID:  "old-id",
+		IssuerURL: "https://old-issuer.example",
+	}
+	b, err := json.Marshal(legacyConfig)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", string(b)))
+
+	// Run migration - should skip since individual field is populated
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err)
+
+	// Verify field was NOT overwritten
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Equal(t, "already-migrated", clientId.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields_RealWorldJSON(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Test with real-world JSON format (as stored in database)
+	realWorldJSON := `{"clientId":"ab92b6cf-283d-4764-9308-92a9b9496bf1","clientSecret":"super-secret-value","issuerUrl":"https://id.ofkm.us","scopes":"openid email profile groups","adminClaim":"groups","adminValue":"_arcane_admins"}`
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", realWorldJSON))
+
+	// Run migration
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err)
+
+	// Verify all individual fields were populated correctly
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Equal(t, "ab92b6cf-283d-4764-9308-92a9b9496bf1", clientId.Value)
+
+	var clientSecret models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&clientSecret).Error)
+	require.Equal(t, "super-secret-value", clientSecret.Value)
+
+	var issuerUrl models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcIssuerUrl").First(&issuerUrl).Error)
+	require.Equal(t, "https://id.ofkm.us", issuerUrl.Value)
+
+	var scopes models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
+	require.Equal(t, "openid email profile groups", scopes.Value)
+
+	var adminClaim models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminClaim").First(&adminClaim).Error)
+	require.Equal(t, "groups", adminClaim.Value)
+
+	var adminValue models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminValue").First(&adminValue).Error)
+	require.Equal(t, "_arcane_admins", adminValue.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields_EmptyConfig(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Empty config should not cause errors
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", "{}"))
+
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err)
+
+	// Verify fields remain empty
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Empty(t, clientId.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields_InvalidJSON(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Invalid JSON should not cause errors (gracefully handled)
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", "not valid json"))
+
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err) // Should not return error, just skip
+
+	// Verify fields remain empty
+	var clientId models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
+	require.Empty(t, clientId.Value)
+}
+
+func TestSettingsService_MigrateOidcConfigToFields_DefaultScopes(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Config without scopes should get default scopes
+	configWithoutScopes := `{"clientId":"test-client","issuerUrl":"https://test.example"}`
+	require.NoError(t, svc.UpdateSetting(ctx, "authOidcConfig", configWithoutScopes))
+
+	err = svc.MigrateOidcConfigToFields(ctx)
+	require.NoError(t, err)
+
+	var scopes models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
+	require.Equal(t, "openid email profile", scopes.Value)
 }
