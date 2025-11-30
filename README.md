@@ -1,5 +1,3 @@
-<div align="center">
-
 > [!IMPORTANT]
 > All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub.
 >
@@ -8,6 +6,8 @@
 > Arcane: `ghcr.io/getarcaneapp/arcane`
 >
 > Arcane Agent: `ghcr.io/getarcaneapp/arcane-headless`
+
+<div align="center">
 
   <img src=".github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
   <p>Modern Docker Management, Designed for Everyone.</p>
