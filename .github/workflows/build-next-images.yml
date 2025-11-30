@@ -10,16 +10,17 @@ concurrency:
   group: build-next-images
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  packages: write
+  attestations: write
+  id-token: write
+
 jobs:
   build-images:
     name: Build Next Image (${{ matrix.display }})
     runs-on: depot-ubuntu-24.04-16
     timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -113,9 +114,140 @@ jobs:
           path: sbom-output/${{ matrix.target }}
           name: SBOM-${{ matrix.target }}
 
+      - name: Upload binaries artifact
+        if: matrix.target == 'manager'
+        uses: actions/upload-artifact@v5
+        with:
+          path: backend/.bin/*
+          name: binaries-${{ matrix.target }}
+
+      - name: Upload binaries artifact
+        if: matrix.target == 'agent'
+        uses: actions/upload-artifact@v5
+        with:
+          path: backend/.bin/*
+          name: binaries-${{ matrix.target }}
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:
           subject-name: "${{ steps.image-name.outputs.value }}"
           subject-digest: ${{ steps.build-push-image.outputs.digest }}
           push-to-registry: true
+
+  release-next:
+    name: Release Next (Pre-release)
+    runs-on: depot-ubuntu-24.04-16
+    needs: build-images
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Derive short SHA
+        id: short-sha
+        run: echo "value=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Download manager binaries
+        uses: actions/download-artifact@v6
+        with:
+          name: binaries-manager
+          path: binaries/manager
+
+      - name: Download agent binaries
+        uses: actions/download-artifact@v6
+        with:
+          name: binaries-agent
+          path: binaries/agent
+
+      - name: Download manager SBOM
+        uses: actions/download-artifact@v6
+        with:
+          name: SBOM-manager
+          path: sbom/manager
+
+      - name: Download agent SBOM
+        uses: actions/download-artifact@v6
+        with:
+          name: SBOM-agent
+          path: sbom/agent
+
+      - name: Prepare release binaries
+        run: |
+          mkdir -p release-binaries
+          cp binaries/manager/* release-binaries/ 2>/dev/null || true
+          cp binaries/agent/* release-binaries/ 2>/dev/null || true
+          ls -la release-binaries/
+
+      - name: Prepare SBOM artifacts
+        run: |
+          mkdir -p release-sbom
+          # Package SBOMs as zip files for cleaner release assets
+          cd sbom/manager && zip -r ../../release-sbom/sbom-arcane.zip . && cd ../..
+          cd sbom/agent && zip -r ../../release-sbom/sbom-arcane-headless.zip . && cd ../..
+          ls -la release-sbom/
+
+      - name: Binary attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "release-binaries/*"
+
+      - name: Generate release notes
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${{ steps.short-sha.outputs.value }}"
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          COMMIT_DATE=$(git log -1 --pretty=%ci)
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          cat << EOF > release-notes.md
+          This pre-release is automatically built and generated on every commit to main.
+
+          > [!WARNING]
+          > This is a nightly build, not a tagged release. We recommend using tagged releases.
+          > You can find tagged releases on the [releases page](https://github.com/${{ github.repository }}/releases/latest).
+
+          ---
+
+          ### Build Information
+
+          | Property | Value |
+          |----------|-------|
+          | **Commit** | [\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${COMMIT_SHA}) |
+          | **Author** | ${COMMIT_AUTHOR} |
+          | **Date** | ${COMMIT_DATE} |
+          | **Branch** | \`main\` |
+
+          ### Container Images
+
+          \`\`\`bash
+          # Manager
+          docker pull ghcr.io/${REPO_OWNER}/arcane:next
+
+          # Agent
+          docker pull ghcr.io/${REPO_OWNER}/arcane-headless:next
+          \`\`\`
+
+          ### Latest Commit
+
+          \`\`\`
+          ${COMMIT_MSG}
+          \`\`\`
+          EOF
+
+      - name: Create pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: next
+          name: Next (Pre-release)
+          body_path: release-notes.md
+          prerelease: true
+          make_latest: false
+          target_commitish: main
+          overwrite_files: true
+          files: |
+            release-binaries/*
+            release-sbom/*
