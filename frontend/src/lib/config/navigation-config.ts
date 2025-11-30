@@ -1,4 +1,4 @@
-import type { Icon as IconType } from '@lucide/svelte';
+import { KeyIcon, type Icon as IconType } from '@lucide/svelte';
 import PaletteIcon from '@lucide/svelte/icons/palette';
 import FileStackIcon from '@lucide/svelte/icons/file-stack';
 import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
@@ -70,7 +70,8 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 				{ title: m.security_title(), url: '/settings/security', icon: ShieldIcon },
 				{ title: m.navigation_title(), url: '/settings/navigation', icon: NavigationIcon },
 				{ title: m.users_title(), url: '/settings/users', icon: UserIcon },
-				{ title: m.notifications_title(), url: '/settings/notifications', icon: BellIcon }
+				{ title: m.notifications_title(), url: '/settings/notifications', icon: BellIcon },
+				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon },
 			]
 		}
 	]

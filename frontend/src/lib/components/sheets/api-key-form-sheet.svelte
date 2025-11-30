@@ -8,6 +8,7 @@
 	import type { ApiKey } from '$lib/types/api-key.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import * as m from '$lib/paraglide/messages.js';
 
 	type ApiKeyFormProps = {
 		open: boolean;
@@ -28,13 +29,13 @@
 	const formSchema = z.object({
 		name: z.string().min(1, 'Name is required'),
 		description: z.string().optional(),
-		expiresAt: z.string().optional()
+		expiresAt: z.date().optional()
 	});
 
 	let formData = $derived({
 		name: apiKeyToEdit?.name || '',
 		description: apiKeyToEdit?.description || '',
-		expiresAt: apiKeyToEdit?.expiresAt ? apiKeyToEdit.expiresAt.slice(0, 10) : ''
+		expiresAt: apiKeyToEdit?.expiresAt ? new Date(apiKeyToEdit.expiresAt) : undefined
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -46,7 +47,7 @@
 		const apiKeyData = {
 			name: data.name,
 			description: data.description || undefined,
-			expiresAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : undefined
+			expiresAt: data.expiresAt ? data.expiresAt.toISOString() : undefined
 		};
 
 		onSubmit({ apiKey: apiKeyData, isEditMode, apiKeyId: apiKeyToEdit?.id });
@@ -69,13 +70,13 @@
 				</div>
 				<div>
 					<Sheet.Title class="text-xl font-semibold">
-						{isEditMode ? 'Edit API Key' : 'Create API Key'}
+						{isEditMode ? m.api_key_edit_title() : m.api_key_create_title()}
 					</Sheet.Title>
 					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
 						{#if isEditMode}
-							Update the details of the API key "{apiKeyToEdit?.name ?? 'Unknown'}"
+							{m.api_key_edit_description({ name: apiKeyToEdit?.name ?? 'Unknown' })}
 						{:else}
-							Create a new API key for programmatic access
+							{m.api_key_create_description()}
 						{/if}
 					</Sheet.Description>
 				</div>
@@ -84,37 +85,36 @@
 
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<FormInput
-				label="Name"
+				label={m.api_key_name()}
 				type="text"
-				placeholder="Enter a name for this API key"
-				description="A friendly name to identify this API key"
+				placeholder={m.api_key_name_placeholder()}
+				description={m.api_key_name_description()}
 				bind:input={$inputs.name}
 			/>
 			<FormInput
-				label="Description"
+				label={m.api_key_description_label()}
 				type="text"
-				placeholder="Optional description"
-				description="Additional details about what this API key is used for"
+				placeholder={m.api_key_description_placeholder()}
+				description={m.api_key_description_help()}
 				bind:input={$inputs.description}
 			/>
 			<FormInput
-				label="Expires At"
+				label={m.api_key_expires_at()}
 				type="date"
-				placeholder="Optional expiration date"
-				description="Leave empty for a non-expiring key"
+				description={m.api_key_expires_at_description()}
 				bind:input={$inputs.expiresAt}
 			/>
 
 			<Sheet.Footer class="flex flex-row gap-2">
 				<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)} disabled={isLoading}
-					>Cancel</Button
+					>{m.common_cancel()}</Button
 				>
 				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
 					{#if isLoading}
 						<Spinner class="mr-2 size-4" />
 					{/if}
 					<SubmitIcon class="mr-2 size-4" />
-					{isEditMode ? 'Save Changes' : 'Create API Key'}
+					{isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
 				</Button>
 			</Sheet.Footer>
 		</form>
