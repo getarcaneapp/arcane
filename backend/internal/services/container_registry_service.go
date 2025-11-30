@@ -11,18 +11,29 @@ import (
 	"sync"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 )
 
 const (
 	registryCheckTimeout = 10 * time.Second
 	registryCacheTTL     = 30 * time.Minute
 )
+
+func getHeaderCaseInsensitive(h http.Header, key string) string {
+	for k, v := range h {
+		if strings.EqualFold(k, key) && len(v) > 0 {
+			return v[0]
+		}
+	}
+	return ""
+}
 
 type ContainerRegistryService struct {
 	db         *database.DB
@@ -253,7 +264,7 @@ func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return s.fetchWithTokenAuth(ctx, repository, tag, resp.Header.Get("WWW-Authenticate"), creds)
+		return s.fetchWithTokenAuth(ctx, repository, tag, getHeaderCaseInsensitive(resp.Header, "WWW-Authenticate"), creds)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -307,7 +318,9 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 		return "", fmt.Errorf("no auth realm found")
 	}
 
-	tokenURL := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, repository)
+	registryURL, repoPath := parseRegistryAndRepo(repository)
+
+	tokenURL := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, repoPath)
 
 	reqCtx, cancel := context.WithTimeout(ctx, registryCheckTimeout)
 	defer cancel()
@@ -348,7 +361,6 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	}
 
 	// Retry with token
-	registryURL, repoPath := parseRegistryAndRepo(repository)
 	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repoPath, tag)
 
 	reqCtx2, cancel2 := context.WithTimeout(ctx, registryCheckTimeout)
@@ -497,84 +509,45 @@ func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, e
 	return nil
 }
 
-// parseImageReference splits an image reference into repository and tag
+// parseImageReference splits an image reference into repository and tag using distribution/reference
 func parseImageReference(imageRef string) (repository, tag string) {
-	if idx := strings.Index(imageRef, "@"); idx != -1 {
-		imageRef = imageRef[:idx]
+	named, err := ref.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return imageRef, "latest"
 	}
 
-	lastSlash := strings.LastIndex(imageRef, "/")
-	lastColon := strings.LastIndex(imageRef, ":")
-
-	if lastColon > lastSlash && lastColon != -1 {
-		repository = imageRef[:lastColon]
-		tag = imageRef[lastColon+1:]
+	tagged, ok := named.(ref.Tagged)
+	if ok {
+		tag = tagged.Tag()
 	} else {
-		repository = imageRef
 		tag = "latest"
 	}
 
-	return repository, tag
+	return named.Name(), tag
 }
 
-// parseRegistryAndRepo splits a repository into registry URL and repo path
+// parseRegistryAndRepo splits a repository into registry URL and repo path using distribution/reference
 func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
-	parts := strings.SplitN(repository, "/", 2)
-
-	if len(parts) == 1 {
-		return "https://registry-1.docker.io", "library/" + parts[0]
+	named, err := ref.ParseNormalizedNamed(repository)
+	if err != nil {
+		return "https://registry-1.docker.io", "library/" + repository
 	}
 
-	registry := parts[0]
-	repoPath = parts[1]
+	domain := ref.Domain(named)
+	repoPath = ref.Path(named)
 
-	switch registry {
-	case "docker.io":
-		registryURL = "https://registry-1.docker.io"
-	case "ghcr.io":
-		registryURL = "https://ghcr.io"
-	case "gcr.io":
-		registryURL = "https://gcr.io"
-	case "quay.io":
-		registryURL = "https://quay.io"
-	default:
-		if strings.Contains(registry, ".") || strings.Contains(registry, ":") {
-			registryURL = "https://" + registry
-		} else {
-			registryURL = "https://registry-1.docker.io"
-			repoPath = repository
-		}
+	registryURL, err = registry.GetRegistryAddress(named.Name())
+	if err != nil {
+		registryURL = "https://" + domain
+	} else {
+		registryURL = "https://" + registryURL
 	}
 
 	return registryURL, repoPath
 }
 
-// parseWWWAuth parses the WWW-Authenticate header
+// parseWWWAuth parses the WWW-Authenticate header using the registry client
 func parseWWWAuth(header string) (realm, service string) {
-	if !strings.HasPrefix(header, "Bearer ") {
-		return "", ""
-	}
-
-	header = strings.TrimPrefix(header, "Bearer ")
-	parts := strings.Split(header, ",")
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(kv[0])
-		value := strings.Trim(strings.TrimSpace(kv[1]), "\"")
-
-		switch key {
-		case "realm":
-			realm = value
-		case "service":
-			service = value
-		}
-	}
-
-	return realm, service
+	c := registry.NewClient()
+	return c.ParseAuthChallenge(header)
 }

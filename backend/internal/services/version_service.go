@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 )
@@ -306,25 +307,29 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 		return "", "", ""
 	}
 
-	// Extract image reference from container config
-	imageRef = container.Config.Image
+	// Parse tag from container config image (user-specified reference)
+	tag = s.extractTagFromImageRef(container.Config.Image)
 
-	// Parse tag from image reference
-	tag = s.extractTagFromImageRef(imageRef)
-
-	// Get digest from container image ID
+	// Get digest and normalized imageRef from container image
 	if container.Image != "" {
 		imageInspect, err := dockerClient.ImageInspect(ctx, container.Image)
 		if err == nil && len(imageInspect.RepoDigests) > 0 {
-			// Extract digest from first RepoDigest
+			// Extract digest and repository from first RepoDigest
 			// Format: "ghcr.io/getarcaneapp/arcane@sha256:abc123..."
+			// Use RepoDigests for imageRef as it contains the fully qualified registry path
 			for _, repoDigest := range imageInspect.RepoDigests {
 				if idx := strings.Index(repoDigest, "@"); idx != -1 {
+					imageRef = repoDigest[:idx]
 					digest = repoDigest[idx+1:]
 					break
 				}
 			}
 		}
+	}
+
+	// Fallback to container config image if RepoDigests didn't provide imageRef
+	if imageRef == "" {
+		imageRef = container.Config.Image
 	}
 
 	return tag, digest, imageRef
@@ -354,19 +359,16 @@ func (s *VersionService) getCurrentContainerID() (string, error) {
 	return "", errors.New("container ID not found")
 }
 
-// extractTagFromImageRef extracts the tag from an image reference
+// extractTagFromImageRef extracts the tag from an image reference using distribution/reference
 func (s *VersionService) extractTagFromImageRef(imageRef string) string {
-	// Remove digest if present
-	if idx := strings.Index(imageRef, "@"); idx != -1 {
-		imageRef = imageRef[:idx]
+	named, err := ref.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return "latest"
 	}
 
-	// Find tag after last colon (after last slash)
-	lastSlash := strings.LastIndex(imageRef, "/")
-	lastColon := strings.LastIndex(imageRef, ":")
-
-	if lastColon > lastSlash && lastColon != -1 {
-		return imageRef[lastColon+1:]
+	tagged, ok := named.(ref.Tagged)
+	if ok {
+		return tagged.Tag()
 	}
 
 	return "latest"
@@ -374,15 +376,12 @@ func (s *VersionService) extractTagFromImageRef(imageRef string) string {
 
 // checkDigestBasedUpdate checks if there's a newer digest for the current tag
 func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag, currentDigest, currentImageRef string) (updateAvailable bool, latestDigest string) {
-	if currentTag == "" || currentDigest == "" {
+	if currentTag == "" || currentDigest == "" || currentImageRef == "" {
 		return false, ""
 	}
 
-	// Build full image reference from current image or fallback to default
-	imageRef := currentImageRef
-	if imageRef == "" {
-		imageRef = fmt.Sprintf("ghcr.io/getarcaneapp/arcane:%s", currentTag)
-	}
+	// Build full image reference with tag
+	imageRef := fmt.Sprintf("%s:%s", currentImageRef, currentTag)
 
 	// Fetch latest digest from registry
 	latestDigest, err := s.containerRegistryService.GetImageDigest(ctx, imageRef)
