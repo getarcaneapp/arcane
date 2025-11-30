@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	imagetypes "github.com/docker/docker/api/types/image"
 	"github.com/ofkm/arcane-backend/internal/models"
 )
 
@@ -110,6 +112,17 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+
+	// Pull the upgrader image first to ensure it exists
+	slog.Info("Pulling upgrader image", "image", upgraderImage)
+	pullReader, err := dockerClient.ImagePull(ctx, upgraderImage, imagetypes.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull upgrader image: %w", err)
+	}
+	// Drain the reader to complete the pull
+	_, _ = io.Copy(io.Discard, pullReader)
+	pullReader.Close()
+	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Create the upgrader container config
 	config := &containertypes.Config{
