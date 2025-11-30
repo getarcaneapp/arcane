@@ -96,6 +96,12 @@ type Settings struct {
 
 	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
 	InstanceID SettingVariable `key:"instanceId,internal"`
+
+	// Users category (admin management page - no actual settings)
+	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
+
+	// API Keys category (admin management page - no actual settings)
+	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=key;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
 }
 
 func (SettingVariable) TableName() string {

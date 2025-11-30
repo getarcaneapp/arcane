@@ -1,6 +1,7 @@
 <!-- Originally From  https://github.com/pocket-id/pocket-id/blob/main/frontend/src/lib/components/form/form-input.svelte -->
 <script lang="ts">
 	import { Input } from '$lib/components/ui/input';
+	import DatePicker from '$lib/components/form/date-picker.svelte';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
@@ -53,6 +54,8 @@
 				<Switch {id} bind:checked={input.value as boolean} {disabled} />
 			{:else if type === 'textarea'}
 				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} />
+			{:else if type === 'date'}
+				<DatePicker {id} bind:value={input.value as Date} />
 			{:else}
 				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} />
 			{/if}

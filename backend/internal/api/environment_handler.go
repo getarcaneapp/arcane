@@ -57,6 +57,16 @@ func NewEnvironmentHandler(
 	}
 }
 
+// PairAgent godoc
+// @Summary Pair with local agent
+// @Description Generate or rotate the local agent pairing token
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID (must be 0 for local)"
+// @Param request body object false "Pair request with optional rotate flag"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/agent/pair [post]
 func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 	if c.Param("id") != LOCAL_DOCKER_ENVIRONMENT_ID {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": "Not found"}})
@@ -86,6 +96,15 @@ func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 	})
 }
 
+// CreateEnvironment godoc
+// @Summary Create an environment
+// @Description Create a new Docker environment
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param environment body dto.CreateEnvironmentDto true "Environment creation data"
+// @Success 201 {object} dto.EnvironmentDto
+// @Router /api/environments [post]
 // Create
 func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 	var req dto.CreateEnvironmentDto
@@ -161,6 +180,16 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": out})
 }
 
+// ListEnvironments godoc
+// @Summary List environments
+// @Description Get a paginated list of Docker environments
+// @Tags Environments
+// @Param pagination[page] query int false "Page number for pagination" default(1)
+// @Param pagination[limit] query int false "Number of items per page" default(20)
+// @Param sort[column] query string false "Column to sort by"
+// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
+// @Success 200 {object} dto.Paginated[dto.EnvironmentDto]
+// @Router /api/environments [get]
 func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -177,6 +206,13 @@ func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 	})
 }
 
+// GetEnvironment godoc
+// @Summary Get an environment
+// @Description Get a Docker environment by ID
+// @Tags Environments
+// @Param id path string true "Environment ID"
+// @Success 200 {object} dto.EnvironmentDto
+// @Router /api/environments/{id} [get]
 // Get by ID
 func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -199,6 +235,16 @@ func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 	})
 }
 
+// UpdateEnvironment godoc
+// @Summary Update an environment
+// @Description Update a Docker environment
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param environment body dto.UpdateEnvironmentDto true "Environment update data"
+// @Success 200 {object} dto.EnvironmentDto
+// @Router /api/environments/{id} [put]
 // Update
 func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -334,6 +380,13 @@ func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string
 	}
 }
 
+// DeleteEnvironment godoc
+// @Summary Delete an environment
+// @Description Delete a Docker environment
+// @Tags Environments
+// @Param id path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id} [delete]
 // Delete
 func (h *EnvironmentHandler) DeleteEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -356,6 +409,16 @@ func (h *EnvironmentHandler) DeleteEnvironment(c *gin.Context) {
 	})
 }
 
+// TestConnection godoc
+// @Summary Test environment connection
+// @Description Test connectivity to a Docker environment
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param request body object false "Optional API URL to test"
+// @Success 200 {object} dto.TestConnectionDto
+// @Router /api/environments/{id}/test [post]
 // TestConnection
 func (h *EnvironmentHandler) TestConnection(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -384,6 +447,13 @@ func (h *EnvironmentHandler) TestConnection(c *gin.Context) {
 	})
 }
 
+// UpdateHeartbeat godoc
+// @Summary Update environment heartbeat
+// @Description Update the heartbeat timestamp for an environment
+// @Tags Environments
+// @Param id path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/heartbeat [post]
 func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	environmentID := c.Param("id")
 
@@ -402,6 +472,13 @@ func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	})
 }
 
+// SyncRegistries godoc
+// @Summary Sync container registries
+// @Description Sync container registries to a remote environment
+// @Tags Environments
+// @Param id path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/sync-registries [post]
 func (h *EnvironmentHandler) SyncRegistries(c *gin.Context) {
 	environmentID := c.Param("id")
 

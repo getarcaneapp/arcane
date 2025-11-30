@@ -37,6 +37,13 @@ func NewNotificationHandler(group *gin.RouterGroup, notificationService *service
 	}
 }
 
+// GetAllSettings godoc
+// @Summary Get all notification settings
+// @Description Get all notification provider settings
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Success 200 {array} dto.NotificationSettingsResponse
+// @Router /api/environments/{id}/notifications/settings [get]
 func (h *NotificationHandler) GetAllSettings(c *gin.Context) {
 	settings, err := h.notificationService.GetAllSettings(c.Request.Context())
 	if err != nil {
@@ -58,6 +65,14 @@ func (h *NotificationHandler) GetAllSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
+// GetSettings godoc
+// @Summary Get notification settings by provider
+// @Description Get notification settings for a specific provider
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Param provider path string true "Notification provider (discord, email)"
+// @Success 200 {object} dto.NotificationSettingsResponse
+// @Router /api/environments/{id}/notifications/settings/{provider} [get]
 func (h *NotificationHandler) GetSettings(c *gin.Context) {
 	providerStr := c.Param("provider")
 	provider := models.NotificationProvider(providerStr)
@@ -85,6 +100,16 @@ func (h *NotificationHandler) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// CreateOrUpdateSettings godoc
+// @Summary Create or update notification settings
+// @Description Create or update notification settings for a provider
+// @Tags Notifications
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param settings body dto.NotificationSettingsRequest true "Notification settings"
+// @Success 200 {object} dto.NotificationSettingsResponse
+// @Router /api/environments/{id}/notifications/settings [post]
 func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 	var req dto.NotificationSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -113,6 +138,14 @@ func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// DeleteSettings godoc
+// @Summary Delete notification settings
+// @Description Delete notification settings for a provider
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Param provider path string true "Notification provider (discord, email)"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/notifications/settings/{provider} [delete]
 func (h *NotificationHandler) DeleteSettings(c *gin.Context) {
 	providerStr := c.Param("provider")
 	provider := models.NotificationProvider(providerStr)
@@ -132,6 +165,15 @@ func (h *NotificationHandler) DeleteSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Settings deleted successfully"})
 }
 
+// TestNotification godoc
+// @Summary Test notification
+// @Description Send a test notification for a provider
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Param provider path string true "Notification provider (discord, email)"
+// @Param type query string false "Test type (simple or image-update)" default(simple)
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/notifications/test/{provider} [post]
 func (h *NotificationHandler) TestNotification(c *gin.Context) {
 	providerStr := c.Param("provider")
 	provider := models.NotificationProvider(providerStr)
@@ -153,6 +195,13 @@ func (h *NotificationHandler) TestNotification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Test notification sent successfully"})
 }
 
+// GetAppriseSettings godoc
+// @Summary Get Apprise settings
+// @Description Get Apprise notification settings
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Success 200 {object} dto.AppriseSettingsResponse
+// @Router /api/environments/{id}/notifications/apprise [get]
 func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 	settings, err := h.appriseService.GetSettings(c.Request.Context())
 	if err != nil {
@@ -171,6 +220,16 @@ func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// CreateOrUpdateAppriseSettings godoc
+// @Summary Create or update Apprise settings
+// @Description Create or update Apprise notification settings
+// @Tags Notifications
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param settings body dto.AppriseSettingsRequest true "Apprise settings"
+// @Success 200 {object} dto.AppriseSettingsResponse
+// @Router /api/environments/{id}/notifications/apprise [post]
 func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 	var req dto.AppriseSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -206,6 +265,13 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// TestAppriseNotification godoc
+// @Summary Test Apprise notification
+// @Description Send a test notification via Apprise
+// @Tags Notifications
+// @Param id path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/notifications/apprise/test [post]
 func (h *NotificationHandler) TestAppriseNotification(c *gin.Context) {
 	if err := h.appriseService.TestNotification(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AppriseTestError{Err: err}).Error()})

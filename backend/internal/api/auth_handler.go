@@ -32,6 +32,15 @@ func NewAuthHandler(group *gin.RouterGroup, userService *services.UserService, a
 	}
 }
 
+// Login godoc
+// @Summary User login
+// @Description Authenticate a user with username and password
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param credentials body dto.LoginRequest true "Login credentials"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -94,12 +103,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// Logout godoc
+// @Summary User logout
+// @Description Log out the current user and clear session
+// @Tags Auth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	cookie.ClearTokenCookie(c)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"message": "Logged out successfully"}})
 }
 
+// GetCurrentUser godoc
+// @Summary Get current user
+// @Description Get the currently authenticated user's information
+// @Tags Auth
+// @Success 200 {object} dto.UserResponseDto
+// @Router /api/auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := middleware.GetCurrentUserID(c)
 	if !exists {
@@ -122,6 +143,15 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
 
+// RefreshToken godoc
+// @Summary Refresh access token
+// @Description Refresh an expired access token using a refresh token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param refresh body dto.RefreshRequest true "Refresh token"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req dto.RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -164,6 +194,15 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
+// ChangePassword godoc
+// @Summary Change password
+// @Description Change the current user's password
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param password body dto.PasswordChangeRequest true "Password change data"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/auth/password [post]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	user, ok := middleware.RequireAuthentication(c)
 	if !ok {
