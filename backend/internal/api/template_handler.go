@@ -46,6 +46,16 @@ func NewTemplateHandler(group *gin.RouterGroup, templateService *services.Templa
 	}
 }
 
+// GetAllTemplatesPaginated godoc
+// @Summary List templates (paginated)
+// @Description Get a paginated list of compose templates
+// @Tags Templates
+// @Param pagination[page] query int false "Page number for pagination" default(1)
+// @Param pagination[limit] query int false "Number of items per page" default(20)
+// @Param sort[column] query string false "Column to sort by"
+// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
+// @Success 200 {object} dto.Paginated[dto.ComposeTemplateDto]
+// @Router /api/templates [get]
 func (h *TemplateHandler) GetAllTemplatesPaginated(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -75,6 +85,12 @@ func (h *TemplateHandler) GetAllTemplatesPaginated(c *gin.Context) {
 	})
 }
 
+// GetAllTemplates godoc
+// @Summary List all templates
+// @Description Get all compose templates without pagination
+// @Tags Templates
+// @Success 200 {array} dto.ComposeTemplateDto
+// @Router /api/templates/all [get]
 func (h *TemplateHandler) GetAllTemplates(c *gin.Context) {
 	templates, err := h.templateService.GetAllTemplates(c.Request.Context())
 	if err != nil {
@@ -102,6 +118,13 @@ func (h *TemplateHandler) GetAllTemplates(c *gin.Context) {
 	})
 }
 
+// GetTemplate godoc
+// @Summary Get a template
+// @Description Get a compose template by ID
+// @Tags Templates
+// @Param id path string true "Template ID"
+// @Success 200 {object} dto.ComposeTemplateDto
+// @Router /api/templates/{id} [get]
 func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -144,6 +167,13 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 	})
 }
 
+// GetTemplateContent godoc
+// @Summary Get template content
+// @Description Get the compose content for a template with parsed data
+// @Tags Templates
+// @Param id path string true "Template ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/{id}/content [get]
 func (h *TemplateHandler) GetTemplateContent(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -169,6 +199,15 @@ func (h *TemplateHandler) GetTemplateContent(c *gin.Context) {
 	})
 }
 
+// CreateTemplate godoc
+// @Summary Create a template
+// @Description Create a new compose template
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param template body object true "Template creation data"
+// @Success 201 {object} dto.ComposeTemplateDto
+// @Router /api/templates [post]
 func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name" binding:"required"`
@@ -219,6 +258,16 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 	})
 }
 
+// UpdateTemplate godoc
+// @Summary Update a template
+// @Description Update an existing compose template
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param template body object true "Template update data"
+// @Success 200 {object} dto.ComposeTemplateDto
+// @Router /api/templates/{id} [put]
 func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -294,6 +343,13 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 	})
 }
 
+// DeleteTemplate godoc
+// @Summary Delete a template
+// @Description Delete a compose template
+// @Tags Templates
+// @Param id path string true "Template ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/{id} [delete]
 func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -326,6 +382,12 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	})
 }
 
+// GetDefaultTemplates godoc
+// @Summary Get default templates
+// @Description Get the default compose and env templates
+// @Tags Templates
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/default [get]
 func (h *TemplateHandler) GetDefaultTemplates(c *gin.Context) {
 	composeTemplate := h.templateService.GetComposeTemplate()
 	envTemplate := h.templateService.GetEnvTemplate()
@@ -339,6 +401,15 @@ func (h *TemplateHandler) GetDefaultTemplates(c *gin.Context) {
 	})
 }
 
+// SaveDefaultTemplates godoc
+// @Summary Save default templates
+// @Description Save the default compose and env templates
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param templates body object true "Default templates data"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/default [post]
 func (h *TemplateHandler) SaveDefaultTemplates(c *gin.Context) {
 	var req struct {
 		ComposeContent string `json:"composeContent" binding:"required"`
@@ -374,6 +445,12 @@ func (h *TemplateHandler) SaveDefaultTemplates(c *gin.Context) {
 	})
 }
 
+// GetRegistries godoc
+// @Summary List template registries
+// @Description Get all template registries
+// @Tags Templates
+// @Success 200 {array} dto.TemplateRegistryDto
+// @Router /api/templates/registries [get]
 func (h *TemplateHandler) GetRegistries(c *gin.Context) {
 	registries, err := h.templateService.GetRegistries(c.Request.Context())
 	if err != nil {
@@ -399,6 +476,15 @@ func (h *TemplateHandler) GetRegistries(c *gin.Context) {
 	})
 }
 
+// CreateRegistry godoc
+// @Summary Create a template registry
+// @Description Create a new template registry
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param registry body object true "Registry creation data"
+// @Success 201 {object} dto.TemplateRegistryDto
+// @Router /api/templates/registries [post]
 func (h *TemplateHandler) CreateRegistry(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name" binding:"required"`
@@ -443,6 +529,16 @@ func (h *TemplateHandler) CreateRegistry(c *gin.Context) {
 	})
 }
 
+// UpdateRegistry godoc
+// @Summary Update a template registry
+// @Description Update an existing template registry
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Registry ID"
+// @Param registry body object true "Registry update data"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/registries/{id} [put]
 func (h *TemplateHandler) UpdateRegistry(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -495,6 +591,13 @@ func (h *TemplateHandler) UpdateRegistry(c *gin.Context) {
 	})
 }
 
+// DeleteRegistry godoc
+// @Summary Delete a template registry
+// @Description Delete a template registry
+// @Tags Templates
+// @Param id path string true "Registry ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/registries/{id} [delete]
 func (h *TemplateHandler) DeleteRegistry(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -527,6 +630,13 @@ func (h *TemplateHandler) DeleteRegistry(c *gin.Context) {
 	})
 }
 
+// FetchRegistry godoc
+// @Summary Fetch remote registry
+// @Description Fetch templates from a remote registry URL
+// @Tags Templates
+// @Param url query string true "Registry URL"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/fetch [get]
 func (h *TemplateHandler) FetchRegistry(c *gin.Context) {
 	url := c.Query("url")
 	if url == "" {
@@ -555,6 +665,13 @@ func (h *TemplateHandler) FetchRegistry(c *gin.Context) {
 	})
 }
 
+// DownloadTemplate godoc
+// @Summary Download a template
+// @Description Download a remote template to local storage
+// @Tags Templates
+// @Param id path string true "Template ID"
+// @Success 200 {object} dto.ComposeTemplateDto
+// @Router /api/templates/{id}/download [post]
 func (h *TemplateHandler) DownloadTemplate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -590,6 +707,12 @@ func (h *TemplateHandler) DownloadTemplate(c *gin.Context) {
 	})
 }
 
+// GetGlobalVariables godoc
+// @Summary Get global variables
+// @Description Get global template variables
+// @Tags Templates
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/variables [get]
 func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 	vars, err := h.templateService.GetGlobalVariables(c.Request.Context())
 	if err != nil {
@@ -606,6 +729,15 @@ func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 	})
 }
 
+// UpdateGlobalVariables godoc
+// @Summary Update global variables
+// @Description Update global template variables
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param variables body dto.UpdateVariablesRequest true "Variables update data"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/templates/variables [put]
 func (h *TemplateHandler) UpdateGlobalVariables(c *gin.Context) {
 	var req dto.UpdateVariablesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

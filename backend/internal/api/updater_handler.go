@@ -27,6 +27,16 @@ func NewUpdaterHandler(group *gin.RouterGroup, updaterService *services.UpdaterS
 	}
 }
 
+// Run godoc
+// @Summary Run updater
+// @Description Apply pending container updates
+// @Tags Updater
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param request body dto.UpdaterRunRequest false "Updater run options"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/updater/run [post]
 func (h *UpdaterHandler) Run(c *gin.Context) {
 	var req dto.UpdaterRunRequest
 	_ = c.ShouldBindJSON(&req)
@@ -40,11 +50,26 @@ func (h *UpdaterHandler) Run(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
 
+// Status godoc
+// @Summary Get updater status
+// @Description Get the current status of the updater
+// @Tags Updater
+// @Param id path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/updater/status [get]
 func (h *UpdaterHandler) Status(c *gin.Context) {
 	status := h.updaterService.GetStatus()
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": status})
 }
 
+// History godoc
+// @Summary Get updater history
+// @Description Get the history of update operations
+// @Tags Updater
+// @Param id path string true "Environment ID"
+// @Param limit query int false "Number of history entries to return" default(50)
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/updater/history [get]
 func (h *UpdaterHandler) History(c *gin.Context) {
 	limit := 50
 	if ls := c.Query("limit"); ls != "" {

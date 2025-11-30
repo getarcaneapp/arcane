@@ -68,6 +68,17 @@ func NewProjectHandler(group *gin.RouterGroup, projectService *services.ProjectS
 	}
 }
 
+// ListProjects godoc
+// @Summary List projects
+// @Description Get a paginated list of Docker Compose projects
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param pagination[page] query int false "Page number for pagination" default(1)
+// @Param pagination[limit] query int false "Number of items per page" default(20)
+// @Param sort[column] query string false "Column to sort by"
+// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
+// @Success 200 {object} dto.Paginated[dto.ProjectDetailsDto]
+// @Router /api/environments/{id}/projects [get]
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -97,6 +108,14 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	})
 }
 
+// DeployProject godoc
+// @Summary Deploy a project
+// @Description Deploy a Docker Compose project (docker-compose up)
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/up [post]
 func (h *ProjectHandler) DeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 
@@ -123,6 +142,14 @@ func (h *ProjectHandler) DeployProject(c *gin.Context) {
 	})
 }
 
+// DownProject godoc
+// @Summary Bring down a project
+// @Description Bring down a Docker Compose project (docker-compose down)
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/down [post]
 func (h *ProjectHandler) DownProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 
@@ -141,6 +168,16 @@ func (h *ProjectHandler) DownProject(c *gin.Context) {
 	})
 }
 
+// CreateProject godoc
+// @Summary Create a project
+// @Description Create a new Docker Compose project
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param project body dto.CreateProjectDto true "Project creation data"
+// @Success 201 {object} dto.CreateProjectReponseDto
+// @Router /api/environments/{id}/projects [post]
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	var req dto.CreateProjectDto
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -172,6 +209,14 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	})
 }
 
+// GetProject godoc
+// @Summary Get a project
+// @Description Get a Docker Compose project by ID
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Success 200 {object} dto.ProjectDetailsDto
+// @Router /api/environments/{id}/projects/{projectId} [get]
 func (h *ProjectHandler) GetProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
@@ -191,6 +236,14 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 	})
 }
 
+// RedeployProject godoc
+// @Summary Redeploy a project
+// @Description Redeploy a Docker Compose project (down + up)
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/redeploy [post]
 func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 
@@ -217,6 +270,17 @@ func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 	})
 }
 
+// DestroyProject godoc
+// @Summary Destroy a project
+// @Description Destroy a Docker Compose project and optionally remove files/volumes
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Param request body dto.DestroyProjectDto false "Destroy options"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/destroy [delete]
 func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 
@@ -243,6 +307,17 @@ func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 	})
 }
 
+// PullProjectImages godoc
+// @Summary Pull project images
+// @Description Pull all images for a Docker Compose project
+// @Tags Projects
+// @Accept json
+// @Produce application/x-json-stream
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Param request body dto.ProjectImagePullDto false "Pull options with optional credentials"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/pull [post]
 func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
@@ -273,6 +348,17 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 	_, _ = fmt.Fprintln(c.Writer, `{"status":"complete"}`)
 }
 
+// UpdateProject godoc
+// @Summary Update a project
+// @Description Update a Docker Compose project configuration
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Param project body dto.UpdateProjectDto true "Project update data"
+// @Success 200 {object} dto.ProjectDetailsDto
+// @Router /api/environments/{id}/projects/{projectId} [put]
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
@@ -303,6 +389,17 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	})
 }
 
+// UpdateProjectInclude godoc
+// @Summary Update project include file
+// @Description Update an include file within a Docker Compose project
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Param include body dto.UpdateProjectIncludeDto true "Include file update data"
+// @Success 200 {object} dto.ProjectDetailsDto
+// @Router /api/environments/{id}/projects/{projectId}/includes [put]
 func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
@@ -333,6 +430,14 @@ func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 	})
 }
 
+// RestartProject godoc
+// @Summary Restart a project
+// @Description Restart all containers in a Docker Compose project
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/environments/{id}/projects/{projectId}/restart [post]
 func (h *ProjectHandler) RestartProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
@@ -415,6 +520,19 @@ func (h *ProjectHandler) getOrStartProjectLogHub(projectID, format string, batch
 	return ls.hub
 }
 
+// GetProjectLogsWS godoc
+// @Summary Get project logs via WebSocket
+// @Description Stream project logs over WebSocket connection
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Param projectId path string true "Project ID"
+// @Param follow query bool false "Follow log output" default(true)
+// @Param tail query string false "Number of lines to show from the end" default(100)
+// @Param since query string false "Show logs since timestamp"
+// @Param timestamps query bool false "Show timestamps" default(false)
+// @Param format query string false "Output format (text or json)" default(text)
+// @Param batched query bool false "Batch log messages" default(false)
+// @Router /api/environments/{id}/projects/{projectId}/logs/ws [get]
 func (h *ProjectHandler) GetProjectLogsWS(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
@@ -437,6 +555,13 @@ func (h *ProjectHandler) GetProjectLogsWS(c *gin.Context) {
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
+// GetProjectStatusCounts godoc
+// @Summary Get project status counts
+// @Description Get counts of running, stopped, and total projects
+// @Tags Projects
+// @Param id path string true "Environment ID"
+// @Success 200 {object} dto.ProjectStatusCounts
+// @Router /api/environments/{id}/projects/counts [get]
 func (h *ProjectHandler) GetProjectStatusCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.projectService.GetProjectStatusCounts(c.Request.Context())
 	if err != nil {

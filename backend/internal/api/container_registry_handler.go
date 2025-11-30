@@ -37,6 +37,16 @@ func NewContainerRegistryHandler(group *gin.RouterGroup, registryService *servic
 	}
 }
 
+// GetRegistries godoc
+// @Summary List container registries
+// @Description Get a paginated list of container registries
+// @Tags Container Registries
+// @Param pagination[page] query int false "Page number for pagination" default(1)
+// @Param pagination[limit] query int false "Number of items per page" default(20)
+// @Param sort[column] query string false "Column to sort by"
+// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
+// @Success 200 {object} dto.Paginated[dto.ContainerRegistryDto]
+// @Router /api/container-registries [get]
 func (h *ContainerRegistryHandler) GetRegistries(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -56,6 +66,13 @@ func (h *ContainerRegistryHandler) GetRegistries(c *gin.Context) {
 	})
 }
 
+// GetRegistry godoc
+// @Summary Get a container registry
+// @Description Get a container registry by ID
+// @Tags Container Registries
+// @Param id path string true "Registry ID"
+// @Success 200 {object} dto.ContainerRegistryDto
+// @Router /api/container-registries/{id} [get]
 func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 	id := c.Param("id")
 
@@ -84,6 +101,15 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 	})
 }
 
+// CreateRegistry godoc
+// @Summary Create a container registry
+// @Description Create a new container registry
+// @Tags Container Registries
+// @Accept json
+// @Produce json
+// @Param registry body models.CreateContainerRegistryRequest true "Registry creation data"
+// @Success 201 {object} dto.ContainerRegistryDto
+// @Router /api/container-registries [post]
 func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 	var req models.CreateContainerRegistryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -119,6 +145,16 @@ func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 	})
 }
 
+// UpdateRegistry godoc
+// @Summary Update a container registry
+// @Description Update an existing container registry
+// @Tags Container Registries
+// @Accept json
+// @Produce json
+// @Param id path string true "Registry ID"
+// @Param registry body models.UpdateContainerRegistryRequest true "Registry update data"
+// @Success 200 {object} dto.ContainerRegistryDto
+// @Router /api/container-registries/{id} [put]
 func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 	id := c.Param("id")
 
@@ -156,6 +192,13 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 	})
 }
 
+// DeleteRegistry godoc
+// @Summary Delete a container registry
+// @Description Delete a container registry by ID
+// @Tags Container Registries
+// @Param id path string true "Registry ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/container-registries/{id} [delete]
 func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 	id := c.Param("id")
 
@@ -174,6 +217,13 @@ func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 	})
 }
 
+// TestRegistry godoc
+// @Summary Test a container registry
+// @Description Test connectivity and authentication to a container registry
+// @Tags Container Registries
+// @Param id path string true "Registry ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/container-registries/{id}/test [post]
 func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	id := c.Param("id")
 
@@ -211,6 +261,15 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	})
 }
 
+// SyncRegistries godoc
+// @Summary Sync container registries
+// @Description Sync container registries from a remote source
+// @Tags Container Registries
+// @Accept json
+// @Produce json
+// @Param request body dto.SyncRegistriesRequest true "Registries to sync"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/container-registries/sync [post]
 func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
 	var req dto.SyncRegistriesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
