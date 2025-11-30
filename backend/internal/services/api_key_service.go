@@ -222,8 +222,11 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 				return nil, ErrApiKeyExpired
 			}
 
-			now := time.Now()
-			s.db.WithContext(ctx).Model(&apiKey).Update("last_used_at", now)
+			// Update last_used_at asynchronously to avoid blocking auth flow
+			go func(keyID string) {
+				now := time.Now()
+				s.db.Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
+			}(apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, apiKey.UserID)
 			if err != nil {
