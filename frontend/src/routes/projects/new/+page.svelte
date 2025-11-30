@@ -7,6 +7,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
 	import WandIcon from '@lucide/svelte/icons/wand';
+	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -253,6 +254,10 @@
 								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (showConverterDialog = true)}>
 									<TerminalIcon class="size-4" />
 									{m.compose_convert_from_docker_run()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item class={dropdownItemClass} onclick={() => goto('/customize/gitops')}>
+									<GitBranchIcon class="size-4" />
+									Add GitOps Repository
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item

@@ -1,4 +1,4 @@
-import type { Icon as IconType } from '@lucide/svelte';
+import { GitBranchIcon, type Icon as IconType } from '@lucide/svelte';
 import PaletteIcon from '@lucide/svelte/icons/palette';
 import FileStackIcon from '@lucide/svelte/icons/file-stack';
 import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
@@ -43,7 +43,8 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			items: [
 				{ title: m.templates_title(), url: '/customize/templates', icon: LayoutTemplateIcon },
 				{ title: m.registries_title(), url: '/customize/registries', icon: LockKeyholeIcon },
-				{ title: m.variables_title(), url: '/customize/variables', icon: FileTextIcon }
+				{ title: m.variables_title(), url: '/customize/variables', icon: FileTextIcon },
+				{ title: m.git_repos_title(), url: '/customize/gitops', icon: GitBranchIcon }
 			]
 		}
 	],

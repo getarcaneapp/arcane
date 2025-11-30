@@ -51,6 +51,14 @@ type ProjectDetailsDto struct {
 	CreatedAt      string           `json:"createdAt"`
 	UpdatedAt      string           `json:"updatedAt"`
 	Services       []any            `json:"services,omitempty"`
+	GitOps         *GitOpsDto       `json:"gitOps,omitempty"`
+}
+
+type GitOpsDto struct {
+	RepositoryID string `json:"repositoryId"`
+	URL          string `json:"url"`
+	Branch       string `json:"branch"`
+	AutoSync     bool   `json:"autoSync"`
 }
 
 type DestroyProjectDto struct {

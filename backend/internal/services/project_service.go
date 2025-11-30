@@ -1012,8 +1012,24 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	slog.DebugContext(ctx, "Retrieved projects from database",
 		"count", len(projectsArray))
 
+	// Fetch all GitOps repos to map them to projects
+	var gitOpsRepos []models.GitOpsRepository
+	gitOpsMap := make(map[string]dto.GitOpsDto)
+	if err := s.db.WithContext(ctx).Find(&gitOpsRepos).Error; err == nil {
+		for _, repo := range gitOpsRepos {
+			if repo.ProjectName != nil {
+				gitOpsMap[*repo.ProjectName] = dto.GitOpsDto{
+					RepositoryID: repo.ID,
+					URL:          repo.URL,
+					Branch:       repo.Branch,
+					AutoSync:     repo.AutoSync,
+				}
+			}
+		}
+	}
+
 	// Fetch live status concurrently for all projects
-	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	result := s.fetchProjectStatusConcurrently(ctx, projectsArray, gitOpsMap)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
@@ -1021,9 +1037,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	return result, paginationResp, nil
 }
 
-// fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
 // Optimized to use a single Docker API call instead of N calls + N file reads
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []dto.ProjectDetailsDto {
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project, gitOpsMap map[string]dto.GitOpsDto) []dto.ProjectDetailsDto {
 	// 1. Fetch all compose containers in one go
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
@@ -1033,6 +1048,11 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 		for i, p := range projectsList {
 			_ = dto.MapStruct(p, &results[i])
 			results[i].Status = string(models.ProjectStatusUnknown)
+
+			// Apply GitOps info if available (Conflict resolution)
+			if val, ok := gitOpsMap[p.Name]; ok {
+				results[i].GitOps = &val
+			}
 		}
 		return results
 	}
@@ -1050,6 +1070,11 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	results := make([]dto.ProjectDetailsDto, len(projectsList))
 	for i, p := range projectsList {
 		results[i] = s.mapProjectToDto(ctx, p, containersByProject)
+
+		// Apply GitOps info if available
+		if val, ok := gitOpsMap[p.Name]; ok {
+			results[i].GitOps = &val
+		}
 	}
 
 	return results
