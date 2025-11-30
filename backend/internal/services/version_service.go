@@ -318,9 +318,9 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 			// Format: "ghcr.io/getarcaneapp/arcane@sha256:abc123..."
 			// Use RepoDigests for imageRef as it contains the fully qualified registry path
 			for _, repoDigest := range imageInspect.RepoDigests {
-				if idx := strings.Index(repoDigest, "@"); idx != -1 {
-					imageRef = repoDigest[:idx]
-					digest = repoDigest[idx+1:]
+				if repo, dig, ok := strings.Cut(repoDigest, "@"); ok {
+					imageRef = repo
+					digest = dig
 					break
 				}
 			}
