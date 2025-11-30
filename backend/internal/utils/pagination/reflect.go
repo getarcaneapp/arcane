@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

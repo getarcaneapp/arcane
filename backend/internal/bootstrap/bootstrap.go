@@ -13,9 +13,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	httputils "github.com/ofkm/arcane-backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
 func Bootstrap(ctx context.Context) error {

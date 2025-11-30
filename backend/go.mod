@@ -1,4 +1,4 @@
-module github.com/ofkm/arcane-backend
+module github.com/getarcaneapp/arcane/backend
 
 go 1.25.4
 

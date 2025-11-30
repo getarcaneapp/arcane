@@ -16,10 +16,10 @@ import (
 
 	"crypto/subtle"
 
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 )
 
 type Argon2Params struct {

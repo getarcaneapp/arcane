@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	apphttp "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/common"
-	"github.com/ofkm/arcane-backend/internal/services"
-	apphttp "github.com/ofkm/arcane-backend/internal/utils/http"
 )
 
 type ApplicationImagesHandler struct {

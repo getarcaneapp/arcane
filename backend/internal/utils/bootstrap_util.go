@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/ofkm/arcane-backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 )
 
 func LoadAgentToken(ctx context.Context, cfg *config.Config, getSettingFunc func(context.Context, string, string) string) {

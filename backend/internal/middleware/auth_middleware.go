@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/services"
-	"github.com/ofkm/arcane-backend/internal/utils/cookie"
 )
 
 const (

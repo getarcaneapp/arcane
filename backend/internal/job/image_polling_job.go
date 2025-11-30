@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/go-co-op/gocron/v2"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/services"
 )
 
 type ImagePollingJob struct {
