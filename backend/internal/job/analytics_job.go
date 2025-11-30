@@ -18,7 +18,7 @@ import (
 
 const (
 	AnalyticsJobName         = "analytics-heartbeat"
-	defaultHeartbeatEndpoint = "https://analytics.arcane.ofkm.dev/heartbeat"
+	defaultHeartbeatEndpoint = "https://checkin.getarcane.app/heartbeat"
 	analyticsInterval        = 24 * time.Hour
 )
 

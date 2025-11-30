@@ -117,7 +117,7 @@
 			// Validate Discord fields when Discord is enabled
 			if (data.discordEnabled && !data.discordWebhookUrl.trim()) {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: 'custom',
 					message: 'Webhook URL is required when Discord is enabled',
 					path: ['discordWebhookUrl']
 				});
@@ -125,7 +125,7 @@
 			if (data.emailEnabled) {
 				if (!data.emailSmtpHost.trim()) {
 					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
+						code: 'custom',
 						message: 'SMTP host is required when email is enabled',
 						path: ['emailSmtpHost']
 					});
@@ -133,7 +133,7 @@
 
 				if (!data.emailFromAddress.trim()) {
 					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
+						code: 'custom',
 						message: 'From address is required when email is enabled',
 						path: ['emailFromAddress']
 					});
@@ -142,7 +142,7 @@
 					const emailValidation = z.string().email().safeParse(data.emailFromAddress.trim());
 					if (!emailValidation.success) {
 						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
+							code: 'custom',
 							message: 'Invalid email address format',
 							path: ['emailFromAddress']
 						});
@@ -151,7 +151,7 @@
 
 				if (!data.emailToAddresses.trim()) {
 					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
+						code: 'custom',
 						message: 'At least one recipient address is required when email is enabled',
 						path: ['emailToAddresses']
 					});
@@ -172,7 +172,7 @@
 
 					if (invalidAddresses.length > 0) {
 						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
+							code: 'custom',
 							message: `Invalid email addresses: ${invalidAddresses.join(', ')}`,
 							path: ['emailToAddresses']
 						});

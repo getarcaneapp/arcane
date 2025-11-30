@@ -307,11 +307,10 @@ func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error 
 
 	slog.DebugContext(ctx, "pruneImageIDs: attempting to prune image ids", "count", len(ids))
 
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("docker connect: %w", err)
 	}
-	defer dcli.Close()
 
 	for _, id := range ids {
 		if id == "" {
@@ -380,11 +379,10 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 // --- internals ---
 
 func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summary, inspect container.InspectResponse, newRef string) error {
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("docker connect: %w", err)
 	}
-	defer dcli.Close()
 
 	name := s.getContainerName(cnt)
 	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef)
@@ -406,6 +404,15 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// recreate with new image ref
 	cfg := inspect.Config
 	cfg.Image = newRef
+
+	// Fix for "conflicting options: hostname and the network mode"
+	// When network mode is "host" or "container:...", Hostname must be empty
+	nm := string(inspect.HostConfig.NetworkMode)
+	if nm == "host" || strings.HasPrefix(nm, "container:") {
+		cfg.Hostname = ""
+		cfg.Domainname = ""
+	}
+
 	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}, nil, inspect.Name)
 	if err != nil {
 		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", inspect.Name, "err", err)
@@ -538,9 +545,9 @@ func (s *UpdaterService) isProjectOptedOut(ctx context.Context, dcli *client.Cli
 func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err == nil && dcli != nil {
-		defer dcli.Close()
+
 		slog.DebugContext(ctx, "collectUsedImages: docker connection created")
 	} else {
 		slog.DebugContext(ctx, "collectUsedImages: docker connection not available, continuing without container list", "err", err)
@@ -670,11 +677,10 @@ func (s *UpdaterService) recordRun(ctx context.Context, item dto.UpdaterItem) er
 func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref string) ([]string, error) {
 	slog.DebugContext(ctx, "resolveLocalImageIDsForRef: resolving local image ids for ref", "ref", ref)
 
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, err
 	}
-	defer dcli.Close()
 
 	ids := []string{}
 	if ii, err := dcli.ImageInspect(ctx, ref); err == nil && ii.ID != "" {
@@ -685,11 +691,10 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 }
 
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]dto.AutoUpdateResourceResult, error) {
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
-	defer dcli.Close()
 
 	list, err := dcli.ContainerList(ctx, container.ListOptions{All: false})
 	if err != nil {
@@ -890,11 +895,10 @@ func (s *UpdaterService) anyImageIDsStillInUse(ctx context.Context, ids []string
 
 	slog.DebugContext(ctx, "anyImageIDsStillInUse: checking ids", "ids", ids)
 
-	dcli, err := s.dockerService.CreateConnection(ctx)
+	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return false, fmt.Errorf("docker connect: %w", err)
 	}
-	defer dcli.Close()
 
 	list, err := dcli.ContainerList(ctx, container.ListOptions{All: false})
 	if err != nil {

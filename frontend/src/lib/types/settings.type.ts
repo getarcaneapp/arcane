@@ -25,11 +25,16 @@ export type Settings = {
 	accentColor: string;
 
 	authLocalEnabled: boolean;
-	authOidcEnabled: boolean;
-	authOidcMergeAccounts: boolean;
+	oidcEnabled: boolean;
+	oidcMergeAccounts: boolean;
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
-	authOidcConfig: string;
+	oidcClientId: string;
+	oidcClientSecret?: string;
+	oidcIssuerUrl: string;
+	oidcScopes: string;
+	oidcAdminClaim: string;
+	oidcAdminValue: string;
 
 	onboardingCompleted: boolean;
 	onboardingSteps: {

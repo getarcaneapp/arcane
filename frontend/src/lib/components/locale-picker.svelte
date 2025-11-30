@@ -30,6 +30,7 @@
 		es: 'Español',
 		fr: 'Français',
 		nl: 'Nederlands',
+		it: 'Italiano',
 		zh: 'Chinese'
 	};
 

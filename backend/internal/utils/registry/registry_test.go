@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
-	"time"
 )
 
 func TestCheckAuthParsesRealmAndService(t *testing.T) {
@@ -86,43 +84,5 @@ func TestGetLatestDigestLowerCaseHeader(t *testing.T) {
 	}
 	if d != "sha256:feedface" {
 		t.Fatalf("digest %q", d)
-	}
-}
-
-func TestGetImageTagsPagination(t *testing.T) {
-	t.Parallel()
-	var server *httptest.Server
-	type tagsResp struct {
-		Tags []string `json:"tags"`
-	}
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/v2/org/repo/tags/list" && (r.URL.RawQuery == "" || r.URL.RawQuery == "page=1"):
-			page2 := server.URL + "/v2/org/repo/tags/list?page=2"
-			w.Header().Set("Link", `<`+page2+`>; rel="next"`)
-			if err := json.NewEncoder(w).Encode(tagsResp{Tags: []string{"a", "b"}}); err != nil {
-				http.Error(w, "encode error: "+err.Error(), http.StatusInternalServerError)
-			}
-		case r.URL.Path == "/v2/org/repo/tags/list" && r.URL.RawQuery == "page=2":
-			if err := json.NewEncoder(w).Encode(tagsResp{Tags: []string{"c"}}); err != nil {
-				http.Error(w, "encode error: "+err.Error(), http.StatusInternalServerError)
-			}
-		default:
-			http.NotFound(w, r)
-		}
-	})
-	server = httptest.NewServer(handler)
-	defer server.Close()
-
-	c := NewClient()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	tags, err := c.GetImageTags(ctx, server.URL, "org/repo", "")
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if strings.Join(tags, ",") != "a,b,c" {
-		t.Fatalf("tags %v", tags)
 	}
 }

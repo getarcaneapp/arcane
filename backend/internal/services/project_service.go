@@ -14,6 +14,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/docker/api/types/container"
 	"github.com/ofkm/arcane-backend/internal/database"
 	"github.com/ofkm/arcane-backend/internal/dto"
 	"github.com/ofkm/arcane-backend/internal/models"
@@ -405,9 +406,23 @@ func formatPorts(publishers []api.PortPublisher) []string {
 	for _, pub := range publishers {
 		if pub.PublishedPort > 0 {
 			ports = append(ports, fmt.Sprintf("%d:%d/%s", pub.PublishedPort, pub.TargetPort, pub.Protocol))
+		} else {
+			ports = append(ports, fmt.Sprintf("%d/%s", pub.TargetPort, pub.Protocol))
 		}
 	}
 	return ports
+}
+
+func formatDockerPorts(ports []container.Port) []string {
+	var res []string
+	for _, p := range ports {
+		if p.PublicPort == 0 {
+			res = append(res, fmt.Sprintf("%d/%s", p.PrivatePort, p.Type))
+		} else {
+			res = append(res, fmt.Sprintf("%d:%d/%s", p.PublicPort, p.PrivatePort, p.Type))
+		}
+	}
+	return res
 }
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
@@ -468,47 +483,73 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	totalProjects = len(projectsList)
-
-	type statusResult struct {
-		status models.ProjectStatus
-	}
-
-	resultChan := make(chan statusResult, totalProjects)
-	semaphore := make(chan struct{}, 10)
-	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	for _, proj := range projectsList {
-		go func(p models.Project) {
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			projectCtx, projectCancel := context.WithTimeout(queryCtx, 2*time.Second)
-			defer projectCancel()
-
-			services, serr := s.getProjectServicesWithTimeout(projectCtx, p.ID)
-			if serr != nil {
-				resultChan <- statusResult{status: p.Status}
-				return
-			}
-
-			resultChan <- statusResult{status: s.calculateProjectStatus(services)}
-		}(proj)
-	}
-
 	runningProjects = 0
 	stoppedProjects = 0
 
-	for i := 0; i < totalProjects; i++ {
-		select {
-		case res := <-resultChan:
-			s.incrementStatusCounts(res.status, &runningProjects, &stoppedProjects)
-		case <-queryCtx.Done():
-			for j := i; j < totalProjects; j++ {
-				s.incrementStatusCounts(projectsList[j].Status, &runningProjects, &stoppedProjects)
-			}
-			return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+	// 1. Fetch all compose containers
+	containers, err := projects.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
+		// Fallback to DB status
+		for _, p := range projectsList {
+			s.incrementStatusCounts(p.Status, &runningProjects, &stoppedProjects)
 		}
+		return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+	}
+
+	// 2. Group by project
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range containers {
+		projName := c.Labels["com.docker.compose.project"]
+		if projName != "" {
+			containersByProject[projName] = append(containersByProject[projName], c)
+		}
+	}
+
+	// 3. Calculate status for each project
+	for _, p := range projectsList {
+		normName := normalizeComposeProjectName(p.Name)
+		projectContainers := containersByProject[normName]
+
+		// Convert to ProjectServiceInfo (minimal needed for calculateProjectStatus)
+		var services []ProjectServiceInfo
+		for _, c := range projectContainers {
+			services = append(services, ProjectServiceInfo{
+				Status: c.State,
+			})
+		}
+
+		var status models.ProjectStatus
+		if len(services) == 0 {
+			status = models.ProjectStatusStopped
+		} else {
+			// We have containers, calculate status based on their state
+			// Note: calculateProjectStatus doesn't know about "missing" services (ServiceCount)
+			// So we need to check if runningCount == p.ServiceCount here if we want strict "Running"
+
+			// Re-implement logic here to be safe or rely on calculateProjectStatus?
+			// calculateProjectStatus returns Running if ALL *present* containers are running.
+			// But if we have 2/3 containers running, it returns Running? No.
+			// calculateProjectStatus: if runningCount == len(services) -> Running.
+			// But len(services) is only the *running* containers (or present ones).
+			// If we have 3 services defined, but only 2 containers exist (both running),
+			// calculateProjectStatus will say "Running".
+			// But strictly it should be "Partial" or "Restarting" or something.
+
+			// However, for the dashboard count, "Running" usually means "Healthy".
+			// Let's stick to calculateProjectStatus for consistency with previous logic,
+			// but maybe check ServiceCount.
+
+			st := s.calculateProjectStatus(services)
+
+			// Refine: if all containers are running, but we have fewer containers than defined services
+			if st == models.ProjectStatusRunning && len(services) < p.ServiceCount {
+				st = models.ProjectStatusPartiallyRunning
+			}
+			status = st
+		}
+
+		s.incrementStatusCounts(status, &runningProjects, &stoppedProjects)
 	}
 
 	return folderCount, runningProjects, stoppedProjects, totalProjects, nil
@@ -981,142 +1022,147 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projects []models.Project) []dto.ProjectDetailsDto {
-	type projectResult struct {
-		index int
-		dto   dto.ProjectDetailsDto
-	}
-
-	resultChan := make(chan projectResult, len(projects))
-
-	const (
-		concurrency       = 10
-		perProjectTimeout = 3 * time.Second
-		minGlobalTimeout  = 30 * time.Second
-	)
-
-	// Calculate dynamic timeout: (projects / concurrency) * per-project-timeout * 1.5 buffer
-	projectBatches := (len(projects) + concurrency - 1) / concurrency // Ceiling division
-	calculatedTimeout := time.Duration(projectBatches) * perProjectTimeout * 3 / 2
-	globalTimeout := minGlobalTimeout
-	if calculatedTimeout > globalTimeout {
-		globalTimeout = calculatedTimeout
-	}
-
-	semaphore := make(chan struct{}, concurrency)
-
-	queryCtx, cancel := context.WithTimeout(ctx, globalTimeout)
-	defer cancel()
-
-	slog.DebugContext(ctx, "Starting concurrent project status queries",
-		"project_count", len(projects),
-		"concurrency", concurrency,
-		"per_project_timeout_sec", perProjectTimeout.Seconds(),
-		"global_timeout_sec", globalTimeout.Seconds())
-
-	// Launch goroutine for each project
-	for i, project := range projects {
-		go func(idx int, proj models.Project) {
-			semaphore <- struct{}{}        // Acquire semaphore
-			defer func() { <-semaphore }() // Release semaphore
-
-			// Create per-project timeout
-			projectCtx, projectCancel := context.WithTimeout(queryCtx, perProjectTimeout)
-			defer projectCancel()
-
-			displayServiceCount := proj.ServiceCount
-			displayRunningCount := proj.RunningCount
-			displayStatus := string(proj.Status)
-			var statusReason *string
-
-			// Try to get live status from Docker
-			if services, serr := s.getProjectServicesWithTimeout(projectCtx, proj.ID); serr == nil {
-				displayServiceCount = len(services)
-				_, displayRunningCount = s.getServiceCounts(services)
-				displayStatus = string(s.calculateProjectStatus(services))
-
-				if displayStatus == string(models.ProjectStatusUnknown) && len(services) == 0 {
-					reason := "No services found in project"
-					statusReason = &reason
-				}
-			} else {
-				// On timeout or error, use cached values
-				if errors.Is(serr, context.DeadlineExceeded) {
-					reason := "Status query timed out, showing cached status"
-					statusReason = &reason
-					displayStatus = string(proj.Status)
-				} else if !errors.Is(serr, context.Canceled) {
-					displayStatus = string(proj.Status)
-					if proj.StatusReason != nil {
-						statusReason = proj.StatusReason
-					}
-					slog.WarnContext(projectCtx, "Failed to get live project status, using cached",
-						"project_id", proj.ID,
-						"project_name", proj.Name,
-						"error", serr)
-				}
-			}
-
-			resultChan <- projectResult{
-				index: idx,
-				dto: dto.ProjectDetailsDto{
-					ID:           proj.ID,
-					Name:         proj.Name,
-					DirName:      utils.DerefString(proj.DirName),
-					Path:         proj.Path,
-					Status:       displayStatus,
-					StatusReason: statusReason,
-					ServiceCount: displayServiceCount,
-					RunningCount: displayRunningCount,
-					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
-					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
-				},
-			}
-		}(i, project)
-	}
-
-	// Collect results
-	results := make([]dto.ProjectDetailsDto, len(projects))
-	for i := 0; i < len(projects); i++ {
-		select {
-		case res := <-resultChan:
-			results[res.index] = res.dto
-		case <-queryCtx.Done():
-			// Timeout - fill remaining with cached data
-			remainingCount := len(projects) - i
-			slog.WarnContext(ctx, "Project list query timed out, using cached data for remaining projects",
-				"completed_count", i,
-				"remaining_count", remainingCount,
-				"total_projects", len(projects))
-
-			for j := i; j < len(projects); j++ {
-				proj := projects[j]
-				results[j] = dto.ProjectDetailsDto{
-					ID:           proj.ID,
-					Name:         proj.Name,
-					DirName:      utils.DerefString(proj.DirName),
-					Path:         proj.Path,
-					Status:       string(proj.Status),
-					StatusReason: proj.StatusReason,
-					ServiceCount: proj.ServiceCount,
-					RunningCount: proj.RunningCount,
-					CreatedAt:    proj.CreatedAt.Format(time.RFC3339),
-					UpdatedAt:    proj.UpdatedAt.Format(time.RFC3339),
-				}
-			}
-			return results
+// Optimized to use a single Docker API call instead of N calls + N file reads
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []dto.ProjectDetailsDto {
+	// 1. Fetch all compose containers in one go
+	containers, err := projects.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
+		// Fallback: return basic info with unknown status
+		results := make([]dto.ProjectDetailsDto, len(projectsList))
+		for i, p := range projectsList {
+			_ = dto.MapStruct(p, &results[i])
+			results[i].Status = string(models.ProjectStatusUnknown)
 		}
+		return results
+	}
+
+	// 2. Group containers by project name
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range containers {
+		projName := c.Labels["com.docker.compose.project"]
+		if projName != "" {
+			containersByProject[projName] = append(containersByProject[projName], c)
+		}
+	}
+
+	// 3. Map to DTOs
+	results := make([]dto.ProjectDetailsDto, len(projectsList))
+	for i, p := range projectsList {
+		results[i] = s.mapProjectToDto(ctx, p, containersByProject)
 	}
 
 	return results
 }
 
-// getProjectServicesWithTimeout is a wrapper that respects context timeout
-func (s *ProjectService) getProjectServicesWithTimeout(ctx context.Context, projectID string) ([]ProjectServiceInfo, error) {
-	return s.GetProjectServices(ctx, projectID)
+func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, containersByProject map[string][]container.Summary) dto.ProjectDetailsDto {
+	var resp dto.ProjectDetailsDto
+	_ = dto.MapStruct(p, &resp)
+
+	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
+	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
+	resp.DirName = utils.DerefString(p.DirName)
+
+	// Find containers for this project
+	normName := normalizeComposeProjectName(p.Name)
+	projectContainers := containersByProject[normName]
+
+	var services []ProjectServiceInfo
+	runningCount := 0
+
+	for _, c := range projectContainers {
+		svcName := c.Labels["com.docker.compose.service"]
+		state := c.State // "running", "exited", etc.
+
+		// Parse health from Status string if possible
+		var health *string
+		statusLower := strings.ToLower(c.Status)
+		switch {
+		case strings.Contains(statusLower, "(healthy)"):
+			h := "healthy"
+			health = &h
+		case strings.Contains(statusLower, "(unhealthy)"):
+			h := "unhealthy"
+			health = &h
+		case strings.Contains(statusLower, "(starting)"):
+			h := "starting"
+			health = &h
+		}
+
+		containerName := ""
+		if len(c.Names) > 0 {
+			containerName = strings.TrimPrefix(c.Names[0], "/")
+		}
+
+		services = append(services, ProjectServiceInfo{
+			Name:          svcName,
+			Image:         c.Image,
+			Status:        state,
+			ContainerID:   c.ID,
+			ContainerName: containerName,
+			Ports:         formatDockerPorts(c.Ports),
+			Health:        health,
+		})
+
+		if state == "running" {
+			runningCount++
+		}
+	}
+
+	resp.Services = make([]any, len(services))
+	for k, s := range services {
+		resp.Services[k] = s
+	}
+
+	// Use DB service count as the source of truth for "Total Services"
+	// since we are not parsing the YAML here.
+	resp.ServiceCount = p.ServiceCount
+	resp.RunningCount = runningCount
+
+	// Fix for missing service count (e.g. newly discovered projects)
+	if resp.ServiceCount == 0 {
+		if count, err := s.countServicesFromCompose(ctx, p); err == nil && count > 0 {
+			resp.ServiceCount = count
+			// Update DB asynchronously
+			go func(ctx context.Context, pid string, c int) {
+				s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", c)
+			}(context.WithoutCancel(ctx), p.ID, count)
+		}
+	}
+
+	// Calculate Status
+	if len(services) == 0 {
+		resp.Status = string(models.ProjectStatusStopped)
+	} else {
+		switch {
+		case runningCount >= resp.ServiceCount && resp.ServiceCount > 0:
+			resp.Status = string(models.ProjectStatusRunning)
+		case runningCount > 0:
+			resp.Status = string(models.ProjectStatusPartiallyRunning)
+		default:
+			resp.Status = string(models.ProjectStatusStopped)
+		}
+	}
+
+	return resp
 }
 
 // End Table Functions
+
+func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.Project) (int, error) {
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if err != nil {
+		return 0, err
+	}
+
+	proj, _, err := projects.LoadComposeProjectFromDir(ctx, p.Path, normalizeComposeProjectName(p.Name), projectsDirectory)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(proj.Services), nil
+}
 
 func (s *ProjectService) calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {
 	if len(services) == 0 {

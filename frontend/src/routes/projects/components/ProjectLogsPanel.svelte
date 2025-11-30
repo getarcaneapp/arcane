@@ -16,6 +16,8 @@
 	let isStreaming = $state(false);
 	let viewer = $state<LogViewer>();
 	let tailLines = $state(100);
+	let autoStartLogs = $state(false);
+	let hasAutoStarted = $state(false);
 
 	function handleStart() {
 		isStreaming = true;
@@ -35,6 +37,19 @@
 		viewer?.stopLogStream();
 		viewer?.startLogStream();
 	}
+
+	$effect(() => {
+		if (projectId) {
+			hasAutoStarted = false;
+		}
+	});
+
+	$effect(() => {
+		if (autoStartLogs && !hasAutoStarted && !isStreaming && projectId) {
+			hasAutoStarted = true;
+			handleStart();
+		}
+	});
 </script>
 
 <Card.Root>
@@ -57,15 +72,16 @@
 				<Card.Description>Real-time project logs</Card.Description>
 			</div>
 			<LogControls
-				bind:autoScroll
-				bind:tailLines
-				{isStreaming}
-				disabled={!projectId}
-				onStart={handleStart}
-				onStop={handleStop}
-				onClear={handleClear}
-				onRefresh={handleRefresh}
-			/>
+                bind:autoScroll
+                bind:tailLines
+                bind:autoStartLogs
+                {isStreaming}
+                disabled={!projectId}
+                onStart={handleStart}
+                onStop={handleStop}
+                onClear={handleClear}
+                onRefresh={handleRefresh}
+            />
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,14 +79,22 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	authSettings := &AuthSettings{
 		LocalAuthEnabled: settings.AuthLocalEnabled.IsTrue(),
-		OidcEnabled:      settings.AuthOidcEnabled.IsTrue(),
+		OidcEnabled:      settings.OidcEnabled.IsTrue(),
 		SessionTimeout:   timeoutMinutes,
 	}
 
-	if authSettings.OidcEnabled && settings.AuthOidcConfig.Value != "" {
-		var oidcConfig models.OidcConfig
-		if err := json.Unmarshal([]byte(settings.AuthOidcConfig.Value), &oidcConfig); err == nil {
-			authSettings.Oidc = &oidcConfig
+	if authSettings.OidcEnabled {
+		oidcConfig := &models.OidcConfig{
+			ClientID:     settings.OidcClientId.Value,
+			ClientSecret: settings.OidcClientSecret.Value,
+			IssuerURL:    settings.OidcIssuerUrl.Value,
+			Scopes:       settings.OidcScopes.Value,
+			AdminClaim:   settings.OidcAdminClaim.Value,
+			AdminValue:   settings.OidcAdminValue.Value,
+		}
+
+		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {
+			authSettings.Oidc = oidcConfig
 		}
 	}
 
@@ -103,7 +110,7 @@ func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*dto.Oidc
 				_ = recover()
 			}()
 			if settings, err := s.settingsService.GetSettings(ctx); err == nil {
-				mergeAccounts = settings.AuthOidcMergeAccounts.IsTrue()
+				mergeAccounts = settings.OidcMergeAccounts.IsTrue()
 			}
 		}()
 	}
@@ -151,7 +158,7 @@ func (s *AuthService) IsOidcEnabled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return settings.AuthOidcEnabled.IsTrue(), nil
+	return settings.OidcEnabled.IsTrue(), nil
 }
 
 func (s *AuthService) GetOidcConfig(ctx context.Context) (*models.OidcConfig, error) {
@@ -190,18 +197,27 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 	}
 
 	if s.userService.NeedsPasswordUpgrade(user.PasswordHash) {
-		if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
-			fmt.Printf("Warning: Failed to upgrade password hash for user %s: %v\n", user.ID, err)
-		} else {
-			fmt.Printf("Successfully upgraded password hash for user %s from bcrypt to Argon2\n", user.Username)
-		}
+		s.runInBackground(ctx, "upgrade_password_hash", func(ctx context.Context) error {
+			if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
+				return fmt.Errorf("failed to upgrade password hash for user %s: %w", user.ID, err)
+			}
+			slog.InfoContext(ctx, "Successfully upgraded password hash from bcrypt to Argon2", "user", user.Username)
+			return nil
+		})
 	}
 
 	now := time.Now()
 	user.LastLogin = &now
-	if _, err := s.userService.UpdateUser(ctx, user); err != nil {
-		fmt.Printf("Failed to update user's last login time: %v\n", err)
-	}
+
+	// Run last login update in background
+	// Use utils.Ptr to create a safe copy of the user struct to avoid data race
+	userCopy := utils.Ptr(*user)
+	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
+		if _, err := s.userService.UpdateUser(ctx, userCopy); err != nil {
+			return fmt.Errorf("failed to update user's last login time: %w", err)
+		}
+		return nil
+	})
 
 	tokenPair, err := s.generateTokenPair(ctx, user)
 	if err != nil {
@@ -212,9 +228,13 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 		"action": "login",
 		"method": "local",
 	}
-	if logErr := s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, user.ID, user.Username, metadata); logErr != nil {
-		fmt.Printf("Could not log user login action: %s\n", logErr)
-	}
+
+	// Run event logging in background
+	logUserID := user.ID
+	logUsername := user.Username
+	s.runInBackground(ctx, "log_user_login", func(ctx context.Context) error {
+		return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, logUserID, logUsername, metadata)
+	})
 
 	return user, tokenPair, nil
 }
@@ -240,9 +260,13 @@ func (s *AuthService) OidcLogin(ctx context.Context, userInfo dto.OidcUserInfo, 
 		"newUser": isNewUser,
 		"subject": userInfo.Subject,
 	}
-	if logErr := s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, user.ID, user.Username, metadata); logErr != nil {
-		fmt.Printf("Could not log OIDC user login action: %s\n", logErr)
-	}
+
+	// Run event logging in background
+	userID := user.ID
+	username := user.Username
+	s.runInBackground(ctx, "log_oidc_login", func(ctx context.Context) error {
+		return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogin, userID, username, metadata)
+	})
 
 	return user, tokenPair, nil
 }
@@ -256,7 +280,7 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo dto.Oid
 	if user == nil {
 		// Check if merge accounts is enabled in settings
 		settings, settingsErr := s.settingsService.GetSettings(ctx)
-		mergeEnabled := settingsErr == nil && settings.AuthOidcMergeAccounts.IsTrue()
+		mergeEnabled := settingsErr == nil && settings.OidcMergeAccounts.IsTrue()
 
 		// If merge accounts is enabled, try to find existing user by email
 		if mergeEnabled && userInfo.Email != "" {
@@ -658,4 +682,25 @@ func generateUsernameFromEmail(email, subject string) string {
 		return "user_" + subject[len(subject)-8:]
 	}
 	return "user_" + subject
+}
+
+func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(ctx context.Context) error) {
+	// Detach context to prevent cancellation when the parent request finishes
+	bgCtx := context.WithoutCancel(ctx)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.ErrorContext(bgCtx, "Background task panicked", "task", name, "panic", r)
+			}
+		}()
+
+		// Set a reasonable timeout for background tasks
+		taskCtx, cancel := context.WithTimeout(bgCtx, 1*time.Minute)
+		defer cancel()
+
+		if err := fn(taskCtx); err != nil {
+			slog.ErrorContext(taskCtx, "Background task failed", "task", name, "error", err)
+		}
+	}()
 }

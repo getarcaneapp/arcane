@@ -59,12 +59,12 @@ func Bootstrap(ctx context.Context) error {
 	}
 
 	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
-		dockerClient, err := dockerClientService.CreateConnection(ctx)
+		dockerClient, err := dockerClientService.GetClient()
 		if err != nil {
 			return err
 		}
-		dockerClient.Close()
-		return nil
+		_, err = dockerClient.Ping(ctx)
+		return err
 	})
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
@@ -72,7 +72,8 @@ func Bootstrap(ctx context.Context) error {
 		func(ctx context.Context) error {
 			_, err := appServices.Settings.SyncOidcEnvToDatabase(ctx)
 			return err
-		})
+		},
+		appServices.Settings.MigrateOidcConfigToFields)
 
 	scheduler, err := initializeScheduler()
 	if err != nil {
