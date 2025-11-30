@@ -1,6 +1,6 @@
 package dto
 
-import "github.com/ofkm/arcane-backend/internal/models"
+import "github.com/getarcaneapp/arcane/backend/internal/models"
 
 type NotificationSettingsRequest struct {
 	Provider models.NotificationProvider `json:"provider" binding:"required"`

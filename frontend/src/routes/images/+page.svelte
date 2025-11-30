@@ -169,6 +169,14 @@
 			disabled: isLoading.checking
 		},
 		{
+			id: 'refresh',
+			action: 'restart',
+			label: m.common_refresh(),
+			onclick: refreshImages,
+			loading: isLoading.refreshing,
+			disabled: isLoading.refreshing
+		},
+		{
 			id: 'prune',
 			action: 'remove',
 			label: m.images_prune_unused(),
@@ -176,14 +184,6 @@
 			onclick: () => (isConfirmPruneDialogOpen = true),
 			loading: isLoading.pruning,
 			disabled: isLoading.pruning
-		},
-		{
-			id: 'refresh',
-			action: 'restart',
-			label: m.common_refresh(),
-			onclick: refreshImages,
-			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
 		}
 	]);
 

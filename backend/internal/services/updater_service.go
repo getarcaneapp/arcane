@@ -13,10 +13,10 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/ofkm/arcane-backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
 )
 
 type UpdaterService struct {
@@ -146,6 +146,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 	}
 
 	// Pull images with ImageService (waits for completion)
+	newImageIDs := map[string][]string{} // newRef -> []imageIDs after pull
+
 	for _, p := range plans {
 		item := dto.UpdaterItem{
 			ResourceID:   p.oldRef,
@@ -181,6 +183,15 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 			item.Status = "updated"
 			item.UpdateApplied = true
 			out.Updated++
+			newIDs, _ := s.resolveLocalImageIDsForRef(ctx, p.newRef)
+			if len(newIDs) > 0 {
+				newImageIDs[p.newRef] = newIDs
+				for _, newID := range newIDs {
+					if newID != "" {
+						oldIDToNewRef[newID] = p.newRef
+					}
+				}
+			}
 		}
 		out.Items = append(out.Items, item)
 		_ = s.recordRun(ctx, item)
@@ -462,7 +473,7 @@ func (s *UpdaterService) stripDigest(ref string) string {
 	return ref
 }
 
-const arcaneUpdaterLabel = "com.ofkm.arcane.updater"
+const arcaneUpdaterLabel = "com.getarcaneapp.arcane.updater"
 
 // isUpdateDisabled returns true if the special label is present and evaluates to false.
 // Accepts false/0/no/off (case-insensitive) as "disabled". Default is enabled.

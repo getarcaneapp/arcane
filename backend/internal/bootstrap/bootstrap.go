@@ -13,9 +13,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	httputils "github.com/ofkm/arcane-backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -72,7 +72,8 @@ func Bootstrap(ctx context.Context) error {
 		func(ctx context.Context) error {
 			_, err := appServices.Settings.SyncOidcEnvToDatabase(ctx)
 			return err
-		})
+		},
+		appServices.Settings.MigrateOidcConfigToFields)
 
 	scheduler, err := initializeScheduler()
 	if err != nil {

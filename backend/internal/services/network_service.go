@@ -8,11 +8,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	dockerutil "github.com/ofkm/arcane-backend/internal/utils/docker"
-	"github.com/ofkm/arcane-backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 )
 
 type NetworkService struct {

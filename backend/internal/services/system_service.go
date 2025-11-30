@@ -11,11 +11,11 @@ import (
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/converter"
 	"github.com/goccy/go-yaml"
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils/converter"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -268,7 +268,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*dto.ContainerAc
 	return s.performBatchContainerAction(ctx, containers, "stop",
 		func(c container.Summary) bool {
 			// Skip Arcane server container
-			return c.Labels == nil || c.Labels["com.ofkm.arcane.server"] != "true"
+			return c.Labels == nil || c.Labels["com.getarcaneapp.arcane.server"] != "true"
 		},
 		func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, systemUser)

@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/config"
 )
 
 type CORSMiddleware struct {

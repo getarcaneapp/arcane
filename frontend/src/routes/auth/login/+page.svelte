@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
+	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import LockIcon from '@lucide/svelte/icons/lock';
@@ -14,6 +14,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
 	import { getApplicationLogo } from '$lib/utils/image.util';
+	import GithubIcon from '$lib/icons/github-icon.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -25,7 +26,7 @@
 	// Make logo URL reactive to accent color changes
 	let logoUrl = $derived(getApplicationLogo());
 
-	const oidcEnabledBySettings = data.settings?.authOidcEnabled === true;
+	const oidcEnabledBySettings = data.settings?.oidcEnabled === true;
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
 
 	const localAuthEnabledBySettings = data.settings?.authLocalEnabled !== false;
@@ -166,41 +167,39 @@
 						<form onsubmit={handleLogin} class="space-y-4">
 							<div class="space-y-2">
 								<Label for="username" class="text-xs">{m.common_username()}</Label>
-								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-										<UserIcon class="text-muted-foreground size-4" />
-									</div>
-									<Input
+								<InputGroup.Root>
+									<InputGroup.Addon>
+										<UserIcon />
+									</InputGroup.Addon>
+									<InputGroup.Input
 										id="username"
 										name="username"
 										type="text"
 										autocomplete="username"
 										required
 										bind:value={username}
-										class="glass-light pl-9"
 										placeholder={m.auth_username_placeholder()}
 										disabled={loading}
 									/>
-								</div>
+								</InputGroup.Root>
 							</div>
 							<div class="space-y-2">
 								<Label for="password" class="text-xs">{m.common_password()}</Label>
-								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-										<LockIcon class="text-muted-foreground size-4" />
-									</div>
-									<Input
+								<InputGroup.Root>
+									<InputGroup.Addon>
+										<LockIcon />
+									</InputGroup.Addon>
+									<InputGroup.Input
 										id="password"
 										name="password"
 										type="password"
 										autocomplete="current-password"
 										required
 										bind:value={password}
-										class="glass-light pl-9"
 										placeholder={m.auth_password_placeholder()}
 										disabled={loading}
 									/>
-								</div>
+								</InputGroup.Root>
 							</div>
 							<Button type="submit" class="hover-lift w-full" size="lg" disabled={loading} aria-busy={loading}>
 								{#if loading}
@@ -245,8 +244,9 @@
 			href="https://github.com/ofkm/arcane"
 			target="_blank"
 			rel="noopener noreferrer"
-			class="glass-light bubble-pill hover:text-primary text-xs transition-colors"
+			class="glass-light bubble-pill hover:text-primary flex items-center gap-1.5 text-xs transition-colors"
 		>
+			<GithubIcon class="size-4" />
 			{m.common_view_on_github()}
 		</a>
 		{#if data.versionInformation?.displayVersion}

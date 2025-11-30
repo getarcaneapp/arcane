@@ -3,9 +3,9 @@ package services
 import (
 	"testing"
 
-	ref "github.com/distribution/reference"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ref "go.podman.io/image/v5/docker/reference"
 )
 
 // TestParseImageReference tests the parseImageReference function with various image formats

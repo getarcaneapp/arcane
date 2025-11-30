@@ -67,7 +67,8 @@ done
 if [ "$FORCE_MAJOR" == true ]; then
     RELEASE_TYPE="major"
 else
-    LATEST_TAG=$(git describe --tags --abbrev=0 || echo "")
+    # Get the latest version tag (v*), ignoring non-version tags like 'next'
+    LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "")
     if [ -z "$LATEST_TAG" ]; then
         RELEASE_TYPE="minor"
     else
@@ -136,7 +137,7 @@ git tag "v$NEW_VERSION"
 
 # Push the commit and the tag to the repository
 git push
-git push --tags
+git push origin "v$NEW_VERSION"
 
 # Extract the changelog content for the latest release
 echo "Extracting changelog content for version $NEW_VERSION..."

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -12,7 +13,8 @@ import (
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/ofkm/arcane-backend/internal/models"
+	imagetypes "github.com/docker/docker/api/types/image"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
 
 var (
@@ -96,9 +98,8 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
 
-	// Use the official Arcane image for the upgrader container
-	// This ensures we always use the packaged CLI from the official image
-	upgraderImage := "ghcr.io/ofkm/arcane:latest"
+	// Use latest tag for the upgrader CLI container
+	upgraderImage := "ghcr.io/getarcaneapp/arcane:latest"
 
 	slog.Info("Spawning upgrade CLI command",
 		"containerName", containerName,
@@ -111,6 +112,17 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+
+	// Pull the upgrader image first to ensure it exists
+	slog.Info("Pulling upgrader image", "image", upgraderImage)
+	pullReader, err := dockerClient.ImagePull(ctx, upgraderImage, imagetypes.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull upgrader image: %w", err)
+	}
+	// Drain the reader to complete the pull
+	_, _ = io.Copy(io.Discard, pullReader)
+	pullReader.Close()
+	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Create the upgrader container config
 	config := &containertypes.Config{
@@ -241,7 +253,7 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 
 	// Fallback: search for containers with arcane image
 	filter := filters.NewArgs()
-	filter.Add("ancestor", "ofkm/arcane")
+	filter.Add("ancestor", "ghcr.io/getarcaneapp/arcane")
 
 	containers, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{
 		All:     true,

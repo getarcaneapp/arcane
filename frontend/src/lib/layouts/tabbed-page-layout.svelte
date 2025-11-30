@@ -56,7 +56,7 @@
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 items-start gap-3">
 						<Button variant="ghost" size="sm" href={backUrl}>
-							<ArrowLeftIcon class="mr-2 size-4" />
+							<ArrowLeftIcon class="size-4" />
 							{backLabel}
 						</Button>
 						<div class="min-w-0">
