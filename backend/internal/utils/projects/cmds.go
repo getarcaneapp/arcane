@@ -31,6 +31,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 		AssumeYes: true,
 	}
 	startOptions := api.StartOptions{
+		Project:  proj,
 		Services: proj.ServiceNames(),
 		Wait:     true,
 	}
