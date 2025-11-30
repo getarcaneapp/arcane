@@ -1,16 +1,27 @@
 > [!IMPORTANT]
-> All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub. This means the images used for Arcane for all future releases (past 1.7.2) will use a new image repo and tag.
+> All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub. 
+>
+> This means the images used for Arcane for all future releases (past 1.7.2) will use the following repositories:
+>
+> Arcane: `ghcr.io/getarcaneapp/arcane`
+>
+> Arcane Agent: `ghcr.io/getarcaneapp/arcane-headless`
 
-<p align="center">
+<div align="center">
   <img src=".github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
-  <p style="padding-top: 5px;" align="center">Modern Docker Management, Designed for Everyone.</p>
-</p>
+  <p>Modern Docker Management, Designed for Everyone.</p>
 
-<p style="padding-top: 5px;" align="center">
-Arcane is designed to be an easy and modern Docker management platform, built with everybody in mind. The goal of Arcane is to be built for and by the community to make sure nobody feels left out or behind with their specific features or processes.
-</p>
+<a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/backend"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/backend.svg" alt="Go Reference"></a>
+<a href="https://goreportcard.com/report/github.com/getarcaneapp/arcane/backend"><img src="https://goreportcard.com/badge/github.com/getarcaneapp/arcane/backend" alt="Go Report Card"></a>
+<a href="https://github.com/getarcaneapp/arcane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License"></a>
+
+<br />
 
 <img width="1685" alt="image" align="center" src=".github/assets/arcane.jpeg" />
+
+</div>
+
+
 
 ---
 
