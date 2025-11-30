@@ -727,7 +727,7 @@
 	"environments_refreshing": "Actualizando…",
 	"environments_name_placeholder": "Mi servidor Lab",
 	"environments_name_too_long": "Nombre demasiado largo (máx. 25 caracteres)",
-	"environments_api_url_placeholder": "http://192.168.1.100:3553",
+	"environments_api_url_placeholder": "192.168.1.100:3553",
 	"environments_api_url_description": "URL completa al extremo del servidor Arcane",
 	"environments_name_required": "Nombre del entorno es obligatorio",
 	"environments_server_url_required": "Se requiere la URL del servidor",
