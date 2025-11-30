@@ -1,5 +1,7 @@
+<div align="center">
+
 > [!IMPORTANT]
-> All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub. 
+> All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub.
 >
 > This means the images used for Arcane for all future releases (past 1.7.2) will use the following repositories:
 >
@@ -7,7 +9,6 @@
 >
 > Arcane Agent: `ghcr.io/getarcaneapp/arcane-headless`
 
-<div align="center">
   <img src=".github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
   <p>Modern Docker Management, Designed for Everyone.</p>
 
@@ -18,10 +19,6 @@
 <br />
 
 <img width="1685" alt="image" align="center" src=".github/assets/arcane.jpeg" />
-
-</div>
-
-
 
 ---
 
@@ -38,3 +35,5 @@ Help translate Arcane on Crowdin: https://crowdin.com/project/arcane-docker-mana
 ---
 
 Thank you for checking out Arcane! Your feedback and contributions are always welcome.
+
+</div>
