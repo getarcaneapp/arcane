@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/ofkm/arcane-backend/resources"
+	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
 type DB struct {

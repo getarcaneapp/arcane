@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/ofkm/arcane-backend/internal/cli"
+	"github.com/getarcaneapp/arcane/backend/internal/cli"
 )
 
 func main() {

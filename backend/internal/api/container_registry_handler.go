@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/common"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/middleware"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/services"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	"github.com/ofkm/arcane-backend/internal/utils/pagination"
-	registry "github.com/ofkm/arcane-backend/internal/utils/registry"
 )
 
 type ContainerRegistryHandler struct {

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ofkm/arcane-backend/internal/services"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	"github.com/ofkm/arcane-backend/internal/utils/fs"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
 )
 
 type FilesystemWatcherJob struct {

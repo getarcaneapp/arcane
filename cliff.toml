@@ -9,6 +9,7 @@ repo = "arcane"
 [git]
 conventional_commits = true
 filter_unconventional = true
+tag_pattern = "v[0-9]*"
 commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
 commit_parsers = [
         { message = "^feat", group = "<!-- 0 --> New features" },

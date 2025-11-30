@@ -1,8 +1,8 @@
 package pagination
 
 import (
+	arcanehttp "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	"github.com/gin-gonic/gin"
-	arcanehttp "github.com/ofkm/arcane-backend/internal/utils/http"
 )
 
 type QueryParams struct {

@@ -66,9 +66,10 @@ jobs:
         run: gh release upload ${{ github.ref_name }} backend/.bin/*
 
   images:
-    runs-on: depot-ubuntu-24.04-16
+    runs-on: depot-ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - target: manager
@@ -137,7 +138,7 @@ jobs:
           name: SBOM-${{ matrix.target }}
 
   publish-release:
-    runs-on: depot-ubuntu-24.04-16
+    runs-on: depot-ubuntu-latest
     needs: [binaries, images]
     permissions:
       contents: write

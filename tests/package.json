@@ -1,9 +1,9 @@
 {
   "type": "module",
   "name": "arcane-tests",
-  "packageManager": "pnpm@10.22.0",
+  "packageManager": "pnpm@10.24.0",
   "engines": {
-    "node": ">=24"
+    "node": ">=25"
   },
   "scripts": {
     "preinstall": "npx only-allow pnpm",

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 )
 
 type SettingsSearchService struct {

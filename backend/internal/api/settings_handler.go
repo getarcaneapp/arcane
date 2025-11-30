@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
-	"github.com/ofkm/arcane-backend/internal/common"
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/middleware"
-	"github.com/ofkm/arcane-backend/internal/services"
 )
 
 type SettingsHandler struct {
@@ -125,9 +125,12 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if environmentID != "0" {
-		if req.AuthLocalEnabled != nil || req.AuthOidcEnabled != nil ||
+		if req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 			req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
-			req.AuthOidcConfig != nil {
+			req.AuthOidcConfig != nil || req.OidcClientId != nil ||
+			req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
+			req.OidcScopes != nil || req.OidcAdminClaim != nil ||
+			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"data":    gin.H{"error": (&common.AuthSettingsUpdateError{}).Error()},

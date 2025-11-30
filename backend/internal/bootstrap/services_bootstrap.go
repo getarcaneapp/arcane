@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/services"
-	"github.com/ofkm/arcane-backend/resources"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
 type Services struct {
@@ -67,7 +67,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
-	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision)
+	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event)
 
 	return svcs, dockerClient, nil

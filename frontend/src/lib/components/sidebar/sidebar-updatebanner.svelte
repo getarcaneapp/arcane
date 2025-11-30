@@ -37,9 +37,34 @@
 
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	
+	// Determine update type and display text
+	const updateType = $derived.by(() => {
+		if (!versionInformation) return 'none';
+		if (versionInformation.isSemverVersion) return 'semver';
+		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
+		return 'none';
+	});
+	
+	const updateDisplayText = $derived.by(() => {
+		if (!versionInformation) return '';
+		if (updateType === 'semver') {
+			return versionInformation.newestVersion ?? '';
+		}
+		if (updateType === 'digest' && versionInformation.newestDigest) {
+			// Show shortened digest for non-semver tags
+			const digest = versionInformation.newestDigest;
+			return digest.length > 12 ? digest.substring(0, 12) : digest;
+		}
+		return '';
+	});
+	
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();
 		if (checkingUpgrade) return m.upgrade_checking();
+		if (updateType === 'digest') {
+			return `Update ${versionInformation?.currentTag ?? 'image'}`;
+		}
 		return m.upgrade_to_version({ version: versionInformation?.newestVersion ?? '' });
 	});
 
@@ -86,14 +111,26 @@
 		}
 	}
 
-	const shouldShowBanner = $derived((updateAvailable && versionInformation?.isSemverVersion) || debug);
+	// Show banner for both semver and digest-based updates
+	const shouldShowBanner = $derived(updateAvailable || debug);
 </script>
 
 {#snippet updateInfo()}
 	<div class="flex flex-col gap-1">
 		<span class="text-sm font-semibold">{m.sidebar_update_available()}</span>
+		{#if versionInformation?.currentTag}
+			<span class="text-xs text-blue-500/60">
+				Tracking: {versionInformation.currentTag}
+			</span>
+		{/if}
 		<span class="text-xs text-blue-500/80">
-			{m.sidebar_version({ version: versionInformation?.newestVersion ?? m.common_unknown() })}
+			{#if updateType === 'semver'}
+				{m.sidebar_version({ version: versionInformation?.newestVersion ?? m.common_unknown() })}
+			{:else if updateType === 'digest'}
+				New digest: {updateDisplayText}
+			{:else}
+				{m.common_unknown()}
+			{/if}
 		</span>
 	</div>
 {/snippet}
@@ -124,7 +161,7 @@
 
 		{#if !isCollapsed}
 			<div
-				class="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-3 transition-all hover:scale-[1.02] hover:from-blue-500/15 hover:to-blue-600/10 hover:shadow-md"
+				class="rounded-xl border border-blue-500/20 bg-linear-to-br from-blue-500/10 to-blue-600/5 p-3 transition-all hover:scale-[1.02] hover:from-blue-500/15 hover:to-blue-600/10 hover:shadow-md"
 			>
 				<div class="flex flex-col gap-2">
 					<a
@@ -148,7 +185,7 @@
 					<Tooltip.Trigger>
 						{#snippet child({ props })}
 							<div
-								class="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-blue-600/5 transition-all hover:scale-[1.02] hover:from-blue-500/15 hover:to-blue-600/10 hover:shadow-md"
+								class="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-linear-to-br from-blue-500/10 to-blue-600/5 transition-all hover:scale-[1.02] hover:from-blue-500/15 hover:to-blue-600/10 hover:shadow-md"
 								{...props}
 							>
 								<a

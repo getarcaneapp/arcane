@@ -1,3 +1,67 @@
+## v1.10.0
+
+### New features
+
+* support for `include` compose directive ([eced698](https://github.com/getarcaneapp/arcane/commit/eced6980dc338966be2cb8aa413ef66897b1aebb) by @user00265)
+* add version label to the login page([6d16da2](https://github.com/getarcaneapp/arcane/commit/6d16da243128ba293c6754606439fa91d2c1261a) by @kmendell)
+* expand system info dialog to show more information ([#965](https://github.com/getarcaneapp/arcane/pull/965) by @kmendell)
+* add support for auto-starting of logs ([#983](https://github.com/getarcaneapp/arcane/pull/983) by @Juoper)
+* improved pull ui including layer progress ([#1002](https://github.com/getarcaneapp/arcane/pull/1002) by @kmendell)
+* self update digest tracking and fixes ([#919](https://github.com/getarcaneapp/arcane/pull/919) by @cabaucom376)
+
+### Bug fixes
+
+* dashboard tables height cutting off rows([10f0d85](https://github.com/getarcaneapp/arcane/commit/10f0d85f6cbce6573188e205d1fd138d2ab9aa53) by @kmendell)
+* pass registry credentials to environment ([d7a112a](https://github.com/getarcaneapp/arcane/commit/d7a112a08ae1b8cf39e8fbef68a96f6a117168e5) by @cabaucom376)
+* use dynamic limit for dashboard tables on page refreshes([f0be4d2](https://github.com/getarcaneapp/arcane/commit/f0be4d2ccabdc71c8550db0d119421fcaf57be0a) by @kmendell)
+* image name container table overflow([3675cca](https://github.com/getarcaneapp/arcane/commit/3675cca816da1b6af9bca36d9a5ad9aeb4c07ee4) by @kmendell)
+* use correct PWD env variable ([#941](https://github.com/getarcaneapp/arcane/pull/941) by @kmendell)
+* dashboard showing incorrect memory value([d49be99](https://github.com/getarcaneapp/arcane/commit/d49be99cd3fde6540a456bc5f51d101956598332) by @kmendell)
+* redirect to root resource page when switching environments([223d5b4](https://github.com/getarcaneapp/arcane/commit/223d5b4625e9fb72e021dbac2c786e7810af9351) by @kmendell)
+* notification settings not able to be saved due to incorrect key([4cd7ff5](https://github.com/getarcaneapp/arcane/commit/4cd7ff51c4b1dfbc298aca400c3c9d7895baf085) by @kmendell)
+* dont sort global env alphabetically([cbca27b](https://github.com/getarcaneapp/arcane/commit/cbca27b51fb3be8f391d53d32df4538f81906ad2) by @kmendell)
+* conflicting options: hostname and the network mode for auto update runs([f267dce](https://github.com/getarcaneapp/arcane/commit/f267dced92b438992b1be30d2e0e4f514a25057e) by @kmendell)
+* oidc settings not saving after changing other security settings ([#1003](https://github.com/getarcaneapp/arcane/pull/1003) by @kmendell)
+
+### Performance Improvements
+
+* overall performance improvements and db transactions ([#951](https://github.com/getarcaneapp/arcane/pull/951) by @kmendell)
+
+### Dependencies
+
+* bump the prod-dependencies group with 4 updates ([0e3896c](https://github.com/getarcaneapp/arcane/commit/0e3896c56a7958cb3d4b172a95a62bbd34ddfdca) by @dependabot[bot])
+* upgrade to node 25 for frontend builds ([85beddf](https://github.com/getarcaneapp/arcane/commit/85beddf0b07b52bb1672d902425ee936408e8153) by @kmendell)
+* bump pnpm to version 10.22.0([394fd2e](https://github.com/getarcaneapp/arcane/commit/394fd2ee27c52c73d45ef49455b162a4ff910842) by @kmendell)
+* bump golang.org/x/crypto from 0.44.0 to 0.45.0 in /backend in the backend-dependencies group ([#954](https://github.com/getarcaneapp/arcane/pull/954) by @dependabot[bot])
+* bump actions/checkout from 5 to 6 ([#957](https://github.com/getarcaneapp/arcane/pull/957) by @dependabot[bot])
+* bump github.com/coreos/go-oidc/v3 from 3.16.0 to 3.17.0 in /backend in the backend-dependencies group ([#973](https://github.com/getarcaneapp/arcane/pull/973) by @dependabot[bot])
+* bump github.com/go-co-op/gocron/v2 from 2.18.0 to 2.18.1 in /backend in the backend-dependencies group ([#978](https://github.com/getarcaneapp/arcane/pull/978) by @dependabot[bot])
+* bump github.com/go-co-op/gocron/v2 from 2.18.1 to 2.18.2 in /backend in the backend-dependencies group ([#992](https://github.com/getarcaneapp/arcane/pull/992) by @dependabot[bot])
+* bump valibot to 1.2.0([040e741](https://github.com/getarcaneapp/arcane/commit/040e741222117daada34bfe5a8c7dd6f828c2950) by @kmendell)
+* bump prettier from 3.6.2 to 3.7.1 in the dev-dependencies group ([#996](https://github.com/getarcaneapp/arcane/pull/996) by @dependabot[bot])
+
+### Other
+
+* update depot runners([7f5461e](https://github.com/getarcaneapp/arcane/commit/7f5461eaf7910de486b1d095da24a5bf058e8de7) by @kmendell)
+* use constant type for config values([e13c3c7](https://github.com/getarcaneapp/arcane/commit/e13c3c7172a71ca116f97cc265135274d76bcc7a) by @kmendell)
+* use constant for index.html([ba69bfd](https://github.com/getarcaneapp/arcane/commit/ba69bfd0e94c5182dfaf47ebc73f89a8882b3d81) by @kmendell)
+* use constant errors to reduce duplication ([#964](https://github.com/getarcaneapp/arcane/pull/964) by @kmendell)
+* use Debian Trixie for container builds/runtime ([#975](https://github.com/getarcaneapp/arcane/pull/975) by @kmendell)
+* add sonarqube analysis([9cd9c49](https://github.com/getarcaneapp/arcane/commit/9cd9c49c00e6711c4888f27d9d356d0e1d7cf67d) by @kmendell)
+* add coverage report to sonarqube([219cd8c](https://github.com/getarcaneapp/arcane/commit/219cd8cc3b698ffe082123696816e0a20011cba5) by @kmendell)
+* rewrite go coverage report([08f5fee](https://github.com/getarcaneapp/arcane/commit/08f5fee7cb7a8f498917092653c679c24a4ea678) by @kmendell)
+* update analytics job to use new domain([7e8c02f](https://github.com/getarcaneapp/arcane/commit/7e8c02f9f42459df8e9d5f8371d393390bd55b15) by @kmendell)
+* remove sonarqube workflows([69eb206](https://github.com/getarcaneapp/arcane/commit/69eb20674c11d68936b34db3ebb91632473d3fc7) by @kmendell)
+* update library used for image referencing ([#1007](https://github.com/getarcaneapp/arcane/pull/1007) by @kmendell)
+* fix next release logic([d14a051](https://github.com/getarcaneapp/arcane/commit/d14a051be0904d79c7559570b4f4443ac28e6af0) by @kmendell)
+* fix next release logic([88711f3](https://github.com/getarcaneapp/arcane/commit/88711f39013ce37c291a72b18794973c3b2fb074) by @kmendell)
+* fix next release logic([ae40aec](https://github.com/getarcaneapp/arcane/commit/ae40aec44cbafefd0e50c4f17c5a84e59c32557c) by @kmendell)
+* use field group components for specific pages([a01787b](https://github.com/getarcaneapp/arcane/commit/a01787b0f227585a1ba0b9161f17b66010c4dc59) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.9.0...v1.10.0
+
 ## v1.9.0
 
 ### New features

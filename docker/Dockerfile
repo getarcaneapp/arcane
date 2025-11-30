@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
     -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/ofkm/arcane-backend/internal/config.Version=${VERSION} -X github.com/ofkm/arcane-backend/internal/config.Revision=${REVISION}" \
+    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go
@@ -79,7 +79,7 @@ org.opencontainers.image.licenses="BSD-3-Clause" \
 org.opencontainers.image.ref.name="arcane" \
 org.opencontainers.image.title="Arcane" \
 org.opencontainers.image.description="Modern Docker Management, Made for Everyone" \
-com.ofkm.arcane.updater="false" \
-com.ofkm.arcane.server="true"
+com.getarcaneapp.arcane.updater="false" \
+com.getarcaneapp.arcane.server="true"
 
 CMD ["./arcane"]

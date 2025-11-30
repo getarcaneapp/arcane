@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/ofkm/arcane-backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

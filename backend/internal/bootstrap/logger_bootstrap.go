@@ -9,8 +9,8 @@ import (
 	"github.com/lmittmann/tint"
 	slogGorm "github.com/orandin/slog-gorm"
 
-	"github.com/ofkm/arcane-backend/internal/config"
-	"github.com/ofkm/arcane-backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"gorm.io/gorm/logger"
 )
 

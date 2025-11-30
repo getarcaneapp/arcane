@@ -12,7 +12,7 @@ import (
 
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
-	"github.com/ofkm/arcane-backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
 
 // EmailClient wraps the SMTP client functionality

@@ -1,0 +1,24 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"entry": [
+		"src/routes/**/*.{svelte,ts,js}",
+		"src/hooks.*.ts",
+		"src/service-worker.ts",
+		"svelte.config.js",
+		"vite.config.ts",
+		"src/lib/paraglide/messages/_index.js"
+	],
+	"project": ["src/**/*.{svelte,ts,js}"],
+	"ignore": [
+		"src/lib/components/ui/**/index.ts",
+		"src/lib/paraglide/runtime.js",
+		"src/lib/paraglide/registry.js",
+		"src/lib/paraglide/server.js"
+	],
+	"ignoreDependencies": ["formsnap", "paneforge", "svelte-toolbelt", "sveltekit-superforms", "isomorphic-dompurify"],
+	"ignoreExportsUsedInFile": {
+		"interface": true,
+		"type": true
+	},
+	"tags": ["-lintignore"]
+}
