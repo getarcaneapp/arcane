@@ -69,3 +69,8 @@ type CreateVolumeDto struct {
 	Labels  map[string]string `json:"labels"`
 	Options map[string]string `json:"options"`
 }
+
+type VolumeUsageDto struct {
+	InUse      bool     `json:"inUse"`
+	Containers []string `json:"containers"`
+}

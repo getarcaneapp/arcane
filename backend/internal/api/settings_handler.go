@@ -145,11 +145,16 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 // @Summary Update settings
 // @Description Update settings for an environment
 // @Tags Settings
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Environment ID"
 // @Param settings body dto.UpdateSettingsDto true "Settings update data"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[[]dto.SettingDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 403 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/settings [put]
 func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	environmentID := c.Param("id")

@@ -218,11 +218,15 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 // @Summary Prune Docker resources
 // @Description Remove unused Docker resources (containers, images, volumes, networks)
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Environment ID"
 // @Param request body dto.PruneSystemDto true "Prune options"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.PruneResultDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/system/prune [post]
 func (h *SystemHandler) PruneAll(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -280,8 +284,11 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 // @Summary Start all containers
 // @Description Start all Docker containers
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ContainerBulkActionResultDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/system/containers/start-all [post]
 func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllContainers(c.Request.Context())
@@ -304,8 +311,11 @@ func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 // @Summary Start all stopped containers
 // @Description Start all stopped Docker containers
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ContainerBulkActionResultDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/system/containers/start-stopped [post]
 func (h *SystemHandler) StartAllStoppedContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllStoppedContainers(c.Request.Context())
@@ -350,8 +360,11 @@ func (h *SystemHandler) getDiskUsagePath(ctx context.Context) string {
 // @Summary Stop all containers
 // @Description Stop all running Docker containers
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ContainerBulkActionResultDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/system/containers/stop-all [post]
 func (h *SystemHandler) StopAllContainers(c *gin.Context) {
 	result, err := h.systemService.StopAllContainers(c.Request.Context())
@@ -597,8 +610,10 @@ func (h *SystemHandler) ConvertDockerRun(c *gin.Context) {
 // @Summary Check for system upgrade
 // @Description Check if a system upgrade is available
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.UpgradeCheckResultDto]
 // @Router /api/environments/{id}/system/upgrade/check [get]
 // CheckUpgradeAvailable checks if the local system can be upgraded
 // Remote environments are handled by the proxy middleware
@@ -626,8 +641,11 @@ func (h *SystemHandler) CheckUpgradeAvailable(c *gin.Context) {
 // @Summary Trigger system upgrade
 // @Description Trigger a system upgrade
 // @Tags System
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 202 {object} map[string]interface{}
+// @Success 202 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/system/upgrade [post]
 // TriggerUpgrade triggers a system upgrade by spawning the upgrade CLI command
 // This runs the upgrade from outside the current container to avoid self-termination issues

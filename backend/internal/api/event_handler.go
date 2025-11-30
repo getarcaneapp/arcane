@@ -134,8 +134,12 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 // @Summary Delete an event
 // @Description Delete a system event by ID
 // @Tags Events
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param eventId path string true "Event ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/events/{eventId} [delete]
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	eventID := c.Param("eventId")

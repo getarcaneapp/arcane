@@ -35,3 +35,10 @@ type ContainerRegistryCredential struct {
 type SyncRegistriesRequest struct {
 	Registries []ContainerRegistrySyncDto `json:"registries" binding:"required"`
 }
+
+type RegistryTestResultDto struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message,omitempty"`
+	Repositories int    `json:"repositories,omitempty"`
+	ResponseTime int64  `json:"responseTime,omitempty"`
+}

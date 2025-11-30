@@ -171,8 +171,12 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 // @Summary Get template content
 // @Description Get the compose content for a template with parsed data
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Template ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.TemplateContentDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/{id}/content [get]
 func (h *TemplateHandler) GetTemplateContent(c *gin.Context) {
 	id := c.Param("id")
@@ -347,8 +351,13 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 // @Summary Delete a template
 // @Description Delete a compose template
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Template ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/{id} [delete]
 func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	id := c.Param("id")
@@ -386,7 +395,9 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 // @Summary Get default templates
 // @Description Get the default compose and env templates
 // @Tags Templates
-// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.ApiResponse[dto.DefaultTemplatesDto]
 // @Router /api/templates/default [get]
 func (h *TemplateHandler) GetDefaultTemplates(c *gin.Context) {
 	composeTemplate := h.templateService.GetComposeTemplate()
@@ -405,10 +416,14 @@ func (h *TemplateHandler) GetDefaultTemplates(c *gin.Context) {
 // @Summary Save default templates
 // @Description Save the default compose and env templates
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
-// @Param templates body object true "Default templates data"
-// @Success 200 {object} map[string]interface{}
+// @Param templates body dto.SaveDefaultTemplatesDto true "Default templates data"
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/default [post]
 func (h *TemplateHandler) SaveDefaultTemplates(c *gin.Context) {
 	var req struct {
@@ -533,11 +548,16 @@ func (h *TemplateHandler) CreateRegistry(c *gin.Context) {
 // @Summary Update a template registry
 // @Description Update an existing template registry
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Registry ID"
-// @Param registry body object true "Registry update data"
-// @Success 200 {object} map[string]interface{}
+// @Param registry body dto.UpdateTemplateRegistryDto true "Registry update data"
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/registries/{id} [put]
 func (h *TemplateHandler) UpdateRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -595,8 +615,13 @@ func (h *TemplateHandler) UpdateRegistry(c *gin.Context) {
 // @Summary Delete a template registry
 // @Description Delete a template registry
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Registry ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/registries/{id} [delete]
 func (h *TemplateHandler) DeleteRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -634,8 +659,12 @@ func (h *TemplateHandler) DeleteRegistry(c *gin.Context) {
 // @Summary Fetch remote registry
 // @Description Fetch templates from a remote registry URL
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param url query string true "Registry URL"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[interface{}]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 502 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/fetch [get]
 func (h *TemplateHandler) FetchRegistry(c *gin.Context) {
 	url := c.Query("url")
@@ -711,7 +740,10 @@ func (h *TemplateHandler) DownloadTemplate(c *gin.Context) {
 // @Summary Get global variables
 // @Description Get global template variables
 // @Tags Templates
-// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.ApiResponse[[]dto.GlobalVariableDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/variables [get]
 func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 	vars, err := h.templateService.GetGlobalVariables(c.Request.Context())
@@ -733,10 +765,14 @@ func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 // @Summary Update global variables
 // @Description Update global template variables
 // @Tags Templates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param variables body dto.UpdateVariablesRequest true "Variables update data"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/templates/variables [put]
 func (h *TemplateHandler) UpdateGlobalVariables(c *gin.Context) {
 	var req dto.UpdateVariablesRequest

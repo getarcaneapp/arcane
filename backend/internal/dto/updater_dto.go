@@ -55,3 +55,28 @@ type AutoUpdateResourceResult struct {
 	Error           string                 `json:"error,omitempty"`
 	Details         map[string]interface{} `json:"details,omitempty"`
 }
+
+type UpdaterStatusDto struct {
+	Running     bool   `json:"running"`
+	LastRun     string `json:"lastRun,omitempty"`
+	NextRun     string `json:"nextRun,omitempty"`
+	LastResult  string `json:"lastResult,omitempty"`
+	LastError   string `json:"lastError,omitempty"`
+	TotalRuns   int    `json:"totalRuns"`
+	SuccessRuns int    `json:"successRuns"`
+	FailedRuns  int    `json:"failedRuns"`
+}
+
+type UpdaterHistoryEntryDto struct {
+	ID        string           `json:"id"`
+	StartTime string           `json:"startTime"`
+	EndTime   string           `json:"endTime"`
+	Duration  string           `json:"duration"`
+	Status    string           `json:"status"`
+	Checked   int              `json:"checked"`
+	Updated   int              `json:"updated"`
+	Skipped   int              `json:"skipped"`
+	Failed    int              `json:"failed"`
+	Error     string           `json:"error,omitempty"`
+	Result    UpdaterRunResult `json:"result,omitempty"`
+}

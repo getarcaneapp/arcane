@@ -142,9 +142,13 @@ func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 // @Summary Delete notification settings
 // @Description Delete notification settings for a provider
 // @Tags Notifications
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param provider path string true "Notification provider (discord, email)"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/notifications/settings/{provider} [delete]
 func (h *NotificationHandler) DeleteSettings(c *gin.Context) {
 	providerStr := c.Param("provider")
@@ -169,10 +173,14 @@ func (h *NotificationHandler) DeleteSettings(c *gin.Context) {
 // @Summary Test notification
 // @Description Send a test notification for a provider
 // @Tags Notifications
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param provider path string true "Notification provider (discord, email)"
 // @Param type query string false "Test type (simple or image-update)" default(simple)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/notifications/test/{provider} [post]
 func (h *NotificationHandler) TestNotification(c *gin.Context) {
 	providerStr := c.Param("provider")
@@ -269,8 +277,11 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 // @Summary Test Apprise notification
 // @Description Send a test notification via Apprise
 // @Tags Notifications
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/notifications/apprise/test [post]
 func (h *NotificationHandler) TestAppriseNotification(c *gin.Context) {
 	if err := h.appriseService.TestNotification(c.Request.Context()); err != nil {

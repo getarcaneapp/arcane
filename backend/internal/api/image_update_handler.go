@@ -33,9 +33,13 @@ func NewImageUpdateHandler(group *gin.RouterGroup, imageUpdateService *services.
 // @Summary Check image update by reference
 // @Description Check if an image has an update available by image reference
 // @Tags Image Updates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param imageRef query string true "Image reference (e.g., nginx:latest)"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ImageUpdateResponse]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/image-updates/check [get]
 func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	imageRef := c.Query("imageRef")
@@ -66,9 +70,13 @@ func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 // @Summary Check image update by ID
 // @Description Check if an image has an update available by image ID
 // @Tags Image Updates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param imageId path string true "Image ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ImageUpdateResponse]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/image-updates/check/{imageId} [get]
 func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	imageID := c.Param("imageId")
@@ -175,8 +183,11 @@ func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 // @Summary Get image update summary
 // @Description Get a summary of images with available updates
 // @Tags Image Updates
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ImageUpdateSummaryResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/image-updates/summary [get]
 func (h *ImageUpdateHandler) GetUpdateSummary(c *gin.Context) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(c.Request.Context())

@@ -65,3 +65,33 @@ type ComposeTemplateDto struct {
 	Registry    *TemplateRegistryDto        `json:"registry,omitempty"`
 	Metadata    *ComposeTemplateMetadataDto `json:"metadata,omitempty"`
 }
+
+type TemplateContentDto struct {
+	Template     ComposeTemplateDto `json:"template"`
+	Content      string             `json:"content"`
+	EnvContent   string             `json:"envContent"`
+	Services     []string           `json:"services"`
+	EnvVariables []EnvVariable      `json:"envVariables"`
+}
+
+type DefaultTemplatesDto struct {
+	ComposeTemplate string `json:"composeTemplate"`
+	EnvTemplate     string `json:"envTemplate"`
+}
+
+type SaveDefaultTemplatesDto struct {
+	ComposeContent string `json:"composeContent" binding:"required"`
+	EnvContent     string `json:"envContent"`
+}
+
+type UpdateTemplateRegistryDto struct {
+	Name        string `json:"name" binding:"required"`
+	URL         string `json:"url" binding:"required"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+}
+
+type GlobalVariableDto struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}

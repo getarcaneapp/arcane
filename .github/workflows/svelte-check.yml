@@ -26,7 +26,7 @@ on:
 jobs:
   type-check:
     name: Run Svelte Check
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-8
     permissions:
       contents: read
       checks: write

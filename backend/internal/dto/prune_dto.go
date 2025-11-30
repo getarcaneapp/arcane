@@ -18,3 +18,18 @@ type PruneAllResult struct {
 	Success          bool     `json:"success"`
 	Errors           []string `json:"errors,omitempty"`
 }
+
+// Alias for swagger docs
+type PruneResultDto = PruneAllResult
+
+type ContainerBulkActionResultDto struct {
+	Started int      `json:"started,omitempty"`
+	Stopped int      `json:"stopped,omitempty"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+type UpgradeCheckResultDto struct {
+	CanUpgrade bool   `json:"canUpgrade"`
+	Error      bool   `json:"error"`
+	Message    string `json:"message"`
+}

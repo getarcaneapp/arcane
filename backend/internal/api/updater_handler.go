@@ -31,11 +31,14 @@ func NewUpdaterHandler(group *gin.RouterGroup, updaterService *services.UpdaterS
 // @Summary Run updater
 // @Description Apply pending container updates
 // @Tags Updater
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Environment ID"
 // @Param request body dto.UpdaterRunRequest false "Updater run options"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.UpdaterRunResult]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/updater/run [post]
 func (h *UpdaterHandler) Run(c *gin.Context) {
 	var req dto.UpdaterRunRequest
@@ -54,8 +57,10 @@ func (h *UpdaterHandler) Run(c *gin.Context) {
 // @Summary Get updater status
 // @Description Get the current status of the updater
 // @Tags Updater
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.UpdaterStatusDto]
 // @Router /api/environments/{id}/updater/status [get]
 func (h *UpdaterHandler) Status(c *gin.Context) {
 	status := h.updaterService.GetStatus()
@@ -66,9 +71,12 @@ func (h *UpdaterHandler) Status(c *gin.Context) {
 // @Summary Get updater history
 // @Description Get the history of update operations
 // @Tags Updater
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param limit query int false "Number of history entries to return" default(50)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[[]dto.UpdaterHistoryEntryDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/updater/history [get]
 func (h *UpdaterHandler) History(c *gin.Context) {
 	limit := 50

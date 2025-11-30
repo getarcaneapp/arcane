@@ -196,8 +196,11 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 // @Summary Delete a container registry
 // @Description Delete a container registry by ID
 // @Tags Container Registries
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Registry ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/container-registries/{id} [delete]
 func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -221,8 +224,11 @@ func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 // @Summary Test a container registry
 // @Description Test connectivity and authentication to a container registry
 // @Tags Container Registries
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Registry ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.RegistryTestResultDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/container-registries/{id}/test [post]
 func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -265,10 +271,14 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 // @Summary Sync container registries
 // @Description Sync container registries from a remote source
 // @Tags Container Registries
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param request body dto.SyncRegistriesRequest true "Registries to sync"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/container-registries/sync [post]
 func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
 	var req dto.SyncRegistriesRequest

@@ -151,10 +151,13 @@ func (h *VolumeHandler) Create(c *gin.Context) {
 // @Summary Remove a volume
 // @Description Remove a Docker volume by name
 // @Tags Volumes
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param volumeName path string true "Volume name"
 // @Param force query bool false "Force removal"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/volumes/{volumeName} [delete]
 func (h *VolumeHandler) Remove(c *gin.Context) {
 	name := c.Param("volumeName")
@@ -183,8 +186,11 @@ func (h *VolumeHandler) Remove(c *gin.Context) {
 // @Summary Prune unused volumes
 // @Description Remove all unused Docker volumes
 // @Tags Volumes
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.VolumePruneReportDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/volumes/prune [post]
 func (h *VolumeHandler) Prune(c *gin.Context) {
 	report, err := h.volumeService.PruneVolumes(c.Request.Context())
@@ -206,9 +212,12 @@ func (h *VolumeHandler) Prune(c *gin.Context) {
 // @Summary Get volume usage
 // @Description Get containers using a specific volume
 // @Tags Volumes
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param volumeName path string true "Volume name"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.VolumeUsageDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/volumes/{volumeName}/usage [get]
 func (h *VolumeHandler) GetUsage(c *gin.Context) {
 	name := c.Param("volumeName")

@@ -158,9 +158,12 @@ func (h *NetworkHandler) Create(c *gin.Context) {
 // @Summary Remove a network
 // @Description Remove a Docker network by ID
 // @Tags Networks
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param networkId path string true "Network ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/networks/{networkId} [delete]
 func (h *NetworkHandler) Remove(c *gin.Context) {
 	id := c.Param("networkId")

@@ -61,11 +61,15 @@ func NewEnvironmentHandler(
 // @Summary Pair with local agent
 // @Description Generate or rotate the local agent pairing token
 // @Tags Environments
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Environment ID (must be 0 for local)"
-// @Param request body object false "Pair request with optional rotate flag"
-// @Success 200 {object} map[string]interface{}
+// @Param request body dto.AgentPairRequestDto false "Pair request with optional rotate flag"
+// @Success 200 {object} dto.ApiResponse[dto.AgentPairResponseDto]
+// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/agent/pair [post]
 func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 	if c.Param("id") != LOCAL_DOCKER_ENVIRONMENT_ID {
@@ -384,8 +388,12 @@ func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string
 // @Summary Delete an environment
 // @Description Delete a Docker environment
 // @Tags Environments
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id} [delete]
 // Delete
 func (h *EnvironmentHandler) DeleteEnvironment(c *gin.Context) {
@@ -451,8 +459,11 @@ func (h *EnvironmentHandler) TestConnection(c *gin.Context) {
 // @Summary Update environment heartbeat
 // @Description Update the heartbeat timestamp for an environment
 // @Tags Environments
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/heartbeat [post]
 func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -476,8 +487,11 @@ func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 // @Summary Sync container registries
 // @Description Sync container registries to a remote environment
 // @Tags Environments
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/sync-registries [post]
 func (h *EnvironmentHandler) SyncRegistries(c *gin.Context) {
 	environmentID := c.Param("id")

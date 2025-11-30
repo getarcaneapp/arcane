@@ -29,12 +29,6 @@ func NewOidcHandler(group *gin.RouterGroup, authService *services.AuthService, o
 	}
 }
 
-// GetOidcStatus godoc
-// @Summary Get OIDC status
-// @Description Get the current OIDC configuration status
-// @Tags OIDC
-// @Success 200 {object} map[string]interface{}
-// @Router /api/oidc/status [get]
 func (h *OidcHandler) GetOidcStatus(c *gin.Context) {
 	status, err := h.authService.GetOidcConfigurationStatus(c.Request.Context())
 	if err != nil {
@@ -47,15 +41,6 @@ func (h *OidcHandler) GetOidcStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, status)
 }
 
-// GetOidcAuthUrl godoc
-// @Summary Get OIDC auth URL
-// @Description Generate an OIDC authentication URL
-// @Tags OIDC
-// @Accept json
-// @Produce json
-// @Param request body dto.OidcAuthUrlRequest true "OIDC auth URL request"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/oidc/url [post]
 func (h *OidcHandler) GetOidcAuthUrl(c *gin.Context) {
 	var req dto.OidcAuthUrlRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -89,15 +74,6 @@ func (h *OidcHandler) GetOidcAuthUrl(c *gin.Context) {
 	})
 }
 
-// HandleOidcCallback godoc
-// @Summary Handle OIDC callback
-// @Description Handle the OIDC authentication callback
-// @Tags OIDC
-// @Accept json
-// @Produce json
-// @Param callback body object true "OIDC callback data"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/oidc/callback [post]
 func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 	var req struct {
 		Code  string `json:"code" binding:"required"`
@@ -153,12 +129,6 @@ func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 	})
 }
 
-// GetOidcConfig godoc
-// @Summary Get OIDC config
-// @Description Get the OIDC configuration details
-// @Tags OIDC
-// @Success 200 {object} map[string]interface{}
-// @Router /api/oidc/config [get]
 func (h *OidcHandler) GetOidcConfig(c *gin.Context) {
 	config, err := h.authService.GetOidcConfig(c.Request.Context())
 	if err != nil {

@@ -250,8 +250,11 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 // @Summary Delete a user
 // @Description Delete a user by ID
 // @Tags Users
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "User ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/users/{id} [delete]
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userID := c.Param("id")

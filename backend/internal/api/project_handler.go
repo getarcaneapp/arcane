@@ -112,9 +112,12 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 // @Summary Deploy a project
 // @Description Deploy a Docker Compose project (docker-compose up)
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/up [post]
 func (h *ProjectHandler) DeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -146,9 +149,12 @@ func (h *ProjectHandler) DeployProject(c *gin.Context) {
 // @Summary Bring down a project
 // @Description Bring down a Docker Compose project (docker-compose down)
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/down [post]
 func (h *ProjectHandler) DownProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -240,9 +246,12 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 // @Summary Redeploy a project
 // @Description Redeploy a Docker Compose project (down + up)
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/redeploy [post]
 func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -274,12 +283,16 @@ func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 // @Summary Destroy a project
 // @Description Destroy a Docker Compose project and optionally remove files/volumes
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
 // @Param request body dto.DestroyProjectDto false "Destroy options"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/destroy [delete]
 func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -311,12 +324,15 @@ func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 // @Summary Pull project images
 // @Description Pull all images for a Docker Compose project
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce application/x-json-stream
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
 // @Param request body dto.ProjectImagePullDto false "Pull options with optional credentials"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {string} string "Streaming JSON response"
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/pull [post]
 func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -434,9 +450,12 @@ func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 // @Summary Restart a project
 // @Description Restart all containers in a Docker Compose project
 // @Tags Projects
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param projectId path string true "Project ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/projects/{projectId}/restart [post]
 func (h *ProjectHandler) RestartProject(c *gin.Context) {
 	projectID := c.Param("projectId")

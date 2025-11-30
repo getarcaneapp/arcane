@@ -28,3 +28,11 @@ type EnvironmentDto struct {
 	Status  string `json:"status"`
 	Enabled bool   `json:"enabled"`
 }
+
+type AgentPairRequestDto struct {
+	Rotate *bool `json:"rotate,omitempty"`
+}
+
+type AgentPairResponseDto struct {
+	Token string `json:"token"`
+}

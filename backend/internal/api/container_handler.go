@@ -393,9 +393,12 @@ func (h *ContainerHandler) GetByID(c *gin.Context) {
 // @Summary Start a container
 // @Description Start a stopped Docker container
 // @Tags Containers
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param containerId path string true "Container ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/containers/{containerId}/start [post]
 func (h *ContainerHandler) Start(c *gin.Context) {
 	id := c.Param("containerId")
@@ -422,9 +425,12 @@ func (h *ContainerHandler) Start(c *gin.Context) {
 // @Summary Stop a container
 // @Description Stop a running Docker container
 // @Tags Containers
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param containerId path string true "Container ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/containers/{containerId}/stop [post]
 func (h *ContainerHandler) Stop(c *gin.Context) {
 	id := c.Param("containerId")
@@ -451,9 +457,12 @@ func (h *ContainerHandler) Stop(c *gin.Context) {
 // @Summary Restart a container
 // @Description Restart a Docker container
 // @Tags Containers
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param containerId path string true "Container ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/containers/{containerId}/restart [post]
 func (h *ContainerHandler) Restart(c *gin.Context) {
 	id := c.Param("containerId")
@@ -480,11 +489,14 @@ func (h *ContainerHandler) Restart(c *gin.Context) {
 // @Summary Delete a container
 // @Description Delete a Docker container
 // @Tags Containers
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param containerId path string true "Container ID"
 // @Param force query bool false "Force removal of running container"
 // @Param volumes query bool false "Remove associated volumes"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/containers/{containerId} [delete]
 func (h *ContainerHandler) Delete(c *gin.Context) {
 	id := c.Param("containerId")

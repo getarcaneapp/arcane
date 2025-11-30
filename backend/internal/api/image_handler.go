@@ -110,10 +110,13 @@ func (h *ImageHandler) GetByID(c *gin.Context) {
 // @Summary Remove an image
 // @Description Remove a Docker image by ID
 // @Tags Images
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Environment ID"
 // @Param imageId path string true "Image ID"
 // @Param force query bool false "Force removal"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/images/{imageId} [delete]
 func (h *ImageHandler) Remove(c *gin.Context) {
 	id := c.Param("imageId")
@@ -141,11 +144,15 @@ func (h *ImageHandler) Remove(c *gin.Context) {
 // @Summary Pull an image
 // @Description Pull a Docker image from a registry
 // @Tags Images
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept json
 // @Produce application/x-json-stream
 // @Param id path string true "Environment ID"
 // @Param request body dto.ImagePullDto true "Image pull request"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {string} string "Streaming JSON response"
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/images/pull [post]
 func (h *ImageHandler) Pull(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -286,11 +293,16 @@ func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 // @Summary Upload an image
 // @Description Upload a Docker image from a tar archive
 // @Tags Images
+// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Accept multipart/form-data
 // @Produce json
 // @Param id path string true "Environment ID"
 // @Param file formData file true "Docker image tar archive"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} dto.ApiResponse[dto.ImageLoadResultDto]
+// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 413 {object} dto.ApiResponse[dto.ErrorResponse]
+// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
 // @Router /api/environments/{id}/images/upload [post]
 func (h *ImageHandler) Upload(c *gin.Context) {
 	ctx := context.Background()
