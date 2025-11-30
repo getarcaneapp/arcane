@@ -106,12 +106,12 @@ func (s *VersionService) ReleaseURL(version string) string {
 	if strings.TrimSpace(version) == "" {
 		return "https://github.com/getarcaneapp/arcane/releases/latest"
 	}
-  
+
 	v := strings.TrimSpace(version)
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v
 	}
-	return "https://github.com/ofkm/arcane/releases/tag/" + v
+	return "https://github.com/getarcaneapp/arcane/releases/tag/" + v
 }
 
 type VersionInformation struct {
@@ -296,11 +296,10 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 	}
 
 	// Connect to Docker and inspect the container
-	dockerClient, err := s.dockerService.CreateConnection(ctx)
+	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return "", "", ""
 	}
-	defer dockerClient.Close()
 
 	container, err := dockerClient.ContainerInspect(ctx, containerId)
 	if err != nil {

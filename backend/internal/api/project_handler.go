@@ -333,36 +333,6 @@ func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 	})
 }
 
-func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
-	projectID := c.Param("projectId")
-	if projectID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Project ID is required"})
-		return
-	}
-
-	var req dto.UpdateProjectIncludeDto
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid request format"})
-		return
-	}
-
-	if err := h.projectService.UpdateProjectIncludeFile(c.Request.Context(), projectID, req.RelativePath, req.Content); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	details, err := h.projectService.GetProjectDetails(c.Request.Context(), projectID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to fetch updated project details"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    details,
-	})
-}
-
 func (h *ProjectHandler) RestartProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 	if projectID == "" {
