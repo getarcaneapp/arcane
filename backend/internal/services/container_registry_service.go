@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
-  "github.com/getarcaneapp/arcane/backend/internal/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 )
 
