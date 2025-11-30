@@ -1,6 +1,5 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"_comment_layout": "=== LAYOUT & UI ===",
 	"layout_title": "Arcane",
 	"accent_color": "Accent Color",
@@ -8,13 +7,11 @@
 	"custom_accent_color": "Custom Accent Color",
 	"custom_accent_color_description": "Enter a custom color using valid CSS color formats (e.g., hex, rgb, hsl).",
 	"color_value": "Color value",
-
 	"_comment_errors": "=== ERROR PAGES ===",
 	"error_occurred": "An Error Occured",
 	"error_not_found": "Not Found",
 	"error_generic": "Something went wrong",
 	"error_go_to_dashboard": "Go to Dashboard",
-
 	"_comment_common_generic": "=== COMMON - GENERIC ===",
 	"common_refresh": "Refresh",
 	"common_unknown": "Unknown",
@@ -161,7 +158,6 @@
 	"common_redeploy": "Redeploy",
 	"common_use_template": "Use Template",
 	"common_apply": "Apply",
-
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
@@ -182,7 +178,6 @@
 	"common_action_saving": "Saving…",
 	"common_action_failed": "Action Failed",
 	"common_action_failed_with_type": "Failed to {action} {type}",
-
 	"_comment_common_crud": "=== COMMON - CRUD MESSAGES ===",
 	"common_create_success": "{resource} created successfully",
 	"common_create_failed": "Failed to create {resource}",
@@ -202,7 +197,6 @@
 	"common_bulk_remove_failed": "Failed to remove {count} {resource}",
 	"common_bulk_delete_success": "Successfully deleted {count} {resource}",
 	"common_bulk_delete_failed": "Failed to delete {count} {resource}",
-
 	"_comment_common_confirmations": "=== COMMON - CONFIRMATION DIALOGS ===",
 	"common_delete_title": "Delete {resource}",
 	"common_delete_selected_title": "Delete {count} {resource}",
@@ -216,7 +210,6 @@
 	"common_confirm_redeploy_message": "Are you sure you want to redeploy this project? This will pull the latest images and recreate containers as needed.",
 	"confirm_remove_project_files": "Remove project files",
 	"confirm_remove_volumes_warning": "Remove volumes (Warning: Data will be lost)",
-
 	"_comment_common_ui": "=== COMMON - UI COMPONENTS ===",
 	"common_no_items_found": "No {resource} found",
 	"common_empty_state_description": "Create a new {resource} using the button above.",
@@ -225,13 +218,11 @@
 	"common_labels_description": "Metadata labels attached to this {resource} for organization and automation",
 	"common_create_button": "Create {resource}",
 	"common_add_button": "Add {resource}",
-
 	"_comment_common_validation": "=== COMMON - VALIDATION ===",
 	"common_field_required": "{field} is required",
 	"common_invalid_format": "{field} must be a valid {format}",
 	"common_field_too_long": "{field} is too long (max {max} characters)",
 	"common_username_required": "Username is required",
-
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
@@ -273,7 +264,6 @@
 	"resource_event_cap": "Event",
 	"resource_events": "events",
 	"resource_events_cap": "Events",
-
 	"_comment_auth": "=== AUTHENTICATION ===",
 	"auth_welcome_back_title": "Welcome back",
 	"auth_login_subtitle": "Sign in to manage your containers",
@@ -318,7 +308,6 @@
 	"auth_oidc_redirecting_description": "Please wait while we redirect you to your identity provider.",
 	"auth_oidc_merge_accounts_title": "Account Linking Enabled",
 	"auth_oidc_merge_accounts_description": "When you sign in with OIDC, your account will automatically link with any existing local account using the same email address. You can then use either login method.",
-
 	"_comment_dashboard": "=== DASHBOARD ===",
 	"dashboard_title": "Dashboard",
 	"dashboard_subtitle": "Overview of your Container Environment",
@@ -350,7 +339,6 @@
 	"dashboard_meter_gpu_desc": "GPU memory utilization",
 	"dashboard_meter_gpu_device": "device",
 	"dashboard_meter_gpu_devices": "devices",
-
 	"_comment_containers": "=== CONTAINERS ===",
 	"containers_title": "Containers",
 	"containers_subtitle": "View and Manage your Containers",
@@ -511,7 +499,6 @@
 	"max_retry_label": "Maximum Retries",
 	"max_retry_placeholder": "3",
 	"max_retry_description": "Maximum retry count for on-failure policy",
-
 	"_comment_images": "=== IMAGES ===",
 	"images_title": "Images",
 	"images_subtitle": "View and Manage your Container Images",
@@ -579,7 +566,6 @@
 	"images_remove_success_many": "{count} images removed successfully",
 	"images_remove_failed_one": "Failed to remove image",
 	"images_remove_failed_many": "Failed to remove {count} images",
-
 	"_comment_volumes": "=== VOLUMES ===",
 	"volumes_title": "Volumes",
 	"volumes_subtitle": "Manage your Docker volumes",
@@ -598,7 +584,6 @@
 	"volumes_remove_confirm_message": "Are you sure you want to remove volume {name}?",
 	"volumes_remove_failed": "Failed to remove volume {name}",
 	"volumes_remove_success": "Volume {name} removed successfully",
-
 	"_comment_networks": "=== NETWORKS ===",
 	"networks_title": "Networks",
 	"networks_subtitle": "Manage your Docker networks",
@@ -641,7 +626,6 @@
 	"networks_remove_confirm_message": "Are you sure you want to remove network {name}?",
 	"networks_remove_failed": "Failed to remove network {name}",
 	"networks_remove_success": "Network {name} removed successfully",
-
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "Projects",
 	"compose_subtitle": "View and Manage Compose Projects",
@@ -711,7 +695,6 @@
 	"compose_logs_title": "Project Logs",
 	"compose_error_loading_stack_title": "Error Loading Project",
 	"project": "Project",
-
 	"_comment_environments": "=== ENVIRONMENTS ===",
 	"environments_title": "Environments",
 	"environments_subtitle": "Manage and monitor your Arcane environments",
@@ -744,7 +727,7 @@
 	"environments_refreshing": "Refreshing…",
 	"environments_name_placeholder": "My Lab Server",
 	"environments_name_too_long": "Name too long (max 25 characters)",
-	"environments_api_url_placeholder": "http://192.168.1.100:3553",
+	"environments_api_url_placeholder": "192.168.1.100:3553",
 	"environments_api_url_description": "Full URL to the Arcane server endpoint",
 	"environments_name_required": "Environment name is required",
 	"environments_server_url_required": "Server URL is required",
@@ -778,7 +761,6 @@
 	"environments_current_environment": "Current Environment",
 	"environments_switched_to": "Switched to {name}",
 	"environments_cannot_switch_disabled": "Cannot switch to a disabled environment",
-
 	"_comment_users": "=== USERS ===",
 	"users_title": "Users",
 	"users_subtitle": "Manage system users and permissions",
@@ -804,7 +786,6 @@
 	"users_username_description": "Unique username for the user",
 	"users_administrator_description": "Grant administrator privileges to this user",
 	"users_save_changes": "Save Changes",
-
 	"_comment_events": "=== EVENTS ===",
 	"events_title": "Event Log",
 	"events_subtitle": "Monitor events that have taken place in Arcane.",
@@ -834,11 +815,9 @@
 	"events_copy_metadata_json_title": "Copy metadata JSON",
 	"events_copy_full_event_json_title": "Copy full event JSON",
 	"events_environment_label": "Environment",
-
 	"_comment_settings": "=== SETTINGS ===",
 	"settings_title": "Settings",
 	"settings_description": "Configure the application settings",
-
 	"_comment_settings_general": "=== SETTINGS - GENERAL ===",
 	"general_title": "General",
 	"general_description": "Core configuration settings for the application",
@@ -859,7 +838,6 @@
 	"general_settings_saved": "Settings Updated Successfully",
 	"general_save_instructions": "Save your updated settings.",
 	"general_settings_save_failed": "Failed to Save General Settings",
-
 	"_comment_settings_security": "=== SETTINGS - SECURITY ===",
 	"security_title": "Security",
 	"security_description": "Configure authentication methods, session timeouts, and other security-related options.",
@@ -868,7 +846,10 @@
 	"security_local_auth_description": "Username and password stored by Arcane. Keep enabled as a fallback.",
 	"security_oidc_auth_label": "OIDC Authentication",
 	"security_oidc_auth_description": "Use an external OIDC provider",
-	"security_oidc_auth_description_forced": "Use an external OIDC provider (forced by server)",
+	"security_server_configured": "Server Configurato",
+	"security_oidc_enabled_label": "Abilita Autenticazione OIDC",
+	"security_oidc_enabled_description": "Consenti agli utenti di accedere utilizzando un provider OpenID Connect",
+	"security_oidc_client_secret_help": "Lascia vuoto per mantenere il segreto esistente",
 	"security_oidc_merge_accounts_label": "Link OIDC with Existing Accounts",
 	"security_oidc_merge_accounts_description": "Allow OIDC logins to merge with existing local accounts by matching email addresses",
 	"security_oidc_merge_accounts_alert_title": "Enable Account Linking?",
@@ -885,6 +866,7 @@
 	"security_session_timeout_min": "Minimum is 15 minutes",
 	"security_session_timeout_max": "Maximum is 1440 minutes",
 	"security_password_policy_label": "Password Policy",
+	"security_password_policy_description": "Imposta i requisiti di forza password",
 	"security_password_policy_basic": "Basic",
 	"security_password_policy_standard": "Standard",
 	"security_password_policy_strong": "Strong",
@@ -893,12 +875,13 @@
 	"security_password_policy_strong_tooltip": "12+ chars with upper, lower, number, and symbol.",
 	"security_enable_one_provider": "Enable at least one authentication provider.",
 	"security_enable_one_provider_error": "At least one authentication provider must be enabled.",
+	"security_form_validation_error": "Per favore controlla il modulo per errori.",
+	"security_oidc_required_fields": "Per abilitare OIDC sono richiesti ID cliente e URL emittente.",
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_oidc_saved": "OIDC configuration saved successfully.",
 	"security_save_instructions": "Save your updated settings.",
 	"security_settings_save_failed": "Failed to save security settings",
-
 	"_comment_settings_docker": "=== SETTINGS - DOCKER ===",
 	"docker_title": "Docker",
 	"docker_description": "Configure Docker automation behavior and settings.",
@@ -946,7 +929,6 @@
 	"docker_auto_update_alert_description": "Automatic container updates are active with polling enabled",
 	"docker_rate_limit_warning_title": "Rate Limiting Warning",
 	"docker_rate_limit_warning_description": "Polling intervals below 30 minutes may trigger registry rate limits. Prefer longer intervals in production.",
-
 	"_comment_settings_navigation": "=== SETTINGS - NAVIGATION ===",
 	"navigation_title": "Navigation",
 	"navigation_description": "Customize navigation behavior and appearance",
@@ -981,14 +963,12 @@
 	"off": "Off",
 	"tap_to_edit": "Tap to edit",
 	"cannot_edit": "Cannot edit",
-
 	"_comment_settings_disk": "=== SETTINGS - DISK USAGE ===",
 	"disk_usage_settings": "Disk Usage Settings",
 	"disk_usage_settings_description": "Configure which directory to monitor for disk usage metrics.",
 	"disk_usage_save": "Disk usage path updated successfully",
 	"disk_usage_save_failed": "Failed to update disk usage path",
 	"directory_path": "Directory Path",
-
 	"_comment_customize_overview": "=== CUSTOMIZATION - OVERVIEW ===",
 	"customize_title": "Customization",
 	"customize_subtitle": "Customize templates, registries, and configuration defaults",
@@ -1015,7 +995,6 @@
 	"customize_registry_mirrors": "Registry Mirrors",
 	"customize_secret_variables": "Secret Variables",
 	"customize_variable_templates": "Variable Templates",
-
 	"_comment_customize_templates": "=== CUSTOMIZATION - TEMPLATES ===",
 	"templates_title": "Templates",
 	"templates_subtitle": "Manage compose registries, templates, and defaults",
@@ -1092,7 +1071,6 @@
 	"templates_save_success": "Default templates saved successfully",
 	"templates_reset_success": "Changes reset",
 	"default_templates": "Default Templates",
-
 	"_comment_customize_registries": "=== CUSTOMIZATION - REGISTRIES ===",
 	"registries_title": "Container Registries",
 	"registries_subtitle": "Configure access credentials for private Docker registries and container repositories",
@@ -1139,7 +1117,6 @@
 	"registry_github_url": "ghcr.io",
 	"registry_google_url": "gcr.io",
 	"registry_quay_url": "quay.io",
-
 	"_comment_customize_variables": "=== CUSTOMIZATION - VARIABLES ===",
 	"variables_title": "Variables",
 	"variables_subtitle": "Manage global environment variables that are available to all projects",
@@ -1157,7 +1134,6 @@
 	"variables_duplicate_keys_error": "Duplicate keys found. Please ensure all keys are unique.",
 	"variables_save_success": "Global variables saved successfully",
 	"variables_save_failed": "Failed to save. Please try again.",
-
 	"_comment_logs": "=== LOGS ===",
 	"log_stream_connection_lost": "Connection to {type} log stream lost",
 	"log_stream_closed_by_server": "{type} log stream was closed by server",
@@ -1176,14 +1152,12 @@
 	"log_tail_1000_lines": "1000 lines",
 	"log_tail_all_lines": "All logs",
 	"log_refresh_aria_label": "Refresh logs",
-
 	"_comment_terminal": "=== TERMINAL/SHELL ===",
 	"shell_interactive_access": "Interactive shell access to container",
 	"shell_custom_placeholder": "/usr/bin/fish",
 	"terminal_websocket_error": "WebSocket error occurred",
 	"terminal_connection_closed": "Connection closed",
 	"apply": "Apply",
-
 	"_comment_docker_info": "=== DOCKER INFO ===",
 	"docker_engine_title": "{engine}",
 	"docker_engine_subtitle": "{os} • {arch}",
@@ -1233,7 +1207,6 @@
 	"docker_info_logs_plugin": "Logs",
 	"docker_info_security_options": "Security Options",
 	"docker_info_runtimes": "Runtimes",
-
 	"_comment_sidebar": "=== SIDEBAR ===",
 	"sidebar_environment_label": "Environment",
 	"sidebar_select_environment": "Select Environment",
@@ -1250,7 +1223,6 @@
 	"sidebar_environments": "Environments",
 	"sidebar_administration": "Administration",
 	"sidebar_settings": "Settings",
-
 	"_comment_quick_actions": "=== QUICK ACTIONS & PROGRESS ===",
 	"quick_actions_title": "Quick Actions",
 	"quick_actions_start_all": "Start All Stopped",
@@ -1261,12 +1233,18 @@
 	"progress_title": "Progress",
 	"progress_subtitle": "Working…",
 	"progress_preparing": "Preparing…",
+	"progress_downloading": "Scaricamento",
+	"progress_extracting": "Estrazione",
+	"progress_pulling": "Tirando",
+	"progress_verifying": "Verifica",
+	"progress_waiting": "In Attesa",
 	"progress_pull_completed": "Pull Completed",
 	"progress_in_progress_note": "This may take a while depending on size and connection.",
 	"progress_completed_success": "Completed successfully!",
 	"progress_pulling_images": "Pulling Images",
+	"progress_layers_status": "{completed} di livelli {total}",
+	"progress_show_layers": "Mostra Livelli",
 	"meter_footer_usage": "{percent}% of resources being used",
-
 	"_comment_image_updates": "=== IMAGE UPDATES ===",
 	"image_update_auth_credential": "Credential",
 	"image_update_auth_credential_with_user": "Credential ({username})",
@@ -1295,17 +1273,11 @@
 	"image_update_click_to_check": "Click to check for updates from registry.",
 	"image_update_unable_check_tags": "Unable to check updates for images without proper tags.",
 	"image_update_auth": "Auth: {label}",
-
 	"_comment_oidc": "=== OIDC CONFIGURATION ===",
-	"oidc_viewmode_description": "OIDC authentication is configured and forced ON by server-side environment variables. These settings are read-only.",
-	"oidc_configure_description": "Configure the OIDC settings for your application. These settings will be saved to the database and used for OIDC authentication.",
-	"oidc_server_env_config_title": "Server Environment Configuration",
-	"oidc_server_env_config_description": "The following OIDC settings are loaded from the server environment:",
 	"oidc_client_id_label": "Client ID",
 	"oidc_client_id_placeholder": "Provided by your OIDC Provider",
 	"oidc_client_secret_label": "Client Secret",
 	"oidc_client_secret_placeholder": "Provided by your OIDC Provider (leave blank to keep existing)",
-	"oidc_client_secret_hidden": "(Sensitive - Not Displayed)",
 	"oidc_issuer_url_label": "Issuer URL",
 	"oidc_issuer_url_placeholder": "https://id.example.com",
 	"oidc_issuer_url_description": "The issuer URL will be used to auto-discover OIDC endpoints.",
@@ -1318,22 +1290,8 @@
 	"oidc_admin_claim_placeholder": "e.g., roles, groups, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "e.g., admin (comma-separated)",
 	"oidc_admin_value_help": "Leave empty for boolean claims (admin=true).",
-	"oidc_env_config_missing": "OIDC configuration details not found in effective settings.",
-	"oidc_env_changes_note": "Changes to these settings must be made in your server's environment configuration.",
-	"oidc_server_override_warning_title": "Server Override Warning",
 	"oidc_redirect_uri_title": "Redirect URI Configuration",
 	"oidc_redirect_uri_description": "Configure this redirect URI in your OIDC provider:",
-	"oidc_status_env_forced": "Env Forced",
-	"oidc_status_env_forced_hint": "Server forces OIDC",
-	"oidc_status_env_configured": "Env Configured",
-	"oidc_status_env_configured_hint": "Server OIDC vars present",
-	"oidc_tips_title": "Tips",
-	"oidc_tip_1": "If your server forces OIDC, app settings become read-only.",
-	"oidc_tip_2": "Use issuer discovery; avoid hardcoding endpoints.",
-	"oidc_tip_3": "Keep client secrets out of the UI when possible.",
-	"oidc_basic_configuration_title": "Basic Configuration",
-	"oidc_basic_description": "Essential OIDC provider settings",
-
 	"_comment_prune": "=== PRUNE ===",
 	"prune_confirm_system_title": "Confirm System Prune",
 	"prune_confirm_description": "Select the resources you want to prune. This action permanently removes unused data and cannot be undone.",
@@ -1348,7 +1306,6 @@
 	"prune_volumes_warning_title": "Warning: Pruning Volumes",
 	"prune_volumes_warning_description": "Pruning volumes permanently deletes data. Ensure you have backups if necessary.",
 	"prune_button": "Prune Selected ({count})",
-
 	"_comment_form_network": "=== FORM - CREATE NETWORK ===",
 	"create_network_title": "Create New Network",
 	"create_network_description": "Configure and create a new Docker network.",
@@ -1369,7 +1326,6 @@
 	"network_driver_options_placeholder": "parent=eth0\ncom.docker.network.bridge.name=docker0",
 	"network_driver_options_description": "Enter driver-specific options as key=value pairs (e.g., parent=eth0 for macvlan), one per line",
 	"network_interface": "Network interface",
-
 	"_comment_form_volume": "=== FORM - CREATE VOLUME ===",
 	"create_volume_title": "Create New Volume",
 	"create_volume_description": "Enter the details for the new Docker volume.",
@@ -1388,7 +1344,6 @@
 	"volume_driver_options_placeholder": "key=value\nkey2=value2",
 	"volume_driver_options_description": "Enter driver-specific options as key=value pairs, one per line",
 	"volume_labels_placeholder": "com.example.description=Production data\ncom.example.department=Finance",
-
 	"_comment_misc": "=== MISCELLANEOUS ===",
 	"file_drop_zone_drag_drop": "Drag 'n' drop files here, or click to select files",
 	"file_drop_zone_max_files": "You can upload {maxFiles} files",
@@ -1414,7 +1369,6 @@
 	"labels_key_value_label": "Key-Value Labels",
 	"services": "Services",
 	"updated": "Updated",
-
 	"_comment_missing_translations": "=== MISSING TRANSLATIONS ===",
 	"cancel": "Cancel",
 	"duplicate": "Duplicate",
@@ -1571,5 +1525,5 @@
 	"upgrade_status_checking": "Checking for new version...",
 	"upgrade_status_detected": "New version detected!",
 	"upgrade_wait_info": "This may take 30-60 seconds. The page will reload automatically when ready.",
-    "auto_start": "Auto-start"
+	"auto_start": "Auto-start"
 }

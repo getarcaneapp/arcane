@@ -28,6 +28,12 @@ For setup instructions, configuration details, and development guides, visit the
 
 ---
 
+## Security & Transparency
+
+View the Software Bill of Materials (SBOM) for Arcane at **[getarcane.app/sbom](https://getarcane.app/sbom)**.
+
+---
+
 ## Translating
 
 Help translate Arcane on Crowdin: https://crowdin.com/project/arcane-docker-management
