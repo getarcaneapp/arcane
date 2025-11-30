@@ -224,8 +224,9 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 
 			// Update last_used_at asynchronously to avoid blocking auth flow
 			go func(keyID string) {
+				bgCtx := context.WithoutCancel(ctx)
 				now := time.Now()
-				s.db.Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
+				s.db.WithContext(bgCtx).Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
 			}(apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, apiKey.UserID)

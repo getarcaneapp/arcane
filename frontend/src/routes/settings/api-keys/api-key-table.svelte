@@ -17,6 +17,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import KeyIcon from '@lucide/svelte/icons/key';
+	import * as m from '$lib/paraglide/messages.js';
 
 	let {
 		apiKeys = $bindable(),
@@ -47,8 +48,8 @@
 	}
 
 	function getStatusText(apiKey: ApiKey): string {
-		if (isExpired(apiKey.expiresAt)) return 'Expired';
-		return 'Active';
+		if (isExpired(apiKey.expiresAt)) return m.api_key_status_expired();
+		return m.api_key_status_active();
 	}
 
 	function getStatusVariant(apiKey: ApiKey): 'red' | 'green' {
@@ -59,9 +60,9 @@
 	async function copyToClipboard(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
-			toast.success('Copied to clipboard');
+			toast.success(m.common_copied());
 		} catch {
-			toast.error('Failed to copy to clipboard');
+			toast.error(m.common_copy_failed());
 		}
 	}
 
@@ -69,10 +70,10 @@
 		if (selectedIds.length === 0) return;
 
 		openConfirmDialog({
-			title: `Delete ${selectedIds.length} API Key${selectedIds.length > 1 ? 's' : ''}?`,
-			message: `Are you sure you want to delete ${selectedIds.length} API key${selectedIds.length > 1 ? 's' : ''}? This action cannot be undone.`,
+			title: m.api_key_delete_selected_title({ count: selectedIds.length }),
+			message: m.api_key_delete_selected_message({ count: selectedIds.length }),
 			confirm: {
-				label: 'Delete',
+				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
 					isLoading.removing = true;
@@ -83,7 +84,7 @@
 						const result = await tryCatch(apiKeyService.delete(apiKeyId));
 						handleApiResultWithCallbacks({
 							result,
-							message: `Failed to delete API key ${apiKeyId}`,
+							message: m.api_key_delete_failed({ name: apiKeyId }),
 							setLoadingState: () => {},
 							onSuccess: () => {
 								successCount++;
@@ -98,12 +99,12 @@
 					isLoading.removing = false;
 
 					if (successCount > 0) {
-						toast.success(`Successfully deleted ${successCount} API key${successCount > 1 ? 's' : ''}`);
+						toast.success(m.api_key_bulk_delete_success({ count: successCount }));
 						await onApiKeysChanged();
 					}
 
 					if (failureCount > 0) {
-						toast.error(`Failed to delete ${failureCount} API key${failureCount > 1 ? 's' : ''}`);
+						toast.error(m.api_key_bulk_delete_failed({ count: failureCount }));
 					}
 
 					selectedIds = [];
@@ -113,21 +114,21 @@
 	}
 
 	async function handleDeleteApiKey(apiKeyId: string, name: string) {
-		const safeName = name?.trim() || 'Unknown';
+		const safeName = name?.trim() || m.common_unknown();
 		openConfirmDialog({
-			title: `Delete API Key "${safeName}"?`,
-			message: `Are you sure you want to delete the API key "${safeName}"? This action cannot be undone.`,
+			title: m.api_key_delete_title({ name: safeName }),
+			message: m.api_key_delete_message({ name: safeName }),
 			confirm: {
-				label: 'Delete',
+				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
 					isLoading.removing = true;
 					handleApiResultWithCallbacks({
 						result: await tryCatch(apiKeyService.delete(apiKeyId)),
-						message: `Failed to delete API key "${safeName}"`,
+						message: m.api_key_delete_failed({ name: safeName }),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
-							toast.success(`API key "${safeName}" deleted successfully`);
+							toast.success(m.api_key_delete_success({ name: safeName }));
 							await onApiKeysChanged();
 						}
 					});
@@ -137,16 +138,18 @@
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: 'Name', sortable: true, cell: NameCell },
-		{ accessorKey: 'keyPrefix', title: 'Key Prefix', sortable: false, cell: KeyPrefixCell },
-		{ accessorKey: 'expiresAt', title: 'Expires', sortable: true, cell: ExpiresCell },
-		{ accessorKey: 'lastUsedAt', title: 'Last Used', sortable: true, cell: LastUsedCell }
+		{ accessorKey: 'name', title: m.api_key_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'description', title: m.api_key_description_label(), sortable: false, cell: DescriptionCell },
+		{ accessorKey: 'keyPrefix', title: m.api_key_key_prefix(), sortable: false, cell: KeyPrefixCell },
+		{ accessorKey: 'expiresAt', title: m.api_key_expires_at(), sortable: true, cell: ExpiresCell },
+		{ accessorKey: 'lastUsedAt', title: m.api_key_last_used(), sortable: true, cell: LastUsedCell }
 	] satisfies ColumnSpec<ApiKey>[];
 
 	const mobileFields = [
-		{ id: 'keyPrefix', label: 'Key Prefix', defaultVisible: true },
-		{ id: 'expiresAt', label: 'Expires', defaultVisible: true },
-		{ id: 'lastUsedAt', label: 'Last Used', defaultVisible: true }
+		{ id: 'description', label: m.api_key_description_label(), defaultVisible: true },
+		{ id: 'keyPrefix', label: m.api_key_key_prefix(), defaultVisible: true },
+		{ id: 'expiresAt', label: m.api_key_expires_at(), defaultVisible: true },
+		{ id: 'lastUsedAt', label: m.api_key_last_used(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -154,6 +157,10 @@
 
 {#snippet NameCell({ item }: { item: ApiKey })}
 	<span class="font-medium">{item.name}</span>
+{/snippet}
+
+{#snippet DescriptionCell({ item }: { item: ApiKey })}
+	<span class="text-muted-foreground">{item.description || '-'}</span>
 {/snippet}
 
 {#snippet KeyPrefixCell({ item }: { item: ApiKey })}
@@ -170,7 +177,7 @@
 		{#if item.expiresAt}
 			<span class={isExpired(item.expiresAt) ? 'text-red-500' : ''}>{formatDate(item.expiresAt)}</span>
 		{:else}
-			<span class="text-muted-foreground">Never</span>
+			<span class="text-muted-foreground">{m.api_key_expires_never()}</span>
 		{/if}
 		<StatusBadge text={getStatusText(item)} variant={getStatusVariant(item)} />
 	</div>
@@ -202,14 +209,21 @@
 		]}
 		fields={[
 			{
-				label: 'Expires',
-				getValue: (item: ApiKey) => (item.expiresAt ? formatDate(item.expiresAt) : 'Never'),
+				label: m.api_key_description_label(),
+				getValue: (item: ApiKey) => item.description || '-',
+				icon: KeyIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.description ?? true
+			},
+			{
+				label: m.api_key_expires_at(),
+				getValue: (item: ApiKey) => (item.expiresAt ? formatDate(item.expiresAt) : m.api_key_expires_never()),
 				icon: KeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.expiresAt ?? true
 			},
 			{
-				label: 'Last Used',
+				label: m.api_key_last_used(),
 				getValue: (item: ApiKey) => formatDate(item.lastUsedAt),
 				icon: KeyIcon,
 				iconVariant: 'gray' as const,
@@ -225,7 +239,7 @@
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
 				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">Open menu</span>
+					<span class="sr-only">{m.common_open_menu()}</span>
 					<EllipsisIcon />
 				</Button>
 			{/snippet}
@@ -234,11 +248,11 @@
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => onEditApiKey(item)}>
 					<EditIcon class="size-4" />
-					Edit
+					{m.common_edit()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
 					<Trash2Icon class="size-4" />
-					Delete
+					{m.common_delete()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>

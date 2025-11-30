@@ -27,7 +27,7 @@
 	let SubmitIcon = $derived(isEditMode ? SaveIcon : KeyIcon);
 
 	const formSchema = z.object({
-		name: z.string().min(1, 'Name is required'),
+		name: z.string().min(1, m.common_field_required({ field: m.api_key_name() })),
 		description: z.string().optional(),
 		expiresAt: z.date().optional()
 	});
@@ -74,7 +74,7 @@
 					</Sheet.Title>
 					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
 						{#if isEditMode}
-							{m.api_key_edit_description({ name: apiKeyToEdit?.name ?? 'Unknown' })}
+							{m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })}
 						{:else}
 							{m.api_key_create_description()}
 						{/if}
