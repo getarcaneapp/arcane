@@ -27,14 +27,16 @@ func NewCustomizeHandler(group *gin.RouterGroup, customizeSearchService *service
 }
 
 // Search godoc
-// @Summary Search customization options
-// @Description Search customization categories and options by query
-// @Tags Customize
-// @Accept json
-// @Produce json
-// @Param request body dto.CustomizeSearchRequest true "Search query"
-// @Success 200 {object} dto.CustomizeSearchResponse
-// @Router /api/customize/search [post]
+//
+//	@Summary		Search customization options
+//	@Description	Search customization categories and options by query
+//	@Tags			Customize
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.CustomizeSearchRequest	true	"Search query"
+//	@Success		200		{object}	dto.CustomizeSearchResponse
+//	@Router			/api/customize/search [post]
+//
 // Search delegates to the customize search service and returns relevance-scored results
 func (h *CustomizeHandler) Search(c *gin.Context) {
 	var req dto.CustomizeSearchRequest
@@ -59,11 +61,13 @@ func (h *CustomizeHandler) Search(c *gin.Context) {
 }
 
 // GetCategories godoc
-// @Summary Get customization categories
-// @Description Get all available customization categories with metadata
-// @Tags Customize
-// @Success 200 {array} dto.CustomizeCategory
-// @Router /api/customize/categories [get]
+//
+//	@Summary		Get customization categories
+//	@Description	Get all available customization categories with metadata
+//	@Tags			Customize
+//	@Success		200	{array}	dto.CustomizeCategory
+//	@Router			/api/customize/categories [get]
+//
 // GetCategories returns all available customization categories with metadata
 func (h *CustomizeHandler) GetCategories(c *gin.Context) {
 	categories := h.customizeSearchService.GetCustomizeCategories()

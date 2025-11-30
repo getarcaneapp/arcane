@@ -42,16 +42,17 @@ func NewImageHandler(group *gin.RouterGroup, dockerService *services.DockerClien
 }
 
 // List godoc
-// @Summary List images
-// @Description Get a paginated list of Docker images
-// @Tags Images
-// @Param id path string true "Environment ID"
-// @Param pagination[page] query int false "Page number for pagination" default(1)
-// @Param pagination[limit] query int false "Number of items per page" default(20)
-// @Param sort[column] query string false "Column to sort by"
-// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
-// @Success 200 {object} dto.Paginated[dto.ImageSummaryDto]
-// @Router /api/environments/{id}/images [get]
+//
+//	@Summary		List images
+//	@Description	Get a paginated list of Docker images
+//	@Tags			Images
+//	@Param			id					path		string	true	"Environment ID"
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	dto.Paginated[dto.ImageSummaryDto]
+//	@Router			/api/environments/{id}/images [get]
 func (h *ImageHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -82,13 +83,14 @@ func (h *ImageHandler) List(c *gin.Context) {
 }
 
 // GetByID godoc
-// @Summary Get image by ID
-// @Description Get a Docker image by its ID
-// @Tags Images
-// @Param id path string true "Environment ID"
-// @Param imageId path string true "Image ID"
-// @Success 200 {object} dto.ImageDetailSummaryDto
-// @Router /api/environments/{id}/images/{imageId} [get]
+//
+//	@Summary		Get image by ID
+//	@Description	Get a Docker image by its ID
+//	@Tags			Images
+//	@Param			id		path		string	true	"Environment ID"
+//	@Param			imageId	path		string	true	"Image ID"
+//	@Success		200		{object}	dto.ImageDetailSummaryDto
+//	@Router			/api/environments/{id}/images/{imageId} [get]
 func (h *ImageHandler) GetByID(c *gin.Context) {
 	id := c.Param("imageId")
 
@@ -107,17 +109,18 @@ func (h *ImageHandler) GetByID(c *gin.Context) {
 }
 
 // Remove godoc
-// @Summary Remove an image
-// @Description Remove a Docker image by ID
-// @Tags Images
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "Environment ID"
-// @Param imageId path string true "Image ID"
-// @Param force query bool false "Force removal"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/images/{imageId} [delete]
+//
+//	@Summary		Remove an image
+//	@Description	Remove a Docker image by ID
+//	@Tags			Images
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id		path		string	true	"Environment ID"
+//	@Param			imageId	path		string	true	"Image ID"
+//	@Param			force	query		bool	false	"Force removal"
+//	@Success		200		{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/images/{imageId} [delete]
 func (h *ImageHandler) Remove(c *gin.Context) {
 	id := c.Param("imageId")
 	force := c.Query("force") == "true"
@@ -141,19 +144,20 @@ func (h *ImageHandler) Remove(c *gin.Context) {
 }
 
 // Pull godoc
-// @Summary Pull an image
-// @Description Pull a Docker image from a registry
-// @Tags Images
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce application/x-json-stream
-// @Param id path string true "Environment ID"
-// @Param request body dto.ImagePullDto true "Image pull request"
-// @Success 200 {string} string "Streaming JSON response"
-// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/images/pull [post]
+//
+//	@Summary		Pull an image
+//	@Description	Pull a Docker image from a registry
+//	@Tags			Images
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		application/x-json-stream
+//	@Param			id		path		string				true	"Environment ID"
+//	@Param			request	body		dto.ImagePullDto	true	"Image pull request"
+//	@Success		200		{string}	string				"Streaming JSON response"
+//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/images/pull [post]
 func (h *ImageHandler) Pull(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.ImagePullDto
@@ -187,15 +191,16 @@ func (h *ImageHandler) Pull(c *gin.Context) {
 }
 
 // Prune godoc
-// @Summary Prune unused images
-// @Description Remove unused Docker images
-// @Tags Images
-// @Accept json
-// @Produce json
-// @Param id path string true "Environment ID"
-// @Param dangling query bool false "Only remove dangling images"
-// @Success 200 {object} dto.ImagePruneReportDto
-// @Router /api/environments/{id}/images/prune [post]
+//
+//	@Summary		Prune unused images
+//	@Description	Remove unused Docker images
+//	@Tags			Images
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			dangling	query		bool	false	"Only remove dangling images"
+//	@Success		200			{object}	dto.ImagePruneReportDto
+//	@Router			/api/environments/{id}/images/prune [post]
 func (h *ImageHandler) Prune(c *gin.Context) {
 	dangling := c.Query("dangling") == "true"
 
@@ -239,12 +244,13 @@ func (h *ImageHandler) Prune(c *gin.Context) {
 }
 
 // GetImageUsageCounts godoc
-// @Summary Get image usage counts
-// @Description Get counts of images in use, unused, total, and total size
-// @Tags Images
-// @Param id path string true "Environment ID"
-// @Success 200 {object} dto.ImageUsageCountsDto
-// @Router /api/environments/{id}/images/counts [get]
+//
+//	@Summary		Get image usage counts
+//	@Description	Get counts of images in use, unused, total, and total size
+//	@Tags			Images
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ImageUsageCountsDto
+//	@Router			/api/environments/{id}/images/counts [get]
 func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -290,20 +296,21 @@ func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 }
 
 // Upload godoc
-// @Summary Upload an image
-// @Description Upload a Docker image from a tar archive
-// @Tags Images
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Accept multipart/form-data
-// @Produce json
-// @Param id path string true "Environment ID"
-// @Param file formData file true "Docker image tar archive"
-// @Success 200 {object} dto.ApiResponse[dto.ImageLoadResultDto]
-// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 413 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/images/upload [post]
+//
+//	@Summary		Upload an image
+//	@Description	Upload a Docker image from a tar archive
+//	@Tags			Images
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			id		path		string	true	"Environment ID"
+//	@Param			file	formData	file	true	"Docker image tar archive"
+//	@Success		200		{object}	dto.ApiResponse[dto.ImageLoadResultDto]
+//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		413		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/images/upload [post]
 func (h *ImageHandler) Upload(c *gin.Context) {
 	ctx := context.Background()
 

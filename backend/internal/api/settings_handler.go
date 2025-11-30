@@ -37,14 +37,16 @@ func NewSettingsHandler(group *gin.RouterGroup, settingsService *services.Settin
 }
 
 // Search godoc
-// @Summary Search settings
-// @Description Search settings categories and individual settings by query
-// @Tags Settings
-// @Accept json
-// @Produce json
-// @Param request body dto.SettingsSearchRequest true "Search query"
-// @Success 200 {object} dto.SettingsSearchResponse
-// @Router /api/settings/search [post]
+//
+//	@Summary		Search settings
+//	@Description	Search settings categories and individual settings by query
+//	@Tags			Settings
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.SettingsSearchRequest	true	"Search query"
+//	@Success		200		{object}	dto.SettingsSearchResponse
+//	@Router			/api/settings/search [post]
+//
 // Search delegates to the settings search service and returns relevance-scored results
 func (h *SettingsHandler) Search(c *gin.Context) {
 	var req dto.SettingsSearchRequest
@@ -69,11 +71,13 @@ func (h *SettingsHandler) Search(c *gin.Context) {
 }
 
 // GetCategories godoc
-// @Summary Get settings categories
-// @Description Get all available settings categories with metadata
-// @Tags Settings
-// @Success 200 {array} dto.SettingsCategory
-// @Router /api/settings/categories [get]
+//
+//	@Summary		Get settings categories
+//	@Description	Get all available settings categories with metadata
+//	@Tags			Settings
+//	@Success		200	{array}	dto.SettingsCategory
+//	@Router			/api/settings/categories [get]
+//
 // GetCategories returns all available settings categories with metadata
 func (h *SettingsHandler) GetCategories(c *gin.Context) {
 	categories := h.settingsSearchService.GetSettingsCategories()
@@ -81,12 +85,13 @@ func (h *SettingsHandler) GetCategories(c *gin.Context) {
 }
 
 // GetSettings godoc
-// @Summary Get settings
-// @Description Get all settings for an environment
-// @Tags Settings
-// @Param id path string true "Environment ID"
-// @Success 200 {array} dto.SettingDto
-// @Router /api/environments/{id}/settings [get]
+//
+//	@Summary		Get settings
+//	@Description	Get all settings for an environment
+//	@Tags			Settings
+//	@Param			id	path	string	true	"Environment ID"
+//	@Success		200	{array}	dto.SettingDto
+//	@Router			/api/environments/{id}/settings [get]
 func (h *SettingsHandler) GetSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 
@@ -113,12 +118,13 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 }
 
 // GetPublicSettings godoc
-// @Summary Get public settings
-// @Description Get all public settings for an environment
-// @Tags Settings
-// @Param id path string true "Environment ID"
-// @Success 200 {array} dto.PublicSettingDto
-// @Router /api/environments/{id}/settings/public [get]
+//
+//	@Summary		Get public settings
+//	@Description	Get all public settings for an environment
+//	@Tags			Settings
+//	@Param			id	path	string	true	"Environment ID"
+//	@Success		200	{array}	dto.PublicSettingDto
+//	@Router			/api/environments/{id}/settings/public [get]
 func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 	settings := h.settingsService.ListSettings(false)
 
@@ -142,20 +148,21 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 }
 
 // UpdateSettings godoc
-// @Summary Update settings
-// @Description Update settings for an environment
-// @Tags Settings
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param id path string true "Environment ID"
-// @Param settings body dto.UpdateSettingsDto true "Settings update data"
-// @Success 200 {object} dto.ApiResponse[[]dto.SettingDto]
-// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 403 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/settings [put]
+//
+//	@Summary		Update settings
+//	@Description	Update settings for an environment
+//	@Tags			Settings
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string					true	"Environment ID"
+//	@Param			settings	body		dto.UpdateSettingsDto	true	"Settings update data"
+//	@Success		200			{object}	dto.ApiResponse[[]dto.SettingDto]
+//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		403			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/settings [put]
 func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 

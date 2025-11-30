@@ -149,18 +149,20 @@ func (h *ContainerHandler) getOrStartContainerLogHub(containerID, format string,
 }
 
 // GetLogsWS godoc
-// @Summary Get container logs via WebSocket
-// @Description Stream container logs over WebSocket connection
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Param follow query bool false "Follow log output" default(true)
-// @Param tail query string false "Number of lines to show from the end" default(100)
-// @Param since query string false "Show logs since timestamp"
-// @Param timestamps query bool false "Show timestamps" default(true)
-// @Param format query string false "Output format (text or json)" default(text)
-// @Param batched query bool false "Batch log messages" default(false)
-// @Router /api/environments/{id}/containers/{containerId}/logs/ws [get]
+//
+//	@Summary		Get container logs via WebSocket
+//	@Description	Stream container logs over WebSocket connection
+//	@Tags			Containers
+//	@Param			id			path	string	true	"Environment ID"
+//	@Param			containerId	path	string	true	"Container ID"
+//	@Param			follow		query	bool	false	"Follow log output"						default(true)
+//	@Param			tail		query	string	false	"Number of lines to show from the end"	default(100)
+//	@Param			since		query	string	false	"Show logs since timestamp"
+//	@Param			timestamps	query	bool	false	"Show timestamps"				default(true)
+//	@Param			format		query	string	false	"Output format (text or json)"	default(text)
+//	@Param			batched		query	bool	false	"Batch log messages"			default(false)
+//	@Router			/api/environments/{id}/containers/{containerId}/logs/ws [get]
+//
 // GET /api/containers/:id/logs/ws
 // /api/environments/:envId/containers/:containerId/logs/ws
 func (h *ContainerHandler) GetLogsWS(c *gin.Context) {
@@ -194,13 +196,15 @@ func (h *ContainerHandler) GetLogsWS(c *gin.Context) {
 }
 
 // GetExecWS godoc
-// @Summary Execute command in container via WebSocket
-// @Description Open an interactive shell session in a container over WebSocket
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Param shell query string false "Shell to use" default(/bin/sh)
-// @Router /api/environments/{id}/containers/{containerId}/exec/ws [get]
+//
+//	@Summary		Execute command in container via WebSocket
+//	@Description	Open an interactive shell session in a container over WebSocket
+//	@Tags			Containers
+//	@Param			id			path	string	true	"Environment ID"
+//	@Param			containerId	path	string	true	"Container ID"
+//	@Param			shell		query	string	false	"Shell to use"	default(/bin/sh)
+//	@Router			/api/environments/{id}/containers/{containerId}/exec/ws [get]
+//
 // GET /api/environments/:id/containers/:containerId/exec/ws
 func (h *ContainerHandler) GetExecWS(c *gin.Context) {
 	containerID := c.Param("containerId")
@@ -320,16 +324,17 @@ func (h *ContainerHandler) waitForExecCompletion(conn *websocket.Conn, done chan
 }
 
 // List godoc
-// @Summary List containers
-// @Description Get a paginated list of Docker containers
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Param pagination[page] query int false "Page number for pagination" default(1)
-// @Param pagination[limit] query int false "Number of items per page" default(20)
-// @Param sort[column] query string false "Column to sort by"
-// @Param sort[direction] query string false "Sort direction (asc or desc)" default("asc")
-// @Success 200 {object} dto.Paginated[dto.ContainerSummaryDto]
-// @Router /api/environments/{id}/containers [get]
+//
+//	@Summary		List containers
+//	@Description	Get a paginated list of Docker containers
+//	@Tags			Containers
+//	@Param			id					path		string	true	"Environment ID"
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	dto.Paginated[dto.ContainerSummaryDto]
+//	@Router			/api/environments/{id}/containers [get]
 func (h *ContainerHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -362,13 +367,14 @@ func (h *ContainerHandler) List(c *gin.Context) {
 }
 
 // GetByID godoc
-// @Summary Get container by ID
-// @Description Get detailed information about a Docker container
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Success 200 {object} dto.ContainerDetailsDto
-// @Router /api/environments/{id}/containers/{containerId} [get]
+//
+//	@Summary		Get container by ID
+//	@Description	Get detailed information about a Docker container
+//	@Tags			Containers
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			containerId	path		string	true	"Container ID"
+//	@Success		200			{object}	dto.ContainerDetailsDto
+//	@Router			/api/environments/{id}/containers/{containerId} [get]
 func (h *ContainerHandler) GetByID(c *gin.Context) {
 	id := c.Param("containerId")
 
@@ -390,16 +396,17 @@ func (h *ContainerHandler) GetByID(c *gin.Context) {
 }
 
 // Start godoc
-// @Summary Start a container
-// @Description Start a stopped Docker container
-// @Tags Containers
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/containers/{containerId}/start [post]
+//
+//	@Summary		Start a container
+//	@Description	Start a stopped Docker container
+//	@Tags			Containers
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			containerId	path		string	true	"Container ID"
+//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/containers/{containerId}/start [post]
 func (h *ContainerHandler) Start(c *gin.Context) {
 	id := c.Param("containerId")
 
@@ -422,16 +429,17 @@ func (h *ContainerHandler) Start(c *gin.Context) {
 }
 
 // Stop godoc
-// @Summary Stop a container
-// @Description Stop a running Docker container
-// @Tags Containers
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/containers/{containerId}/stop [post]
+//
+//	@Summary		Stop a container
+//	@Description	Stop a running Docker container
+//	@Tags			Containers
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			containerId	path		string	true	"Container ID"
+//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/containers/{containerId}/stop [post]
 func (h *ContainerHandler) Stop(c *gin.Context) {
 	id := c.Param("containerId")
 
@@ -454,16 +462,17 @@ func (h *ContainerHandler) Stop(c *gin.Context) {
 }
 
 // Restart godoc
-// @Summary Restart a container
-// @Description Restart a Docker container
-// @Tags Containers
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/containers/{containerId}/restart [post]
+//
+//	@Summary		Restart a container
+//	@Description	Restart a Docker container
+//	@Tags			Containers
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			containerId	path		string	true	"Container ID"
+//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/containers/{containerId}/restart [post]
 func (h *ContainerHandler) Restart(c *gin.Context) {
 	id := c.Param("containerId")
 
@@ -486,18 +495,19 @@ func (h *ContainerHandler) Restart(c *gin.Context) {
 }
 
 // Delete godoc
-// @Summary Delete a container
-// @Description Delete a Docker container
-// @Tags Containers
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Param force query bool false "Force removal of running container"
-// @Param volumes query bool false "Remove associated volumes"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/environments/{id}/containers/{containerId} [delete]
+//
+//	@Summary		Delete a container
+//	@Description	Delete a Docker container
+//	@Tags			Containers
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			containerId	path		string	true	"Container ID"
+//	@Param			force		query		bool	false	"Force removal of running container"
+//	@Param			volumes		query		bool	false	"Remove associated volumes"
+//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/containers/{containerId} [delete]
 func (h *ContainerHandler) Delete(c *gin.Context) {
 	id := c.Param("containerId")
 	force := c.Query("force") == "true"
@@ -522,12 +532,13 @@ func (h *ContainerHandler) Delete(c *gin.Context) {
 }
 
 // GetContainerStatusCounts godoc
-// @Summary Get container status counts
-// @Description Get counts of running, stopped, and total containers
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Success 200 {object} dto.ContainerStatusLengthsDto
-// @Router /api/environments/{id}/containers/counts [get]
+//
+//	@Summary		Get container status counts
+//	@Description	Get counts of running, stopped, and total containers
+//	@Tags			Containers
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ContainerStatusLengthsDto
+//	@Router			/api/environments/{id}/containers/counts [get]
 func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.dockerService.GetAllContainers(c.Request.Context())
 	if err != nil {
@@ -551,15 +562,16 @@ func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 }
 
 // Create godoc
-// @Summary Create a container
-// @Description Create a new Docker container
-// @Tags Containers
-// @Accept json
-// @Produce json
-// @Param id path string true "Environment ID"
-// @Param container body dto.CreateContainerDto true "Container creation data"
-// @Success 201 {object} dto.ContainerCreatedDto
-// @Router /api/environments/{id}/containers [post]
+//
+//	@Summary		Create a container
+//	@Description	Create a new Docker container
+//	@Tags			Containers
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string					true	"Environment ID"
+//	@Param			container	body		dto.CreateContainerDto	true	"Container creation data"
+//	@Success		201			{object}	dto.ContainerCreatedDto
+//	@Router			/api/environments/{id}/containers [post]
 func (h *ContainerHandler) Create(c *gin.Context) {
 	var req dto.CreateContainerDto
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -723,12 +735,13 @@ func (h *ContainerHandler) getOrStartContainerStatsHub(containerID string) *ws.H
 }
 
 // GetStatsWS godoc
-// @Summary Get container stats via WebSocket
-// @Description Stream container resource statistics over WebSocket connection
-// @Tags Containers
-// @Param id path string true "Environment ID"
-// @Param containerId path string true "Container ID"
-// @Router /api/environments/{id}/containers/{containerId}/stats/ws [get]
+//
+//	@Summary		Get container stats via WebSocket
+//	@Description	Stream container resource statistics over WebSocket connection
+//	@Tags			Containers
+//	@Param			id			path	string	true	"Environment ID"
+//	@Param			containerId	path	string	true	"Container ID"
+//	@Router			/api/environments/{id}/containers/{containerId}/stats/ws [get]
 func (h *ContainerHandler) GetStatsWS(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if containerID == "" {

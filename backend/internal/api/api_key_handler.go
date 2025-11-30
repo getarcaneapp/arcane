@@ -30,19 +30,20 @@ func NewApiKeyHandler(group *gin.RouterGroup, apiKeyService *services.ApiKeyServ
 }
 
 // ListApiKeys godoc
-// @Summary List API keys
-// @Description Get a paginated list of API keys
-// @Tags API Keys
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param search query string false "Search query for filtering by name or description"
-// @Param sort query string false "Column to sort by"
-// @Param order query string false "Sort direction (asc or desc)" default("asc")
-// @Param start query int false "Start index for pagination" default(0)
-// @Param limit query int false "Number of items per page" default(20)
-// @Success 200 {object} dto.Paginated[dto.ApiKeyDto]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/api-keys [get]
+//
+//	@Summary		List API keys
+//	@Description	Get a paginated list of API keys
+//	@Tags			API Keys
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			search	query		string	false	"Search query for filtering by name or description"
+//	@Param			sort	query		string	false	"Column to sort by"
+//	@Param			order	query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Param			start	query		int		false	"Start index for pagination"	default(0)
+//	@Param			limit	query		int		false	"Number of items per page"		default(20)
+//	@Success		200		{object}	dto.Paginated[dto.ApiKeyDto]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/api-keys [get]
 func (h *ApiKeyHandler) ListApiKeys(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -63,19 +64,20 @@ func (h *ApiKeyHandler) ListApiKeys(c *gin.Context) {
 }
 
 // CreateApiKey godoc
-// @Summary Create an API key
-// @Description Create a new API key for programmatic access
-// @Tags API Keys
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param request body dto.CreateApiKeyDto true "API key creation request"
-// @Success 201 {object} dto.ApiResponse[dto.ApiKeyCreatedDto]
-// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 401 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/api-keys [post]
+//
+//	@Summary		Create an API key
+//	@Description	Create a new API key for programmatic access
+//	@Tags			API Keys
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.CreateApiKeyDto	true	"API key creation request"
+//	@Success		201		{object}	dto.ApiResponse[dto.ApiKeyCreatedDto]
+//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		401		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/api-keys [post]
 func (h *ApiKeyHandler) CreateApiKey(c *gin.Context) {
 	user, ok := middleware.RequireAuthentication(c)
 	if !ok {
@@ -107,16 +109,17 @@ func (h *ApiKeyHandler) CreateApiKey(c *gin.Context) {
 }
 
 // GetApiKey godoc
-// @Summary Get an API key
-// @Description Get details of a specific API key by ID
-// @Tags API Keys
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "API key ID"
-// @Success 200 {object} dto.ApiResponse[dto.ApiKeyDto]
-// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/api-keys/{id} [get]
+//
+//	@Summary		Get an API key
+//	@Description	Get details of a specific API key by ID
+//	@Tags			API Keys
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"API key ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.ApiKeyDto]
+//	@Failure		404	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/api-keys/{id} [get]
 func (h *ApiKeyHandler) GetApiKey(c *gin.Context) {
 	id := c.Param("id")
 
@@ -136,20 +139,21 @@ func (h *ApiKeyHandler) GetApiKey(c *gin.Context) {
 }
 
 // UpdateApiKey godoc
-// @Summary Update an API key
-// @Description Update an existing API key's details
-// @Tags API Keys
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param id path string true "API key ID"
-// @Param request body dto.UpdateApiKeyDto true "API key update request"
-// @Success 200 {object} dto.ApiResponse[dto.ApiKeyDto]
-// @Failure 400 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/api-keys/{id} [put]
+//
+//	@Summary		Update an API key
+//	@Description	Update an existing API key's details
+//	@Tags			API Keys
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"API key ID"
+//	@Param			request	body		dto.UpdateApiKeyDto	true	"API key update request"
+//	@Success		200		{object}	dto.ApiResponse[dto.ApiKeyDto]
+//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		404		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/api-keys/{id} [put]
 func (h *ApiKeyHandler) UpdateApiKey(c *gin.Context) {
 	id := c.Param("id")
 
@@ -178,16 +182,17 @@ func (h *ApiKeyHandler) UpdateApiKey(c *gin.Context) {
 }
 
 // DeleteApiKey godoc
-// @Summary Delete an API key
-// @Description Delete an API key by ID
-// @Tags API Keys
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Param id path string true "API key ID"
-// @Success 200 {object} dto.ApiResponse[dto.MessageResponseDto]
-// @Failure 404 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Failure 500 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/api-keys/{id} [delete]
+//
+//	@Summary		Delete an API key
+//	@Description	Delete an API key by ID
+//	@Tags			API Keys
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"API key ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		404	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/api-keys/{id} [delete]
 func (h *ApiKeyHandler) DeleteApiKey(c *gin.Context) {
 	id := c.Param("id")
 

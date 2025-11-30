@@ -101,14 +101,15 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 // GetCurrentUser godoc
-// @Summary Get current user
-// @Description Get the currently authenticated user's information
-// @Tags Auth
-// @Security BearerAuth
-// @Security ApiKeyAuth
-// @Success 200 {object} dto.ApiResponse[dto.UserResponseDto]
-// @Failure 401 {object} dto.ApiResponse[dto.ErrorResponse]
-// @Router /api/auth/me [get]
+//
+//	@Summary		Get current user
+//	@Description	Get the currently authenticated user's information
+//	@Tags			Auth
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	dto.ApiResponse[dto.UserResponseDto]
+//	@Failure		401	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := middleware.GetCurrentUserID(c)
 	if !exists {
