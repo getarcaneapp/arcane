@@ -3,10 +3,25 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Popover as PopoverPrimitive } from 'bits-ui';
 	import { Progress } from '$lib/components/ui/progress/index.js';
+	import * as Item from '$lib/components/ui/item/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import DownloadIcon from '@lucide/svelte/icons/download';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
+	import XCircleIcon from '@lucide/svelte/icons/x-circle';
+	import PackageIcon from '@lucide/svelte/icons/package';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import type { Icon as IconType } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
+	import {
+		type LayerProgress,
+		type PullPhase,
+		getPullPhase,
+		getLayerStats,
+		showImageLayersState,
+		isIndeterminatePhase
+	} from '$lib/utils/pull-progress';
 
 	interface Props {
 		open?: boolean;
@@ -22,6 +37,8 @@
 		icon?: typeof IconType;
 		iconClass?: string;
 		preventCloseWhileLoading?: boolean;
+		onCancel?: () => void;
+		layers?: Record<string, LayerProgress>;
 		children: Snippet;
 	}
 
@@ -37,14 +54,66 @@
 		sideOffset = 4,
 		class: className = '',
 		icon,
-		iconClass = 'text-primary size-4',
+		iconClass = 'size-5',
 		preventCloseWhileLoading = true,
+		onCancel,
+		layers = {},
 		children
 	}: Props = $props();
 
 	const percent = $derived(Math.round(progress));
-	const isComplete = $derived(progress === 100);
-	const displaySubtitle = $derived(error ? subtitle : isComplete ? m.progress_pull_completed() : subtitle);
+	const isComplete = $derived(progress >= 100);
+
+	// Track if we've ever reached complete state to prevent flashing back
+	let hasReachedComplete = $state(false);
+
+	// Update complete tracking
+	$effect(() => {
+		if (isComplete && !error) {
+			hasReachedComplete = true;
+		}
+		// Reset when popover closes
+		if (!open) {
+			hasReachedComplete = false;
+		}
+	});
+
+	// Derive layer stats using utility
+	const layerStats = $derived(getLayerStats(layers, hasReachedComplete));
+
+	// Check if we're in an indeterminate phase (extracting with no byte progress)
+	const isIndeterminate = $derived(isIndeterminatePhase(layers, progress));
+
+	// Derive the current phase from status text using utility
+	const currentPhase = $derived.by((): PullPhase => {
+		return getPullPhase(statusText, hasReachedComplete || isComplete, !!error);
+	});
+
+	// Get localized title based on phase
+	const displayTitle = $derived.by(() => {
+		switch (currentPhase) {
+			case 'error':
+				return 'Error';
+			case 'complete':
+				return m.progress_pull_completed();
+			case 'downloading':
+				return m.progress_downloading();
+			case 'extracting':
+				return m.progress_extracting();
+			case 'verifying':
+				return m.progress_verifying();
+			case 'waiting':
+				return m.progress_waiting();
+			default:
+				return title;
+		}
+	});
+
+	// Get the appropriate icon based on phase
+	const PhaseIcon = $derived.by(() => {
+		if (currentPhase === 'extracting') return PackageIcon;
+		return icon ?? DownloadIcon;
+	});
 
 	function handleOpenChange(next: boolean) {
 		if (preventCloseWhileLoading && !next && loading) {
@@ -53,6 +122,10 @@
 		}
 		open = next;
 	}
+
+	function getLayerPhase(status: string): PullPhase {
+		return getPullPhase(status, false, false);
+	}
 </script>
 
 <Popover.Root bind:open onOpenChange={handleOpenChange}>
@@ -60,64 +133,96 @@
 		{@render children()}
 	</Popover.Trigger>
 
-	<Popover.Content class={cn('bg-popover/20 w-80 backdrop-blur-md', className)} {align} {sideOffset}>
-		<div class="space-y-3">
-			{@render headerSection()}
-			{@render contentSection()}
-		</div>
+	<Popover.Content class={cn('w-80 p-2', className)} {align} {sideOffset}>
+		<Item.Root variant={error ? 'outline' : 'default'} class={cn(error && 'border-destructive/50')}>
+			<Item.Media
+				variant="icon"
+				class={cn(
+					error && 'bg-destructive/10 text-destructive',
+					isComplete && !loading && !error && 'bg-green-500/10 text-green-500'
+				)}
+			>
+				{#if error}
+					<XCircleIcon class={iconClass} />
+				{:else if isComplete && !loading}
+					<CheckCircleIcon class={iconClass} />
+				{:else}
+					<PhaseIcon class={cn(iconClass, loading && 'animate-pulse')} />
+				{/if}
+			</Item.Media>
+			<Item.Content>
+				<Item.Title class={cn(error && 'text-destructive')}>{displayTitle}</Item.Title>
+				<Item.Description>
+					{#if error}
+						{error}
+					{:else if layerStats.total > 0}
+						{m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
+					{:else}
+						{hasReachedComplete ? 100 : percent}% · {statusText || subtitle}
+					{/if}
+				</Item.Description>
+			</Item.Content>
+			{#if loading && onCancel}
+				<Item.Actions>
+					<Button variant="outline" size="sm" onclick={onCancel}>
+						{m.common_cancel()}
+					</Button>
+				</Item.Actions>
+			{/if}
+			{#if !error}
+				<Item.Footer>
+					<Progress
+						value={hasReachedComplete || isIndeterminate ? 100 : progress}
+						max={100}
+						class="h-1.5 w-full"
+						indeterminate={isIndeterminate && !hasReachedComplete}
+					/>
+				</Item.Footer>
+			{/if}
+		</Item.Root>
+
+		{#if Object.keys(layers).length > 0 && !error}
+			<Collapsible.Root bind:open={showImageLayersState.current} class="mt-2">
+				<Collapsible.Trigger
+					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
+				>
+					{m.progress_show_layers()}
+					<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+				</Collapsible.Trigger>
+				<Collapsible.Content>
+					<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">
+						{#each Object.entries(layers) as [id, layer] (id)}
+							{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layer.status)}
+							{@const layerPercent =
+								phase === 'complete' ? 100 : layer.total > 0 ? Math.round((layer.current / layer.total) * 100) : 0}
+							<div class="bg-muted/30 rounded-md px-2 py-1.5">
+								<div class="flex items-center justify-between gap-2">
+									<span class="text-muted-foreground truncate font-mono text-[10px]">{id.slice(0, 12)}</span>
+									<span
+										class={cn(
+											'text-[10px] font-medium',
+											phase === 'complete' && 'text-green-500',
+											phase === 'downloading' && 'text-blue-500',
+											phase === 'extracting' && 'text-amber-500'
+										)}
+									>
+										{#if phase === 'complete'}
+											✓
+										{:else if layer.total > 0}
+											{layerPercent}%
+										{:else}
+											{layer.status}
+										{/if}
+									</span>
+								</div>
+								<Progress value={layerPercent} max={100} class="mt-1 h-1" />
+							</div>
+						{/each}
+					</div>
+				</Collapsible.Content>
+			</Collapsible.Root>
+		{/if}
+
 		<PopoverPrimitive.Arrow class="fill-background stroke-border" />
 	</Popover.Content>
 </Popover.Root>
-
-{#snippet headerSection()}
-	<div class="flex items-center gap-3">
-		<div class="bg-primary/10 flex size-8 shrink-0 items-center justify-center rounded-full">
-			{#if icon}
-				{@const Icon = icon}
-				<Icon class={iconClass} />
-			{:else}
-				<DownloadIcon class={iconClass} />
-			{/if}
-		</div>
-		<div>
-			<h4 class="text-sm font-semibold">{title}</h4>
-			<p class="text-muted-foreground text-xs">{displaySubtitle}</p>
-		</div>
-	</div>
-{/snippet}
-
-{#snippet contentSection()}
-	{#if error}
-		{@render errorDisplay()}
-	{:else}
-		{@render progressDisplay()}
-		{#if isComplete && !loading}
-			{@render successDisplay()}
-		{/if}
-	{/if}
-{/snippet}
-
-{#snippet errorDisplay()}
-	<div class="rounded-md bg-red-50 p-3 dark:bg-red-950/20">
-		<p class="text-destructive text-sm">{error}</p>
-	</div>
-{/snippet}
-
-{#snippet progressDisplay()}
-	<div class="space-y-2">
-		<div class="flex justify-between text-xs">
-			<span class="text-muted-foreground truncate pr-2">{statusText || m.progress_preparing()}</span>
-			<span class="text-muted-foreground shrink-0">{percent}%</span>
-		</div>
-		<Progress value={progress} max={100} class="h-2 w-full" />
-		{#if loading}
-			<p class="text-muted-foreground text-xs">{m.progress_in_progress_note()}</p>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet successDisplay()}
-	<div class="rounded-md bg-green-50 p-3 dark:bg-green-950/20">
-		<p class="text-sm text-green-600 dark:text-green-400">{m.progress_completed_success()}</p>
-	</div>
-{/snippet}
