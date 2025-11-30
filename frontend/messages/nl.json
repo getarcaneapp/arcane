@@ -727,7 +727,7 @@
 	"environments_refreshing": "Vernieuwen…",
 	"environments_name_placeholder": "Mijn Lab Server",
 	"environments_name_too_long": "Naam is te lang (max. 25 tekens)",
-	"environments_api_url_placeholder": "http://192.168.1.100:3553",
+	"environments_api_url_placeholder": "192.168.1.100:3553",
 	"environments_api_url_description": "Volledige URL naar het eindpunt van de Arcane server",
 	"environments_name_required": "Omgevingsnaam is vereist",
 	"environments_server_url_required": "Server-URL is vereist",
