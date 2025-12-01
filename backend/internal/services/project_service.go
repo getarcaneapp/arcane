@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -177,10 +178,10 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		have[c.Service] = true
 	}
 
-	for _, svc := range project.Services {
-		if !have[svc.Name] {
+	for serviceName, svc := range project.Services {
+		if !have[serviceName] {
 			services = append(services, ProjectServiceInfo{
-				Name:   svc.Name,
+				Name:   serviceName,
 				Image:  svc.Image,
 				Status: "stopped",
 				Ports:  []string{},
@@ -256,12 +257,21 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.ServiceCount = serviceCount
 	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
-	if serr == nil && services != nil {
-		raw := make([]any, len(services))
-		for i := range services {
-			raw[i] = services[i]
+
+	// Load compose project to get ServiceConfig types for the response
+	if detectErr == nil {
+		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+		projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+		if pdErr == nil {
+			composeProject, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory)
+			if loadErr == nil {
+				svcList := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
+				for _, svc := range composeProject.Services {
+					svcList = append(svcList, svc)
+				}
+				resp.Services = svcList
+			}
 		}
-		resp.Services = raw
 	}
 
 	return resp, nil
@@ -1111,10 +1121,9 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 		}
 	}
 
-	resp.Services = make([]any, len(services))
-	for k, s := range services {
-		resp.Services[k] = s
-	}
+	// Note: Services field requires []composetypes.ServiceConfig which requires parsing
+	// the compose file. For list views, we skip this to avoid the overhead.
+	// Use GetProjectDetails for full service config data.
 
 	// Use DB service count as the source of truth for "Total Services"
 	// since we are not parsing the YAML here.
