@@ -25,6 +25,7 @@ import (
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	arcanetypes "go.getarcane.app/types/container"
 )
 
 type ContainerHandler struct {
@@ -458,7 +459,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 }
 
 func (h *ContainerHandler) Create(c *gin.Context) {
-	var req dto.CreateContainerDto
+	var req arcanetypes.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
