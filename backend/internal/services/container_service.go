@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/containerregistry"
 )
 
 type ContainerService struct {
@@ -173,7 +174,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	return nil
 }
 
-func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User, credentials []dto.ContainerRegistryCredential) (*container.InspectResponse, error) {
+func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User, credentials []containerregistry.Credential) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image})

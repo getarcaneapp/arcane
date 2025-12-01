@@ -31,6 +31,7 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
+	"go.getarcane.app/types/dockerinfo"
 )
 
 const (
@@ -186,7 +187,7 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	info.NCPU = cpuCount
 	info.MemTotal = memTotal
 
-	dockerInfo := dto.DockerInfoDto{
+	dockerInfo := dockerinfo.Info{
 		Success:    true,
 		APIVersion: version.APIVersion,
 		GitCommit:  version.GitCommit,

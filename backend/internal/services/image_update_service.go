@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"go.getarcane.app/types/containerregistry"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -651,7 +652,7 @@ func (s *ImageUpdateService) parseAndGroupImages(imageRefs []string) (map[string
 	return regRepos, results, images
 }
 
-func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCreds []dto.ContainerRegistryCredential) (map[string]batchCred, []models.ContainerRegistry) {
+func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCreds []containerregistry.Credential) (map[string]batchCred, []models.ContainerRegistry) {
 	var enabledRegs []models.ContainerRegistry
 	credMap := make(map[string]batchCred)
 
@@ -874,7 +875,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}
 }
 
-func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []dto.ContainerRegistryCredential) (map[string]*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (map[string]*dto.ImageUpdateResponse, error) {
 	startBatch := time.Now()
 	results := make(map[string]*dto.ImageUpdateResponse, len(imageRefs))
 	if len(imageRefs) == 0 {
@@ -933,7 +934,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	return results, nil
 }
 
-func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []dto.ContainerRegistryCredential) (map[string]*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*dto.ImageUpdateResponse, error) {
 	imageRefs, err := s.getAllImageRefs(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image references: %w", err)

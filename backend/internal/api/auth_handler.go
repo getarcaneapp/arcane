@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/auth"
 )
 
 type AuthHandler struct {
@@ -33,7 +34,7 @@ func NewAuthHandler(group *gin.RouterGroup, userService *services.UserService, a
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req dto.LoginRequest
+	var req auth.Login
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -123,7 +124,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	var req dto.RefreshRequest
+	var req auth.Refresh
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -170,7 +171,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	var req dto.PasswordChangeRequest
+	var req auth.PasswordChange
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return

@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
+	"go.getarcane.app/types/containerregistry"
 	"gorm.io/gorm"
 )
 
@@ -757,7 +758,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	return s.DeployProject(ctx, projectID, systemUser)
 }
 
-func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []dto.ContainerRegistryCredential) error {
+func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -795,7 +796,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 
 // EnsureProjectImagesPresent checks all compose service images for the project and
 // only pulls images that are not already available locally.
-func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []dto.ContainerRegistryCredential) error {
+func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

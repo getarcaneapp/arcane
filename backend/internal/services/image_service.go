@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/containerregistry"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -104,7 +105,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	return nil
 }
 
-func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []dto.ContainerRegistryCredential) error {
+func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []containerregistry.Credential) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
@@ -229,7 +230,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []dto.ContainerRegistryCredential) (image.PullOptions, error) {
+func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (image.PullOptions, error) {
 	pullOptions := image.PullOptions{}
 
 	registryHost := s.extractRegistryHost(imageRef)
