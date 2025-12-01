@@ -235,13 +235,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download manager SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: SBOM-manager
           path: sbom-artifacts/manager
 
       - name: Download agent SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: SBOM-agent
           path: sbom-artifacts/agent
