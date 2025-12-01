@@ -1,0 +1,156 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  # Main Arcane build with frontend
+  - id: arcane
+    main: ./cmd/main.go
+    binary: arcane
+    dir: backend
+
+    ldflags:
+      - -s -w
+      - -buildid={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Version={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Revision={{ .ShortCommit }}
+
+    flags:
+      - -trimpath
+
+    env:
+      - CGO_ENABLED=0
+
+    goos:
+      - linux
+      - darwin
+
+    goarch:
+      - amd64
+      - '386'
+      - arm64
+      - arm
+
+    goarm:
+      - '7'
+
+    ignore:
+      - goos: darwin
+        goarch: '386'
+      - goos: darwin
+        goarch: arm
+
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CGO_ENABLED=1
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CGO_ENABLED=1
+
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+  # Agent build without frontend
+  - id: arcane-agent
+    main: ./cmd/main.go
+    binary: arcane-agent
+    dir: backend
+
+    tags:
+      - exclude_frontend
+
+    ldflags:
+      - -s -w
+      - -buildid={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Version={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Revision={{ .ShortCommit }}
+
+    flags:
+      - -trimpath
+
+    env:
+      - CGO_ENABLED=0
+
+    goos:
+      - linux
+      - darwin
+
+    goarch:
+      - amd64
+      - '386'
+      - arm64
+      - arm
+
+    goarm:
+      - '7'
+
+    ignore:
+      - goos: darwin
+        goarch: '386'
+      - goos: darwin
+        goarch: arm
+
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CGO_ENABLED=1
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CGO_ENABLED=1
+
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: arcane
+    name_template: >-
+      {{ .ProjectName }}-
+      {{- .Version }}-
+      {{- .Os }}-
+      {{- if eq .Arch "amd64" }}x64
+      {{- else if eq .Arch "386" }}386
+      {{- else if eq .Arch "arm" }}armv{{ .Arm }}
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+  - id: arcane-agent
+    name_template: >-
+      {{ .ProjectName }}-agent-
+      {{- .Version }}-
+      {{- .Os }}-
+      {{- if eq .Arch "amd64" }}x64
+      {{- else if eq .Arch "386" }}386
+      {{- else if eq .Arch "arm" }}armv{{ .Arm }}
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: '{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
