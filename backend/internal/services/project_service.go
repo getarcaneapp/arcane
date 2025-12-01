@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -50,10 +49,18 @@ type ProjectServiceInfo struct {
 	Name          string   `json:"name"`
 	Image         string   `json:"image"`
 	Status        string   `json:"status"`
-	ContainerID   string   `json:"container_id"`
-	ContainerName string   `json:"container_name"`
+	ContainerID   string   `json:"containerId"`
+	ContainerName string   `json:"containerName"`
 	Ports         []string `json:"ports"`
 	Health        *string  `json:"health,omitempty"`
+}
+
+// ProjectDetailsResponse wraps project.Details with runtime service information.
+// TODO: Move RuntimeServices field to go.getarcane.app/types/project.Details
+// once the types package is updated. This is a temporary workaround.
+type ProjectDetailsResponse struct {
+	project.Details
+	RuntimeServices []ProjectServiceInfo `json:"runtimeServices,omitempty"`
 }
 
 func normalizeComposeProjectName(name string) string {
@@ -200,10 +207,10 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	return fs.ReadProjectFiles(proj.Path)
 }
 
-func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string) (project.Details, error) {
+func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string) (ProjectDetailsResponse, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
-		return project.Details{}, err
+		return ProjectDetailsResponse{}, err
 	}
 
 	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
@@ -229,52 +236,47 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		slog.WarnContext(ctx, "Failed to detect compose file", "error", detectErr, "projectID", projectID, "path", proj.Path)
 	}
 
-	services, serr := s.GetProjectServices(ctx, projectID)
+	// Get runtime service info (container status, health, etc.)
+	runtimeServices, serr := s.GetProjectServices(ctx, projectID)
 
 	var serviceCount, runningCount int
 	var liveStatus models.ProjectStatus
 
-	if serr == nil && services != nil {
-		serviceCount = len(services)
-		_, runningCount = s.getServiceCounts(services)
-		liveStatus = s.calculateProjectStatus(services)
+	if serr == nil && runtimeServices != nil {
+		serviceCount = len(runtimeServices)
+		_, runningCount = s.getServiceCounts(runtimeServices)
+		liveStatus = s.calculateProjectStatus(runtimeServices)
 	} else {
 		serviceCount = proj.ServiceCount
 		runningCount = proj.RunningCount
 		liveStatus = proj.Status
 	}
 
-	var resp project.Details
-	if err := dto.MapStruct(proj, &resp); err != nil {
-		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
+	var details project.Details
+	if err := dto.MapStruct(proj, &details); err != nil {
+		return ProjectDetailsResponse{}, fmt.Errorf("failed to map project: %w", err)
 	}
-	resp.Status = string(liveStatus)
-	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
-	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
-	resp.ComposeContent = composeContent
-	resp.EnvContent = envContent
-	resp.IncludeFiles = includeFiles
-	resp.ServiceCount = serviceCount
-	resp.RunningCount = runningCount
-	resp.DirName = utils.DerefString(proj.DirName)
+	details.Status = string(liveStatus)
+	details.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
+	details.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
+	details.ComposeContent = composeContent
+	details.EnvContent = envContent
+	details.IncludeFiles = includeFiles
+	details.ServiceCount = serviceCount
+	details.RunningCount = runningCount
+	details.DirName = utils.DerefString(proj.DirName)
 
-	// Load compose project to get ServiceConfig types for the response
-	if detectErr == nil {
-		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
-		projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-		if pdErr == nil {
-			composeProject, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory)
-			if loadErr == nil {
-				svcList := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
-				for _, svc := range composeProject.Services {
-					svcList = append(svcList, svc)
-				}
-				resp.Services = svcList
-			}
-		}
+	// Load compose services
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if svcList, err := projects.GetComposeServices(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory); err == nil {
+		details.Services = svcList
 	}
 
-	return resp, nil
+	return ProjectDetailsResponse{
+		Details:         details,
+		RuntimeServices: runtimeServices,
+	}, nil
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
@@ -1121,9 +1123,12 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 		}
 	}
 
-	// Note: Services field requires []composetypes.ServiceConfig which requires parsing
-	// the compose file. For list views, we skip this to avoid the overhead.
-	// Use GetProjectDetails for full service config data.
+	// Load compose services
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if svcList, err := projects.GetComposeServices(ctx, p.Path, normalizeComposeProjectName(p.Name), projectsDirectory); err == nil {
+		resp.Services = svcList
+	}
 
 	// Use DB service count as the source of truth for "Total Services"
 	// since we are not parsing the YAML here.

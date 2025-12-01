@@ -301,7 +301,7 @@
 
 		{#snippet tabContent()}
 			<Tabs.Content value="services" class="h-full">
-				<ServicesGrid services={project.services} {projectId} />
+				<ServicesGrid services={project.runtimeServices} {projectId} />
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full">

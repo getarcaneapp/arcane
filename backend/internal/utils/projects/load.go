@@ -188,3 +188,22 @@ func resolvePathRelative(workdir, candidate string) (string, bool) {
 	resolved := filepath.Join(workdir, candidate)
 	return filepath.Clean(resolved), true
 }
+
+// GetComposeServices loads a compose project and returns its services as a slice.
+func GetComposeServices(ctx context.Context, projectPath, projectName, projectsDirectory string) ([]composetypes.ServiceConfig, error) {
+	composeFile, err := DetectComposeFile(projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	project, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory)
+	if err != nil {
+		return nil, err
+	}
+
+	services := make([]composetypes.ServiceConfig, 0, len(project.Services))
+	for _, svc := range project.Services {
+		services = append(services, svc)
+	}
+	return services, nil
+}
