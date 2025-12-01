@@ -209,7 +209,7 @@ jobs:
           echo "${{ steps.build-push-image.outputs.digest }}" > sbom-output/${{ matrix.target }}/digest.txt
 
       - name: Upload SBOM artifact (${{ matrix.display }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: sbom-output/${{ matrix.target }}
           name: SBOM-${{ matrix.target }}
