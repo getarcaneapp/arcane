@@ -182,13 +182,13 @@ func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
 
-	environment, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
+	environmentObject, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentNotFoundError{}).Error()}})
 		return
 	}
 
-	out, mapErr := dto.MapOne[*models.Environment, environment.Response](environment)
+	out, mapErr := dto.MapOne[*models.Environment, environment.Response](environmentObject)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return

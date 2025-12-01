@@ -610,6 +610,10 @@ github.com/zclconf/go-cty v1.17.0 h1:seZvECve6XX4tmnvRzWtJNHdscMtYEx5R7bnnVyd/d0
 github.com/zclconf/go-cty v1.17.0/go.mod h1:wqFzcImaLTI6A5HfsRwB0nj5n0MRZFwmey8YoFPPs3U=
 go.getarcane.app/types v1.0.0 h1:AUZZQFaxQBe8Us34nJ/sD8kgjJeLssFSOCF/7twGvDQ=
 go.getarcane.app/types v1.0.0/go.mod h1:0lP6EvgWJdun094n28WBeCrI+V5Rk9t1dqKvSIr+NJE=
+go.getarcane.app/types v1.0.1 h1:Y9nr8SGksiyXVD6QMaWsNEOSDYWUqjNIIqTDxLaZbBU=
+go.getarcane.app/types v1.0.1/go.mod h1:0lP6EvgWJdun094n28WBeCrI+V5Rk9t1dqKvSIr+NJE=
+go.getarcane.app/types v1.0.2 h1:75AjbkgHW1NNXL4PFUxLQbLbMWaxktaODmH2xOOkf28=
+go.getarcane.app/types v1.0.2/go.mod h1:0lP6EvgWJdun094n28WBeCrI+V5Rk9t1dqKvSIr+NJE=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

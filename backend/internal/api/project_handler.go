@@ -21,6 +21,7 @@ import (
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.getarcane.app/types/image"
 )
 
 type ProjectHandler struct {
@@ -250,7 +251,7 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 		return
 	}
 
-	var req dto.ProjectImagePullDto
+	var req image.PullOptions
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
