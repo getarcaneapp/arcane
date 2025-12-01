@@ -303,7 +303,7 @@
 	"auth_oidc_callback_error": "Während der Anmeldung ist ein Fehler aufgetreten. Bitte erneut versuchen.",
 	"auth_oidc_network_error": "Netzwerkfehler während der Anmeldung. Bitte prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
 	"auth_oidc_url_generation_failed": "Anmelde-URL kann nicht erstellt werden. Bitte erneut versuchen oder Administrator kontaktieren.",
-	"auth_oidc_init_failed": "Initialisierung des OIDC Logins fehlgeschlagen. Bitt erneut versuchen.",
+	"auth_oidc_init_failed": "Initialisierung des OIDC Logins fehlgeschlagen. Bitte erneut versuchen.",
 	"auth_oidc_redirecting_title": "Weiterleitung zum Login…",
 	"auth_oidc_redirecting_description": "Bitte warten Sie während wir Sie zu Ihrem Identitätsprovider weiterleiten.",
 	"auth_oidc_merge_accounts_title": "Kontoverknüpfung aktiviert",
