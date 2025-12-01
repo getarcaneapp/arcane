@@ -43,9 +43,9 @@ type IPAMConfigDto struct {
 
 // IPAMDto represents IP Address Management configuration
 type IPAMDto struct {
-	Driver  string          `json:"driver"`
+	Driver  string            `json:"driver"`
 	Options map[string]string `json:"options"`
-	Config  []IPAMConfigDto `json:"config"`
+	Config  []IPAMConfigDto   `json:"config"`
 }
 
 type NetworkInspectDto struct {
