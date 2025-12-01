@@ -205,7 +205,7 @@
 	"common_remove_confirm": "Sind Sie sicher, dass Sie {resource} entfernen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
 	"common_confirm_removal_title": "Löschen bestätigen",
 	"common_confirm_removal_message": "Sind Sie sicher, dass Sie diesen {type} entfernen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
-	"common_confirm_destroy_message": "Sind Sie sicher, dass Sie diese {type}löschen möchten? Diese Aktion ist DESTRUCTIVE und entfernt zugehörige Ressourcen und kann nicht rückgängig gemacht werden.",
+	"common_confirm_destroy_message": "Sind Sie sicher, dass Sie diese {type} löschen möchten? Diese Aktion ist DESTRUCTIVE und entfernt zugehörige Ressourcen und kann nicht rückgängig gemacht werden.",
 	"common_confirm_redeploy_title": "\"Bereitstellen\" bestätigen",
 	"common_confirm_redeploy_message": "Sind Sie sicher, dass Sie dieses Projekt neu verteilen möchten? Dies wird die neuesten Bilder ziehen und bei Bedarf Container neu erstellen.",
 	"confirm_remove_project_files": "Projektdateien löschen",
