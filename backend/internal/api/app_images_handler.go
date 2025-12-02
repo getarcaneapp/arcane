@@ -23,6 +23,15 @@ func NewApplicationImagesHandler(group *gin.RouterGroup, appImagesService *servi
 	group.GET("/app-images/profile", appImageHandler.getDefaultProfile)
 }
 
+// getLogo godoc
+//
+//	@Summary		Get application logo
+//	@Description	Get the application logo image
+//	@Tags			Application Images
+//	@Param			full	query	bool	false	"Return full logo"	default(false)
+//	@Produce		image/png,image/jpeg
+//	@Success		200	{file}	binary
+//	@Router			/api/app-images/logo [get]
 func (c *ApplicationImagesHandler) getLogo(ctx *gin.Context) {
 	name := "logo"
 
@@ -35,10 +44,26 @@ func (c *ApplicationImagesHandler) getLogo(ctx *gin.Context) {
 	c.getImage(ctx, name)
 }
 
+// getFavicon godoc
+//
+//	@Summary		Get application favicon
+//	@Description	Get the application favicon image
+//	@Tags			Application Images
+//	@Produce		image/png,image/jpeg
+//	@Success		200	{file}	binary
+//	@Router			/api/app-images/favicon [get]
 func (c *ApplicationImagesHandler) getFavicon(ctx *gin.Context) {
 	c.getImage(ctx, "favicon")
 }
 
+// getDefaultProfile godoc
+//
+//	@Summary		Get default profile image
+//	@Description	Get the default user profile image
+//	@Tags			Application Images
+//	@Produce		image/png,image/jpeg
+//	@Success		200	{file}	binary
+//	@Router			/api/app-images/profile [get]
 func (c *ApplicationImagesHandler) getDefaultProfile(ctx *gin.Context) {
 	c.getImage(ctx, "profile")
 }

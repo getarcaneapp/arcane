@@ -9,7 +9,11 @@ import (
 	"strings"
 	"testing"
 
+<<<<<<<< HEAD:cli/pkg/generate/secret_test.go
 	gen "go.getarcane.app/cli/pkg/generate"
+========
+	gen "github.com/getarcaneapp/arcane/backend/cli/generate"
+>>>>>>>> bdc2e316 (feat: add api key authentication):backend/cli/generate/secret_test.go
 )
 
 // captureOutput captures stdout produced by fn and returns it as a string.

@@ -115,6 +115,14 @@ type SystemStats struct {
 	GPUs         []GPUStats `json:"gpus,omitempty"`
 }
 
+// Health godoc
+//
+//	@Summary		Check system health
+//	@Description	Check if the Docker daemon is responsive
+//	@Tags			System
+//	@Param			id	path	string	true	"Environment ID"
+//	@Success		200
+//	@Router			/api/environments/{id}/system/health [head]
 func (h *SystemHandler) Health(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -134,6 +142,14 @@ func (h *SystemHandler) Health(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
+// GetDockerInfo godoc
+//
+//	@Summary		Get Docker info
+//	@Description	Get Docker daemon version and system information
+//	@Tags			System
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.DockerInfoDto
+//	@Router			/api/environments/{id}/system/docker/info [get]
 func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -201,6 +217,21 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, dockerInfo)
 }
 
+// PruneAll godoc
+//
+//	@Summary		Prune Docker resources
+//	@Description	Remove unused Docker resources (containers, images, volumes, networks)
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Environment ID"
+//	@Param			request	body		dto.PruneSystemDto	true	"Prune options"
+//	@Success		200		{object}	dto.ApiResponse[dto.PruneResultDto]
+//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/system/prune [post]
 func (h *SystemHandler) PruneAll(c *gin.Context) {
 	ctx := c.Request.Context()
 	slog.InfoContext(ctx, "System prune operation initiated")
@@ -249,6 +280,17 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 	})
 }
 
+// StartAllContainers godoc
+//
+//	@Summary		Start all containers
+//	@Description	Start all Docker containers
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/system/containers/start-all [post]
 func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllContainers(c.Request.Context())
 	if err != nil {
@@ -266,6 +308,17 @@ func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 	})
 }
 
+// StartAllStoppedContainers godoc
+//
+//	@Summary		Start all stopped containers
+//	@Description	Start all stopped Docker containers
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/system/containers/start-stopped [post]
 func (h *SystemHandler) StartAllStoppedContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllStoppedContainers(c.Request.Context())
 	if err != nil {
@@ -305,6 +358,17 @@ func (h *SystemHandler) getDiskUsagePath(ctx context.Context) string {
 	return diskUsagePath
 }
 
+// StopAllContainers godoc
+//
+//	@Summary		Stop all containers
+//	@Description	Stop all running Docker containers
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/system/containers/stop-all [post]
 func (h *SystemHandler) StopAllContainers(c *gin.Context) {
 	result, err := h.systemService.StopAllContainers(c.Request.Context())
 	if err != nil {
@@ -322,6 +386,14 @@ func (h *SystemHandler) StopAllContainers(c *gin.Context) {
 	})
 }
 
+// Stats godoc
+//
+//	@Summary		Get system stats via WebSocket
+//	@Description	Stream system resource statistics over WebSocket connection
+//	@Tags			System
+//	@Param			id	path	string	true	"Environment ID"
+//	@Router			/api/environments/{id}/system/stats/ws [get]
+//
 //nolint:gocognit
 func (h *SystemHandler) Stats(c *gin.Context) {
 	clientIP := c.ClientIP()
@@ -488,6 +560,17 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 	}
 }
 
+// ConvertDockerRun godoc
+//
+//	@Summary		Convert docker run command
+//	@Description	Convert a docker run command to docker-compose format
+//	@Tags			System
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string							true	"Environment ID"
+//	@Param			request	body		models.ConvertDockerRunRequest	true	"Docker run command"
+//	@Success		200		{object}	models.ConvertDockerRunResponse
+//	@Router			/api/environments/{id}/system/convert [post]
 func (h *SystemHandler) ConvertDockerRun(c *gin.Context) {
 	var req models.ConvertDockerRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -526,6 +609,17 @@ func (h *SystemHandler) ConvertDockerRun(c *gin.Context) {
 	})
 }
 
+// CheckUpgradeAvailable godoc
+//
+//	@Summary		Check for system upgrade
+//	@Description	Check if a system upgrade is available
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	dto.ApiResponse[dto.UpgradeCheckResultDto]
+//	@Router			/api/environments/{id}/system/upgrade/check [get]
+//
 // CheckUpgradeAvailable checks if the local system can be upgraded
 // Remote environments are handled by the proxy middleware
 func (h *SystemHandler) CheckUpgradeAvailable(c *gin.Context) {
@@ -548,6 +642,18 @@ func (h *SystemHandler) CheckUpgradeAvailable(c *gin.Context) {
 	})
 }
 
+// TriggerUpgrade godoc
+//
+//	@Summary		Trigger system upgrade
+//	@Description	Trigger a system upgrade
+//	@Tags			System
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		202	{object}	dto.ApiResponse[dto.MessageResponseDto]
+//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Router			/api/environments/{id}/system/upgrade [post]
+//
 // TriggerUpgrade triggers a system upgrade by spawning the upgrade CLI command
 // This runs the upgrade from outside the current container to avoid self-termination issues
 func (h *SystemHandler) TriggerUpgrade(c *gin.Context) {

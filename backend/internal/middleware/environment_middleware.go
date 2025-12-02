@@ -135,13 +135,18 @@ func (m *EnvironmentMiddleware) convertToWebSocketURL(target string) string {
 func (m *EnvironmentMiddleware) buildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
 	hdr := http.Header{}
 
+	// Forward API key header if present
+	if apiKey := c.GetHeader("X-Api-Token"); apiKey != "" {
+		hdr.Set("X-Api-Token", apiKey)
+	}
+
 	if auth := c.GetHeader("Authorization"); auth != "" {
 		hdr.Set("Authorization", auth)
 	} else if cookieToken, err := c.Cookie("token"); err == nil && cookieToken != "" {
 		hdr.Set("Authorization", "Bearer "+cookieToken)
 	}
 
-	if hdr.Get("Authorization") == "" {
+	if hdr.Get("Authorization") == "" && hdr.Get("X-Api-Token") == "" {
 		if cookieHeader := c.Request.Header.Get("Cookie"); cookieHeader != "" {
 			hdr.Set("Cookie", cookieHeader)
 		}
