@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/gin-gonic/gin"
 	"go.getarcane.app/types/auth"
+	"go.getarcane.app/types/user"
 )
 
 type AuthHandler struct {
@@ -50,7 +51,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, tokenPair, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
+	userModel, tokenPair, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		var statusCode int
 		var errorMsg string
@@ -78,8 +79,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	maxAge += 60
 	cookie.CreateTokenCookie(c, maxAge, tokenPair.AccessToken)
 
-	var out dto.UserResponseDto
-	if mapErr := dto.MapStruct(user, &out); mapErr != nil {
+	var out user.Response
+	if mapErr := dto.MapStruct(userModel, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserMappingError{Err: mapErr}).Error()}})
 		return
 	}
@@ -108,14 +109,14 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetUser(c.Request.Context(), userID)
+	userModel, err := h.userService.GetUser(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserRetrievalError{Err: err}).Error()}})
 		return
 	}
 
-	var out dto.UserResponseDto
-	if mapErr := dto.MapStruct(user, &out); mapErr != nil {
+	var out user.Response
+	if mapErr := dto.MapStruct(userModel, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserMappingError{Err: mapErr}).Error()}})
 		return
 	}

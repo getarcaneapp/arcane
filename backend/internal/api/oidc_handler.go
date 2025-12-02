@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/auth"
+	"go.getarcane.app/types/user"
 )
 
 type OidcHandler struct {
@@ -42,7 +43,7 @@ func (h *OidcHandler) GetOidcStatus(c *gin.Context) {
 }
 
 func (h *OidcHandler) GetOidcAuthUrl(c *gin.Context) {
-	var req dto.OidcAuthUrlRequest
+	var req auth.OidcAuthUrlRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -98,7 +99,7 @@ func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 		return
 	}
 
-	user, tokenPair, err := h.authService.OidcLogin(c.Request.Context(), *userInfo, tokenResp)
+	userModel, tokenPair, err := h.authService.OidcLogin(c.Request.Context(), *userInfo, tokenResp)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AuthFailedError{Err: err}).Error()})
 		return
@@ -118,13 +119,13 @@ func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 		"token":        tokenPair.AccessToken,
 		"refreshToken": tokenPair.RefreshToken,
 		"expiresAt":    tokenPair.ExpiresAt,
-		"user": dto.UserResponseDto{
-			ID:            user.ID,
-			Username:      user.Username,
-			DisplayName:   user.DisplayName,
-			Email:         user.Email,
-			Roles:         user.Roles,
-			OidcSubjectId: user.OidcSubjectId,
+		"user": user.Response{
+			ID:            userModel.ID,
+			Username:      userModel.Username,
+			DisplayName:   userModel.DisplayName,
+			Email:         userModel.Email,
+			Roles:         userModel.Roles,
+			OidcSubjectId: userModel.OidcSubjectId,
 		},
 	})
 }

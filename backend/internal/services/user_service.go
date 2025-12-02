@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"go.getarcane.app/types/user"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -17,7 +18,6 @@ import (
 	"crypto/subtle"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 )
@@ -324,7 +324,7 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 	})
 }
 
-func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.UserResponseDto, pagination.Response, error) {
+func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.Response, pagination.Response, error) {
 	var users []models.User
 	query := s.db.WithContext(ctx).Model(&models.User{})
 
@@ -341,7 +341,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result := make([]dto.UserResponseDto, len(users))
+	result := make([]user.Response, len(users))
 	for i, user := range users {
 		result[i] = toUserResponseDto(user)
 	}
@@ -349,17 +349,17 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 	return result, paginationResp, nil
 }
 
-func toUserResponseDto(user models.User) dto.UserResponseDto {
-	return dto.UserResponseDto{
-		ID:            user.ID,
-		Username:      user.Username,
-		DisplayName:   user.DisplayName,
-		Email:         user.Email,
-		Roles:         user.Roles,
-		OidcSubjectId: user.OidcSubjectId,
-		Locale:        user.Locale,
-		CreatedAt:     user.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
-		UpdatedAt:     user.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
+func toUserResponseDto(userModel models.User) user.Response {
+	return user.Response{
+		ID:            userModel.ID,
+		Username:      userModel.Username,
+		DisplayName:   userModel.DisplayName,
+		Email:         userModel.Email,
+		Roles:         userModel.Roles,
+		OidcSubjectId: userModel.OidcSubjectId,
+		Locale:        userModel.Locale,
+		CreatedAt:     userModel.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
+		UpdatedAt:     userModel.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
 	}
 }
 
