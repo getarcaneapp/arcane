@@ -210,6 +210,9 @@ test.describe('New Compose Project Page', () => {
 
     const serviceBadge = page.locator('text=redis').first();
     await expect(serviceBadge).toBeVisible();
+
+    const statusBadge = page.locator('text=Running').first();
+    await expect(statusBadge).toBeVisible();
   });
 });
 
