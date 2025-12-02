@@ -326,18 +326,6 @@
 		searchInputRef?.focus();
 	}
 
-	function selectTagSuggestion(tag: string) {
-		if (suggestionType === 'exclude') {
-			filterStore.addExcludedTag(tag);
-			inputValue = inputValue.replace(/-tag:\S*$/i, '').trim();
-		} else {
-			filterStore.addTag(tag);
-			inputValue = inputValue.replace(/tag:\S*$/i, '').trim();
-		}
-		searchQuery = inputValue;
-		searchInputRef?.focus();
-	}
-
 	function scrollSelectedIntoView() {
         const selected = document.querySelector(`[data-index="${selectedSuggestionIndex}"]`);
 		selected?.scrollIntoView({ block: 'nearest' });
@@ -483,7 +471,7 @@
 	{#snippet children()}
 		<div class="flex flex-col gap-3">
 			<!-- Search + Filter Row -->
-			<div class="flex gap-2">
+			<div class="flex gap-2 pt-2">
 				<div class="relative flex-1">
 					<SearchIcon class="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
 					<Input
@@ -664,7 +652,7 @@
 					{/each}
 					{#each filterStore.excludedTags as tag}
 						<Badge variant="outline" class="gap-1 border-red-500/50 pr-1 text-red-600 dark:text-red-400">
-							<XIcon class="size-3" />
+							<TagIcon class="size-3" />
 							{tag}
 							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => filterStore.removeExcludedTag(tag)}>
 								<XIcon class="size-3" />
