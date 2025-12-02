@@ -99,15 +99,21 @@
 	let sorting = $state<SortingState>([]);
 	let globalFilter = $state<string>('');
 
-	const enablePersist = !!persistKey;
+	const enablePersist = $derived(!!persistKey);
 	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
-	const prefs = enablePersist
-		? new PersistedState<CompactTablePrefs>(
-				persistKey as string,
+	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
+
+	$effect(() => {
+		if (persistKey) {
+			prefs = new PersistedState<CompactTablePrefs>(
+				persistKey,
 				{ v: [], f: [], g: '', l: getDefaultLimit() },
 				{ syncTabs: false }
-			)
-		: null;
+			);
+		} else {
+			prefs = null;
+		}
+	});
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
@@ -232,10 +238,10 @@
 		}
 	}
 
-	function buildColumns(specs: ColumnSpec<TData>[]): ColumnDef<TData>[] {
+	function buildColumns(specs: ColumnSpec<TData>[], isSelectionDisabled: boolean): ColumnDef<TData>[] {
 		const cols: ColumnDef<TData>[] = [];
 
-		if (!selectionDisabled) {
+		if (!isSelectionDisabled) {
 			cols.push({
 				id: 'select',
 				header: ({ table }) => {
@@ -289,10 +295,6 @@
 				enableSorting: !!spec.sortable,
 				enableHiding: true
 			});
-
-			if (spec.hidden) {
-				columnVisibility[String(accessorKey ?? id)] = false;
-			}
 		});
 
 		if (rowActions) {
@@ -305,7 +307,32 @@
 		return cols;
 	}
 
-	const columnsDef: ColumnDef<TData>[] = buildColumns(columns);
+	// Compute initial hidden columns from column specs (without mutating state in derived)
+	function getInitialHiddenColumns(specs: ColumnSpec<TData>[]): Record<string, boolean> {
+		const hidden: Record<string, boolean> = {};
+		specs.forEach((spec, i) => {
+			if (spec.hidden) {
+				const accessorKey = spec.accessorKey;
+				const id = spec.id ?? (accessorKey as string) ?? `col_${i}`;
+				hidden[String(accessorKey ?? id)] = false;
+			}
+		});
+		return hidden;
+	}
+
+	// Apply initial hidden columns once on mount
+	let initialHiddenApplied = false;
+	$effect(() => {
+		if (!initialHiddenApplied && columns.length > 0) {
+			const hiddenCols = getInitialHiddenColumns(columns);
+			if (Object.keys(hiddenCols).length > 0) {
+				columnVisibility = { ...columnVisibility, ...hiddenCols };
+			}
+			initialHiddenApplied = true;
+		}
+	});
+
+	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
 
 	const table = createSvelteTable({
 		get data() {
@@ -328,9 +355,13 @@
 				return globalFilter;
 			}
 		},
-		columns: columnsDef,
+		get columns() {
+			return columnsDef;
+		},
 		globalFilterFn: passAllGlobal,
-		enableRowSelection: !selectionDisabled,
+		get enableRowSelection() {
+			return !selectionDisabled;
+		},
 		onRowSelectionChange: (updater) => {
 			rowSelection = typeof updater === 'function' ? updater(rowSelection) : updater;
 		},

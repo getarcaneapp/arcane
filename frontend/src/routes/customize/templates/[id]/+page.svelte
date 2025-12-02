@@ -17,13 +17,14 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { data } = $props();
 
 	let template = $derived(data.templateData.template);
-	let compose = $state(data.templateData.content);
-	let env = $state(data.templateData.envContent);
+	let compose = $state(untrack(() => data.templateData.content));
+	let env = $state(untrack(() => data.templateData.envContent));
 	let services = $derived(data.templateData.services);
 	let envVars = $derived(data.templateData.envVariables);
 

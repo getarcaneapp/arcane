@@ -11,11 +11,14 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let { volumes, volumeUsageCounts, volumeRequestOptions: requestOptions } = $state(data);
+	let volumes = $state(untrack(() => data.volumes));
+	let volumeUsageCounts = $state(untrack(() => data.volumeUsageCounts));
+	let requestOptions = $state(untrack(() => data.volumeRequestOptions));
 
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
