@@ -16,7 +16,6 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { mode } from 'mode-watcher';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -434,11 +433,11 @@
 	<span class="max-w-[500px] truncate">{value ?? ''}</span>
 {/snippet}
 
-{#snippet PlainHeader({ title, class: className, ...restProps }: { title: string } & HTMLAttributes<HTMLDivElement>)}
+{#snippet PlainHeader({ title, class: className, ...restProps }: { title: string } & HTMLAttributes)}
 	<div class={className} {...restProps}>{title}</div>
 {/snippet}
 
-{#snippet Pagination({ table }: { table: TableType<TData> })}
+{#snippet Pagination({ table }: { table: TableType })}
 	<div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
 		<div class="text-muted-foreground order-2 text-sm sm:order-1">
 			{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
@@ -491,16 +490,11 @@
 	</div>
 {/snippet}
 
-{#snippet MobileCard({ row, item }: { row: Row<TData>; item: TData })}
+{#snippet MobileCard({ row, item }: { row: Row; item: TData })}
 	{@render mobileCard({ row, item, mobileFieldVisibility })}
 {/snippet}
 
-{#snippet ColumnHeader({
-	column,
-	title,
-	class: className,
-	...restProps
-}: { column: Column<TData>; title: string } & HTMLAttributes<HTMLDivElement>)}
+{#snippet ColumnHeader({ column, title, class: className, ...restProps }: { column: Column; title: string } & HTMLAttributes)}
 	{#if !column?.getCanSort()}
 		<div class={className} {...restProps}>
 			{title}
