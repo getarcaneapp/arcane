@@ -25,7 +25,9 @@
 		...restProps
 	}: DropdownButtonProps = $props();
 
-	provideDropdownButtonRoot({ variant, size, align, disabled });
+	$effect(() => {
+		provideDropdownButtonRoot({ variant, size, align, disabled });
+	});
 </script>
 
 <div bind:this={ref} data-slot="dropdown-button" class={cn('flex', className)} {...restProps}>

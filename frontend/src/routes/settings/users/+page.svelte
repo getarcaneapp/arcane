@@ -10,13 +10,14 @@
 	import type { CreateUser } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
+	import { untrack } from 'svelte';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let users = $state(data.users);
+	let users = $state(untrack(() => data.users));
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(data.userRequestOptions);
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.userRequestOptions));
 
 	let isDialogOpen = $state({
 		create: false,

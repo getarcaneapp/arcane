@@ -13,13 +13,14 @@
 	import TemplatesBrowser from './components/TemplatesBrowser.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
 	import type { TemplateRegistry } from '$lib/types/template.type';
+	import { untrack } from 'svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 
 	let { data } = $props();
 
-	let templates = $state(data.templates);
-	let registries = $state<TemplateRegistry[]>(data.registries);
-	let requestOptions = $state<SearchPaginationSortRequest>(data.templateRequestOptions);
+	let templates = $state(untrack(() => data.templates));
+	let registries = $state<TemplateRegistry[]>(untrack(() => data.registries));
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.templateRequestOptions));
 	let activeView = $state<'browse' | 'registries'>('browse');
 
 	const tabItems: TabItem[] = [

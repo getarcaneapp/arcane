@@ -15,6 +15,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
+	import { untrack } from 'svelte';
 	import type { Template } from '$lib/types/template.type';
 
 	let { data } = $props();
@@ -22,8 +23,8 @@
 	let saving = $state(false);
 	let showTemplateDialog = $state(false);
 	let isLoadingTemplate = $state(false);
-	let originalComposeContent = $state(data.composeTemplate);
-	let originalEnvContent = $state(data.envTemplate);
+	let originalComposeContent = $state(untrack(() => data.composeTemplate));
+	let originalEnvContent = $state(untrack(() => data.envTemplate));
 
 	const formSchema = z.object({
 		composeContent: z.string().min(1, m.compose_compose_content_required()),
