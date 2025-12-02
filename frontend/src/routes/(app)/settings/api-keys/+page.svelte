@@ -13,12 +13,13 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Snippet } from '$lib/components/ui/snippet/index.js';
 	import * as m from '$lib/paraglide/messages.js';
+	import { untrack } from 'svelte';
 
 	let { data } = $props();
 
-	let apiKeys = $state(data.apiKeys);
+	let apiKeys = $state(untrack(() => data.apiKeys));
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state<SearchPaginationSortRequest>(data.apiKeyRequestOptions);
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.apiKeyRequestOptions));
 
 	let isDialogOpen = $state({
 		create: false,
@@ -133,12 +134,7 @@
 			isLoading={isLoading.creating}
 		/>
 
-		<ApiKeyFormSheet
-			bind:open={isDialogOpen.edit}
-			{apiKeyToEdit}
-			onSubmit={handleApiKeySubmit}
-			isLoading={isLoading.editing}
-		/>
+		<ApiKeyFormSheet bind:open={isDialogOpen.edit} {apiKeyToEdit} onSubmit={handleApiKeySubmit} isLoading={isLoading.editing} />
 
 		<Dialog.Root bind:open={isDialogOpen.showKey}>
 			<Dialog.Content class="!max-w-fit">
@@ -163,9 +159,10 @@
 							}}
 						/>
 					</div>
-					<div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800 p-4">
+					<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
 						<p class="text-sm text-yellow-800 dark:text-yellow-200">
-							<strong>{m.common_important()}:</strong> {m.api_key_important_warning()}
+							<strong>{m.common_important()}:</strong>
+							{m.api_key_important_warning()}
 						</p>
 					</div>
 				</div>
