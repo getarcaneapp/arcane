@@ -17,7 +17,8 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"knip": "knip",
 		"i18n:unused": "i18n-unused display-unused",
-		"i18n:missed": "i18n-unused display-missed"
+		"i18n:remove": "i18n-unused remove-unused",
+		"i18n:mark": "i18n-unused mark-unused"
 	},
 	"dependencies": {
 		"@codemirror/lang-yaml": "^6.1.2",
