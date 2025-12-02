@@ -10,15 +10,16 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let registries = $state(data.registries);
+	let registries = $state(untrack(() => data.registries));
 	let selectedIds = $state<string[]>([]);
 	let isRegistryDialogOpen = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
-	let requestOptions = $state(data.registryRequestOptions);
+	let requestOptions = $state(untrack(() => data.registryRequestOptions));
 
 	let isLoading = $state({
 		create: false,

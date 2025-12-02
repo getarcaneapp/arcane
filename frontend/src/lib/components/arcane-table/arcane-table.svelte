@@ -16,7 +16,6 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { mode } from 'mode-watcher';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -28,8 +27,14 @@
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import EyeOffIcon from '@lucide/svelte/icons/eye-off';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import type { HTMLAttributes } from 'svelte/elements';
+	import type { SvelteHTMLElements } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
+
+	type DivAttributes = SvelteHTMLElements['div'];
+	type PlainHeaderProps = { title: string } & DivAttributes;
+	type ColumnHeaderProps = { column: Column<TData, unknown>; title: string } & DivAttributes;
+	type PaginationProps = { table: TableType<TData> };
+	type MobileCardProps = { row: Row<TData>; item: TData };
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
@@ -94,15 +99,21 @@
 	let sorting = $state<SortingState>([]);
 	let globalFilter = $state<string>('');
 
-	const enablePersist = !!persistKey;
+	const enablePersist = $derived(!!persistKey);
 	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
-	const prefs = enablePersist
-		? new PersistedState<CompactTablePrefs>(
-				persistKey as string,
+	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
+
+	$effect(() => {
+		if (persistKey) {
+			prefs = new PersistedState<CompactTablePrefs>(
+				persistKey,
 				{ v: [], f: [], g: '', l: getDefaultLimit() },
 				{ syncTabs: false }
-			)
-		: null;
+			);
+		} else {
+			prefs = null;
+		}
+	});
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
@@ -227,10 +238,10 @@
 		}
 	}
 
-	function buildColumns(specs: ColumnSpec<TData>[]): ColumnDef<TData>[] {
+	function buildColumns(specs: ColumnSpec<TData>[], isSelectionDisabled: boolean): ColumnDef<TData>[] {
 		const cols: ColumnDef<TData>[] = [];
 
-		if (!selectionDisabled) {
+		if (!isSelectionDisabled) {
 			cols.push({
 				id: 'select',
 				header: ({ table }) => {
@@ -284,10 +295,6 @@
 				enableSorting: !!spec.sortable,
 				enableHiding: true
 			});
-
-			if (spec.hidden) {
-				columnVisibility[String(accessorKey ?? id)] = false;
-			}
 		});
 
 		if (rowActions) {
@@ -300,7 +307,32 @@
 		return cols;
 	}
 
-	const columnsDef: ColumnDef<TData>[] = buildColumns(columns);
+	// Compute initial hidden columns from column specs (without mutating state in derived)
+	function getInitialHiddenColumns(specs: ColumnSpec<TData>[]): Record<string, boolean> {
+		const hidden: Record<string, boolean> = {};
+		specs.forEach((spec, i) => {
+			if (spec.hidden) {
+				const accessorKey = spec.accessorKey;
+				const id = spec.id ?? (accessorKey as string) ?? `col_${i}`;
+				hidden[String(accessorKey ?? id)] = false;
+			}
+		});
+		return hidden;
+	}
+
+	// Apply initial hidden columns once on mount
+	let initialHiddenApplied = false;
+	$effect(() => {
+		if (!initialHiddenApplied && columns.length > 0) {
+			const hiddenCols = getInitialHiddenColumns(columns);
+			if (Object.keys(hiddenCols).length > 0) {
+				columnVisibility = { ...columnVisibility, ...hiddenCols };
+			}
+			initialHiddenApplied = true;
+		}
+	});
+
+	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
 
 	const table = createSvelteTable({
 		get data() {
@@ -323,9 +355,13 @@
 				return globalFilter;
 			}
 		},
-		columns: columnsDef,
+		get columns() {
+			return columnsDef;
+		},
 		globalFilterFn: passAllGlobal,
-		enableRowSelection: !selectionDisabled,
+		get enableRowSelection() {
+			return !selectionDisabled;
+		},
 		onRowSelectionChange: (updater) => {
 			rowSelection = typeof updater === 'function' ? updater(rowSelection) : updater;
 		},
@@ -434,11 +470,11 @@
 	<span class="max-w-[500px] truncate">{value ?? ''}</span>
 {/snippet}
 
-{#snippet PlainHeader({ title, class: className, ...restProps }: { title: string } & HTMLAttributes<HTMLDivElement>)}
+{#snippet PlainHeader({ title, class: className, ...restProps }: PlainHeaderProps)}
 	<div class={className} {...restProps}>{title}</div>
 {/snippet}
 
-{#snippet Pagination({ table }: { table: TableType<TData> })}
+{#snippet Pagination({ table }: PaginationProps)}
 	<div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
 		<div class="text-muted-foreground order-2 text-sm sm:order-1">
 			{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
@@ -491,16 +527,11 @@
 	</div>
 {/snippet}
 
-{#snippet MobileCard({ row, item }: { row: Row<TData>; item: TData })}
+{#snippet MobileCard({ row, item }: MobileCardProps)}
 	{@render mobileCard({ row, item, mobileFieldVisibility })}
 {/snippet}
 
-{#snippet ColumnHeader({
-	column,
-	title,
-	class: className,
-	...restProps
-}: { column: Column<TData>; title: string } & HTMLAttributes<HTMLDivElement>)}
+{#snippet ColumnHeader({ column, title, class: className, ...restProps }: ColumnHeaderProps)}
 	{#if !column?.getCanSort()}
 		<div class={className} {...restProps}>
 			{title}

@@ -15,11 +15,14 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let { images, imageUsageCounts, imageRequestOptions: requestOptions } = $state(data);
+	let images = $state(untrack(() => data.images));
+	let imageUsageCounts = $state(untrack(() => data.imageUsageCounts));
+	let requestOptions = $state(untrack(() => data.imageRequestOptions));
 	let selectedIds = $state<string[]>([]);
 
 	let isLoading = $state({

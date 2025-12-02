@@ -12,11 +12,14 @@
 	import { networkService } from '$lib/services/network-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let { networks, networkUsageCounts, networkRequestOptions: requestOptions } = $state(data);
+	let networks = $state(untrack(() => data.networks));
+	let networkUsageCounts = $state(untrack(() => data.networkUsageCounts));
+	let requestOptions = $state(untrack(() => data.networkRequestOptions));
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
 
