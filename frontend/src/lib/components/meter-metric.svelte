@@ -31,7 +31,7 @@
 	}: Props = $props();
 
 	const percentage = $derived(currentValue !== undefined && !loading && maxValue > 0 ? (currentValue / maxValue) * 100 : 0);
-	const Icon = icon;
+	const Icon = $derived(icon);
 </script>
 
 <Card.Root>

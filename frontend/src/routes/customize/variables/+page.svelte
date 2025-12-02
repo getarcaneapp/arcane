@@ -14,11 +14,12 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import type { Variable } from '$lib/types/variable.type';
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	let { data } = $props();
-	let envVars = $state<Variable[]>([...data.variables]);
-	let originalVars = $state<Variable[]>([...data.variables]);
+	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
+	let originalVars = $state<Variable[]>(untrack(() => [...data.variables]));
 	let searchQuery = $state('');
 	let isLoading = $state(false);
 

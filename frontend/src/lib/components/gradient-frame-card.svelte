@@ -26,23 +26,29 @@
 		children?: Snippet;
 	} = $props();
 
-	const frameGradientClass =
+	const frameGradientClass = $derived(
 		color === 'emerald'
 			? 'before:[background:linear-gradient(135deg,rgba(16,185,129,0.35),rgba(16,185,129,0))]'
 			: color === 'purple'
 				? 'before:[background:linear-gradient(135deg,rgba(168,85,247,0.35),rgba(168,85,247,0))]'
-				: 'before:[background:linear-gradient(135deg,rgba(59,130,246,0.35),rgba(59,130,246,0))]';
+				: 'before:[background:linear-gradient(135deg,rgba(59,130,246,0.35),rgba(59,130,246,0))]'
+	);
 
-	const iconBoxClass =
+	const iconBoxClass = $derived(
 		color === 'emerald'
 			? 'bg-emerald-500/10 ring-1 ring-emerald-500/30'
 			: color === 'purple'
 				? 'bg-purple-500/10 ring-1 ring-purple-500/30'
-				: 'bg-blue-500/10 ring-1 ring-blue-500/30';
+				: 'bg-blue-500/10 ring-1 ring-blue-500/30'
+	);
 
-	const iconColorClass = color === 'emerald' ? 'text-emerald-400' : color === 'purple' ? 'text-purple-400' : 'text-blue-400';
+	const iconColorClass = $derived(
+		color === 'emerald' ? 'text-emerald-400' : color === 'purple' ? 'text-purple-400' : 'text-blue-400'
+	);
 
-	const glowBgClass = color === 'emerald' ? 'bg-emerald-500/20' : color === 'purple' ? 'bg-purple-500/20' : 'bg-blue-500/20';
+	const glowBgClass = $derived(
+		color === 'emerald' ? 'bg-emerald-500/20' : color === 'purple' ? 'bg-purple-500/20' : 'bg-blue-500/20'
+	);
 </script>
 
 <Card.Root

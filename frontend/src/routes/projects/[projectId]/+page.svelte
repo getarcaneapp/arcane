@@ -28,11 +28,12 @@
 	import ServicesGrid from '../components/ServicesGrid.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
+	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
-	let project = $state(data.project);
+	let project = $state(untrack(() => data.project));
 	let editorState = $derived(data.editorState);
 
 	let isLoading = $state({
@@ -47,9 +48,9 @@
 		saving: false
 	});
 
-	let originalName = $state(data.editorState.originalName);
-	let originalComposeContent = $state(data.editorState.originalComposeContent);
-	let originalEnvContent = $state(data.editorState.originalEnvContent || '');
+	let originalName = $state(untrack(() => data.editorState.originalName));
+	let originalComposeContent = $state(untrack(() => data.editorState.originalComposeContent));
+	let originalEnvContent = $state(untrack(() => data.editorState.originalEnvContent || ''));
 	let includeFilesState = $state<Record<string, string>>({});
 	let originalIncludeFiles = $state<Record<string, string>>({});
 

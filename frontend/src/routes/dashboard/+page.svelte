@@ -21,13 +21,21 @@
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
+	import { untrack } from 'svelte';
 	import bytes from 'bytes';
 
 	let { data } = $props();
-	let containers = $state(data.containers);
-	let images = $state(data.images);
-	let dockerInfo = $state(data.dockerInfo);
-	let containerStatusCounts = $state(data.containerStatusCounts);
+	let containers = $state(untrack(() => data.containers));
+	let images = $state(untrack(() => data.images));
+	let dockerInfo = $state(untrack(() => data.dockerInfo));
+	let containerStatusCounts = $state(untrack(() => data.containerStatusCounts));
+
+	let dashboardStates = $state({
+		dockerInfo: untrack(() => data.dockerInfo) as typeof data.dockerInfo | null,
+		settings: untrack(() => data.settings) as typeof data.settings | null,
+		systemStats: null as SystemStats | null,
+		isPruneDialogOpen: false
+	});
 
 	$effect(() => {
 		containers = data.containers;
@@ -36,13 +44,6 @@
 		containerStatusCounts = data.containerStatusCounts;
 		dashboardStates.dockerInfo = data.dockerInfo;
 		dashboardStates.settings = data.settings;
-	});
-
-	let dashboardStates = $state({
-		dockerInfo: data.dockerInfo,
-		settings: data.settings,
-		systemStats: null as SystemStats | null,
-		isPruneDialogOpen: false
 	});
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
