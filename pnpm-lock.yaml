@@ -157,6 +157,9 @@ importers:
       formsnap:
         specifier: ^2.0.1
         version: 2.0.1(svelte@5.45.3)(sveltekit-superforms@2.28.1(@sveltejs/kit@2.49.0(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.45.3)(vite@7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.45.3)(vite@7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(@types/json-schema@7.0.15)(esbuild@0.27.0)(svelte@5.45.3)(typescript@5.9.3))
+      i18n-unused:
+        specifier: ^0.19.0
+        version: 0.19.0
       isomorphic-dompurify:
         specifier: ^2.33.0
         version: 2.33.0
@@ -1757,6 +1760,10 @@ packages:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
 
+  commander@10.0.1:
+    resolution: {integrity: sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug==}
+    engines: {node: '>=14'}
+
   commander@11.1.0:
     resolution: {integrity: sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ==}
     engines: {node: '>=16'}
@@ -1989,6 +1996,10 @@ packages:
   esm-env@1.2.2:
     resolution: {integrity: sha512-Epxrv+Nr/CaL4ZcFGPJIYLWFom+YeV1DqMLHJoEd9SYRxNbaFruBwfEX/kkHUJf55j2+TUbmDcmuilbP1TmXHA==}
 
+  esm@3.2.25:
+    resolution: {integrity: sha512-U1suiZ2oDVWv4zPO56S0NcR5QriEahGtdN2OR6FiOG4WJvcjBVFB0qI4+eKoWFH483PKGuLuu6V8Z4T5g63UVA==}
+    engines: {node: '>=6'}
+
   esprima@4.0.1:
     resolution: {integrity: sha512-eGuFFw7Upda+g4p+QHvnW0RyTX/SVeJBDM/gCtMARO0cLuT2HcEKnTPvhjV6aGeqrCB/sbNop0Kszm0jsaWU4A==}
     engines: {node: '>=4'}
@@ -2139,6 +2150,10 @@ packages:
 
   human-id@4.1.2:
     resolution: {integrity: sha512-v/J+4Z/1eIJovEBdlV5TYj1IR+ZiohcYGRY+qN/oC9dAfKzVT023N/Bgw37hrKCoVRBvk3bqyzpr2PP5YeTMSg==}
+    hasBin: true
+
+  i18n-unused@0.19.0:
+    resolution: {integrity: sha512-g/zPenRzkE0NV0LWSCKfQ6h08lCSloh5MPHKPAw19oscPKMV5zEcyYF2QrwUvZF5CV96aeR8XQenJcsEWcLlIw==}
     hasBin: true
 
   iconv-lite@0.6.3:
@@ -2484,6 +2499,9 @@ packages:
   onetime@7.0.0:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
+
+  options-defaults@2.0.40:
+    resolution: {integrity: sha512-a0oW0AMaP/Uqk1gU7s3unE83wzs/MACy3wsCnNREn4wqp4KCcxRdulRjf0d2FeIxENbGJ4EBGtHTQ6J30XB6Cw==}
 
   ora@8.2.0:
     resolution: {integrity: sha512-weP+BZ8MVNnlCm8c0Qdc1WSWq4Qn7I+9CJGm7Qali6g44e/PUzbjNqJX5NJ9ljlNMosfJvg1fKEGILklK9cwnw==}
@@ -2994,6 +3012,10 @@ packages:
   ts-deepmerge@7.0.3:
     resolution: {integrity: sha512-Du/ZW2RfwV/D4cmA5rXafYjBQVuvu4qGiEEla4EmEHVHgRdx68Gftx7i66jn2bzHPwSVZY36Ae6OuDn9el4ZKA==}
     engines: {node: '>=14.13.1'}
+
+  ts-import@2.0.40:
+    resolution: {integrity: sha512-yTP9fSDaBL1LvcN7/taRHbcQoazk7cLrDOEPyIDUVKLNYTMhaDkvZhfUwp41iXe+GlAFL6l87ZoGABWZRdIfjg==}
+    engines: {node: '>=14.14.0'}
 
   tsconfig-paths@4.2.0:
     resolution: {integrity: sha512-NoZ4roiN7LnbKn9QqE1amc9DJfzvZXxF4xDavcOWt1BPkdx+m+0gJuPM+S0vCe7zTJMYUP0R8pO2XMr+Y8oLIg==}
@@ -4521,6 +4543,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
+  commander@10.0.1: {}
+
   commander@11.1.0: {}
 
   commander@13.1.0: {}
@@ -4784,6 +4808,8 @@ snapshots:
 
   esm-env@1.2.2: {}
 
+  esm@3.2.25: {}
+
   esprima@4.0.1: {}
 
   esrap@2.2.1:
@@ -4943,6 +4969,12 @@ snapshots:
       - supports-color
 
   human-id@4.1.2: {}
+
+  i18n-unused@0.19.0:
+    dependencies:
+      commander: 10.0.1
+      esm: 3.2.25
+      ts-import: 2.0.40
 
   iconv-lite@0.6.3:
     dependencies:
@@ -5246,6 +5278,8 @@ snapshots:
   onetime@7.0.0:
     dependencies:
       mimic-function: 5.0.1
+
+  options-defaults@2.0.40: {}
 
   ora@8.2.0:
     dependencies:
@@ -5817,6 +5851,10 @@ snapshots:
     optional: true
 
   ts-deepmerge@7.0.3: {}
+
+  ts-import@2.0.40:
+    dependencies:
+      options-defaults: 2.0.40
 
   tsconfig-paths@4.2.0:
     dependencies:

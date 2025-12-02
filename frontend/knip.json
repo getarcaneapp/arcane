@@ -11,7 +11,7 @@
 		"src/lib/components/**/index.ts"
 	],
 	"project": ["src/**/*.{svelte,ts,js}"],
-	"ignore": ["src/lib/paraglide/runtime.js", "src/lib/paraglide/registry.js", "src/lib/paraglide/server.js"],
+	"ignore": ["src/lib/paraglide/server.js"],
 	"ignoreDependencies": ["paneforge", "svelte-toolbelt", "isomorphic-dompurify", "tw-animate-css"],
 	"ignoreExportsUsedInFile": {
 		"interface": true,
