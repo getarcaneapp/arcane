@@ -18,6 +18,7 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import type { Environment } from '$lib/types/environment.type';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { envSelectorFilterStore } from '$lib/stores/env-selector-filter.store.svelte';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
@@ -40,17 +41,15 @@
 	let isLoading = $state(false);
 	let inputValue = $state('');
 	let searchQuery = $state('');
-	let selectedTags = $state<string[]>([]);
-	let excludedTags = $state<string[]>([]);
-	let tagMode = $state<'any' | 'all'>('any'); // any = OR, all = AND
-	let statusFilter = $state<'all' | 'online' | 'offline'>('all');
-	let groupBy = $state<'none' | 'status' | 'tags'>('none');
 	let filterPopoverOpen = $state(false);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 100 },
 		sort: { column: 'name', direction: 'asc' }
 	});
+
+	// Use persisted filter state from store
+	const filterStore = envSelectorFilterStore;
 
 	// Derived
 	const allTags = $derived.by(() => {
@@ -90,12 +89,13 @@
 		if (!isMatch) return [];
 		
 		const partial = isMatch[1].toLowerCase();
+		const currentStatus = filterStore.statusFilter;
 		return statusOptions.filter(
-			(status) => (status.includes(partial) || getStatusLabel(status).toLowerCase().includes(partial)) && statusFilter !== status
+			(status) => (status.includes(partial) || getStatusLabel(status).toLowerCase().includes(partial)) && currentStatus !== status
 		);
 	});
 
-	// Tag suggestions
+	// Tag suggestions - exclude tags already in selectedTags OR excludedTags
 	const tagSuggestions = $derived.by(() => {
 		const excludeMatch = inputValue.match(/-tag:(\S*)$/i);
 		const includeMatch = inputValue.match(/tag:(\S*)$/i);
@@ -103,8 +103,8 @@
 		if (!tagMatch) return [];
 		
 		const partial = tagMatch[1].toLowerCase();
-		const alreadySelected = excludeMatch ? excludedTags : selectedTags;
-		return allTags.filter((tag) => !alreadySelected.includes(tag) && tag.toLowerCase().includes(partial));
+		const allUsedTags = [...filterStore.selectedTags, ...filterStore.excludedTags];
+		return allTags.filter((tag) => !allUsedTags.includes(tag) && tag.toLowerCase().includes(partial));
 	});
 
 	const showSuggestions = $derived(tagSuggestions.length > 0 || statusSuggestions.length > 0);
@@ -136,24 +136,24 @@
 		}
 
 		// Filter by status
-		if (statusFilter !== 'all') {
-			filtered = filtered.filter((env) => env.status === statusFilter);
+		if (filterStore.statusFilter !== 'all') {
+			filtered = filtered.filter((env) => env.status === filterStore.statusFilter);
 		}
 
 		// Filter by included tags (AND/OR mode)
-		if (selectedTags.length > 0) {
-			if (tagMode === 'all') {
+		if (filterStore.selectedTags.length > 0) {
+			if (filterStore.tagMode === 'all') {
 				// AND mode: environment must have ALL selected tags
-				filtered = filtered.filter((env) => selectedTags.every((tag) => env.tags?.includes(tag)));
+				filtered = filtered.filter((env) => filterStore.selectedTags.every((tag) => env.tags?.includes(tag)));
 			} else {
 				// OR mode: environment must have ANY selected tag
-				filtered = filtered.filter((env) => env.tags?.some((tag) => selectedTags.includes(tag)));
+				filtered = filtered.filter((env) => env.tags?.some((tag) => filterStore.selectedTags.includes(tag)));
 			}
 		}
 
 		// Filter by excluded tags (always exclude if ANY excluded tag matches)
-		if (excludedTags.length > 0) {
-			filtered = filtered.filter((env) => !env.tags?.some((tag) => excludedTags.includes(tag)));
+		if (filterStore.excludedTags.length > 0) {
+			filtered = filtered.filter((env) => !env.tags?.some((tag) => filterStore.excludedTags.includes(tag)));
 		}
 
 		return filtered;
@@ -161,17 +161,17 @@
 
 	// Group environments based on groupBy setting
 	const groupedEnvironments = $derived.by(() => {
-		if (groupBy === 'none') return null;
+		if (filterStore.groupBy === 'none') return null;
 
 		const groups = new Map<string, Environment[]>();
 
 		for (const env of filteredEnvironments) {
-			if (groupBy === 'status') {
+			if (filterStore.groupBy === 'status') {
 				const key = env.status;
 				const items = groups.get(key) ?? [];
 				items.push(env);
 				groups.set(key, items);
-			} else if (groupBy === 'tags') {
+			} else if (filterStore.groupBy === 'tags') {
 				if (env.tags && env.tags.length > 0) {
 					for (const tag of env.tags) {
 						const items = groups.get(tag) ?? [];
@@ -193,7 +193,7 @@
 			.map(([name, items]) => ({ name, items }))
 			.sort((a, b) => {
 				// Put 'online' first for status grouping
-				if (groupBy === 'status') {
+				if (filterStore.groupBy === 'status') {
 					if (a.name === 'online') return -1;
 					if (b.name === 'online') return 1;
 				}
@@ -258,7 +258,7 @@
 				for (const match of isMatches) {
 					const status = match.slice(3).toLowerCase(); // Remove 'is:' prefix
 					if (status === 'online' || status === 'offline') {
-						statusFilter = status;
+						filterStore.statusFilter = status;
 						hasMatches = true;
 					}
 				}
@@ -273,8 +273,8 @@
 					const partialMatch = allTags.find((t) => t.toLowerCase().includes(tagName.toLowerCase()));
 					const matchedTag = exactMatch || partialMatch;
 					
-					if (matchedTag && !excludedTags.includes(matchedTag)) {
-						excludedTags = [...excludedTags, matchedTag];
+					if (matchedTag && !filterStore.excludedTags.includes(matchedTag)) {
+						filterStore.addExcludedTag(matchedTag);
 						hasMatches = true;
 					}
 				}
@@ -293,8 +293,8 @@
 					const partialMatch = allTags.find((t) => t.toLowerCase().includes(tagName.toLowerCase()));
 					const matchedTag = exactMatch || partialMatch;
 					
-					if (matchedTag && !selectedTags.includes(matchedTag)) {
-						selectedTags = [...selectedTags, matchedTag];
+					if (matchedTag && !filterStore.selectedTags.includes(matchedTag)) {
+						filterStore.addTag(matchedTag);
 						hasMatches = true;
 					}
 				}
@@ -311,15 +311,15 @@
 	function selectSuggestion(index: number) {
 		if (suggestionType === 'status' && index < statusSuggestions.length) {
 			const status = statusSuggestions[index];
-			statusFilter = status as 'online' | 'offline';
+			filterStore.statusFilter = status as 'online' | 'offline';
 			inputValue = inputValue.replace(/is:\S*$/i, '').trim();
 		} else if (suggestionType === 'exclude') {
 			const tag = tagSuggestions[index];
-			excludedTags = [...excludedTags, tag];
+			filterStore.addExcludedTag(tag);
 			inputValue = inputValue.replace(/-tag:\S*$/i, '').trim();
 		} else if (suggestionType === 'include') {
 			const tag = tagSuggestions[index];
-			selectedTags = [...selectedTags, tag];
+			filterStore.addTag(tag);
 			inputValue = inputValue.replace(/tag:\S*$/i, '').trim();
 		}
 		searchQuery = inputValue;
@@ -328,10 +328,10 @@
 
 	function selectTagSuggestion(tag: string) {
 		if (suggestionType === 'exclude') {
-			excludedTags = [...excludedTags, tag];
+			filterStore.addExcludedTag(tag);
 			inputValue = inputValue.replace(/-tag:\S*$/i, '').trim();
 		} else {
-			selectedTags = [...selectedTags, tag];
+			filterStore.addTag(tag);
 			inputValue = inputValue.replace(/tag:\S*$/i, '').trim();
 		}
 		searchQuery = inputValue;
@@ -369,11 +369,7 @@
 	function clearFilters() {
 		searchQuery = '';
 		inputValue = '';
-		selectedTags = [];
-		excludedTags = [];
-		tagMode = 'any';
-		statusFilter = 'all';
-		groupBy = 'none';
+		filterStore.clearFilters();
 	}
 
 	function getConnectionString(env: Environment): string {
@@ -396,17 +392,9 @@
 		}
 	}
 
-	const hasActiveFilters = $derived(selectedTags.length > 0 || excludedTags.length > 0 || statusFilter !== 'all' || groupBy !== 'none');
-	const activeFilterCount = $derived((groupBy !== 'none' ? 1 : 0) + (tagMode !== 'any' ? 1 : 0));
-	const hasTagFilters = $derived(selectedTags.length > 0 || excludedTags.length > 0);
-
-	function removeTag(tag: string) {
-		selectedTags = selectedTags.filter((t) => t !== tag);
-	}
-
-	function removeExcludedTag(tag: string) {
-		excludedTags = excludedTags.filter((t) => t !== tag);
-	}
+	const hasActiveFilters = $derived(filterStore.selectedTags.length > 0 || filterStore.excludedTags.length > 0 || filterStore.statusFilter !== 'all' || filterStore.groupBy !== 'none');
+	const activeFilterCount = $derived((filterStore.groupBy !== 'none' ? 1 : 0) + (filterStore.tagMode !== 'any' ? 1 : 0));
+	const hasTagFilters = $derived(filterStore.selectedTags.length > 0 || filterStore.excludedTags.length > 0);
 </script>
 
 {#snippet environmentItem(env: Environment)}
@@ -570,22 +558,22 @@
 									<button
 										class={cn(
 											'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-											groupBy === 'none'
+											filterStore.groupBy === 'none'
 												? 'bg-primary text-primary-foreground'
 												: 'bg-muted hover:bg-muted/80'
 										)}
-										onclick={() => (groupBy = 'none')}
+										onclick={() => (filterStore.groupBy = 'none')}
 									>
 										{m.common_none()}
 									</button>
 									<button
 										class={cn(
 											'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-											groupBy === 'status'
+											filterStore.groupBy === 'status'
 												? 'bg-primary text-primary-foreground'
 												: 'bg-muted hover:bg-muted/80'
 										)}
-										onclick={() => (groupBy = 'status')}
+										onclick={() => (filterStore.groupBy = 'status')}
 									>
 										{m.common_status()}
 									</button>
@@ -593,11 +581,11 @@
 										<button
 											class={cn(
 												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												groupBy === 'tags'
+												filterStore.groupBy === 'tags'
 													? 'bg-primary text-primary-foreground'
 													: 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => (groupBy = 'tags')}
+											onclick={() => (filterStore.groupBy = 'tags')}
 										>
 											{m.env_selector_tags()}
 										</button>
@@ -606,29 +594,29 @@
 						</div>
 
 						<!-- Tag Match Mode (only show if tags are selected) -->
-							{#if selectedTags.length > 1}
+							{#if filterStore.selectedTags.length > 1}
 								<div class="space-y-2">
 									<div class="text-sm font-medium">{m.env_selector_tag_mode()}</div>
 									<div class="flex gap-1.5">
 										<button
 											class={cn(
 												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												tagMode === 'any'
+												filterStore.tagMode === 'any'
 													? 'bg-primary text-primary-foreground'
 													: 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => (tagMode = 'any')}
+											onclick={() => (filterStore.tagMode = 'any')}
 										>
 											{m.env_selector_tag_mode_any()}
 										</button>
 										<button
 											class={cn(
 												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												tagMode === 'all'
+												filterStore.tagMode === 'all'
 													? 'bg-primary text-primary-foreground'
 													: 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => (tagMode = 'all')}
+											onclick={() => (filterStore.tagMode = 'all')}
 										>
 											{m.env_selector_tag_mode_all()}
 										</button>
@@ -649,42 +637,42 @@
 			</div>
 
 			<!-- Active Filter Pills -->
-			{#if hasTagFilters || statusFilter !== 'all'}
+			{#if hasTagFilters || filterStore.statusFilter !== 'all'}
 				<div class="flex flex-wrap items-center gap-1.5">
-					{#if statusFilter !== 'all'}
+					{#if filterStore.statusFilter !== 'all'}
 						<Badge variant="secondary" class="gap-1 pr-1">
-							<span class={cn('size-1.5 rounded-full', statusFilter === 'online' ? 'bg-emerald-500' : 'bg-red-500')}></span>
-							{statusFilter === 'online' ? m.common_online() : m.common_offline()}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => (statusFilter = 'all')}>
+							<span class={cn('size-1.5 rounded-full', filterStore.statusFilter === 'online' ? 'bg-emerald-500' : 'bg-red-500')}></span>
+							{filterStore.statusFilter === 'online' ? m.common_online() : m.common_offline()}
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => (filterStore.statusFilter = 'all')}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/if}
-					{#if selectedTags.length > 1}
+					{#if filterStore.selectedTags.length > 1}
 						<Badge variant="secondary" class="text-[10px]">
-							{tagMode === 'all' ? m.env_selector_tag_mode_all() : m.env_selector_tag_mode_any()}
+							{filterStore.tagMode === 'all' ? m.env_selector_tag_mode_all() : m.env_selector_tag_mode_any()}
 						</Badge>
 					{/if}
-					{#each selectedTags as tag}
+					{#each filterStore.selectedTags as tag}
 						<Badge variant="outline" class="gap-1 pr-1">
 							<TagIcon class="size-3" />
 							{tag}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => removeTag(tag)}>
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => filterStore.removeTag(tag)}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/each}
-					{#each excludedTags as tag}
+					{#each filterStore.excludedTags as tag}
 						<Badge variant="outline" class="gap-1 border-red-500/50 pr-1 text-red-600 dark:text-red-400">
 							<XIcon class="size-3" />
 							{tag}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => removeExcludedTag(tag)}>
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => filterStore.removeExcludedTag(tag)}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/each}
 					{#if hasTagFilters}
-						<button class="text-muted-foreground hover:text-foreground text-xs" onclick={() => { selectedTags = []; excludedTags = []; }}>
+						<button class="text-muted-foreground hover:text-foreground text-xs" onclick={() => filterStore.clearTags()}>
 							{m.common_clear_tags()}
 						</button>
 					{/if}
