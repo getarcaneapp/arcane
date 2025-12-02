@@ -13,8 +13,6 @@
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -217,9 +215,11 @@
 	}
 
 	function handleTagKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
+		if (event.key === 'Enter' || (event.key === 'Tab' && newTagInput.trim())) {
 			event.preventDefault();
 			addTag();
+		} else if (event.key === 'Backspace' && !newTagInput && formTags.length > 0) {
+			removeTag(formTags[formTags.length - 1]);
 		}
 	}
 
@@ -370,7 +370,7 @@
 						<div class="mt-1 font-mono text-sm">{environment.id}</div>
 					</div>
 					<div>
-						<Label class="text-muted-foreground text-xs font-medium">Status</Label>
+						<Label class="text-muted-foreground text-xs font-medium">{m.common_status()}</Label>
 						<div class="mt-1">
 							<StatusBadge
 								text={currentStatus === 'online' ? m.common_online() : m.common_offline()}
@@ -379,49 +379,36 @@
 						</div>
 					</div>
 				</div>
-			</Card.Content>
-		</Card.Root>
 
-		<Card.Root class="flex flex-col">
-			<Card.Header icon={TagIcon}>
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.env_selector_tags()}</h2>
-					</Card.Title>
-					<Card.Description>Organize environments with tags for easier filtering and grouping</Card.Description>
-				</div>
-			</Card.Header>
-			<Card.Content class="space-y-4 p-4">
-				<div class="flex gap-2">
-					<Input
-						type="text"
-						placeholder="Add a tag..."
-						bind:value={newTagInput}
-						onkeydown={handleTagKeydown}
-						class="flex-1"
-					/>
-					<Button variant="outline" size="icon" onclick={addTag} disabled={!newTagInput.trim()}>
-						<PlusIcon class="size-4" />
-					</Button>
-				</div>
-
-				{#if formTags.length > 0}
-					<div class="flex flex-wrap gap-2">
+				<div>
+					<Label for="tag-input" class="text-sm font-medium">{m.env_selector_tags()}</Label>
+					<div 
+						class="border-input bg-background focus-within:ring-ring mt-1.5 flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border px-3 py-2 transition-colors focus-within:ring-1"
+					>
 						{#each formTags as tag}
-							<Badge variant="secondary" class="gap-1 pr-1">
+							<span 
+								class="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-medium transition-all hover:bg-primary/15"
+							>
 								{tag}
 								<button
-									class="hover:bg-muted ml-0.5 rounded p-0.5 transition-colors"
-									onclick={() => removeTag(tag)}
+									class="hover:bg-primary/20 -mr-0.5 rounded p-0.5 transition-colors"
+									onclick={(e) => { e.stopPropagation(); removeTag(tag); }}
+									type="button"
 								>
 									<XIcon class="size-3" />
 								</button>
-							</Badge>
+							</span>
 						{/each}
+						<input
+							id="tag-input"
+							type="text"
+							placeholder={formTags.length === 0 ? m.environments_tags_placeholder() : ''}
+							bind:value={newTagInput}
+							onkeydown={handleTagKeydown}
+							class="placeholder:text-muted-foreground min-w-[120px] flex-1 bg-transparent text-sm outline-none"
+						/>
 					</div>
-				{:else}
-					<p class="text-muted-foreground text-sm">No tags added yet. Tags help organize and filter environments.</p>
-				{/if}
+				</div>
 			</Card.Content>
 		</Card.Root>
 
