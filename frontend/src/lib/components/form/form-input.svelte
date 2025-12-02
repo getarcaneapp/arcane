@@ -36,7 +36,7 @@
 		autocomplete?: HTMLInputElement['autocomplete'];
 	} = $props();
 
-	const id = label?.toLowerCase().replace(/ /g, '-');
+	const id = $derived(label?.toLowerCase().replace(/ /g, '-'));
 </script>
 
 <div {...restProps}>
