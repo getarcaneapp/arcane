@@ -193,6 +193,11 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 	remenv.SetAgentToken(req, accessToken)
 	remenv.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
 
+	// Preserve Content-Length for request body to ensure the body is sent correctly to the agent
+	if c.Request.ContentLength > 0 {
+		req.ContentLength = c.Request.ContentLength
+	}
+
 	return req, nil
 }
 
