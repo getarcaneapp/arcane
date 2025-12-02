@@ -1,0 +1,233 @@
+/*
+   Copyright 2020 Docker Compose CLI authors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+package compose
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli"
+	"github.com/docker/cli/cli/command"
+	"github.com/docker/cli/cli/command/image/build"
+	"github.com/docker/compose/v2/pkg/api"
+	buildtypes "github.com/docker/docker/api/types/build"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/progress"
+	"github.com/docker/docker/pkg/streamformatter"
+	"github.com/moby/go-archive"
+	"github.com/sirupsen/logrus"
+)
+
+//nolint:gocyclo
+func (s *composeService) doBuildClassic(ctx context.Context, project *types.Project, service types.ServiceConfig, options api.BuildOptions) (string, error) {
+	var (
+		buildCtx      io.ReadCloser
+		dockerfileCtx io.ReadCloser
+		contextDir    string
+		relDockerfile string
+	)
+
+	if len(service.Build.Platforms) > 1 {
+		return "", fmt.Errorf("the classic builder doesn't support multi-arch build, set DOCKER_BUILDKIT=1 to use BuildKit")
+	}
+	if service.Build.Privileged {
+		return "", fmt.Errorf("the classic builder doesn't support privileged mode, set DOCKER_BUILDKIT=1 to use BuildKit")
+	}
+	if len(service.Build.AdditionalContexts) > 0 {
+		return "", fmt.Errorf("the classic builder doesn't support additional contexts, set DOCKER_BUILDKIT=1 to use BuildKit")
+	}
+	if len(service.Build.SSH) > 0 {
+		return "", fmt.Errorf("the classic builder doesn't support SSH keys, set DOCKER_BUILDKIT=1 to use BuildKit")
+	}
+	if len(service.Build.Secrets) > 0 {
+		return "", fmt.Errorf("the classic builder doesn't support secrets, set DOCKER_BUILDKIT=1 to use BuildKit")
+	}
+
+	if service.Build.Labels == nil {
+		service.Build.Labels = make(map[string]string)
+	}
+	service.Build.Labels[api.ImageBuilderLabel] = "classic"
+
+	dockerfileName := dockerFilePath(service.Build.Context, service.Build.Dockerfile)
+	specifiedContext := service.Build.Context
+	progBuff := s.stdout()
+	buildBuff := s.stdout()
+
+	contextType, err := build.DetectContextType(specifiedContext)
+	if err != nil {
+		return "", err
+	}
+
+	switch contextType {
+	case build.ContextTypeStdin:
+		return "", fmt.Errorf("building from STDIN is not supported")
+	case build.ContextTypeLocal:
+		contextDir, relDockerfile, err = build.GetContextFromLocalDir(specifiedContext, dockerfileName)
+		if err != nil {
+			return "", fmt.Errorf("unable to prepare context: %w", err)
+		}
+		if strings.HasPrefix(relDockerfile, ".."+string(filepath.Separator)) {
+			// Dockerfile is outside build-context; read the Dockerfile and pass it as dockerfileCtx
+			dockerfileCtx, err = os.Open(dockerfileName)
+			if err != nil {
+				return "", fmt.Errorf("unable to open Dockerfile: %w", err)
+			}
+			defer dockerfileCtx.Close() //nolint:errcheck
+		}
+	case build.ContextTypeGit:
+		var tempDir string
+		tempDir, relDockerfile, err = build.GetContextFromGitURL(specifiedContext, dockerfileName)
+		if err != nil {
+			return "", fmt.Errorf("unable to prepare context: %w", err)
+		}
+		defer func() {
+			_ = os.RemoveAll(tempDir)
+		}()
+		contextDir = tempDir
+	case build.ContextTypeRemote:
+		buildCtx, relDockerfile, err = build.GetContextFromURL(progBuff, specifiedContext, dockerfileName)
+		if err != nil {
+			return "", fmt.Errorf("unable to prepare context: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("unable to prepare context: path %q not found", specifiedContext)
+	}
+
+	// read from a directory into tar archive
+	if buildCtx == nil {
+		excludes, err := build.ReadDockerignore(contextDir)
+		if err != nil {
+			return "", err
+		}
+
+		if err := build.ValidateContextDirectory(contextDir, excludes); err != nil {
+			return "", fmt.Errorf("checking context: %w", err)
+		}
+
+		// And canonicalize dockerfile name to a platform-independent one
+		relDockerfile = filepath.ToSlash(relDockerfile)
+
+		excludes = build.TrimBuildFilesFromExcludes(excludes, relDockerfile, false)
+		buildCtx, err = archive.TarWithOptions(contextDir, &archive.TarOptions{
+			ExcludePatterns: excludes,
+			ChownOpts:       &archive.ChownOpts{UID: 0, GID: 0},
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// replace Dockerfile if it was added from stdin or a file outside the build-context, and there is archive context
+	if dockerfileCtx != nil && buildCtx != nil {
+		buildCtx, relDockerfile, err = build.AddDockerfileToBuildContext(dockerfileCtx, buildCtx)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	buildCtx, err = build.Compress(buildCtx)
+	if err != nil {
+		return "", err
+	}
+
+	// Setup an upload progress bar
+	progressOutput := streamformatter.NewProgressOutput(progBuff)
+	body := progress.NewProgressReader(buildCtx, progressOutput, 0, "", "Sending build context to Docker daemon")
+
+	configFile := s.configFile()
+	creds, err := configFile.GetAllCredentials()
+	if err != nil {
+		return "", err
+	}
+	authConfigs := make(map[string]registry.AuthConfig, len(creds))
+	for k, authConfig := range creds {
+		authConfigs[k] = registry.AuthConfig{
+			Username:      authConfig.Username,
+			Password:      authConfig.Password,
+			ServerAddress: authConfig.ServerAddress,
+
+			// TODO(thaJeztah): Are these expected to be included? See https://github.com/docker/cli/pull/6516#discussion_r2387586472
+			Auth:          authConfig.Auth,
+			IdentityToken: authConfig.IdentityToken,
+			RegistryToken: authConfig.RegistryToken,
+		}
+	}
+	buildOpts := imageBuildOptions(s.dockerCli, project, service, options)
+	imageName := api.GetImageNameOrDefault(service, project.Name)
+	buildOpts.Tags = append(buildOpts.Tags, imageName)
+	buildOpts.Dockerfile = relDockerfile
+	buildOpts.AuthConfigs = authConfigs
+	buildOpts.Memory = options.Memory
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	response, err := s.apiClient().ImageBuild(ctx, body, buildOpts)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close() //nolint:errcheck
+
+	imageID := ""
+	aux := func(msg jsonmessage.JSONMessage) {
+		var result buildtypes.Result
+		if err := json.Unmarshal(*msg.Aux, &result); err != nil {
+			logrus.Errorf("Failed to parse aux message: %s", err)
+		} else {
+			imageID = result.ID
+		}
+	}
+
+	err = jsonmessage.DisplayJSONMessagesStream(response.Body, buildBuff, progBuff.FD(), true, aux)
+	if err != nil {
+		var jerr *jsonmessage.JSONError
+		if errors.As(err, &jerr) {
+			// If no error code is set, default to 1
+			if jerr.Code == 0 {
+				jerr.Code = 1
+			}
+			return "", cli.StatusError{Status: jerr.Message, StatusCode: jerr.Code}
+		}
+		return "", err
+	}
+	return imageID, nil
+}
+
+func imageBuildOptions(dockerCli command.Cli, project *types.Project, service types.ServiceConfig, options api.BuildOptions) buildtypes.ImageBuildOptions {
+	config := service.Build
+	return buildtypes.ImageBuildOptions{
+		Version:     buildtypes.BuilderV1,
+		Tags:        config.Tags,
+		NoCache:     config.NoCache,
+		Remove:      true,
+		PullParent:  config.Pull,
+		BuildArgs:   resolveAndMergeBuildArgs(dockerCli, project, service, options),
+		Labels:      config.Labels,
+		NetworkMode: config.Network,
+		ExtraHosts:  config.ExtraHosts.AsList(":"),
+		Target:      config.Target,
+		Isolation:   container.Isolation(config.Isolation),
+	}
+}

@@ -1,0 +1,7 @@
+language: go
+
+go:
+ - release
+
+install:
+ - go get -v -t ./...

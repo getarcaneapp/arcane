@@ -1,0 +1,20 @@
+image: alpine/latest
+packages:
+  - go
+sources:
+  - https://github.com/emersion/go-smtp
+artifacts:
+  - coverage.html
+tasks:
+  - build: |
+      cd go-smtp
+      go build -race -v ./...
+  - test: |
+      cd go-smtp
+      go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+  - coverage: |
+      cd go-smtp
+      go tool cover -html=coverage.txt -o ~/coverage.html
+  - gofmt: |
+      cd go-smtp
+      test -z $(gofmt -l .)
