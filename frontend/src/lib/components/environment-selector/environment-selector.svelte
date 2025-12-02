@@ -18,14 +18,22 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import type { Environment } from '$lib/types/environment.type';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { envSelectorFilterStore } from '$lib/stores/env-selector-filter.store.svelte';
+	import {
+		envSelectorFilterStore,
+		addTag,
+		removeTag,
+		addExcludedTag,
+		removeExcludedTag,
+		clearTags,
+		clearFilters
+	} from '$lib/stores/env-selector-filter.store.svelte';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import { goto } from '$app/navigation';
 	import settingsStore from '$lib/stores/config-store';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { Paginated } from '$lib/types/pagination.type';
 
 	interface Props {
 		open?: boolean;
@@ -36,183 +44,138 @@
 
 	let { open = $bindable(false), isAdmin = false, onOpenChange, trigger }: Props = $props();
 
-	// State
 	let environments = $state<Paginated<Environment> | null>(null);
 	let isLoading = $state(false);
 	let inputValue = $state('');
-	let searchQuery = $state('');
 	let filterPopoverOpen = $state(false);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
-	let requestOptions = $state<SearchPaginationSortRequest>({
-		pagination: { page: 1, limit: 100 },
-		sort: { column: 'name', direction: 'asc' }
-	});
+	let selectedSuggestionIndex = $state(0);
 
-	// Use persisted filter state from store
-	const filterStore = envSelectorFilterStore;
+	const filters = $derived(envSelectorFilterStore.current);
+	const allTags = $derived(
+		[...new Set(environments?.data?.flatMap((env) => env.tags ?? []) ?? [])].sort()
+	);
 
-	// Derived
-	const allTags = $derived.by(() => {
-		if (!environments?.data) return [];
-		const tags = new Set<string>();
-		for (const env of environments.data) {
-			if (env.tags) {
-				for (const tag of env.tags) {
-					tags.add(tag);
-				}
-			}
-		}
-		return Array.from(tags).sort();
-	});
+	const inputMatch = $derived.by(() => {
+		const isMatch = inputValue.match(/is:(\S*)$/i);
+		if (isMatch) return { type: 'status' as const, partial: isMatch[1].toLowerCase() };
 
-	// Tag suggestion state
-	let selectedSuggestionIndex = $state(-1);
+		const excludeMatch = inputValue.match(/-tag:(\S*)$/i);
+		if (excludeMatch) return { type: 'exclude' as const, partial: excludeMatch[1].toLowerCase() };
 
-	// Status options for is: syntax
-	const statusOptions = ['online', 'offline'] as const;
+		const includeMatch = inputValue.match(/tag:(\S*)$/i);
+		if (includeMatch) return { type: 'include' as const, partial: includeMatch[1].toLowerCase() };
 
-	function getStatusLabel(status: string): string {
-		return status === 'online' ? m.common_online() : m.common_offline();
-	}
-
-	// Determine what type of suggestion to show
-	const suggestionType = $derived.by(() => {
-		if (inputValue.match(/is:(\S*)$/i)) return 'status';
-		if (inputValue.match(/-tag:(\S*)$/i)) return 'exclude';
-		if (inputValue.match(/tag:(\S*)$/i)) return 'include';
 		return null;
 	});
 
-	// Status suggestions for is: syntax (matches both key and translated label)
-	const statusSuggestions = $derived.by(() => {
-		const isMatch = inputValue.match(/is:(\S*)$/i);
-		if (!isMatch) return [];
-		
-		const partial = isMatch[1].toLowerCase();
-		const currentStatus = filterStore.statusFilter;
-		return statusOptions.filter(
-			(status) => (status.includes(partial) || getStatusLabel(status).toLowerCase().includes(partial)) && currentStatus !== status
-		);
-	});
+	const suggestions = $derived.by(() => {
+		if (!inputMatch) return [];
 
-	// Tag suggestions - exclude tags already in selectedTags OR excludedTags
-	const tagSuggestions = $derived.by(() => {
-		const excludeMatch = inputValue.match(/-tag:(\S*)$/i);
-		const includeMatch = inputValue.match(/tag:(\S*)$/i);
-		const tagMatch = excludeMatch || includeMatch;
-		if (!tagMatch) return [];
-		
-		const partial = tagMatch[1].toLowerCase();
-		const allUsedTags = [...filterStore.selectedTags, ...filterStore.excludedTags];
-		return allTags.filter((tag) => !allUsedTags.includes(tag) && tag.toLowerCase().includes(partial));
-	});
-
-	// Only one type of suggestion is active at a time based on suggestionType
-	const activeSuggestions = $derived(suggestionType === 'status' ? statusSuggestions : tagSuggestions);
-	const showSuggestions = $derived(activeSuggestions.length > 0);
-
-	// Reset selection index when suggestions change
-	$effect(() => {
-		if (activeSuggestions.length > 0) {
-			selectedSuggestionIndex = 0;
-		} else {
-			selectedSuggestionIndex = -1;
+		if (inputMatch.type === 'status') {
+			const statusOptions = [
+				{ value: 'online', label: m.common_online() },
+				{ value: 'offline', label: m.common_offline() }
+			];
+			return statusOptions.filter(
+				(s) =>
+					(s.value.includes(inputMatch.partial) || s.label.toLowerCase().includes(inputMatch.partial)) &&
+					filters.statusFilter !== s.value
+			);
 		}
+
+		// Tag suggestions - exclude already used tags
+		const usedTags = new Set([...filters.selectedTags, ...filters.excludedTags]);
+		return allTags
+			.filter((tag) => !usedTags.has(tag) && tag.toLowerCase().includes(inputMatch.partial))
+			.map((tag) => ({ value: tag, label: tag }));
 	});
+
+	// Reset suggestion index when suggestions change
+	$effect(() => {
+		selectedSuggestionIndex = suggestions.length > 0 ? 0 : -1;
+	});
+
+	const searchQuery = $derived(inputValue.replace(/-?tag:\S*/gi, '').replace(/is:\S*/gi, '').trim());
 
 	const filteredEnvironments = $derived.by(() => {
 		if (!environments?.data) return [];
 
-		let filtered = environments.data;
-
-		// Filter by search query
-		if (searchQuery.trim()) {
-			const query = searchQuery.toLowerCase();
-			filtered = filtered.filter(
-				(env) =>
-					env.name.toLowerCase().includes(query) ||
-					env.apiUrl.toLowerCase().includes(query) ||
-					env.tags?.some((tag) => tag.toLowerCase().includes(query))
-			);
-		}
-
-		// Filter by status
-		if (filterStore.statusFilter !== 'all') {
-			filtered = filtered.filter((env) => env.status === filterStore.statusFilter);
-		}
-
-		// Filter by included tags (AND/OR mode)
-		if (filterStore.selectedTags.length > 0) {
-			if (filterStore.tagMode === 'all') {
-				// AND mode: environment must have ALL selected tags
-				filtered = filtered.filter((env) => filterStore.selectedTags.every((tag) => env.tags?.includes(tag)));
-			} else {
-				// OR mode: environment must have ANY selected tag
-				filtered = filtered.filter((env) => env.tags?.some((tag) => filterStore.selectedTags.includes(tag)));
+		return environments.data.filter((env) => {
+			// Search filter
+			if (searchQuery) {
+				const q = searchQuery.toLowerCase();
+				const matches =
+					env.name.toLowerCase().includes(q) ||
+					env.apiUrl.toLowerCase().includes(q) ||
+					env.tags?.some((t) => t.toLowerCase().includes(q));
+				if (!matches) return false;
 			}
-		}
 
-		// Filter by excluded tags (always exclude if ANY excluded tag matches)
-		if (filterStore.excludedTags.length > 0) {
-			filtered = filtered.filter((env) => !env.tags?.some((tag) => filterStore.excludedTags.includes(tag)));
-		}
+			// Status filter
+			if (filters.statusFilter !== 'all' && env.status !== filters.statusFilter) return false;
 
-		return filtered;
+			// Include tags (AND/OR)
+			if (filters.selectedTags.length > 0) {
+				const hasTag = filters.tagMode === 'all'
+					? filters.selectedTags.every((t) => env.tags?.includes(t))
+					: filters.selectedTags.some((t) => env.tags?.includes(t));
+				if (!hasTag) return false;
+			}
+
+			// Exclude tags
+			if (filters.excludedTags.some((t) => env.tags?.includes(t))) return false;
+
+			return true;
+		});
 	});
 
-	// Group environments based on groupBy setting
 	const groupedEnvironments = $derived.by(() => {
-		if (filterStore.groupBy === 'none') return null;
+		if (filters.groupBy === 'none') return null;
 
 		const groups = new Map<string, Environment[]>();
 
 		for (const env of filteredEnvironments) {
-			if (filterStore.groupBy === 'status') {
-				const key = env.status;
+			const keys =
+				filters.groupBy === 'status'
+					? [env.status]
+					: env.tags?.length
+						? env.tags
+						: [m.env_selector_untagged()];
+
+			for (const key of keys) {
 				const items = groups.get(key) ?? [];
-				items.push(env);
+				if (!items.some((e) => e.id === env.id)) items.push(env);
 				groups.set(key, items);
-			} else if (filterStore.groupBy === 'tags') {
-				if (env.tags && env.tags.length > 0) {
-					for (const tag of env.tags) {
-						const items = groups.get(tag) ?? [];
-						if (!items.some((e) => e.id === env.id)) {
-							items.push(env);
-						}
-						groups.set(tag, items);
-					}
-				} else {
-					const key = m.env_selector_untagged();
-					const items = groups.get(key) ?? [];
-					items.push(env);
-					groups.set(key, items);
-				}
 			}
 		}
 
-		return Array.from(groups.entries())
+		return [...groups.entries()]
 			.map(([name, items]) => ({ name, items }))
-			.sort((a, b) => {
-				// Put 'online' first for status grouping
-				if (filterStore.groupBy === 'status') {
-					if (a.name === 'online') return -1;
-					if (b.name === 'online') return 1;
-				}
-				return a.name.localeCompare(b.name);
-			});
+			.sort((a, b) => (a.name === 'online' ? -1 : b.name === 'online' ? 1 : a.name.localeCompare(b.name)));
 	});
+
+	const hasActiveFilters = $derived(
+		filters.selectedTags.length > 0 ||
+			filters.excludedTags.length > 0 ||
+			filters.statusFilter !== 'all' ||
+			filters.groupBy !== 'none'
+	);
+	const activeFilterCount = $derived((filters.groupBy !== 'none' ? 1 : 0) + (filters.tagMode !== 'any' ? 1 : 0));
+	const hasTagFilters = $derived(filters.selectedTags.length > 0 || filters.excludedTags.length > 0);
 
 	// Load environments when dialog opens
 	$effect(() => {
-		if (open) {
-			loadEnvironments();
-		}
+		if (open) loadEnvironments();
 	});
 
 	async function loadEnvironments() {
 		isLoading = true;
 		try {
-			environments = await environmentManagementService.getEnvironments(requestOptions);
+			environments = await environmentManagementService.getEnvironments({
+				pagination: { page: 1, limit: 100 },
+				sort: { column: 'name', direction: 'asc' }
+			});
 		} catch (error) {
 			console.error('Failed to load environments:', error);
 			toast.error(m.common_refresh_failed({ resource: m.environments_title() }));
@@ -221,113 +184,37 @@
 		}
 	}
 
-	function handleSearchInput(event: Event) {
-		const target = event.target as HTMLInputElement;
-		inputValue = target.value;
-		
-		// Extract search query without tag:, -tag:, and is: prefixes
-		const withoutFilters = target.value.replace(/-?tag:\S*/gi, '').replace(/is:\S*/gi, '').trim();
-		searchQuery = withoutFilters;
-	}
-
-	function handleSearchKeydown(event: KeyboardEvent) {
-		if (showSuggestions) {
+	function handleKeydown(event: KeyboardEvent) {
+		if (suggestions.length > 0) {
 			if (event.key === 'ArrowDown') {
 				event.preventDefault();
-				selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, activeSuggestions.length - 1);
-				scrollSelectedIntoView();
+				selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, suggestions.length - 1);
 			} else if (event.key === 'ArrowUp') {
 				event.preventDefault();
 				selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, 0);
-				scrollSelectedIntoView();
 			} else if (event.key === 'Tab' || event.key === 'Enter') {
 				event.preventDefault();
 				selectSuggestion(selectedSuggestionIndex);
 			} else if (event.key === 'Escape') {
-				// Clear the filter prefix to close suggestions
-				inputValue = inputValue.replace(/-?tag:\S*$/i, '').replace(/is:\S*$/i, '').trim();
-				searchQuery = inputValue;
-			}
-		} else if (event.key === 'Enter') {
-			let hasMatches = false;
-			
-			// Check for is: syntax (status filter)
-			const isMatches = inputValue.match(/is:(\S+)/gi);
-			if (isMatches) {
-				for (const match of isMatches) {
-					const status = match.slice(3).toLowerCase(); // Remove 'is:' prefix
-					if (status === 'online' || status === 'offline') {
-						filterStore.statusFilter = status;
-						hasMatches = true;
-					}
-				}
-			}
-			
-			// Check for -tag: syntax (exclusion)
-			const excludeMatches = inputValue.match(/-tag:(\S+)/gi);
-			if (excludeMatches) {
-				for (const match of excludeMatches) {
-					const tagName = match.slice(5); // Remove '-tag:' prefix
-					const exactMatch = allTags.find((t) => t.toLowerCase() === tagName.toLowerCase());
-					const partialMatch = allTags.find((t) => t.toLowerCase().includes(tagName.toLowerCase()));
-					const matchedTag = exactMatch || partialMatch;
-					
-					if (matchedTag && !filterStore.excludedTags.includes(matchedTag)) {
-						filterStore.addExcludedTag(matchedTag);
-						hasMatches = true;
-					}
-				}
-			}
-			
-			// Check for tag: syntax (inclusion) - filter out -tag: matches
-			const allTagMatches = inputValue.match(/\btag:(\S+)/gi) || [];
-			const includeMatches = allTagMatches.filter((m) => {
-				const idx = inputValue.indexOf(m);
-				return idx === 0 || inputValue[idx - 1] !== '-';
-			});
-			if (includeMatches.length > 0) {
-				for (const match of includeMatches) {
-					const tagName = match.slice(4); // Remove 'tag:' prefix
-					const exactMatch = allTags.find((t) => t.toLowerCase() === tagName.toLowerCase());
-					const partialMatch = allTags.find((t) => t.toLowerCase().includes(tagName.toLowerCase()));
-					const matchedTag = exactMatch || partialMatch;
-					
-					if (matchedTag && !filterStore.selectedTags.includes(matchedTag)) {
-						filterStore.addTag(matchedTag);
-						hasMatches = true;
-					}
-				}
-			}
-			
-			// Clear all filter patterns from input
-			if (hasMatches) {
-				inputValue = inputValue.replace(/-?tag:\S*/gi, '').replace(/is:\S*/gi, '').trim();
-				searchQuery = inputValue;
+				inputValue = searchQuery;
 			}
 		}
 	}
 
 	function selectSuggestion(index: number) {
-		if (suggestionType === 'status' && index < statusSuggestions.length) {
-			const status = statusSuggestions[index];
-			filterStore.statusFilter = status as 'online' | 'offline';
-			inputValue = inputValue.replace(/is:\S*$/i, '').trim();
-		} else if (suggestionType === 'exclude') {
-			const tag = tagSuggestions[index];
-			filterStore.addExcludedTag(tag);
-			inputValue = inputValue.replace(/-tag:\S*$/i, '').trim();
-		} else if (suggestionType === 'include') {
-			const tag = tagSuggestions[index];
-			filterStore.addTag(tag);
-			inputValue = inputValue.replace(/tag:\S*$/i, '').trim();
-		}
-		searchQuery = inputValue;
-		searchInputRef?.focus();
-	}
+		const suggestion = suggestions[index];
+		if (!suggestion || !inputMatch) return;
 
-	function scrollSelectedIntoView() {
-        const selected = document.querySelector(`[data-index="${selectedSuggestionIndex}"]`);
-		selected?.scrollIntoView({ block: 'nearest' });
+		if (inputMatch.type === 'status') {
+			envSelectorFilterStore.current = { ...filters, statusFilter: suggestion.value as 'online' | 'offline' };
+		} else if (inputMatch.type === 'exclude') {
+			addExcludedTag(suggestion.value);
+		} else {
+			addTag(suggestion.value);
+		}
+
+		inputValue = searchQuery;
+		searchInputRef?.focus();
 	}
 
 	async function handleSelectEnvironment(env: Environment) {
@@ -347,41 +234,18 @@
 		}
 	}
 
-	function handleManageEnvironments() {
-		open = false;
-		onOpenChange?.(false);
-		goto('/environments');
-	}
-
-	function clearFilters() {
-		searchQuery = '';
+	function handleClearFilters() {
 		inputValue = '';
-		filterStore.clearFilters();
+		clearFilters();
 	}
 
 	function getConnectionString(env: Environment): string {
-		if (env.id === '0') {
-			return $settingsStore.dockerHost || 'unix:///var/run/docker.sock';
-		}
-		return env.apiUrl;
+		return env.id === '0' ? ($settingsStore.dockerHost || 'unix:///var/run/docker.sock') : env.apiUrl;
 	}
 
 	function getStatusColor(status: string): string {
-		switch (status) {
-			case 'online':
-				return 'bg-emerald-500';
-			case 'offline':
-				return 'bg-red-500';
-			case 'error':
-				return 'bg-amber-500';
-			default:
-				return 'bg-gray-400';
-		}
+		return status === 'online' ? 'bg-emerald-500' : status === 'offline' ? 'bg-red-500' : 'bg-gray-400';
 	}
-
-	const hasActiveFilters = $derived(filterStore.selectedTags.length > 0 || filterStore.excludedTags.length > 0 || filterStore.statusFilter !== 'all' || filterStore.groupBy !== 'none');
-	const activeFilterCount = $derived((filterStore.groupBy !== 'none' ? 1 : 0) + (filterStore.tagMode !== 'any' ? 1 : 0));
-	const hasTagFilters = $derived(filterStore.selectedTags.length > 0 || filterStore.excludedTags.length > 0);
 </script>
 
 {#snippet environmentItem(env: Environment)}
@@ -390,47 +254,27 @@
 	<button
 		class={cn(
 			'group relative flex w-full items-center gap-3 rounded-lg p-2.5 text-left transition-all',
-			isSelected
-				? 'bg-primary/10 ring-primary/40 ring-1'
-				: isDisabled
-					? 'cursor-not-allowed opacity-50'
-					: 'hover:bg-muted/60'
+			isSelected ? 'bg-primary/10 ring-primary/40 ring-1' : isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/60'
 		)}
 		onclick={() => handleSelectEnvironment(env)}
 		disabled={isDisabled}
 	>
-		<!-- Status dot + Icon -->
 		<div class="relative">
-			<div
-				class={cn(
-					'flex size-9 items-center justify-center rounded-md',
-					isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-				)}
-			>
-				{#if env.id === '0'}
-					<ServerIcon class="size-4" />
-				{:else}
-					<RouterIcon class="size-4" />
-				{/if}
+			<div class={cn('flex size-9 items-center justify-center rounded-md', isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+				{#if env.id === '0'}<ServerIcon class="size-4" />{:else}<RouterIcon class="size-4" />{/if}
 			</div>
-			<span
-				class={cn('absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-background', getStatusColor(env.status))}
-			></span>
+			<span class={cn('absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-background', getStatusColor(env.status))}></span>
 		</div>
 
-		<!-- Environment Info -->
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
 				<span class={cn('truncate text-sm font-medium', isSelected && 'text-primary')}>{env.name}</span>
-				{#if isSelected}
-					<CheckIcon class="text-primary size-4 shrink-0" />
-				{/if}
+				{#if isSelected}<CheckIcon class="text-primary size-4 shrink-0" />{/if}
 			</div>
 			<div class="text-muted-foreground truncate text-xs">{getConnectionString(env)}</div>
 		</div>
 
-		<!-- Tags (compact) -->
-		{#if env.tags && env.tags.length > 0}
+		{#if env.tags?.length}
 			<div class="hidden shrink-0 sm:flex sm:gap-1">
 				{#each env.tags.slice(0, 2) as tag}
 					<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">{tag}</span>
@@ -460,16 +304,10 @@
 	</Collapsible.Root>
 {/snippet}
 
-<ResponsiveDialog
-	bind:open
-	{onOpenChange}
-	{trigger}
-	title={m.env_selector_title()}
-	contentClass="sm:max-w-2xl"
->
+<ResponsiveDialog bind:open {onOpenChange} {trigger} title={m.env_selector_title()} contentClass="sm:max-w-2xl">
 	{#snippet children()}
 		<div class="flex flex-col gap-3">
-			<!-- Search + Filter Row -->
+			<!-- Search + Filter -->
 			<div class="flex gap-2 pt-2">
 				<div class="relative flex-1">
 					<SearchIcon class="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
@@ -478,53 +316,38 @@
 						type="text"
 						placeholder={m.common_search()}
 						class="h-9 pl-9 pr-8 text-sm"
-						value={inputValue}
-						oninput={handleSearchInput}
-						onkeydown={handleSearchKeydown}
+						bind:value={inputValue}
+						onkeydown={handleKeydown}
 					/>
-					
+
 					<!-- Suggestions Dropdown -->
-					{#if showSuggestions}
+					{#if suggestions.length > 0}
 						<div class="bg-popover border-border absolute left-0 right-0 top-full z-50 mt-1 rounded-md border shadow-md">
 							<div class="text-muted-foreground px-3 py-1.5 text-xs">{m.env_selector_suggestions()}</div>
 							<div class="max-h-[180px] overflow-y-auto p-1 pt-0">
-								{#if suggestionType === 'status'}
-									{#each statusSuggestions as status, index}
-										<button
-											class={cn(
-												'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
-												index === selectedSuggestionIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-											)}
-											onclick={() => selectSuggestion(index)}
-											onmouseenter={() => (selectedSuggestionIndex = index)}
-											data-index={index}
-										>
-											<span class={cn('size-2 rounded-full', status === 'online' ? 'bg-emerald-500' : 'bg-red-500')}></span>
-											<span>{getStatusLabel(status)}</span>
-										</button>
-									{/each}
-								{:else if suggestionType === 'include' || suggestionType === 'exclude'}
-									{#each tagSuggestions as tag, index}
-										<button
-											class={cn(
-												'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
-												index === selectedSuggestionIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-											)}
-											onclick={() => selectSuggestion(index)}
-											onmouseenter={() => (selectedSuggestionIndex = index)}
-											data-index={index}
-										>
+								{#each suggestions as suggestion, index}
+									<button
+										class={cn(
+											'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
+											index === selectedSuggestionIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+										)}
+										onclick={() => selectSuggestion(index)}
+										onmouseenter={() => (selectedSuggestionIndex = index)}
+									>
+										{#if inputMatch?.type === 'status'}
+											<span class={cn('size-2 rounded-full', suggestion.value === 'online' ? 'bg-emerald-500' : 'bg-red-500')}></span>
+										{:else}
 											<TagIcon class="size-3.5" />
-											<span>{tag}</span>
-										</button>
-									{/each}
-								{/if}
+										{/if}
+										<span>{suggestion.label}</span>
+									</button>
+								{/each}
 							</div>
 						</div>
 					{/if}
 				</div>
 
-				<!-- Filter Popover (Status & Group only) -->
+				<!-- Filter Popover -->
 				<Popover.Root bind:open={filterPopoverOpen}>
 					<Popover.Trigger>
 						<Button variant="outline" size="sm" class="h-9 gap-1.5">
@@ -541,78 +364,42 @@
 							<div class="space-y-2">
 								<div class="text-sm font-medium">{m.env_selector_group_by()}</div>
 								<div class="flex flex-wrap gap-1.5">
-									<button
-										class={cn(
-											'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-											filterStore.groupBy === 'none'
-												? 'bg-primary text-primary-foreground'
-												: 'bg-muted hover:bg-muted/80'
-										)}
-										onclick={() => (filterStore.groupBy = 'none')}
-									>
-										{m.common_none()}
-									</button>
-									<button
-										class={cn(
-											'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-											filterStore.groupBy === 'status'
-												? 'bg-primary text-primary-foreground'
-												: 'bg-muted hover:bg-muted/80'
-										)}
-										onclick={() => (filterStore.groupBy = 'status')}
-									>
-										{m.common_status()}
-									</button>
-									{#if allTags.length > 0}
+									{#each [{ value: 'none', label: m.common_none() }, { value: 'status', label: m.common_status() }, ...(allTags.length ? [{ value: 'tags', label: m.env_selector_tags() }] : [])] as option}
 										<button
 											class={cn(
 												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												filterStore.groupBy === 'tags'
-													? 'bg-primary text-primary-foreground'
-													: 'bg-muted hover:bg-muted/80'
+												filters.groupBy === option.value ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => (filterStore.groupBy = 'tags')}
+											onclick={() => (envSelectorFilterStore.current = { ...filters, groupBy: option.value as any })}
 										>
-											{m.env_selector_tags()}
+											{option.label}
 										</button>
-									{/if}
+									{/each}
+								</div>
 							</div>
-						</div>
 
-						<!-- Tag Match Mode (only show if tags are selected) -->
-							{#if filterStore.selectedTags.length > 1}
+							<!-- Tag Mode -->
+							{#if filters.selectedTags.length > 1}
 								<div class="space-y-2">
 									<div class="text-sm font-medium">{m.env_selector_tag_mode()}</div>
 									<div class="flex gap-1.5">
-										<button
-											class={cn(
-												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												filterStore.tagMode === 'any'
-													? 'bg-primary text-primary-foreground'
-													: 'bg-muted hover:bg-muted/80'
-											)}
-											onclick={() => (filterStore.tagMode = 'any')}
-										>
-											{m.env_selector_tag_mode_any()}
-										</button>
-										<button
-											class={cn(
-												'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-												filterStore.tagMode === 'all'
-													? 'bg-primary text-primary-foreground'
-													: 'bg-muted hover:bg-muted/80'
-											)}
-											onclick={() => (filterStore.tagMode = 'all')}
-										>
-											{m.env_selector_tag_mode_all()}
-										</button>
+										{#each [{ value: 'any', label: m.env_selector_tag_mode_any() }, { value: 'all', label: m.env_selector_tag_mode_all() }] as option}
+											<button
+												class={cn(
+													'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+													filters.tagMode === option.value ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+												)}
+												onclick={() => (envSelectorFilterStore.current = { ...filters, tagMode: option.value as any })}
+											>
+												{option.label}
+											</button>
+										{/each}
 									</div>
 								</div>
 							{/if}
 
-							<!-- Clear Filters -->
 							{#if hasActiveFilters}
-								<Button variant="ghost" size="sm" class="w-full" onclick={clearFilters}>
+								<Button variant="ghost" size="sm" class="w-full" onclick={handleClearFilters}>
 									<XIcon class="mr-1.5 size-3" />
 									{m.common_clear_filters()}
 								</Button>
@@ -623,42 +410,42 @@
 			</div>
 
 			<!-- Active Filter Pills -->
-			{#if hasTagFilters || filterStore.statusFilter !== 'all'}
+			{#if hasTagFilters || filters.statusFilter !== 'all'}
 				<div class="flex flex-wrap items-center gap-1.5">
-					{#if filterStore.statusFilter !== 'all'}
+					{#if filters.statusFilter !== 'all'}
 						<Badge variant="secondary" class="gap-1 pr-1">
-							<span class={cn('size-1.5 rounded-full', filterStore.statusFilter === 'online' ? 'bg-emerald-500' : 'bg-red-500')}></span>
-							{filterStore.statusFilter === 'online' ? m.common_online() : m.common_offline()}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => (filterStore.statusFilter = 'all')}>
+							<span class={cn('size-1.5 rounded-full', getStatusColor(filters.statusFilter))}></span>
+							{filters.statusFilter === 'online' ? m.common_online() : m.common_offline()}
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => (envSelectorFilterStore.current = { ...filters, statusFilter: 'all' })}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/if}
-					{#if filterStore.selectedTags.length > 1}
+					{#if filters.selectedTags.length > 1}
 						<Badge variant="secondary" class="text-[10px]">
-							{filterStore.tagMode === 'all' ? m.env_selector_tag_mode_all() : m.env_selector_tag_mode_any()}
+							{filters.tagMode === 'all' ? m.env_selector_tag_mode_all() : m.env_selector_tag_mode_any()}
 						</Badge>
 					{/if}
-					{#each filterStore.selectedTags as tag}
+					{#each filters.selectedTags as tag}
 						<Badge variant="outline" class="gap-1 pr-1">
 							<TagIcon class="size-3" />
 							{tag}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => filterStore.removeTag(tag)}>
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => removeTag(tag)}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/each}
-					{#each filterStore.excludedTags as tag}
+					{#each filters.excludedTags as tag}
 						<Badge variant="outline" class="gap-1 border-red-500/50 pr-1 text-red-600 dark:text-red-400">
 							<TagIcon class="size-3" />
 							{tag}
-							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => filterStore.removeExcludedTag(tag)}>
+							<button class="hover:bg-muted ml-0.5 rounded p-0.5" onclick={() => removeExcludedTag(tag)}>
 								<XIcon class="size-3" />
 							</button>
 						</Badge>
 					{/each}
 					{#if hasTagFilters}
-						<button class="text-muted-foreground hover:text-foreground text-xs" onclick={() => filterStore.clearTags()}>
+						<button class="text-muted-foreground hover:text-foreground text-xs" onclick={clearTags}>
 							{m.common_clear_tags()}
 						</button>
 					{/if}
@@ -666,10 +453,8 @@
 			{/if}
 
 			<!-- Results count -->
-			<div class="text-muted-foreground flex items-center justify-between text-xs">
-				<span>
-					{m.env_selector_showing_count({ count: filteredEnvironments.length, total: environments?.data?.length ?? 0 })}
-				</span>
+			<div class="text-muted-foreground text-xs">
+				{m.env_selector_showing_count({ count: filteredEnvironments.length, total: environments?.data?.length ?? 0 })}
 			</div>
 
 			<!-- Environment List -->
@@ -684,12 +469,12 @@
 						<p class="text-sm font-medium">{m.env_selector_no_environments()}</p>
 						{#if hasActiveFilters || searchQuery}
 							<p class="mt-1 text-xs">{m.env_selector_try_different_filters()}</p>
-							<Button variant="ghost" size="sm" class="mt-2" onclick={clearFilters}>
+							<Button variant="ghost" size="sm" class="mt-2" onclick={handleClearFilters}>
 								{m.common_clear_filters()}
 							</Button>
 						{/if}
 					</div>
-				{:else if groupedEnvironments && groupedEnvironments.length > 0}
+				{:else if groupedEnvironments}
 					<div class="space-y-2 p-1">
 						{#each groupedEnvironments as group (group.name)}
 							{@render envGroup(group)}
@@ -709,7 +494,7 @@
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between">
 			{#if isAdmin}
-				<Button variant="ghost" size="sm" onclick={handleManageEnvironments}>
+				<Button variant="ghost" size="sm" onclick={() => { open = false; onOpenChange?.(false); goto('/environments'); }}>
 					<SettingsIcon class="mr-1.5 size-4" />
 					{m.sidebar_manage_environments()}
 				</Button>

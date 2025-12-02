@@ -4,7 +4,7 @@ export type TagMode = 'any' | 'all';
 export type StatusFilter = 'all' | 'online' | 'offline';
 export type GroupBy = 'none' | 'status' | 'tags';
 
-interface EnvSelectorFilterState {
+export interface EnvSelectorFilterState {
 	selectedTags: string[];
 	excludedTags: string[];
 	tagMode: TagMode;
@@ -20,83 +20,56 @@ const defaultState: EnvSelectorFilterState = {
 	groupBy: 'none'
 };
 
-function createEnvSelectorFilterStore() {
-	const persisted = new PersistedState<EnvSelectorFilterState>('envSelectorFilter', defaultState);
+export const envSelectorFilterStore = new PersistedState<EnvSelectorFilterState>(
+	'envSelectorFilter',
+	defaultState
+);
 
-	return {
-		get state() {
-			return persisted.current;
-		},
-		get selectedTags() {
-			return persisted.current.selectedTags;
-		},
-		set selectedTags(value: string[]) {
-			persisted.current = { ...persisted.current, selectedTags: value };
-		},
-		get excludedTags() {
-			return persisted.current.excludedTags;
-		},
-		set excludedTags(value: string[]) {
-			persisted.current = { ...persisted.current, excludedTags: value };
-		},
-		get tagMode() {
-			return persisted.current.tagMode;
-		},
-		set tagMode(value: TagMode) {
-			persisted.current = { ...persisted.current, tagMode: value };
-		},
-		get statusFilter() {
-			return persisted.current.statusFilter;
-		},
-		set statusFilter(value: StatusFilter) {
-			persisted.current = { ...persisted.current, statusFilter: value };
-		},
-		get groupBy() {
-			return persisted.current.groupBy;
-		},
-		set groupBy(value: GroupBy) {
-			persisted.current = { ...persisted.current, groupBy: value };
-		},
-		addTag(tag: string) {
-			if (!persisted.current.selectedTags.includes(tag)) {
-				persisted.current = {
-					...persisted.current,
-					selectedTags: [...persisted.current.selectedTags, tag]
-				};
-			}
-		},
-		removeTag(tag: string) {
-			persisted.current = {
-				...persisted.current,
-				selectedTags: persisted.current.selectedTags.filter((t) => t !== tag)
-			};
-		},
-		addExcludedTag(tag: string) {
-			if (!persisted.current.excludedTags.includes(tag)) {
-				persisted.current = {
-					...persisted.current,
-					excludedTags: [...persisted.current.excludedTags, tag]
-				};
-			}
-		},
-		removeExcludedTag(tag: string) {
-			persisted.current = {
-				...persisted.current,
-				excludedTags: persisted.current.excludedTags.filter((t) => t !== tag)
-			};
-		},
-		clearTags() {
-			persisted.current = {
-				...persisted.current,
-				selectedTags: [],
-				excludedTags: []
-			};
-		},
-		clearFilters() {
-			persisted.current = defaultState;
-		}
+export function addTag(tag: string) {
+	const current = envSelectorFilterStore.current;
+	if (!current.selectedTags.includes(tag)) {
+		envSelectorFilterStore.current = {
+			...current,
+			selectedTags: [...current.selectedTags, tag]
+		};
+	}
+}
+
+export function removeTag(tag: string) {
+	const current = envSelectorFilterStore.current;
+	envSelectorFilterStore.current = {
+		...current,
+		selectedTags: current.selectedTags.filter((t) => t !== tag)
 	};
 }
 
-export const envSelectorFilterStore = createEnvSelectorFilterStore();
+export function addExcludedTag(tag: string) {
+	const current = envSelectorFilterStore.current;
+	if (!current.excludedTags.includes(tag)) {
+		envSelectorFilterStore.current = {
+			...current,
+			excludedTags: [...current.excludedTags, tag]
+		};
+	}
+}
 
+export function removeExcludedTag(tag: string) {
+	const current = envSelectorFilterStore.current;
+	envSelectorFilterStore.current = {
+		...current,
+		excludedTags: current.excludedTags.filter((t) => t !== tag)
+	};
+}
+
+export function clearTags() {
+	const current = envSelectorFilterStore.current;
+	envSelectorFilterStore.current = {
+		...current,
+		selectedTags: [],
+		excludedTags: []
+	};
+}
+
+export function clearFilters() {
+	envSelectorFilterStore.current = defaultState;
+}
