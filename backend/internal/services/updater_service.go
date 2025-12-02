@@ -13,10 +13,9 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"go.getarcane.app/types/updater"
 )
 
 type UpdaterService struct {
@@ -61,9 +60,9 @@ func NewUpdaterService(
 }
 
 //nolint:gocognit
-func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.UpdaterRunResult, error) {
+func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*updater.Result, error) {
 	start := time.Now()
-	out := &dto.UpdaterRunResult{Items: []dto.UpdaterItem{}}
+	out := &updater.Result{Items: []updater.ResourceResult{}}
 
 	var records []models.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
@@ -149,7 +148,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 	newImageIDs := map[string][]string{} // newRef -> []imageIDs after pull
 
 	for _, p := range plans {
-		item := dto.UpdaterItem{
+		item := updater.ResourceResult{
 			ResourceID:   p.oldRef,
 			ResourceType: "image",
 			ResourceName: p.oldRef,
@@ -211,17 +210,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 			slog.Warn("container restarts had errors", "err", err)
 		}
 		for _, r := range results {
-			item := dto.UpdaterItem{
-				ResourceID:    r.ResourceID,
-				ResourceType:  "container",
-				ResourceName:  r.ResourceName,
-				Status:        r.Status,
-				Error:         r.Error,
-				OldImages:     r.OldImages,
-				NewImages:     r.NewImages,
-				UpdateApplied: r.UpdateApplied,
-			}
-			out.Items = append(out.Items, item)
+			out.Items = append(out.Items, r)
 			out.Checked++
 			switch {
 			case r.UpdateApplied:
@@ -231,9 +220,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*dto.Up
 			default:
 				out.Skipped++
 			}
-			_ = s.recordRun(ctx, item)
+			_ = s.recordRun(ctx, r)
 
-			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+			s.logAutoUpdate(ctx, s.severityFromStatus(r.Status), models.JSON{
 				"phase":        "container",
 				"containerId":  r.ResourceID,
 				"container":    r.ResourceName,
@@ -636,14 +625,14 @@ func (s *UpdaterService) getContainerName(cnt container.Summary) string {
 	return cnt.ID[:12]
 }
 
-func (s *UpdaterService) recordRun(ctx context.Context, item dto.UpdaterItem) error {
+func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceResult) error {
 	rec := &models.AutoUpdateRecord{
 		ResourceID:      item.ResourceID,
 		ResourceType:    item.ResourceType,
 		ResourceName:    item.ResourceName,
 		Status:          models.AutoUpdateStatus(item.Status),
 		StartTime:       time.Now(),
-		UpdateAvailable: item.Status == "updated" || item.Status == "update_available",
+		UpdateAvailable: item.Status == "updated" || item.Status == "update_available" || item.UpdateAvailable,
 		UpdateApplied:   item.UpdateApplied,
 	}
 
@@ -690,7 +679,7 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 	return ids, nil
 }
 
-func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]dto.AutoUpdateResourceResult, error) {
+func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -702,7 +691,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: scanning containers for matching images", "containers", len(list), "oldIDMatches", len(oldIDToNewRef), "oldRefMatches", len(oldRefToNewRef))
 
-	var results []dto.AutoUpdateResourceResult
+	var results []updater.ResourceResult
 	for _, c := range list {
 		// Skip containers with opt-out label
 		if s.isUpdateDisabled(c.Labels) {
@@ -748,7 +737,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		slog.DebugContext(ctx, "restartContainersUsingOldIDs: matched container for update", "containerId", c.ID, "match", match, "newRef", newRef)
 
 		name := s.getContainerName(c)
-		res := dto.AutoUpdateResourceResult{
+		res := updater.ResourceResult{
 			ResourceID:   c.ID,
 			ResourceName: name,
 			ResourceType: "container",

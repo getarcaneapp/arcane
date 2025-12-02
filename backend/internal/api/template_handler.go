@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/env"
 )
 
 type TemplateHandler struct {
@@ -607,7 +608,7 @@ func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 }
 
 func (h *TemplateHandler) UpdateGlobalVariables(c *gin.Context) {
-	var req dto.UpdateVariablesRequest
+	var req env.Summary
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,

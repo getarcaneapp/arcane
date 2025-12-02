@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/template"
 	"github.com/google/uuid"
+	"go.getarcane.app/types/env"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -907,7 +908,7 @@ func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, e
 	return filepath.Join(projectsDirectory, ".env.global"), nil
 }
 
-func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.VariableDto, error) {
+func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]env.Variable, error) {
 	envPath, err := s.getGlobalVariablesPath(ctx)
 	if err != nil {
 		return nil, err
@@ -915,7 +916,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.Variabl
 
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-		return []dto.VariableDto{}, nil
+		return []env.Variable{}, nil
 	}
 
 	file, err := os.Open(envPath)
@@ -924,7 +925,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.Variabl
 	}
 	defer file.Close()
 
-	vars := []dto.VariableDto{}
+	vars := []env.Variable{}
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 
@@ -954,7 +955,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.Variabl
 			}
 		}
 
-		vars = append(vars, dto.VariableDto{
+		vars = append(vars, env.Variable{
 			Key:   key,
 			Value: value,
 		})
@@ -967,7 +968,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]dto.Variabl
 	return vars, nil
 }
 
-func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []dto.VariableDto) error {
+func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.Variable) error {
 	envPath, err := s.getGlobalVariablesPath(ctx)
 	if err != nil {
 		return err
