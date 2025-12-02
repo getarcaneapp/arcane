@@ -3,7 +3,7 @@ module.exports = {
 	// Locale files config
 	localesPath: 'messages',
 	localesExtensions: ['json'],
-	localeNameResolver: (name) => name === 'en.json', // Only check source locale
+	// localeNameResolver: (name) => name === 'en.json', // Only check source locale
 
 	// Source files config
 	srcPath: 'src',
