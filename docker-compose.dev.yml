@@ -48,6 +48,10 @@ services:
     container_name: arcane-backend-dev
     ports:
       - "3552:3552"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 256M
     volumes:
       # Source code mounting for hot reload
       - ${HOST_PROJECT_ROOT:-.}/backend:/app:cached
