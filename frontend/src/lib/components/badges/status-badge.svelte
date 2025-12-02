@@ -79,7 +79,6 @@
 		orange: 'text-orange-900 bg-orange-200 ring-orange-500 dark:text-orange-300 dark:bg-orange-400/15 dark:ring-orange-300/25'
 	};
 
-	const resolvedMinWidth = minWidth as MinWidth;
 	const badgeClasses = $derived(
 		cn(
 			// base
@@ -90,7 +89,7 @@
 			// variant styles
 			variantStyles[variant as Variant],
 			// optional fixed width
-			minWidthClasses[resolvedMinWidth],
+			minWidthClasses[minWidth as MinWidth],
 			className
 		)
 	);

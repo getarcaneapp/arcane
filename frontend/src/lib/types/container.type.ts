@@ -76,32 +76,6 @@ export interface ContainerStatusCounts {
 	totalContainers: number;
 }
 
-export interface CreateContainerDto {
-	name: string;
-	image: string;
-	command?: string[];
-	entrypoint?: string[];
-	workingDir?: string;
-	user?: string;
-	environment?: string[];
-	ports?: Record<string, string>;
-	volumes?: string[];
-	networks?: string[];
-	restartPolicy?: string;
-	privileged?: boolean;
-	autoRemove?: boolean;
-	memory?: number;
-	cpus?: number;
-}
-
-export interface ContainerActionResult {
-	started?: string[];
-	stopped?: string[];
-	failed?: string[];
-	success: boolean;
-	errors?: string[];
-}
-
 export interface ContainerStateDto {
 	status: string;
 	running: boolean;

@@ -8,14 +8,15 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
-	let environments = $state(data.environments);
+	let environments = $state(untrack(() => data.environments));
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state(data.environmentRequestOptions);
+	let requestOptions = $state(untrack(() => data.environmentRequestOptions));
 	let showEnvironmentSheet = $state(false);
 
 	let isLoading = $state({

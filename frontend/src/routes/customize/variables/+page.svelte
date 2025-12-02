@@ -14,11 +14,12 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import type { Variable } from '$lib/types/variable.type';
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	let { data } = $props();
-	let envVars = $state<Variable[]>([...data.variables]);
-	let originalVars = $state<Variable[]>([...data.variables]);
+	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
+	let originalVars = $state<Variable[]>(untrack(() => [...data.variables]));
 	let searchQuery = $state('');
 	let isLoading = $state(false);
 
@@ -260,45 +261,49 @@
 													onkeydown={(e) => handleKeyDown(e, actualIndex)}
 												/>
 												<InputGroup.Addon align="inline-end">
-													<Tooltip.Root>
-														<Tooltip.Trigger>
-															{#snippet child({ props })}
-																<InputGroup.Button
-																	{...props}
-																	variant="ghost"
-																	aria-label={m.duplicate()}
-																	size="icon-xs"
-																	onclick={() => duplicateEnvVar(actualIndex)}
-																	disabled={isLoading}
-																>
-																	<CopyIcon />
-																</InputGroup.Button>
-															{/snippet}
-														</Tooltip.Trigger>
-														<Tooltip.Content>
-															<p>{m.duplicate()}</p>
-														</Tooltip.Content>
-													</Tooltip.Root>
-													<Tooltip.Root>
-														<Tooltip.Trigger>
-															{#snippet child({ props })}
-																<InputGroup.Button
-																	{...props}
-																	variant="ghost"
-																	aria-label={m.common_remove()}
-																	size="icon-xs"
-																	onclick={() => removeEnvVar(actualIndex)}
-																	disabled={isLoading}
-																	class="text-destructive hover:text-destructive"
-																>
-																	<XIcon />
-																</InputGroup.Button>
-															{/snippet}
-														</Tooltip.Trigger>
-														<Tooltip.Content>
-															<p>{m.common_remove()}</p>
-														</Tooltip.Content>
-													</Tooltip.Root>
+													<Tooltip.Provider>
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																{#snippet child({ props })}
+																	<InputGroup.Button
+																		{...props}
+																		variant="ghost"
+																		aria-label={m.duplicate()}
+																		size="icon-xs"
+																		onclick={() => duplicateEnvVar(actualIndex)}
+																		disabled={isLoading}
+																	>
+																		<CopyIcon />
+																	</InputGroup.Button>
+																{/snippet}
+															</Tooltip.Trigger>
+															<Tooltip.Content>
+																<p>{m.duplicate()}</p>
+															</Tooltip.Content>
+														</Tooltip.Root>
+													</Tooltip.Provider>
+													<Tooltip.Provider>
+														<Tooltip.Root>
+															<Tooltip.Trigger>
+																{#snippet child({ props })}
+																	<InputGroup.Button
+																		{...props}
+																		variant="ghost"
+																		aria-label={m.common_remove()}
+																		size="icon-xs"
+																		onclick={() => removeEnvVar(actualIndex)}
+																		disabled={isLoading}
+																		class="text-destructive hover:text-destructive"
+																	>
+																		<XIcon />
+																	</InputGroup.Button>
+																{/snippet}
+															</Tooltip.Trigger>
+															<Tooltip.Content>
+																<p>{m.common_remove()}</p>
+															</Tooltip.Content>
+														</Tooltip.Root>
+													</Tooltip.Provider>
 												</InputGroup.Addon>
 											</InputGroup.Root>
 										</div>

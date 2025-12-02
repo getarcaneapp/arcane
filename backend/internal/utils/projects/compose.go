@@ -7,8 +7,8 @@ import (
 
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/flags"
-	"github.com/docker/compose/v2/pkg/api"
-	composev2 "github.com/docker/compose/v2/pkg/compose"
+	"github.com/docker/compose/v5/pkg/api"
+	composev2 "github.com/docker/compose/v5/pkg/compose"
 )
 
 type Client struct {
@@ -25,7 +25,13 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if err := cli.Initialize(opts); err != nil {
 		return nil, err
 	}
-	svc := composev2.NewComposeService(cli)
+	svc, err := composev2.NewComposeService(cli,
+		composev2.WithPrompt(composev2.AlwaysOkPrompt()),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{svc: svc, dockerCli: cli}, nil
 }
 

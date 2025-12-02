@@ -12,11 +12,14 @@
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let { projects, projectStatusCounts, projectRequestOptions } = $state(data);
+	let projects = $state(untrack(() => data.projects));
+	let projectStatusCounts = $state(untrack(() => data.projectStatusCounts));
+	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions));
 	let selectedIds = $state<string[]>([]);
 
 	let isLoading = $state({

@@ -25,7 +25,8 @@
 		children: Snippet;
 	} = $props();
 
-	let expanded = $state(defaultExpanded);
+	let expanded = $state(false);
+	let initialized = $state(false);
 
 	function loadExpandedState() {
 		const state = JSON.parse(localStorage.getItem('collapsible-cards-expanded') || '{}');
@@ -57,10 +58,14 @@
 	}
 
 	onMount(() => {
-		if (defaultExpanded) {
-			saveExpandedState();
+		if (!initialized) {
+			expanded = defaultExpanded;
+			if (defaultExpanded) {
+				saveExpandedState();
+			}
+			loadExpandedState();
+			initialized = true;
 		}
-		loadExpandedState();
 	});
 </script>
 
