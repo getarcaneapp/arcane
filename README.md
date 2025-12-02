@@ -20,25 +20,27 @@
 
 <img width="1685" alt="image" align="center" src=".github/assets/arcane.jpeg" />
 
----
-
 ## Documentation
 
 For setup instructions, configuration details, and development guides, visit the **[official documentation site](https://getarcane.app)**.
 
----
+## Sponsors
+
+This project is supported by the following amazing people:
+
+<p align="center">
+  <a href="https://github.com/sponsors/kmendell">
+    <img src='https://github.com/kmendell/static/blob/main/sponsors.svg?raw=true' alt="Logos" />
+  </a>
+</p>
 
 ## Security & Transparency
 
 View the Software Bill of Materials (SBOM) for Arcane at **[getarcane.app/sbom](https://getarcane.app/sbom)**.
 
----
-
 ## Translating
 
 Help translate Arcane on Crowdin: https://crowdin.com/project/arcane-docker-management
-
----
 
 Thank you for checking out Arcane! Your feedback and contributions are always welcome.
 

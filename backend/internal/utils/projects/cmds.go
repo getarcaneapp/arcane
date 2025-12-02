@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/compose-spec/compose-go/v2/types"
-	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 )
@@ -27,8 +27,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 	defer c.Close()
 
 	upOptions := api.CreateOptions{
-		Services:  proj.ServiceNames(),
-		AssumeYes: true,
+		Services: proj.ServiceNames(),
 	}
 	startOptions := api.StartOptions{
 		Project:  proj,

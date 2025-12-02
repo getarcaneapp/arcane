@@ -11,162 +11,15 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
   packages: write
-  attestations: write
   id-token: write
 
 jobs:
-  create-release:
-    name: Create Draft Release
+  build-manager-image:
+    name: Build Manager Image
     runs-on: depot-ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: Derive short SHA
-        id: short-sha
-        run: echo "value=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Generate release notes
-        run: |
-          COMMIT_SHA="${{ github.sha }}"
-          SHORT_SHA="${{ steps.short-sha.outputs.value }}"
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
-          COMMIT_DATE=$(git log -1 --pretty=%ci)
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          REPO="${{ github.repository }}"
-
-          cat << EOF > release-notes.md
-          This pre-release is automatically built and generated on every commit to main.
-
-          > [!WARNING]
-          > This is a nightly build, not a tagged release. We recommend using tagged releases.
-          > You can find tagged releases on the [releases page](https://github.com/${REPO}/releases/latest).
-
-          ---
-
-          ### Build Information
-
-          | Property | Value |
-          |----------|-------|
-          | **Commit** | [\`${SHORT_SHA}\`](https://github.com/${REPO}/commit/${COMMIT_SHA}) |
-          | **Author** | ${COMMIT_AUTHOR} |
-          | **Date** | ${COMMIT_DATE} |
-          | **Branch** | \`main\` |
-
-          ### Container Images
-
-          \`\`\`bash
-          # Manager
-          docker pull ghcr.io/${REPO_OWNER}/arcane:next
-
-          # Agent
-          docker pull ghcr.io/${REPO_OWNER}/arcane-headless:next
-          \`\`\`
-
-          ### Latest Commit
-
-          \`\`\`
-          ${COMMIT_MSG}
-          \`\`\`
-          EOF
-
-      - name: Delete existing next release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete next --yes --cleanup-tag 2>/dev/null || true
-
-      - name: Create draft release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create next \
-            --title "Next (Pre-release)" \
-            --notes-file release-notes.md \
-            --prerelease \
-            --draft \
-            --target main
-
-  binaries:
-    name: Build Binaries
-    runs-on: depot-ubuntu-24.04-16
-    needs: create-release
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Derive short SHA
-        id: short-sha
-        run: echo "value=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: pnpm
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "backend/go.mod"
-          cache: true
-          cache-dependency-path: backend/go.sum
-
-      - name: Install frontend dependencies
-        run: pnpm -C frontend install --frozen-lockfile
-
-      - name: Build frontend
-        run: pnpm -C frontend build
-
-      - name: Build manager binaries
-        run: bash scripts/github/build-binaries.sh
-        env:
-          VERSION: next
-          REVISION: ${{ steps.short-sha.outputs.value }}
-
-      - name: Build agent binaries
-        run: bash scripts/github/build-binaries.sh --agent
-        env:
-          VERSION: next
-          REVISION: ${{ steps.short-sha.outputs.value }}
-
-      - name: Binary attestation
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: "backend/.bin/*"
-
-      - name: Upload binaries to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload next backend/.bin/*
-
-  images:
-    name: Build Next Image (${{ matrix.display }})
-    runs-on: depot-ubuntu-latest
-    needs: create-release
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: manager
-            display: Arcane
-            dockerfile: docker/Dockerfile
-            image-suffix: arcane
-          - target: agent
-            display: Arcane Headless
-            dockerfile: docker/Dockerfile-agent
-            image-suffix: arcane-headless
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -178,7 +31,7 @@ jobs:
         id: image-name
         run: |
           REPO_OWNER=${{ github.repository_owner }}
-          echo "value=ghcr.io/${REPO_OWNER,,}/${{ matrix.image-suffix }}" >> $GITHUB_OUTPUT
+          echo "value=ghcr.io/${REPO_OWNER,,}/arcane" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -188,96 +41,50 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push container image
-        id: build-push-image
         uses: depot/build-push-action@v1
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.image-name.outputs.value }}:next
-          file: ${{ matrix.dockerfile }}
+          file: docker/Dockerfile
           build-args: |
             VERSION=next
             REVISION=${{ github.sha }}
-          sbom: true
-          sbom-dir: sbom-output/${{ matrix.target }}
-          provenance: true
 
-      - name: Record digest
-        run: |
-          mkdir -p sbom-output/${{ matrix.target }}
-          echo "${{ steps.build-push-image.outputs.digest }}" > sbom-output/${{ matrix.target }}/digest.txt
-
-      - name: Upload SBOM artifact (${{ matrix.display }})
-        uses: actions/upload-artifact@v4
-        with:
-          path: sbom-output/${{ matrix.target }}
-          name: SBOM-${{ matrix.target }}
-
-  publish-release:
-    name: Publish Release
+  build-agent-image:
+    name: Build Agent Image
     runs-on: depot-ubuntu-latest
-    needs: [binaries, images]
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
-      attestations: write
+    needs: build-manager-image
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Login to GHCR
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Resolve Docker image name
+        id: image-name
+        run: |
+          REPO_OWNER=${{ github.repository_owner }}
+          echo "value=ghcr.io/${REPO_OWNER,,}/arcane-headless" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download manager SBOM
-        uses: actions/download-artifact@v4
+      - name: Build and push container image
+        uses: depot/build-push-action@v1
         with:
-          name: SBOM-manager
-          path: sbom-artifacts/manager
-
-      - name: Download agent SBOM
-        uses: actions/download-artifact@v4
-        with:
-          name: SBOM-agent
-          path: sbom-artifacts/agent
-
-      - name: Read digests
-        id: digests
-        run: |
-          echo "manager=$(cat sbom-artifacts/manager/digest.txt)" >> "$GITHUB_OUTPUT"
-          echo "agent=$(cat sbom-artifacts/agent/digest.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare SBOM artifacts
-        run: |
-          mkdir -p release-sbom
-          cd sbom-artifacts/manager && zip -r ../../release-sbom/sbom-arcane.zip . && cd ../..
-          cd sbom-artifacts/agent && zip -r ../../release-sbom/sbom-arcane-headless.zip . && cd ../..
-
-      - name: Upload SBOMs to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload next release-sbom/*
-
-      - name: Container image attestation (manager)
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/arcane
-          subject-digest: ${{ steps.digests.outputs.manager }}
-          push-to-registry: true
-
-      - name: Container image attestation (agent)
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/arcane-headless
-          subject-digest: ${{ steps.digests.outputs.agent }}
-          push-to-registry: true
-
-      - name: Publish release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit next --draft=false
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image-name.outputs.value }}:next
+          file: docker/Dockerfile-agent
+          build-args: |
+            VERSION=next
+            REVISION=${{ github.sha }}
