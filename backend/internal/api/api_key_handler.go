@@ -4,11 +4,11 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/apikey"
 )
 
 type ApiKeyHandler struct {
@@ -84,7 +84,7 @@ func (h *ApiKeyHandler) CreateApiKey(c *gin.Context) {
 		return
 	}
 
-	var req dto.CreateApiKeyDto
+	var req apikey.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -157,7 +157,7 @@ func (h *ApiKeyHandler) GetApiKey(c *gin.Context) {
 func (h *ApiKeyHandler) UpdateApiKey(c *gin.Context) {
 	id := c.Param("id")
 
-	var req dto.UpdateApiKeyDto
+	var req apikey.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,

@@ -25,6 +25,8 @@ func SetupPlaywrightRoutes(api *gin.RouterGroup, playwrightService *services.Pla
 
 	playwright.POST("/skip-onboarding", playwrightHandler.SkipOnboardingHandler)
 	playwright.POST("/reset-onboarding", playwrightHandler.ResetOnboardingHandler)
+	playwright.POST("/create-test-api-keys", playwrightHandler.CreateTestApiKeysHandler)
+	playwright.POST("/delete-test-api-keys", playwrightHandler.DeleteTestApiKeysHandler)
 }
 
 func (ph *PlaywrightHandler) SkipOnboardingHandler(c *gin.Context) {
@@ -39,6 +41,39 @@ func (ph *PlaywrightHandler) SkipOnboardingHandler(c *gin.Context) {
 func (ph *PlaywrightHandler) ResetOnboardingHandler(c *gin.Context) {
 	if err := ph.PlaywrightService.ResetOnboarding(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.ResetOnboardingError{Err: err}).Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+type CreateTestApiKeysRequest struct {
+	Count int `json:"count"`
+}
+
+func (ph *PlaywrightHandler) CreateTestApiKeysHandler(c *gin.Context) {
+	var req CreateTestApiKeysRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Default to 2 if no count provided
+		req.Count = 2
+	}
+
+	if req.Count <= 0 {
+		req.Count = 2
+	}
+
+	apiKeys, err := ph.PlaywrightService.CreateTestApiKeys(c.Request.Context(), req.Count)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"apiKeys": apiKeys})
+}
+
+func (ph *PlaywrightHandler) DeleteTestApiKeysHandler(c *gin.Context) {
+	if err := ph.PlaywrightService.DeleteAllTestApiKeys(c.Request.Context()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

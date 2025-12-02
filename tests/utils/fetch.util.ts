@@ -4,6 +4,7 @@ import { ImageUsageCounts } from 'types/image.type';
 import { NetworkSummary, NetworkUsageCounts } from 'types/networks.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { VolumeUsageCounts } from 'types/volumes.type';
+import { ApiKey } from 'types/api-key.type';
 
 export type Paginated<T> = { data: T[]; pagination?: { totalItems?: number } };
 
@@ -120,6 +121,17 @@ export async function fetchContainersWithRetry(page: Page, maxRetries = 3): Prom
     if (!res.ok()) throw new Error(`HTTP ${res.status()}`);
     const body = await res.json().catch(() => null as any);
     const data = Array.isArray(body?.data) ? (body.data as ContainerSummary[]) : [];
+    const pagination = body?.pagination || { totalItems: data.length };
+    return { data, pagination };
+  }, maxRetries);
+}
+
+export async function fetchApiKeysWithRetry(page: Page, maxRetries = 3): Promise<Paginated<ApiKey>> {
+  return retry(async () => {
+    const res = await page.request.get('/api/api-keys');
+    if (!res.ok()) throw new Error(`HTTP ${res.status()}`);
+    const body = await res.json().catch(() => null as any);
+    const data = Array.isArray(body?.data) ? (body.data as ApiKey[]) : [];
     const pagination = body?.pagination || { totalItems: data.length };
     return { data, pagination };
   }, maxRetries);

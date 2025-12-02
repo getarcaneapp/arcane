@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/apikey"
 	"gorm.io/gorm"
 )
 
@@ -58,7 +58,7 @@ func (s *ApiKeyService) validateApiKeyHash(hash, key string) error {
 	return s.userService.ValidatePassword(hash, key)
 }
 
-func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req dto.CreateApiKeyDto) (*dto.ApiKeyCreatedDto, error) {
+func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.Create) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req dto
 
 	keyPrefix := rawKey[:len(apiKeyPrefix)+apiKeyPrefixLen]
 
-	apiKey := &models.ApiKey{
+	ak := &models.ApiKey{
 		Name:        req.Name,
 		Description: req.Description,
 		KeyHash:     keyHash,
@@ -80,49 +80,49 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req dto
 		ExpiresAt:   req.ExpiresAt,
 	}
 
-	if err := s.db.WithContext(ctx).Create(apiKey).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
 		return nil, fmt.Errorf("failed to create API key: %w", err)
 	}
 
-	return &dto.ApiKeyCreatedDto{
-		ApiKeyDto: dto.ApiKeyDto{
-			ID:          apiKey.ID,
-			Name:        apiKey.Name,
-			Description: apiKey.Description,
-			KeyPrefix:   apiKey.KeyPrefix,
-			UserID:      apiKey.UserID,
-			ExpiresAt:   apiKey.ExpiresAt,
-			LastUsedAt:  apiKey.LastUsedAt,
-			CreatedAt:   apiKey.CreatedAt,
-			UpdatedAt:   apiKey.UpdatedAt,
+	return &apikey.ApiKeyCreatedDto{
+		ApiKey: apikey.ApiKey{
+			ID:          ak.ID,
+			Name:        ak.Name,
+			Description: ak.Description,
+			KeyPrefix:   ak.KeyPrefix,
+			UserID:      ak.UserID,
+			ExpiresAt:   ak.ExpiresAt,
+			LastUsedAt:  ak.LastUsedAt,
+			CreatedAt:   ak.CreatedAt,
+			UpdatedAt:   ak.UpdatedAt,
 		},
 		Key: rawKey,
 	}, nil
 }
 
-func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*dto.ApiKeyDto, error) {
-	var apiKey models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&apiKey).Error; err != nil {
+func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKey, error) {
+	var ak models.ApiKey
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 
-	return &dto.ApiKeyDto{
-		ID:          apiKey.ID,
-		Name:        apiKey.Name,
-		Description: apiKey.Description,
-		KeyPrefix:   apiKey.KeyPrefix,
-		UserID:      apiKey.UserID,
-		ExpiresAt:   apiKey.ExpiresAt,
-		LastUsedAt:  apiKey.LastUsedAt,
-		CreatedAt:   apiKey.CreatedAt,
-		UpdatedAt:   apiKey.UpdatedAt,
+	return &apikey.ApiKey{
+		ID:          ak.ID,
+		Name:        ak.Name,
+		Description: ak.Description,
+		KeyPrefix:   ak.KeyPrefix,
+		UserID:      ak.UserID,
+		ExpiresAt:   ak.ExpiresAt,
+		LastUsedAt:  ak.LastUsedAt,
+		CreatedAt:   ak.CreatedAt,
+		UpdatedAt:   ak.UpdatedAt,
 	}, nil
 }
 
-func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]dto.ApiKeyDto, pagination.Response, error) {
+func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {
 	var apiKeys []models.ApiKey
 	query := s.db.WithContext(ctx).Model(&models.ApiKey{})
 
@@ -139,27 +139,27 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate API keys: %w", err)
 	}
 
-	result := make([]dto.ApiKeyDto, len(apiKeys))
-	for i, apiKey := range apiKeys {
-		result[i] = dto.ApiKeyDto{
-			ID:          apiKey.ID,
-			Name:        apiKey.Name,
-			Description: apiKey.Description,
-			KeyPrefix:   apiKey.KeyPrefix,
-			UserID:      apiKey.UserID,
-			ExpiresAt:   apiKey.ExpiresAt,
-			LastUsedAt:  apiKey.LastUsedAt,
-			CreatedAt:   apiKey.CreatedAt,
-			UpdatedAt:   apiKey.UpdatedAt,
+	result := make([]apikey.ApiKey, len(apiKeys))
+	for i, ak := range apiKeys {
+		result[i] = apikey.ApiKey{
+			ID:          ak.ID,
+			Name:        ak.Name,
+			Description: ak.Description,
+			KeyPrefix:   ak.KeyPrefix,
+			UserID:      ak.UserID,
+			ExpiresAt:   ak.ExpiresAt,
+			LastUsedAt:  ak.LastUsedAt,
+			CreatedAt:   ak.CreatedAt,
+			UpdatedAt:   ak.UpdatedAt,
 		}
 	}
 
 	return result, paginationResp, nil
 }
 
-func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req dto.UpdateApiKeyDto) (*dto.ApiKeyDto, error) {
-	var apiKey models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&apiKey).Error; err != nil {
+func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.Update) (*apikey.ApiKey, error) {
+	var ak models.ApiKey
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
@@ -167,29 +167,29 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req dto.Upd
 	}
 
 	if req.Name != nil {
-		apiKey.Name = *req.Name
+		ak.Name = *req.Name
 	}
 	if req.Description != nil {
-		apiKey.Description = req.Description
+		ak.Description = req.Description
 	}
 	if req.ExpiresAt != nil {
-		apiKey.ExpiresAt = req.ExpiresAt
+		ak.ExpiresAt = req.ExpiresAt
 	}
 
-	if err := s.db.WithContext(ctx).Save(&apiKey).Error; err != nil {
+	if err := s.db.WithContext(ctx).Save(&ak).Error; err != nil {
 		return nil, fmt.Errorf("failed to update API key: %w", err)
 	}
 
-	return &dto.ApiKeyDto{
-		ID:          apiKey.ID,
-		Name:        apiKey.Name,
-		Description: apiKey.Description,
-		KeyPrefix:   apiKey.KeyPrefix,
-		UserID:      apiKey.UserID,
-		ExpiresAt:   apiKey.ExpiresAt,
-		LastUsedAt:  apiKey.LastUsedAt,
-		CreatedAt:   apiKey.CreatedAt,
-		UpdatedAt:   apiKey.UpdatedAt,
+	return &apikey.ApiKey{
+		ID:          ak.ID,
+		Name:        ak.Name,
+		Description: ak.Description,
+		KeyPrefix:   ak.KeyPrefix,
+		UserID:      ak.UserID,
+		ExpiresAt:   ak.ExpiresAt,
+		LastUsedAt:  ak.LastUsedAt,
+		CreatedAt:   ak.CreatedAt,
+		UpdatedAt:   ak.UpdatedAt,
 	}, nil
 }
 
