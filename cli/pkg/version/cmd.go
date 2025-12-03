@@ -31,7 +31,7 @@ var VersionCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get version: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		logger.GetLogger().Debugf("Response status: %s", resp.Status)
 
