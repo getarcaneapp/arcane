@@ -99,13 +99,13 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category 
 		}
 
 		result = append(result, category.Category{
-			ID:             catMeta["id"],
-			Title:          catMeta["title"],
-			Description:    catMeta["description"],
-			Icon:           catMeta["icon"],
-			URL:            catMeta["url"],
-			Keywords:       keywords,
-			Settings:       categories[catID],
+			ID:          catMeta["id"],
+			Title:       catMeta["title"],
+			Description: catMeta["description"],
+			Icon:        catMeta["icon"],
+			URL:         catMeta["url"],
+			Keywords:    keywords,
+			Settings:    categories[catID],
 		})
 	}
 

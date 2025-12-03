@@ -20,10 +20,10 @@ type Response struct {
 	// Query is the search query that was executed.
 	//
 	// Required: true
-	Query   string              `json:"query"`
+	Query string `json:"query"`
 
 	// Count is the number of results returned.
 	//
 	// Required: true
-	Count   int                 `json:"count"`
+	Count int `json:"count"`
 }

@@ -88,7 +88,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 			}
 
 			slog.InfoContext(ctx, "Pruning images...", slog.Bool("dangling_only", danglingOnly))
-		localResult := &system.PruneAllResult{}
+			localResult := &system.PruneAllResult{}
 			if err := s.pruneImages(ctx, danglingOnly, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
