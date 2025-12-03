@@ -25,3 +25,7 @@ CREATE TABLE IF NOT EXISTS environment_filters (
 
 -- Create index for efficient user-based queries
 CREATE INDEX IF NOT EXISTS idx_environment_filters_user_id ON environment_filters(user_id);
+
+-- Ensure only one default filter per user
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_filters_user_default 
+ON environment_filters(user_id) WHERE is_default = 1;
