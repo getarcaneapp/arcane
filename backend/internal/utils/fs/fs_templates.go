@@ -115,7 +115,8 @@ func getDefaultComposeTemplate() string {
     image: nginx:alpine
     container_name: nginx_service
     env_file:
-      - .env
+      - path: .env
+        required: false
     ports:
       - "8080:80"
     volumes:
