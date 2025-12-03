@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -168,6 +169,13 @@ func (h *ApiKeyHandler) UpdateApiKey(c *gin.Context) {
 
 	apiKey, err := h.apiKeyService.UpdateApiKey(c.Request.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, services.ErrApiKeyNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"data":    gin.H{"error": (&common.ApiKeyNotFoundError{}).Error()},
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"data":    gin.H{"error": (&common.ApiKeyUpdateError{Err: err}).Error()},
@@ -197,6 +205,13 @@ func (h *ApiKeyHandler) DeleteApiKey(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.apiKeyService.DeleteApiKey(c.Request.Context(), id); err != nil {
+		if errors.Is(err, services.ErrApiKeyNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"data":    gin.H{"error": (&common.ApiKeyNotFoundError{}).Error()},
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"data":    gin.H{"error": (&common.ApiKeyDeletionError{Err: err}).Error()},

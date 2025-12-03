@@ -70,7 +70,7 @@
 
 		if (defaultNetworks.length > 0) {
 			const names = defaultNetworks.map((n) => n.name ?? m.common_unknown()).join(', ');
-			toast.error(m.networks_cannot_delete_default_many({ names }));
+			toast.error(m.networks_cannot_delete_default_many({ names: names }));
 			return;
 		}
 
@@ -215,7 +215,7 @@
 }: {
 	row: any;
 	item: NetworkSummaryDto;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: Record;
 })}
 	<UniversalMobileCard
 		{item}
