@@ -3,71 +3,26 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      interval: 'daily'
-    groups:
-      prod-dependencies:
-        patterns:
-          - '*'
-        exclude-patterns:
-          - '@types/*'
-          - 'typescript'
-          - 'eslint*'
-          - 'prettier*'
-          - 'vite'
-          - '*-plugin'
-          - '*-loader'
-          - 'jest*'
-          - 'vitest*'
-          - '@testing-library/*'
-          - '@playwright/*'
-        update-types:
-          - 'minor'
-          - 'patch'
-      dev-dependencies:
-        patterns:
-          - '@types/*'
-          - 'typescript'
-          - 'eslint*'
-          - 'prettier*'
-          - 'vite'
-          - '*-plugin'
-          - '*-loader'
-          - 'jest*'
-          - 'vitest*'
-          - '@testing-library/*'
-          - '@playwright/*'
-        update-types:
-          - 'minor'
-          - 'patch'
-      frontend-major-updates:
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
+      interval: 'weekly'
+    open-pull-requests-limit: 10
 
   - package-ecosystem: 'gomod'
     directory: '/backend'
     schedule:
-      interval: 'daily'
-    groups:
-      backend-dependencies:
-        patterns: ['*']
-        update-types: ['minor', 'patch']
-      backend-major-updates:
-        patterns: ['*']
-        update-types: ['major']
+      interval: 'weekly'
+    open-pull-requests-limit: 10
 
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
 
   - package-ecosystem: 'docker'
     directory: '/docker'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
 
   - package-ecosystem: 'devcontainers'
     directory: '/'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
