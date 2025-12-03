@@ -522,7 +522,7 @@
 	"networks_delete_selected_title": "Lösche {count} Netzwerk(e)",
 	"networks_delete_selected_message": "Sind Sie sicher das Sie {count} gewählte Netzwerk(e) löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
 	"networks_cannot_delete_default": "Standart Netzwerk kann nicht gelöscht werden: {name}",
-	"networks_cannot_delete_default_many": "Standart Netzwerke kann nicht gelöscht werden: {name}",
+	"networks_cannot_delete_default_many": "Standart Netzwerke kann nicht gelöscht werden: {names}",
 	"networks_missing_id": "Netzwerk ID fehlt",
 	"networks_in_use_count": "In Benutzung ({count})",
 	"networks_predefined": "Vordefiniert",
