@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -144,7 +145,7 @@ func pullRepository(ctx context.Context, repoDir, branch string, auth *http.Basi
 	}
 
 	err = worktree.PullContext(ctx, pullOpts)
-	if err != nil && err != gogit.NoErrAlreadyUpToDate {
+	if err != nil && !errors.Is(err, gogit.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("failed to pull repository: %w", err)
 	}
 
