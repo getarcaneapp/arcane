@@ -343,7 +343,7 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 			}
 		}
 		out.Config.WorkingDir = src.Config.WorkingDir
-		out.Config.ArgsEscaped = src.Config.ArgsEscaped
+		out.Config.ArgsEscaped = src.Config.ArgsEscaped //nolint:staticcheck // Required for Docker Windows image compatibility
 	}
 
 	out.Architecture = src.Architecture

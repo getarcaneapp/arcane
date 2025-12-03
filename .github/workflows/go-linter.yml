@@ -26,6 +26,7 @@ jobs:
     name: Run Golangci-lint
     runs-on: depot-ubuntu-24.04-16
     strategy:
+      fail-fast: false
       matrix:
         module: [backend, cli, types]
         include:
