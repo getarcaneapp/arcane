@@ -620,7 +620,7 @@
 	"internal": "Internal",
 	"network_name_required": "Netzwerkname wird benötigt",
 	"network_driver_required": "Treiber wird benötigt",
-	"unused_networks": "Nicht genutze Netzwerke,
+	"unused_networks": "Nicht genutze Netzwerke",
 	"networks_ipam_gateway_label": "Gateway",
 	"networks_delete_confirm_message": "Sind Sie sicher, dass Sie Netzwerk {name} löschen möchten?",
 	"networks_remove_confirm_message": "Sind Sie sicher, dass Sie Netzwerk {name} entfernen möchten?",
