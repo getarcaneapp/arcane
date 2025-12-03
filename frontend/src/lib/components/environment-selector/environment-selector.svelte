@@ -137,6 +137,18 @@
 		selectedSuggestionIndex = suggestions.length > 0 ? 0 : -1;
 	});
 
+	// Reset groupBy when it becomes invalid due to filter changes
+	$effect(() => {
+		const canGroupByStatus = filters.statusFilter === 'all';
+		const canGroupByTags = allTags.length > 0 && filters.selectedTags.length === 0 && filters.excludedTags.length === 0;
+
+		if (filters.groupBy === 'status' && !canGroupByStatus) {
+			filters = { ...filters, groupBy: 'none' };
+		} else if (filters.groupBy === 'tags' && !canGroupByTags) {
+			filters = { ...filters, groupBy: 'none' };
+		}
+	});
+
 	// Grouping (client-side, on already-filtered data from backend)
 	const groupedEnvironments = $derived.by(() => {
 		if (filters.groupBy === 'none') return null;
@@ -831,6 +843,10 @@
 				</ScrollArea>
 			</div>
 		{:else}
+			{@const canGroupByStatus = filters.statusFilter === 'all'}
+			{@const canGroupByTags = allTags.length > 0 && filters.selectedTags.length === 0 && filters.excludedTags.length === 0}
+			{@const hasGroupingOptions = canGroupByStatus || canGroupByTags}
+
 			<!-- Main Environment List View -->
 			<div class="flex flex-col gap-3">
 				<!-- Search + Filter -->
@@ -875,34 +891,66 @@
 					</div>
 
 					<!-- Group Popover -->
-					<Popover.Root>
-						<Popover.Trigger>
-							<Button variant="outline" size="sm" class="h-9 gap-1.5">
-								<LayersIcon class="size-4" />
-								<span class="hidden sm:inline">{m.env_selector_group()}</span>
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-48 p-2" align="end">
-							<div class="space-y-1">
-								{#each [{ value: 'none' as const, label: m.common_none() }, { value: 'status' as const, label: m.common_status() }, ...(allTags.length ? [{ value: 'tags' as const, label: m.common_tags() }] : [])] as option}
+					{#if hasGroupingOptions}
+						<Popover.Root>
+							<Popover.Trigger>
+								<Button variant="outline" size="sm" class="h-9 gap-1.5">
+									<LayersIcon class="size-4" />
+									<span class="hidden sm:inline">{m.env_selector_group()}</span>
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-48 p-2" align="end">
+								<div class="space-y-1">
 									<button
 										class={cn(
 											'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-											filters.groupBy === option.value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+											filters.groupBy === 'none' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
 										)}
-										onclick={() => (filters = { ...filters, groupBy: option.value })}
+										onclick={() => (filters = { ...filters, groupBy: 'none' })}
 									>
-										{#if filters.groupBy === option.value}
+										{#if filters.groupBy === 'none'}
 											<CheckIcon class="size-4" />
 										{:else}
 											<span class="size-4"></span>
 										{/if}
-										{option.label}
+										{m.common_none()}
 									</button>
-								{/each}
-							</div>
-						</Popover.Content>
-					</Popover.Root>
+									{#if canGroupByStatus}
+										<button
+											class={cn(
+												'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+												filters.groupBy === 'status' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+											)}
+											onclick={() => (filters = { ...filters, groupBy: 'status' })}
+										>
+											{#if filters.groupBy === 'status'}
+												<CheckIcon class="size-4" />
+											{:else}
+												<span class="size-4"></span>
+											{/if}
+											{m.common_status()}
+										</button>
+									{/if}
+									{#if canGroupByTags}
+										<button
+											class={cn(
+												'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+												filters.groupBy === 'tags' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+											)}
+											onclick={() => (filters = { ...filters, groupBy: 'tags' })}
+										>
+											{#if filters.groupBy === 'tags'}
+												<CheckIcon class="size-4" />
+											{:else}
+												<span class="size-4"></span>
+											{/if}
+											{m.common_tags()}
+										</button>
+									{/if}
+								</div>
+							</Popover.Content>
+						</Popover.Root>
+					{/if}
 
 					<!-- Filters Popover -->
 					<Popover.Root bind:open={filterPopoverOpen}>
