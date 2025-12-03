@@ -222,7 +222,7 @@
 	"resource_container_cap": "Container",
 	"resource_image": "afbeelding",
 	"resource_image_cap": "Afbeelding",
-	"resource_template": "Sjabloon",
+	"resource_template": "sjabloon",
 	"resource_templates": "Sjablonen",
 	"_comment_auth": "=== AUTHENTICATIE ===",
 	"auth_welcome_back_title": "Welkom terug",
