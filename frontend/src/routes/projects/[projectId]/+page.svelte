@@ -10,10 +10,12 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import LogsIcon from '@lucide/svelte/icons/logs';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { invalidateAll } from '$app/navigation';
@@ -263,6 +265,19 @@
 						text={capitalizeFirstLetter(project.status)}
 						tooltip={showTooltip ? project.statusReason : undefined}
 					/>
+				{/if}
+				{#if project.gitOps}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<div class="rounded-full bg-blue-500/10 p-1 text-blue-500">
+								<GitBranchIcon class="size-4" />
+							</div>
+						</Tooltip.Trigger>
+						<Tooltip.Content>
+							<p class="font-medium">Managed by GitOps</p>
+							<p class="text-muted-foreground text-xs">{project.gitOps.url} ({project.gitOps.branch})</p>
+						</Tooltip.Content>
+					</Tooltip.Root>
 				{/if}
 			</div>
 			{#if project.createdAt}

@@ -27,6 +27,8 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	let {
 		projects = $bindable(),
@@ -157,9 +159,24 @@
 </script>
 
 {#snippet NameCell({ item }: { item: Project })}
-	<a class="font-medium hover:underline" href="/projects/{item.id}">
-		{item.name}
-	</a>
+	<div class="flex items-center gap-2">
+		<a class="font-medium hover:underline" href="/projects/{item.id}">
+			{item.name}
+		</a>
+		{#if item.gitOps}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<div class="rounded-full bg-blue-500/10 p-1 text-blue-500">
+						<GitBranchIcon class="size-3" />
+					</div>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p class="font-medium">Managed by GitOps</p>
+					<p class="text-muted-foreground text-xs">{item.gitOps.url} ({item.gitOps.branch})</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
@@ -199,7 +216,8 @@
 							text: capitalizeFirstLetter(item.status),
 							tooltip: getStatusTooltip(item)
 						}
-					: null
+					: null,
+			(item: Project) => (item.gitOps ? { variant: 'blue', text: 'GitOps', icon: GitBranchIcon } : null)
 		]}
 		fields={[
 			{
