@@ -9,13 +9,14 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/environment"
 )
 
 const LOCAL_DOCKER_ENVIRONMENT_ID = "0"
@@ -98,7 +99,7 @@ func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 
 // Create
 func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
-	var req dto.CreateEnvironmentDto
+	var req environment.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -165,7 +166,7 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 		}()
 	}
 
-	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](created)
+	out, mapErr := mapper.MapOne[*models.Environment, environment.Response](created)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return
@@ -208,13 +209,13 @@ func (h *EnvironmentHandler) GetAllTags(c *gin.Context) {
 func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
 
-	environment, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
+	env, err := h.environmentService.GetEnvironmentByID(c.Request.Context(), environmentID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentNotFoundError{}).Error()}})
 		return
 	}
 
-	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](environment)
+	out, mapErr := mapper.MapOne[*models.Environment, environment.Response](env)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return
@@ -231,7 +232,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 	environmentID := c.Param("id")
 	isLocalEnv := environmentID == LOCAL_DOCKER_ENVIRONMENT_ID
 
-	var req dto.UpdateEnvironmentDto
+	var req environment.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -256,7 +257,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 
 	h.triggerPostUpdateTasksInternal(environmentID, updated, pairingSucceeded, &req)
 
-	out, mapErr := dto.MapOne[*models.Environment, dto.EnvironmentDto](updated)
+	out, mapErr := mapper.MapOne[*models.Environment, environment.Response](updated)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.EnvironmentMappingError{Err: mapErr}).Error()}})
 		return
@@ -265,7 +266,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
 
-func (h *EnvironmentHandler) buildUpdateMapInternal(req *dto.UpdateEnvironmentDto, isLocalEnv bool) map[string]any {
+func (h *EnvironmentHandler) buildUpdateMapInternal(req *environment.Update, isLocalEnv bool) map[string]any {
 	updates := map[string]any{}
 
 	// For local environment, only allow name and tags
@@ -294,7 +295,7 @@ type updateError struct {
 	message    string
 }
 
-func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Context, environmentID string, req *dto.UpdateEnvironmentDto, updates map[string]any, isLocalEnv bool) (bool, *updateError) {
+func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Context, environmentID string, req *environment.Update, updates map[string]any, isLocalEnv bool) (bool, *updateError) {
 	pairingSucceeded := false
 
 	// Local environment cannot be paired or have access token updated
@@ -332,7 +333,7 @@ func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Contex
 	return pairingSucceeded, nil
 }
 
-func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string, updated *models.Environment, pairingSucceeded bool, req *dto.UpdateEnvironmentDto) {
+func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) {
 	// Trigger health check after update to verify new configuration
 	// This runs in background and doesn't block the response
 	if updated.Enabled {
@@ -398,7 +399,7 @@ func (h *EnvironmentHandler) TestConnection(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	status, err := h.environmentService.TestConnection(c.Request.Context(), environmentID, req.ApiUrl)
-	resp := dto.TestConnectionDto{Status: status}
+	resp := environment.Test{Status: status}
 	if err != nil {
 		msg := err.Error()
 		resp.Message = &msg
@@ -464,9 +465,9 @@ func (h *EnvironmentHandler) ListFilters(c *gin.Context) {
 		return
 	}
 
-	out := make([]dto.EnvironmentFilterDto, len(filters))
+	out := make([]environment.FilterResponse, len(filters))
 	for i, f := range filters {
-		out[i] = toFilterDto(&f)
+		out[i] = toFilterResponse(&f)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
@@ -494,7 +495,7 @@ func (h *EnvironmentHandler) GetFilter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterDto(filter)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterResponse(filter)})
 }
 
 func (h *EnvironmentHandler) GetDefaultFilter(c *gin.Context) {
@@ -515,7 +516,7 @@ func (h *EnvironmentHandler) GetDefaultFilter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterDto(filter)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterResponse(filter)})
 }
 
 func (h *EnvironmentHandler) CreateFilter(c *gin.Context) {
@@ -525,7 +526,7 @@ func (h *EnvironmentHandler) CreateFilter(c *gin.Context) {
 		return
 	}
 
-	var req dto.CreateEnvironmentFilterDto
+	var req environment.FilterCreate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -548,7 +549,7 @@ func (h *EnvironmentHandler) CreateFilter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"success": true, "data": toFilterDto(created)})
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": toFilterResponse(created)})
 }
 
 func (h *EnvironmentHandler) UpdateFilter(c *gin.Context) {
@@ -560,7 +561,7 @@ func (h *EnvironmentHandler) UpdateFilter(c *gin.Context) {
 
 	filterID := c.Param("filterId")
 
-	var req dto.UpdateEnvironmentFilterDto
+	var req environment.FilterUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -586,7 +587,7 @@ func (h *EnvironmentHandler) UpdateFilter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterDto(updated)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toFilterResponse(updated)})
 }
 
 func (h *EnvironmentHandler) DeleteFilter(c *gin.Context) {
@@ -644,27 +645,35 @@ func (h *EnvironmentHandler) ClearFilterDefault(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": nil})
 }
 
-func toFilterDto(f *models.EnvironmentFilter) dto.EnvironmentFilterDto {
-	var d dto.EnvironmentFilterDto
-	_ = dto.MapStruct(f, &d)
+func toFilterResponse(f *models.EnvironmentFilter) environment.FilterResponse {
+	resp := environment.FilterResponse{
+		ID:           f.ID,
+		UserID:       f.UserID,
+		Name:         f.Name,
+		IsDefault:    f.IsDefault,
+		SelectedTags: f.SelectedTags,
+		ExcludedTags: f.ExcludedTags,
+		TagMode:      string(f.TagMode),
+		StatusFilter: string(f.StatusFilter),
+		GroupBy:      string(f.GroupBy),
+		CreatedAt:    f.CreatedAt.Format(time.RFC3339),
+	}
 
-	// Format timestamps as RFC3339
-	d.CreatedAt = f.CreatedAt.Format(time.RFC3339)
 	if f.UpdatedAt != nil {
-		d.UpdatedAt = f.UpdatedAt.Format(time.RFC3339)
+		resp.UpdatedAt = f.UpdatedAt.Format(time.RFC3339)
 	}
 
 	// Ensure slices are not nil for JSON serialization
-	if d.SelectedTags == nil {
-		d.SelectedTags = []string{}
+	if resp.SelectedTags == nil {
+		resp.SelectedTags = []string{}
 	}
-	if d.ExcludedTags == nil {
-		d.ExcludedTags = []string{}
+	if resp.ExcludedTags == nil {
+		resp.ExcludedTags = []string{}
 	}
-	return d
+	return resp
 }
 
-func buildFilterUpdates(req *dto.UpdateEnvironmentFilterDto) map[string]interface{} {
+func buildFilterUpdates(req *environment.FilterUpdate) map[string]interface{} {
 	updates := make(map[string]interface{})
 	if req.Name != nil {
 		updates["name"] = *req.Name

@@ -1,3 +1,40 @@
+## v1.10.1
+
+### Bug fixes
+
+* Pass project object to StartOptions ([#1010](https://github.com/getarcaneapp/arcane/pull/1010) by @chadweimer)
+* dashboard memory stats not restrained to container limits([80ccc9b](https://github.com/getarcaneapp/arcane/commit/80ccc9b689afa7fa1e2ac87862970652772153cd) by @kmendell)
+* exposed ports woroding rework will show published/exposed or a mix of the two([ebee116](https://github.com/getarcaneapp/arcane/commit/ebee116acc9dce85e772308228f2bbd8f11d4a63) by @kmendell)
+* Tooltip.Provider not found causing env page to hang([3b3ff91](https://github.com/getarcaneapp/arcane/commit/3b3ff91744ed53ca7a9a6def2a1a030b3d9a1be2) by @kmendell)
+* dashboard tables footer overlapping cells([305f46b](https://github.com/getarcaneapp/arcane/commit/305f46b46eea152c311f09ce2836ed4445993280) by @kmendell)
+* bump validator to 13.15.22([9420308](https://github.com/getarcaneapp/arcane/commit/94203087e3f17887132076bd466ce2dad3bf6527) by @kmendell)
+* arcane-table generic types([200f7ea](https://github.com/getarcaneapp/arcane/commit/200f7ea3fa88270b1e7bc480892f7a472b079af1) by @kmendell)
+* use proper svelte reactivity logic to fix svelte-check warnings ([#1042](https://github.com/getarcaneapp/arcane/pull/1042) by @kmendell)
+* set --primary-foreground as black in light mode([ff67565](https://github.com/getarcaneapp/arcane/commit/ff67565b1def18da4bb937d633911264ddbcce98) by @kmendell)
+
+### Dependencies
+
+* bump pnpm from 10.22.0 to 10.24.0([f840fb4](https://github.com/getarcaneapp/arcane/commit/f840fb435a48f540a092816e1c90087fc4664696) by @kmendell)
+* bump node engine version requirement from >=24 to >=25([15a69ce](https://github.com/getarcaneapp/arcane/commit/15a69ced0ee4ec53e7cdadafac07cb5ae568c47d) by @kmendell)
+* bump the dev-dependencies group across 1 directory with 3 updates ([#1028](https://github.com/getarcaneapp/arcane/pull/1028) by @dependabot[bot])
+* upgrade to compose v5 and compose-go v2.10.0([33b6704](https://github.com/getarcaneapp/arcane/commit/33b670462df27adbfd177f434bc62e5e569df06a) by @kmendell)
+* bump the backend-dependencies group across 1 directory with 3 updates ([#1037](https://github.com/getarcaneapp/arcane/pull/1037) by @dependabot[bot])
+* remove unused frontend dependencies([316df73](https://github.com/getarcaneapp/arcane/commit/316df73f138743b7a18c94d4f7fd280a353da8d4) by @kmendell)
+
+### Other
+
+* update depot runner size([b2b3972](https://github.com/getarcaneapp/arcane/commit/b2b39724d382cd1bffa92cd197d1878f5fe190a3) by @kmendell)
+* build next images sequentially([cde4d8b](https://github.com/getarcaneapp/arcane/commit/cde4d8bcfeb9da776e90ff659fd5389705cd7401) by @kmendell)
+* build frontend for next images([af53ba7](https://github.com/getarcaneapp/arcane/commit/af53ba7229ceaf52df0507688eacd0d072578fb4) by @kmendell)
+* build all binaries for next images([bc69eed](https://github.com/getarcaneapp/arcane/commit/bc69eeddd392d28b78c2946070796e189a507230) by @kmendell)
+* build armv7 containers for next image([5d1f0d6](https://github.com/getarcaneapp/arcane/commit/5d1f0d6fef390e48821655cb7facdc9fcf664c20) by @kmendell)
+* use sequential workflow and single binary command([826ecd3](https://github.com/getarcaneapp/arcane/commit/826ecd36624cbaba23b3c94daaa5d9c507f9b747) by @kmendell)
+* simplify release workflow to single sequential job([f1e942a](https://github.com/getarcaneapp/arcane/commit/f1e942abc27c181c023df534d796d912c7bb6c12) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.10.0...v1.10.1
+
 ## v1.10.0
 
 ### New features

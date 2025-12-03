@@ -10,10 +10,11 @@ import (
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"go.getarcane.app/types/containerregistry"
+	"go.getarcane.app/types/imageupdate"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -45,12 +46,12 @@ func NewImageUpdateService(db *database.DB, settingsService *SettingsService, re
 	}
 }
 
-func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*imageupdate.Response, error) {
 	startTime := time.Now()
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
-		return &dto.ImageUpdateResponse{
+		return &imageupdate.Response{
 			Error:          "Invalid image reference format",
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
@@ -61,7 +62,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 
 	digestResult, err := s.checkDigestUpdate(ctx, parts, registries)
 	if err != nil {
-		result := &dto.ImageUpdateResponse{
+		result := &imageupdate.Response{
 			Error:          err.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
@@ -167,7 +168,7 @@ func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repo
 	return "", nil, fmt.Errorf("failed to get registry token")
 }
 
-func (s *ImageUpdateService) checkDigestUpdate(ctx context.Context, parts *ImageParts, registries []models.ContainerRegistry) (*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) checkDigestUpdate(ctx context.Context, parts *ImageParts, registries []models.ContainerRegistry) (*imageupdate.Response, error) {
 	rc := registry.NewClient()
 
 	token, auth, err := s.getRegistryToken(ctx, parts.Registry, parts.Repository, registries)
@@ -214,7 +215,7 @@ func (s *ImageUpdateService) checkDigestUpdate(ctx context.Context, parts *Image
 		"remoteDigest", remoteDigest,
 		"hasUpdate", hasUpdate)
 
-	return &dto.ImageUpdateResponse{
+	return &imageupdate.Response{
 		HasUpdate:      hasUpdate,
 		UpdateType:     "digest",
 		CurrentDigest:  localDigest,
@@ -473,7 +474,7 @@ func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 	return repo
 }
 
-func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
 	imageRef, err := s.getImageRefByID(ctx, imageID)
 	if err != nil {
 		metadata := models.JSON{
@@ -496,7 +497,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	return result, nil
 }
 
-func (s *ImageUpdateService) saveUpdateResult(ctx context.Context, imageRef string, result *dto.ImageUpdateResponse) error {
+func (s *ImageUpdateService) saveUpdateResult(ctx context.Context, imageRef string, result *imageupdate.Response) error {
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
 		return fmt.Errorf("invalid image reference")
@@ -554,7 +555,7 @@ func stringToPtr(s string) *string {
 	return &s
 }
 
-func buildImageUpdateRecord(imageID, repo, tag string, result *dto.ImageUpdateResponse) *models.ImageUpdateRecord {
+func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *models.ImageUpdateRecord {
 	currentVersion := result.CurrentVersion
 	if currentVersion == "" {
 		currentVersion = tag
@@ -580,7 +581,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *dto.ImageUpdateRe
 	}
 }
 
-func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID string, result *dto.ImageUpdateResponse) error {
+func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID string, result *imageupdate.Response) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		dockerClient, err := s.dockerService.GetClient()
 		if err != nil {
@@ -627,15 +628,15 @@ type batchImage struct {
 	parts *ImageParts
 }
 
-func (s *ImageUpdateService) parseAndGroupImages(imageRefs []string) (map[string]map[string]struct{}, map[string]*dto.ImageUpdateResponse, []batchImage) {
+func (s *ImageUpdateService) parseAndGroupImages(imageRefs []string) (map[string]map[string]struct{}, map[string]*imageupdate.Response, []batchImage) {
 	regRepos := make(map[string]map[string]struct{})
-	results := make(map[string]*dto.ImageUpdateResponse)
+	results := make(map[string]*imageupdate.Response)
 	var images []batchImage
 
 	for _, ref := range imageRefs {
 		parts := s.parseImageReference(ref)
 		if parts == nil {
-			results[ref] = &dto.ImageUpdateResponse{
+			results[ref] = &imageupdate.Response{
 				Error:          "Invalid image reference format",
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 0,
@@ -651,7 +652,7 @@ func (s *ImageUpdateService) parseAndGroupImages(imageRefs []string) (map[string
 	return regRepos, results, images
 }
 
-func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCreds []dto.ContainerRegistryCredential) (map[string]batchCred, []models.ContainerRegistry) {
+func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCreds []containerregistry.Credential) (map[string]batchCred, []models.ContainerRegistry) {
 	var enabledRegs []models.ContainerRegistry
 	credMap := make(map[string]batchCred)
 
@@ -808,7 +809,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	authMap map[string]regAuth,
 	enabledRegs []models.ContainerRegistry,
 	parts *ImageParts,
-) *dto.ImageUpdateResponse {
+) *imageupdate.Response {
 
 	start := time.Now()
 	authInfo := authMap[parts.Registry]
@@ -827,7 +828,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}
 	}
 	if digestErr != nil {
-		return &dto.ImageUpdateResponse{
+		return &imageupdate.Response{
 			Error:          digestErr.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(start).Milliseconds()),
@@ -840,7 +841,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 
 	localDigest, allLocalDigests, ldErr := s.getLocalImageDigestWithAll(ctx, fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag))
 	if ldErr != nil {
-		return &dto.ImageUpdateResponse{
+		return &imageupdate.Response{
 			Error:          ldErr.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(start).Milliseconds()),
@@ -860,7 +861,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}
 	}
 
-	return &dto.ImageUpdateResponse{
+	return &imageupdate.Response{
 		HasUpdate:      hasDigestUpdate,
 		UpdateType:     "digest",
 		CurrentDigest:  localDigest,
@@ -874,9 +875,9 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}
 }
 
-func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []dto.ContainerRegistryCredential) (map[string]*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
 	startBatch := time.Now()
-	results := make(map[string]*dto.ImageUpdateResponse, len(imageRefs))
+	results := make(map[string]*imageupdate.Response, len(imageRefs))
 	if len(imageRefs) == 0 {
 		return results, nil
 	}
@@ -933,14 +934,14 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	return results, nil
 }
 
-func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []dto.ContainerRegistryCredential) (map[string]*dto.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
 	imageRefs, err := s.getAllImageRefs(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image references: %w", err)
 	}
 
 	if len(imageRefs) == 0 {
-		return make(map[string]*dto.ImageUpdateResponse), nil
+		return make(map[string]*imageupdate.Response), nil
 	}
 
 	return s.CheckMultipleImages(ctx, imageRefs, externalCreds)
@@ -988,7 +989,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 	})
 }
 
-func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*dto.ImageUpdateSummaryResponse, error) {
+func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
 	var (
 		totalImages       int64
 		imagesWithUpdates int64
@@ -1019,7 +1020,7 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*dto.ImageUp
 		return nil, err
 	}
 
-	return &dto.ImageUpdateSummaryResponse{
+	return &imageupdate.Summary{
 		TotalImages:       int(totalImages),
 		ImagesWithUpdates: int(imagesWithUpdates),
 		DigestUpdates:     int(digestUpdates),

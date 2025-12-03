@@ -19,17 +19,21 @@ ARG TARGETARCH
 ARG BUILD_TAGS
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata \ 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \ 
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY ./.version ./VERSION
-COPY ./backend/go.mod ./backend/go.sum ./
+COPY ./.arcane.json ./arcane.json
+COPY ./go.work ./go.work
+COPY ./types ./types
+COPY ./cli ./cli
+COPY ./backend/go.mod ./backend/go.sum ./backend/
+WORKDIR /build/backend
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY ./backend ./
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    VERSION=$(cat VERSION | tr -d '[:space:]') && \
-    REVISION=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") && \
+    VERSION=$(jq -r '.version // "dev"' ../arcane.json) && \
+    REVISION=$(jq -r '.revision // "unknown"' ../arcane.json) && \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
     -tags "${BUILD_TAGS}" \

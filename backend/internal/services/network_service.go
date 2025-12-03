@@ -9,10 +9,10 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	networktypes "go.getarcane.app/types/network"
 )
 
 type NetworkService struct {
@@ -123,7 +123,7 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	return &report, nil
 }
 
-func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.NetworkSummaryDto, pagination.Response, error) {
+func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -153,43 +153,43 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
 
-	items := make([]dto.NetworkSummaryDto, 0, len(rawNets))
+	items := make([]networktypes.Summary, 0, len(rawNets))
 	for _, n := range rawNets {
-		netDto := dto.NewNetworkSummaryDto(n)
+		netDto := networktypes.NewSummary(n)
 		netDto.InUse = inUseByID[netDto.ID] || inUseByName[netDto.Name]
 		netDto.IsDefault = dockerutil.IsDefaultNetwork(netDto.Name)
 		items = append(items, netDto)
 	}
 
-	config := pagination.Config[dto.NetworkSummaryDto]{
-		SearchAccessors: []pagination.SearchAccessor[dto.NetworkSummaryDto]{
-			func(n dto.NetworkSummaryDto) (string, error) { return n.Name, nil },
-			func(n dto.NetworkSummaryDto) (string, error) { return n.Driver, nil },
-			func(n dto.NetworkSummaryDto) (string, error) { return n.Scope, nil },
-			func(n dto.NetworkSummaryDto) (string, error) { return n.ID, nil },
+	config := pagination.Config[networktypes.Summary]{
+		SearchAccessors: []pagination.SearchAccessor[networktypes.Summary]{
+			func(n networktypes.Summary) (string, error) { return n.Name, nil },
+			func(n networktypes.Summary) (string, error) { return n.Driver, nil },
+			func(n networktypes.Summary) (string, error) { return n.Scope, nil },
+			func(n networktypes.Summary) (string, error) { return n.ID, nil },
 		},
-		SortBindings: []pagination.SortBinding[dto.NetworkSummaryDto]{
+		SortBindings: []pagination.SortBinding[networktypes.Summary]{
 			{
 				Key: "name",
-				Fn: func(a, b dto.NetworkSummaryDto) int {
+				Fn: func(a, b networktypes.Summary) int {
 					return strings.Compare(a.Name, b.Name)
 				},
 			},
 			{
 				Key: "driver",
-				Fn: func(a, b dto.NetworkSummaryDto) int {
+				Fn: func(a, b networktypes.Summary) int {
 					return strings.Compare(a.Driver, b.Driver)
 				},
 			},
 			{
 				Key: "scope",
-				Fn: func(a, b dto.NetworkSummaryDto) int {
+				Fn: func(a, b networktypes.Summary) int {
 					return strings.Compare(a.Scope, b.Scope)
 				},
 			},
 			{
 				Key: "created",
-				Fn: func(a, b dto.NetworkSummaryDto) int {
+				Fn: func(a, b networktypes.Summary) int {
 					if a.Created.Before(b.Created) {
 						return -1
 					}
@@ -201,7 +201,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 			},
 			{
 				Key: "inUse",
-				Fn: func(a, b dto.NetworkSummaryDto) int {
+				Fn: func(a, b networktypes.Summary) int {
 					if a.InUse == b.InUse {
 						return 0
 					}
@@ -212,10 +212,10 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 				},
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[dto.NetworkSummaryDto]{
+		FilterAccessors: []pagination.FilterAccessor[networktypes.Summary]{
 			{
 				Key: "inUse",
-				Fn: func(n dto.NetworkSummaryDto, filterValue string) bool {
+				Fn: func(n networktypes.Summary, filterValue string) bool {
 					if filterValue == "true" {
 						return n.InUse
 					}

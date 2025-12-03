@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 jobs:
-  binaries:
+  release:
     runs-on: depot-ubuntu-24.04-16
 
     env:
@@ -65,122 +65,97 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload ${{ github.ref_name }} backend/.bin/*
 
-  images:
-    runs-on: depot-ubuntu-latest
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - target: manager
-            display: Arcane
-            dockerfile: docker/Dockerfile
-            image-suffix: arcane
-            sbom-dir: manager
-          - target: agent
-            display: Arcane Headless
-            dockerfile: docker/Dockerfile-agent
-            image-suffix: arcane-headless
-            sbom-dir: agent
-    steps:
-      - uses: actions/checkout@v6
-        with: { fetch-depth: 1 }
-
+      # Docker Images
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
 
-      - name: Resolve image name
-        id: image-name
-        run: |
-          OWNER=${{ github.repository_owner }}
-          echo "value=ghcr.io/${OWNER,,}/${{ matrix.image-suffix }}" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.image-name.outputs.value }}
-          tags: |
-            type=semver,pattern={{version}},prefix=v
-            type=semver,pattern={{major}}.{{minor}},prefix=v
-            type=semver,pattern={{major}},prefix=v
-
-      - id: build
-        uses: depot/build-push-action@v1
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-          sbom: true
-          sbom-dir: sbom-output/${{ matrix.target }}
-          provenance: true
-
-      - name: Record digest
-        run: |
-          mkdir -p sbom-output/${{ matrix.target }}
-          echo "${{ steps.build.outputs.digest }}" > sbom-output/${{ matrix.target }}/digest.txt
-
-      - name: Upload SBOM artifact (${{ matrix.display }})
-        uses: actions/upload-artifact@v5
-        with:
-          path: sbom-output/${{ matrix.target }}
-          name: SBOM-${{ matrix.target }}
-
-  publish-release:
-    runs-on: depot-ubuntu-latest
-    needs: [binaries, images]
-    permissions:
-      contents: write
-      id-token: write
-      packages: write
-      attestations: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download manager SBOM and digest
-        uses: actions/download-artifact@v6
-        with:
-          name: SBOM-manager
-          path: sbom-artifacts/manager
-      - name: Download agent SBOM and digest
-        uses: actions/download-artifact@v6
-        with:
-          name: SBOM-agent
-          path: sbom-artifacts/agent
-      - name: Read digests
-        id: digests
+
+      - name: Resolve manager image name
+        id: manager-image
         run: |
-          echo "manager=$(cat sbom-artifacts/manager/digest.txt)" >> "$GITHUB_OUTPUT"
-          echo "agent=$(cat sbom-artifacts/agent/digest.txt)" >> "$GITHUB_OUTPUT"
+          OWNER=${{ github.repository_owner }}
+          echo "value=ghcr.io/${OWNER,,}/arcane" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve agent image name
+        id: agent-image
+        run: |
+          OWNER=${{ github.repository_owner }}
+          echo "value=ghcr.io/${OWNER,,}/arcane-headless" >> "$GITHUB_OUTPUT"
+
+      - name: Manager image metadata
+        id: manager-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.manager-image.outputs.value }}
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
+            type=semver,pattern={{major}},prefix=v
+            type=raw,value=latest
+
+      - name: Build and push manager image
+        id: manager-build
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.manager-meta.outputs.tags }}
+          labels: ${{ steps.manager-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: true
+
+      - name: Agent image metadata
+        id: agent-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.agent-image.outputs.value }}
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
+            type=semver,pattern={{major}},prefix=v
+            type=raw,value=latest
+
+      - name: Build and push agent image
+        id: agent-build
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          file: docker/Dockerfile-agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.agent-meta.outputs.tags }}
+          labels: ${{ steps.agent-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: true
+
       - name: Container image attestation (manager)
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/arcane
-          subject-digest: ${{ steps.digests.outputs.manager }}
+          subject-name: ${{ steps.manager-image.outputs.value }}
+          subject-digest: ${{ steps.manager-build.outputs.digest }}
           push-to-registry: true
+
       - name: Container image attestation (agent)
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/arcane-headless
-          subject-digest: ${{ steps.digests.outputs.agent }}
+          subject-name: ${{ steps.agent-image.outputs.value }}
+          subject-digest: ${{ steps.agent-build.outputs.digest }}
           push-to-registry: true
+
       - name: Publish release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
