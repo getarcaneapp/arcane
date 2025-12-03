@@ -283,7 +283,7 @@ func (h *EnvironmentHandler) buildUpdateMapInternal(req *dto.UpdateEnvironmentDt
 	}
 
 	if req.Tags != nil {
-		updates["tags"] = models.StringSlice(req.Tags)
+		updates["tags"] = req.Tags
 	}
 
 	return updates

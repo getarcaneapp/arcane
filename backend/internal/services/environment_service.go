@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -83,10 +82,23 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	environment.CreatedAt = now
 	environment.UpdatedAt = &now
 
-	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
-		return nil, fmt.Errorf("failed to create environment: %w", err)
+	tags := environment.Tags
+	environment.Tags = nil
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(environment).Error; err != nil {
+			return fmt.Errorf("failed to create environment: %w", err)
+		}
+		if err := s.setEnvironmentTags(tx, environment.ID, tags); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	environment.Tags = tags
 	return environment, nil
 }
 
@@ -98,6 +110,13 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 		}
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
+
+	tags, err := s.getEnvironmentTags(s.db.WithContext(ctx), id)
+	if err != nil {
+		return nil, err
+	}
+	environment.Tags = tags
+
 	return &environment, nil
 }
 
@@ -125,49 +144,46 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		}
 	}
 
-	// Tag filtering: tags (include), excludeTags (exclude), tagMode (any/all)
 	if includeTags := params.Filters["tags"]; includeTags != "" {
-		tagList := strings.Split(includeTags, ",")
+		tagList := splitAndTrimTags(includeTags)
 		tagMode := params.Filters["tagMode"]
-		if tagMode == "all" {
-			// ALL mode: environment must have all specified tags
-			for _, tag := range tagList {
-				tag = strings.TrimSpace(tag)
-				if tag != "" {
-					q = q.Where("CAST(tags AS TEXT) LIKE ?", "%\""+tag+"\"%")
-				}
-			}
-		} else {
-			// ANY mode (default): environment must have at least one of the tags
-			var tagConditions []string
-			var tagArgs []interface{}
-			for _, tag := range tagList {
-				tag = strings.TrimSpace(tag)
-				if tag != "" {
-					tagConditions = append(tagConditions, "CAST(tags AS TEXT) LIKE ?")
-					tagArgs = append(tagArgs, "%\""+tag+"\"%")
-				}
-			}
-			if len(tagConditions) > 0 {
-				q = q.Where("("+strings.Join(tagConditions, " OR ")+")", tagArgs...)
+		if len(tagList) > 0 {
+			if tagMode == "all" {
+				// ALL mode: environment must have all specified tags
+				q = q.Where("environments.id IN (?)",
+					s.db.Table("environment_tags").
+						Select("environment_id").
+						Where("tag IN ?", tagList).
+						Group("environment_id").
+						Having("COUNT(DISTINCT tag) = ?", len(tagList)))
+			} else {
+				// ANY mode (default): environment must have at least one of the tags
+				q = q.Where("environments.id IN (?)",
+					s.db.Table("environment_tags").
+						Select("environment_id").
+						Where("tag IN ?", tagList))
 			}
 		}
 	}
 
 	// Exclude tags: environment must NOT have any of these tags
 	if excludeTags := params.Filters["excludeTags"]; excludeTags != "" {
-		tagList := strings.Split(excludeTags, ",")
-		for _, tag := range tagList {
-			tag = strings.TrimSpace(tag)
-			if tag != "" {
-				q = q.Where("CAST(tags AS TEXT) NOT LIKE ? OR tags IS NULL", "%\""+tag+"\"%")
-			}
+		tagList := splitAndTrimTags(excludeTags)
+		if len(tagList) > 0 {
+			q = q.Where("environments.id NOT IN (?)",
+				s.db.Table("environment_tags").
+					Select("environment_id").
+					Where("tag IN ?", tagList))
 		}
 	}
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate environments: %w", err)
+	}
+
+	if err := s.loadTagsForEnvironments(ctx, envs); err != nil {
+		return nil, pagination.Response{}, err
 	}
 
 	out, mapErr := dto.MapSlice[models.Environment, dto.EnvironmentDto](envs)
@@ -180,25 +196,14 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 
 // GetAllTags returns all unique tags used across all environments
 func (s *EnvironmentService) GetAllTags(ctx context.Context) ([]string, error) {
-	var envs []models.Environment
-	if err := s.db.WithContext(ctx).Select("tags").Find(&envs).Error; err != nil {
+	var tags []string
+	if err := s.db.WithContext(ctx).
+		Table("environment_tags").
+		Distinct("tag").
+		Order("tag").
+		Pluck("tag", &tags).Error; err != nil {
 		return nil, fmt.Errorf("failed to get environment tags: %w", err)
 	}
-
-	tagSet := make(map[string]struct{})
-	for _, env := range envs {
-		for _, tag := range env.Tags {
-			tagSet[tag] = struct{}{}
-		}
-	}
-
-	tags := make([]string, 0, len(tagSet))
-	for tag := range tagSet {
-		tags = append(tags, tag)
-	}
-
-	sort.Strings(tags)
-
 	return tags, nil
 }
 
@@ -206,8 +211,32 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	now := time.Now()
 	updates["updated_at"] = &now
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update environment: %w", err)
+	// Extract tags from updates (handled separately via junction table)
+	var tags []string
+	var hasTags bool
+	if t, ok := updates["tags"]; ok {
+		hasTags = true
+		if tagSlice, ok := t.([]string); ok {
+			tags = tagSlice
+		}
+		delete(updates, "tags")
+	}
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return fmt.Errorf("failed to update environment: %w", err)
+			}
+		}
+		if hasTags {
+			if err := s.setEnvironmentTags(tx, id, tags); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return s.GetEnvironmentByID(ctx, id)
@@ -676,4 +705,82 @@ func (s *EnvironmentService) ClearFilterDefault(ctx context.Context, userID stri
 		return fmt.Errorf("failed to clear default: %w", err)
 	}
 	return nil
+}
+
+// getEnvironmentTags retrieves tags for a single environment
+func (s *EnvironmentService) getEnvironmentTags(db *gorm.DB, envID string) ([]string, error) {
+	var tags []string
+	if err := db.Table("environment_tags").
+		Where("environment_id = ?", envID).
+		Order("tag").
+		Pluck("tag", &tags).Error; err != nil {
+		return nil, fmt.Errorf("failed to get environment tags: %w", err)
+	}
+	return tags, nil
+}
+
+// setEnvironmentTags replaces all tags for an environment
+func (s *EnvironmentService) setEnvironmentTags(tx *gorm.DB, envID string, tags []string) error {
+	// Delete existing tags
+	if err := tx.Where("environment_id = ?", envID).Delete(&models.EnvironmentTag{}).Error; err != nil {
+		return fmt.Errorf("failed to delete existing tags: %w", err)
+	}
+
+	// Insert new tags
+	if len(tags) > 0 {
+		envTags := make([]models.EnvironmentTag, len(tags))
+		for i, tag := range tags {
+			envTags[i] = models.EnvironmentTag{EnvironmentID: envID, Tag: tag}
+		}
+		if err := tx.Create(&envTags).Error; err != nil {
+			return fmt.Errorf("failed to create tags: %w", err)
+		}
+	}
+	return nil
+}
+
+// loadTagsForEnvironments loads tags for multiple environments in a single query
+func (s *EnvironmentService) loadTagsForEnvironments(ctx context.Context, envs []models.Environment) error {
+	if len(envs) == 0 {
+		return nil
+	}
+
+	// Collect environment IDs
+	envIDs := make([]string, len(envs))
+	envMap := make(map[string]*models.Environment, len(envs))
+	for i := range envs {
+		envIDs[i] = envs[i].ID
+		envMap[envs[i].ID] = &envs[i]
+	}
+
+	// Fetch all tags for these environments
+	var envTags []models.EnvironmentTag
+	if err := s.db.WithContext(ctx).
+		Where("environment_id IN ?", envIDs).
+		Order("tag").
+		Find(&envTags).Error; err != nil {
+		return fmt.Errorf("failed to load environment tags: %w", err)
+	}
+
+	// Group tags by environment
+	for _, et := range envTags {
+		if env, ok := envMap[et.EnvironmentID]; ok {
+			env.Tags = append(env.Tags, et.Tag)
+		}
+	}
+
+	return nil
+}
+
+// splitAndTrimTags splits a comma-separated tag string and trims whitespace
+func splitAndTrimTags(tagsStr string) []string {
+	parts := strings.Split(tagsStr, ",")
+	tags := make([]string, 0, len(parts))
+	for _, tag := range parts {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
 }
