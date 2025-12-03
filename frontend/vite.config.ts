@@ -17,6 +17,11 @@ export default defineConfig({
 		}),
 		devtoolsJson()
 	],
+	build: {
+		target: 'es2022',
+		// Disable gzip reporting to speed up builds
+		reportCompressedSize: false
+	},
 	server: {
 		host: process.env.HOST,
 		proxy: {
