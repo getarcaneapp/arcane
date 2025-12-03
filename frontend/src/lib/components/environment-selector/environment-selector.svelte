@@ -12,6 +12,7 @@
 	import { untrack } from 'svelte';
 	import type { PaginationResponse } from '$lib/types/pagination.type';
 	import { type EnvironmentFilterState, type InputMatch, type Suggestion, defaultFilterState } from './types';
+	import { setEnvSelectorContext } from './context.svelte';
 	import EnvironmentList from './environment-list.svelte';
 	import SavedFiltersView from './saved-filters-view.svelte';
 	import FilterToolbar from './filter-toolbar.svelte';
@@ -26,17 +27,26 @@
 
 	let { open = $bindable(false), isAdmin = false, onOpenChange, trigger }: Props = $props();
 
-	let environments = $state<Environment[]>([]);
+	let environments = $state.raw<Environment[]>([]);
 	let pagination = $state<PaginationResponse | null>(null);
-	let allTags = $state<string[]>([]);
+	let allTags = $state.raw<string[]>([]);
 	let isLoading = $state(true);
 	let inputValue = $state('');
 	let filters = $state<EnvironmentFilterState>({ ...defaultFilterState });
-	let savedFilters = $state<EnvironmentFilter[]>([]);
+	let savedFilters = $state.raw<EnvironmentFilter[]>([]);
 	let activeFilterId = $state<string | null>(null);
 	let defaultFilterDisabled = $state(false);
 	let selectedSuggestionIndex = $state(0);
 	let showSavedFiltersView = $state(false);
+
+	setEnvSelectorContext({
+		filters: () => filters,
+		allTags: () => allTags,
+		savedFilters: () => savedFilters,
+		activeFilterId: () => activeFilterId,
+		updateFilters,
+		clearFilters
+	});
 
 	const searchQuery = $derived(
 		inputValue
@@ -333,9 +343,6 @@
 	{#snippet children()}
 		{#if showSavedFiltersView}
 			<SavedFiltersView
-				{savedFilters}
-				{activeFilterId}
-				currentFilters={filters}
 				onBack={() => (showSavedFiltersView = false)}
 				onApplyFilter={applyFilter}
 				onSaveFilter={handleSaveFilter}
@@ -349,41 +356,22 @@
 			<div class="flex flex-col gap-3 pt-2">
 				<FilterToolbar
 					bind:inputValue
-					{filters}
-					{allTags}
 					{suggestions}
 					{inputMatch}
 					bind:selectedSuggestionIndex
-					{activeSavedFilter}
-					hasDefaultFilter={savedFilters.some((f) => f.isDefault)}
 					{defaultFilterDisabled}
 					onKeydown={handleKeydown}
 					onSelectSuggestion={selectSuggestion}
-					onFiltersChange={updateFilters}
 					onClearFilters={clearFilters}
 					onResetToDefault={resetToDefault}
 					onShowSavedFilters={() => (showSavedFiltersView = true)}
 				/>
 
 				<FilterChips
-					selectedTags={filters.selectedTags}
-					excludedTags={filters.excludedTags}
-					statusFilter={filters.statusFilter}
-					tagMode={filters.tagMode}
-					{activeSavedFilter}
-					onRemoveTag={(tag) => updateFilters({ selectedTags: filters.selectedTags.filter((t) => t !== tag) })}
-					onRemoveExcludedTag={(tag) => updateFilters({ excludedTags: filters.excludedTags.filter((t) => t !== tag) })}
-					onClearStatus={() => updateFilters({ statusFilter: activeSavedFilter?.statusFilter ?? 'all' })}
 					onClearSavedFilter={() => {
 						activeFilterId = null;
 						defaultFilterDisabled = true;
 					}}
-					onClearTags={() =>
-						updateFilters(
-							activeSavedFilter
-								? { selectedTags: [...activeSavedFilter.selectedTags], excludedTags: [...activeSavedFilter.excludedTags] }
-								: { selectedTags: [], excludedTags: [] }
-						)}
 				/>
 
 				<EnvironmentList

@@ -6,13 +6,10 @@
 	import FilterIcon from '@lucide/svelte/icons/filter';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { m } from '$lib/paraglide/messages';
+	import { useEnvSelector, type EnvironmentFilter } from './context.svelte';
 	import SavedFilterItem from './saved-filter-item.svelte';
-	import type { EnvironmentFilter, EnvironmentFilterState } from './types';
 
 	interface Props {
-		savedFilters: EnvironmentFilter[];
-		activeFilterId: string | null;
-		currentFilters: EnvironmentFilterState;
 		onBack?: () => void;
 		onApplyFilter?: (filter: EnvironmentFilter) => void;
 		onSaveFilter?: (name: string) => void;
@@ -24,9 +21,6 @@
 	}
 
 	let {
-		savedFilters,
-		activeFilterId,
-		currentFilters,
 		onBack,
 		onApplyFilter,
 		onSaveFilter,
@@ -37,23 +31,11 @@
 		onRenameFilter
 	}: Props = $props();
 
+	const ctx = useEnvSelector();
+
 	let saveFilterName = $state('');
 	let editingFilterId = $state<string | null>(null);
 	let editingFilterName = $state('');
-
-	function isFilterDifferent(savedFilter: EnvironmentFilter): boolean {
-		const tagsMatch =
-			JSON.stringify([...currentFilters.selectedTags].sort()) === JSON.stringify([...savedFilter.selectedTags].sort());
-		const excludedMatch =
-			JSON.stringify([...currentFilters.excludedTags].sort()) === JSON.stringify([...savedFilter.excludedTags].sort());
-		return (
-			!tagsMatch ||
-			!excludedMatch ||
-			currentFilters.tagMode !== savedFilter.tagMode ||
-			currentFilters.statusFilter !== savedFilter.statusFilter ||
-			currentFilters.groupBy !== savedFilter.groupBy
-		);
-	}
 
 	function startEditing(filter: EnvironmentFilter) {
 		editingFilterId = filter.id;
@@ -106,7 +88,7 @@
 
 	<!-- Filters list -->
 	<ScrollArea class="max-h-[40vh] min-h-[120px]">
-		{#if savedFilters.length === 0}
+		{#if ctx.savedFilters.length === 0}
 			<div class="text-muted-foreground flex h-32 flex-col items-center justify-center text-center">
 				<FilterIcon class="mb-2 size-8 opacity-30" />
 				<p class="text-sm">{m.env_selector_no_saved_filters()}</p>
@@ -114,13 +96,13 @@
 			</div>
 		{:else}
 			<div class="space-y-1 p-1">
-				{#each savedFilters as filter (filter.id)}
+				{#each ctx.savedFilters as filter (filter.id)}
 					<SavedFilterItem
 						{filter}
-						isActive={activeFilterId === filter.id}
+						isActive={ctx.activeFilterId === filter.id}
 						isEditing={editingFilterId === filter.id}
 						bind:editingName={editingFilterName}
-						showUpdateButton={isFilterDifferent(filter)}
+						showUpdateButton={ctx.isFilterDifferent(filter)}
 						onApply={() => onApplyFilter?.(filter)}
 						onSetDefault={() => onSetDefault?.(filter.id)}
 						onClearDefault={() => onClearDefault?.(filter.id)}

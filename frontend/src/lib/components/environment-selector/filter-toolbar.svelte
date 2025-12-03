@@ -9,22 +9,18 @@
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
+	import { useEnvSelector } from './context.svelte';
 	import SearchSuggestions from './search-suggestions.svelte';
-	import type { EnvironmentFilterState, Suggestion, InputMatch, EnvironmentFilter } from './types';
+	import type { Suggestion, InputMatch } from './types';
 
 	interface Props {
 		inputValue: string;
-		filters: EnvironmentFilterState;
-		allTags: string[];
 		suggestions: Suggestion[];
 		inputMatch: InputMatch | null;
 		selectedSuggestionIndex: number;
-		activeSavedFilter: EnvironmentFilter | null;
-		hasDefaultFilter?: boolean;
 		defaultFilterDisabled: boolean;
 		onKeydown?: (event: KeyboardEvent) => void;
 		onSelectSuggestion?: (index: number) => void;
-		onFiltersChange?: (filters: Partial<EnvironmentFilterState>) => void;
 		onClearFilters?: () => void;
 		onResetToDefault?: () => void;
 		onShowSavedFilters?: () => void;
@@ -32,25 +28,24 @@
 
 	let {
 		inputValue = $bindable(),
-		filters,
-		allTags,
 		suggestions,
 		inputMatch,
 		selectedSuggestionIndex = $bindable(),
-		activeSavedFilter,
-		hasDefaultFilter = false,
 		defaultFilterDisabled,
 		onKeydown,
 		onSelectSuggestion,
-		onFiltersChange,
 		onClearFilters,
 		onResetToDefault,
 		onShowSavedFilters
 	}: Props = $props();
 
-	// Compute available grouping options
-	const canGroupByStatus = $derived(filters.statusFilter === 'all');
-	const canGroupByTags = $derived(allTags.length > 0 && filters.selectedTags.length === 0 && filters.excludedTags.length === 0);
+	const ctx = useEnvSelector();
+
+	// Compute available grouping options using context
+	const canGroupByStatus = $derived(ctx.filters.statusFilter === 'all');
+	const canGroupByTags = $derived(
+		ctx.allTags.length > 0 && ctx.filters.selectedTags.length === 0 && ctx.filters.excludedTags.length === 0
+	);
 	const hasGroupingOptions = $derived(canGroupByStatus || canGroupByTags);
 
 	const groupByOptions = $derived([
@@ -58,14 +53,6 @@
 		...(canGroupByStatus ? [{ value: 'status' as const, label: m.common_status() }] : []),
 		...(canGroupByTags ? [{ value: 'tags' as const, label: m.common_tags() }] : [])
 	]);
-
-	const hasActiveFilters = $derived(
-		filters.statusFilter !== 'all' ||
-			filters.selectedTags.length > 0 ||
-			filters.excludedTags.length > 0 ||
-			filters.tagMode !== 'any' ||
-			filters.groupBy !== 'none'
-	);
 </script>
 
 <div class="flex items-center gap-2">
@@ -87,13 +74,13 @@
 			</Popover.Trigger>
 			<Popover.Content class="w-48 p-2" align="start">
 				<div class="space-y-1">
-					{#each groupByOptions as option}
+					{#each groupByOptions as option (option.value)}
 						<button
 							class={cn(
 								'flex w-full items-center rounded-md px-2 py-1.5 text-sm transition-colors',
-								filters.groupBy === option.value ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+								ctx.filters.groupBy === option.value ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
 							)}
-							onclick={() => onFiltersChange?.({ groupBy: option.value })}
+							onclick={() => ctx.setGroupBy(option.value)}
 						>
 							{option.label}
 						</button>
@@ -120,7 +107,7 @@
 				</Button>
 
 				<!-- Tag matching mode -->
-				{#if filters.selectedTags.length > 1}
+				{#if ctx.filters.selectedTags.length > 1}
 					<div class="space-y-1.5">
 						<span class="text-muted-foreground text-xs font-medium">{m.env_selector_tag_mode()}</span>
 						<div class="flex gap-1">
@@ -130,9 +117,9 @@
 										<button
 											class={cn(
 												'w-full rounded-md px-2 py-1.5 text-xs transition-colors',
-												filters.tagMode === 'any' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+												ctx.filters.tagMode === 'any' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => onFiltersChange?.({ tagMode: 'any' })}
+											onclick={() => ctx.setTagMode('any')}
 										>
 											{m.env_selector_tag_mode_any()}
 										</button>
@@ -146,9 +133,9 @@
 										<button
 											class={cn(
 												'w-full rounded-md px-2 py-1.5 text-xs transition-colors',
-												filters.tagMode === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+												ctx.filters.tagMode === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
 											)}
-											onclick={() => onFiltersChange?.({ tagMode: 'all' })}
+											onclick={() => ctx.setTagMode('all')}
 										>
 											{m.env_selector_tag_mode_all()}
 										</button>
@@ -167,11 +154,11 @@
 						size="sm"
 						class="h-8 flex-1"
 						onclick={onClearFilters}
-						disabled={!hasActiveFilters && !activeSavedFilter}
+						disabled={!ctx.hasActiveFilters && !ctx.activeSavedFilter}
 					>
 						{m.common_clear_filters()}
 					</Button>
-					{#if defaultFilterDisabled && hasDefaultFilter}
+					{#if defaultFilterDisabled && ctx.hasDefaultFilter}
 						<Button variant="ghost" size="sm" class="h-8 flex-1" onclick={onResetToDefault}>
 							{m.env_selector_reset_to_default()}
 						</Button>

@@ -8,4 +8,5 @@ export { default as FilterToolbar } from './filter-toolbar.svelte';
 export { default as FilterChips } from './filter-chips.svelte';
 export { default as SearchSuggestions } from './search-suggestions.svelte';
 export * from './types';
+export * from './context.svelte';
 export * from './utils';
