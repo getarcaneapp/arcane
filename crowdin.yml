@@ -1,9 +1,4 @@
-project_id_env: CROWDIN_PROJECT_ID
-api_token_env: CROWDIN_PERSONAL_TOKEN
-
 files:
   - source: /frontend/messages/en.json
     translation: /%original_path%/%two_letters_code%.json
-preserve_hierarchy: true
-localization_branch_name: l10n_crowdin
-crowdin_branch_name: main
+pull_request_title: 'chore(translations): update translations via Crowdin'
