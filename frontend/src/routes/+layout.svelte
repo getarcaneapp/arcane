@@ -38,8 +38,14 @@
 		}
 	});
 
-	const { versionInformation, user, settings } = data;
-	let isGlassEnabled = $state(settings?.glassEffectEnabled ?? false);
+	const versionInformation = $derived(data.versionInformation);
+	const user = $derived(data.user);
+	const settings = $derived(data.settings);
+	let isGlassEnabled = $state(false);
+
+	$effect(() => {
+		isGlassEnabled = settings?.glassEffectEnabled ?? false;
+	});
 
 	// Apply glass-enabled class to body based on settings
 	$effect(() => {
@@ -87,10 +93,12 @@
 	});
 	const navigationMode = $derived(navigationSettings.mode);
 
-	const redirectPath = getAuthRedirectPath(page.url.pathname, user);
-	if (redirectPath) {
-		goto(redirectPath);
-	}
+	$effect(() => {
+		const redirectPath = getAuthRedirectPath(page.url.pathname, user);
+		if (redirectPath) {
+			goto(redirectPath);
+		}
+	});
 
 	if (browser) {
 		afterNavigate((event) => {

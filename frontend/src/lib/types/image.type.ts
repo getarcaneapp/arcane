@@ -74,14 +74,3 @@ export interface ImageDetailSummaryDto {
 }
 
 export type ImageUpdateData = ImageUpdateInfoDto;
-
-export interface ImageVersions {
-	imageRef: string;
-	current: string;
-	versions: string[];
-	latest?: string;
-}
-
-export interface ImageLoadResult {
-	stream?: string;
-}

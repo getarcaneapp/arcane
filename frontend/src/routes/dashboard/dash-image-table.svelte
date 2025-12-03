@@ -154,7 +154,7 @@
 				</Button>
 			</div>
 		</Card.Header>
-		<Card.Content class="relative flex min-h-0 flex-1 flex-col px-0">
+		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
 				items={{ ...images, data: images.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
@@ -167,13 +167,13 @@
 				{columns}
 				mobileCard={DashImageMobileCard}
 			/>
-			{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}
-				<div
-					class="bg-muted/40 text-muted-foreground absolute right-0 bottom-0 left-0 rounded-b-xl px-6 py-3 text-xs backdrop-blur-sm"
-				>
-					{m.images_showing_of_total({ shown: calculatedLimit, total: images.pagination.totalItems })}
-				</div>
-			{/if}
 		</Card.Content>
+		{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}
+			<Card.Footer class="border-t px-6 py-3">
+				<span class="text-muted-foreground text-xs">
+					{m.images_showing_of_total({ shown: calculatedLimit, total: images.pagination.totalItems })}
+				</span>
+			</Card.Footer>
+		{/if}
 	</Card.Root>
 </div>

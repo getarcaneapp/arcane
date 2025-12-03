@@ -19,11 +19,12 @@
 	import { format } from 'date-fns';
 	import ContainerIcon from '@lucide/svelte/icons/container';
 	import { m } from '$lib/paraglide/messages';
+	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
 
 	let { data } = $props();
-	let volume = $state(data.volume);
-	let containersDetailed = $state<{ id: string; name: string }[]>(data.containersDetailed ?? []);
+	let volume = $state(untrack(() => data.volume));
+	let containersDetailed = $state<{ id: string; name: string }[]>(untrack(() => data.containersDetailed ?? []));
 
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());

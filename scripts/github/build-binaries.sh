@@ -14,11 +14,13 @@ LDFLAGS="-w -s -buildid=${VERSION} \
 
 DOCKER_ONLY=false
 AGENT_BUILD=false
+NEXT_BUILDS=false
 
 for arg in "${@:-}"; do
   case "$arg" in
     --docker) DOCKER_ONLY=true ;;
     --agent)  AGENT_BUILD=true ;;
+    --next-builds) NEXT_BUILDS=true ;;
     *) ;;
   esac
 done
@@ -68,7 +70,21 @@ build_platform() {
 }
 
 echo "Version: ${VERSION}"
-if [ "$DOCKER_ONLY" = true ] ; then
+if [ "$NEXT_BUILDS" = true ]; then
+  echo "Building next images binaries (manager + agent for linux targets)..."
+  # Build manager binaries
+  BINARY_BASENAME="arcane"
+  BUILD_TAGS=""
+  build_platform "linux-amd64" "linux" "amd64"
+  build_platform "linux-arm64" "linux" "arm64"
+  build_platform "linux-armv7" "linux" "arm" "7"
+  # Build agent binaries
+  BINARY_BASENAME="arcane-agent"
+  BUILD_TAGS="exclude_frontend"
+  build_platform "linux-amd64" "linux" "amd64"
+  build_platform "linux-arm64" "linux" "arm64"
+  build_platform "linux-armv7" "linux" "arm" "7"
+elif [ "$DOCKER_ONLY" = true ]; then
   if [ "$AGENT_BUILD" = true ]; then
     echo "Building agent binaries (docker-only linux targets)..."
   else
