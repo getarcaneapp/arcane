@@ -76,7 +76,7 @@ abstract class BaseAPIService {
 					const isAuthApi = skipAuthPaths.some((p) => reqUrl.startsWith(p));
 
 					const pathname = window.location.pathname || '/';
-					const isOnAuthPage = pathname.startsWith('/auth');
+					const isOnAuthPage = pathname.startsWith('/login') || pathname.startsWith('/logout') || pathname.startsWith('/oidc');
 
 					if (!isAuthApi && !isOnAuthPage && !isVersionMismatch && BaseAPIService.tokenRefreshHandler) {
 						try {
@@ -92,7 +92,7 @@ abstract class BaseAPIService {
 						// If we reach here, refresh failed - redirect to login
 						if (!isOnAuthPage) {
 							const redirectTo = encodeURIComponent(pathname);
-							window.location.replace(`/auth/login?redirect=${redirectTo}`);
+							window.location.replace(`/login?redirect=${redirectTo}`);
 							return new Promise(() => {});
 						}
 					}
@@ -100,7 +100,7 @@ abstract class BaseAPIService {
 					if (!isAuthApi && !isOnAuthPage && isVersionMismatch) {
 						toast.info('Application has been updated. Please log in again.');
 						const redirectTo = encodeURIComponent(pathname);
-						window.location.replace(`/auth/login?redirect=${redirectTo}`);
+						window.location.replace(`/login?redirect=${redirectTo}`);
 						return new Promise(() => {});
 					}
 				}
