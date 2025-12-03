@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/user"
 )
 
 type UserHandler struct {
@@ -52,7 +53,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 }
 
 func (h *UserHandler) CreateUser(c *gin.Context) {
-	var req dto.CreateUserDto
+	var req user.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -70,7 +71,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	user := &models.User{
+	userModel := &models.User{
 		Username:     req.Username,
 		PasswordHash: hashedPassword,
 		DisplayName:  req.DisplayName,
@@ -82,11 +83,11 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		},
 	}
 
-	if user.Roles == nil {
-		user.Roles = []string{"user"}
+	if userModel.Roles == nil {
+		userModel.Roles = []string{"user"}
 	}
 
-	createdUser, err := h.userService.CreateUser(c.Request.Context(), user)
+	createdUser, err := h.userService.CreateUser(c.Request.Context(), userModel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -95,7 +96,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	out, err := dto.MapOne[*models.User, dto.UserResponseDto](createdUser)
+	out, err := mapper.MapOne[*models.User, user.Response](createdUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -113,7 +114,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 func (h *UserHandler) GetUser(c *gin.Context) {
 	userID := c.Param("id")
 
-	user, err := h.userService.GetUserByID(c.Request.Context(), userID)
+	userModel, err := h.userService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
@@ -122,7 +123,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		return
 	}
 
-	out, err := dto.MapOne[*models.User, dto.UserResponseDto](user)
+	out, err := mapper.MapOne[*models.User, user.Response](userModel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -140,7 +141,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	userID := c.Param("id")
 
-	var req dto.UpdateUserDto
+	var req user.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -149,7 +150,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetUserByID(c.Request.Context(), userID)
+	userModel, err := h.userService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
@@ -159,16 +160,16 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if req.DisplayName != nil {
-		user.DisplayName = req.DisplayName
+		userModel.DisplayName = req.DisplayName
 	}
 	if req.Email != nil {
-		user.Email = req.Email
+		userModel.Email = req.Email
 	}
 	if req.Roles != nil {
-		user.Roles = req.Roles
+		userModel.Roles = req.Roles
 	}
 	if req.Locale != nil {
-		user.Locale = req.Locale
+		userModel.Locale = req.Locale
 	}
 
 	if req.Password != nil && *req.Password != "" {
@@ -180,13 +181,13 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 			})
 			return
 		}
-		user.PasswordHash = hashedPassword
+		userModel.PasswordHash = hashedPassword
 	}
 
 	now := time.Now()
-	user.UpdatedAt = &now
+	userModel.UpdatedAt = &now
 
-	updatedUser, err := h.userService.UpdateUser(c.Request.Context(), user)
+	updatedUser, err := h.userService.UpdateUser(c.Request.Context(), userModel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -195,7 +196,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	out, err := dto.MapOne[*models.User, dto.UserResponseDto](updatedUser)
+	out, err := mapper.MapOne[*models.User, user.Response](updatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

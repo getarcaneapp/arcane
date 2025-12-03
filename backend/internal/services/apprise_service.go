@@ -12,8 +12,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"go.getarcane.app/types/imageupdate"
 )
 
 type AppriseService struct {
@@ -148,7 +148,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	return nil
 }
 
-func (s *AppriseService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *dto.ImageUpdateResponse) error {
+func (s *AppriseService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response) error {
 	title := fmt.Sprintf("Container Image Update Available: %s", imageRef)
 	body := fmt.Sprintf(
 		"Image: %s\nUpdate Type: %s\nCurrent Digest: %s\nLatest Digest: %s",
@@ -172,12 +172,12 @@ func (s *AppriseService) SendContainerUpdateNotification(ctx context.Context, co
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventContainerUpdate)
 }
 
-func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*dto.ImageUpdateResponse) error {
+func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) error {
 	if len(updates) == 0 {
 		return nil
 	}
 
-	updatesWithChanges := make(map[string]*dto.ImageUpdateResponse)
+	updatesWithChanges := make(map[string]*imageupdate.Response)
 	for imageRef, update := range updates {
 		if update != nil && update.HasUpdate {
 			updatesWithChanges[imageRef] = update

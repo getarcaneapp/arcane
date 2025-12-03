@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/auth"
+	"go.getarcane.app/types/user"
 )
 
 type AuthHandler struct {
@@ -33,7 +35,7 @@ func NewAuthHandler(group *gin.RouterGroup, userService *services.UserService, a
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req dto.LoginRequest
+	var req auth.Login
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -49,7 +51,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, tokenPair, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
+	userModel, tokenPair, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		var statusCode int
 		var errorMsg string
@@ -77,8 +79,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	maxAge += 60
 	cookie.CreateTokenCookie(c, maxAge, tokenPair.AccessToken)
 
-	var out dto.UserResponseDto
-	if mapErr := dto.MapStruct(user, &out); mapErr != nil {
+	var out user.Response
+	if mapErr := mapper.MapStruct(userModel, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserMappingError{Err: mapErr}).Error()}})
 		return
 	}
@@ -107,14 +109,14 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetUser(c.Request.Context(), userID)
+	userModel, err := h.userService.GetUser(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserRetrievalError{Err: err}).Error()}})
 		return
 	}
 
-	var out dto.UserResponseDto
-	if mapErr := dto.MapStruct(user, &out); mapErr != nil {
+	var out user.Response
+	if mapErr := mapper.MapStruct(userModel, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.UserMappingError{Err: mapErr}).Error()}})
 		return
 	}
@@ -123,7 +125,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	var req dto.RefreshRequest
+	var req auth.Refresh
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -165,12 +167,12 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 }
 
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
-	user, ok := middleware.RequireAuthentication(c)
+	userModel, ok := middleware.RequireAuthentication(c)
 	if !ok {
 		return
 	}
 
-	var req dto.PasswordChangeRequest
+	var req auth.PasswordChange
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()}})
 		return
@@ -181,7 +183,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.ChangePassword(c.Request.Context(), user.ID, req.CurrentPassword, req.NewPassword)
+	err := h.authService.ChangePassword(c.Request.Context(), userModel.ID, req.CurrentPassword, req.NewPassword)
 	if err != nil {
 		var statusCode int
 		var errorMsg string

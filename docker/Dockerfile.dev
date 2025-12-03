@@ -51,17 +51,24 @@ ENV GIN_MODE=debug \
 
 WORKDIR /app
 
-# Copy Go module files first for dependency caching
-COPY backend/go.mod backend/go.sum ./
+# Copy Go workspace file and all modules first
+COPY go.work ./go.work
+COPY types/ ./types/
+COPY cli/ ./cli/
+
+# Copy backend Go module files for dependency caching
+COPY backend/go.mod backend/go.sum ./backend/
 
 # Download dependencies with cache mounts
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go mod download && go mod verify
+    cd backend && go mod download && go mod verify
 
 # Create directories with proper permissions
 RUN mkdir -p /app/data /app/.bin && \
     chmod 755 /app/data /app/.bin
+
+WORKDIR /app/backend
 
 EXPOSE 3552
 

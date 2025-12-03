@@ -12,15 +12,16 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.getarcane.app/types/project"
 )
 
 type ProjectHandler struct {
@@ -87,7 +88,7 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 		return
 	}
 	if projectsResponse == nil {
-		projectsResponse = []dto.ProjectDetailsDto{}
+		projectsResponse = []project.Details{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -142,7 +143,7 @@ func (h *ProjectHandler) DownProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
-	var req dto.CreateProjectDto
+	var req project.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
@@ -155,8 +156,8 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 		return
 	}
 
-	var response dto.CreateProjectReponseDto
-	if err := dto.MapStruct(proj, &response); err != nil {
+	var response project.CreateReponse
+	if err := mapper.MapStruct(proj, &response); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "failed to map response"})
 		return
 	}
@@ -220,7 +221,7 @@ func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 	projectID := c.Param("projectId")
 
-	var req dto.DestroyProjectDto
+	var req project.Destroy
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
@@ -250,7 +251,7 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 		return
 	}
 
-	var req dto.ProjectImagePullDto
+	var req project.ImagePullRequest
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
@@ -280,7 +281,7 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 		return
 	}
 
-	var req dto.UpdateProjectDto
+	var req project.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
@@ -310,7 +311,7 @@ func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 		return
 	}
 
-	var req dto.UpdateProjectIncludeDto
+	var req project.UpdateIncludeFile
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
@@ -447,7 +448,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(c *gin.Context) {
 		return
 	}
 
-	out := dto.ProjectStatusCounts{
+	out := project.StatusCounts{
 		RunningProjects: int(running),
 		StoppedProjects: int(stopped),
 		TotalProjects:   int(total),

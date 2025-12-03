@@ -94,7 +94,7 @@
 				<div class="px-3 pb-2">
 					<div class="flex items-center gap-2">
 						<SidebarUser {isCollapsed} user={effectiveUser} />
-						<form action="/auth/logout" method="POST" class="ml-auto">
+						<form action="/logout" method="POST" class="ml-auto">
 							<Button.Root
 								variant="ghost"
 								title={m.common_logout()}

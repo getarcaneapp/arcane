@@ -18,9 +18,10 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/containerregistry"
+	imagetypes "go.getarcane.app/types/image"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -104,7 +105,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	return nil
 }
 
-func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []dto.ContainerRegistryCredential) error {
+func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []containerregistry.Credential) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
@@ -168,7 +169,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	return nil
 }
 
-func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user models.User, maxSizeBytes int64) (*dto.ImageLoadResultDto, error) {
+func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user models.User, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
 	// Wrap reader with size limit enforcement
 	limitedReader := io.LimitReader(reader, maxSizeBytes+1)
 
@@ -190,7 +191,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	}
 	defer loadResp.Body.Close()
 
-	var result dto.ImageLoadResultDto
+	var result imagetypes.LoadResult
 	responseBytes, err := io.ReadAll(loadResp.Body)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
@@ -229,7 +230,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []dto.ContainerRegistryCredential) (image.PullOptions, error) {
+func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (image.PullOptions, error) {
 	pullOptions := image.PullOptions{}
 
 	registryHost := s.extractRegistryHost(imageRef)
@@ -400,7 +401,7 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 	return &report, nil
 }
 
-func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.ImageSummaryDto, pagination.Response, error) {
+func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -575,8 +576,8 @@ func stringPtrValue(p *string) string {
 	return *p
 }
 
-func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *dto.ImageUpdateInfoDto {
-	return &dto.ImageUpdateInfoDto{
+func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateInfo {
+	return &imagetypes.UpdateInfo{
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
 		CurrentVersion: updateRecord.CurrentVersion,
@@ -593,12 +594,12 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *dto.ImageUpdateInf
 	}
 }
 
-func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord) []dto.ImageSummaryDto {
-	items := make([]dto.ImageSummaryDto, 0, len(dockerImages))
+func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord) []imagetypes.Summary {
+	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)
 
-		imageDto := dto.ImageSummaryDto{
+		imageDto := imagetypes.Summary{
 			ID:          di.ID,
 			Repo:        repo,
 			Tag:         tag,
@@ -620,35 +621,35 @@ func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]boo
 	return items
 }
 
-func (s *ImageService) getImagePaginationConfig() pagination.Config[dto.ImageSummaryDto] {
-	return pagination.Config[dto.ImageSummaryDto]{
-		SearchAccessors: []pagination.SearchAccessor[dto.ImageSummaryDto]{
-			func(i dto.ImageSummaryDto) (string, error) { return i.Repo, nil },
-			func(i dto.ImageSummaryDto) (string, error) { return i.Tag, nil },
-			func(i dto.ImageSummaryDto) (string, error) { return i.ID, nil },
-			func(i dto.ImageSummaryDto) (string, error) {
+func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.Summary] {
+	return pagination.Config[imagetypes.Summary]{
+		SearchAccessors: []pagination.SearchAccessor[imagetypes.Summary]{
+			func(i imagetypes.Summary) (string, error) { return i.Repo, nil },
+			func(i imagetypes.Summary) (string, error) { return i.Tag, nil },
+			func(i imagetypes.Summary) (string, error) { return i.ID, nil },
+			func(i imagetypes.Summary) (string, error) {
 				if len(i.RepoTags) > 0 {
 					return i.RepoTags[0], nil
 				}
 				return "", nil
 			},
 		},
-		SortBindings: []pagination.SortBinding[dto.ImageSummaryDto]{
+		SortBindings: []pagination.SortBinding[imagetypes.Summary]{
 			{
 				Key: "repo",
-				Fn: func(a, b dto.ImageSummaryDto) int {
+				Fn: func(a, b imagetypes.Summary) int {
 					return strings.Compare(a.Repo, b.Repo)
 				},
 			},
 			{
 				Key: "tag",
-				Fn: func(a, b dto.ImageSummaryDto) int {
+				Fn: func(a, b imagetypes.Summary) int {
 					return strings.Compare(a.Tag, b.Tag)
 				},
 			},
 			{
 				Key: "size",
-				Fn: func(a, b dto.ImageSummaryDto) int {
+				Fn: func(a, b imagetypes.Summary) int {
 					if a.Size < b.Size {
 						return -1
 					}
@@ -660,7 +661,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[dto.ImageSum
 			},
 			{
 				Key: "created",
-				Fn: func(a, b dto.ImageSummaryDto) int {
+				Fn: func(a, b imagetypes.Summary) int {
 					if a.Created < b.Created {
 						return -1
 					}
@@ -672,7 +673,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[dto.ImageSum
 			},
 			{
 				Key: "inUse",
-				Fn: func(a, b dto.ImageSummaryDto) int {
+				Fn: func(a, b imagetypes.Summary) int {
 					if a.InUse == b.InUse {
 						return 0
 					}
@@ -683,10 +684,10 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[dto.ImageSum
 				},
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[dto.ImageSummaryDto]{
+		FilterAccessors: []pagination.FilterAccessor[imagetypes.Summary]{
 			{
 				Key: "inUse",
-				Fn: func(i dto.ImageSummaryDto, filterValue string) bool {
+				Fn: func(i imagetypes.Summary, filterValue string) bool {
 					if filterValue == "true" {
 						return i.InUse
 					}
@@ -698,7 +699,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[dto.ImageSum
 			},
 			{
 				Key: "updates",
-				Fn: func(i dto.ImageSummaryDto, filterValue string) bool {
+				Fn: func(i imagetypes.Summary, filterValue string) bool {
 					hasUpdate := i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
 					if filterValue == "true" {
 						return hasUpdate

@@ -12,10 +12,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/converter"
 	"github.com/goccy/go-yaml"
+	containertypes "go.getarcane.app/types/container"
+	"go.getarcane.app/types/system"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -53,7 +54,7 @@ var systemUser = models.User{
 	Username: "System",
 }
 
-func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*dto.PruneAllResult, error) {
+func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest) (*system.PruneAllResult, error) {
 	slog.InfoContext(ctx, "Starting selective prune operation",
 		slog.Bool("containers", req.Containers),
 		slog.Bool("images", req.Images),
@@ -62,7 +63,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 		slog.Bool("build_cache", req.BuildCache),
 		slog.Bool("dangling", req.Dangling))
 
-	result := &dto.PruneAllResult{Success: true}
+	result := &system.PruneAllResult{Success: true}
 	var mu sync.Mutex
 
 	// 1. Prune Containers first (sequential) as it may free up other resources
@@ -87,7 +88,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 			}
 
 			slog.InfoContext(ctx, "Pruning images...", slog.Bool("dangling_only", danglingOnly))
-			localResult := &dto.PruneAllResult{}
+			localResult := &system.PruneAllResult{}
 			if err := s.pruneImages(ctx, danglingOnly, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
@@ -106,7 +107,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 	if req.BuildCache {
 		g.Go(func() error {
 			slog.InfoContext(ctx, "Pruning build cache...")
-			localResult := &dto.PruneAllResult{}
+			localResult := &system.PruneAllResult{}
 			if err := s.pruneBuildCache(ctx, localResult, !req.Dangling); err != nil {
 				slog.WarnContext(ctx, "Build cache pruning encountered an error", slog.String("error", err.Error()))
 				// Build cache errors are often non-critical, but we log them
@@ -122,7 +123,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 	if req.Volumes {
 		g.Go(func() error {
 			slog.InfoContext(ctx, "Pruning unused volumes...")
-			localResult := &dto.PruneAllResult{}
+			localResult := &system.PruneAllResult{}
 			if err := s.pruneVolumes(ctx, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
@@ -141,7 +142,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req dto.PruneSystemDto) (*
 	if req.Networks {
 		g.Go(func() error {
 			slog.InfoContext(ctx, "Pruning unused networks...")
-			localResult := &dto.PruneAllResult{}
+			localResult := &system.PruneAllResult{}
 			if err := s.pruneNetworks(ctx, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
@@ -185,8 +186,8 @@ func (s *SystemService) getDanglingModeFromSettings(ctx context.Context) (bool, 
 	}
 }
 
-func (s *SystemService) performBatchContainerAction(ctx context.Context, containers []container.Summary, actionName string, shouldProcess func(container.Summary) bool, action func(context.Context, string) error) *dto.ContainerActionResult {
-	result := &dto.ContainerActionResult{Success: true}
+func (s *SystemService) performBatchContainerAction(ctx context.Context, containers []container.Summary, actionName string, shouldProcess func(container.Summary) bool, action func(context.Context, string) error) *containertypes.ActionResult {
+	result := &containertypes.ActionResult{Success: true}
 	var mu sync.Mutex
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -224,10 +225,10 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 	return result
 }
 
-func (s *SystemService) StartAllContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
+func (s *SystemService) StartAllContainers(ctx context.Context) (*containertypes.ActionResult, error) {
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return &dto.ContainerActionResult{
+		return &containertypes.ActionResult{
 			Success: false,
 			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
 		}, err
@@ -240,10 +241,10 @@ func (s *SystemService) StartAllContainers(ctx context.Context) (*dto.ContainerA
 		}), nil
 }
 
-func (s *SystemService) StartAllStoppedContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
+func (s *SystemService) StartAllStoppedContainers(ctx context.Context) (*containertypes.ActionResult, error) {
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return &dto.ContainerActionResult{
+		return &containertypes.ActionResult{
 			Success: false,
 			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
 		}, err
@@ -256,10 +257,10 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context) (*dto.Con
 		}), nil
 }
 
-func (s *SystemService) StopAllContainers(ctx context.Context) (*dto.ContainerActionResult, error) {
+func (s *SystemService) StopAllContainers(ctx context.Context) (*containertypes.ActionResult, error) {
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return &dto.ContainerActionResult{
+		return &containertypes.ActionResult{
 			Success: false,
 			Errors:  []string{fmt.Sprintf("Failed to list containers: %v", err)},
 		}, err
@@ -275,7 +276,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*dto.ContainerAc
 		}), nil
 }
 
-func (s *SystemService) pruneContainers(ctx context.Context, result *dto.PruneAllResult) error {
+func (s *SystemService) pruneContainers(ctx context.Context, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -293,7 +294,7 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *dto.PruneAl
 	return nil
 }
 
-func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, result *dto.PruneAllResult) error {
+func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, result *system.PruneAllResult) error {
 	slog.DebugContext(ctx, "Starting image pruning", slog.Bool("dangling_only", danglingOnly))
 
 	dockerClient, err := s.dockerService.GetClient()
@@ -344,7 +345,7 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 	return nil
 }
 
-func (s *SystemService) pruneBuildCache(ctx context.Context, result *dto.PruneAllResult, pruneAllCache bool) error {
+func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.PruneAllResult, pruneAllCache bool) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed (connection): %w", err).Error())
@@ -373,7 +374,7 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *dto.PruneAl
 	return nil
 }
 
-func (s *SystemService) pruneVolumes(ctx context.Context, result *dto.PruneAllResult) error {
+func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAllResult) error {
 	// Prune ALL unused volumes (both named and anonymous)
 	// Note: Docker API only prunes volumes that are NOT in use by any containers (running or stopped)
 	// With all=true, it will remove both named and anonymous unused volumes
@@ -393,7 +394,7 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *dto.PruneAllRe
 	return nil
 }
 
-func (s *SystemService) pruneNetworks(ctx context.Context, result *dto.PruneAllResult) error {
+func (s *SystemService) pruneNetworks(ctx context.Context, result *system.PruneAllResult) error {
 	// Note: Docker API only prunes networks that are NOT in use by any containers
 	report, err := s.networkService.PruneNetworks(ctx)
 	if err != nil {

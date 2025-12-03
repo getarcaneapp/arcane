@@ -11,8 +11,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"go.getarcane.app/types/settings"
 )
 
 func setupSettingsTestDB(t *testing.T) *database.DB {
@@ -192,7 +192,7 @@ func TestSettingsService_UpdateSettings_MergeOidcSecret(t *testing.T) {
 	require.NoError(t, err)
 	s := string(nb)
 
-	updates := dto.UpdateSettingsDto{
+	updates := settings.Update{
 		AuthOidcConfig: &s,
 	}
 	_, err = svc.UpdateSettings(ctx, updates)
@@ -256,7 +256,7 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	newDir := "custom/projects2"
-	req := dto.UpdateSettingsDto{
+	req := settings.Update{
 		ProjectsDirectory: &newDir,
 	}
 
