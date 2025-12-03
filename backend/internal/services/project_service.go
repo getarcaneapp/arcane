@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -256,12 +257,37 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.ServiceCount = serviceCount
 	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
-	if serr == nil && services != nil {
-		raw := make([]any, len(services))
-		for i := range services {
-			raw[i] = services[i]
+
+	// Load compose services from the compose file
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if composeFile != "" {
+		composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory)
+		if loadErr == nil && composeProj != nil {
+			// Convert map to slice
+			svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
+			for _, svc := range composeProj.Services {
+				svcList = append(svcList, svc)
+			}
+			resp.Services = svcList
 		}
-		resp.Services = raw
+	}
+
+	// Convert ProjectServiceInfo to project.RuntimeService
+	if serr == nil && services != nil {
+		runtimeServices := make([]project.RuntimeService, len(services))
+		for i, svc := range services {
+			runtimeServices[i] = project.RuntimeService{
+				Name:          svc.Name,
+				Image:         svc.Image,
+				Status:        svc.Status,
+				ContainerID:   svc.ContainerID,
+				ContainerName: svc.ContainerName,
+				Ports:         svc.Ports,
+				Health:        svc.Health,
+			}
+		}
+		resp.RuntimeServices = runtimeServices
 	}
 
 	return resp, nil
@@ -1111,10 +1137,20 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 		}
 	}
 
-	resp.Services = make([]any, len(services))
+	// Convert to RuntimeServices
+	runtimeServices := make([]project.RuntimeService, len(services))
 	for k, s := range services {
-		resp.Services[k] = s
+		runtimeServices[k] = project.RuntimeService{
+			Name:          s.Name,
+			Image:         s.Image,
+			Status:        s.Status,
+			ContainerID:   s.ContainerID,
+			ContainerName: s.ContainerName,
+			Ports:         s.Ports,
+			Health:        s.Health,
+		}
 	}
+	resp.RuntimeServices = runtimeServices
 
 	// Use DB service count as the source of truth for "Total Services"
 	// since we are not parsing the YAML here.

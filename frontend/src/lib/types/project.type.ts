@@ -9,24 +9,56 @@ export interface NetworkSettings {
 	>;
 }
 
+export interface ServicePort {
+	mode?: string;
+	target: number;
+	published?: string;
+	protocol?: string;
+}
+
+export interface ServiceVolume {
+	type: string;
+	source: string;
+	target: string;
+	read_only?: boolean;
+	volume?: Record<string, any>;
+	bind?: Record<string, any>;
+}
+
 export interface ProjectService {
-	container_id: string;
-	name: string;
-	status: string;
+	name?: string;
 	image?: string;
-	ports?: string[];
-	networks?: string[];
-	volumes?: string[];
+	container_name?: string;
+	command?: string[] | string | null;
+	entrypoint?: string[] | string | null;
 	environment?: Record<string, string>;
-	restart_count?: number;
-	health?: string;
-	networkSettings?: NetworkSettings;
+	env_file?: string[];
+	ports?: ServicePort[];
+	volumes?: ServiceVolume[];
+	networks?: Record<string, any>;
+	restart?: string;
+	depends_on?: Record<string, any>;
+	labels?: Record<string, string>;
+	healthcheck?: Record<string, any>;
+	deploy?: Record<string, any>;
+	[key: string]: any;
 }
 
 export interface IncludeFile {
 	path: string;
 	relativePath: string;
 	content: string;
+}
+
+// RuntimeService contains live container status information
+export interface RuntimeService {
+	name: string;
+	image: string;
+	status: string;
+	containerId?: string;
+	containerName?: string;
+	ports?: string[];
+	health?: string;
 }
 
 export interface Project {
@@ -40,6 +72,7 @@ export interface Project {
 	updatedAt: string;
 	createdAt: string;
 	services?: ProjectService[];
+	runtimeServices?: RuntimeService[];
 	composeContent?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];

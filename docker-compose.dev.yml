@@ -53,13 +53,16 @@ services:
     #     limits:
     #       memory: 256M
     volumes:
+      # Go workspace files
+      - ${HOST_PROJECT_ROOT:-.}/go.work:/app/go.work:ro
+      - ${HOST_PROJECT_ROOT:-.}/types:/app/types:cached
       # Source code mounting for hot reload
-      - ${HOST_PROJECT_ROOT:-.}/backend:/app:cached
-      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/.air.toml:ro
+      - ${HOST_PROJECT_ROOT:-.}/backend:/app/backend:cached
+      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/backend/.air.toml:ro
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
       # Persistent data storage
-      - arcane-dev-data:/app/data
+      - arcane-dev-data:/app/backend/data
       # Persistent Go build cache
       - go-build-cache:/go/cache
       - go-mod-cache:/go/pkg/mod
@@ -69,7 +72,7 @@ services:
       - PORT=${PORT:-3552}
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-    working_dir: /app
+    working_dir: /app/backend
     networks:
       - arcane-dev
     restart: unless-stopped
@@ -102,13 +105,17 @@ services:
       - AGENT_BOOTSTRAP_TOKEN=${AGENT_BOOTSTRAP_TOKEN:-development-bootstrap-token}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - agent-dev-data:/app/data
+      - agent-dev-data:/app/backend/data
+      # Go workspace files
+      - ${HOST_PROJECT_ROOT:-.}/go.work:/app/go.work:ro
+      - ${HOST_PROJECT_ROOT:-.}/types:/app/types:cached
       # Optional: hot-reload the agent too (same as backend dev)
-      - ${HOST_PROJECT_ROOT:-.}/backend:/app:cached
-      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/.air.toml:ro
+      - ${HOST_PROJECT_ROOT:-.}/backend:/app/backend:cached
+      - ${HOST_PROJECT_ROOT:-.}/backend/.air.toml:/app/backend/.air.toml:ro
       # Shared Go build cache with backend for consistency
       - go-build-cache:/go/cache
       - go-mod-cache:/go/pkg/mod
+    working_dir: /app/backend
     networks:
       - arcane-dev
     restart: unless-stopped

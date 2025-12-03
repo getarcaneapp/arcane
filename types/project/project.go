@@ -1,6 +1,7 @@
 package project
 
 import (
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"go.getarcane.app/types/containerregistry"
 )
 
@@ -69,6 +70,44 @@ type UpdateIncludeFile struct {
 	//
 	// Required: true
 	Content string `json:"content" binding:"required"`
+}
+
+// RuntimeService contains live container status information for a service.
+type RuntimeService struct {
+	// Name is the service name from the compose file.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// Image is the Docker image used by the service.
+	//
+	// Required: true
+	Image string `json:"image"`
+
+	// Status is the current status of the container (running, stopped, etc.).
+	//
+	// Required: true
+	Status string `json:"status"`
+
+	// ContainerID is the Docker container ID.
+	//
+	// Required: false
+	ContainerID string `json:"containerId,omitempty"`
+
+	// ContainerName is the Docker container name.
+	//
+	// Required: false
+	ContainerName string `json:"containerName,omitempty"`
+
+	// Ports is a list of port mappings for the container.
+	//
+	// Required: false
+	Ports []string `json:"ports,omitempty"`
+
+	// Health is the health status of the container.
+	//
+	// Required: false
+	Health *string `json:"health,omitempty"`
 }
 
 // CreateReponse is the response when a project is created.
@@ -194,7 +233,12 @@ type Details struct {
 	// Services is a list of services defined in the Docker Compose file.
 	//
 	// Required: false
-	Services []any `json:"services,omitempty"`
+	Services []composetypes.ServiceConfig `json:"services,omitempty"`
+
+	// RuntimeServices contains live container status information for each service.
+	//
+	// Required: false
+	RuntimeServices []RuntimeService `json:"runtimeServices,omitempty"`
 }
 
 // Destroy is used to destroy a project.
