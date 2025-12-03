@@ -1,27 +1,19 @@
 {
   "labels": [],
-  "comment": "**Disclaimer** Greptiles Reviews uses AI, make sure to check over its work",
+  "comment": "**Disclaimer** Greptiles Reviews use AI, make sure to check over its work",
   "fixWithAI": true,
   "strictness": 2,
   "statusCheck": true,
-  "commentTypes": [
-    "syntax",
-    "logic",
-    "style"
-  ],
+  "commentTypes": ["syntax", "logic", "style"],
   "instructions": "",
   "disabledLabels": [],
-  "excludeAuthors": [
-    "dependabot[bot]",
-    "blacksmith-sh[bot]",
-    "github-actions[bot]"
-  ],
+  "excludeAuthors": ["dependabot[bot]", "github-actions[bot]"],
   "ignoreKeywords": "chore(translations)",
   "includeAuthors": [],
   "summarySection": {
     "included": true,
     "collapsible": true,
-    "defaultOpen": false
+    "defaultOpen": true
   },
   "excludeBranches": [],
   "includeBranches": [],
@@ -37,9 +29,10 @@
     "defaultOpen": false
   },
   "sequenceDiagramSection": {
-    "included": false,
-    "collapsible": false,
+    "included": true,
+    "collapsible": true,
     "defaultOpen": false
   },
-  "shouldUpdateDescription": true
+  "shouldUpdateDescription": true,
+  "updateExistingSummaryComment": true
 }
