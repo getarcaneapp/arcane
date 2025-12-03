@@ -20,9 +20,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"go.getarcane.app/types/settings"
 )
 
 type SettingsService struct {
@@ -279,7 +279,7 @@ func (s *SettingsService) SyncOidcEnvToDatabase(ctx context.Context) ([]models.S
 		scopes = "openid email profile"
 	}
 
-	return s.UpdateSettings(ctx, dto.UpdateSettingsDto{
+	return s.UpdateSettings(ctx, settings.Update{
 		OidcEnabled:      &trueStr,
 		OidcClientId:     &cfg.OidcClientID,
 		OidcClientSecret: &cfg.OidcClientSecret,
@@ -294,7 +294,7 @@ func (s *SettingsService) SyncOidcEnvToDatabase(ctx context.Context) ([]models.S
 // and renames legacy auth* keys to their new oidc* names.
 // This should be called during bootstrap to ensure existing configurations are preserved.
 func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
-	settings, err := s.GetSettings(ctx)
+	currentSettings, err := s.GetSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get settings for OIDC migration: %w", err)
 	}
@@ -306,19 +306,19 @@ func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
 	}
 
 	// Check if migration is needed: if we have authOidcConfig but no oidcClientId
-	if settings.AuthOidcConfig.Value == "" || settings.AuthOidcConfig.Value == "{}" {
+	if currentSettings.AuthOidcConfig.Value == "" || currentSettings.AuthOidcConfig.Value == "{}" {
 		slog.DebugContext(ctx, "No OIDC config to migrate")
 		return nil
 	}
 
 	// If individual fields are already populated, skip migration
-	if settings.OidcClientId.Value != "" {
+	if currentSettings.OidcClientId.Value != "" {
 		slog.DebugContext(ctx, "OIDC fields already populated, skipping migration")
 		return nil
 	}
 
 	var oidcConfig models.OidcConfig
-	if err := json.Unmarshal([]byte(settings.AuthOidcConfig.Value), &oidcConfig); err != nil {
+	if err := json.Unmarshal([]byte(currentSettings.AuthOidcConfig.Value), &oidcConfig); err != nil {
 		slog.WarnContext(ctx, "Failed to parse legacy OIDC config for migration", "error", err)
 		return nil
 	}
@@ -336,7 +336,7 @@ func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
 		scopes = "openid email profile"
 	}
 
-	_, err = s.UpdateSettings(ctx, dto.UpdateSettingsDto{
+	_, err = s.UpdateSettings(ctx, settings.Update{
 		OidcClientId:     &oidcConfig.ClientID,
 		OidcClientSecret: &oidcConfig.ClientSecret,
 		OidcIssuerUrl:    &oidcConfig.IssuerURL,
@@ -407,7 +407,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 	})
 }
 
-func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.UpdateSettingsDto) ([]models.SettingVariable, error) {
+func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg, err := s.GetSettings(ctx)
 	if err != nil {
@@ -444,7 +444,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates dto.Update
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates dto.UpdateSettingsDto, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
@@ -511,7 +511,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 	})
 }
 
-func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates dto.UpdateSettingsDto) error {
+func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates settings.Update) error {
 	// Handle legacy JSON config format (for backward compatibility during migration)
 	if updates.AuthOidcConfig != nil {
 		newCfgStr := *updates.AuthOidcConfig

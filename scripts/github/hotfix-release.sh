@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Check if the script is being run from the root of the project
-if [ ! -f .version ] || [ ! -f frontend/package.json ] || [ ! -f CHANGELOG.md ]; then
+if [ ! -f .arcane.json ] || [ ! -f frontend/package.json ] || [ ! -f CHANGELOG.md ]; then
     echo -e "${RED}Error: This script must be run from the root of the project.${NC}"
     exit 1
 fi
@@ -179,18 +179,15 @@ fi
 echo ""
 echo -e "${BLUE}Finalizing hotfix release ${NEW_TAG}...${NC}"
 
-# Update .version file
-echo "$NEW_VERSION" > .version
-git add .version
+# Update .arcane.json file with the new version and revision
+LATEST_REVISION=$(git rev-parse --short HEAD)
+jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
+  '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
+git add .arcane.json
 
 # Update version in frontend/package.json
 jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
 git add frontend/package.json
-
-# Create/Update .revision file with the latest commit short hash
-LATEST_REVISION=$(git rev-parse --short HEAD)
-echo "$LATEST_REVISION" > .revision
-git add .revision
 
 # Generate changelog for ONLY the fixes in this release branch
 echo -e "${BLUE}Generating changelog for hotfix...${NC}"
@@ -259,20 +256,18 @@ echo -e "${BLUE}Updating main branch with version ${NEW_VERSION}...${NC}"
 git checkout main
 git pull origin main --quiet
 
-# Update .version file
-echo "$NEW_VERSION" > .version
+# Update .arcane.json file with the new version and revision
+jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
+  '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
 
 # Update version in frontend/package.json
 jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
-
-# Update .revision file
-echo "$LATEST_REVISION" > .revision
 
 # Copy the updated CHANGELOG.md from the release branch
 git checkout "${RELEASE_BRANCH}" -- CHANGELOG.md
 
 # Commit the version updates to main
-git add .version frontend/package.json .revision CHANGELOG.md
+git add .arcane.json frontend/package.json CHANGELOG.md
 git commit -m "chore: bump version to ${NEW_VERSION} after hotfix release"
 git push origin main
 

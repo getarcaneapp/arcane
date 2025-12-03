@@ -25,18 +25,18 @@ export function getAuthRedirectPath(path: string, user: User | null) {
 	const isSignedIn = !!user;
 
 	const isUnauthenticatedOnlyPath =
-		path === '/auth/login' ||
-		path.startsWith('/auth/login/') ||
-		path === '/auth/oidc/login' ||
-		path.startsWith('/auth/oidc/login') ||
-		path === '/auth/oidc/callback' ||
-		path.startsWith('/auth/oidc/callback') ||
+		path === '/login' ||
+		path.startsWith('/login/') ||
+		path === '/oidc/login' ||
+		path.startsWith('/oidc/login') ||
+		path === '/oidc/callback' ||
+		path.startsWith('/oidc/callback') ||
 		path === '/img' ||
 		path.startsWith('/img') ||
 		path === '/favicon.ico';
 
 	if (!isSignedIn && isProtectedPath(path)) {
-		return '/auth/login';
+		return '/login';
 	}
 
 	if (isUnauthenticatedOnlyPath && isSignedIn) {
@@ -44,7 +44,7 @@ export function getAuthRedirectPath(path: string, user: User | null) {
 	}
 
 	if (path === '/') {
-		return isSignedIn ? '/dashboard' : '/auth/login';
+		return isSignedIn ? '/dashboard' : '/login';
 	}
 
 	return null;

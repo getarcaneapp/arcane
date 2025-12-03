@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"go.getarcane.app/types/auth"
 )
 
 var (
@@ -101,7 +101,7 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 	return authSettings, nil
 }
 
-func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*dto.OidcStatusInfo, error) {
+func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.OidcStatusInfo, error) {
 	mergeAccounts := false
 	if s.settingsService != nil {
 		func() {
@@ -115,7 +115,7 @@ func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*dto.Oidc
 		}()
 	}
 
-	status := &dto.OidcStatusInfo{
+	status := &auth.OidcStatusInfo{
 		EnvForced:     s.config.OidcEnabled,
 		MergeAccounts: mergeAccounts,
 	}
@@ -239,7 +239,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 	return user, tokenPair, nil
 }
 
-func (s *AuthService) OidcLogin(ctx context.Context, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) (*models.User, *TokenPair, error) {
+func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, *TokenPair, error) {
 	if userInfo.Subject == "" {
 		return nil, nil, errors.New("missing OIDC subject identifier")
 	}
@@ -271,7 +271,7 @@ func (s *AuthService) OidcLogin(ctx context.Context, userInfo dto.OidcUserInfo, 
 	return user, tokenPair, nil
 }
 
-func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) (*models.User, bool, error) {
+func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, bool, error) {
 	user, err := s.userService.GetUserByOidcSubjectId(ctx, userInfo.Subject)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, false, err
@@ -315,7 +315,7 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo dto.Oid
 	return user, false, nil
 }
 
-func (s *AuthService) createOidcUser(ctx context.Context, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) (*models.User, error) {
+func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, error) {
 	now := time.Now()
 
 	var username string
@@ -360,7 +360,7 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo dto.OidcUserI
 	return user, nil
 }
 
-func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) error {
+func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
 	if userInfo.Name != "" && user.DisplayName == nil {
 		user.DisplayName = &userInfo.Name
 	}
@@ -385,7 +385,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, use
 	return err
 }
 
-func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, user *models.User, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) error {
+func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
 	// Perform the merge atomically to avoid races when multiple OIDC subjects share the same email
 	_, err := s.userService.AttachOidcSubjectTransactional(ctx, user.ID, userInfo.Subject, func(u *models.User) {
 		// Update display name if not set
@@ -438,7 +438,7 @@ func removeRole(roles models.StringSlice, role string) models.StringSlice {
 	return out
 }
 
-func (s *AuthService) isAdminFromOidc(ctx context.Context, userInfo dto.OidcUserInfo, tokenResp *dto.OidcTokenResponse) bool {
+func (s *AuthService) isAdminFromOidc(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) bool {
 	claimKey, values := s.getAdminClaimConfig(ctx)
 	if claimKey == "" {
 		return false
@@ -482,7 +482,7 @@ func (s *AuthService) getAdminClaimConfig(ctx context.Context) (claim string, va
 	return claim, values
 }
 
-func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *dto.OidcTokenResponse) {
+func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *auth.OidcTokenResponse) {
 	if tokenResp == nil {
 		return
 	}

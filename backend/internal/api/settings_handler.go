@@ -7,10 +7,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/search"
+	"go.getarcane.app/types/settings"
 )
 
 type SettingsHandler struct {
@@ -38,7 +40,7 @@ func NewSettingsHandler(group *gin.RouterGroup, settingsService *services.Settin
 
 // Search delegates to the settings search service and returns relevance-scored results
 func (h *SettingsHandler) Search(c *gin.Context) {
-	var req dto.SettingsSearchRequest
+	var req search.Request
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -69,10 +71,10 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 
 	showAll := environmentID == "0"
-	settings := h.settingsService.ListSettings(showAll)
+	settingsList := h.settingsService.ListSettings(showAll)
 
-	var settingsDto []dto.PublicSettingDto
-	if err := dto.MapStructList(settings, &settingsDto); err != nil {
+	var settingsDto []settings.PublicSetting
+	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -81,7 +83,7 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 		return
 	}
 
-	settingsDto = append(settingsDto, dto.PublicSettingDto{
+	settingsDto = append(settingsDto, settings.PublicSetting{
 		Key:   "uiConfigDisabled",
 		Value: strconv.FormatBool(config.Load().UIConfigurationDisabled),
 		Type:  "boolean",
@@ -91,10 +93,10 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 }
 
 func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
-	settings := h.settingsService.ListSettings(false)
+	settingsList := h.settingsService.ListSettings(false)
 
-	var settingsDto []dto.PublicSettingDto
-	if err := dto.MapStructList(settings, &settingsDto); err != nil {
+	var settingsDto []settings.PublicSetting
+	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -103,7 +105,7 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 		return
 	}
 
-	settingsDto = append(settingsDto, dto.PublicSettingDto{
+	settingsDto = append(settingsDto, settings.PublicSetting{
 		Key:   "uiConfigDisabled",
 		Value: strconv.FormatBool(config.Load().UIConfigurationDisabled),
 		Type:  "boolean",
@@ -115,7 +117,7 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 
-	var req dto.UpdateSettingsDto
+	var req settings.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -148,10 +150,10 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	settingDtos := make([]dto.SettingDto, 0, len(updatedSettings))
+	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))
 	for _, setting := range updatedSettings {
-		settingDtos = append(settingDtos, dto.SettingDto{
-			PublicSettingDto: dto.PublicSettingDto{
+		settingDtos = append(settingDtos, settings.SettingDto{
+			PublicSetting: settings.PublicSetting{
 				Key:   setting.Key,
 				Type:  "string",
 				Value: setting.Value,

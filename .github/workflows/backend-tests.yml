@@ -1,20 +1,27 @@
-name: Backend Unit Tests
+name: Go Unit Tests
 
 on:
   push:
     branches: [main]
     paths:
       - "backend/**"
+      - "cli/**"
+      - "types/**"
+      - "go.work"
   pull_request:
     branches: [main]
     paths:
       - "backend/**"
+      - "cli/**"
+      - "types/**"
+      - "go.work"
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  test-backend:
+    name: Backend Tests
     runs-on: depot-ubuntu-24.04-8
     timeout-minutes: 30
     defaults:
@@ -54,3 +61,35 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage.out
+
+  test-cli:
+    name: CLI Tests
+    runs-on: depot-ubuntu-24.04-8
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -v
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cli-coverage
+          path: cli/coverage.out

@@ -5,7 +5,7 @@ Thanks for helping make Arcane better! We've built a modern, streamlined develop
 ## 🌟 Ways to Contribute
 
 - 🐛 **Report bugs** using our issue templates
-- 💡 **Suggest features** or improvements  
+- 💡 **Suggest features** or improvements
 - 🔧 **Code contributions** (frontend, backend, DevOps)
 - 📚 **Documentation** improvements
 - 🌍 **Translations** via [Crowdin](https://crowdin.com/project/arcane-docker-management)
@@ -36,12 +36,14 @@ From the project root directory:
 ```
 
 That's it! The development environment will automatically:
+
 - 🔥 Start both frontend and backend with hot reload
 - 🐳 Handle all dependencies via Docker
 - 📊 Set up health checks and monitoring
 - 💾 Create persistent storage for your development data
 
 Access your development environment:
+
 - **Frontend**: http://localhost:3000 (SvelteKit with HMR)
 - **Backend**: http://localhost:3552 (Go with Air hot reload)
 
@@ -52,6 +54,7 @@ For the best development experience, we've included VS Code tasks and workspace 
 ### Recommended Extensions
 
 When you open the project in VS Code, you'll be prompted to install our recommended extensions. These provide:
+
 - Docker integration and management
 - Go language support with debugging
 - Svelte/TypeScript support
@@ -61,15 +64,15 @@ When you open the project in VS Code, you'll be prompted to install our recommen
 
 Use `Ctrl/Cmd+Shift+P` → "Tasks: Run Task" to access:
 
-| Task | Description |
-|------|-------------|
-| **Start** | Start the development environment |
-| **Stop** | Stop all services |
-| **Restart** | Restart all services |
-| **Rebuild** | Rebuild containers (after dependency changes) |
-| **Clean** | Remove all containers and volumes |
-| **Logs** | Interactive log viewer with service selection |
-| **Open Frontend** | Launch frontend in browser |
+| Task              | Description                                   |
+| ----------------- | --------------------------------------------- |
+| **Start**         | Start the development environment             |
+| **Stop**          | Stop all services                             |
+| **Restart**       | Restart all services                          |
+| **Rebuild**       | Rebuild containers (after dependency changes) |
+| **Clean**         | Remove all containers and volumes             |
+| **Logs**          | Interactive log viewer with service selection |
+| **Open Frontend** | Launch frontend in browser                    |
 
 ### Quick Build Shortcut
 
@@ -80,6 +83,7 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
 ### Making Changes
 
 1. **Create a feature branch**:
+
    ```bash
    git switch -c feat/my-awesome-feature
    # or
@@ -87,20 +91,22 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
    ```
 
 2. **Start development** (from project root):
+
    ```bash
    ./scripts/development/dev.sh start
    # or use VS Code Task: "Start"
    ```
 
 3. **Monitor logs** (choose your preferred method):
+
    ```bash
    # Interactive selector
    ./scripts/development/dev.sh logs
-   
+
    # Specific service
    ./scripts/development/dev.sh logs frontend
    ./scripts/development/dev.sh logs backend
-   
+
    # Or use VS Code Task: "Logs"
    ```
 
@@ -113,6 +119,7 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
 **Note**: All commands should be run from the project root directory (`arcane/`).
 
 ### Environment Management
+
 ```bash
 # Start development environment
 ./scripts/development/dev.sh start
@@ -134,6 +141,7 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
 ```
 
 ### Debugging & Logs
+
 ```bash
 # Interactive log selection
 ./scripts/development/dev.sh logs
@@ -167,12 +175,12 @@ If you need to run checks manually:
 
 ```bash
 # Frontend checks
-docker compose -f docker-compose.dev.yml exec frontend pnpm check
-docker compose -f docker-compose.dev.yml exec frontend pnpm format
+docker compose -f docker/compose.dev.yaml exec frontend pnpm check
+docker compose -f docker/compose.dev.yaml exec frontend pnpm format
 
-# Backend checks  
-docker compose -f docker-compose.dev.yml exec backend go fmt ./...
-docker compose -f docker-compose.dev.yml exec backend go vet ./...
+# Backend checks
+docker compose -f docker/compose.dev.yaml exec backend go fmt ./...
+docker compose -f docker/compose.dev.yaml exec backend go vet ./...
 ```
 
 ## 📝 Commit Guidelines
@@ -200,7 +208,7 @@ git commit -m "refactor: simplify API response handling"
 
 - [ ] Code builds successfully in development environment
 - [ ] Frontend hot reload works correctly
-- [ ] Backend hot reload works correctly  
+- [ ] Backend hot reload works correctly
 - [ ] No linting errors
 - [ ] Commit messages follow conventional format
 - [ ] PR description explains the change and why it's needed
@@ -210,6 +218,7 @@ git commit -m "refactor: simplify API response handling"
 ### Common Issues
 
 **Port conflicts:**
+
 ```bash
 # Stop and clean everything (from project root)
 ./scripts/development/dev.sh clean
@@ -220,6 +229,7 @@ lsof -i :3552  # Backend port
 ```
 
 **Docker issues:**
+
 ```bash
 # Reset Docker environment (from project root)
 ./scripts/development/dev.sh clean
@@ -230,6 +240,7 @@ docker system prune -f
 ```
 
 **VS Code tasks not working:**
+
 - Ensure you've opened the project root folder (`arcane/`) in VS Code, not a subfolder or parent directory
 - Install recommended extensions when prompted
 - Restart VS Code if tasks don't appear

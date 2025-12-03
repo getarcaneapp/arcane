@@ -19,7 +19,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -31,6 +30,8 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
+	"go.getarcane.app/types/dockerinfo"
+	"go.getarcane.app/types/system"
 )
 
 const (
@@ -186,7 +187,7 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	info.NCPU = cpuCount
 	info.MemTotal = memTotal
 
-	dockerInfo := dto.DockerInfoDto{
+	dockerInfo := dockerinfo.Info{
 		Success:    true,
 		APIVersion: version.APIVersion,
 		GitCommit:  version.GitCommit,
@@ -204,7 +205,7 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 	ctx := c.Request.Context()
 	slog.InfoContext(ctx, "System prune operation initiated")
 
-	var req dto.PruneSystemDto
+	var req system.PruneAllRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		slog.ErrorContext(ctx, "Failed to bind prune request JSON", "error", err, "client_ip", c.ClientIP())
 		c.JSON(http.StatusBadRequest, gin.H{

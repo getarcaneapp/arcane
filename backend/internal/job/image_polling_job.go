@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/go-co-op/gocron/v2"
+	"go.getarcane.app/types/containerregistry"
 )
 
 type ImagePollingJob struct {
@@ -97,7 +97,7 @@ func (j *ImagePollingJob) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (j *ImagePollingJob) loadRegistryCredentials(ctx context.Context) ([]dto.ContainerRegistryCredential, error) {
+func (j *ImagePollingJob) loadRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	return j.environmentService.GetEnabledRegistryCredentials(ctx)
 }
 

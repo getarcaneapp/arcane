@@ -18,9 +18,9 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"go.getarcane.app/types/auth"
 )
 
 type OidcService struct {
@@ -256,7 +256,7 @@ func (s *OidcService) fetchClaims(ctx context.Context, provider *oidc.Provider, 
 	return claims, nil
 }
 
-func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState string) (*dto.OidcUserInfo, *dto.OidcTokenResponse, error) {
+func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
 	slog.Debug("HandleCallback: processing callback", "code_present", code != "", "state_present", state != "")
 
 	stateData, err := s.validateState(state, storedState)
@@ -355,7 +355,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 	return idToken, rawIDToken, nil
 }
 
-func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*dto.OidcUserInfo, *dto.OidcTokenResponse, error) {
+func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
 	claims, err := s.fetchClaims(ctx, provider, token, idToken)
 	if err != nil {
 		slog.Error("HandleCallback: failed to fetch claims", "error", err)
@@ -368,7 +368,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
 	}
 
-	userInfoDto := dto.OidcUserInfo{
+	userInfoDto := auth.OidcUserInfo{
 		Subject:           subject,
 		Name:              utils.GetStringClaim(claims, "name"),
 		Email:             utils.GetStringClaim(claims, "email"),
@@ -387,7 +387,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		tokenType = "Bearer"
 	}
 
-	tokenResp := &dto.OidcTokenResponse{
+	tokenResp := &auth.OidcTokenResponse{
 		AccessToken:  token.AccessToken,
 		TokenType:    tokenType,
 		RefreshToken: token.RefreshToken,
