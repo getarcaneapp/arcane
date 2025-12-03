@@ -2,6 +2,9 @@ module github.com/getarcaneapp/arcane/backend
 
 go 1.25.4
 
+// TODO: Remove this replace directive after merging the types module
+replace go.getarcane.app/types => ../types
+
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/compose-spec/compose-go/v2 v2.10.0
@@ -32,6 +35,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.11
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
+	go.getarcane.app/types v0.0.0-00010101000000-000000000000
 	go.podman.io/image/v5 v5.38.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/oauth2 v0.33.0
