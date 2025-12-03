@@ -1,47 +1,5 @@
 import { getContext, setContext } from 'svelte';
-import type { Environment, EnvironmentFilter, TagMode, StatusFilter, GroupBy } from '$lib/types/environment.type';
-
-export interface EnvironmentFilterState {
-	selectedTags: string[];
-	excludedTags: string[];
-	tagMode: TagMode;
-	statusFilter: StatusFilter;
-	groupBy: GroupBy;
-}
-
-export const defaultFilterState: EnvironmentFilterState = {
-	selectedTags: [],
-	excludedTags: [],
-	tagMode: 'any',
-	statusFilter: 'all',
-	groupBy: 'none'
-};
-
-export interface InputMatch {
-	type: 'status' | 'include' | 'exclude';
-	partial: string;
-}
-
-export interface Suggestion {
-	value: string;
-	label: string;
-}
-
-export interface EnvironmentGroup {
-	name: string;
-	items: Environment[];
-}
-
-type Getter<T> = () => T;
-
-export interface EnvSelectorStateProps {
-	filters: Getter<EnvironmentFilterState>;
-	allTags: Getter<string[]>;
-	savedFilters: Getter<EnvironmentFilter[]>;
-	activeFilterId: Getter<string | null>;
-	updateFilters: (partial: Partial<EnvironmentFilterState>) => void;
-	clearFilters: () => void;
-}
+import type { EnvironmentFilter, EnvironmentFilterState, EnvSelectorStateProps, GroupBy, StatusFilter, TagMode } from './types';
 
 /**
  * State class for the environment selector context.
@@ -199,6 +157,3 @@ export function setEnvSelectorContext(props: EnvSelectorStateProps): EnvSelector
 export function useEnvSelector(): EnvSelectorState {
 	return getContext(Symbol.for(SYMBOL_KEY));
 }
-
-// Re-export types for convenience
-export type { Environment, EnvironmentFilter, TagMode, StatusFilter, GroupBy };

@@ -109,7 +109,6 @@
 			filters.groupBy !== 'none'
 	);
 	const hasMorePages = $derived(pagination ? pagination.currentPage < pagination.totalPages : false);
-	const activeSavedFilter = $derived(savedFilters.find((f) => f.id === activeFilterId) ?? null);
 	const filterKey = $derived(
 		JSON.stringify([searchQuery, filters.statusFilter, filters.selectedTags, filters.excludedTags, filters.tagMode])
 	);

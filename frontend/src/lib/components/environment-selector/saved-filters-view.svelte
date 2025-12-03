@@ -6,7 +6,8 @@
 	import FilterIcon from '@lucide/svelte/icons/filter';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { m } from '$lib/paraglide/messages';
-	import { useEnvSelector, type EnvironmentFilter } from './context.svelte';
+	import { useEnvSelector } from './context.svelte';
+	import type { EnvironmentFilter } from './types';
 	import SavedFilterItem from './saved-filter-item.svelte';
 
 	interface Props {
