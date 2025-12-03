@@ -43,7 +43,7 @@ func NewVolumeHandler(group *gin.RouterGroup, dockerService *services.DockerClie
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.VolumeDto]
+//	@Success		200					{object}	base.Paginated[volume.Volume]
 //	@Router			/api/environments/{id}/volumes [get]
 func (h *VolumeHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -82,7 +82,7 @@ func (h *VolumeHandler) List(c *gin.Context) {
 //	@Tags			Volumes
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			volumeName	path		string	true	"Volume name"
-//	@Success		200			{object}	dto.VolumeDto
+//	@Success		200			{object}	base.ApiResponse[volume.Volume]
 //	@Router			/api/environments/{id}/volumes/{volumeName} [get]
 func (h *VolumeHandler) GetByName(c *gin.Context) {
 	name := c.Param("volumeName")
@@ -109,9 +109,9 @@ func (h *VolumeHandler) GetByName(c *gin.Context) {
 //	@Tags			Volumes
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string				true	"Environment ID"
-//	@Param			volume	body		dto.CreateVolumeDto	true	"Volume creation data"
-//	@Success		201		{object}	dto.VolumeDto
+//	@Param			id		path		string			true	"Environment ID"
+//	@Param			volume	body		volume.Create	true	"Volume creation data"
+//	@Success		201		{object}	base.ApiResponse[volume.Volume]
 //	@Router			/api/environments/{id}/volumes [post]
 func (h *VolumeHandler) Create(c *gin.Context) {
 	var req volumetypes.Create
@@ -160,8 +160,8 @@ func (h *VolumeHandler) Create(c *gin.Context) {
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			volumeName	path		string	true	"Volume name"
 //	@Param			force		query		bool	false	"Force removal"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/volumes/{volumeName} [delete]
 func (h *VolumeHandler) Remove(c *gin.Context) {
 	name := c.Param("volumeName")
@@ -194,8 +194,8 @@ func (h *VolumeHandler) Remove(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.VolumePruneReportDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[volume.PruneReport]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/volumes/prune [post]
 func (h *VolumeHandler) Prune(c *gin.Context) {
 	report, err := h.volumeService.PruneVolumes(c.Request.Context())
@@ -222,8 +222,8 @@ func (h *VolumeHandler) Prune(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			volumeName	path		string	true	"Volume name"
-//	@Success		200			{object}	dto.ApiResponse[dto.VolumeUsageDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[volume.Usage]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/volumes/{volumeName}/usage [get]
 func (h *VolumeHandler) GetUsage(c *gin.Context) {
 	name := c.Param("volumeName")
@@ -252,7 +252,7 @@ func (h *VolumeHandler) GetUsage(c *gin.Context) {
 //	@Description	Get counts of volumes in use, unused, and total
 //	@Tags			Volumes
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.VolumeUsageCounts
+//	@Success		200	{object}	base.ApiResponse[volume.UsageCounts]
 //	@Router			/api/environments/{id}/volumes/counts [get]
 func (h *VolumeHandler) GetVolumeUsageCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.dockerService.GetAllVolumes(c.Request.Context())

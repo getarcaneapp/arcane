@@ -47,7 +47,7 @@ func NewContainerRegistryHandler(group *gin.RouterGroup, registryService *servic
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.ContainerRegistryDto]
+//	@Success		200					{object}	base.Paginated[containerregistry.Response]
 //	@Router			/api/container-registries [get]
 func (h *ContainerRegistryHandler) GetRegistries(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -74,7 +74,7 @@ func (h *ContainerRegistryHandler) GetRegistries(c *gin.Context) {
 //	@Description	Get a container registry by ID
 //	@Tags			Container Registries
 //	@Param			id	path		string	true	"Registry ID"
-//	@Success		200	{object}	dto.ContainerRegistryDto
+//	@Success		200	{object}	base.ApiResponse[containerregistry.Response]
 //	@Router			/api/container-registries/{id} [get]
 func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -112,7 +112,7 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			registry	body		models.CreateContainerRegistryRequest	true	"Registry creation data"
-//	@Success		201			{object}	dto.ContainerRegistryDto
+//	@Success		201			{object}	base.ApiResponse[containerregistry.Response]
 //	@Router			/api/container-registries [post]
 func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 	var req models.CreateContainerRegistryRequest
@@ -158,7 +158,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 //	@Produce		json
 //	@Param			id			path		string									true	"Registry ID"
 //	@Param			registry	body		models.UpdateContainerRegistryRequest	true	"Registry update data"
-//	@Success		200			{object}	dto.ContainerRegistryDto
+//	@Success		200			{object}	base.ApiResponse[containerregistry.Response]
 //	@Router			/api/container-registries/{id} [put]
 func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -205,8 +205,8 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Registry ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/container-registries/{id} [delete]
 func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -234,8 +234,8 @@ func (h *ContainerRegistryHandler) DeleteRegistry(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Registry ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.RegistryTestResultDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[containerregistry.TestResult]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/container-registries/{id}/test [post]
 func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 	id := c.Param("id")
@@ -283,10 +283,10 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		dto.SyncRegistriesRequest	true	"Registries to sync"
-//	@Success		200		{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			request	body		containerregistry.SyncRequest	true	"Registries to sync"
+//	@Success		200		{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/container-registries/sync [post]
 func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
 	var req containerregistry.SyncRequest

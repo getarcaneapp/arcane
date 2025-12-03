@@ -68,10 +68,10 @@ func NewEnvironmentHandler(
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path		string					true	"Environment ID (must be 0 for local)"
-//	@Param			request	body		dto.AgentPairRequestDto	false	"Pair request with optional rotate flag"
-//	@Success		200		{object}	dto.ApiResponse[dto.AgentPairResponseDto]
-//	@Failure		404		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			request	body		environment.AgentPairRequest	false	"Pair request with optional rotate flag"
+//	@Success		200		{object}	base.ApiResponse[environment.AgentPairResponse]
+//	@Failure		404		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/agent/pair [post]
 func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 	if c.Param("id") != LOCAL_DOCKER_ENVIRONMENT_ID {
@@ -109,8 +109,8 @@ func (h *EnvironmentHandler) PairAgent(c *gin.Context) {
 //	@Tags			Environments
 //	@Accept			json
 //	@Produce		json
-//	@Param			environment	body		dto.CreateEnvironmentDto	true	"Environment creation data"
-//	@Success		201			{object}	dto.EnvironmentDto
+//	@Param			environment	body		environment.Create	true	"Environment creation data"
+//	@Success		201			{object}	base.ApiResponse[environment.Response]
 //	@Router			/api/environments [post]
 //
 // Create
@@ -197,7 +197,7 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.EnvironmentDto]
+//	@Success		200					{object}	base.Paginated[environment.Response]
 //	@Router			/api/environments [get]
 func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -221,7 +221,7 @@ func (h *EnvironmentHandler) ListEnvironments(c *gin.Context) {
 //	@Description	Get a Docker environment by ID
 //	@Tags			Environments
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.EnvironmentDto
+//	@Success		200	{object}	base.ApiResponse[environment.Response]
 //	@Router			/api/environments/{id} [get]
 //
 // Get by ID
@@ -253,9 +253,9 @@ func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 //	@Tags			Environments
 //	@Accept			json
 //	@Produce		json
-//	@Param			id			path		string						true	"Environment ID"
-//	@Param			environment	body		dto.UpdateEnvironmentDto	true	"Environment update data"
-//	@Success		200			{object}	dto.EnvironmentDto
+//	@Param			id			path		string					true	"Environment ID"
+//	@Param			environment	body		environment.Update		true	"Environment update data"
+//	@Success		200			{object}	base.ApiResponse[environment.Response]
 //	@Router			/api/environments/{id} [put]
 //
 // Update
@@ -401,9 +401,9 @@ func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(environmentID string
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400	{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400	{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id} [delete]
 //
 // Delete
@@ -437,7 +437,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(c *gin.Context) {
 //	@Produce		json
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			request	body		object	false	"Optional API URL to test"
-//	@Success		200		{object}	dto.TestConnectionDto
+//	@Success		200		{object}	base.ApiResponse[environment.Test]
 //	@Router			/api/environments/{id}/test [post]
 //
 // TestConnection
@@ -476,8 +476,8 @@ func (h *EnvironmentHandler) TestConnection(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/heartbeat [post]
 func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 	environmentID := c.Param("id")
@@ -505,8 +505,8 @@ func (h *EnvironmentHandler) UpdateHeartbeat(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/sync-registries [post]
 func (h *EnvironmentHandler) SyncRegistries(c *gin.Context) {
 	environmentID := c.Param("id")

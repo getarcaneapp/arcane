@@ -33,8 +33,8 @@ func NewCustomizeHandler(group *gin.RouterGroup, customizeSearchService *service
 //	@Tags			Customize
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		dto.CustomizeSearchRequest	true	"Search query"
-//	@Success		200		{object}	dto.CustomizeSearchResponse
+//	@Param			request	body		search.Request	true	"Search query"
+//	@Success		200		{object}	search.Response
 //	@Router			/api/customize/search [post]
 //
 // Search delegates to the customize search service and returns relevance-scored results
@@ -65,7 +65,7 @@ func (h *CustomizeHandler) Search(c *gin.Context) {
 //	@Summary		Get customization categories
 //	@Description	Get all available customization categories with metadata
 //	@Tags			Customize
-//	@Success		200	{array}	dto.CustomizeCategory
+//	@Success		200	{array}	search.Category
 //	@Router			/api/customize/categories [get]
 //
 // GetCategories returns all available customization categories with metadata

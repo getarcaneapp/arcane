@@ -109,8 +109,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 //	@Tags			Auth
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
-//	@Success		200	{object}	dto.ApiResponse[dto.UserResponseDto]
-//	@Failure		401	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[user.Response]
+//	@Failure		401	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := middleware.GetCurrentUserID(c)

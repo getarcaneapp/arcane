@@ -37,7 +37,7 @@ func NewEventHandler(group *gin.RouterGroup, eventService *services.EventService
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.EventDto]
+//	@Success		200					{object}	base.Paginated[event.Event]
 //	@Router			/api/events [get]
 func (h *EventHandler) ListEvents(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -68,7 +68,7 @@ func (h *EventHandler) ListEvents(c *gin.Context) {
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.EventDto]
+//	@Success		200					{object}	base.Paginated[event.Event]
 //	@Router			/api/events/environment/{environmentId} [get]
 func (h *EventHandler) GetEventsByEnvironment(c *gin.Context) {
 	environmentID := c.Param("environmentId")
@@ -105,8 +105,8 @@ func (h *EventHandler) GetEventsByEnvironment(c *gin.Context) {
 //	@Tags			Events
 //	@Accept			json
 //	@Produce		json
-//	@Param			event	body		dto.CreateEventDto	true	"Event creation data"
-//	@Success		201		{object}	dto.EventDto
+//	@Param			event	body		event.Create	true	"Event creation data"
+//	@Success		201		{object}	base.ApiResponse[event.Event]
 //	@Router			/api/events [post]
 func (h *EventHandler) CreateEvent(c *gin.Context) {
 	var req event.Create
@@ -141,9 +141,9 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			eventId	path		string	true	"Event ID"
-//	@Success		200		{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200		{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/events/{eventId} [delete]
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	eventID := c.Param("eventId")

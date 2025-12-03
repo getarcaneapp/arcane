@@ -26,7 +26,7 @@ func NewVersionHandler(api *gin.RouterGroup, version *services.VersionService) *
 //	@Description	Get application version information and check for updates
 //	@Tags			Version
 //	@Param			current	query		string	false	"Current version to compare against"
-//	@Success		200		{object}	dto.VersionInfoDto
+//	@Success		200		{object}	version.Info
 //	@Router			/api/version [get]
 func (h *VersionHandler) Get(c *gin.Context) {
 	current := strings.TrimSpace(c.Query("current"))
@@ -43,7 +43,7 @@ func (h *VersionHandler) Get(c *gin.Context) {
 //	@Summary		Get app version
 //	@Description	Get the current application version
 //	@Tags			Version
-//	@Success		200	{object}	dto.VersionInfoDto
+//	@Success		200	{object}	version.Info
 //	@Router			/api/app-version [get]
 func (h *VersionHandler) GetAppVersion(c *gin.Context) {
 	info := h.version.GetAppVersionInfo(c.Request.Context())

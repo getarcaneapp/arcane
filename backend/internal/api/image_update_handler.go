@@ -38,9 +38,9 @@ func NewImageUpdateHandler(group *gin.RouterGroup, imageUpdateService *services.
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			imageRef	query		string	true	"Image reference (e.g., nginx:latest)"
-//	@Success		200			{object}	dto.ApiResponse[dto.ImageUpdateResponse]
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[imageupdate.Response]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/image-updates/check [get]
 func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	imageRef := c.Query("imageRef")
@@ -76,9 +76,9 @@ func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			imageId	path		string	true	"Image ID"
-//	@Success		200		{object}	dto.ApiResponse[dto.ImageUpdateResponse]
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200		{object}	base.ApiResponse[imageupdate.Response]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/image-updates/check/{imageId} [get]
 func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	imageID := c.Param("imageId")
@@ -112,9 +112,9 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 //	@Tags			Image Updates
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string						true	"Environment ID"
-//	@Param			request	body		dto.BatchImageUpdateRequest	true	"Batch image update request"
-//	@Success		200		{object}	dto.BatchImageUpdateResponse
+//	@Param			id		path		string							true	"Environment ID"
+//	@Param			request	body		imageupdate.BatchImageUpdateRequest	true	"Batch image update request"
+//	@Success		200		{object}	base.ApiResponse[imageupdate.BatchResponse]
 //	@Router			/api/environments/{id}/image-updates/check-batch [post]
 func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	var req imageupdate.BatchImageUpdateRequest
@@ -158,9 +158,9 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 //	@Tags			Image Updates
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string						true	"Environment ID"
-//	@Param			request	body		dto.BatchImageUpdateRequest	false	"Optional credentials"
-//	@Success		200		{object}	dto.BatchImageUpdateResponse
+//	@Param			id		path		string							false	"Environment ID"
+//	@Param			request	body		imageupdate.BatchImageUpdateRequest	false	"Optional credentials"
+//	@Success		200		{object}	base.ApiResponse[imageupdate.BatchResponse]
 //	@Router			/api/environments/{id}/image-updates/check-all [post]
 func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 	var req imageupdate.BatchImageUpdateRequest
@@ -191,8 +191,8 @@ func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.ImageUpdateSummaryResponse]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[imageupdate.Summary]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/image-updates/summary [get]
 func (h *ImageUpdateHandler) GetUpdateSummary(c *gin.Context) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(c.Request.Context())

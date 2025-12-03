@@ -148,7 +148,7 @@ func (h *SystemHandler) Health(c *gin.Context) {
 //	@Description	Get Docker daemon version and system information
 //	@Tags			System
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.DockerInfoDto
+//	@Success		200	{object}	dockerinfo.Info
 //	@Router			/api/environments/{id}/system/docker/info [get]
 func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -226,11 +226,11 @@ func (h *SystemHandler) GetDockerInfo(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string				true	"Environment ID"
-//	@Param			request	body		dto.PruneSystemDto	true	"Prune options"
-//	@Success		200		{object}	dto.ApiResponse[dto.PruneResultDto]
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			id		path		string					true	"Environment ID"
+//	@Param			request	body		system.PruneAllRequest	true	"Prune options"
+//	@Success		200		{object}	base.ApiResponse[system.PruneResult]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/system/prune [post]
 func (h *SystemHandler) PruneAll(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -288,8 +288,8 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[system.ContainerBulkActionResult]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/system/containers/start-all [post]
 func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllContainers(c.Request.Context())
@@ -316,8 +316,8 @@ func (h *SystemHandler) StartAllContainers(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[system.ContainerBulkActionResult]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/system/containers/start-stopped [post]
 func (h *SystemHandler) StartAllStoppedContainers(c *gin.Context) {
 	result, err := h.systemService.StartAllStoppedContainers(c.Request.Context())
@@ -366,8 +366,8 @@ func (h *SystemHandler) getDiskUsagePath(ctx context.Context) string {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.ContainerBulkActionResultDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[system.ContainerBulkActionResult]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/system/containers/stop-all [post]
 func (h *SystemHandler) StopAllContainers(c *gin.Context) {
 	result, err := h.systemService.StopAllContainers(c.Request.Context())
@@ -617,7 +617,7 @@ func (h *SystemHandler) ConvertDockerRun(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.UpgradeCheckResultDto]
+//	@Success		200	{object}	base.ApiResponse[system.UpgradeCheckResult]
 //	@Router			/api/environments/{id}/system/upgrade/check [get]
 //
 // CheckUpgradeAvailable checks if the local system can be upgraded
@@ -650,8 +650,8 @@ func (h *SystemHandler) CheckUpgradeAvailable(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		202	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		202	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/system/upgrade [post]
 //
 // TriggerUpgrade triggers a system upgrade by spawning the upgrade CLI command

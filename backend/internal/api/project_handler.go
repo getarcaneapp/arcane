@@ -79,7 +79,7 @@ func NewProjectHandler(group *gin.RouterGroup, projectService *services.ProjectS
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.ProjectDetailsDto]
+//	@Success		200					{object}	base.Paginated[project.Details]
 //	@Router			/api/environments/{id}/projects [get]
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -119,8 +119,8 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/up [post]
 func (h *ProjectHandler) DeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -157,8 +157,8 @@ func (h *ProjectHandler) DeployProject(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/down [post]
 func (h *ProjectHandler) DownProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -185,9 +185,9 @@ func (h *ProjectHandler) DownProject(c *gin.Context) {
 //	@Tags			Projects
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string					true	"Environment ID"
-//	@Param			project	body		dto.CreateProjectDto	true	"Project creation data"
-//	@Success		201		{object}	dto.CreateProjectReponseDto
+//	@Param			id		path		string				true	"Environment ID"
+//	@Param			project	body		project.Create		true	"Project creation data"
+//	@Success		201		{object}	base.ApiResponse[project.CreateReponse]
 //	@Router			/api/environments/{id}/projects [post]
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	var req project.Create
@@ -227,7 +227,7 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 //	@Tags			Projects
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{object}	dto.ProjectDetailsDto
+//	@Success		200			{object}	base.ApiResponse[project.Details]
 //	@Router			/api/environments/{id}/projects/{projectId} [get]
 func (h *ProjectHandler) GetProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -257,8 +257,8 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/redeploy [post]
 func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -295,12 +295,12 @@ func (h *ProjectHandler) RedeployProject(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			id			path		string					true	"Environment ID"
-//	@Param			projectId	path		string					true	"Project ID"
-//	@Param			request		body		dto.DestroyProjectDto	false	"Destroy options"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			id			path		string				true	"Environment ID"
+//	@Param			projectId	path		string				true	"Project ID"
+//	@Param			request		body		project.Destroy		false	"Destroy options"
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/destroy [delete]
 func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -337,11 +337,11 @@ func (h *ProjectHandler) DestroyProject(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Accept			json
 //	@Produce		application/x-json-stream
-//	@Param			id			path		string					true	"Environment ID"
-//	@Param			projectId	path		string					true	"Project ID"
-//	@Param			request		body		dto.ProjectImagePullDto	false	"Pull options with optional credentials"
-//	@Success		200			{string}	string					"Streaming JSON response"
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			id			path		string						true	"Environment ID"
+//	@Param			projectId	path		string						true	"Project ID"
+//	@Param			request		body		project.ImagePullRequest	false	"Pull options with optional credentials"
+//	@Success		200			{string}	string						"Streaming JSON response"
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/pull [post]
 func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -380,10 +380,10 @@ func (h *ProjectHandler) PullProjectImages(c *gin.Context) {
 //	@Tags			Projects
 //	@Accept			json
 //	@Produce		json
-//	@Param			id			path		string					true	"Environment ID"
-//	@Param			projectId	path		string					true	"Project ID"
-//	@Param			project		body		dto.UpdateProjectDto	true	"Project update data"
-//	@Success		200			{object}	dto.ProjectDetailsDto
+//	@Param			id			path		string				true	"Environment ID"
+//	@Param			projectId	path		string				true	"Project ID"
+//	@Param			project		body		project.Update		true	"Project update data"
+//	@Success		200			{object}	base.ApiResponse[project.Details]
 //	@Router			/api/environments/{id}/projects/{projectId} [put]
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -422,10 +422,10 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 //	@Tags			Projects
 //	@Accept			json
 //	@Produce		json
-//	@Param			id			path		string						true	"Environment ID"
-//	@Param			projectId	path		string						true	"Project ID"
-//	@Param			include		body		dto.UpdateProjectIncludeDto	true	"Include file update data"
-//	@Success		200			{object}	dto.ProjectDetailsDto
+//	@Param			id			path		string					true	"Environment ID"
+//	@Param			projectId	path		string					true	"Project ID"
+//	@Param			include		body		project.UpdateIncludeFile	true	"Include file update data"
+//	@Success		200			{object}	base.ApiResponse[project.Details]
 //	@Router			/api/environments/{id}/projects/{projectId}/includes [put]
 func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -466,8 +466,8 @@ func (h *ProjectHandler) UpdateProjectInclude(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		400			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/projects/{projectId}/restart [post]
 func (h *ProjectHandler) RestartProject(c *gin.Context) {
 	projectID := c.Param("projectId")
@@ -593,7 +593,7 @@ func (h *ProjectHandler) GetProjectLogsWS(c *gin.Context) {
 //	@Description	Get counts of running, stopped, and total projects
 //	@Tags			Projects
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ProjectStatusCounts
+//	@Success		200	{object}	base.ApiResponse[project.StatusCounts]
 //	@Router			/api/environments/{id}/projects/counts [get]
 func (h *ProjectHandler) GetProjectStatusCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.projectService.GetProjectStatusCounts(c.Request.Context())

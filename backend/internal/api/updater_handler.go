@@ -36,10 +36,10 @@ func NewUpdaterHandler(group *gin.RouterGroup, updaterService *services.UpdaterS
 //	@Security		ApiKeyAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string					true	"Environment ID"
-//	@Param			request	body		dto.UpdaterRunRequest	false	"Updater run options"
-//	@Success		200		{object}	dto.ApiResponse[dto.UpdaterRunResult]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Param			id		path		string				true	"Environment ID"
+//	@Param			request	body		updater.Options		false	"Updater run options"
+//	@Success		200		{object}	base.ApiResponse[updater.Result]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/updater/run [post]
 func (h *UpdaterHandler) Run(c *gin.Context) {
 	var req updater.Options
@@ -62,7 +62,7 @@ func (h *UpdaterHandler) Run(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.UpdaterStatusDto]
+//	@Success		200	{object}	base.ApiResponse[updater.Status]
 //	@Router			/api/environments/{id}/updater/status [get]
 func (h *UpdaterHandler) Status(c *gin.Context) {
 	status := h.updaterService.GetStatus()
@@ -78,8 +78,8 @@ func (h *UpdaterHandler) Status(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			limit	query		int		false	"Number of history entries to return"	default(50)
-//	@Success		200		{object}	dto.ApiResponse[[]dto.UpdaterHistoryEntryDto]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200		{object}	base.ApiResponse[[]updater.HistoryEntry]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/updater/history [get]
 func (h *UpdaterHandler) History(c *gin.Context) {
 	limit := 50

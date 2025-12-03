@@ -51,7 +51,7 @@ func NewImageHandler(group *gin.RouterGroup, dockerService *services.DockerClien
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.ImageSummaryDto]
+//	@Success		200					{object}	base.Paginated[image.Summary]
 //	@Router			/api/environments/{id}/images [get]
 func (h *ImageHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -89,7 +89,7 @@ func (h *ImageHandler) List(c *gin.Context) {
 //	@Tags			Images
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			imageId	path		string	true	"Image ID"
-//	@Success		200		{object}	dto.ImageDetailSummaryDto
+//	@Success		200		{object}	base.ApiResponse[image.DetailSummary]
 //	@Router			/api/environments/{id}/images/{imageId} [get]
 func (h *ImageHandler) GetByID(c *gin.Context) {
 	id := c.Param("imageId")
@@ -118,8 +118,8 @@ func (h *ImageHandler) GetByID(c *gin.Context) {
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			imageId	path		string	true	"Image ID"
 //	@Param			force	query		bool	false	"Force removal"
-//	@Success		200		{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200		{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/images/{imageId} [delete]
 func (h *ImageHandler) Remove(c *gin.Context) {
 	id := c.Param("imageId")
@@ -153,10 +153,10 @@ func (h *ImageHandler) Remove(c *gin.Context) {
 //	@Accept			json
 //	@Produce		application/x-json-stream
 //	@Param			id		path		string				true	"Environment ID"
-//	@Param			request	body		dto.ImagePullDto	true	"Image pull request"
+//	@Param			request	body		image.PullOptions	true	"Image pull request"
 //	@Success		200		{string}	string				"Streaming JSON response"
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/images/pull [post]
 func (h *ImageHandler) Pull(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -199,7 +199,7 @@ func (h *ImageHandler) Pull(c *gin.Context) {
 //	@Produce		json
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			dangling	query		bool	false	"Only remove dangling images"
-//	@Success		200			{object}	dto.ImagePruneReportDto
+//	@Success		200			{object}	base.ApiResponse[image.PruneReport]
 //	@Router			/api/environments/{id}/images/prune [post]
 func (h *ImageHandler) Prune(c *gin.Context) {
 	dangling := c.Query("dangling") == "true"
@@ -249,7 +249,7 @@ func (h *ImageHandler) Prune(c *gin.Context) {
 //	@Description	Get counts of images in use, unused, total, and total size
 //	@Tags			Images
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ImageUsageCountsDto
+//	@Success		200	{object}	base.ApiResponse[image.UsageCounts]
 //	@Router			/api/environments/{id}/images/counts [get]
 func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -306,10 +306,10 @@ func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 //	@Produce		json
 //	@Param			id		path		string	true	"Environment ID"
 //	@Param			file	formData	file	true	"Docker image tar archive"
-//	@Success		200		{object}	dto.ApiResponse[dto.ImageLoadResultDto]
-//	@Failure		400		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		413		{object}	dto.ApiResponse[dto.ErrorResponse]
-//	@Failure		500		{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200		{object}	base.ApiResponse[image.LoadResult]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		413		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/images/upload [post]
 func (h *ImageHandler) Upload(c *gin.Context) {
 	ctx := context.Background()

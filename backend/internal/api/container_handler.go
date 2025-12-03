@@ -333,7 +333,7 @@ func (h *ContainerHandler) waitForExecCompletion(conn *websocket.Conn, done chan
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.ContainerSummaryDto]
+//	@Success		200					{object}	base.Paginated[container.Summary]
 //	@Router			/api/environments/{id}/containers [get]
 func (h *ContainerHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -373,7 +373,7 @@ func (h *ContainerHandler) List(c *gin.Context) {
 //	@Tags			Containers
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			containerId	path		string	true	"Container ID"
-//	@Success		200			{object}	dto.ContainerDetailsDto
+//	@Success		200			{object}	base.ApiResponse[container.Details]
 //	@Router			/api/environments/{id}/containers/{containerId} [get]
 func (h *ContainerHandler) GetByID(c *gin.Context) {
 	id := c.Param("containerId")
@@ -404,8 +404,8 @@ func (h *ContainerHandler) GetByID(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			containerId	path		string	true	"Container ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/containers/{containerId}/start [post]
 func (h *ContainerHandler) Start(c *gin.Context) {
 	id := c.Param("containerId")
@@ -437,8 +437,8 @@ func (h *ContainerHandler) Start(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			containerId	path		string	true	"Container ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/containers/{containerId}/stop [post]
 func (h *ContainerHandler) Stop(c *gin.Context) {
 	id := c.Param("containerId")
@@ -470,8 +470,8 @@ func (h *ContainerHandler) Stop(c *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Param			id			path		string	true	"Environment ID"
 //	@Param			containerId	path		string	true	"Container ID"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/containers/{containerId}/restart [post]
 func (h *ContainerHandler) Restart(c *gin.Context) {
 	id := c.Param("containerId")
@@ -505,8 +505,8 @@ func (h *ContainerHandler) Restart(c *gin.Context) {
 //	@Param			containerId	path		string	true	"Container ID"
 //	@Param			force		query		bool	false	"Force removal of running container"
 //	@Param			volumes		query		bool	false	"Remove associated volumes"
-//	@Success		200			{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500			{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/{id}/containers/{containerId} [delete]
 func (h *ContainerHandler) Delete(c *gin.Context) {
 	id := c.Param("containerId")
@@ -537,7 +537,7 @@ func (h *ContainerHandler) Delete(c *gin.Context) {
 //	@Description	Get counts of running, stopped, and total containers
 //	@Tags			Containers
 //	@Param			id	path		string	true	"Environment ID"
-//	@Success		200	{object}	dto.ContainerStatusLengthsDto
+//	@Success		200	{object}	base.ApiResponse[container.StatusCounts]
 //	@Router			/api/environments/{id}/containers/counts [get]
 func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.dockerService.GetAllContainers(c.Request.Context())
@@ -569,8 +569,8 @@ func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			id			path		string					true	"Environment ID"
-//	@Param			container	body		dto.CreateContainerDto	true	"Container creation data"
-//	@Success		201			{object}	dto.ContainerCreatedDto
+//	@Param			container	body		container.Create		true	"Container creation data"
+//	@Success		201			{object}	base.ApiResponse[container.Created]
 //	@Router			/api/environments/{id}/containers [post]
 func (h *ContainerHandler) Create(c *gin.Context) {
 	var req containertypes.Create

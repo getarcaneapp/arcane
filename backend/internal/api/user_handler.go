@@ -42,7 +42,7 @@ func NewUserHandler(group *gin.RouterGroup, userService *services.UserService, a
 //	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
 //	@Param			sort[column]		query		string	false	"Column to sort by"
 //	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
-//	@Success		200					{object}	dto.Paginated[dto.UserResponseDto]
+//	@Success		200					{object}	base.Paginated[user.Response]
 //	@Router			/api/users [get]
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
@@ -70,8 +70,8 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 //	@Tags			Users
 //	@Accept			json
 //	@Produce		json
-//	@Param			user	body		dto.CreateUserDto	true	"User creation data"
-//	@Success		201		{object}	dto.UserResponseDto
+//	@Param			user	body		user.Create	true	"User creation data"
+//	@Success		201		{object}	base.ApiResponse[user.Response]
 //	@Router			/api/users [post]
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req user.Create
@@ -138,7 +138,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 //	@Description	Get a user by ID
 //	@Tags			Users
 //	@Param			id	path		string	true	"User ID"
-//	@Success		200	{object}	dto.UserResponseDto
+//	@Success		200	{object}	base.ApiResponse[user.Response]
 //	@Router			/api/users/{id} [get]
 func (h *UserHandler) GetUser(c *gin.Context) {
 	userID := c.Param("id")
@@ -174,9 +174,9 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 //	@Tags			Users
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string				true	"User ID"
-//	@Param			user	body		dto.UpdateUserDto	true	"User update data"
-//	@Success		200		{object}	dto.UserResponseDto
+//	@Param			id		path		string			true	"User ID"
+//	@Param			user	body		user.Update		true	"User update data"
+//	@Success		200		{object}	base.ApiResponse[user.Response]
 //	@Router			/api/users/{id} [put]
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	userID := c.Param("id")
@@ -259,8 +259,8 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 //	@Security		BearerAuth
 //	@Security		ApiKeyAuth
 //	@Param			id	path		string	true	"User ID"
-//	@Success		200	{object}	dto.ApiResponse[dto.MessageResponseDto]
-//	@Failure		500	{object}	dto.ApiResponse[dto.ErrorResponse]
+//	@Success		200	{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/users/{id} [delete]
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userID := c.Param("id")
