@@ -16,12 +16,14 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
+	"go.getarcane.app/types/containerregistry"
+	"go.getarcane.app/types/project"
 	"gorm.io/gorm"
 )
 
@@ -197,23 +199,23 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	return fs.ReadProjectFiles(proj.Path)
 }
 
-func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string) (dto.ProjectDetailsDto, error) {
+func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string) (project.Details, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
-		return dto.ProjectDetailsDto{}, err
+		return project.Details{}, err
 	}
 
 	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
 
 	// Parse include files from the compose file
-	var includeFiles []dto.IncludeFileDto
+	var includeFiles []project.IncludeFile
 	composeFile, detectErr := projects.DetectComposeFile(proj.Path)
 	if detectErr == nil {
 		includes, parseErr := projects.ParseIncludes(composeFile)
 		if parseErr == nil {
 			slog.InfoContext(ctx, "Parsed includes", "count", len(includes), "projectID", projectID)
 			for _, inc := range includes {
-				includeFiles = append(includeFiles, dto.IncludeFileDto{
+				includeFiles = append(includeFiles, project.IncludeFile{
 					Path:         inc.Path,
 					RelativePath: inc.RelativePath,
 					Content:      inc.Content,
@@ -241,9 +243,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		liveStatus = proj.Status
 	}
 
-	var resp dto.ProjectDetailsDto
-	if err := dto.MapStruct(proj, &resp); err != nil {
-		return dto.ProjectDetailsDto{}, fmt.Errorf("failed to map project: %w", err)
+	var resp project.Details
+	if err := mapper.MapStruct(proj, &resp); err != nil {
+		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
 	}
 	resp.Status = string(liveStatus)
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
@@ -757,7 +759,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	return s.DeployProject(ctx, projectID, systemUser)
 }
 
-func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []dto.ContainerRegistryCredential) error {
+func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -795,7 +797,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 
 // EnsureProjectImagesPresent checks all compose service images for the project and
 // only pulls images that are not already available locally.
-func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []dto.ContainerRegistryCredential) error {
+func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -992,7 +994,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 
 // Table Functions
 
-func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]dto.ProjectDetailsDto, pagination.Response, error) {
+func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
 	var projectsArray []models.Project
 	query := s.db.WithContext(ctx).Model(&models.Project{})
 
@@ -1023,15 +1025,15 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
 // Optimized to use a single Docker API call instead of N calls + N file reads
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []dto.ProjectDetailsDto {
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []project.Details {
 	// 1. Fetch all compose containers in one go
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
 		// Fallback: return basic info with unknown status
-		results := make([]dto.ProjectDetailsDto, len(projectsList))
+		results := make([]project.Details, len(projectsList))
 		for i, p := range projectsList {
-			_ = dto.MapStruct(p, &results[i])
+			_ = mapper.MapStruct(p, &results[i])
 			results[i].Status = string(models.ProjectStatusUnknown)
 		}
 		return results
@@ -1047,7 +1049,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	}
 
 	// 3. Map to DTOs
-	results := make([]dto.ProjectDetailsDto, len(projectsList))
+	results := make([]project.Details, len(projectsList))
 	for i, p := range projectsList {
 		results[i] = s.mapProjectToDto(ctx, p, containersByProject)
 	}
@@ -1055,9 +1057,9 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, containersByProject map[string][]container.Summary) dto.ProjectDetailsDto {
-	var resp dto.ProjectDetailsDto
-	_ = dto.MapStruct(p, &resp)
+func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, containersByProject map[string][]container.Summary) project.Details {
+	var resp project.Details
+	_ = mapper.MapStruct(p, &resp)
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)

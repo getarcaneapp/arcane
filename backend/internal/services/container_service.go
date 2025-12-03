@@ -15,9 +15,10 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	containertypes "go.getarcane.app/types/container"
+	"go.getarcane.app/types/containerregistry"
 )
 
 type ContainerService struct {
@@ -173,7 +174,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	return nil
 }
 
-func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User, credentials []dto.ContainerRegistryCredential) (*container.InspectResponse, error) {
+func (s *ContainerService) CreateContainer(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string, user models.User, credentials []containerregistry.Credential) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image})
@@ -406,7 +407,7 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 	return nil
 }
 
-func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]dto.ContainerSummaryDto, pagination.Response, error) {
+func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]containertypes.Summary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -417,27 +418,27 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
-	items := make([]dto.ContainerSummaryDto, 0, len(dockerContainers))
+	items := make([]containertypes.Summary, 0, len(dockerContainers))
 	for _, dc := range dockerContainers {
-		items = append(items, dto.NewContainerSummaryDto(dc))
+		items = append(items, containertypes.NewSummary(dc))
 	}
 
-	config := pagination.Config[dto.ContainerSummaryDto]{
-		SearchAccessors: []pagination.SearchAccessor[dto.ContainerSummaryDto]{
-			func(c dto.ContainerSummaryDto) (string, error) {
+	config := pagination.Config[containertypes.Summary]{
+		SearchAccessors: []pagination.SearchAccessor[containertypes.Summary]{
+			func(c containertypes.Summary) (string, error) {
 				if len(c.Names) > 0 {
 					return c.Names[0], nil
 				}
 				return "", nil
 			},
-			func(c dto.ContainerSummaryDto) (string, error) { return c.Image, nil },
-			func(c dto.ContainerSummaryDto) (string, error) { return c.State, nil },
-			func(c dto.ContainerSummaryDto) (string, error) { return c.Status, nil },
+			func(c containertypes.Summary) (string, error) { return c.Image, nil },
+			func(c containertypes.Summary) (string, error) { return c.State, nil },
+			func(c containertypes.Summary) (string, error) { return c.Status, nil },
 		},
-		SortBindings: []pagination.SortBinding[dto.ContainerSummaryDto]{
+		SortBindings: []pagination.SortBinding[containertypes.Summary]{
 			{
 				Key: "name",
-				Fn: func(a, b dto.ContainerSummaryDto) int {
+				Fn: func(a, b containertypes.Summary) int {
 					nameA := ""
 					if len(a.Names) > 0 {
 						nameA = a.Names[0]
@@ -451,25 +452,25 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 			},
 			{
 				Key: "image",
-				Fn: func(a, b dto.ContainerSummaryDto) int {
+				Fn: func(a, b containertypes.Summary) int {
 					return strings.Compare(a.Image, b.Image)
 				},
 			},
 			{
 				Key: "state",
-				Fn: func(a, b dto.ContainerSummaryDto) int {
+				Fn: func(a, b containertypes.Summary) int {
 					return strings.Compare(a.State, b.State)
 				},
 			},
 			{
 				Key: "status",
-				Fn: func(a, b dto.ContainerSummaryDto) int {
+				Fn: func(a, b containertypes.Summary) int {
 					return strings.Compare(a.Status, b.Status)
 				},
 			},
 			{
 				Key: "created",
-				Fn: func(a, b dto.ContainerSummaryDto) int {
+				Fn: func(a, b containertypes.Summary) int {
 					if a.Created < b.Created {
 						return -1
 					}

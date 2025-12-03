@@ -17,9 +17,9 @@ import (
 	"crypto/subtle"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/user"
 )
 
 type Argon2Params struct {
@@ -269,7 +269,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 
 		email := "admin@localhost"
 		displayName := "Arcane Admin"
-		user := &models.User{
+		userModel := &models.User{
 			Username:               "arcane",
 			Email:                  &email,
 			DisplayName:            &displayName,
@@ -278,7 +278,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			RequiresPasswordChange: true,
 		}
 
-		if err := tx.Create(user).Error; err != nil {
+		if err := tx.Create(userModel).Error; err != nil {
 			return fmt.Errorf("failed to create default admin user: %w", err)
 		}
 
@@ -324,7 +324,7 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 	})
 }
 
-func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.UserResponseDto, pagination.Response, error) {
+func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.Response, pagination.Response, error) {
 	var users []models.User
 	query := s.db.WithContext(ctx).Model(&models.User{})
 
@@ -341,25 +341,25 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result := make([]dto.UserResponseDto, len(users))
-	for i, user := range users {
-		result[i] = toUserResponseDto(user)
+	result := make([]user.Response, len(users))
+	for i, u := range users {
+		result[i] = toUserResponseDto(u)
 	}
 
 	return result, paginationResp, nil
 }
 
-func toUserResponseDto(user models.User) dto.UserResponseDto {
-	return dto.UserResponseDto{
-		ID:            user.ID,
-		Username:      user.Username,
-		DisplayName:   user.DisplayName,
-		Email:         user.Email,
-		Roles:         user.Roles,
-		OidcSubjectId: user.OidcSubjectId,
-		Locale:        user.Locale,
-		CreatedAt:     user.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
-		UpdatedAt:     user.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
+func toUserResponseDto(u models.User) user.Response {
+	return user.Response{
+		ID:            u.ID,
+		Username:      u.Username,
+		DisplayName:   u.DisplayName,
+		Email:         u.Email,
+		Roles:         u.Roles,
+		OidcSubjectId: u.OidcSubjectId,
+		Locale:        u.Locale,
+		CreatedAt:     u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
+		UpdatedAt:     u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
 	}
 }
 

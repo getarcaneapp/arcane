@@ -4,16 +4,16 @@ import (
 	"bufio"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"go.getarcane.app/types/env"
 )
 
 // ParseEnvContent parses environment variables from .env file content
-func ParseEnvContent(content string) []dto.EnvVariable {
+func ParseEnvContent(content string) []env.Variable {
 	if content == "" {
-		return []dto.EnvVariable{}
+		return []env.Variable{}
 	}
 
-	var vars []dto.EnvVariable
+	var vars []env.Variable
 	scanner := bufio.NewScanner(strings.NewReader(content))
 
 	for scanner.Scan() {
@@ -48,7 +48,7 @@ func ParseEnvContent(content string) []dto.EnvVariable {
 		}
 
 		if key != "" {
-			vars = append(vars, dto.EnvVariable{
+			vars = append(vars, env.Variable{
 				Key:   key,
 				Value: value,
 			})

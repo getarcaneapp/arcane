@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"go.getarcane.app/types/event"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
@@ -76,7 +77,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	return event, nil
 }
 
-func (s *EventService) CreateEventFromDto(ctx context.Context, req dto.CreateEventDto) (*dto.EventDto, error) {
+func (s *EventService) CreateEventFromDto(ctx context.Context, req event.Create) (*event.Response, error) {
 	severity := models.EventSeverity(req.Severity)
 	if severity == "" {
 		severity = models.EventSeverityInfo
@@ -109,7 +110,7 @@ func (s *EventService) CreateEventFromDto(ctx context.Context, req dto.CreateEve
 	return s.toEventDto(event), nil
 }
 
-func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.EventDto, pagination.Response, error) {
+func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Response, pagination.Response, error) {
 	var events []models.Event
 	q := s.db.WithContext(ctx).Model(&models.Event{})
 
@@ -142,7 +143,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := dto.MapSlice[models.Event, dto.EventDto](events)
+	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Response](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -150,7 +151,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	return eventDtos, paginationResp, nil
 }
 
-func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]dto.EventDto, pagination.Response, error) {
+func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Response, pagination.Response, error) {
 	var events []models.Event
 	q := s.db.WithContext(ctx).Model(&models.Event{}).Where("environment_id = ?", environmentID)
 
@@ -180,7 +181,7 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := dto.MapSlice[models.Event, dto.EventDto](events)
+	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Response](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -428,28 +429,28 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeUserLogout: {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
 }
 
-func (s *EventService) toEventDto(event *models.Event) *dto.EventDto {
+func (s *EventService) toEventDto(e *models.Event) *event.Response {
 	var metadata map[string]interface{}
-	if event.Metadata != nil {
-		metadata = map[string]interface{}(event.Metadata)
+	if e.Metadata != nil {
+		metadata = map[string]interface{}(e.Metadata)
 	}
 
-	return &dto.EventDto{
-		ID:            event.ID,
-		Type:          string(event.Type),
-		Severity:      string(event.Severity),
-		Title:         event.Title,
-		Description:   event.Description,
-		ResourceType:  event.ResourceType,
-		ResourceID:    event.ResourceID,
-		ResourceName:  event.ResourceName,
-		UserID:        event.UserID,
-		Username:      event.Username,
-		EnvironmentID: event.EnvironmentID,
+	return &event.Response{
+		ID:            e.ID,
+		Type:          string(e.Type),
+		Severity:      string(e.Severity),
+		Title:         e.Title,
+		Description:   e.Description,
+		ResourceType:  e.ResourceType,
+		ResourceID:    e.ResourceID,
+		ResourceName:  e.ResourceName,
+		UserID:        e.UserID,
+		Username:      e.Username,
+		EnvironmentID: e.EnvironmentID,
 		Metadata:      metadata,
-		Timestamp:     event.Timestamp,
-		CreatedAt:     event.CreatedAt,
-		UpdatedAt:     event.UpdatedAt,
+		Timestamp:     e.Timestamp,
+		CreatedAt:     e.CreatedAt,
+		UpdatedAt:     e.UpdatedAt,
 	}
 }
 

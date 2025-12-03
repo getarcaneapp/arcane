@@ -6,13 +6,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"go.getarcane.app/types/category"
+	"go.getarcane.app/types/meta"
+	"go.getarcane.app/types/search"
 )
 
 type SettingsSearchService struct {
-	categories []dto.SettingsCategory
+	categories []category.Category
 	once       sync.Once
 }
 
@@ -29,16 +31,16 @@ func (s *SettingsSearchService) initCategories() {
 }
 
 // GetSettingsCategories returns all available settings categories with their metadata
-func (s *SettingsSearchService) GetSettingsCategories() []dto.SettingsCategory {
+func (s *SettingsSearchService) GetSettingsCategories() []category.Category {
 	return s.categories
 }
 
-func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategory {
+func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 	// Extract category metadata from struct tags (catmeta)
 	catMetaMap := utils.ExtractCategoryMetadata(models.Settings{}, nil)
 
 	// map category id -> list of settings
-	categories := map[string][]dto.SettingMeta{}
+	categories := map[string][]meta.Metadata{}
 	categoryOrder := []string{} // Track order from first appearance in struct
 
 	rt := reflect.TypeOf(models.Settings{})
@@ -50,18 +52,18 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategor
 			continue
 		}
 
-		meta := utils.ParseMetaTag(field.Tag.Get("meta"))
-		label := meta["label"]
+		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		label := metaTag["label"]
 		if label == "" {
 			label = key
 		}
-		typ := meta["type"]
+		typ := metaTag["type"]
 		if typ == "" {
 			typ = "text"
 		}
-		desc := meta["description"]
-		keywords := utils.ParseKeywords(meta["keywords"])
-		categoryID := meta["category"]
+		desc := metaTag["description"]
+		keywords := utils.ParseKeywords(metaTag["keywords"])
+		categoryID := metaTag["category"]
 		if categoryID == "" {
 			categoryID = "general"
 		}
@@ -76,7 +78,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategor
 			categoryOrder = append(categoryOrder, categoryID)
 		}
 
-		sm := dto.SettingMeta{
+		sm := meta.Metadata{
 			Key:         key,
 			Label:       label,
 			Type:        typ,
@@ -88,7 +90,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategor
 	}
 
 	// Build final category list in struct order
-	results := []dto.SettingsCategory{}
+	results := []category.Category{}
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {
@@ -101,7 +103,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategor
 			keywords = []string{}
 		}
 
-		results = append(results, dto.SettingsCategory{
+		results = append(results, category.Category{
 			ID:          catMeta["id"],
 			Title:       catMeta["title"],
 			Description: catMeta["description"],
@@ -116,38 +118,38 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []dto.SettingsCategor
 }
 
 // Search performs a relevance-scored search across settings categories and individual settings
-func (s *SettingsSearchService) Search(query string) dto.SettingsSearchResponse {
+func (s *SettingsSearchService) Search(query string) search.Response {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
-		return dto.SettingsSearchResponse{
-			Results: []dto.SettingsCategory{},
+		return search.Response{
+			Results: []category.Category{},
 			Query:   query,
 			Count:   0,
 		}
 	}
 
 	categories := s.GetSettingsCategories()
-	var results []dto.SettingsCategory
+	var results []category.Category
 
-	for _, category := range categories {
+	for _, cat := range categories {
 		// Check if category matches
-		categoryMatch := s.categoryMatches(category, query)
+		categoryMatch := s.categoryMatches(cat, query)
 
 		// Check individual settings with enhanced matching
-		matchingSettings := s.findMatchingSettings(category.Settings, query)
+		matchingSettings := s.findMatchingSettings(cat.Settings, query)
 
 		if categoryMatch || len(matchingSettings) > 0 {
 			// Calculate relevance score based on match quality
-			relevanceScore := s.calculateRelevance(category, matchingSettings, query)
+			relevanceScore := s.calculateRelevance(cat, matchingSettings, query)
 
-			categoryResult := dto.SettingsCategory{
-				ID:             category.ID,
-				Title:          category.Title,
-				Description:    category.Description,
-				Icon:           category.Icon,
-				URL:            category.URL,
-				Keywords:       category.Keywords,
-				Settings:       category.Settings,
+			categoryResult := category.Category{
+				ID:             cat.ID,
+				Title:          cat.Title,
+				Description:    cat.Description,
+				Icon:           cat.Icon,
+				URL:            cat.URL,
+				Keywords:       cat.Keywords,
+				Settings:       cat.Settings,
 				RelevanceScore: relevanceScore,
 			}
 
@@ -162,21 +164,21 @@ func (s *SettingsSearchService) Search(query string) dto.SettingsSearchResponse 
 	// Sort by relevance (highest first)
 	s.sortByRelevance(results)
 
-	return dto.SettingsSearchResponse{
+	return search.Response{
 		Results: results,
 		Query:   query,
 		Count:   len(results),
 	}
 }
 
-func (s *SettingsSearchService) categoryMatches(category dto.SettingsCategory, query string) bool {
-	if strings.Contains(strings.ToLower(category.Title), query) {
+func (s *SettingsSearchService) categoryMatches(cat category.Category, query string) bool {
+	if strings.Contains(strings.ToLower(cat.Title), query) {
 		return true
 	}
-	if strings.Contains(strings.ToLower(category.Description), query) {
+	if strings.Contains(strings.ToLower(cat.Description), query) {
 		return true
 	}
-	for _, keyword := range category.Keywords {
+	for _, keyword := range cat.Keywords {
 		if strings.Contains(strings.ToLower(keyword), query) {
 			return true
 		}
@@ -184,8 +186,8 @@ func (s *SettingsSearchService) categoryMatches(category dto.SettingsCategory, q
 	return false
 }
 
-func (s *SettingsSearchService) findMatchingSettings(settings []dto.SettingMeta, query string) []dto.SettingMeta {
-	var matching []dto.SettingMeta
+func (s *SettingsSearchService) findMatchingSettings(settings []meta.Metadata, query string) []meta.Metadata {
+	var matching []meta.Metadata
 	for _, setting := range settings {
 		if s.settingMatches(setting, query) {
 			matching = append(matching, setting)
@@ -194,7 +196,7 @@ func (s *SettingsSearchService) findMatchingSettings(settings []dto.SettingMeta,
 	return matching
 }
 
-func (s *SettingsSearchService) settingMatches(setting dto.SettingMeta, query string) bool {
+func (s *SettingsSearchService) settingMatches(setting meta.Metadata, query string) bool {
 	if strings.Contains(strings.ToLower(setting.Key), query) {
 		return true
 	}
@@ -212,19 +214,19 @@ func (s *SettingsSearchService) settingMatches(setting dto.SettingMeta, query st
 	return false
 }
 
-func (s *SettingsSearchService) calculateRelevance(category dto.SettingsCategory, matchingSettings []dto.SettingMeta, query string) int {
+func (s *SettingsSearchService) calculateRelevance(cat category.Category, matchingSettings []meta.Metadata, query string) int {
 	score := 0
 
 	// Category title/description match gets high score
-	if strings.Contains(strings.ToLower(category.Title), query) {
+	if strings.Contains(strings.ToLower(cat.Title), query) {
 		score += 20
 	}
-	if strings.Contains(strings.ToLower(category.Description), query) {
+	if strings.Contains(strings.ToLower(cat.Description), query) {
 		score += 15
 	}
 
 	// Exact keyword match
-	for _, keyword := range category.Keywords {
+	for _, keyword := range cat.Keywords {
 		if strings.ToLower(keyword) == query {
 			score += 25
 		} else if strings.Contains(strings.ToLower(keyword), query) {
@@ -259,7 +261,7 @@ func (s *SettingsSearchService) calculateRelevance(category dto.SettingsCategory
 	return score
 }
 
-func (s *SettingsSearchService) sortByRelevance(results []dto.SettingsCategory) {
+func (s *SettingsSearchService) sortByRelevance(results []category.Category) {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].RelevanceScore > results[j].RelevanceScore
 	})
