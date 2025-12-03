@@ -43,11 +43,11 @@ require (
 )
 
 require (
-	dario.cat/mergo v1.0.1 // indirect
+	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DefangLabs/secret-detector v0.0.0-20250811234530-d4b4214cd679 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/ProtonMail/go-crypto v1.3.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
@@ -79,7 +79,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
-	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
@@ -172,7 +171,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.1 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
-	github.com/serialx/hashring v0.0.0-20200727003509-22c0c7ab6b1b // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
@@ -189,7 +187,6 @@ require (
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

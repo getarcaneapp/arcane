@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ofkm/arcane-backend/internal/database"
-	"github.com/ofkm/arcane-backend/internal/dto"
-	"github.com/ofkm/arcane-backend/internal/models"
-	"github.com/ofkm/arcane-backend/internal/utils"
-	"github.com/ofkm/arcane-backend/internal/utils/fs"
-	"github.com/ofkm/arcane-backend/internal/utils/git"
-	"github.com/ofkm/arcane-backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/dto"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/git"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"gorm.io/gorm"
 )
 
