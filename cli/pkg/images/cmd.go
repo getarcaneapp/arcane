@@ -620,7 +620,7 @@ var imagesUploadCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to open file: %w", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		// Create a multipart form
 		body := &bytes.Buffer{}

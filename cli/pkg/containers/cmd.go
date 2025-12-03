@@ -68,15 +68,15 @@ var containersListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tIMAGE\tSTATE\tSTATUS")
+		_, _ = fmt.Fprintln(w, "ID\tNAME\tIMAGE\tSTATE\tSTATUS")
 		for _, container := range result.Items {
 			name := ""
 			if len(container.Names) > 0 {
 				name = container.Names[0]
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", shortID(container.ID), name, container.Image, container.State, container.Status)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", shortID(container.ID), name, container.Image, container.State, container.Status)
 		}
-		w.Flush()
+		_ = w.Flush()
 
 		fmt.Printf("\nTotal: %d containers\n", result.Pagination.TotalItems)
 

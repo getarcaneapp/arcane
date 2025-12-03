@@ -241,7 +241,7 @@ func (c *Client) EnvPath(path string) string {
 // status code, an error is returned with the error message from the API.
 // Note: This function closes the response body.
 func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -265,7 +265,7 @@ func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
 // containing the items array and pagination metadata.
 // Note: This function closes the response body.
 func DecodePaginatedResponse[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
