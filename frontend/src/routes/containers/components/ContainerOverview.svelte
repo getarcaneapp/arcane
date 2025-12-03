@@ -66,7 +66,35 @@
 	}
 
 	const restartPolicy = $derived(container.hostConfig?.restartPolicy || 'no');
-	const portCount = $derived(container.ports?.length || 0);
+
+	// Deduplicate and categorize ports
+	const uniquePorts = $derived.by(() => {
+		if (!container.ports?.length) return { published: 0, exposed: 0, total: 0 };
+
+		const seen = new Set<string>();
+		let published = 0;
+		let exposed = 0;
+
+		for (const p of container.ports) {
+			const privatePort = (p as any).privatePort ?? (p as any).target ?? 0;
+			const publicPort = (p as any).publicPort ?? (p as any).hostPort ?? (p as any).published ?? null;
+			const proto = (p as any).type ?? (p as any).protocol ?? 'tcp';
+
+			// Create unique key for deduplication
+			const key = `${publicPort ?? ''}:${privatePort}/${proto}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+
+			if (publicPort && publicPort !== 0) {
+				published++;
+			} else {
+				exposed++;
+			}
+		}
+
+		return { published, exposed, total: published + exposed };
+	});
+
 	const mountCount = $derived(container.mounts?.length || 0);
 	const networkCount = $derived(container.networkSettings?.networks ? Object.keys(container.networkSettings.networks).length : 0);
 </script>
@@ -224,8 +252,15 @@
 				<Card.Content class="flex flex-col gap-2 p-4">
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Ports</div>
 					<div class="text-foreground text-sm font-medium">
-						{portCount}
-						{portCount === 1 ? 'port' : 'ports'} exposed
+						{#if uniquePorts.total === 0}
+							No ports
+						{:else if uniquePorts.published > 0 && uniquePorts.exposed > 0}
+							{uniquePorts.published} published, {uniquePorts.exposed} exposed
+						{:else if uniquePorts.published > 0}
+							{uniquePorts.published} published
+						{:else}
+							{uniquePorts.exposed} exposed
+						{/if}
 					</div>
 				</Card.Content>
 			</Card.Root>

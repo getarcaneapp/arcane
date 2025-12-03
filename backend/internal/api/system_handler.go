@@ -206,9 +206,7 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 
 	var req dto.PruneSystemDto
 	if err := c.ShouldBindJSON(&req); err != nil {
-		slog.ErrorContext(ctx, "Failed to bind prune request JSON",
-			slog.String("error", err.Error()),
-			slog.String("client_ip", c.ClientIP()))
+		slog.ErrorContext(ctx, "Failed to bind prune request JSON", "error", err, "client_ip", c.ClientIP())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   (&common.InvalidRequestFormatError{Err: err}).Error(),
@@ -217,18 +215,16 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 	}
 
 	slog.InfoContext(ctx, "Prune request parsed successfully",
-		slog.Bool("containers", req.Containers),
-		slog.Bool("images", req.Images),
-		slog.Bool("volumes", req.Volumes),
-		slog.Bool("networks", req.Networks),
-		slog.Bool("build_cache", req.BuildCache),
-		slog.Bool("dangling", req.Dangling))
+		"containers", req.Containers,
+		"images", req.Images,
+		"volumes", req.Volumes,
+		"networks", req.Networks,
+		"build_cache", req.BuildCache,
+		"dangling", req.Dangling)
 
 	result, err := h.systemService.PruneAll(ctx, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "System prune operation failed",
-			slog.String("error", err.Error()),
-			slog.String("client_ip", c.ClientIP()))
+		slog.ErrorContext(ctx, "System prune operation failed", "error", err, "client_ip", c.ClientIP())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   (&common.SystemPruneError{Err: err}).Error(),
@@ -237,13 +233,13 @@ func (h *SystemHandler) PruneAll(c *gin.Context) {
 	}
 
 	slog.InfoContext(ctx, "System prune operation completed successfully",
-		slog.Int("containers_pruned", len(result.ContainersPruned)),
-		slog.Int("images_deleted", len(result.ImagesDeleted)),
-		slog.Int("volumes_deleted", len(result.VolumesDeleted)),
-		slog.Int("networks_deleted", len(result.NetworksDeleted)),
-		slog.Uint64("space_reclaimed", result.SpaceReclaimed),
-		slog.Bool("success", result.Success),
-		slog.Int("error_count", len(result.Errors)))
+		"containers_pruned", len(result.ContainersPruned),
+		"images_deleted", len(result.ImagesDeleted),
+		"volumes_deleted", len(result.VolumesDeleted),
+		"networks_deleted", len(result.NetworksDeleted),
+		"space_reclaimed", result.SpaceReclaimed,
+		"success", result.Success,
+		"error_count", len(result.Errors))
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -397,26 +393,25 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 			memTotal = memInfo.Total
 		}
 
-		// Only apply cgroup limits for memory total and CPU count, NOT for memory usage.
-		// Memory usage from cgroups reflects only the Arcane container's usage when running
-		// inside Docker, not the entire system. We want system-wide stats from /proc/meminfo
-		// (via gopsutil) which correctly shows total VM/host memory usage.
-		// The cgroup memory limit is still useful to cap the total if we're in a limited container.
+		// Apply cgroup limits when running in a memory-limited container.
+		// When a memory limit is set (e.g., deploy.resources.limits.memory in compose),
+		// we must use BOTH the cgroup memory limit AND the cgroup memory usage.
+		// Using host-wide memory usage against a container limit would show incorrect
+		// percentages (e.g., 2GB host usage / 256MB limit = 825%).
 		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
 			// Use cgroup memory limit if available and smaller than host values
-			// This helps when running in an LXC or memory-limited container
 			if limit := cgroupLimits.MemoryLimit; limit > 0 {
 				limitUint := uint64(limit)
 				if memTotal == 0 || limitUint < memTotal {
 					memTotal = limitUint
+					// When we have a cgroup memory limit, we should also use cgroup memory usage
+					// to ensure both values refer to the same scope (container, not host).
+					// This fixes incorrect memory percentages when running with memory limits.
+					if cgroupLimits.MemoryUsage > 0 {
+						memUsed = uint64(cgroupLimits.MemoryUsage)
+					}
 				}
 			}
-
-			// NOTE: We intentionally do NOT override memUsed with cgroupLimits.MemoryUsage
-			// because when running in Docker, cgroup memory.current only reflects the
-			// Arcane container's memory, not total system memory usage.
-			// gopsutil's mem.VirtualMemory().Used reads from /proc/meminfo which correctly
-			// reports the entire VM/host memory usage.
 
 			// Use cgroup CPU count if available
 			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
@@ -444,7 +439,6 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 			hostname = hostInfo.Hostname
 		}
 
-		// Collect GPU stats (non-blocking, fails gracefully)
 		var gpuStats []GPUStats
 		var gpuCount int
 		if gpuData, err := h.getGPUStats(ctx); err == nil {
@@ -656,7 +650,7 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "NVIDIA GPU detected", slog.String("tool", "nvidia-smi"), slog.String("path", path))
+		slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
 		return nil
 	}
 
@@ -669,7 +663,7 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", slog.String("tool", "rocm-smi"), slog.String("path", path))
+		slog.InfoContext(ctx, "AMD GPU detected", "tool", "rocm-smi", "path", path)
 		return nil
 	}
 
@@ -682,7 +676,7 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "NVIDIA Jetson detected", slog.String("tool", "tegrastats"), slog.String("path", path))
+		slog.InfoContext(ctx, "NVIDIA Jetson detected", "tool", "tegrastats", "path", path)
 		return nil
 	}
 
@@ -695,7 +689,7 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "Intel GPU detected", slog.String("tool", "intel_gpu_top"), slog.String("path", path))
+		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
 		return nil
 	}
 
@@ -715,7 +709,7 @@ func (h *SystemHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, error) 
 
 	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute nvidia-smi", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
 		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
 	}
 
@@ -729,7 +723,7 @@ func (h *SystemHandler) parseNvidiaOutput(ctx context.Context, output []byte) ([
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
 		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
 	}
 
@@ -741,7 +735,7 @@ func (h *SystemHandler) parseNvidiaOutput(ctx context.Context, output []byte) ([
 
 		index, err := strconv.Atoi(strings.TrimSpace(record[0]))
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse GPU index", slog.String("value", record[0]))
+			slog.WarnContext(ctx, "Failed to parse GPU index", "value", record[0])
 			continue
 		}
 
@@ -749,13 +743,13 @@ func (h *SystemHandler) parseNvidiaOutput(ctx context.Context, output []byte) ([
 
 		memUsed, err := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory used", slog.String("value", record[2]))
+			slog.WarnContext(ctx, "Failed to parse memory used", "value", record[2])
 			continue
 		}
 
 		memTotal, err := strconv.ParseFloat(strings.TrimSpace(record[3]), 64)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory total", slog.String("value", record[3]))
+			slog.WarnContext(ctx, "Failed to parse memory total", "value", record[3])
 			continue
 		}
 
@@ -772,7 +766,7 @@ func (h *SystemHandler) parseNvidiaOutput(ctx context.Context, output []byte) ([
 		return nil, fmt.Errorf("no GPU data parsed from nvidia-smi")
 	}
 
-	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", slog.Int("gpu_count", len(stats)))
+	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpu_count", len(stats))
 	return stats, nil
 }
 
@@ -784,7 +778,7 @@ func (h *SystemHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) {
 	cmd := exec.CommandContext(ctx, "rocm-smi", "--showmeminfo", "vram", "--json")
 	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute rocm-smi", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to execute rocm-smi", "error", err)
 		return nil, fmt.Errorf("rocm-smi execution failed: %w", err)
 	}
 
@@ -803,7 +797,7 @@ type ROCmGPUInfo struct {
 func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]GPUStats, error) {
 	var rocmData ROCmSMIOutput
 	if err := json.Unmarshal(output, &rocmData); err != nil {
-		slog.WarnContext(ctx, "Failed to parse rocm-smi JSON output", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to parse rocm-smi JSON output", "error", err)
 		return nil, fmt.Errorf("failed to parse rocm-smi output: %w", err)
 	}
 
@@ -813,14 +807,14 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 		// Parse memory used (in bytes)
 		memUsedBytes, err := strconv.ParseFloat(info.VRAMUsed, 64)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory used", slog.String("gpu", gpuID), slog.String("value", info.VRAMUsed))
+			slog.WarnContext(ctx, "Failed to parse AMD memory used", "gpu", gpuID, "value", info.VRAMUsed)
 			continue
 		}
 
 		// Parse memory total (in bytes)
 		memTotalBytes, err := strconv.ParseFloat(info.VRAMTotal, 64)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory total", slog.String("gpu", gpuID), slog.String("value", info.VRAMTotal))
+			slog.WarnContext(ctx, "Failed to parse AMD memory total", "gpu", gpuID, "value", info.VRAMTotal)
 			continue
 		}
 
@@ -838,7 +832,7 @@ func (h *SystemHandler) parseROCmOutput(ctx context.Context, output []byte) ([]G
 		return nil, fmt.Errorf("no GPU data parsed from rocm-smi")
 	}
 
-	slog.DebugContext(ctx, "Collected AMD GPU stats", slog.Int("gpu_count", len(stats)))
+	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
 	return stats, nil
 }
 
@@ -851,7 +845,7 @@ func (h *SystemHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
 	cmd := exec.CommandContext(ctx, "intel_gpu_top", "-J", "-o", "-")
 	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute intel_gpu_top", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to execute intel_gpu_top", "error", err)
 		return nil, fmt.Errorf("intel_gpu_top execution failed: %w", err)
 	}
 
@@ -887,7 +881,7 @@ func (h *SystemHandler) getJetsonStats(ctx context.Context) ([]GPUStats, error) 
 	cmd := exec.CommandContext(ctx, "tegrastats", "--interval", "1000")
 	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute tegrastats", slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to execute tegrastats", "error", err)
 		return nil, fmt.Errorf("tegrastats execution failed: %w", err)
 	}
 

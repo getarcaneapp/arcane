@@ -1,12 +1,5 @@
 import type { TemplateRegistryConfig } from './template.type';
 
-export type SettingRawResponse = {
-	key: string;
-	type: string;
-	value: string;
-	isPublic?: boolean;
-}[];
-
 export type Settings = {
 	projectsDirectory: string;
 	diskUsagePath: string;
@@ -25,16 +18,16 @@ export type Settings = {
 	accentColor: string;
 
 	authLocalEnabled: boolean;
-	oidcEnabled: boolean;
-	oidcMergeAccounts: boolean;
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
+	oidcEnabled: boolean;
 	oidcClientId: string;
 	oidcClientSecret?: string;
 	oidcIssuerUrl: string;
 	oidcScopes: string;
 	oidcAdminClaim: string;
 	oidcAdminValue: string;
+	oidcMergeAccounts: boolean;
 
 	onboardingCompleted: boolean;
 	onboardingSteps: {
@@ -59,16 +52,6 @@ export interface RegistryCredential {
 	url: string;
 	username: string;
 	password: string;
-}
-
-export interface OidcConfig {
-	clientId: string;
-	clientSecret?: string;
-	issuerUrl: string;
-	scopes: string;
-
-	adminClaim?: string; // e.g., "roles", "groups", "realm_access.roles", "admin"
-	adminValue?: string; // e.g., "admin" (comma-separated accepted values)
 }
 
 export interface OidcStatusInfo {

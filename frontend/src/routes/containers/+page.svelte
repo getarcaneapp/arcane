@@ -9,13 +9,16 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { imageService } from '$lib/services/image-service';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
-	let { containers, containerStatusCounts, containerRequestOptions } = $state(data);
+	let containers = $state(untrack(() => data.containers));
+	let containerStatusCounts = $state(untrack(() => data.containerStatusCounts));
+	let containerRequestOptions = $state(untrack(() => data.containerRequestOptions));
 
-	let requestOptions = $state(containerRequestOptions);
+	let requestOptions = $state(untrack(() => data.containerRequestOptions));
 	let selectedIds = $state([]);
 	let isCreateDialogOpen = $state(false);
 

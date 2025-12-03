@@ -1,14 +1,15 @@
-FROM debian:trixie-slim
+FROM alpine:3
 
 ARG TARGETARCH
+ARG TARGETVARIANT
 ARG VERSION="dev"
 ARG REVISION="unknown"
 
 WORKDIR /app
-RUN apt-get update && apt-get upgrade -y && apt-get install --no-install-recommends -y ca-certificates tzdata curl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates tzdata curl
 RUN mkdir -p /app/data
 
-COPY ./backend/.bin/arcane-agent-linux-${TARGETARCH} ./arcane-agent
+COPY ./backend/.bin/arcane-agent-linux-${TARGETARCH}${TARGETVARIANT} ./arcane-agent
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
@@ -25,8 +26,8 @@ LABEL org.opencontainers.image.authors="OFKM Technologies" \
     org.opencontainers.image.ref.name="arcane-agent" \
     org.opencontainers.image.title="Arcane Agent" \
     org.opencontainers.image.description="Arcane Agent" \
-    com.ofkm.arcane.updater="false" \
-    com.ofkm.arcane.server="true"
+    com.getarcaneapp.arcane.updater="false" \
+    com.getarcaneapp.arcane.server="true"
 
 EXPOSE 3553
 VOLUME ["/app/data"]

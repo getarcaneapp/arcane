@@ -6,19 +6,26 @@
 		"src/service-worker.ts",
 		"svelte.config.js",
 		"vite.config.ts",
-		"src/lib/paraglide/messages/_index.js"
+		"src/lib/paraglide/messages/_index.js",
+		"src/lib/index.ts",
+		"src/lib/components/**/index.ts"
 	],
 	"project": ["src/**/*.{svelte,ts,js}"],
-	"ignore": [
-		"src/lib/components/ui/**/index.ts",
-		"src/lib/paraglide/runtime.js",
-		"src/lib/paraglide/registry.js",
-		"src/lib/paraglide/server.js"
-	],
-	"ignoreDependencies": ["formsnap", "paneforge", "svelte-toolbelt", "sveltekit-superforms", "isomorphic-dompurify"],
+	"ignore": ["src/lib/paraglide/server.js"],
+	"ignoreDependencies": ["paneforge", "svelte-toolbelt", "isomorphic-dompurify", "tw-animate-css"],
 	"ignoreExportsUsedInFile": {
 		"interface": true,
 		"type": true
+	},
+	"ignoreIssues": {
+		"src/lib/components/ui/**/index.ts": ["exports"],
+		"src/lib/components/**/index.ts": ["exports"],
+		"src/lib/services/**/*.ts": ["exports"],
+		"src/lib/stores/**/*.ts": ["exports"],
+		"src/lib/utils/**/*.ts": ["exports"],
+		"src/lib/layouts/**/*.ts": ["exports"],
+		"src/lib/config/**/*.ts": ["exports"],
+		"src/lib/hooks/**/*.ts": ["exports"]
 	},
 	"tags": ["-lintignore"]
 }

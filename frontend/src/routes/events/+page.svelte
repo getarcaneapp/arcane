@@ -9,13 +9,14 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data }: { data: PageData } = $props();
 
-	let events = $state(data.events);
+	let events = $state(untrack(() => data.events));
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state(data.eventRequestOptions);
+	let requestOptions = $state(untrack(() => data.eventRequestOptions));
 
 	let isLoading = $state({
 		refreshing: false,

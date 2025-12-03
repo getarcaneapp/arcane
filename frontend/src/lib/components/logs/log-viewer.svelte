@@ -135,7 +135,7 @@
 		return type === 'project' ? (projectId ? `project:${projectId}` : null) : containerId ? `ctr:${containerId}` : null;
 	}
 
-	const humanType = type === 'project' ? m.project() : m.container();
+	const humanType = $derived(type === 'project' ? m.project() : m.container());
 
 	function buildWebSocketEndpoint(path: string): string {
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';

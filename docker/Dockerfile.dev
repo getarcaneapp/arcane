@@ -1,27 +1,41 @@
+# syntax=docker/dockerfile:1
+
+# Stage 1: Frontend Development with optimized caching
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-dev
-RUN npm install -g --force corepack && corepack enable
+
+RUN npm install -g --force corepack && corepack enable pnpm
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
 WORKDIR /app
 
-# Copy package configuration files and install dependencies
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# Copy lockfile first for better layer caching
+COPY pnpm-lock.yaml ./
+
+# Fetch dependencies with cache mount
+RUN --mount=type=cache,target=/pnpm/store \
+    pnpm fetch --frozen-lockfile
+
+# Copy package files and install
+COPY package.json pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
-RUN --mount=type=cache,target=/root/.pnpm-store pnpm install --frozen-lockfile
 
-# Set development environment
-ENV NODE_ENV=development
-ENV PORT=3000
+RUN --mount=type=cache,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline
 
-# Expose frontend development port
+ENV NODE_ENV=development \
+    PORT=3000
+
 EXPOSE 3000
 
-# Start frontend development server with hot reload
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
-# Stage 2: Backend Development
+# Stage 2: Backend Development with optimized caching
 FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-dev
 
-# Install development tools and dependencies
-RUN apt-get update && apt-get install -y \
+# Install development tools in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
@@ -29,27 +43,26 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/* && \
     go install github.com/air-verse/air@latest
 
-# Set development environment variables
-ENV GIN_MODE=debug
-ENV PORT=3552
-ENV ENVIRONMENT=development
-ENV GOCACHE=/go/cache
-ENV GOMODCACHE=/go/pkg/mod
+ENV GIN_MODE=debug \
+    PORT=3552 \
+    ENVIRONMENT=development \
+    GOCACHE=/root/.cache/go-build \
+    GOMODCACHE=/go/pkg/mod
 
 WORKDIR /app
 
-# Copy Go module files and download dependencies
+# Copy Go module files first for dependency caching
 COPY backend/go.mod backend/go.sum ./
+
+# Download dependencies with cache mounts
 RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/go/cache \
-    go mod download
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download && go mod verify
 
-# Create directories for development with proper permissions
-RUN mkdir -p /app/data /app/.bin /go/cache && \
-    chmod 755 /app/data /app/.bin /go/cache
+# Create directories with proper permissions
+RUN mkdir -p /app/data /app/.bin && \
+    chmod 755 /app/data /app/.bin
 
-# Expose backend development port
 EXPOSE 3552
 
-# Use Air for hot reloading in development
 CMD ["air", "-c", ".air.toml"]
