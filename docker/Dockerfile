@@ -23,12 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY ./.version ./VERSION
-COPY ./backend/go.mod ./backend/go.sum ./
+COPY ./types ./types
+COPY ./backend/go.mod ./backend/go.sum ./backend/
+WORKDIR /build/backend
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY ./backend ./
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    VERSION=$(cat VERSION | tr -d '[:space:]') && \
+    VERSION=$(cat ../VERSION | tr -d '[:space:]') && \
     REVISION=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") && \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
