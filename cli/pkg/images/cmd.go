@@ -115,7 +115,7 @@ var imagesListCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list images: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -185,7 +185,7 @@ var imagesGetCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get image: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -291,7 +291,7 @@ var imagesRemoveCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to remove image: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -347,7 +347,7 @@ var imagesPullCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to pull image: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Stream the response
 		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
@@ -514,7 +514,7 @@ var imagesPruneCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to prune images: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -565,7 +565,7 @@ var imagesCountsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get image counts: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -680,7 +680,7 @@ var imagesUploadCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to upload image: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
