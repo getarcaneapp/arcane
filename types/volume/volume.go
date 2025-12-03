@@ -131,7 +131,9 @@ func NewSummary(v volume.Volume) Volume {
 		Containers: make([]string, 0),
 	}
 
-	dto.InUse = v.UsageData.RefCount >= 1
+	if v.UsageData != nil {
+		dto.InUse = v.UsageData.RefCount >= 1
+	}
 
 	return dto
 }
