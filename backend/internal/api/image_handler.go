@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/image"
 )
 
 type ImageHandler struct {
@@ -57,7 +57,7 @@ func (h *ImageHandler) List(c *gin.Context) {
 		return
 	}
 
-	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[dto.ImageSummaryDto]{
+	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[image.Summary]{
 		Items:          images,
 		TotalCount:     paginationResp.TotalItems,
 		TotalAvailable: paginationResp.GrandTotalItems,
@@ -79,7 +79,7 @@ func (h *ImageHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	out := dto.NewImageDetailSummaryDto(img)
+	out := image.NewDetailSummary(img)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -111,7 +111,7 @@ func (h *ImageHandler) Remove(c *gin.Context) {
 
 func (h *ImageHandler) Pull(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req dto.ImagePullDto
+	var req image.PullOptions
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -179,7 +179,7 @@ func (h *ImageHandler) Prune(c *gin.Context) {
 		return
 	}
 
-	out := dto.NewImagePruneReportDto(*report)
+	out := image.NewPruneReport(*report)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
 
@@ -214,7 +214,7 @@ func (h *ImageHandler) GetImageUsageCounts(c *gin.Context) {
 		return
 	}
 
-	out := dto.ImageUsageCountsDto{
+	out := image.UsageCounts{
 		Inuse:     inuse,
 		Unused:    unused,
 		Total:     total,

@@ -16,11 +16,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
+	"go.getarcane.app/types/imageupdate"
 )
 
 type NotificationService struct {
@@ -89,7 +89,7 @@ func (s *NotificationService) DeleteSettings(ctx context.Context, provider model
 	return nil
 }
 
-func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *dto.ImageUpdateResponse, eventType models.NotificationEventType) error {
+func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) error {
 	// Send to Apprise if enabled (don't block on error)
 	if appriseErr := s.appriseService.SendImageUpdateNotification(ctx, imageRef, updateInfo); appriseErr != nil {
 		slog.WarnContext(ctx, "Failed to send Apprise notification", "error", appriseErr)
@@ -229,7 +229,7 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 	return nil
 }
 
-func (s *NotificationService) sendDiscordNotification(ctx context.Context, imageRef string, updateInfo *dto.ImageUpdateResponse, config models.JSON) error {
+func (s *NotificationService) sendDiscordNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
 	var discordConfig models.DiscordConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
@@ -339,7 +339,7 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, image
 	return nil
 }
 
-func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRef string, updateInfo *dto.ImageUpdateResponse, config models.JSON) error {
+func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
 	var emailConfig models.EmailConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
@@ -392,7 +392,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	return nil
 }
 
-func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *dto.ImageUpdateResponse) (string, string, error) {
+func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
 	data := map[string]interface{}{
 		"LogoURL":       "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
 		"AppURL":        s.config.AppUrl,
@@ -644,7 +644,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		return fmt.Errorf("please save your %s settings before testing", provider)
 	}
 
-	testUpdate := &dto.ImageUpdateResponse{
+	testUpdate := &imageupdate.Response{
 		HasUpdate:      true,
 		UpdateType:     "digest",
 		CurrentDigest:  "sha256:abc123def456789012345678901234567890",
@@ -775,12 +775,12 @@ func (s *NotificationService) logNotification(ctx context.Context, provider mode
 	}
 }
 
-func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*dto.ImageUpdateResponse) error {
+func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) error {
 	if len(updates) == 0 {
 		return nil
 	}
 
-	updatesWithChanges := make(map[string]*dto.ImageUpdateResponse)
+	updatesWithChanges := make(map[string]*imageupdate.Response)
 	for imageRef, update := range updates {
 		if update != nil && update.HasUpdate {
 			updatesWithChanges[imageRef] = update
@@ -850,7 +850,7 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 	return nil
 }
 
-func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, updates map[string]*dto.ImageUpdateResponse, config models.JSON) error {
+func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
 	var discordConfig models.DiscordConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
@@ -929,7 +929,7 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 	return nil
 }
 
-func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, updates map[string]*dto.ImageUpdateResponse, config models.JSON) error {
+func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
 	var emailConfig models.EmailConfig
 	configBytes, err := json.Marshal(config)
 	if err != nil {
@@ -988,7 +988,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 	return nil
 }
 
-func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*dto.ImageUpdateResponse) (string, string, error) {
+func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*imageupdate.Response) (string, string, error) {
 	data := map[string]interface{}{
 		"LogoURL":     "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
 		"AppURL":      s.config.AppUrl,

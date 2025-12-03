@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
+	"go.getarcane.app/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 
@@ -204,10 +204,10 @@ func (s *VersionService) getDisplayVersion() string {
 }
 
 // GetAppVersionInfo returns application version information including display version
-func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfoDto {
-	version := strings.TrimSpace(s.version)
-	if s.isSemverVersion() && !strings.HasPrefix(version, "v") {
-		version = "v" + version
+func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
+	ver := strings.TrimSpace(s.version)
+	if s.isSemverVersion() && !strings.HasPrefix(ver, "v") {
+		ver = "v" + ver
 	}
 	displayVersion := s.getDisplayVersion()
 	isSemver := s.isSemverVersion()
@@ -216,8 +216,8 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfo
 	currentTag, currentDigest, currentImageRef := s.detectCurrentImageInfo(ctx)
 
 	if s.disabled {
-		return &dto.VersionInfoDto{
-			CurrentVersion:  version,
+		return &version.Info{
+			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
@@ -233,8 +233,8 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfo
 		if err != nil {
 			var staleErr *cache.ErrStale
 			if !errors.As(err, &staleErr) {
-				return &dto.VersionInfoDto{
-					CurrentVersion:  version,
+				return &version.Info{
+					CurrentVersion:  ver,
 					CurrentTag:      currentTag,
 					CurrentDigest:   currentDigest,
 					DisplayVersion:  displayVersion,
@@ -245,15 +245,15 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfo
 			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
 		}
 
-		return &dto.VersionInfoDto{
-			CurrentVersion:  version,
+		return &version.Info{
+			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
 			IsSemverVersion: isSemver,
 			NewestVersion:   latest,
-			UpdateAvailable: s.IsNewer(latest, version),
+			UpdateAvailable: s.IsNewer(latest, ver),
 			ReleaseURL:      s.ReleaseURL(latest),
 		}
 	}
@@ -261,8 +261,8 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfo
 	// For non-semver versions (like "next"), check digest-based updates
 	if currentTag != "" && s.containerRegistryService != nil {
 		updateAvailable, latestDigest := s.checkDigestBasedUpdate(ctx, currentTag, currentDigest, currentImageRef)
-		return &dto.VersionInfoDto{
-			CurrentVersion:  version,
+		return &version.Info{
+			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
@@ -273,8 +273,8 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *dto.VersionInfo
 		}
 	}
 
-	return &dto.VersionInfoDto{
-		CurrentVersion:  version,
+	return &version.Info{
+		CurrentVersion:  ver,
 		CurrentTag:      currentTag,
 		CurrentDigest:   currentDigest,
 		DisplayVersion:  displayVersion,

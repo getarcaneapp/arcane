@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Configuration
-readonly COMPOSE_FILE="docker-compose.dev.yml"
+readonly COMPOSE_FILE="docker/compose.dev.yaml"
 readonly PROJECT_NAME="arcane-dev"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -207,7 +207,7 @@ show_env_config() {
             grep -E "^[A-Z_]+" .env | sort
             echo "----------------------------------------"
         else
-            log_warning "No .env file found. Run 'start' to create one from .env.dev"
+            log_warning "No .env file found (not needed for development - values are in docker/compose.dev.yaml)"
         fi
     fi
 }
@@ -236,30 +236,8 @@ show_logs() {
     fi
 }
 
-create_env_file() {
-    local env_file=".env"
-    local env_dev=".env.dev"
-    
-    if [[ -f "$env_file" ]]; then
-        return 0
-    fi
-    
-    if [[ ! -f "$env_dev" ]]; then
-        log_error ".env.dev file not found!"
-        log_error "Please ensure .env.dev exists in the project root"
-        exit 1
-    fi
-    
-    log_warning ".env file not found, creating from .env.dev..."
-    cp "$env_dev" "$env_file"
-    log_success "Created .env file from .env.dev template"
-    log_info "You can customize the values in .env for your development setup"
-}
-
 start_dev() {
     log_info "Starting Arcane development environment..."
-    
-    create_env_file
     
     if ! docker compose -f "${COMPOSE_FILE}" -p "${PROJECT_NAME}" up -d --build; then
         log_error "Failed to start development environment"
@@ -285,9 +263,6 @@ stop_dev() {
 
 restart_dev() {
     log_info "Restarting Arcane development environment..."
-    
-    # Check if .env file exists and create if needed (to pick up any new changes)
-    create_env_file
     
     # Stop containers gracefully to allow Air to clean up properly
     log_info "Stopping containers gracefully..."
@@ -722,7 +697,7 @@ show_help() {
     echo "Commands:"
     echo "  start     Start the development environment"
     echo "  stop      Stop the development environment"
-    echo "  restart   Restart the development environment (reloads .env file)"
+    echo "  restart   Restart the development environment"
     echo "  status    Show status of all services"
     echo "  env       Show current environment configuration (optionally specify service: backend, frontend)"
     echo "  logs      Show logs (optionally specify service: frontend, backend, agent)"

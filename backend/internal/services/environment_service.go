@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/google/uuid"
+	"go.getarcane.app/types/containerregistry"
+	"go.getarcane.app/types/environment"
 	"gorm.io/gorm"
 )
 
@@ -95,7 +97,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	return &environment, nil
 }
 
-func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]dto.EnvironmentDto, pagination.Response, error) {
+func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Response, pagination.Response, error) {
 	var envs []models.Environment
 	q := s.db.WithContext(ctx).Model(&models.Environment{})
 
@@ -124,7 +126,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate environments: %w", err)
 	}
 
-	out, mapErr := dto.MapSlice[models.Environment, dto.EnvironmentDto](envs)
+	out, mapErr := mapper.MapSlice[models.Environment, environment.Response](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
 	}
@@ -299,13 +301,13 @@ func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
 }
 
-func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]dto.ContainerRegistryCredential, error) {
+func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	var registries []models.ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
 		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
 	}
 
-	var creds []dto.ContainerRegistryCredential
+	var creds []containerregistry.Credential
 	for _, reg := range registries {
 		if !reg.Enabled || reg.Username == "" || reg.Token == "" {
 			continue
@@ -319,7 +321,7 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 			continue
 		}
 
-		creds = append(creds, dto.ContainerRegistryCredential{
+		creds = append(creds, containerregistry.Credential{
 			URL:      reg.URL,
 			Username: reg.Username,
 			Token:    decryptedToken,
@@ -358,7 +360,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		slog.Int("count", len(registries)))
 
 	// Prepare sync items with decrypted tokens
-	syncItems := make([]dto.ContainerRegistrySyncDto, 0, len(registries))
+	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
 		decryptedToken, err := utils.Decrypt(reg.Token)
 		if err != nil {
@@ -369,7 +371,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 			continue
 		}
 
-		syncItems = append(syncItems, dto.ContainerRegistrySyncDto{
+		syncItems = append(syncItems, containerregistry.Sync{
 			ID:          reg.ID,
 			URL:         reg.URL,
 			Username:    reg.Username,
@@ -383,7 +385,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	}
 
 	// Prepare the sync request
-	syncReq := dto.SyncRegistriesRequest{
+	syncReq := containerregistry.SyncRequest{
 		Registries: syncItems,
 	}
 

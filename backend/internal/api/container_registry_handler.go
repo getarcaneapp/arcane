@@ -6,14 +6,15 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/containerregistry"
 )
 
 type ContainerRegistryHandler struct {
@@ -69,7 +70,7 @@ func (h *ContainerRegistryHandler) GetRegistry(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[*models.ContainerRegistry, dto.ContainerRegistryDto](registry)
+	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.Response](registry)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -104,7 +105,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[*models.ContainerRegistry, dto.ContainerRegistryDto](registry)
+	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.Response](registry)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -141,7 +142,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[*models.ContainerRegistry, dto.ContainerRegistryDto](registry)
+	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.Response](registry)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -212,7 +213,7 @@ func (h *ContainerRegistryHandler) TestRegistry(c *gin.Context) {
 }
 
 func (h *ContainerRegistryHandler) SyncRegistries(c *gin.Context) {
-	var req dto.SyncRegistriesRequest
+	var req containerregistry.SyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,

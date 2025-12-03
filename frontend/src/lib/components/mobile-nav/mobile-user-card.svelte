@@ -77,7 +77,7 @@
 			>
 				<ChevronDownIcon class="size-4" />
 			</div>
-			<form action="/auth/logout" method="POST">
+			<form action="/logout" method="POST">
 				<Button.Root
 					variant="ghost"
 					size="icon"

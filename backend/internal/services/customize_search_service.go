@@ -6,13 +6,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"go.getarcane.app/types/category"
+	"go.getarcane.app/types/meta"
+	"go.getarcane.app/types/search"
 )
 
 type CustomizeSearchService struct {
-	categories []dto.CustomizeCategory
+	categories []category.Category
 	once       sync.Once
 }
 
@@ -29,16 +31,16 @@ func (s *CustomizeSearchService) initCategories() {
 }
 
 // GetCustomizeCategories returns all available customization categories with their metadata
-func (s *CustomizeSearchService) GetCustomizeCategories() []dto.CustomizeCategory {
+func (s *CustomizeSearchService) GetCustomizeCategories() []category.Category {
 	return s.categories
 }
 
-func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCategory {
+func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category {
 	// Extract category metadata from struct tags (catmeta)
 	catMetaMap := utils.ExtractCategoryMetadata(models.CustomizeItem{}, nil)
 
 	// map category id -> list of customizations
-	categories := map[string][]dto.CustomizationMeta{}
+	categories := map[string][]meta.Metadata{}
 	categoryOrder := []string{} // Track order from first appearance in struct
 
 	rt := reflect.TypeOf(models.CustomizeItem{})
@@ -50,18 +52,18 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCateg
 			continue
 		}
 
-		meta := utils.ParseMetaTag(field.Tag.Get("meta"))
-		label := meta["label"]
+		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		label := metaTag["label"]
 		if label == "" {
 			label = key
 		}
-		typ := meta["type"]
+		typ := metaTag["type"]
 		if typ == "" {
 			typ = "text"
 		}
-		desc := meta["description"]
-		keywords := utils.ParseKeywords(meta["keywords"])
-		categoryID := meta["category"]
+		desc := metaTag["description"]
+		keywords := utils.ParseKeywords(metaTag["keywords"])
+		categoryID := metaTag["category"]
 		if categoryID == "" {
 			categoryID = "defaults"
 		}
@@ -71,7 +73,7 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCateg
 			categoryOrder = append(categoryOrder, categoryID)
 		}
 
-		cm := dto.CustomizationMeta{
+		cm := meta.Metadata{
 			Key:         key,
 			Label:       label,
 			Type:        typ,
@@ -83,7 +85,7 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCateg
 	}
 
 	// Build final category list in struct order
-	result := []dto.CustomizeCategory{}
+	result := []category.Category{}
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {
@@ -96,14 +98,14 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCateg
 			keywords = []string{}
 		}
 
-		result = append(result, dto.CustomizeCategory{
-			ID:             catMeta["id"],
-			Title:          catMeta["title"],
-			Description:    catMeta["description"],
-			Icon:           catMeta["icon"],
-			URL:            catMeta["url"],
-			Keywords:       keywords,
-			Customizations: categories[catID],
+		result = append(result, category.Category{
+			ID:          catMeta["id"],
+			Title:       catMeta["title"],
+			Description: catMeta["description"],
+			Icon:        catMeta["icon"],
+			URL:         catMeta["url"],
+			Keywords:    keywords,
+			Settings:    categories[catID],
 		})
 	}
 
@@ -111,39 +113,39 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []dto.CustomizeCateg
 }
 
 // Search performs a relevance-scored search across all customization categories and items
-func (s *CustomizeSearchService) Search(query string) dto.CustomizeSearchResponse {
+func (s *CustomizeSearchService) Search(query string) search.Response {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
-		return dto.CustomizeSearchResponse{
-			Results: []dto.CustomizeCategory{},
+		return search.Response{
+			Results: []category.Category{},
 			Query:   query,
 			Count:   0,
 		}
 	}
 
 	categories := s.GetCustomizeCategories()
-	results := []dto.CustomizeCategory{}
+	results := []category.Category{}
 
-	for _, category := range categories {
+	for _, cat := range categories {
 		// Check if category matches
-		categoryMatch := strings.Contains(strings.ToLower(category.Title), query) ||
-			strings.Contains(strings.ToLower(category.Description), query) ||
-			containsKeyword(category.Keywords, query)
+		categoryMatch := strings.Contains(strings.ToLower(cat.Title), query) ||
+			strings.Contains(strings.ToLower(cat.Description), query) ||
+			containsKeyword(cat.Keywords, query)
 
-		// Check individual customizations
-		matchingCustomizations := []dto.CustomizationMeta{}
-		for _, customization := range category.Customizations {
-			if matchesCustomization(customization, query) {
-				matchingCustomizations = append(matchingCustomizations, customization)
+		// Check individual settings
+		matchingSettings := []meta.Metadata{}
+		for _, setting := range cat.Settings {
+			if matchesSetting(setting, query) {
+				matchingSettings = append(matchingSettings, setting)
 			}
 		}
 
-		if categoryMatch || len(matchingCustomizations) > 0 {
-			relevanceScore := calculateCustomizeRelevance(category, matchingCustomizations, query)
+		if categoryMatch || len(matchingSettings) > 0 {
+			relevanceScore := calculateCustomizeRelevance(cat, matchingSettings, query)
 
-			resultCategory := category
-			if len(matchingCustomizations) > 0 {
-				resultCategory.MatchingCustomizations = matchingCustomizations
+			resultCategory := cat
+			if len(matchingSettings) > 0 {
+				resultCategory.MatchingSettings = matchingSettings
 			}
 			resultCategory.RelevanceScore = relevanceScore
 
@@ -156,36 +158,36 @@ func (s *CustomizeSearchService) Search(query string) dto.CustomizeSearchRespons
 		return results[i].RelevanceScore > results[j].RelevanceScore
 	})
 
-	return dto.CustomizeSearchResponse{
+	return search.Response{
 		Results: results,
 		Query:   query,
 		Count:   len(results),
 	}
 }
 
-func matchesCustomization(customization dto.CustomizationMeta, query string) bool {
-	return strings.Contains(strings.ToLower(customization.Key), query) ||
-		strings.Contains(strings.ToLower(customization.Label), query) ||
-		strings.Contains(strings.ToLower(customization.Description), query) ||
-		containsKeyword(customization.Keywords, query)
+func matchesSetting(setting meta.Metadata, query string) bool {
+	return strings.Contains(strings.ToLower(setting.Key), query) ||
+		strings.Contains(strings.ToLower(setting.Label), query) ||
+		strings.Contains(strings.ToLower(setting.Description), query) ||
+		containsKeyword(setting.Keywords, query)
 }
 
-func calculateCustomizeRelevance(category dto.CustomizeCategory, matchingCustomizations []dto.CustomizationMeta, query string) int {
+func calculateCustomizeRelevance(cat category.Category, matchingSettings []meta.Metadata, query string) int {
 	score := 0
 
 	// Category-level scoring
-	if strings.ToLower(category.Title) == query {
+	if strings.ToLower(cat.Title) == query {
 		score += 30
-	} else if strings.Contains(strings.ToLower(category.Title), query) {
+	} else if strings.Contains(strings.ToLower(cat.Title), query) {
 		score += 20
 	}
 
-	if strings.Contains(strings.ToLower(category.Description), query) {
+	if strings.Contains(strings.ToLower(cat.Description), query) {
 		score += 15
 	}
 
 	// Exact keyword match
-	for _, keyword := range category.Keywords {
+	for _, keyword := range cat.Keywords {
 		if strings.ToLower(keyword) == query {
 			score += 25
 			break
@@ -195,24 +197,24 @@ func calculateCustomizeRelevance(category dto.CustomizeCategory, matchingCustomi
 		}
 	}
 
-	// Customization-level scoring
-	for _, customization := range matchingCustomizations {
-		if strings.ToLower(customization.Key) == query {
+	// Setting-level scoring
+	for _, setting := range matchingSettings {
+		if strings.ToLower(setting.Key) == query {
 			score += 30
-		} else if strings.Contains(strings.ToLower(customization.Key), query) {
+		} else if strings.Contains(strings.ToLower(setting.Key), query) {
 			score += 15
 		}
 
-		if strings.Contains(strings.ToLower(customization.Label), query) {
+		if strings.Contains(strings.ToLower(setting.Label), query) {
 			score += 12
 		}
 
-		if strings.Contains(strings.ToLower(customization.Description), query) {
+		if strings.Contains(strings.ToLower(setting.Description), query) {
 			score += 8
 		}
 
 		// Exact keyword match
-		for _, keyword := range customization.Keywords {
+		for _, keyword := range setting.Keywords {
 			if strings.ToLower(keyword) == query {
 				score += 20
 				break

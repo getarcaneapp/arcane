@@ -4,11 +4,12 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/base"
+	"go.getarcane.app/types/notification"
 )
 
 type NotificationHandler struct {
@@ -45,13 +46,13 @@ func (h *NotificationHandler) GetAllSettings(c *gin.Context) {
 	}
 
 	// Map to DTOs
-	responses := make([]dto.NotificationSettingsResponse, len(settings))
+	responses := make([]notification.Response, len(settings))
 	for i, setting := range settings {
-		responses[i] = dto.NotificationSettingsResponse{
+		responses[i] = notification.Response{
 			ID:       setting.ID,
-			Provider: setting.Provider,
+			Provider: notification.Provider(setting.Provider),
 			Enabled:  setting.Enabled,
-			Config:   setting.Config,
+			Config:   base.JsonObject(setting.Config),
 		}
 	}
 
@@ -75,18 +76,18 @@ func (h *NotificationHandler) GetSettings(c *gin.Context) {
 		return
 	}
 
-	response := dto.NotificationSettingsResponse{
+	response := notification.Response{
 		ID:       settings.ID,
-		Provider: settings.Provider,
+		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
-		Config:   settings.Config,
+		Config:   base.JsonObject(settings.Config),
 	}
 
 	c.JSON(http.StatusOK, response)
 }
 
 func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
-	var req dto.NotificationSettingsRequest
+	var req notification.Update
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
@@ -94,20 +95,20 @@ func (h *NotificationHandler) CreateOrUpdateSettings(c *gin.Context) {
 
 	settings, err := h.notificationService.CreateOrUpdateSettings(
 		c.Request.Context(),
-		req.Provider,
+		models.NotificationProvider(req.Provider),
 		req.Enabled,
-		req.Config,
+		models.JSON(req.Config),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.NotificationSettingsUpdateError{Err: err}).Error()})
 		return
 	}
 
-	response := dto.NotificationSettingsResponse{
+	response := notification.Response{
 		ID:       settings.ID,
-		Provider: settings.Provider,
+		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
-		Config:   settings.Config,
+		Config:   base.JsonObject(settings.Config),
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -160,7 +161,7 @@ func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 		return
 	}
 
-	response := dto.AppriseSettingsResponse{
+	response := notification.AppriseResponse{
 		ID:                 settings.ID,
 		APIURL:             settings.APIURL,
 		Enabled:            settings.Enabled,
@@ -172,7 +173,7 @@ func (h *NotificationHandler) GetAppriseSettings(c *gin.Context) {
 }
 
 func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
-	var req dto.AppriseSettingsRequest
+	var req notification.AppriseUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
 		return
@@ -195,7 +196,7 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(c *gin.Context) {
 		return
 	}
 
-	response := dto.AppriseSettingsResponse{
+	response := notification.AppriseResponse{
 		ID:                 settings.ID,
 		APIURL:             settings.APIURL,
 		Enabled:            settings.Enabled,

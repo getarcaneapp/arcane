@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/golang-jwt/jwt/v5"
+	"go.getarcane.app/types/auth"
 )
 
 func newTestAuthService(secret string) *AuthService {
@@ -149,7 +149,7 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 	s := newTestAuthService("")
 	user := &models.User{}
 	start := time.Now()
-	resp := &dto.OidcTokenResponse{
+	resp := &auth.OidcTokenResponse{
 		AccessToken:  "at-123",
 		RefreshToken: "rt-456",
 		ExpiresIn:    7,

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Check if the script is being run from the root of the project
-if [ ! -f .version ] || [ ! -f frontend/package.json ] || [ ! -f CHANGELOG.md ]; then
+if [ ! -f .arcane.json ] || [ ! -f frontend/package.json ] || [ ! -f CHANGELOG.md ]; then
     echo "Error: This script must be run from the root of the project."
     exit 1
 fi
@@ -28,8 +28,8 @@ if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
     exit 1
 fi
 
-# Read the current version from .version
-VERSION=$(cat .version)
+# Read the current version from .arcane.json
+VERSION=$(jq -r '.version' .arcane.json)
 
 # Function to increment the version
 increment_version() {
@@ -110,19 +110,16 @@ if [[ "$CONFIRM" != "y" ]]; then
     exit 1
 fi
 
-# Update the .version file with the new version
-echo "$NEW_VERSION" > .version
-git add .version
+# Update .arcane.json file with the new version and revision
+echo "Updating .arcane.json file..."
+LATEST_REVISION=$(git rev-parse --short HEAD)
+jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
+  '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
+git add .arcane.json
 
 # Update version in frontend/package.json
 jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
 git add frontend/package.json
-
-# Create/Update .revision file with the latest commit short hash
-echo "Creating/Updating .revision file..."
-LATEST_REVISION=$(git rev-parse --short HEAD)
-echo "$LATEST_REVISION" > .revision
-git add .revision
 
 # Generate changelog
 echo "Generating changelog..."

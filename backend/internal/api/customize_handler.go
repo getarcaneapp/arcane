@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/search"
 )
 
 type CustomizeHandler struct {
@@ -28,7 +28,7 @@ func NewCustomizeHandler(group *gin.RouterGroup, customizeSearchService *service
 
 // Search delegates to the customize search service and returns relevance-scored results
 func (h *CustomizeHandler) Search(c *gin.Context) {
-	var req dto.CustomizeSearchRequest
+	var req search.Request
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
