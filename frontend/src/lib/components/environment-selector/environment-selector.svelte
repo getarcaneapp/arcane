@@ -864,13 +864,13 @@
 						</Popover.Trigger>
 						<Popover.Content class="w-48 p-2" align="end">
 							<div class="space-y-1">
-								{#each [{ value: 'none', label: m.common_none() }, { value: 'status', label: m.common_status() }, ...(allTags.length ? [{ value: 'tags', label: m.common_tags() }] : [])] as option}
+								{#each [{ value: 'none' as const, label: m.common_none() }, { value: 'status' as const, label: m.common_status() }, ...(allTags.length ? [{ value: 'tags' as const, label: m.common_tags() }] : [])] as option}
 									<button
 										class={cn(
 											'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
 											filters.groupBy === option.value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
 										)}
-										onclick={() => (filters = { ...filters, groupBy: option.value as any })}
+										onclick={() => (filters = { ...filters, groupBy: option.value })}
 									>
 										{#if filters.groupBy === option.value}
 											<CheckIcon class="size-4" />

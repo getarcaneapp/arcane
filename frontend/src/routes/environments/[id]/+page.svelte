@@ -203,7 +203,7 @@
 		const tag = newTagInput.trim();
 		if (!tag) return;
 		if (formTags.includes(tag)) {
-			toast.error('Tag already exists');
+			toast.error(m.common_tag_already_exists());
 			return;
 		}
 		formTags = [...formTags, tag];

@@ -31,6 +31,7 @@
 	"common_configuration": "Configuration",
 	"common_limit": "Limit",
 	"common_tags": "Tags",
+	"common_tag_already_exists": "Tag already exists",
 	"common_subnet": "Subnet",
 	"common_shell": "Shell",
 	"common_ports": "Ports",

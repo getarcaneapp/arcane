@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -196,14 +197,7 @@ func (s *EnvironmentService) GetAllTags(ctx context.Context) ([]string, error) {
 		tags = append(tags, tag)
 	}
 
-	// Sort tags alphabetically
-	for i := 0; i < len(tags)-1; i++ {
-		for j := i + 1; j < len(tags); j++ {
-			if tags[i] > tags[j] {
-				tags[i], tags[j] = tags[j], tags[i]
-			}
-		}
-	}
+	sort.Strings(tags)
 
 	return tags, nil
 }
@@ -606,7 +600,7 @@ func (s *EnvironmentService) UpdateFilter(ctx context.Context, filterID, userID 
 		}
 
 		// If setting as default, clear any existing default first
-		if isDefault, ok := updates["is_default"]; ok && isDefault == true {
+		if isDefault, ok := updates["is_default"].(bool); ok && isDefault {
 			if err := tx.Model(&models.EnvironmentFilter{}).
 				Where("user_id = ? AND is_default = ? AND id != ?", userID, true, filterID).
 				Update("is_default", false).Error; err != nil {
