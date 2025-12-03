@@ -23,6 +23,8 @@
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 
+	type FieldVisibility = Record<string, boolean>;
+
 	let {
 		networks = $bindable(),
 		selectedIds = $bindable(),
@@ -70,7 +72,7 @@
 
 		if (defaultNetworks.length > 0) {
 			const names = defaultNetworks.map((n) => n.name ?? m.common_unknown()).join(', ');
-			toast.error(m.networks_cannot_delete_default_many({ names: names }));
+			toast.error(m.networks_cannot_delete_default_many({ names }));
 			return;
 		}
 
@@ -215,7 +217,7 @@
 }: {
 	row: any;
 	item: NetworkSummaryDto;
-	mobileFieldVisibility: Record;
+	mobileFieldVisibility: FieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
