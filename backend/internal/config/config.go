@@ -40,6 +40,8 @@ type Config struct {
 	UpdateCheckDisabled     bool
 	UIConfigurationDisabled bool
 	AnalyticsDisabled       bool
+	GPUMonitoringEnabled    bool
+	GPUType                 string
 }
 
 func Load() *Config {
@@ -68,6 +70,8 @@ func Load() *Config {
 		UpdateCheckDisabled:     getBoolEnvOrDefault("UPDATE_CHECK_DISABLED", false),
 		UIConfigurationDisabled: getBoolEnvOrDefault("UI_CONFIGURATION_DISABLED", false),
 		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
+		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
+		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
 	}
 }
 
