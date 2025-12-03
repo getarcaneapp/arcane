@@ -42,8 +42,9 @@ services:
     ports:
       - "3552:3552"
     volumes:
-      - ${HOST_PROJECT_ROOT:-..}/docker/go.work.docker:/app/go.work:ro
+      - ${HOST_PROJECT_ROOT:-..}/go.work:/app/go.work:ro
       - ${HOST_PROJECT_ROOT:-..}/types:/app/types:cached
+      - ${HOST_PROJECT_ROOT:-..}/cli:/app/cli:cached
       - ${HOST_PROJECT_ROOT:-..}/backend:/app/backend:cached
       - ${HOST_PROJECT_ROOT:-..}/backend/.air.toml:/app/backend/.air.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -98,8 +99,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-dev-data:/app/backend/data
-      - ${HOST_PROJECT_ROOT:-..}/docker/go.work.docker:/app/go.work:ro
+      - ${HOST_PROJECT_ROOT:-..}/go.work:/app/go.work:ro
       - ${HOST_PROJECT_ROOT:-..}/types:/app/types:cached
+      - ${HOST_PROJECT_ROOT:-..}/cli:/app/cli:cached
       - ${HOST_PROJECT_ROOT:-..}/backend:/app/backend:cached
       - ${HOST_PROJECT_ROOT:-..}/backend/.air.toml:/app/backend/.air.toml:ro
       - go-build-cache:/go/cache

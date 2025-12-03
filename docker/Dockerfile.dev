@@ -51,9 +51,10 @@ ENV GIN_MODE=debug \
 
 WORKDIR /app
 
-# Copy Docker-specific Go workspace file (excludes cli module) and types module first
-COPY docker/go.work.docker ./go.work
+# Copy Go workspace file and all modules first
+COPY go.work ./go.work
 COPY types/ ./types/
+COPY cli/ ./cli/
 
 # Copy backend Go module files for dependency caching
 COPY backend/go.mod backend/go.sum ./backend/

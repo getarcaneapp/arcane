@@ -23,7 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY ./.arcane.json ./arcane.json
+COPY ./go.work ./go.work
 COPY ./types ./types
+COPY ./cli ./cli
 COPY ./backend/go.mod ./backend/go.sum ./backend/
 WORKDIR /build/backend
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
