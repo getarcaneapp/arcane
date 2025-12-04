@@ -39,6 +39,7 @@ type EnvironmentFilter struct {
 	UserID       string                        `json:"userId" gorm:"column:user_id;not null;index"`
 	Name         string                        `json:"name" gorm:"not null"`
 	IsDefault    bool                          `json:"isDefault" gorm:"column:is_default;default:false"`
+	SearchQuery  string                        `json:"searchQuery" gorm:"column:search_query;default:''"`
 	SelectedTags StringSlice                   `json:"selectedTags" gorm:"column:selected_tags;type:jsonb;default:'[]'"`
 	ExcludedTags StringSlice                   `json:"excludedTags" gorm:"column:excluded_tags;type:jsonb;default:'[]'"`
 	TagMode      EnvironmentFilterTagMode      `json:"tagMode" gorm:"column:tag_mode;default:'any'"`

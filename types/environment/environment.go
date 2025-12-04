@@ -125,6 +125,11 @@ type FilterCreate struct {
 	// Required: false
 	IsDefault bool `json:"isDefault"`
 
+	// SearchQuery is a saved search string for filtering environments.
+	//
+	// Required: false
+	SearchQuery string `json:"searchQuery"`
+
 	// SelectedTags are tags that environments must have.
 	//
 	// Required: false
@@ -162,6 +167,11 @@ type FilterUpdate struct {
 	//
 	// Required: false
 	IsDefault *bool `json:"isDefault,omitempty"`
+
+	// SearchQuery is a saved search string for filtering environments.
+	//
+	// Required: false
+	SearchQuery *string `json:"searchQuery,omitempty"`
 
 	// SelectedTags are tags that environments must have.
 	//
@@ -210,6 +220,11 @@ type FilterResponse struct {
 	//
 	// Required: true
 	IsDefault bool `json:"isDefault"`
+
+	// SearchQuery is a saved search string for filtering environments.
+	//
+	// Required: true
+	SearchQuery string `json:"searchQuery"`
 
 	// SelectedTags are tags that environments must have.
 	//

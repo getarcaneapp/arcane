@@ -34,6 +34,7 @@ export interface EnvironmentFilter {
 	userId: string;
 	name: string;
 	isDefault: boolean;
+	searchQuery: string;
 	selectedTags: string[];
 	excludedTags: string[];
 	tagMode: TagMode;
@@ -46,6 +47,7 @@ export interface EnvironmentFilter {
 export interface CreateEnvironmentFilterDTO {
 	name: string;
 	isDefault?: boolean;
+	searchQuery?: string;
 	selectedTags?: string[];
 	excludedTags?: string[];
 	tagMode?: TagMode;
@@ -56,6 +58,7 @@ export interface CreateEnvironmentFilterDTO {
 export interface UpdateEnvironmentFilterDTO {
 	name?: string;
 	isDefault?: boolean;
+	searchQuery?: string;
 	selectedTags?: string[];
 	excludedTags?: string[];
 	tagMode?: TagMode;

@@ -93,6 +93,14 @@
 					{/if}
 				</div>
 				<div class="mt-1 flex flex-wrap items-center gap-1">
+					{#if filter.searchQuery}
+						<span
+							class="bg-muted text-muted-foreground truncate rounded px-1.5 py-0.5 text-[10px] font-medium italic"
+							title={filter.searchQuery}
+						>
+							"{filter.searchQuery.length > 15 ? filter.searchQuery.slice(0, 15) + '…' : filter.searchQuery}"
+						</span>
+					{/if}
 					{#if filter.statusFilter !== 'all'}
 						<span
 							class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"

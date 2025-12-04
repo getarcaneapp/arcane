@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS environment_filters (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     is_default INTEGER DEFAULT 0,
+    search_query TEXT DEFAULT '',
     selected_tags TEXT DEFAULT '[]',
     excluded_tags TEXT DEFAULT '[]',
     tag_mode TEXT DEFAULT 'any',

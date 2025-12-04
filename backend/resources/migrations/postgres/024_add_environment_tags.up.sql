@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS environment_filters (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     is_default BOOLEAN DEFAULT FALSE,
+    search_query TEXT DEFAULT '',
     selected_tags JSONB DEFAULT '[]',
     excluded_tags JSONB DEFAULT '[]',
     tag_mode TEXT DEFAULT 'any' CHECK (tag_mode IN ('any', 'all')),

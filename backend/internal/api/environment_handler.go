@@ -512,6 +512,7 @@ func (h *EnvironmentHandler) CreateFilter(c *gin.Context) {
 		UserID:       userID,
 		Name:         req.Name,
 		IsDefault:    req.IsDefault,
+		SearchQuery:  req.SearchQuery,
 		SelectedTags: req.SelectedTags,
 		ExcludedTags: req.ExcludedTags,
 		TagMode:      models.EnvironmentFilterTagMode(defaultString(req.TagMode, string(models.TagModeAny))),
@@ -592,6 +593,7 @@ func toFilterResponse(f *models.EnvironmentFilter) environment.FilterResponse {
 		UserID:       f.UserID,
 		Name:         f.Name,
 		IsDefault:    f.IsDefault,
+		SearchQuery:  f.SearchQuery,
 		SelectedTags: f.SelectedTags,
 		ExcludedTags: f.ExcludedTags,
 		TagMode:      string(f.TagMode),
@@ -621,6 +623,9 @@ func buildFilterUpdates(req *environment.FilterUpdate) map[string]interface{} {
 	}
 	if req.IsDefault != nil {
 		updates["is_default"] = *req.IsDefault
+	}
+	if req.SearchQuery != nil {
+		updates["search_query"] = *req.SearchQuery
 	}
 	if req.SelectedTags != nil {
 		updates["selected_tags"] = models.StringSlice(req.SelectedTags)

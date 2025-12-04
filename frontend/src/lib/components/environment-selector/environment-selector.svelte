@@ -191,12 +191,15 @@
 
 	function applyFilter(filter: EnvironmentFilter) {
 		filters = {
+			searchQuery: filter.searchQuery ?? '',
 			selectedTags: filter.selectedTags ?? [],
 			excludedTags: filter.excludedTags ?? [],
 			tagMode: filter.tagMode,
 			statusFilter: filter.statusFilter,
 			groupBy: filter.groupBy
 		};
+		// Apply saved search query to input
+		inputValue = filter.searchQuery ?? '';
 		activeFilterId = filter.id;
 		showSavedFiltersView = false;
 	}
@@ -275,8 +278,9 @@
 	}
 
 	async function handleSaveFilter(name: string) {
+		const filterData = { ...filters, searchQuery };
 		const created = await withToast(
-			() => environmentManagementService.createSavedFilter({ name, ...filters }),
+			() => environmentManagementService.createSavedFilter({ name, ...filterData }),
 			m.common_create_success({ resource: m.common_filter() }),
 			m.common_create_failed({ resource: m.common_filter() })
 		);
@@ -287,8 +291,9 @@
 	}
 
 	async function handleUpdateFilter(filterId: string) {
+		const filterData = { ...filters, searchQuery };
 		const updated = await withToast(
-			() => environmentManagementService.updateSavedFilter(filterId, filters),
+			() => environmentManagementService.updateSavedFilter(filterId, filterData),
 			m.common_update_success({ resource: m.common_filter() }),
 			m.common_update_failed({ resource: m.common_filter() })
 		);

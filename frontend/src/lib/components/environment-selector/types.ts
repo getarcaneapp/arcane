@@ -4,6 +4,7 @@ import type { Environment, EnvironmentFilter, GroupBy, StatusFilter, TagMode } f
 export type { Environment, EnvironmentFilter, TagMode, StatusFilter, GroupBy };
 
 export interface EnvironmentFilterState {
+	searchQuery: string;
 	selectedTags: string[];
 	excludedTags: string[];
 	tagMode: TagMode;
@@ -12,6 +13,7 @@ export interface EnvironmentFilterState {
 }
 
 export const defaultFilterState: EnvironmentFilterState = {
+	searchQuery: '',
 	selectedTags: [],
 	excludedTags: [],
 	tagMode: 'any',
