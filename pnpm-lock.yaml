@@ -19,20 +19,20 @@ importers:
     dependencies:
       '@react-email/components':
         specifier: 1.0.1
-        version: 1.0.1(react-dom@19.2.0(react@19.2.1))(react@19.2.1)
+        version: 1.0.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       react:
         specifier: ^19.2.1
         version: 19.2.1
       react-dom:
-        specifier: ^19.0.0
-        version: 19.2.0(react@19.2.1)
+        specifier: ^19.2.1
+        version: 19.2.1(react@19.2.1)
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
     devDependencies:
       '@react-email/preview-server':
         specifier: 5.0.5
-        version: 5.0.5(@playwright/test@1.57.0)(react-dom@19.2.0(react@19.2.1))(react@19.2.1)
+        version: 5.0.5(@playwright/test@1.57.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@types/node':
         specifier: ^24.10.1
         version: 24.10.1
@@ -2456,6 +2456,7 @@ packages:
   next@16.0.1:
     resolution: {integrity: sha512-e9RLSssZwd35p7/vOa+hoDFggUZIUbZhIUSLZuETCwrCVvxOs87NamoUzT+vbcNAL8Ld9GobBnWOA6SbV/arOw==}
     engines: {node: '>=20.9.0'}
+    deprecated: This version has a security vulnerability. Please upgrade to a patched version. See https://nextjs.org/blog/CVE-2025-66478 for more details.
     hasBin: true
     peerDependencies:
       '@opentelemetry/api': ^1.1.0
@@ -2655,10 +2656,10 @@ packages:
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
 
-  react-dom@19.2.0:
-    resolution: {integrity: sha512-UlbRu4cAiGaIewkPyiRGJk0imDN2T3JjieT6spoL2UeSf5od4n5LB/mQ4ejmxhCFT1tYe8IvaFulzynWovsEFQ==}
+  react-dom@19.2.1:
+    resolution: {integrity: sha512-ibrK8llX2a4eOskq1mXKu/TGZj9qzomO+sNfO98M6d9zIPOEhlBkMkBUBLd1vgS0gQsLDBzA+8jJBVXDnfHmJg==}
     peerDependencies:
-      react: ^19.2.0
+      react: ^19.2.1
 
   react-email@5.0.5:
     resolution: {integrity: sha512-O0BCyg2zR/3CsEYqoeDQuJL6W8oHYSPmvzIeSbFa5XXdtofmgizCLThbs50lcP7wGCTkDvdJIZ6XWUt2aRU6zA==}
@@ -3950,7 +3951,7 @@ snapshots:
     dependencies:
       react: 19.2.1
 
-  '@react-email/components@1.0.1(react-dom@19.2.0(react@19.2.1))(react@19.2.1)':
+  '@react-email/components@1.0.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
     dependencies:
       '@react-email/body': 0.2.0(react@19.2.1)
       '@react-email/button': 0.2.0(react@19.2.1)
@@ -3967,7 +3968,7 @@ snapshots:
       '@react-email/link': 0.0.12(react@19.2.1)
       '@react-email/markdown': 0.0.17(react@19.2.1)
       '@react-email/preview': 0.0.13(react@19.2.1)
-      '@react-email/render': 2.0.0(react-dom@19.2.0(react@19.2.1))(react@19.2.1)
+      '@react-email/render': 2.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@react-email/row': 0.0.12(react@19.2.1)
       '@react-email/section': 0.0.16(react@19.2.1)
       '@react-email/tailwind': 2.0.1(@react-email/body@0.2.0(react@19.2.1))(@react-email/button@0.2.0(react@19.2.1))(@react-email/code-block@0.2.0(react@19.2.1))(@react-email/code-inline@0.0.5(react@19.2.1))(@react-email/container@0.0.15(react@19.2.1))(@react-email/heading@0.0.15(react@19.2.1))(@react-email/hr@0.0.11(react@19.2.1))(@react-email/img@0.0.11(react@19.2.1))(@react-email/link@0.0.12(react@19.2.1))(@react-email/preview@0.0.13(react@19.2.1))(@react-email/text@0.1.5(react@19.2.1))(react@19.2.1)
@@ -4013,9 +4014,9 @@ snapshots:
       marked: 15.0.12
       react: 19.2.1
 
-  '@react-email/preview-server@5.0.5(@playwright/test@1.57.0)(react-dom@19.2.0(react@19.2.1))(react@19.2.1)':
+  '@react-email/preview-server@5.0.5(@playwright/test@1.57.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
     dependencies:
-      next: 16.0.1(@playwright/test@1.57.0)(react-dom@19.2.0(react@19.2.1))(react@19.2.1)
+      next: 16.0.1(@playwright/test@1.57.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
     transitivePeerDependencies:
       - '@babel/core'
       - '@opentelemetry/api'
@@ -4030,12 +4031,12 @@ snapshots:
     dependencies:
       react: 19.2.1
 
-  '@react-email/render@2.0.0(react-dom@19.2.0(react@19.2.1))(react@19.2.1)':
+  '@react-email/render@2.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
     dependencies:
       html-to-text: 9.0.5
       prettier: 3.7.3
       react: 19.2.1
-      react-dom: 19.2.0(react@19.2.1)
+      react-dom: 19.2.1(react@19.2.1)
 
   '@react-email/row@0.0.12(react@19.2.1)':
     dependencies:
@@ -5227,14 +5228,14 @@ snapshots:
 
   negotiator@0.6.3: {}
 
-  next@16.0.1(@playwright/test@1.57.0)(react-dom@19.2.0(react@19.2.1))(react@19.2.1):
+  next@16.0.1(@playwright/test@1.57.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
       '@next/env': 16.0.1
       '@swc/helpers': 0.5.15
       caniuse-lite: 1.0.30001756
       postcss: 8.4.31
       react: 19.2.1
-      react-dom: 19.2.0(react@19.2.1)
+      react-dom: 19.2.1(react@19.2.1)
       styled-jsx: 5.1.6(react@19.2.1)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.0.1
@@ -5398,7 +5399,7 @@ snapshots:
 
   queue-microtask@1.2.3: {}
 
-  react-dom@19.2.0(react@19.2.1):
+  react-dom@19.2.1(react@19.2.1):
     dependencies:
       react: 19.2.1
       scheduler: 0.27.0
