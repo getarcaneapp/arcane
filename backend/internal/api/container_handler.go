@@ -17,7 +17,6 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
@@ -25,6 +24,7 @@ import (
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	containertypes "go.getarcane.app/types/container"
 )
 
 type ContainerHandler struct {
@@ -316,7 +316,7 @@ func (h *ContainerHandler) List(c *gin.Context) {
 		return
 	}
 
-	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[dto.ContainerSummaryDto]{
+	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[containertypes.Summary]{
 		Items:          containers,
 		TotalCount:     paginationResp.TotalItems,
 		TotalAvailable: paginationResp.GrandTotalItems,
@@ -341,7 +341,7 @@ func (h *ContainerHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	details := dto.NewContainerDetailsDto(container)
+	details := containertypes.NewDetails(container)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -445,7 +445,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 		return
 	}
 
-	out := dto.ContainerStatusLengthsDto{
+	out := containertypes.StatusCounts{
 		RunningContainers: running,
 		StoppedContainers: stopped,
 		TotalContainers:   total,
@@ -458,7 +458,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(c *gin.Context) {
 }
 
 func (h *ContainerHandler) Create(c *gin.Context) {
-	var req dto.CreateContainerDto
+	var req containertypes.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -546,7 +546,7 @@ func (h *ContainerHandler) Create(c *gin.Context) {
 		return
 	}
 
-	out := dto.ContainerCreatedDto{
+	out := containertypes.Created{
 		ID:      containerJSON.ID,
 		Name:    containerJSON.Name,
 		Image:   containerJSON.Config.Image,

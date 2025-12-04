@@ -5,10 +5,10 @@ import (
 	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/updater"
 )
 
 type UpdaterHandler struct {
@@ -28,7 +28,7 @@ func NewUpdaterHandler(group *gin.RouterGroup, updaterService *services.UpdaterS
 }
 
 func (h *UpdaterHandler) Run(c *gin.Context) {
-	var req dto.UpdaterRunRequest
+	var req updater.Options
 	_ = c.ShouldBindJSON(&req)
 
 	out, err := h.updaterService.ApplyPending(c.Request.Context(), req.DryRun)

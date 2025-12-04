@@ -5,8 +5,14 @@ cd backend
 mkdir -p .bin
 
 HOST_OS="$(go env GOHOSTOS)"
-VERSION=${VERSION:-$(sed 's/^\s*\|\s*$//g' ../.version)}
-REVISION=${REVISION:-$(cat ../.revision 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
+
+# Read version and revision from .arcane.json
+if [ -f ../.arcane.json ]; then
+  VERSION=${VERSION:-$(jq -r '.version' ../.arcane.json)}
+  REVISION=${REVISION:-$(jq -r '.revision // empty' ../.arcane.json)}
+fi
+VERSION=${VERSION:-"dev"}
+REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
 
 LDFLAGS="-w -s -buildid=${VERSION} \
   -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \

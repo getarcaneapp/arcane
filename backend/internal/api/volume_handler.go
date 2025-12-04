@@ -5,11 +5,11 @@ import (
 
 	"github.com/docker/docker/api/types/volume"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	volumetypes "go.getarcane.app/types/volume"
 )
 
 type VolumeHandler struct {
@@ -49,7 +49,7 @@ func (h *VolumeHandler) List(c *gin.Context) {
 		return
 	}
 
-	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[dto.VolumeDto]{
+	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[volumetypes.Volume]{
 		Items:          volumes,
 		TotalCount:     paginationResp.TotalItems,
 		TotalAvailable: paginationResp.GrandTotalItems,
@@ -82,7 +82,7 @@ func (h *VolumeHandler) GetByName(c *gin.Context) {
 }
 
 func (h *VolumeHandler) Create(c *gin.Context) {
-	var req dto.CreateVolumeDto
+	var req volumetypes.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -188,7 +188,7 @@ func (h *VolumeHandler) GetVolumeUsageCounts(c *gin.Context) {
 		return
 	}
 
-	out := dto.VolumeUsageCounts{
+	out := volumetypes.UsageCounts{
 		Inuse:  running,
 		Unused: stopped,
 		Total:  total,

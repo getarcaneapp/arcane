@@ -1,14 +1,20 @@
-name: Run Backend Linter
+name: Run Go Linter
 
 on:
   push:
     branches: [main]
     paths:
       - "backend/**"
+      - "cli/**"
+      - "types/**"
+      - "go.work"
   pull_request:
     branches: [main]
     paths:
       - "backend/**"
+      - "cli/**"
+      - "types/**"
+      - "go.work"
 
 permissions:
   contents: read
@@ -19,6 +25,17 @@ jobs:
   golangci-lint:
     name: Run Golangci-lint
     runs-on: depot-ubuntu-24.04-16
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [backend, cli, types]
+        include:
+          - module: backend
+            args: --build-tags=exclude_frontend
+          - module: cli
+            args: ""
+          - module: types
+            args: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -26,13 +43,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.6.1
-          args: --build-tags=exclude_frontend
-          working-directory: backend
+          args: ${{ matrix.args }}
+          working-directory: ${{ matrix.module }}
           only-new-issues: ${{ github.event_name == 'pull_request' }}

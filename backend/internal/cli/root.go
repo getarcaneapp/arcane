@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
-	"github.com/getarcaneapp/arcane/backend/internal/cli/generate"
 	"github.com/getarcaneapp/arcane/backend/internal/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/signals"
+	"go.getarcane.app/cli/pkg/generate"
 )
 
 var rootCmd = &cobra.Command{

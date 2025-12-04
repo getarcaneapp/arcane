@@ -5,12 +5,14 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/env"
+	"go.getarcane.app/types/template"
 )
 
 type TemplateHandler struct {
@@ -62,7 +64,7 @@ func (h *TemplateHandler) GetAllTemplatesPaginated(c *gin.Context) {
 		return
 	}
 
-	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[dto.ComposeTemplateDto]{
+	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[template.Template]{
 		Items:          templates,
 		TotalCount:     paginationResp.TotalItems,
 		TotalAvailable: paginationResp.GrandTotalItems,
@@ -85,8 +87,8 @@ func (h *TemplateHandler) GetAllTemplates(c *gin.Context) {
 		return
 	}
 
-	var out []dto.ComposeTemplateDto
-	if mapped, mapErr := dto.MapSlice[models.ComposeTemplate, dto.ComposeTemplateDto](templates); mapErr == nil {
+	var out []template.Template
+	if mapped, mapErr := mapper.MapSlice[models.ComposeTemplate, template.Template](templates); mapErr == nil {
 		out = mapped
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -112,7 +114,7 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 
-	template, err := h.templateService.GetTemplate(c.Request.Context(), id)
+	tmpl, err := h.templateService.GetTemplate(c.Request.Context(), id)
 	if err != nil {
 		status := http.StatusInternalServerError
 		var msg string
@@ -129,8 +131,8 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 
-	var out dto.ComposeTemplateDto
-	if mapErr := dto.MapStruct(template, &out); mapErr != nil {
+	var out template.Template
+	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"data":    gin.H{"error": (&common.TemplateMappingError{Err: mapErr}).Error()},
@@ -185,7 +187,7 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	template := &models.ComposeTemplate{
+	tmpl := &models.ComposeTemplate{
 		Name:        req.Name,
 		Description: req.Description,
 		Content:     req.Content,
@@ -193,10 +195,10 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		IsRemote:    false,
 	}
 	if req.EnvContent != "" {
-		template.EnvContent = &req.EnvContent
+		tmpl.EnvContent = &req.EnvContent
 	}
 
-	if err := h.templateService.CreateTemplate(c.Request.Context(), template); err != nil {
+	if err := h.templateService.CreateTemplate(c.Request.Context(), tmpl); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"data":    gin.H{"error": (&common.TemplateCreationError{Err: err}).Error()},
@@ -204,8 +206,8 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	var out dto.ComposeTemplateDto
-	if mapErr := dto.MapStruct(template, &out); mapErr != nil {
+	var out template.Template
+	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"data":    gin.H{"error": (&common.TemplateMappingError{Err: mapErr}).Error()},
@@ -279,8 +281,8 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
-	var out dto.ComposeTemplateDto
-	if mapErr := dto.MapStruct(updated, &out); mapErr != nil {
+	var out template.Template
+	if mapErr := mapper.MapStruct(updated, &out); mapErr != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    gin.H{"message": "Template updated successfully"},
@@ -384,7 +386,7 @@ func (h *TemplateHandler) GetRegistries(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapSlice[models.TemplateRegistry, dto.TemplateRegistryDto](registries)
+	out, mapErr := mapper.MapSlice[models.TemplateRegistry, template.Registry](registries)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -428,8 +430,8 @@ func (h *TemplateHandler) CreateRegistry(c *gin.Context) {
 		return
 	}
 
-	var out dto.TemplateRegistryDto
-	if mapErr := dto.MapStruct(registry, &out); mapErr != nil {
+	var out template.Registry
+	if mapErr := mapper.MapStruct(registry, &out); mapErr != nil {
 		c.JSON(http.StatusCreated, gin.H{
 			"success": true,
 			"data":    gin.H{"message": "Registry created"},
@@ -562,24 +564,24 @@ func (h *TemplateHandler) DownloadTemplate(c *gin.Context) {
 		return
 	}
 
-	template, err := h.templateService.GetTemplate(c.Request.Context(), id)
+	tmpl, err := h.templateService.GetTemplate(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.TemplateNotFoundError{}).Error()}})
 		return
 	}
-	if !template.IsRemote {
+	if !tmpl.IsRemote {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.TemplateAlreadyLocalError{}).Error()}})
 		return
 	}
 
-	localTemplate, err := h.templateService.DownloadTemplate(c.Request.Context(), template)
+	localTemplate, err := h.templateService.DownloadTemplate(c.Request.Context(), tmpl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.TemplateDownloadError{Err: err}).Error()}})
 		return
 	}
 
-	var out dto.ComposeTemplateDto
-	if mapErr := dto.MapStruct(localTemplate, &out); mapErr != nil {
+	var out template.Template
+	if mapErr := mapper.MapStruct(localTemplate, &out); mapErr != nil {
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"message": "Template downloaded successfully"}})
 		return
 	}
@@ -607,7 +609,7 @@ func (h *TemplateHandler) GetGlobalVariables(c *gin.Context) {
 }
 
 func (h *TemplateHandler) UpdateGlobalVariables(c *gin.Context) {
-	var req dto.UpdateVariablesRequest
+	var req env.Summary
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,

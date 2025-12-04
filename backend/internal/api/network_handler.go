@@ -5,11 +5,12 @@ import (
 
 	"github.com/docker/docker/api/types/network"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	networktypes "go.getarcane.app/types/network"
 )
 
 type NetworkHandler struct {
@@ -48,7 +49,7 @@ func (h *NetworkHandler) List(c *gin.Context) {
 		return
 	}
 
-	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[dto.NetworkSummaryDto]{
+	pagination.ApplyFilterResultsHeaders(&c.Writer, pagination.FilterResult[networktypes.Summary]{
 		Items:          networks,
 		TotalCount:     paginationResp.TotalItems,
 		TotalAvailable: paginationResp.GrandTotalItems,
@@ -73,7 +74,7 @@ func (h *NetworkHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[network.Inspect, dto.NetworkInspectDto](*networkInspect)
+	out, mapErr := mapper.MapOne[network.Inspect, networktypes.Inspect](*networkInspect)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return
@@ -113,7 +114,7 @@ func (h *NetworkHandler) Create(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[network.CreateResponse, dto.NetworkCreateResponseDto](*response)
+	out, mapErr := mapper.MapOne[network.CreateResponse, networktypes.CreateResponse](*response)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return
@@ -157,7 +158,7 @@ func (h *NetworkHandler) GetNetworkUsageCounts(c *gin.Context) {
 		return
 	}
 
-	out := dto.NetworkUsageCounts{
+	out := networktypes.UsageCounts{
 		Inuse:  inuse,
 		Unused: unused,
 		Total:  total,
@@ -179,7 +180,7 @@ func (h *NetworkHandler) Prune(c *gin.Context) {
 		return
 	}
 
-	out, mapErr := dto.MapOne[network.PruneReport, dto.NetworkPruneReportDto](*report)
+	out, mapErr := mapper.MapOne[network.PruneReport, networktypes.PruneReport](*report)
 	if mapErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": (&common.NetworkMappingError{Err: mapErr}).Error()}})
 		return

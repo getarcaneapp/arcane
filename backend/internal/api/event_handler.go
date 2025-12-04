@@ -4,11 +4,11 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/event"
 )
 
 type EventHandler struct {
@@ -76,7 +76,7 @@ func (h *EventHandler) GetEventsByEnvironment(c *gin.Context) {
 }
 
 func (h *EventHandler) CreateEvent(c *gin.Context) {
-	var req dto.CreateEventDto
+	var req event.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,

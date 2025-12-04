@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/dto"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
+	"go.getarcane.app/types/imageupdate"
 )
 
 type ImageUpdateHandler struct {
@@ -80,7 +80,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 }
 
 func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
-	var req dto.BatchImageUpdateRequest
+	var req imageupdate.BatchImageUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -106,7 +106,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 		return
 	}
 
-	response := dto.BatchImageUpdateResponse(results)
+	response := imageupdate.BatchResponse(results)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -115,7 +115,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 }
 
 func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
-	var req dto.BatchImageUpdateRequest
+	var req imageupdate.BatchImageUpdateRequest
 	_ = c.ShouldBindJSON(&req)
 
 	results, err := h.imageUpdateService.CheckAllImages(c.Request.Context(), 0, req.Credentials)
@@ -127,7 +127,7 @@ func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 		return
 	}
 
-	response := dto.BatchImageUpdateResponse(results)
+	response := imageupdate.BatchResponse(results)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

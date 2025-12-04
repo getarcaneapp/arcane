@@ -3,6 +3,7 @@ import settingsStore from '$lib/stores/config-store';
 import { settingsService } from '$lib/services/settings-service';
 import type { Settings } from '$lib/types/settings.type';
 import { tryCatch } from '$lib/utils/try-catch';
+import type { Readable } from 'svelte/store';
 
 type SettingsFormState = {
 	hasChanges: boolean;
@@ -11,18 +12,20 @@ type SettingsFormState = {
 	resetFunction?: () => void;
 };
 
-type Options = {
-	hasChangesChecker: () => boolean;
+type Options<T> = {
+	formInputs: Readable<T>;
+	getCurrentSettings: () => Record<string, any>;
 };
 
-export class UseSettingsForm {
+export class UseSettingsForm<T extends Record<string, { value: any; error: string | null }>> {
 	#hasChanges = $state(false);
 	#isLoading = $state(false);
+	#formValues = $state<T | null>(null);
 	private formState: SettingsFormState | undefined;
-	private hasChangesChecker: () => boolean;
+	private getCurrentSettings: () => Record<string, any>;
 
-	constructor({ hasChangesChecker }: Options) {
-		this.hasChangesChecker = hasChangesChecker;
+	constructor({ formInputs, getCurrentSettings }: Options<T>) {
+		this.getCurrentSettings = getCurrentSettings;
 
 		try {
 			this.formState = getContext('settingsFormState') as SettingsFormState | undefined;
@@ -30,10 +33,34 @@ export class UseSettingsForm {
 			// Context not available
 		}
 
+		// Subscribe to form inputs store to track changes
+		formInputs.subscribe((value) => {
+			this.#formValues = value;
+		});
+
 		$effect(() => {
-			this.#hasChanges = this.hasChangesChecker();
+			// Access reactive state to trigger re-runs
+			const currentFormValues = this.#formValues;
+			if (!currentFormValues) {
+				this.#hasChanges = false;
+				return;
+			}
+
+			const settingsToCompare = this.getCurrentSettings();
+			const keys = Object.keys(currentFormValues) as (keyof T)[];
+
+			const hasChanges = keys.some((key) => {
+				const input = currentFormValues[key];
+				if (input && 'value' in input) {
+					return input.value !== settingsToCompare[key as string];
+				}
+				return false;
+			});
+
+			this.#hasChanges = hasChanges;
+
 			if (this.formState) {
-				this.formState.hasChanges = this.#hasChanges;
+				this.formState.hasChanges = hasChanges;
 				this.formState.isLoading = this.#isLoading;
 			}
 		});

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read version from .version file
-VERSION=$(sed 's/^\s*\|\s*$//g' .version || echo "dev")
-# Get git revision (short commit hash)
-REVISION=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Read version and revision from .arcane.json file
+if [ -f .arcane.json ]; then
+  VERSION=$(jq -r '.version // "dev"' .arcane.json)
+  REVISION=$(jq -r '.revision // empty' .arcane.json)
+fi
+VERSION=${VERSION:-"dev"}
+REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || "unknown")}
 
 # Parse optional arguments
 TAG="${1:-arcane:latest}"
