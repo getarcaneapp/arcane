@@ -16,13 +16,6 @@ type Environment struct {
 
 func (Environment) TableName() string { return "environments" }
 
-type EnvironmentTag struct {
-	EnvironmentID string `json:"environmentId" gorm:"column:environment_id;primaryKey"`
-	Tag           string `json:"tag" gorm:"primaryKey"`
-}
-
-func (EnvironmentTag) TableName() string { return "environment_tags" }
-
 type EnvironmentStatus string
 
 const (
@@ -31,9 +24,12 @@ const (
 	EnvironmentStatusError   EnvironmentStatus = "error"
 )
 
-type EnvironmentFilterTagMode string
-type EnvironmentFilterStatusFilter string
-type EnvironmentFilterGroupBy string
+type EnvironmentTag struct {
+	EnvironmentID string `json:"environmentId" gorm:"column:environment_id;primaryKey"`
+	Tag           string `json:"tag" gorm:"primaryKey"`
+}
+
+func (EnvironmentTag) TableName() string { return "environment_tags" }
 
 type EnvironmentFilter struct {
 	UserID       string                        `json:"userId" gorm:"column:user_id;not null;index"`
@@ -53,16 +49,22 @@ func (EnvironmentFilter) TableName() string {
 	return "environment_filters"
 }
 
+type EnvironmentFilterTagMode string
+
 const (
 	TagModeAny EnvironmentFilterTagMode = "any"
 	TagModeAll EnvironmentFilterTagMode = "all"
 )
+
+type EnvironmentFilterStatusFilter string
 
 const (
 	StatusFilterAll     EnvironmentFilterStatusFilter = "all"
 	StatusFilterOnline  EnvironmentFilterStatusFilter = "online"
 	StatusFilterOffline EnvironmentFilterStatusFilter = "offline"
 )
+
+type EnvironmentFilterGroupBy string
 
 const (
 	GroupByNone   EnvironmentFilterGroupBy = "none"

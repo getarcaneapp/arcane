@@ -195,19 +195,6 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
-// GetAllTags returns all unique tags used across all environments
-func (s *EnvironmentService) GetAllTags(ctx context.Context) ([]string, error) {
-	var tags []string
-	if err := s.db.WithContext(ctx).
-		Table("environment_tags").
-		Distinct("tag").
-		Order("tag").
-		Pluck("tag", &tags).Error; err != nil {
-		return nil, fmt.Errorf("failed to get environment tags: %w", err)
-	}
-	return tags, nil
-}
-
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]interface{}) (*models.Environment, error) {
 	now := time.Now()
 	updates["updated_at"] = &now
@@ -549,6 +536,19 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		slog.String("environmentName", environment.Name))
 
 	return nil
+}
+
+// ListTags returns all unique tags used across all environments
+func (s *EnvironmentService) ListTags(ctx context.Context) ([]string, error) {
+	var tags []string
+	if err := s.db.WithContext(ctx).
+		Table("environment_tags").
+		Distinct("tag").
+		Order("tag").
+		Pluck("tag", &tags).Error; err != nil {
+		return nil, fmt.Errorf("failed to get environment tags: %w", err)
+	}
+	return tags, nil
 }
 
 // ListFilters returns all saved filters for a given user

@@ -542,7 +542,7 @@ func (h *EnvironmentHandler) SyncRegistries(c *gin.Context) {
 //	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
 //	@Router			/api/environments/tags [get]
 func (h *EnvironmentHandler) ListTags(c *gin.Context) {
-	tags, err := h.environmentService.GetAllTags(c.Request.Context())
+	tags, err := h.environmentService.ListTags(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "data": gin.H{"error": err.Error()}})
 		return
