@@ -20,7 +20,7 @@ type GetLogoInput struct {
 	Full bool `query:"full" default:"false" doc:"Return full logo instead of icon"`
 }
 
-type GetImageOutput struct {
+type GetAppImageOutput struct {
 	ContentType  string `header:"Content-Type"`
 	CacheControl string `header:"Cache-Control"`
 	Body         []byte
@@ -61,7 +61,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 }
 
 // GetLogo returns the application logo image.
-func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetImageOutput, error) {
+func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -75,7 +75,7 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 }
 
 // GetFavicon returns the application favicon image.
-func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetImageOutput, error) {
+func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -84,7 +84,7 @@ func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*Ge
 }
 
 // GetDefaultProfile returns the default user profile image.
-func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetImageOutput, error) {
+func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -92,7 +92,7 @@ func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{
 	return h.getImage("profile")
 }
 
-func (h *AppImagesHandler) getImage(name string) (*GetImageOutput, error) {
+func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
 	imageData, mimeType, err := h.appImagesService.GetImage(name)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageRetrievalError{Err: err}).Error())
@@ -101,7 +101,7 @@ func (h *AppImagesHandler) getImage(name string) (*GetImageOutput, error) {
 	// Cache for 15 minutes, stale-while-revalidate for 24 hours
 	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
 
-	return &GetImageOutput{
+	return &GetAppImageOutput{
 		ContentType:  mimeType,
 		CacheControl: cacheControl,
 		Body:         imageData,

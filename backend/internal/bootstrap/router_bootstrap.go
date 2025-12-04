@@ -104,24 +104,24 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Version:           appServices.Version,
 		Environment:       appServices.Environment,
 		Settings:          appServices.Settings,
+		SettingsSearch:    appServices.SettingsSearch,
 		ContainerRegistry: appServices.ContainerRegistry,
 		Template:          appServices.Template,
+		Docker:            appServices.Docker,
+		Image:             appServices.Image,
+		ImageUpdate:       appServices.ImageUpdate,
+		Volume:            appServices.Volume,
+		Updater:           appServices.Updater,
 		Config:            cfg,
 	})
 
-	api.NewHealthHandler(apiGroup)
+	// Remaining Gin handlers (not yet migrated to Huma)
 	api.NewContainerHandler(apiGroup, appServices.Docker, appServices.Container, appServices.Image, authMiddleware, cfg)
-	api.NewImageHandler(apiGroup, appServices.Docker, appServices.Image, appServices.ImageUpdate, appServices.Settings, authMiddleware)
 	api.NewImageUpdateHandler(apiGroup, appServices.ImageUpdate, authMiddleware)
 	api.NewNetworkHandler(apiGroup, appServices.Docker, appServices.Network, authMiddleware)
-	// Project REST handlers use Huma - see internal/huma/handlers/projects.go
-	// WebSocket/streaming consolidated in ws_handler.go
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
 	api.NewSystemHandler(apiGroup, appServices.Docker, appServices.System, appServices.SystemUpgrade, authMiddleware, cfg)
-	api.NewUpdaterHandler(apiGroup, appServices.Updater, authMiddleware)
-	api.NewVolumeHandler(apiGroup, appServices.Docker, appServices.Volume, authMiddleware)
 	api.NewNotificationHandler(apiGroup, appServices.Notification, appServices.Apprise, authMiddleware)
-	api.NewSettingsHandler(apiGroup, appServices.Settings, appServices.SettingsSearch, authMiddleware)
 	api.NewCustomizeHandler(apiGroup, appServices.CustomizeSearch, authMiddleware)
 
 	if cfg.Environment != "production" {

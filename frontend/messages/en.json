@@ -1418,5 +1418,6 @@
 	"api_key_bulk_delete_failed": "Failed to delete {count} API key(s)",
 	"common_done": "Done",
 	"common_important": "Important",
-	"select_a_date": "Select a date"
+	"select_a_date": "Select a date",
+	"api_reference": "API Reference"
 }
