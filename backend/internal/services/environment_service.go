@@ -604,63 +604,52 @@ func (s *EnvironmentService) CreateFilter(ctx context.Context, filter *models.En
 func (s *EnvironmentService) UpdateFilter(ctx context.Context, filterID, userID string, req *environment.FilterUpdate) (*models.EnvironmentFilter, error) {
 	var filter models.EnvironmentFilter
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// First, get the filter and verify ownership
-		if err := tx.Where("id = ?", filterID).First(&filter).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrFilterNotFound
-			}
-			return fmt.Errorf("failed to get filter: %w", err)
+	if err := s.db.WithContext(ctx).Where("id = ?", filterID).First(&filter).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFilterNotFound
 		}
+		return nil, fmt.Errorf("failed to get filter: %w", err)
+	}
 
-		if filter.UserID != userID {
-			return ErrFilterForbidden
-		}
+	if filter.UserID != userID {
+		return nil, ErrFilterForbidden
+	}
 
-		// Apply updates from request
-		if req.Name != nil {
-			filter.Name = *req.Name
-		}
-		if req.IsDefault != nil {
-			// If setting as default, clear any existing default first
-			if *req.IsDefault {
-				if err := tx.Model(&models.EnvironmentFilter{}).
-					Where("user_id = ? AND is_default = ? AND id != ?", userID, true, filterID).
-					Update("is_default", false).Error; err != nil {
-					return fmt.Errorf("failed to clear existing default: %w", err)
-				}
-			}
-			filter.IsDefault = *req.IsDefault
-		}
-		if req.SearchQuery != nil {
-			filter.SearchQuery = *req.SearchQuery
-		}
-		if req.SelectedTags != nil {
-			filter.SelectedTags = req.SelectedTags
-		}
-		if req.ExcludedTags != nil {
-			filter.ExcludedTags = req.ExcludedTags
-		}
-		if req.TagMode != nil {
-			filter.TagMode = models.EnvironmentFilterTagMode(*req.TagMode)
-		}
-		if req.StatusFilter != nil {
-			filter.StatusFilter = models.EnvironmentFilterStatusFilter(*req.StatusFilter)
-		}
-		if req.GroupBy != nil {
-			filter.GroupBy = models.EnvironmentFilterGroupBy(*req.GroupBy)
-		}
+	if req.Name != nil {
+		filter.Name = *req.Name
+	}
+	if req.SearchQuery != nil {
+		filter.SearchQuery = *req.SearchQuery
+	}
+	if req.SelectedTags != nil {
+		filter.SelectedTags = req.SelectedTags
+	}
+	if req.ExcludedTags != nil {
+		filter.ExcludedTags = req.ExcludedTags
+	}
+	if req.TagMode != nil {
+		filter.TagMode = models.EnvironmentFilterTagMode(*req.TagMode)
+	}
+	if req.StatusFilter != nil {
+		filter.StatusFilter = models.EnvironmentFilterStatusFilter(*req.StatusFilter)
+	}
+	if req.GroupBy != nil {
+		filter.GroupBy = models.EnvironmentFilterGroupBy(*req.GroupBy)
+	}
 
-		// Save the updated filter
-		if err := tx.Save(&filter).Error; err != nil {
-			return fmt.Errorf("failed to update filter: %w", err)
+	if req.IsDefault != nil && *req.IsDefault && !filter.IsDefault {
+		if err := s.db.WithContext(ctx).Model(&models.EnvironmentFilter{}).
+			Where("user_id = ? AND is_default = ? AND id != ?", userID, true, filterID).
+			Update("is_default", false).Error; err != nil {
+			return nil, fmt.Errorf("failed to clear existing default: %w", err)
 		}
+	}
+	if req.IsDefault != nil {
+		filter.IsDefault = *req.IsDefault
+	}
 
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
+	if err := s.db.WithContext(ctx).Save(&filter).Error; err != nil {
+		return nil, fmt.Errorf("failed to update filter: %w", err)
 	}
 
 	return &filter, nil
