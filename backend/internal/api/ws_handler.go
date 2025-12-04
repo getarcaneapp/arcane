@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -14,18 +16,35 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService   *services.ProjectService
-	containerService *services.ContainerService
-	wsUpgrader       websocket.Upgrader
+	projectService    *services.ProjectService
+	containerService  *services.ContainerService
+	systemService     *services.SystemService
+	wsUpgrader        websocket.Upgrader
+	activeConnections sync.Map
+	cpuCache          struct {
+		sync.RWMutex
+		value     float64
+		timestamp time.Time
+	}
+	diskUsagePathCache struct {
+		sync.RWMutex
+		value     string
+		timestamp time.Time
+	}
 }
 
 type wsLogStream struct {
@@ -35,17 +54,18 @@ type wsLogStream struct {
 	seq    atomic.Uint64
 }
 
-// NewWebSocketHandler registers all WebSocket and streaming endpoints under /ws/*
 func NewWebSocketHandler(
 	group *gin.RouterGroup,
 	projectService *services.ProjectService,
 	containerService *services.ContainerService,
+	systemService *services.SystemService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
 		projectService:   projectService,
 		containerService: containerService,
+		systemService:    systemService,
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.AppUrl),
 			ReadBufferSize:    32 * 1024,
@@ -57,14 +77,16 @@ func NewWebSocketHandler(
 	wsGroup := group.Group("/environments/:id/ws")
 	wsGroup.Use(authMiddleware.WithAdminNotRequired().Add())
 	{
-		// Project endpoints
+		// Project endpoints (pull moved to Huma handler)
 		wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
-		wsGroup.POST("/projects/:projectId/pull", handler.ProjectPullImages)
 
 		// Container endpoints
 		wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
 		wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
 		wsGroup.GET("/containers/:containerId/exec", handler.ContainerExec)
+
+		// System endpoints
+		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
 }
 
@@ -169,42 +191,6 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 	}
 
 	return ls.hub
-}
-
-// ProjectPullImages pulls project images with streaming output.
-//
-//	@Summary		Pull project images
-//	@Description	Pull all images for a Docker Compose project with streaming output
-//	@Tags			WebSocket
-//	@Security		BearerAuth
-//	@Security		ApiKeyAuth
-//	@Accept			json
-//	@Produce		application/x-json-stream
-//	@Param			id			path		string	true	"Environment ID"
-//	@Param			projectId	path		string	true	"Project ID"
-//	@Success		200			{string}	string	"Streaming JSON response"
-//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
-//	@Router			/api/environments/{id}/ws/projects/{projectId}/pull [post]
-func (h *WebSocketHandler) ProjectPullImages(c *gin.Context) {
-	projectID := c.Param("projectId")
-	if projectID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.ProjectIDRequiredError{}).Error()})
-		return
-	}
-
-	c.Writer.Header().Set("Content-Type", "application/x-json-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-
-	_, _ = c.Writer.WriteString(`{"status":"starting project image pull"}` + "\n")
-
-	if err := h.projectService.PullProjectImages(c.Request.Context(), projectID, c.Writer, nil); err != nil {
-		_, _ = c.Writer.WriteString(fmt.Sprintf(`{"error":%q}`+"\n", err.Error()))
-		return
-	}
-
-	_, _ = c.Writer.WriteString(`{"status":"complete"}` + "\n")
 }
 
 // ============================================================================
@@ -438,4 +424,189 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	}()
 
 	<-done
+}
+
+// ============================================================================
+// System WebSocket Endpoints
+// ============================================================================
+
+// SystemStats streams system stats over WebSocket.
+//
+//	@Summary		Get system stats via WebSocket
+//	@Description	Stream system resource statistics over WebSocket connection
+//	@Tags			WebSocket
+//	@Param			id	path	string	true	"Environment ID"
+//	@Router			/api/environments/{id}/ws/system/stats [get]
+func (h *WebSocketHandler) SystemStats(c *gin.Context) {
+	clientIP := c.ClientIP()
+
+	// Rate limit connections per IP
+	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
+	count := connCount.(*int32)
+
+	currentCount := atomic.AddInt32(count, 1)
+	if currentCount > 5 {
+		atomic.AddInt32(count, -1)
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"success": false,
+			"error":   "Too many concurrent stats connections from this IP",
+		})
+		return
+	}
+
+	defer func() {
+		newCount := atomic.AddInt32(count, -1)
+		if newCount <= 0 {
+			h.activeConnections.Delete(clientIP)
+		}
+	}()
+
+	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	cpuUpdateTicker := time.NewTicker(1 * time.Second)
+	defer cpuUpdateTicker.Stop()
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	// Background CPU sampling
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-cpuUpdateTicker.C:
+				if vals, err := cpu.Percent(0, false); err == nil && len(vals) > 0 {
+					h.cpuCache.Lock()
+					h.cpuCache.value = vals[0]
+					h.cpuCache.timestamp = time.Now()
+					h.cpuCache.Unlock()
+				}
+			}
+		}
+	}(ctx)
+
+	send := func() error {
+		h.cpuCache.RLock()
+		cpuUsage := h.cpuCache.value
+		h.cpuCache.RUnlock()
+
+		cpuCount, err := cpu.Counts(true)
+		if err != nil {
+			cpuCount = runtime.NumCPU()
+		}
+
+		memInfo, _ := mem.VirtualMemory()
+		var memUsed, memTotal uint64
+		if memInfo != nil {
+			memUsed = memInfo.Used
+			memTotal = memInfo.Total
+		}
+
+		// Apply cgroup limits when running in a container
+		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
+			if limit := cgroupLimits.MemoryLimit; limit > 0 {
+				limitUint := uint64(limit)
+				if memTotal == 0 || limitUint < memTotal {
+					memTotal = limitUint
+					if cgroupLimits.MemoryUsage > 0 {
+						memUsed = uint64(cgroupLimits.MemoryUsage)
+					}
+				}
+			}
+			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+				cpuCount = cgroupLimits.CPUCount
+			}
+		}
+
+		diskUsagePath := h.getDiskUsagePath(ctx)
+		diskInfo, err := disk.Usage(diskUsagePath)
+		if err != nil || diskInfo == nil || diskInfo.Total == 0 {
+			if diskUsagePath != "/" {
+				diskInfo, _ = disk.Usage("/")
+			}
+		}
+
+		var diskUsed, diskTotal uint64
+		if diskInfo != nil {
+			diskUsed = diskInfo.Used
+			diskTotal = diskInfo.Total
+		}
+
+		hostInfo, _ := host.Info()
+		var hostname string
+		if hostInfo != nil {
+			hostname = hostInfo.Hostname
+		}
+
+		stats := SystemStats{
+			CPUUsage:     cpuUsage,
+			MemoryUsage:  memUsed,
+			MemoryTotal:  memTotal,
+			DiskUsage:    diskUsed,
+			DiskTotal:    diskTotal,
+			CPUCount:     cpuCount,
+			Architecture: runtime.GOARCH,
+			Platform:     runtime.GOOS,
+			Hostname:     hostname,
+		}
+
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteJSON(stats)
+	}
+
+	// Initial CPU sample
+	if vals, err := cpu.Percent(time.Second, false); err == nil && len(vals) > 0 {
+		h.cpuCache.Lock()
+		h.cpuCache.value = vals[0]
+		h.cpuCache.timestamp = time.Now()
+		h.cpuCache.Unlock()
+	}
+
+	if err := send(); err != nil {
+		return
+	}
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			if err := send(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
+	h.diskUsagePathCache.RLock()
+	if h.diskUsagePathCache.value != "" && time.Since(h.diskUsagePathCache.timestamp) < 5*time.Minute {
+		path := h.diskUsagePathCache.value
+		h.diskUsagePathCache.RUnlock()
+		return path
+	}
+	h.diskUsagePathCache.RUnlock()
+
+	// Default path
+	path := "/"
+
+	// Try to get Docker root from system service
+	if h.systemService != nil {
+		path = h.systemService.GetDiskUsagePath(ctx)
+	}
+
+	h.diskUsagePathCache.Lock()
+	h.diskUsagePathCache.value = path
+	h.diskUsagePathCache.timestamp = time.Now()
+	h.diskUsagePathCache.Unlock()
+
+	return path
 }

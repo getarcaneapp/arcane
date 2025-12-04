@@ -36,6 +36,9 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 
+	// Disable default docs path - we'll use Scalar instead
+	humaConfig.DocsPath = ""
+
 	// Configure servers for OpenAPI spec
 	if cfg.AppUrl != "" {
 		humaConfig.Servers = []*huma.Server{
@@ -72,7 +75,41 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 	// Register all Huma handlers
 	registerHandlers(api, svc)
 
+	// Register Scalar API docs endpoint with dark mode
+	registerScalarDocs(apiGroup)
+
 	return api
+}
+
+// scalarDocsHTML returns the HTML template for Scalar API documentation.
+const scalarDocsHTML = `<!doctype html>
+<html>
+  <head>
+    <title>Arcane API Reference</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script
+      id="api-reference"
+      data-url="/api/openapi.json"
+      data-configuration='{
+        "theme": "purple",
+        "darkMode": true,
+        "layout": "modern",
+        "hiddenClients": ["unirest"],
+        "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
+      }'></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`
+
+// registerScalarDocs adds the Scalar API documentation endpoint.
+func registerScalarDocs(apiGroup *gin.RouterGroup) {
+	apiGroup.GET("/docs", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html")
+		c.String(200, scalarDocsHTML)
+	})
 }
 
 // SetupAPIForSpec creates a Huma API instance for OpenAPI spec generation only.

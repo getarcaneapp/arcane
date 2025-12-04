@@ -115,9 +115,8 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	api.NewImageUpdateHandler(apiGroup, appServices.ImageUpdate, authMiddleware)
 	api.NewNetworkHandler(apiGroup, appServices.Docker, appServices.Network, authMiddleware)
 	// Project REST handlers use Huma - see internal/huma/handlers/projects.go
-	// Update frontend to use new routes
 	// WebSocket/streaming consolidated in ws_handler.go
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, authMiddleware, cfg)
+	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
 	api.NewSystemHandler(apiGroup, appServices.Docker, appServices.System, appServices.SystemUpgrade, authMiddleware, cfg)
 	api.NewUpdaterHandler(apiGroup, appServices.Updater, authMiddleware)
 	api.NewVolumeHandler(apiGroup, appServices.Docker, appServices.Volume, authMiddleware)

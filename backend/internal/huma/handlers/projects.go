@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -134,6 +135,23 @@ type RestartProjectInput struct {
 
 type RestartProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
+}
+
+type PullProjectImagesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+// PullProgressEvent represents a Docker pull progress event
+type PullProgressEvent struct {
+	Status         string `json:"status,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Progress       string `json:"progress,omitempty"`
+	ProgressDetail struct {
+		Current int64 `json:"current,omitempty"`
+		Total   int64 `json:"total,omitempty"`
+	} `json:"progressDetail,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // RegisterProjects registers project management routes using Huma.
@@ -286,9 +304,18 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 		},
 	}, h.RestartProject)
 
-	// Note: These endpoints remain as Gin handlers due to WebSocket/streaming:
-	// - POST /environments/{id}/projects/{projectId}/pull (streaming)
-	// - GET /environments/{id}/projects/{projectId}/logs/ws (WebSocket)
+	huma.Register(api, huma.Operation{
+		OperationID: "pull-project-images",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/pull",
+		Summary:     "Pull project images",
+		Description: "Pull all images for a Docker Compose project with streaming progress output",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.PullProjectImages)
 }
 
 // ListProjects returns a paginated list of projects.
@@ -609,6 +636,40 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 			Data: base.MessageResponse{
 				Message: "Project restarted successfully",
 			},
+		},
+	}, nil
+}
+
+// PullProjectImages pulls all images for a project with streaming progress.
+func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(ctx huma.Context) {
+			ctx.SetHeader("Content-Type", "application/x-json-stream")
+			ctx.SetHeader("Cache-Control", "no-cache")
+			ctx.SetHeader("Connection", "keep-alive")
+			ctx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := ctx.BodyWriter()
+
+			_, _ = writer.Write([]byte(`{"status":"starting project image pull"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			if err := h.projectService.PullProjectImages(ctx.Context(), input.ProjectID, writer, nil); err != nil {
+				_, _ = writer.Write([]byte(fmt.Sprintf(`{"error":%q}`+"\n", err.Error())))
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"status":"complete"}` + "\n"))
 		},
 	}, nil
 }

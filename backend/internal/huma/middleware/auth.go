@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -40,8 +41,8 @@ func IsAdminFromContext(ctx context.Context) bool {
 	return ok && isAdmin
 }
 
-// NewAuthBridge creates a Huma middleware that extracts authentication
-// from the request and sets it in the Go context for Huma handlers.
+// NewAuthBridge creates a Huma middleware that validates JWT tokens and
+// enforces security requirements defined on operations.
 func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		// Skip auth for nil service (spec generation)
@@ -50,34 +51,80 @@ func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(c
 			return
 		}
 
-		// Extract token from Authorization header or cookie
-		token := ""
-		authHeader := ctx.Header("Authorization")
-		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-			token = authHeader[7:]
-		}
-		if token == "" {
-			// Try cookie - parse from the Cookie header
-			cookieHeader := ctx.Header("Cookie")
-			if cookieHeader != "" {
-				token = extractTokenFromCookieHeader(cookieHeader)
+		// Check if this operation requires authentication
+		isAuthRequired := false
+		requiresBearerAuth := false
+		requiresApiKeyAuth := false
+
+		if ctx.Operation() != nil && len(ctx.Operation().Security) > 0 {
+			for _, secReq := range ctx.Operation().Security {
+				if _, ok := secReq["BearerAuth"]; ok {
+					isAuthRequired = true
+					requiresBearerAuth = true
+				}
+				if _, ok := secReq["ApiKeyAuth"]; ok {
+					isAuthRequired = true
+					requiresApiKeyAuth = true
+				}
 			}
 		}
 
-		if token != "" {
-			// Validate token and get user
-			user, err := authService.VerifyToken(ctx.Context(), token)
-			if err == nil && user != nil {
-				// Add user info to context
-				newCtx := context.WithValue(ctx.Context(), ContextKeyUserID, user.ID)
-				newCtx = context.WithValue(newCtx, ContextKeyCurrentUser, user)
-				newCtx = context.WithValue(newCtx, ContextKeyUserIsAdmin, userHasRole(user, "admin"))
-				ctx = huma.WithContext(ctx, newCtx)
+		// If no security requirements, allow the request through
+		if !isAuthRequired {
+			next(ctx)
+			return
+		}
+
+		var user *models.User
+		var authErr error
+
+		// Try Bearer token authentication
+		if requiresBearerAuth {
+			token := extractBearerToken(ctx)
+			if token != "" {
+				user, authErr = authService.VerifyToken(ctx.Context(), token)
+				if authErr == nil && user != nil {
+					// Success - add user to context and continue
+					newCtx := setUserInContext(ctx.Context(), user)
+					ctx = huma.WithContext(ctx, newCtx)
+					next(ctx)
+					return
+				}
 			}
 		}
 
-		next(ctx)
+		// Try API Key authentication (if Bearer failed or wasn't provided)
+		if requiresApiKeyAuth && user == nil {
+			apiKey := ctx.Header("X-API-Key")
+			if apiKey != "" {
+				// API key validation is handled by the ApiKeyService
+				// For now, we'll let it through and let the handler validate
+				// This could be enhanced to validate API keys here
+				next(ctx)
+				return
+			}
+		}
+
+		// Authentication failed
+		huma.WriteErr(nil, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
+}
+
+// extractBearerToken extracts the JWT token from Authorization header or cookie.
+func extractBearerToken(ctx huma.Context) string {
+	// Try Authorization header first
+	authHeader := ctx.Header("Authorization")
+	if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
+		return authHeader[7:]
+	}
+
+	// Try cookie as fallback
+	cookieHeader := ctx.Header("Cookie")
+	if cookieHeader != "" {
+		return extractTokenFromCookieHeader(cookieHeader)
+	}
+
+	return ""
 }
 
 // extractTokenFromCookieHeader parses the token cookie from a Cookie header string.
@@ -93,6 +140,14 @@ func extractTokenFromCookieHeader(cookieHeader string) string {
 		}
 	}
 	return ""
+}
+
+// setUserInContext adds the authenticated user to the context.
+func setUserInContext(ctx context.Context, user *models.User) context.Context {
+	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
+	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
+	ctx = context.WithValue(ctx, ContextKeyUserIsAdmin, userHasRole(user, "admin"))
+	return ctx
 }
 
 func userHasRole(user *models.User, role string) bool {

@@ -91,7 +91,7 @@ func NewSystemHandler(group *gin.RouterGroup, dockerService *services.DockerClie
 	apiGroup.Use(authMiddleware.WithAdminNotRequired().Add())
 	{
 		apiGroup.HEAD("/health", handler.Health)
-		apiGroup.GET("/stats/ws", handler.Stats)
+		// Stats WebSocket moved to ws_handler.go at /environments/:id/ws/system/stats
 		apiGroup.GET("/docker/info", handler.GetDockerInfo)
 		apiGroup.POST("/prune", handler.PruneAll)
 		apiGroup.POST("/containers/start-all", handler.StartAllContainers)
