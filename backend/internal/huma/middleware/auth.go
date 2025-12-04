@@ -114,7 +114,10 @@ func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(c
 			return
 		}
 
-		_ = huma.WriteErr(nil, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
+		// Write unauthorized response directly
+		ctx.SetStatus(http.StatusUnauthorized)
+		ctx.SetHeader("Content-Type", "application/json")
+		_, _ = ctx.BodyWriter().Write([]byte(`{"$schema":"","title":"Unauthorized","status":401,"detail":"Unauthorized: valid authentication required"}`))
 	}
 }
 
