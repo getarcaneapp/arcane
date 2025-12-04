@@ -310,15 +310,15 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
 	}
 
-	// Sync registries in background
+	// Sync registries in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
-		go func() {
+		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, created.ID); err != nil {
+			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
 				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
-					"environmentID", created.ID, "environmentName", created.Name, "error", err.Error())
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
-		}()
+		}(created.ID, created.Name)
 	}
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
@@ -432,7 +432,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 				Success: false,
 				Data:    resp,
 			},
-		}, nil
+		}, err
 	}
 
 	return &TestConnectionOutput{
@@ -563,25 +563,25 @@ func (h *EnvironmentHandler) handleEnvironmentPairing(ctx context.Context, envir
 	return pairingSucceeded, nil
 }
 
-func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) {
+func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) { //nolint:contextcheck // intentionally spawns background tasks
 	if updated.Enabled {
-		go func() {
+		go func(envID string, envName string) {
 			ctx := context.Background()
-			status, err := h.environmentService.TestConnection(ctx, environmentID, nil)
+			status, err := h.environmentService.TestConnection(ctx, envID, nil)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to test connection after environment update",
-					"environment_id", environmentID, "environment_name", updated.Name, "status", status, "error", err)
+					"environment_id", envID, "environment_name", envName, "status", status, "error", err)
 			}
-		}()
+		}(environmentID, updated.Name)
 	}
 
 	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
-		go func() {
+		go func(envID string, envName string) {
 			ctx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
+			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID); err != nil {
 				slog.WarnContext(ctx, "Failed to sync registries after environment update",
-					"environmentID", environmentID, "environmentName", updated.Name, "error", err.Error())
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
-		}()
+		}(environmentID, updated.Name)
 	}
 }

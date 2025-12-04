@@ -25,15 +25,15 @@ type UserHandler struct {
 // UserPaginatedResponse is the paginated response for users.
 type UserPaginatedResponse struct {
 	Success    bool                    `json:"success"`
-	Data       []user.User         `json:"data"`
+	Data       []user.User             `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
 type ListUsersInput struct {
-	Page      int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit     int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol   string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir   string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
+	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
+	SortCol string `query:"sort[column]" doc:"Column to sort by"`
+	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
 }
 
 type ListUsersOutput struct {

@@ -26,9 +26,9 @@ type ContainerRegistryHandler struct {
 
 // ContainerRegistryPaginatedResponse is the paginated response for container registries.
 type ContainerRegistryPaginatedResponse struct {
-	Success    bool                         `json:"success"`
+	Success    bool                                  `json:"success"`
 	Data       []containerregistry.ContainerRegistry `json:"data"`
-	Pagination base.PaginationResponse      `json:"pagination"`
+	Pagination base.PaginationResponse               `json:"pagination"`
 }
 
 type ListContainerRegistriesInput struct {

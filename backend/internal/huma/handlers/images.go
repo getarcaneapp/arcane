@@ -326,16 +326,16 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 	}
 
 	return &huma.StreamResponse{
-		Body: func(ctx huma.Context) {
-			ctx.SetHeader("Content-Type", "application/x-json-stream")
-			ctx.SetHeader("Cache-Control", "no-cache")
-			ctx.SetHeader("Connection", "keep-alive")
-			ctx.SetHeader("X-Accel-Buffering", "no")
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
 
-			writer := ctx.BodyWriter()
+			writer := humaCtx.BodyWriter()
 
-			if err := h.imageService.PullImage(ctx.Context(), input.Body.ImageName, writer, *user, input.Body.Credentials); err != nil {
-				_, _ = writer.Write([]byte(fmt.Sprintf(`{"error":%q}`+"\n", err.Error())))
+			if err := h.imageService.PullImage(humaCtx.Context(), input.Body.ImageName, writer, *user, input.Body.Credentials); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
 		},

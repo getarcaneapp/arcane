@@ -50,7 +50,7 @@ type GetEventsByEnvironmentOutput struct {
 }
 
 type CreateEventInput struct {
-	Body event.CreateEvent  
+	Body event.CreateEvent
 }
 
 type CreateEventOutput struct {

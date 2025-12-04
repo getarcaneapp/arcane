@@ -41,72 +41,80 @@ func IsAdminFromContext(ctx context.Context) bool {
 	return ok && isAdmin
 }
 
+// securityRequirements holds parsed security requirements from an operation.
+type securityRequirements struct {
+	isRequired bool
+	bearerAuth bool
+	apiKeyAuth bool
+}
+
+// parseSecurityRequirements extracts security requirements from a Huma operation.
+func parseSecurityRequirements(ctx huma.Context) securityRequirements {
+	reqs := securityRequirements{}
+	if ctx.Operation() == nil || len(ctx.Operation().Security) == 0 {
+		return reqs
+	}
+	for _, secReq := range ctx.Operation().Security {
+		if _, ok := secReq["BearerAuth"]; ok {
+			reqs.isRequired = true
+			reqs.bearerAuth = true
+		}
+		if _, ok := secReq["ApiKeyAuth"]; ok {
+			reqs.isRequired = true
+			reqs.apiKeyAuth = true
+		}
+	}
+	return reqs
+}
+
+// tryBearerAuth attempts Bearer token authentication.
+func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models.User, bool) {
+	token := extractBearerToken(ctx)
+	if token == "" {
+		return nil, false
+	}
+	user, err := authService.VerifyToken(ctx.Context(), token)
+	if err != nil || user == nil {
+		return nil, false
+	}
+	return user, true
+}
+
+// tryApiKeyAuth checks if API key authentication should be allowed through.
+func tryApiKeyAuth(ctx huma.Context) bool {
+	return ctx.Header("X-API-Key") != ""
+}
+
 // NewAuthBridge creates a Huma middleware that validates JWT tokens and
 // enforces security requirements defined on operations.
 func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		// Skip auth for nil service (spec generation)
 		if authService == nil {
 			next(ctx)
 			return
 		}
 
-		// Check if this operation requires authentication
-		isAuthRequired := false
-		requiresBearerAuth := false
-		requiresApiKeyAuth := false
-
-		if ctx.Operation() != nil && len(ctx.Operation().Security) > 0 {
-			for _, secReq := range ctx.Operation().Security {
-				if _, ok := secReq["BearerAuth"]; ok {
-					isAuthRequired = true
-					requiresBearerAuth = true
-				}
-				if _, ok := secReq["ApiKeyAuth"]; ok {
-					isAuthRequired = true
-					requiresApiKeyAuth = true
-				}
-			}
-		}
-
-		// If no security requirements, allow the request through
-		if !isAuthRequired {
+		reqs := parseSecurityRequirements(ctx)
+		if !reqs.isRequired {
 			next(ctx)
 			return
 		}
 
-		var user *models.User
-		var authErr error
-
-		// Try Bearer token authentication
-		if requiresBearerAuth {
-			token := extractBearerToken(ctx)
-			if token != "" {
-				user, authErr = authService.VerifyToken(ctx.Context(), token)
-				if authErr == nil && user != nil {
-					// Success - add user to context and continue
-					newCtx := setUserInContext(ctx.Context(), user)
-					ctx = huma.WithContext(ctx, newCtx)
-					next(ctx)
-					return
-				}
-			}
-		}
-
-		// Try API Key authentication (if Bearer failed or wasn't provided)
-		if requiresApiKeyAuth && user == nil {
-			apiKey := ctx.Header("X-API-Key")
-			if apiKey != "" {
-				// API key validation is handled by the ApiKeyService
-				// For now, we'll let it through and let the handler validate
-				// This could be enhanced to validate API keys here
+		if reqs.bearerAuth {
+			if user, ok := tryBearerAuth(ctx, authService); ok {
+				newCtx := setUserInContext(ctx.Context(), user)
+				ctx = huma.WithContext(ctx, newCtx)
 				next(ctx)
 				return
 			}
 		}
 
-		// Authentication failed
-		huma.WriteErr(nil, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
+		if reqs.apiKeyAuth && tryApiKeyAuth(ctx) {
+			next(ctx)
+			return
+		}
+
+		_ = huma.WriteErr(nil, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
 }
 

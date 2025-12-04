@@ -483,6 +483,161 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 // System WebSocket Endpoints
 // ============================================================================
 
+// checkRateLimit checks and applies rate limiting for WebSocket connections.
+// Returns the counter and whether the connection should be allowed.
+func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
+	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
+	count := connCount.(*int32)
+
+	currentCount := atomic.AddInt32(count, 1)
+	if currentCount > 5 {
+		atomic.AddInt32(count, -1)
+		return nil, false
+	}
+	return count, true
+}
+
+// releaseRateLimit decrements the connection counter and cleans up if needed.
+func (h *WebSocketHandler) releaseRateLimit(clientIP string, count *int32) {
+	newCount := atomic.AddInt32(count, -1)
+	if newCount <= 0 {
+		h.activeConnections.Delete(clientIP)
+	}
+}
+
+// startCPUSampler starts a background goroutine that samples CPU usage.
+func (h *WebSocketHandler) startCPUSampler(ctx context.Context, ticker *time.Ticker) {
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if vals, err := cpu.Percent(0, false); err == nil && len(vals) > 0 {
+					h.cpuCache.Lock()
+					h.cpuCache.value = vals[0]
+					h.cpuCache.timestamp = time.Now()
+					h.cpuCache.Unlock()
+				}
+			}
+		}
+	}(ctx)
+}
+
+// collectSystemStats gathers all system statistics.
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
+	h.cpuCache.RLock()
+	cpuUsage := h.cpuCache.value
+	h.cpuCache.RUnlock()
+
+	cpuCount := h.getCPUCount()
+	memUsed, memTotal := h.getMemoryInfo()
+	cpuCount, memUsed, memTotal = h.applyCgroupLimits(cpuCount, memUsed, memTotal)
+	diskUsed, diskTotal := h.getDiskInfo(ctx)
+	hostname := h.getHostname()
+	gpuStats, gpuCount := h.getGPUInfo(ctx)
+
+	return SystemStats{
+		CPUUsage:     cpuUsage,
+		MemoryUsage:  memUsed,
+		MemoryTotal:  memTotal,
+		DiskUsage:    diskUsed,
+		DiskTotal:    diskTotal,
+		CPUCount:     cpuCount,
+		Architecture: runtime.GOARCH,
+		Platform:     runtime.GOOS,
+		Hostname:     hostname,
+		GPUCount:     gpuCount,
+		GPUs:         gpuStats,
+	}
+}
+
+// getCPUCount returns the number of CPUs.
+func (h *WebSocketHandler) getCPUCount() int {
+	cpuCount, err := cpu.Counts(true)
+	if err != nil {
+		return runtime.NumCPU()
+	}
+	return cpuCount
+}
+
+// getMemoryInfo returns memory usage and total.
+func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
+	memInfo, _ := mem.VirtualMemory()
+	if memInfo == nil {
+		return 0, 0
+	}
+	return memInfo.Used, memInfo.Total
+}
+
+// applyCgroupLimits applies cgroup limits when running in a container.
+func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
+	cgroupLimits, err := utils.DetectCgroupLimits()
+	if err != nil {
+		return cpuCount, memUsed, memTotal
+	}
+
+	if limit := cgroupLimits.MemoryLimit; limit > 0 {
+		limitUint := uint64(limit)
+		if memTotal == 0 || limitUint < memTotal {
+			memTotal = limitUint
+			if cgroupLimits.MemoryUsage > 0 {
+				memUsed = uint64(cgroupLimits.MemoryUsage)
+			}
+		}
+	}
+	if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+		cpuCount = cgroupLimits.CPUCount
+	}
+	return cpuCount, memUsed, memTotal
+}
+
+// getDiskInfo returns disk usage and total.
+func (h *WebSocketHandler) getDiskInfo(ctx context.Context) (uint64, uint64) {
+	diskUsagePath := h.getDiskUsagePath(ctx)
+	diskInfo, err := disk.Usage(diskUsagePath)
+	if err != nil || diskInfo == nil || diskInfo.Total == 0 {
+		if diskUsagePath != "/" {
+			diskInfo, _ = disk.Usage("/")
+		}
+	}
+	if diskInfo == nil {
+		return 0, 0
+	}
+	return diskInfo.Used, diskInfo.Total
+}
+
+// getHostname returns the system hostname.
+func (h *WebSocketHandler) getHostname() string {
+	hostInfo, _ := host.Info()
+	if hostInfo == nil {
+		return ""
+	}
+	return hostInfo.Hostname
+}
+
+// getGPUInfo returns GPU statistics if monitoring is enabled.
+func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]GPUStats, int) {
+	if !h.gpuMonitoringEnabled {
+		return nil, 0
+	}
+	gpuData, err := h.getGPUStats(ctx)
+	if err != nil {
+		return nil, 0
+	}
+	return gpuData, len(gpuData)
+}
+
+// initializeCPUCache performs initial CPU sampling.
+func (h *WebSocketHandler) initializeCPUCache() {
+	if vals, err := cpu.Percent(time.Second, false); err == nil && len(vals) > 0 {
+		h.cpuCache.Lock()
+		h.cpuCache.value = vals[0]
+		h.cpuCache.timestamp = time.Now()
+		h.cpuCache.Unlock()
+	}
+}
+
 // SystemStats streams system stats over WebSocket.
 //
 //	@Summary		Get system stats via WebSocket
@@ -493,26 +648,15 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	clientIP := c.ClientIP()
 
-	// Rate limit connections per IP
-	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
-	count := connCount.(*int32)
-
-	currentCount := atomic.AddInt32(count, 1)
-	if currentCount > 5 {
-		atomic.AddInt32(count, -1)
+	count, allowed := h.checkRateLimit(clientIP)
+	if !allowed {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"success": false,
 			"error":   "Too many concurrent stats connections from this IP",
 		})
 		return
 	}
-
-	defer func() {
-		newCount := atomic.AddInt32(count, -1)
-		if newCount <= 0 {
-			h.activeConnections.Delete(clientIP)
-		}
-	}()
+	defer h.releaseRateLimit(clientIP, count)
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -529,110 +673,15 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	// Background CPU sampling
-	go func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-cpuUpdateTicker.C:
-				if vals, err := cpu.Percent(0, false); err == nil && len(vals) > 0 {
-					h.cpuCache.Lock()
-					h.cpuCache.value = vals[0]
-					h.cpuCache.timestamp = time.Now()
-					h.cpuCache.Unlock()
-				}
-			}
-		}
-	}(ctx)
+	h.startCPUSampler(ctx, cpuUpdateTicker)
 
 	send := func() error {
-		h.cpuCache.RLock()
-		cpuUsage := h.cpuCache.value
-		h.cpuCache.RUnlock()
-
-		cpuCount, err := cpu.Counts(true)
-		if err != nil {
-			cpuCount = runtime.NumCPU()
-		}
-
-		memInfo, _ := mem.VirtualMemory()
-		var memUsed, memTotal uint64
-		if memInfo != nil {
-			memUsed = memInfo.Used
-			memTotal = memInfo.Total
-		}
-
-		// Apply cgroup limits when running in a container
-		if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
-			if limit := cgroupLimits.MemoryLimit; limit > 0 {
-				limitUint := uint64(limit)
-				if memTotal == 0 || limitUint < memTotal {
-					memTotal = limitUint
-					if cgroupLimits.MemoryUsage > 0 {
-						memUsed = uint64(cgroupLimits.MemoryUsage)
-					}
-				}
-			}
-			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
-				cpuCount = cgroupLimits.CPUCount
-			}
-		}
-
-		diskUsagePath := h.getDiskUsagePath(ctx)
-		diskInfo, err := disk.Usage(diskUsagePath)
-		if err != nil || diskInfo == nil || diskInfo.Total == 0 {
-			if diskUsagePath != "/" {
-				diskInfo, _ = disk.Usage("/")
-			}
-		}
-
-		var diskUsed, diskTotal uint64
-		if diskInfo != nil {
-			diskUsed = diskInfo.Used
-			diskTotal = diskInfo.Total
-		}
-
-		hostInfo, _ := host.Info()
-		var hostname string
-		if hostInfo != nil {
-			hostname = hostInfo.Hostname
-		}
-
-		var gpuStats []GPUStats
-		var gpuCount int
-		if h.gpuMonitoringEnabled {
-			if gpuData, err := h.getGPUStats(ctx); err == nil {
-				gpuStats = gpuData
-				gpuCount = len(gpuData)
-			}
-		}
-
-		stats := SystemStats{
-			CPUUsage:     cpuUsage,
-			MemoryUsage:  memUsed,
-			MemoryTotal:  memTotal,
-			DiskUsage:    diskUsed,
-			DiskTotal:    diskTotal,
-			CPUCount:     cpuCount,
-			Architecture: runtime.GOARCH,
-			Platform:     runtime.GOOS,
-			Hostname:     hostname,
-			GPUCount:     gpuCount,
-			GPUs:         gpuStats,
-		}
-
+		stats := h.collectSystemStats(ctx)
 		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		return conn.WriteJSON(stats)
 	}
 
-	// Initial CPU sample
-	if vals, err := cpu.Percent(time.Second, false); err == nil && len(vals) > 0 {
-		h.cpuCache.Lock()
-		h.cpuCache.value = vals[0]
-		h.cpuCache.timestamp = time.Now()
-		h.cpuCache.Unlock()
-	}
+	h.initializeCPUCache()
 
 	if err := send(); err != nil {
 		return

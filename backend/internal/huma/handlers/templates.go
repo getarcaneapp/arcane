@@ -578,20 +578,12 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 
 	updated, err := h.templateService.GetTemplate(ctx, input.ID)
 	if err != nil {
-		return &UpdateTemplateOutput{
-			Body: base.ApiResponse[template.Template]{
-				Success: true,
-			},
-		}, nil
+		return nil, huma.Error500InternalServerError((&common.TemplateRetrievalError{Err: err}).Error())
 	}
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(updated, &out); mapErr != nil {
-		return &UpdateTemplateOutput{
-			Body: base.ApiResponse[template.Template]{
-				Success: true,
-			},
-		}, nil
+		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
 	return &UpdateTemplateOutput{
@@ -654,11 +646,7 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 
 	var out template.Template
 	if mapErr := mapper.MapStruct(localTemplate, &out); mapErr != nil {
-		return &DownloadTemplateOutput{
-			Body: base.ApiResponse[template.Template]{
-				Success: true,
-			},
-		}, nil
+		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
 	return &DownloadTemplateOutput{
@@ -761,11 +749,7 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 
 	var out template.TemplateRegistry
 	if mapErr := mapper.MapStruct(registry, &out); mapErr != nil {
-		return &CreateTemplateRegistryOutput{
-			Body: base.ApiResponse[template.TemplateRegistry]{
-				Success: true,
-			},
-		}, nil
+		return nil, huma.Error500InternalServerError((&common.RegistryMappingError{Err: mapErr}).Error())
 	}
 
 	return &CreateTemplateRegistryOutput{
