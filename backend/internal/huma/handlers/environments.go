@@ -377,7 +377,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentUpdateError{Err: updateErr}).Error())
 	}
 
-	h.triggerPostUpdateTasks(input.ID, updated, pairingSucceeded, &input.Body)
+	h.triggerPostUpdateTasks(input.ID, updated, pairingSucceeded, &input.Body) //nolint:contextcheck // intentionally detached background tasks
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](updated)
 	if mapErr != nil {
