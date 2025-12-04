@@ -40,7 +40,7 @@
 
 	<div class="min-w-0 flex-1">
 		<div class="flex items-center gap-2">
-			<span class={cn('truncate text-sm font-medium', isSelected && 'text-primary')}>{env.name}</span>
+			<span class={cn('truncate text-sm font-medium', isSelected && 'text-primary-foreground')}>{env.name}</span>
 			{#if isSelected}<CheckIcon class="text-primary size-4 shrink-0" />{/if}
 		</div>
 		<div class="text-muted-foreground truncate text-xs">{getConnectionString(env)}</div>

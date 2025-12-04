@@ -84,7 +84,7 @@
 			</div>
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-2">
-					<span class={cn('truncate text-sm font-medium', isActive && 'text-primary')}>{filter.name}</span>
+					<span class="truncate text-sm font-medium">{filter.name}</span>
 					{#if filter.isDefault}
 						<StarIcon class="size-3 shrink-0 fill-yellow-500 text-yellow-500" />
 					{/if}
@@ -95,12 +95,7 @@
 				<div class="mt-1 flex flex-wrap items-center gap-1">
 					{#if filter.statusFilter !== 'all'}
 						<span
-							class={cn(
-								'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
-								filter.statusFilter === 'online'
-									? 'bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-									: 'bg-red-500/15 text-red-700 dark:bg-red-500/20 dark:text-red-300'
-							)}
+							class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
 						>
 							<span class={cn('size-1.5 rounded-full', filter.statusFilter === 'online' ? 'bg-emerald-500' : 'bg-red-500')}
 							></span>
@@ -109,8 +104,7 @@
 					{/if}
 					{#if filter.selectedTags.length > 0}
 						{#each filter.selectedTags.slice(0, 2) as tag}
-							<span
-								class="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/20 dark:text-sky-300"
+							<span class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
 								>{tag}</span
 							>
 						{/each}
@@ -119,7 +113,7 @@
 								<Tooltip.Root>
 									<Tooltip.Trigger>
 										<span
-											class="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-500/20 dark:text-sky-300"
+											class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
 											>+{filter.selectedTags.length - 2}</span
 										>
 									</Tooltip.Trigger>
@@ -132,17 +126,13 @@
 					{/if}
 					{#if filter.excludedTags.length > 0}
 						{#each filter.excludedTags.slice(0, 2) as tag}
-							<span
-								class="rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
-								>{tag}</span
-							>
+							<span class="bg-destructive/15 text-destructive rounded px-1.5 py-0.5 text-[10px] font-medium">{tag}</span>
 						{/each}
 						{#if filter.excludedTags.length > 2}
 							<Tooltip.Provider>
 								<Tooltip.Root>
 									<Tooltip.Trigger>
-										<span
-											class="rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
+										<span class="bg-destructive/15 text-destructive rounded px-1.5 py-0.5 text-[10px] font-medium"
 											>+{filter.excludedTags.length - 2}</span
 										>
 									</Tooltip.Trigger>
