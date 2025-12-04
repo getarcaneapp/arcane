@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -655,9 +656,9 @@ func (h *EnvironmentHandler) CreateFilter(c *gin.Context) {
 		SearchQuery:  req.SearchQuery,
 		SelectedTags: req.SelectedTags,
 		ExcludedTags: req.ExcludedTags,
-		TagMode:      models.EnvironmentFilterTagMode(defaultString(req.TagMode, string(models.TagModeAny))),
-		StatusFilter: models.EnvironmentFilterStatusFilter(defaultString(req.StatusFilter, string(models.StatusFilterAll))),
-		GroupBy:      models.EnvironmentFilterGroupBy(defaultString(req.GroupBy, string(models.GroupByNone))),
+		TagMode:      models.EnvironmentFilterTagMode(cmp.Or(req.TagMode, string(models.TagModeAny))),
+		StatusFilter: models.EnvironmentFilterStatusFilter(cmp.Or(req.StatusFilter, string(models.StatusFilterAll))),
+		GroupBy:      models.EnvironmentFilterGroupBy(cmp.Or(req.GroupBy, string(models.GroupByNone))),
 	}
 
 	created, err := h.environmentService.CreateFilter(c.Request.Context(), filter)
@@ -705,13 +706,7 @@ func (h *EnvironmentHandler) UpdateFilter(c *gin.Context) {
 		return
 	}
 
-	updates := buildFilterUpdates(&req)
-	if len(updates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "data": gin.H{"error": (&common.InvalidRequestFormatError{}).Error()}})
-		return
-	}
-
-	updated, err := h.environmentService.UpdateFilter(c.Request.Context(), filterID, userID, updates)
+	updated, err := h.environmentService.UpdateFilter(c.Request.Context(), filterID, userID, &req)
 	if err != nil {
 		if errors.Is(err, services.ErrFilterNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "data": gin.H{"error": (&common.FilterNotFoundError{}).Error()}})
@@ -765,40 +760,4 @@ func (h *EnvironmentHandler) DeleteFilter(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": nil})
-}
-
-func buildFilterUpdates(req *environment.FilterUpdate) map[string]interface{} {
-	updates := make(map[string]interface{})
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.IsDefault != nil {
-		updates["is_default"] = *req.IsDefault
-	}
-	if req.SearchQuery != nil {
-		updates["search_query"] = *req.SearchQuery
-	}
-	if req.SelectedTags != nil {
-		updates["selected_tags"] = models.StringSlice(req.SelectedTags)
-	}
-	if req.ExcludedTags != nil {
-		updates["excluded_tags"] = models.StringSlice(req.ExcludedTags)
-	}
-	if req.TagMode != nil {
-		updates["tag_mode"] = models.EnvironmentFilterTagMode(*req.TagMode)
-	}
-	if req.StatusFilter != nil {
-		updates["status_filter"] = models.EnvironmentFilterStatusFilter(*req.StatusFilter)
-	}
-	if req.GroupBy != nil {
-		updates["group_by"] = models.EnvironmentFilterGroupBy(*req.GroupBy)
-	}
-	return updates
-}
-
-func defaultString(val, fallback string) string {
-	if val == "" {
-		return fallback
-	}
-	return val
 }
