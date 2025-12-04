@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 import { createForm } from '$lib/utils/form.utils';
 import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
 import { toast } from 'svelte-sonner';
-import { get, type Writable } from 'svelte/store';
+import type { Writable } from 'svelte/store';
 
 type FormInput<T> = { value: T; error: string | null };
 type FormInputs<T> = { [K in keyof T]: FormInput<T[K]> };
@@ -10,6 +10,7 @@ type FormInputs<T> = { [K in keyof T]: FormInput<T[K]> };
 export interface SettingsFormConfig<T extends z.ZodType<any, any>> {
 	schema: T;
 	currentSettings: z.infer<T>;
+	getCurrentSettings?: () => z.infer<T>;
 	onSuccess?: () => void;
 	onReset?: () => void;
 	successMessage?: string;
@@ -18,44 +19,37 @@ export interface SettingsFormConfig<T extends z.ZodType<any, any>> {
 
 /**
  * Creates a complete settings form with automatic change detection and save/reset handling.
- * 
+ *
  * Usage:
  * ```ts
  * const { formInputs, form, settingsForm, registerOnMount } = createSettingsForm({
  *   schema: formSchema,
  *   currentSettings,
+ *   getCurrentSettings: () => $settingsStore || data.settings!,
  *   successMessage: m.general_settings_saved(),
  *   onReset: () => applyAccentColor(currentSettings.accentColor)
  * });
- * 
+ *
  * onMount(() => registerOnMount());
  * ```
  */
 export function createSettingsForm<T extends z.ZodType<any, any>>(config: SettingsFormConfig<T>) {
-	const { 
-		schema, 
-		currentSettings, 
-		onSuccess, 
+	const {
+		schema,
+		currentSettings,
+		getCurrentSettings,
+		onSuccess,
 		onReset,
-		successMessage = 'Settings saved', 
-		errorMessage = 'Failed to save settings' 
+		successMessage = 'Settings saved',
+		errorMessage = 'Failed to save settings'
 	} = config;
 
 	const { inputs: formInputs, ...form } = createForm(schema, currentSettings);
 
-	const hasChangesChecker = () => {
-		const current = get(formInputs);
-		const keys = Object.keys(currentSettings) as (keyof z.infer<T>)[];
-		return keys.some(key => {
-			const input = current[key];
-			if (input && 'value' in input) {
-				return input.value !== currentSettings[key];
-			}
-			return false;
-		});
-	};
-
-	const settingsForm = new UseSettingsForm({ hasChangesChecker });
+	const settingsForm = new UseSettingsForm({
+		formInputs,
+		getCurrentSettings: getCurrentSettings ?? (() => currentSettings)
+	});
 
 	const onSubmit = async () => {
 		const data = form.validate();

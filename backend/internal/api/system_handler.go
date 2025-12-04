@@ -66,18 +66,22 @@ type SystemHandler struct {
 		sync.RWMutex
 		detected  bool
 		timestamp time.Time
-		gpuType   string // "nvidia", "amd", "intel", "jetson", or ""
+		gpuType   string // "nvidia", "amd", "intel", or ""
 		toolPath  string
 	}
-	detectionDone  bool
-	detectionMutex sync.Mutex
+	detectionDone        bool
+	detectionMutex       sync.Mutex
+	gpuMonitoringEnabled bool
+	gpuType              string
 }
 
 func NewSystemHandler(group *gin.RouterGroup, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, authMiddleware *middleware.AuthMiddleware, cfg *config.Config) {
 	handler := &SystemHandler{
-		dockerService:  dockerService,
-		systemService:  systemService,
-		upgradeService: upgradeService,
+		dockerService:        dockerService,
+		systemService:        systemService,
+		upgradeService:       upgradeService,
+		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
+		gpuType:              cfg.GPUType,
 		sysWsUpgrader: websocket.Upgrader{
 			CheckOrigin: httputil.ValidateWebSocketOrigin(cfg.AppUrl),
 		},
@@ -442,9 +446,11 @@ func (h *SystemHandler) Stats(c *gin.Context) {
 
 		var gpuStats []GPUStats
 		var gpuCount int
-		if gpuData, err := h.getGPUStats(ctx); err == nil {
-			gpuStats = gpuData
-			gpuCount = len(gpuData)
+		if h.gpuMonitoringEnabled {
+			if gpuData, err := h.getGPUStats(ctx); err == nil {
+				gpuStats = gpuData
+				gpuCount = len(gpuData)
+			}
 		}
 
 		stats := SystemStats{
@@ -607,8 +613,6 @@ func (h *SystemHandler) getGPUStats(ctx context.Context) ([]GPUStats, error) {
 			return h.getAMDStats(ctx)
 		case "intel":
 			return h.getIntelStats(ctx)
-		case "jetson":
-			return h.getJetsonStats(ctx)
 		}
 	}
 	h.gpuDetectionCache.RUnlock()
@@ -630,8 +634,6 @@ func (h *SystemHandler) getGPUStats(ctx context.Context) ([]GPUStats, error) {
 		return h.getAMDStats(ctx)
 	case "intel":
 		return h.getIntelStats(ctx)
-	case "jetson":
-		return h.getJetsonStats(ctx)
 	default:
 		return nil, fmt.Errorf("no supported GPU found")
 	}
@@ -642,6 +644,58 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 	h.detectionMutex.Lock()
 	defer h.detectionMutex.Unlock()
 
+	// If GPU type is explicitly specified, skip detection and use that type
+	if h.gpuType != "" && h.gpuType != "auto" {
+		switch h.gpuType {
+		case "nvidia":
+			if path, err := exec.LookPath("nvidia-smi"); err == nil {
+				h.gpuDetectionCache.Lock()
+				h.gpuDetectionCache.detected = true
+				h.gpuDetectionCache.gpuType = "nvidia"
+				h.gpuDetectionCache.toolPath = path
+				h.gpuDetectionCache.timestamp = time.Now()
+				h.gpuDetectionCache.Unlock()
+				h.detectionDone = true
+				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "nvidia"))
+				return nil
+			}
+			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
+
+		case "amd":
+			if path, err := exec.LookPath("rocm-smi"); err == nil {
+				h.gpuDetectionCache.Lock()
+				h.gpuDetectionCache.detected = true
+				h.gpuDetectionCache.gpuType = "amd"
+				h.gpuDetectionCache.toolPath = path
+				h.gpuDetectionCache.timestamp = time.Now()
+				h.gpuDetectionCache.Unlock()
+				h.detectionDone = true
+				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "amd"))
+				return nil
+			}
+			return fmt.Errorf("rocm-smi not found but GPU_TYPE set to amd")
+
+		case "intel":
+			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
+				h.gpuDetectionCache.Lock()
+				h.gpuDetectionCache.detected = true
+				h.gpuDetectionCache.gpuType = "intel"
+				h.gpuDetectionCache.toolPath = path
+				h.gpuDetectionCache.timestamp = time.Now()
+				h.gpuDetectionCache.Unlock()
+				h.detectionDone = true
+				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "intel"))
+				return nil
+			}
+			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
+
+		default:
+			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", slog.String("gpu_type", h.gpuType))
+			// Fall through to auto-detection
+		}
+	}
+
+	// Auto-detection: Check in order (nvidia → amd → intel)
 	// Check for NVIDIA
 	if path, err := exec.LookPath("nvidia-smi"); err == nil {
 		h.gpuDetectionCache.Lock()
@@ -665,19 +719,6 @@ func (h *SystemHandler) detectGPUs(ctx context.Context) error {
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
 		slog.InfoContext(ctx, "AMD GPU detected", "tool", "rocm-smi", "path", path)
-		return nil
-	}
-
-	// Check for NVIDIA Jetson
-	if path, err := exec.LookPath("tegrastats"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "jetson"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "NVIDIA Jetson detected", "tool", "tegrastats", "path", path)
 		return nil
 	}
 
@@ -871,66 +912,4 @@ func (h *SystemHandler) parseIntelOutput(ctx context.Context, output []byte) ([]
 
 	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
 	return stats, nil
-}
-
-// getJetsonStats collects NVIDIA Jetson statistics using tegrastats
-func (h *SystemHandler) getJetsonStats(ctx context.Context) ([]GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	// tegrastats outputs continuous stream, we'll use --interval for single sample
-	cmd := exec.CommandContext(ctx, "tegrastats", "--interval", "1000")
-	output, err := cmd.Output()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute tegrastats", "error", err)
-		return nil, fmt.Errorf("tegrastats execution failed: %w", err)
-	}
-
-	return h.parseJetsonOutput(ctx, output)
-}
-
-// parseJetsonOutput parses text output from tegrastats
-func (h *SystemHandler) parseJetsonOutput(ctx context.Context, output []byte) ([]GPUStats, error) {
-	// tegrastats output format: RAM 1234/5678MB (lfb 1x2MB) ...
-	// This is a simplified parser for MVP
-
-	lines := strings.Split(string(output), "\n")
-	if len(lines) == 0 {
-		return nil, fmt.Errorf("no output from tegrastats")
-	}
-
-	// Parse first line for RAM info (Jetson uses unified memory)
-	// Example: "RAM 1234/5678MB"
-	for _, line := range lines {
-		if strings.Contains(line, "RAM") {
-			// Simple parsing - extract RAM usage
-			parts := strings.Fields(line)
-			for i, part := range parts {
-				if part == "RAM" && i+1 < len(parts) {
-					memPart := parts[i+1]
-					if strings.Contains(memPart, "/") && strings.HasSuffix(memPart, "MB") {
-						memPart = strings.TrimSuffix(memPart, "MB")
-						memValues := strings.Split(memPart, "/")
-						if len(memValues) == 2 {
-							used, _ := strconv.ParseFloat(memValues[0], 64)
-							total, _ := strconv.ParseFloat(memValues[1], 64)
-
-							// tegrastats returns MB, convert to bytes
-							return []GPUStats{
-								{
-									Name:        "NVIDIA Jetson",
-									Index:       0,
-									MemoryUsed:  used * 1024 * 1024,
-									MemoryTotal: total * 1024 * 1024,
-								},
-							}, nil
-						}
-					}
-				}
-			}
-		}
-	}
-
-	slog.DebugContext(ctx, "NVIDIA Jetson detected but could not parse memory stats")
-	return nil, fmt.Errorf("failed to parse tegrastats output")
 }

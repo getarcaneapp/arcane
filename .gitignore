@@ -1,10 +1,4 @@
 node_modules
-# fork-timothy
-TIMOTHY-README.MD
-gpu_service.go
-compose.gpu-amd.yaml
-compose.gpu-intel.yaml
-compose.gpu-nvidia.yaml
 
 # Output
 .output

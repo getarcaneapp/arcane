@@ -41,6 +41,7 @@
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
+			getCurrentSettings: () => $settingsStore || data.settings!,
 			successMessage: m.navigation_settings_saved()
 		})
 	);
