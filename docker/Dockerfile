@@ -34,10 +34,11 @@ COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
     VERSION=$(jq -r '.version // "dev"' ../arcane.json) && \
     REVISION=$(jq -r '.revision // "unknown"' ../arcane.json) && \
+    BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ') && \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
     -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION}" \
+    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go

@@ -33,6 +33,18 @@ func NewNetworkHandler(group *gin.RouterGroup, dockerService *services.DockerCli
 	}
 }
 
+// List godoc
+//
+//	@Summary		List networks
+//	@Description	Get a paginated list of Docker networks
+//	@Tags			Networks
+//	@Param			id					path		string	true	"Environment ID"
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	base.Paginated[network.Summary]
+//	@Router			/api/environments/{id}/networks [get]
 func (h *NetworkHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -62,6 +74,15 @@ func (h *NetworkHandler) List(c *gin.Context) {
 	})
 }
 
+// GetByID godoc
+//
+//	@Summary		Get network by ID
+//	@Description	Get a Docker network by its ID
+//	@Tags			Networks
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			networkId	path		string	true	"Network ID"
+//	@Success		200			{object}	base.ApiResponse[network.Inspect]
+//	@Router			/api/environments/{id}/networks/{networkId} [get]
 func (h *NetworkHandler) GetByID(c *gin.Context) {
 	id := c.Param("networkId")
 
@@ -86,6 +107,17 @@ func (h *NetworkHandler) GetByID(c *gin.Context) {
 	})
 }
 
+// Create godoc
+//
+//	@Summary		Create a network
+//	@Description	Create a new Docker network
+//	@Tags			Networks
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string	true	"Environment ID"
+//	@Param			network	body		object	true	"Network creation data"
+//	@Success		201		{object}	base.ApiResponse[network.CreateResponse]
+//	@Router			/api/environments/{id}/networks [post]
 func (h *NetworkHandler) Create(c *gin.Context) {
 	var req struct {
 		Name    string                `json:"name" binding:"required"`
@@ -126,6 +158,18 @@ func (h *NetworkHandler) Create(c *gin.Context) {
 	})
 }
 
+// Remove godoc
+//
+//	@Summary		Remove a network
+//	@Description	Remove a Docker network by ID
+//	@Tags			Networks
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			networkId	path		string	true	"Network ID"
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/networks/{networkId} [delete]
 func (h *NetworkHandler) Remove(c *gin.Context) {
 	id := c.Param("networkId")
 
@@ -148,6 +192,14 @@ func (h *NetworkHandler) Remove(c *gin.Context) {
 	})
 }
 
+// GetNetworkUsageCounts godoc
+//
+//	@Summary		Get network usage counts
+//	@Description	Get counts of networks in use, unused, and total
+//	@Tags			Networks
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	base.ApiResponse[network.UsageCounts]
+//	@Router			/api/environments/{id}/networks/counts [get]
 func (h *NetworkHandler) GetNetworkUsageCounts(c *gin.Context) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(c.Request.Context())
 	if err != nil {
@@ -170,6 +222,14 @@ func (h *NetworkHandler) GetNetworkUsageCounts(c *gin.Context) {
 	})
 }
 
+// Prune godoc
+//
+//	@Summary		Prune unused networks
+//	@Description	Remove all unused Docker networks
+//	@Tags			Networks
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	base.ApiResponse[network.PruneReport]
+//	@Router			/api/environments/{id}/networks/prune [post]
 func (h *NetworkHandler) Prune(c *gin.Context) {
 	report, err := h.networkService.PruneNetworks(c.Request.Context())
 	if err != nil {

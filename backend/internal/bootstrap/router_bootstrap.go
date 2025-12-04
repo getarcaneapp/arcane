@@ -66,7 +66,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		},
 	}))
 
-	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg)
+	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
 	corsMiddleware := middleware.NewCORSMiddleware(cfg).Add()
 	router.Use(corsMiddleware)
 
@@ -81,6 +81,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	api.NewEnvironmentHandler(apiGroup, appServices.Environment, appServices.Settings, authMiddleware, cfg)
 	api.NewContainerRegistryHandler(apiGroup, appServices.ContainerRegistry, authMiddleware)
 	api.NewTemplateHandler(apiGroup, appServices.Template, authMiddleware)
+	api.NewApiKeyHandler(apiGroup, appServices.ApiKey, authMiddleware)
 
 	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		api.LOCAL_DOCKER_ENVIRONMENT_ID,

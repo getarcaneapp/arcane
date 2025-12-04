@@ -35,6 +35,7 @@
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
+			getCurrentSettings: () => $settingsStore || data.settings!,
 			successMessage: m.general_settings_saved(),
 			onReset: () => applyAccentColor(currentSettings.accentColor)
 		})

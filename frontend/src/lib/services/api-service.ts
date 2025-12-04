@@ -76,7 +76,11 @@ abstract class BaseAPIService {
 					const isAuthApi = skipAuthPaths.some((p) => reqUrl.startsWith(p));
 
 					const pathname = window.location.pathname || '/';
-					const isOnAuthPage = pathname.startsWith('/login') || pathname.startsWith('/logout') || pathname.startsWith('/oidc');
+					const isOnAuthPage =
+						pathname.startsWith('/login') ||
+						pathname.startsWith('/logout') ||
+						pathname.startsWith('/oidc') ||
+						pathname.startsWith('/auth/oidc');
 
 					if (!isAuthApi && !isOnAuthPage && !isVersionMismatch && BaseAPIService.tokenRefreshHandler) {
 						try {

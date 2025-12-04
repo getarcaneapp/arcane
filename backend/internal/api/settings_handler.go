@@ -38,6 +38,17 @@ func NewSettingsHandler(group *gin.RouterGroup, settingsService *services.Settin
 	top.GET("/categories", authMiddleware.WithAdminNotRequired().Add(), handler.GetCategories)
 }
 
+// Search godoc
+//
+//	@Summary		Search settings
+//	@Description	Search settings categories and individual settings by query
+//	@Tags			Settings
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		search.Request	true	"Search query"
+//	@Success		200		{object}	search.Response
+//	@Router			/api/settings/search [post]
+//
 // Search delegates to the settings search service and returns relevance-scored results
 func (h *SettingsHandler) Search(c *gin.Context) {
 	var req search.Request
@@ -61,12 +72,28 @@ func (h *SettingsHandler) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
+// GetCategories godoc
+//
+//	@Summary		Get settings categories
+//	@Description	Get all available settings categories with metadata
+//	@Tags			Settings
+//	@Success		200	{array}	settings.Category
+//	@Router			/api/settings/categories [get]
+//
 // GetCategories returns all available settings categories with metadata
 func (h *SettingsHandler) GetCategories(c *gin.Context) {
 	categories := h.settingsSearchService.GetSettingsCategories()
 	c.JSON(http.StatusOK, categories)
 }
 
+// GetSettings godoc
+//
+//	@Summary		Get settings
+//	@Description	Get all settings for an environment
+//	@Tags			Settings
+//	@Param			id	path	string	true	"Environment ID"
+//	@Success		200	{array}	settings.PublicSetting
+//	@Router			/api/environments/{id}/settings [get]
 func (h *SettingsHandler) GetSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 
@@ -92,6 +119,14 @@ func (h *SettingsHandler) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settingsDto)
 }
 
+// GetPublicSettings godoc
+//
+//	@Summary		Get public settings
+//	@Description	Get all public settings for an environment
+//	@Tags			Settings
+//	@Param			id	path	string	true	"Environment ID"
+//	@Success		200	{array}	settings.PublicSetting
+//	@Router			/api/environments/{id}/settings/public [get]
 func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 	settingsList := h.settingsService.ListSettings(false)
 
@@ -114,6 +149,22 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settingsDto)
 }
 
+// UpdateSettings godoc
+//
+//	@Summary		Update settings
+//	@Description	Update settings for an environment
+//	@Tags			Settings
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path		string				true	"Environment ID"
+//	@Param			settings	body		settings.Update		true	"Settings update data"
+//	@Success		200			{object}	base.ApiResponse[[]settings.SettingDto]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		403			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/settings [put]
 func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	environmentID := c.Param("id")
 

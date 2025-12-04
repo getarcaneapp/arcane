@@ -7,10 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const headerApiToken = "X-Api-Token" // #nosec G101: header name, not a credential
+
 func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct{}) {
 	for k, vs := range from {
 		ck := http.CanonicalHeaderKey(k)
-		if _, ok := skip[ck]; ok || ck == "Authorization" {
+		if _, ok := skip[ck]; ok || ck == "Authorization" || ck == http.CanonicalHeaderKey(headerApiToken) {
 			continue
 		}
 		for _, v := range vs {
@@ -20,6 +22,12 @@ func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct
 }
 
 func SetAuthHeader(req *http.Request, c *gin.Context) {
+	// Forward API key header if present
+	if apiKey := c.GetHeader(headerApiToken); apiKey != "" {
+		req.Header.Set(headerApiToken, apiKey)
+	}
+
+	// Forward Authorization header or cookie token
 	if auth := c.GetHeader("Authorization"); auth != "" {
 		req.Header.Set("Authorization", auth)
 	} else if cookieToken, err := c.Cookie("token"); err == nil && cookieToken != "" {

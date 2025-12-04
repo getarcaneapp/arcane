@@ -1202,3 +1202,41 @@ type VolumeCountsError struct {
 func (e *VolumeCountsError) Error() string {
 	return fmt.Sprintf("Failed to get volume counts: %v", e.Err)
 }
+
+type ApiKeyListError struct {
+	Err error
+}
+
+func (e *ApiKeyListError) Error() string {
+	return fmt.Sprintf("Failed to list API keys: %v", e.Err)
+}
+
+type ApiKeyCreationError struct {
+	Err error
+}
+
+func (e *ApiKeyCreationError) Error() string {
+	return "Failed to create API key"
+}
+
+type ApiKeyNotFoundError struct{}
+
+func (e *ApiKeyNotFoundError) Error() string {
+	return "API key not found"
+}
+
+type ApiKeyUpdateError struct {
+	Err error
+}
+
+func (e *ApiKeyUpdateError) Error() string {
+	return "Failed to update API key"
+}
+
+type ApiKeyDeletionError struct {
+	Err error
+}
+
+func (e *ApiKeyDeletionError) Error() string {
+	return "Failed to delete API key"
+}

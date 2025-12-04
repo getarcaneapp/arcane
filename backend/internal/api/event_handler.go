@@ -28,6 +28,17 @@ func NewEventHandler(group *gin.RouterGroup, eventService *services.EventService
 	}
 }
 
+// ListEvents godoc
+//
+//	@Summary		List events
+//	@Description	Get a paginated list of system events
+//	@Tags			Events
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	base.Paginated[event.Event]
+//	@Router			/api/events [get]
 func (h *EventHandler) ListEvents(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -47,6 +58,18 @@ func (h *EventHandler) ListEvents(c *gin.Context) {
 	})
 }
 
+// GetEventsByEnvironment godoc
+//
+//	@Summary		Get events by environment
+//	@Description	Get a paginated list of events for a specific environment
+//	@Tags			Events
+//	@Param			environmentId		path		string	true	"Environment ID"
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	base.Paginated[event.Event]
+//	@Router			/api/events/environment/{environmentId} [get]
 func (h *EventHandler) GetEventsByEnvironment(c *gin.Context) {
 	environmentID := c.Param("environmentId")
 	if environmentID == "" {
@@ -75,6 +98,16 @@ func (h *EventHandler) GetEventsByEnvironment(c *gin.Context) {
 	})
 }
 
+// CreateEvent godoc
+//
+//	@Summary		Create an event
+//	@Description	Create a new system event
+//	@Tags			Events
+//	@Accept			json
+//	@Produce		json
+//	@Param			event	body		event.Create	true	"Event creation data"
+//	@Success		201		{object}	base.ApiResponse[event.Event]
+//	@Router			/api/events [post]
 func (h *EventHandler) CreateEvent(c *gin.Context) {
 	var req event.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -100,6 +133,18 @@ func (h *EventHandler) CreateEvent(c *gin.Context) {
 	})
 }
 
+// DeleteEvent godoc
+//
+//	@Summary		Delete an event
+//	@Description	Delete a system event by ID
+//	@Tags			Events
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			eventId	path		string	true	"Event ID"
+//	@Success		200		{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/events/{eventId} [delete]
 func (h *EventHandler) DeleteEvent(c *gin.Context) {
 	eventID := c.Param("eventId")
 	if eventID == "" {

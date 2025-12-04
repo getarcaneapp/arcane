@@ -13,10 +13,12 @@ if [ -f ../.arcane.json ]; then
 fi
 VERSION=${VERSION:-"dev"}
 REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
+BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 LDFLAGS="-w -s -buildid=${VERSION} \
   -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
-  -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION}"
+  -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
+  -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}"
 
 DOCKER_ONLY=false
 AGENT_BUILD=false

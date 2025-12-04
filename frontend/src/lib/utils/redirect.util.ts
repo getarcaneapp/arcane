@@ -31,6 +31,8 @@ export function getAuthRedirectPath(path: string, user: User | null) {
 		path.startsWith('/oidc/login') ||
 		path === '/oidc/callback' ||
 		path.startsWith('/oidc/callback') ||
+		path === '/auth/oidc/callback' ||
+		path.startsWith('/auth/oidc/callback') ||
 		path === '/img' ||
 		path.startsWith('/img') ||
 		path === '/favicon.ico';

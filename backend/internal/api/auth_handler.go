@@ -102,6 +102,16 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"message": "Logged out successfully"}})
 }
 
+// GetCurrentUser godoc
+//
+//	@Summary		Get current user
+//	@Description	Get the currently authenticated user's information
+//	@Tags			Auth
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	base.ApiResponse[user.Response]
+//	@Failure		401	{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := middleware.GetCurrentUserID(c)
 	if !exists {

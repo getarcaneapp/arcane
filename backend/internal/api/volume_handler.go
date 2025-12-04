@@ -33,6 +33,18 @@ func NewVolumeHandler(group *gin.RouterGroup, dockerService *services.DockerClie
 	}
 }
 
+// List godoc
+//
+//	@Summary		List volumes
+//	@Description	Get a paginated list of Docker volumes
+//	@Tags			Volumes
+//	@Param			id					path		string	true	"Environment ID"
+//	@Param			pagination[page]	query		int		false	"Page number for pagination"	default(1)
+//	@Param			pagination[limit]	query		int		false	"Number of items per page"		default(20)
+//	@Param			sort[column]		query		string	false	"Column to sort by"
+//	@Param			sort[direction]		query		string	false	"Sort direction (asc or desc)"	default("asc")
+//	@Success		200					{object}	base.Paginated[volume.Volume]
+//	@Router			/api/environments/{id}/volumes [get]
 func (h *VolumeHandler) List(c *gin.Context) {
 	params := pagination.ExtractListModifiersQueryParams(c)
 
@@ -63,6 +75,15 @@ func (h *VolumeHandler) List(c *gin.Context) {
 	})
 }
 
+// GetByName godoc
+//
+//	@Summary		Get volume by name
+//	@Description	Get a Docker volume by its name
+//	@Tags			Volumes
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			volumeName	path		string	true	"Volume name"
+//	@Success		200			{object}	base.ApiResponse[volume.Volume]
+//	@Router			/api/environments/{id}/volumes/{volumeName} [get]
 func (h *VolumeHandler) GetByName(c *gin.Context) {
 	name := c.Param("volumeName")
 
@@ -81,6 +102,17 @@ func (h *VolumeHandler) GetByName(c *gin.Context) {
 	})
 }
 
+// Create godoc
+//
+//	@Summary		Create a volume
+//	@Description	Create a new Docker volume
+//	@Tags			Volumes
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string			true	"Environment ID"
+//	@Param			volume	body		volume.Create	true	"Volume creation data"
+//	@Success		201		{object}	base.ApiResponse[volume.Volume]
+//	@Router			/api/environments/{id}/volumes [post]
 func (h *VolumeHandler) Create(c *gin.Context) {
 	var req volumetypes.Create
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -118,6 +150,19 @@ func (h *VolumeHandler) Create(c *gin.Context) {
 	})
 }
 
+// Remove godoc
+//
+//	@Summary		Remove a volume
+//	@Description	Remove a Docker volume by name
+//	@Tags			Volumes
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			volumeName	path		string	true	"Volume name"
+//	@Param			force		query		bool	false	"Force removal"
+//	@Success		200			{object}	base.ApiResponse[base.MessageResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/volumes/{volumeName} [delete]
 func (h *VolumeHandler) Remove(c *gin.Context) {
 	name := c.Param("volumeName")
 	force := c.Query("force") == "true"
@@ -141,6 +186,17 @@ func (h *VolumeHandler) Remove(c *gin.Context) {
 	})
 }
 
+// Prune godoc
+//
+//	@Summary		Prune unused volumes
+//	@Description	Remove all unused Docker volumes
+//	@Tags			Volumes
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	base.ApiResponse[volume.PruneReport]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/volumes/prune [post]
 func (h *VolumeHandler) Prune(c *gin.Context) {
 	report, err := h.volumeService.PruneVolumes(c.Request.Context())
 	if err != nil {
@@ -157,6 +213,18 @@ func (h *VolumeHandler) Prune(c *gin.Context) {
 	})
 }
 
+// GetUsage godoc
+//
+//	@Summary		Get volume usage
+//	@Description	Get containers using a specific volume
+//	@Tags			Volumes
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			volumeName	path		string	true	"Volume name"
+//	@Success		200			{object}	base.ApiResponse[volume.Usage]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/volumes/{volumeName}/usage [get]
 func (h *VolumeHandler) GetUsage(c *gin.Context) {
 	name := c.Param("volumeName")
 
@@ -178,6 +246,14 @@ func (h *VolumeHandler) GetUsage(c *gin.Context) {
 	})
 }
 
+// GetVolumeUsageCounts godoc
+//
+//	@Summary		Get volume usage counts
+//	@Description	Get counts of volumes in use, unused, and total
+//	@Tags			Volumes
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	base.ApiResponse[volume.UsageCounts]
+//	@Router			/api/environments/{id}/volumes/counts [get]
 func (h *VolumeHandler) GetVolumeUsageCounts(c *gin.Context) {
 	_, running, stopped, total, err := h.dockerService.GetAllVolumes(c.Request.Context())
 	if err != nil {

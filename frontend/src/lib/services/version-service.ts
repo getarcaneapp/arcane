@@ -17,6 +17,9 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			currentDigest?: string;
 			displayVersion?: string;
 			revision?: string;
+			shortRevision?: string;
+			goVersion?: string;
+			buildTime?: string;
 			isSemverVersion?: boolean;
 			newestVersion?: string;
 			newestDigest?: string;
@@ -30,6 +33,9 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			currentDigest: data.currentDigest,
 			displayVersion: data.displayVersion || data.currentVersion || getCurrentVersion(),
 			revision: data.revision || 'unknown',
+			shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
+			goVersion: data.goVersion || 'unknown',
+			buildTime: data.buildTime,
 			isSemverVersion: data.isSemverVersion || false,
 			newestVersion: data.newestVersion,
 			newestDigest: data.newestDigest,
@@ -42,6 +48,8 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			currentVersion: getCurrentVersion(),
 			displayVersion: getCurrentVersion(),
 			revision: 'unknown',
+			shortRevision: 'unknown',
+			goVersion: 'unknown',
 			isSemverVersion: false,
 			updateAvailable: false
 		};

@@ -79,6 +79,19 @@
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings: formDefaults,
+			getCurrentSettings: () => ({
+				authLocalEnabled: ($settingsStore || data.settings!).authLocalEnabled,
+				authSessionTimeout: ($settingsStore || data.settings!).authSessionTimeout,
+				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
+				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
+				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
+				oidcClientId: ($settingsStore || data.settings!).oidcClientId,
+				oidcClientSecret: '',
+				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
+				oidcScopes: ($settingsStore || data.settings!).oidcScopes,
+				oidcAdminClaim: ($settingsStore || data.settings!).oidcAdminClaim,
+				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue
+			}),
 			successMessage: m.security_settings_saved()
 		})
 	);

@@ -23,6 +23,8 @@
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 
+	type FieldVisibility = Record<string, boolean>;
+
 	let {
 		networks = $bindable(),
 		selectedIds = $bindable(),
@@ -215,7 +217,7 @@
 }: {
 	row: any;
 	item: NetworkSummaryDto;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: FieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

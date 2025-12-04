@@ -29,6 +29,19 @@ func NewImageUpdateHandler(group *gin.RouterGroup, imageUpdateService *services.
 	}
 }
 
+// CheckImageUpdate godoc
+//
+//	@Summary		Check image update by reference
+//	@Description	Check if an image has an update available by image reference
+//	@Tags			Image Updates
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id			path		string	true	"Environment ID"
+//	@Param			imageRef	query		string	true	"Image reference (e.g., nginx:latest)"
+//	@Success		200			{object}	base.ApiResponse[imageupdate.Response]
+//	@Failure		400			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500			{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/image-updates/check [get]
 func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	imageRef := c.Query("imageRef")
 	if imageRef == "" {
@@ -54,6 +67,19 @@ func (h *ImageUpdateHandler) CheckImageUpdate(c *gin.Context) {
 	})
 }
 
+// CheckImageUpdateByID godoc
+//
+//	@Summary		Check image update by ID
+//	@Description	Check if an image has an update available by image ID
+//	@Tags			Image Updates
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id		path		string	true	"Environment ID"
+//	@Param			imageId	path		string	true	"Image ID"
+//	@Success		200		{object}	base.ApiResponse[imageupdate.Response]
+//	@Failure		400		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Failure		500		{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/image-updates/check/{imageId} [get]
 func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	imageID := c.Param("imageId")
 	if imageID == "" {
@@ -79,6 +105,17 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(c *gin.Context) {
 	})
 }
 
+// CheckMultipleImages godoc
+//
+//	@Summary		Check multiple images for updates
+//	@Description	Check multiple images for available updates
+//	@Tags			Image Updates
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string							true	"Environment ID"
+//	@Param			request	body		imageupdate.BatchImageUpdateRequest	true	"Batch image update request"
+//	@Success		200		{object}	base.ApiResponse[imageupdate.BatchResponse]
+//	@Router			/api/environments/{id}/image-updates/check-batch [post]
 func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	var req imageupdate.BatchImageUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -114,6 +151,17 @@ func (h *ImageUpdateHandler) CheckMultipleImages(c *gin.Context) {
 	})
 }
 
+// CheckAllImages godoc
+//
+//	@Summary		Check all images for updates
+//	@Description	Check all local images for available updates
+//	@Tags			Image Updates
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string							false	"Environment ID"
+//	@Param			request	body		imageupdate.BatchImageUpdateRequest	false	"Optional credentials"
+//	@Success		200		{object}	base.ApiResponse[imageupdate.BatchResponse]
+//	@Router			/api/environments/{id}/image-updates/check-all [post]
 func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 	var req imageupdate.BatchImageUpdateRequest
 	_ = c.ShouldBindJSON(&req)
@@ -135,6 +183,17 @@ func (h *ImageUpdateHandler) CheckAllImages(c *gin.Context) {
 	})
 }
 
+// GetUpdateSummary godoc
+//
+//	@Summary		Get image update summary
+//	@Description	Get a summary of images with available updates
+//	@Tags			Image Updates
+//	@Security		BearerAuth
+//	@Security		ApiKeyAuth
+//	@Param			id	path		string	true	"Environment ID"
+//	@Success		200	{object}	base.ApiResponse[imageupdate.Summary]
+//	@Failure		500	{object}	base.ApiResponse[base.ErrorResponse]
+//	@Router			/api/environments/{id}/image-updates/summary [get]
 func (h *ImageUpdateHandler) GetUpdateSummary(c *gin.Context) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(c.Request.Context())
 	if err != nil {

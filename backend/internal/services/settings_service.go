@@ -427,19 +427,21 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, err
 	}
 
-	if changedPolling && s.OnImagePollingSettingsChanged != nil {
-		s.OnImagePollingSettingsChanged(ctx)
-	}
-	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
-		s.OnAutoUpdateSettingsChanged(ctx)
-	}
-
+	// Reload and store settings BEFORE calling callbacks so they read updated values
 	settings, err := s.GetSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve updated settings: %w", err)
 	}
 
 	s.config.Store(settings)
+
+	// Now call callbacks after in-memory config is updated
+	if changedPolling && s.OnImagePollingSettingsChanged != nil {
+		s.OnImagePollingSettingsChanged(ctx)
+	}
+	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
+		s.OnAutoUpdateSettingsChanged(ctx)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
