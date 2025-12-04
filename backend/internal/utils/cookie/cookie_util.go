@@ -59,3 +59,34 @@ func GetOidcStateCookie(c *gin.Context) (string, error) {
 func ClearOidcStateCookie(c *gin.Context) {
 	c.SetCookie(OidcStateCookieName, "", -1, "/", "", c.Request.TLS != nil, true)
 }
+
+// BuildTokenCookieString builds a Set-Cookie header string for Huma handlers.
+// Uses the insecure cookie name since we can't detect TLS from context.
+// For secure contexts, the middleware should handle the __Host- prefix.
+func BuildTokenCookieString(maxAgeInSeconds int, token string) string {
+	if maxAgeInSeconds < 0 {
+		maxAgeInSeconds = 0
+	}
+	cookie := &http.Cookie{
+		Name:     InsecureTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAgeInSeconds,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
+}
+
+// BuildClearTokenCookieString builds a Set-Cookie header string to clear the token cookie.
+func BuildClearTokenCookieString() string {
+	cookie := &http.Cookie{
+		Name:     InsecureTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
+}

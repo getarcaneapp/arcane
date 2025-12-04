@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/frontend"
 	"github.com/getarcaneapp/arcane/backend/internal/api"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 )
 
@@ -72,16 +73,26 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 
 	apiGroup := router.Group("/api")
 
+	// Setup Huma API
+	_ = huma.SetupAPI(router, apiGroup, cfg, &huma.Services{
+		User:   appServices.User,
+		Auth:   appServices.Auth,
+		Oidc:   appServices.Oidc,
+		ApiKey: appServices.ApiKey,
+	})
+
 	api.NewApplicationImagesHandler(apiGroup, appServices.AppImages)
 	api.NewUserHandler(apiGroup, appServices.User, authMiddleware)
 	api.NewVersionHandler(apiGroup, appServices.Version)
-	api.NewAuthHandler(apiGroup, appServices.User, appServices.Auth, appServices.Oidc, authMiddleware)
+	// Auth handler now uses Huma - see internal/huma/handlers/auth.go
+	// api.NewAuthHandler(apiGroup, appServices.User, appServices.Auth, appServices.Oidc, authMiddleware)
 	api.NewEventHandler(apiGroup, appServices.Event, authMiddleware)
 	api.NewOidcHandler(apiGroup, appServices.Auth, appServices.Oidc)
 	api.NewEnvironmentHandler(apiGroup, appServices.Environment, appServices.Settings, authMiddleware, cfg)
 	api.NewContainerRegistryHandler(apiGroup, appServices.ContainerRegistry, authMiddleware)
 	api.NewTemplateHandler(apiGroup, appServices.Template, authMiddleware)
-	api.NewApiKeyHandler(apiGroup, appServices.ApiKey, authMiddleware)
+	// API Key handler now uses Huma - see internal/huma/handlers/apikeys.go
+	// api.NewApiKeyHandler(apiGroup, appServices.ApiKey, authMiddleware)
 
 	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		api.LOCAL_DOCKER_ENVIRONMENT_ID,
