@@ -4,6 +4,9 @@ export interface AppVersionInformation {
 	currentDigest?: string;
 	displayVersion: string;
 	revision: string;
+	shortRevision: string;
+	goVersion: string;
+	buildTime?: string;
 	isSemverVersion: boolean;
 	newestVersion?: string;
 	newestDigest?: string;

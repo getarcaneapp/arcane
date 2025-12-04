@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"go.getarcane.app/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -190,12 +191,12 @@ func (s *VersionService) isSemverVersion() bool {
 }
 
 // getDisplayVersion formats the version for display purposes
-// If version contains "next", it returns "next-<revision>"
+// If version contains "next", it returns "next-<short revision>"
 // Otherwise returns the version as-is
 func (s *VersionService) getDisplayVersion() string {
 	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
 	if strings.Contains(strings.ToLower(version), "next") && s.revision != "" && s.revision != "unknown" {
-		return fmt.Sprintf("next-%s", s.revision)
+		return fmt.Sprintf("next-%s", config.ShortRevision())
 	}
 	if s.isSemverVersion() {
 		return "v" + version
@@ -215,6 +216,11 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	// Detect current container image tag, digest, and registry
 	currentTag, currentDigest, currentImageRef := s.detectCurrentImageInfo(ctx)
 
+	// Common fields for all responses
+	shortRev := config.ShortRevision()
+	goVer := config.GoVersion()
+	buildTime := config.BuildTime
+
 	if s.disabled {
 		return &version.Info{
 			CurrentVersion:  ver,
@@ -222,6 +228,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
+			ShortRevision:   shortRev,
+			GoVersion:       goVer,
+			BuildTime:       buildTime,
 			IsSemverVersion: isSemver,
 			UpdateAvailable: false,
 		}
@@ -239,6 +248,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 					CurrentDigest:   currentDigest,
 					DisplayVersion:  displayVersion,
 					Revision:        s.revision,
+					ShortRevision:   shortRev,
+					GoVersion:       goVer,
+					BuildTime:       buildTime,
 					IsSemverVersion: isSemver,
 				}
 			}
@@ -251,6 +263,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
+			ShortRevision:   shortRev,
+			GoVersion:       goVer,
+			BuildTime:       buildTime,
 			IsSemverVersion: isSemver,
 			NewestVersion:   latest,
 			UpdateAvailable: s.IsNewer(latest, ver),
@@ -267,6 +282,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentDigest:   currentDigest,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
+			ShortRevision:   shortRev,
+			GoVersion:       goVer,
+			BuildTime:       buildTime,
 			IsSemverVersion: isSemver,
 			NewestDigest:    latestDigest,
 			UpdateAvailable: updateAvailable,
@@ -279,6 +297,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		CurrentDigest:   currentDigest,
 		DisplayVersion:  displayVersion,
 		Revision:        s.revision,
+		ShortRevision:   shortRev,
+		GoVersion:       goVer,
+		BuildTime:       buildTime,
 		IsSemverVersion: isSemver,
 		UpdateAvailable: false,
 	}
