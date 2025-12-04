@@ -131,6 +131,10 @@ type Services struct {
 	Image             *services.ImageService
 	ImageUpdate       *services.ImageUpdateService
 	Volume            *services.VolumeService
+	Container         *services.ContainerService
+	Network           *services.NetworkService
+	Notification      *services.NotificationService
+	Apprise           *services.AppriseService
 	Updater           *services.UpdaterService
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
@@ -281,6 +285,10 @@ func registerHandlers(api huma.API, svc *Services) {
 	var imageSvc *services.ImageService
 	var imageUpdateSvc *services.ImageUpdateService
 	var volumeSvc *services.VolumeService
+	var containerSvc *services.ContainerService
+	var networkSvc *services.NetworkService
+	var notificationSvc *services.NotificationService
+	var appriseSvc *services.AppriseService
 	var updaterSvc *services.UpdaterService
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService
@@ -305,6 +313,10 @@ func registerHandlers(api huma.API, svc *Services) {
 		imageSvc = svc.Image
 		imageUpdateSvc = svc.ImageUpdate
 		volumeSvc = svc.Volume
+		containerSvc = svc.Container
+		networkSvc = svc.Network
+		notificationSvc = svc.Notification
+		appriseSvc = svc.Apprise
 		updaterSvc = svc.Updater
 		customizeSearchSvc = svc.CustomizeSearch
 		systemSvc = svc.System
@@ -356,6 +368,15 @@ func registerHandlers(api huma.API, svc *Services) {
 
 	// Volume handlers
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
+
+	// Container handlers
+	handlers.RegisterContainers(api, containerSvc, dockerSvc)
+
+	// Network handlers
+	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
+
+	// Notification handlers
+	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
 
 	// Updater handlers
 	handlers.RegisterUpdater(api, updaterSvc)

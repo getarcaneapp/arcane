@@ -114,12 +114,8 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Config:            cfg,
 	})
 
-	// Remaining Gin handlers (not yet migrated to Huma - WebSocket/streaming)
-	api.NewContainerHandler(apiGroup, appServices.Docker, appServices.Container, appServices.Image, authMiddleware, cfg)
-	api.NewImageUpdateHandler(apiGroup, appServices.ImageUpdate, authMiddleware)
-	api.NewNetworkHandler(apiGroup, appServices.Docker, appServices.Network, authMiddleware)
+	// Remaining Gin handlers (WebSocket/streaming - not yet migrated to Huma)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
-	api.NewNotificationHandler(apiGroup, appServices.Notification, appServices.Apprise, authMiddleware)
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {
