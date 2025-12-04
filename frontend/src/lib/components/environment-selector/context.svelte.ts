@@ -38,6 +38,11 @@ class EnvSelectorState {
 		return f.selectedTags.length > 0 || f.excludedTags.length > 0 || f.statusFilter !== 'all' || f.groupBy !== 'none';
 	}
 
+	get hasSaveableFilters(): boolean {
+		const f = this.filters;
+		return f.selectedTags.length > 0 || f.excludedTags.length > 0 || f.statusFilter !== 'all';
+	}
+
 	get hasDefaultFilter(): boolean {
 		return this.savedFilters.some((f) => f.isDefault);
 	}

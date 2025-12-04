@@ -79,9 +79,9 @@
 			placeholder={m.env_selector_filter_name_placeholder()}
 			class="h-9 flex-1 text-sm"
 			bind:value={saveFilterName}
-			onkeydown={(e) => e.key === 'Enter' && handleSaveNew()}
+			onkeydown={(e) => e.key === 'Enter' && ctx.hasSaveableFilters && handleSaveNew()}
 		/>
-		<Button size="sm" class="h-9" onclick={handleSaveNew} disabled={!saveFilterName.trim()}>
+		<Button size="sm" class="h-9" onclick={handleSaveNew} disabled={!saveFilterName.trim() || !ctx.hasSaveableFilters}>
 			<PlusIcon class="mr-1 size-4" />
 			{m.common_save()}
 		</Button>
@@ -103,7 +103,7 @@
 						isActive={ctx.activeFilterId === filter.id}
 						isEditing={editingFilterId === filter.id}
 						bind:editingName={editingFilterName}
-						showUpdateButton={ctx.isFilterDifferent(filter)}
+						showUpdateButton={ctx.isFilterDifferent(filter) && ctx.hasSaveableFilters}
 						onApply={() => onApplyFilter?.(filter)}
 						onSetDefault={() => onSetDefault?.(filter.id)}
 						onClearDefault={() => onClearDefault?.(filter.id)}
