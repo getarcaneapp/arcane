@@ -21,6 +21,13 @@ type ApiKeyHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
+// ApiKeyPaginatedResponse is the paginated response for API keys.
+type ApiKeyPaginatedResponse struct {
+	Success    bool                    `json:"success"`
+	Data       []apikey.ApiKey         `json:"data"`
+	Pagination base.PaginationResponse `json:"pagination"`
+}
+
 type ListApiKeysInput struct {
 	Search string `query:"search" doc:"Search query for filtering by name or description"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -30,11 +37,11 @@ type ListApiKeysInput struct {
 }
 
 type ListApiKeysOutput struct {
-	Body base.Paginated[apikey.ApiKey]
+	Body ApiKeyPaginatedResponse
 }
 
 type CreateApiKeyInput struct {
-	Body apikey.Create
+	Body apikey.CreateApiKey
 }
 
 type CreateApiKeyOutput struct {
@@ -51,7 +58,7 @@ type GetApiKeyOutput struct {
 
 type UpdateApiKeyInput struct {
 	ID   string `path:"id" doc:"API key ID"`
-	Body apikey.Update
+	Body apikey.UpdateApiKey
 }
 
 type UpdateApiKeyOutput struct {
@@ -166,7 +173,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 	}
 
 	return &ListApiKeysOutput{
-		Body: base.Paginated[apikey.ApiKey]{
+		Body: ApiKeyPaginatedResponse{
 			Success: true,
 			Data:    apiKeys,
 			Pagination: base.PaginationResponse{

@@ -58,7 +58,7 @@ type ChangePasswordOutput struct {
 }
 
 type GetCurrentUserOutput struct {
-	Body base.ApiResponse[user.Response]
+	Body base.ApiResponse[user.User]
 }
 
 // RegisterAuth registers authentication routes using Huma.
@@ -149,7 +149,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		}
 	}
 
-	var userResp user.Response
+	var userResp user.User
 	if mapErr := mapper.MapStruct(userModel, &userResp); mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
 	}
@@ -203,13 +203,13 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
 	}
 
-	var out user.Response
+	var out user.User
 	if mapErr := mapper.MapStruct(userModel, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
 	}
 
 	return &GetCurrentUserOutput{
-		Body: base.ApiResponse[user.Response]{
+		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
 		},

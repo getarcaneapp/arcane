@@ -60,7 +60,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 
 	var createdKeys []*apikey.ApiKeyCreatedDto
 	for i := 0; i < count; i++ {
-		req := apikey.Create{
+		req := apikey.CreateApiKey{
 			Name:        fmt.Sprintf("test-api-key-%d", i+1),
 			Description: stringPtr(fmt.Sprintf("Test API key %d for Playwright tests", i+1)),
 		}

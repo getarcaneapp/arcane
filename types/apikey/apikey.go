@@ -3,7 +3,7 @@ package apikey
 import "time"
 
 // Create represents the request body for creating an API key.
-type Create struct {
+type CreateApiKey struct {
 	Name        string     `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key"`
 	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty" doc:"Optional expiration date for the API key"`
@@ -29,7 +29,7 @@ type ApiKeyCreatedDto struct {
 }
 
 // Update represents the request body for updating an API key.
-type Update struct {
+type UpdateApiKey struct {
 	Name        *string    `json:"name,omitempty" maxLength:"255" doc:"New name for the API key"`
 	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"New description for the API key"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty" doc:"New expiration date for the API key"`

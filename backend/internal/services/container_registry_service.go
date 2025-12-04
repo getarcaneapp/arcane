@@ -61,7 +61,7 @@ func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]mode
 	return registries, nil
 }
 
-func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, params pagination.QueryParams) ([]containerregistry.Response, pagination.Response, error) {
+func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, params pagination.QueryParams) ([]containerregistry.ContainerRegistry, pagination.Response, error) {
 	var registries []models.ContainerRegistry
 	q := s.db.WithContext(ctx).Model(&models.ContainerRegistry{})
 
@@ -96,7 +96,7 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate container registries: %w", err)
 	}
 
-	out, mapErr := mapper.MapSlice[models.ContainerRegistry, containerregistry.Response](registries)
+	out, mapErr := mapper.MapSlice[models.ContainerRegistry, containerregistry.ContainerRegistry](registries)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map registries: %w", mapErr)
 	}

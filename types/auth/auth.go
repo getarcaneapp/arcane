@@ -28,7 +28,7 @@ type LoginResponse struct {
 	Token        string        `json:"token" doc:"JWT access token"`
 	RefreshToken string        `json:"refreshToken" doc:"Refresh token for obtaining new access tokens"`
 	ExpiresAt    time.Time     `json:"expiresAt" doc:"Expiration time of the access token"`
-	User         user.Response `json:"user" doc:"Authenticated user information"`
+	User         user.User `json:"user" doc:"Authenticated user information"`
 }
 
 // TokenRefreshResponse represents the successful token refresh response data.

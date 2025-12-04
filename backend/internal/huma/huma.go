@@ -15,11 +15,19 @@ import (
 
 // Services holds all service dependencies needed by Huma handlers.
 type Services struct {
-	User   *services.UserService
-	Auth   *services.AuthService
-	Oidc   *services.OidcService
-	ApiKey *services.ApiKeyService
-	// Add more services here as handlers are migrated
+	User              *services.UserService
+	Auth              *services.AuthService
+	Oidc              *services.OidcService
+	ApiKey            *services.ApiKeyService
+	AppImages         *services.ApplicationImagesService
+	Project           *services.ProjectService
+	Event             *services.EventService
+	Version           *services.VersionService
+	Environment       *services.EnvironmentService
+	Settings          *services.SettingsService
+	ContainerRegistry *services.ContainerRegistryService
+	Template          *services.TemplateService
+	Config            *config.Config
 }
 
 // SetupAPI creates and configures the Huma API alongside the existing Gin router.
@@ -109,12 +117,30 @@ func registerHandlers(api huma.API, svc *Services) {
 	var authSvc *services.AuthService
 	var oidcSvc *services.OidcService
 	var apiKeySvc *services.ApiKeyService
+	var appImagesSvc *services.ApplicationImagesService
+	var projectSvc *services.ProjectService
+	var eventSvc *services.EventService
+	var versionSvc *services.VersionService
+	var environmentSvc *services.EnvironmentService
+	var settingsSvc *services.SettingsService
+	var containerRegistrySvc *services.ContainerRegistryService
+	var templateSvc *services.TemplateService
+	var cfg *config.Config
 
 	if svc != nil {
 		userSvc = svc.User
 		authSvc = svc.Auth
 		oidcSvc = svc.Oidc
 		apiKeySvc = svc.ApiKey
+		appImagesSvc = svc.AppImages
+		projectSvc = svc.Project
+		eventSvc = svc.Event
+		versionSvc = svc.Version
+		environmentSvc = svc.Environment
+		settingsSvc = svc.Settings
+		containerRegistrySvc = svc.ContainerRegistry
+		templateSvc = svc.Template
+		cfg = svc.Config
 	}
 
 	// Auth handlers
@@ -123,8 +149,30 @@ func registerHandlers(api huma.API, svc *Services) {
 	// API Key handlers
 	handlers.RegisterApiKeys(api, apiKeySvc)
 
-	// Add more handler registrations here as they are migrated:
-	// handlers.RegisterContainers(api, svc.Docker, svc.Container)
-	// handlers.RegisterImages(api, svc.Docker, svc.Image)
-	// etc.
+	// Application Images handlers
+	handlers.RegisterAppImages(api, appImagesSvc)
+
+	// Project handlers (REST only - WebSocket/streaming stay in Gin)
+	handlers.RegisterProjects(api, projectSvc)
+
+	// User management handlers
+	handlers.RegisterUsers(api, userSvc)
+
+	// Version handlers
+	handlers.RegisterVersion(api, versionSvc)
+
+	// Event handlers
+	handlers.RegisterEvents(api, eventSvc)
+
+	// OIDC handlers (status/config only - URL/callback use Gin for cookies)
+	handlers.RegisterOidc(api, authSvc, oidcSvc)
+
+	// Environment handlers
+	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, cfg)
+
+	// Container registry handlers
+	handlers.RegisterContainerRegistries(api, containerRegistrySvc)
+
+	// Template handlers
+	handlers.RegisterTemplates(api, templateSvc)
 }

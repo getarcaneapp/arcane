@@ -324,7 +324,7 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 	})
 }
 
-func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.Response, pagination.Response, error) {
+func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
 	var users []models.User
 	query := s.db.WithContext(ctx).Model(&models.User{})
 
@@ -341,7 +341,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result := make([]user.Response, len(users))
+	result := make([]user.User, len(users))
 	for i, u := range users {
 		result[i] = toUserResponseDto(u)
 	}
@@ -349,8 +349,8 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 	return result, paginationResp, nil
 }
 
-func toUserResponseDto(u models.User) user.Response {
-	return user.Response{
+func toUserResponseDto(u models.User) user.User {
+	return user.User{
 		ID:            u.ID,
 		Username:      u.Username,
 		DisplayName:   u.DisplayName,

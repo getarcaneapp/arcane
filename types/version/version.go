@@ -1,5 +1,6 @@
 package version
 
+// Info contains detailed version information about the application.
 type Info struct {
 	// CurrentVersion is the current version string.
 	//
@@ -55,6 +56,29 @@ type Info struct {
 	//
 	// Required: false
 	NewestDigest string `json:"newestDigest,omitempty"`
+
+	// UpdateAvailable indicates if an update is available.
+	//
+	// Required: true
+	UpdateAvailable bool `json:"updateAvailable"`
+
+	// ReleaseURL is the URL to the release page.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+}
+
+// Check contains simplified version check information.
+type Check struct {
+	// CurrentVersion is the current version string.
+	//
+	// Required: true
+	CurrentVersion string `json:"currentVersion"`
+
+	// NewestVersion is the newest available version string.
+	//
+	// Required: false
+	NewestVersion string `json:"newestVersion,omitempty"`
 
 	// UpdateAvailable indicates if an update is available.
 	//

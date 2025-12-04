@@ -119,7 +119,7 @@ func (h *OidcHandler) HandleOidcCallback(c *gin.Context) {
 		"token":        tokenPair.AccessToken,
 		"refreshToken": tokenPair.RefreshToken,
 		"expiresAt":    tokenPair.ExpiresAt,
-		"user": user.Response{
+		"user": user.User{
 			ID:            userModel.ID,
 			Username:      userModel.Username,
 			DisplayName:   userModel.DisplayName,

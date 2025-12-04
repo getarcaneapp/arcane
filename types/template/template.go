@@ -102,7 +102,7 @@ type RemoteRegistry struct {
 }
 
 // Registry represents a local registry configuration.
-type Registry struct {
+type TemplateRegistry struct {
 	BaseRegistry
 
 	// ID is the unique identifier of the registry.
@@ -176,10 +176,10 @@ type Template struct {
 	// Registry is the registry information if the template is from a registry.
 	//
 	// Required: false
-	Registry *Registry `json:"registry,omitempty"`
+	Registry *TemplateRegistry `json:"registry,omitempty"`
 
 	// Metadata contains additional metadata about the template.
 	//
 	// Required: false
-	Metadata *meta.Template `json:"metadata,omitempty"`
+	Metadata *meta.TemplateMeta `json:"metadata,omitempty"`
 }
