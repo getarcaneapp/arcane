@@ -7,10 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
-	"github.com/gin-gonic/gin"
 	"go.getarcane.app/types/auth"
 	"go.getarcane.app/types/user"
 )
@@ -36,21 +34,22 @@ type GetOidcAuthUrlInput struct {
 }
 
 type GetOidcAuthUrlOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
 	Body      struct {
 		AuthUrl string `json:"authUrl"`
 	}
 }
 
 type HandleOidcCallbackInput struct {
-	Body struct {
-		Code  string `json:"code" required:"true"`
-		State string `json:"state" required:"true"`
+	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
+	Body            struct {
+		Code  string `json:"code" required:"true" doc:"Authorization code from OIDC provider"`
+		State string `json:"state" required:"true" doc:"State parameter from OIDC provider"`
 	}
 }
 
 type HandleOidcCallbackOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
 	Body      struct {
 		Success      bool      `json:"success"`
 		Token        string    `json:"token"`
@@ -78,13 +77,13 @@ type GetOidcConfigOutput struct {
 // Registration
 // ============================================================================
 
-// RegisterOidc registers OIDC authentication endpoints.
+// RegisterOidc registers all OIDC authentication endpoints using Huma.
 func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *services.OidcService) {
 	h := &OidcHandler{authService: authService, oidcService: oidcService}
 
 	huma.Register(api, huma.Operation{
-		OperationID: "getOidcStatus",
-		Method:      "GET",
+		OperationID: "get-oidc-status",
+		Method:      http.MethodGet,
 		Path:        "/oidc/status",
 		Summary:     "Get OIDC status",
 		Description: "Get the current OIDC configuration status",
@@ -92,27 +91,31 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 	}, h.GetOidcStatus)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "getOidcConfig",
-		Method:      "GET",
+		OperationID: "get-oidc-config",
+		Method:      http.MethodGet,
 		Path:        "/oidc/config",
 		Summary:     "Get OIDC config",
 		Description: "Get the OIDC client configuration",
 		Tags:        []string{"OIDC"},
 	}, h.GetOidcConfig)
 
-	// Note: URL and callback endpoints need Gin context for cookie management
-	// These are registered separately in the Gin router
-}
+	huma.Register(api, huma.Operation{
+		OperationID: "get-oidc-auth-url",
+		Method:      http.MethodPost,
+		Path:        "/oidc/url",
+		Summary:     "Get OIDC auth URL",
+		Description: "Generate an OIDC authorization URL for login",
+		Tags:        []string{"OIDC"},
+	}, h.GetOidcAuthUrl)
 
-// RegisterOidcGinRoutes registers OIDC routes that require Gin context for cookie handling.
-func RegisterOidcGinRoutes(group *gin.RouterGroup, authService *services.AuthService, oidcService *services.OidcService) {
-	h := &OidcHandler{authService: authService, oidcService: oidcService}
-
-	oidcGroup := group.Group("/oidc")
-	{
-		oidcGroup.POST("/url", h.GetOidcAuthUrlGin)
-		oidcGroup.POST("/callback", h.HandleOidcCallbackGin)
-	}
+	huma.Register(api, huma.Operation{
+		OperationID: "handle-oidc-callback",
+		Method:      http.MethodPost,
+		Path:        "/oidc/callback",
+		Summary:     "Handle OIDC callback",
+		Description: "Process the OIDC callback and complete authentication",
+		Tags:        []string{"OIDC"},
+	}, h.HandleOidcCallback)
 }
 
 // ============================================================================
@@ -167,94 +170,93 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, _ *GetOidcConfigInput) 
 	}, nil
 }
 
-// GetOidcAuthUrlGin handles OIDC auth URL generation (requires Gin for cookie).
-func (h *OidcHandler) GetOidcAuthUrlGin(c *gin.Context) {
-	var req auth.OidcAuthUrlRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"data":    gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()},
-		})
-		return
+// GetOidcAuthUrl generates an OIDC authorization URL and sets the state cookie.
+func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlInput) (*GetOidcAuthUrlOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	enabled, err := h.authService.IsOidcEnabled(c.Request.Context())
+	enabled, err := h.authService.IsOidcEnabled(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.OidcStatusCheckError{}).Error()})
-		return
+		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
 	}
 	if !enabled {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.OidcDisabledError{}).Error()})
-		return
+		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
 	}
 
-	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(c.Request.Context(), req.RedirectUri)
+	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": (&common.OidcAuthUrlGenerationError{Err: err}).Error()})
-		return
+		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
 	}
 
-	cookie.CreateOidcStateCookie(c, stateCookieValue, 600)
+	// Build state cookie (600 seconds = 10 minutes)
+	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, false)
 
-	c.JSON(http.StatusOK, gin.H{
-		"authUrl": authUrl,
-	})
+	return &GetOidcAuthUrlOutput{
+		SetCookie: stateCookie,
+		Body: struct {
+			AuthUrl string `json:"authUrl"`
+		}{
+			AuthUrl: authUrl,
+		},
+	}, nil
 }
 
-// HandleOidcCallbackGin handles the OIDC callback (requires Gin for cookie).
-func (h *OidcHandler) HandleOidcCallbackGin(c *gin.Context) {
-	var req struct {
-		Code  string `json:"code" binding:"required"`
-		State string `json:"state" binding:"required"`
+// HandleOidcCallback processes the OIDC callback and completes authentication.
+func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcCallbackInput) (*HandleOidcCallbackOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.InvalidRequestFormatError{Err: err}).Error()})
-		return
+	// Validate state cookie
+	if input.OidcStateCookie == "" {
+		return nil, huma.Error400BadRequest((&common.OidcStateCookieError{}).Error())
 	}
 
-	encodedStateFromCookie, err := cookie.GetOidcStateCookie(c)
+	// Process OIDC callback
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.OidcStateCookieError{}).Error()})
-		return
+		return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
 	}
-	cookie.ClearOidcStateCookie(c)
 
-	userInfo, tokenResp, err := h.oidcService.HandleCallback(c.Request.Context(), req.Code, req.State, encodedStateFromCookie)
+	// Complete login
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": (&common.OidcCallbackError{Err: err}).Error()})
-		return
+		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
 	}
 
-	userModel, tokenPair, err := h.authService.OidcLogin(c.Request.Context(), *userInfo, tokenResp)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.AuthFailedError{Err: err}).Error()})
-		return
-	}
-
-	c.SetSameSite(http.SameSiteLaxMode)
+	// Calculate cookie max age
 	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
 	if maxAge < 0 {
 		maxAge = 0
 	}
-	maxAge += 60
-	cookie.CreateTokenCookie(c, maxAge, tokenPair.AccessToken)
+	maxAge += 60 // Add 60 seconds buffer for clock skew
 
-	c.JSON(http.StatusOK, gin.H{
-		"success":      true,
-		"token":        tokenPair.AccessToken,
-		"refreshToken": tokenPair.RefreshToken,
-		"expiresAt":    tokenPair.ExpiresAt,
-		"user": user.User{
-			ID:            userModel.ID,
-			Username:      userModel.Username,
-			DisplayName:   userModel.DisplayName,
-			Email:         userModel.Email,
-			Roles:         userModel.Roles,
-			OidcSubjectId: userModel.OidcSubjectId,
+	// Build cookies: session token + clear state cookie
+	tokenCookie := cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken)
+	clearStateCookie := cookie.BuildClearOidcStateCookieString(false)
+
+	return &HandleOidcCallbackOutput{
+		SetCookie: []string{tokenCookie, clearStateCookie},
+		Body: struct {
+			Success      bool      `json:"success"`
+			Token        string    `json:"token"`
+			RefreshToken string    `json:"refreshToken"`
+			ExpiresAt    time.Time `json:"expiresAt"`
+			User         user.User `json:"user"`
+		}{
+			Success:      true,
+			Token:        tokenPair.AccessToken,
+			RefreshToken: tokenPair.RefreshToken,
+			ExpiresAt:    tokenPair.ExpiresAt,
+			User: user.User{
+				ID:            userModel.ID,
+				Username:      userModel.Username,
+				DisplayName:   userModel.DisplayName,
+				Email:         userModel.Email,
+				Roles:         userModel.Roles,
+				OidcSubjectId: userModel.OidcSubjectId,
+			},
 		},
-	})
+	}, nil
 }
-
-// Unused but needed for import
-var _ = humamw.GetCurrentUserFromContext

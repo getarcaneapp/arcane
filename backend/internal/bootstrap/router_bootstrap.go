@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/api"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
-	"github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"go.getarcane.app/types"
 )
@@ -75,9 +74,6 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 
 	apiGroup := router.Group("/api")
 
-	// OIDC URL and callback need Gin context for cookies
-	handlers.RegisterOidcGinRoutes(apiGroup, appServices.Auth, appServices.Oidc)
-
 	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
@@ -112,17 +108,18 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		ImageUpdate:       appServices.ImageUpdate,
 		Volume:            appServices.Volume,
 		Updater:           appServices.Updater,
+		CustomizeSearch:   appServices.CustomizeSearch,
+		System:            appServices.System,
+		SystemUpgrade:     appServices.SystemUpgrade,
 		Config:            cfg,
 	})
 
-	// Remaining Gin handlers (not yet migrated to Huma)
+	// Remaining Gin handlers (not yet migrated to Huma - WebSocket/streaming)
 	api.NewContainerHandler(apiGroup, appServices.Docker, appServices.Container, appServices.Image, authMiddleware, cfg)
 	api.NewImageUpdateHandler(apiGroup, appServices.ImageUpdate, authMiddleware)
 	api.NewNetworkHandler(apiGroup, appServices.Docker, appServices.Network, authMiddleware)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
-	api.NewSystemHandler(apiGroup, appServices.Docker, appServices.System, appServices.SystemUpgrade, authMiddleware, cfg)
 	api.NewNotificationHandler(apiGroup, appServices.Notification, appServices.Apprise, authMiddleware)
-	api.NewCustomizeHandler(apiGroup, appServices.CustomizeSearch, authMiddleware)
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {

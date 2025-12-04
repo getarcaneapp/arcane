@@ -90,3 +90,34 @@ func BuildClearTokenCookieString() string {
 	}
 	return cookie.String()
 }
+
+// BuildOidcStateCookieString builds a Set-Cookie header string for the OIDC state cookie.
+func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) string {
+	if maxAgeInSeconds < 0 {
+		maxAgeInSeconds = 0
+	}
+	cookie := &http.Cookie{
+		Name:     OidcStateCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAgeInSeconds,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
+}
+
+// BuildClearOidcStateCookieString builds a Set-Cookie header string to clear the OIDC state cookie.
+func BuildClearOidcStateCookieString(secure bool) string {
+	cookie := &http.Cookie{
+		Name:     OidcStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
+}

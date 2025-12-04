@@ -1,6 +1,3 @@
-// Package huma provides Huma API setup and configuration for OpenAPI generation.
-// This package allows gradual migration of handlers from Gin to Huma while
-// maintaining the existing Gin router.
 package huma
 
 import (
@@ -22,8 +19,21 @@ import (
 func customSchemaNamer(t reflect.Type, hint string) string {
 	name := huma.DefaultSchemaNamer(t, hint)
 
-	// Get the package path
+	// Get the package path - for non-pointer types this gives the full import path
 	pkgPath := t.PkgPath()
+
+	// For pointer types, get the element's package path
+	if pkgPath == "" && t.Kind() == reflect.Ptr {
+		pkgPath = t.Elem().PkgPath()
+	}
+
+	// Use type string representation for package identification
+	// Format: "pkgname.TypeName" - we extract the pkgname part
+	typeStr := t.String()
+	var shortPkg string
+	if dotIdx := strings.Index(typeStr, "."); dotIdx != -1 {
+		shortPkg = typeStr[:dotIdx]
+	}
 
 	// For types from our types package, prefix with the package name
 	if strings.HasPrefix(pkgPath, "go.getarcane.app/types/") {
@@ -35,6 +45,43 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 			pkgName = strings.ToUpper(pkgName[:1]) + pkgName[1:]
 			return pkgName + name
 		}
+	}
+
+	// Handle Docker SDK types that have name conflicts
+	// Docker has many packages with overlapping type names:
+	// types.ServiceConfig vs registry.ServiceConfig
+	// types.GenericResource vs swarm.GenericResource
+	// etc.
+	// We prefix ALL Docker types with their package name
+	dockerPackages := map[string]string{
+		"types":     "DockerTypes",
+		"registry":  "DockerRegistry",
+		"system":    "DockerSystem",
+		"container": "DockerContainer",
+		"network":   "DockerNetwork",
+		"volume":    "DockerVolume",
+		"swarm":     "DockerSwarm",
+		"mount":     "DockerMount",
+		"filters":   "DockerFilters",
+		"blkiodev":  "DockerBlkiodev",
+		"strslice":  "DockerStrslice",
+		"events":    "DockerEvents",
+		"image":     "DockerImage",
+	}
+
+	// Check if this is a Docker type based on pkgPath
+	if strings.Contains(pkgPath, "github.com/docker/docker") {
+		// Extract the last part of the package path
+		parts := strings.Split(pkgPath, "/")
+		lastPart := parts[len(parts)-1]
+		if prefix, ok := dockerPackages[lastPart]; ok {
+			return prefix + name
+		}
+	}
+
+	// Also check short package name from type string for nested/embedded types
+	if prefix, ok := dockerPackages[shortPkg]; ok {
+		return prefix + name
 	}
 
 	// Handle generic types like base.ApiResponse[T] where T is from go.getarcane.app/types
@@ -85,6 +132,9 @@ type Services struct {
 	ImageUpdate       *services.ImageUpdateService
 	Volume            *services.VolumeService
 	Updater           *services.UpdaterService
+	CustomizeSearch   *services.CustomizeSearchService
+	System            *services.SystemService
+	SystemUpgrade     *services.SystemUpgradeService
 	Config            *config.Config
 }
 
@@ -232,6 +282,9 @@ func registerHandlers(api huma.API, svc *Services) {
 	var imageUpdateSvc *services.ImageUpdateService
 	var volumeSvc *services.VolumeService
 	var updaterSvc *services.UpdaterService
+	var customizeSearchSvc *services.CustomizeSearchService
+	var systemSvc *services.SystemService
+	var systemUpgradeSvc *services.SystemUpgradeService
 	var cfg *config.Config
 
 	if svc != nil {
@@ -253,6 +306,9 @@ func registerHandlers(api huma.API, svc *Services) {
 		imageUpdateSvc = svc.ImageUpdate
 		volumeSvc = svc.Volume
 		updaterSvc = svc.Updater
+		customizeSearchSvc = svc.CustomizeSearch
+		systemSvc = svc.System
+		systemUpgradeSvc = svc.SystemUpgrade
 		cfg = svc.Config
 	}
 
@@ -303,4 +359,10 @@ func registerHandlers(api huma.API, svc *Services) {
 
 	// Updater handlers
 	handlers.RegisterUpdater(api, updaterSvc)
+
+	// Customize handlers
+	handlers.RegisterCustomize(api, customizeSearchSvc)
+
+	// System handlers (WebSocket stats remains in Gin)
+	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 }
