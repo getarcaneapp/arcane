@@ -25,7 +25,7 @@ export const load = async () => {
 	};
 
 	const user = await userService.getCurrentUser().catch(() => null);
-	
+
 	if (user) {
 		const environments = await tryCatch(environmentManagementService.getEnvironments(environmentRequestOptions));
 		if (!environments.error) {
@@ -41,6 +41,8 @@ export const load = async () => {
 		currentVersion: versionService.getCurrentVersion(),
 		displayVersion: versionService.getCurrentVersion(),
 		revision: 'unknown',
+		shortRevision: 'unknown',
+		goVersion: 'unknown',
 		isSemverVersion: false
 	};
 
@@ -52,6 +54,9 @@ export const load = async () => {
 			currentDigest: info.currentDigest,
 			displayVersion: info.displayVersion,
 			revision: info.revision,
+			shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
+			goVersion: info.goVersion || 'unknown',
+			buildTime: info.buildTime,
 			isSemverVersion: info.isSemverVersion,
 			newestVersion: info.newestVersion,
 			newestDigest: info.newestDigest,

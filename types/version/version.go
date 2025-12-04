@@ -16,10 +16,25 @@ type Info struct {
 	// Required: false
 	CurrentDigest string `json:"currentDigest,omitempty"`
 
-	// Revision is the revision identifier (e.g., commit hash).
+	// Revision is the full revision identifier (e.g., commit hash).
 	//
 	// Required: true
 	Revision string `json:"revision"`
+
+	// ShortRevision is the short revision identifier (first 8 chars of commit hash).
+	//
+	// Required: true
+	ShortRevision string `json:"shortRevision"`
+
+	// GoVersion is the Go runtime version used to build the application.
+	//
+	// Required: true
+	GoVersion string `json:"goVersion"`
+
+	// BuildTime is the timestamp when the application was built.
+	//
+	// Required: false
+	BuildTime string `json:"buildTime,omitempty"`
 
 	// DisplayVersion is the version string formatted for display.
 	//

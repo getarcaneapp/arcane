@@ -18,6 +18,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import * as Button from '$lib/components/ui/button/index.js';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
+	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -34,6 +35,8 @@
 	const sidebar = useSidebar();
 
 	let storeUser: User | null = $state(null);
+	let showVersionDialog = $state(false);
+
 	$effect(() => {
 		const unsub = userStore.subscribe((u) => (storeUser = u));
 		return unsub;
@@ -43,6 +46,12 @@
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
 </script>
+
+<VersionInfoDialog
+	bind:open={showVersionDialog}
+	onOpenChange={(open) => (showVersionDialog = open)}
+	versionInfo={versionInformation}
+/>
 
 <Sidebar.Root {collapsible} {variant} {...restProps}>
 	<Sidebar.Header class={isCollapsed ? 'gap-0 p-1 pb-2' : ''}>
@@ -109,11 +118,15 @@
 			{/if}
 		{/if}
 		<div class={`flex items-center justify-center ${isCollapsed ? 'px-1' : 'px-4'}`}>
-			<span class="text-muted-foreground/60 text-xs font-medium">
+			<button
+				type="button"
+				onclick={() => (showVersionDialog = true)}
+				class="text-muted-foreground/60 hover:text-muted-foreground cursor-pointer text-xs font-medium transition-colors"
+			>
 				{m.sidebar_version({
 					version: versionInformation?.displayVersion ?? versionInformation?.currentVersion ?? m.common_unknown()
 				})}
-			</span>
+			</button>
 		</div>
 	</Sidebar.Footer>
 </Sidebar.Root>
