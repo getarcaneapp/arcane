@@ -123,15 +123,15 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	return &report, nil
 }
 
-func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, error) {
+func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, networktypes.UsageCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	inUseByID := make(map[string]bool)
@@ -150,7 +150,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	rawNets, err := dockerClient.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list Docker networks: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
 
 	items := make([]networktypes.Summary, 0, len(rawNets))
@@ -230,6 +230,18 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 
+	// Calculate usage counts from items (before pagination)
+	counts := networktypes.UsageCounts{
+		Total: len(items),
+	}
+	for _, n := range items {
+		if n.InUse {
+			counts.Inuse++
+		} else {
+			counts.Unused++
+		}
+	}
+
 	totalPages := int64(0)
 	if params.Limit > 0 {
 		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
@@ -248,5 +260,5 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		GrandTotalItems: int64(result.TotalAvailable),
 	}
 
-	return result.Items, paginationResp, nil
+	return result.Items, paginationResp, counts, nil
 }

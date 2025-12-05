@@ -407,15 +407,15 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 	return nil
 }
 
-func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]containertypes.Summary, pagination.Response, error) {
+func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	dockerContainers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: includeAll})
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list Docker containers: %w", err)
+		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
 	items := make([]containertypes.Summary, 0, len(dockerContainers))
@@ -485,6 +485,18 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 
+	// Calculate status counts from items (before pagination)
+	counts := containertypes.StatusCounts{
+		TotalContainers: len(items),
+	}
+	for _, c := range items {
+		if c.State == "running" {
+			counts.RunningContainers++
+		} else {
+			counts.StoppedContainers++
+		}
+	}
+
 	totalPages := int64(0)
 	if params.Limit > 0 {
 		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
@@ -503,7 +515,7 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		GrandTotalItems: int64(result.TotalAvailable),
 	}
 
-	return result.Items, paginationResp, nil
+	return result.Items, paginationResp, counts, nil
 }
 
 // CreateExec creates an exec instance in the container

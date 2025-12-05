@@ -41,6 +41,7 @@ test.describe('Volumes Page', () => {
 
   test('Correct Volume Stat Card Counts', async ({ page }) => {
     await page.goto('/volumes');
+    await page.waitForLoadState('networkidle');
 
     await expect(page.locator('p:has-text("Total Volumes") + p')).toHaveText(volumeCount.totalVolumes.toString());
   });

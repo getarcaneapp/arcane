@@ -15,10 +15,13 @@ export const load: PageLoad = async () => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const [networks, networkUsageCounts] = await Promise.all([
-		networkService.getNetworks(networkRequestOptions),
-		networkService.getNetworkUsageCounts()
-	]);
+	// Single API call - counts are included in the response
+	const networks = await networkService.getNetworks(networkRequestOptions);
 
-	return { networks, networkRequestOptions, networkUsageCounts };
+	return {
+		networks,
+		networkRequestOptions,
+		// Use counts from the networks response
+		networkUsageCounts: networks.counts ?? { networksInuse: 0, networksUnused: 0, totalNetworks: 0 }
+	};
 };

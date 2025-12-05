@@ -4,8 +4,10 @@ import type { NetworkSummaryDto, NetworkUsageCounts, NetworkCreateRequest, Netwo
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
+export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
+
 export class NetworkService extends BaseAPIService {
-	async getNetworks(options?: SearchPaginationSortRequest): Promise<Paginated<NetworkSummaryDto>> {
+	async getNetworks(options?: SearchPaginationSortRequest): Promise<NetworksPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/networks`, { params });

@@ -10,8 +10,10 @@ import type {
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
+export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
+
 export class VolumeService extends BaseAPIService {
-	async getVolumes(options?: SearchPaginationSortRequest): Promise<Paginated<VolumeSummaryDto>> {
+	async getVolumes(options?: SearchPaginationSortRequest): Promise<VolumesPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/volumes`, { params });

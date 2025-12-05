@@ -22,9 +22,10 @@ type ContainerHandler struct {
 
 // Paginated response
 type ContainerPaginatedResponse struct {
-	Success    bool                     `json:"success"`
-	Data       []containertypes.Summary `json:"data"`
-	Pagination base.PaginationResponse  `json:"pagination"`
+	Success    bool                        `json:"success"`
+	Data       []containertypes.Summary    `json:"data"`
+	Counts     containertypes.StatusCounts `json:"counts"`
+	Pagination base.PaginationResponse     `json:"pagination"`
 }
 
 type ListContainersInput struct {
@@ -204,7 +205,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		},
 	}
 
-	containers, paginationResp, err := h.containerService.ListContainersPaginated(ctx, params, true)
+	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -213,6 +214,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		Body: ContainerPaginatedResponse{
 			Success: true,
 			Data:    containers,
+			Counts:  counts,
 			Pagination: base.PaginationResponse{
 				TotalPages:      paginationResp.TotalPages,
 				TotalItems:      paginationResp.TotalItems,

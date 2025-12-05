@@ -29,12 +29,11 @@
 			{
 				volumes: {
 					fetch: () => volumeService.getVolumes(requestOptions),
-					onSuccess: (data) => (volumes = data),
-					errorMessage: m.common_refresh_failed({ resource: m.volumes_title() })
-				},
-				counts: {
-					fetch: () => volumeService.getVolumeUsageCounts(),
-					onSuccess: (data) => (volumeUsageCounts = data),
+					onSuccess: (data) => {
+						volumes = data;
+						// Extract counts from the response - they're included in the list endpoint
+						volumeUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
+					},
 					errorMessage: m.common_refresh_failed({ resource: m.volumes_title() })
 				}
 			},

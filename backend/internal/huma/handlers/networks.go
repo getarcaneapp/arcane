@@ -20,9 +20,10 @@ type NetworkHandler struct {
 }
 
 type NetworkPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []networktypes.Summary  `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
+	Success    bool                     `json:"success"`
+	Data       []networktypes.Summary   `json:"data"`
+	Counts     networktypes.UsageCounts `json:"counts"`
+	Pagination base.PaginationResponse  `json:"pagination"`
 }
 
 type ListNetworksInput struct {
@@ -181,7 +182,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 		},
 	}
 
-	networks, paginationResp, err := h.networkService.ListNetworksPaginated(ctx, params)
+	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -190,6 +191,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 		Body: NetworkPaginatedResponse{
 			Success: true,
 			Data:    networks,
+			Counts:  counts,
 			Pagination: base.PaginationResponse{
 				TotalPages:      paginationResp.TotalPages,
 				TotalItems:      paginationResp.TotalItems,

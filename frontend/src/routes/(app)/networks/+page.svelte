@@ -28,12 +28,10 @@
 			{
 				networks: {
 					fetch: () => networkService.getNetworks(requestOptions),
-					onSuccess: (data) => (networks = data),
-					errorMessage: m.common_refresh_failed({ resource: m.networks_title() })
-				},
-				counts: {
-					fetch: () => networkService.getNetworkUsageCounts(),
-					onSuccess: (data) => (networkUsageCounts = data),
+					onSuccess: (data) => {
+						networks = data;
+						networkUsageCounts = data.counts ?? { networksInuse: 0, networksUnused: 0, totalNetworks: 0 };
+					},
 					errorMessage: m.common_refresh_failed({ resource: m.networks_title() })
 				}
 			},

@@ -9,8 +9,10 @@ import type {
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
+export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts>;
+
 export class ContainerService extends BaseAPIService {
-	async getContainers(options?: SearchPaginationSortRequest): Promise<Paginated<ContainerSummaryDto>> {
+	async getContainers(options?: SearchPaginationSortRequest): Promise<ContainersPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/containers`, { params });
