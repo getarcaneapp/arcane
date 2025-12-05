@@ -28,6 +28,15 @@ type RunUpdaterOutput struct {
 	Body base.ApiResponse[*updater.Result]
 }
 
+type UpdateContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID to update"`
+}
+
+type UpdateContainerOutput struct {
+	Body base.ApiResponse[*updater.Result]
+}
+
 type GetUpdaterStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
@@ -89,6 +98,19 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetUpdaterHistory)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/update",
+		Summary:     "Update a single container",
+		Description: "Pull the latest image and recreate a specific container",
+		Tags:        []string{"Updater", "Containers"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UpdateContainer)
 }
 
 // RunUpdater applies pending container updates.
@@ -151,6 +173,25 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 		Body: base.ApiResponse[[]models.AutoUpdateRecord]{
 			Success: true,
 			Data:    history,
+		},
+	}, nil
+}
+
+// UpdateContainer updates a single container by pulling the latest image and recreating it.
+func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
+	if h.updaterService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	out, err := h.updaterService.UpdateSingleContainer(ctx, input.ContainerID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
+	}
+
+	return &UpdateContainerOutput{
+		Body: base.ApiResponse[*updater.Result]{
+			Success: true,
+			Data:    out,
 		},
 	}, nil
 }

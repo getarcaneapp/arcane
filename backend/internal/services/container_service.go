@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	containertypes "go.getarcane.app/types/container"
 	"go.getarcane.app/types/containerregistry"
+	imagetypes "go.getarcane.app/types/image"
 )
 
 type ContainerService struct {
@@ -418,9 +419,39 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
+	// Collect unique image IDs for update info lookup
+	imageIDSet := make(map[string]struct{}, len(dockerContainers))
+	for _, dc := range dockerContainers {
+		if dc.ImageID != "" {
+			imageIDSet[dc.ImageID] = struct{}{}
+		}
+	}
+	imageIDs := make([]string, 0, len(imageIDSet))
+	for id := range imageIDSet {
+		imageIDs = append(imageIDs, id)
+	}
+
+	// Fetch update info for all images used by containers
+	var updateInfoMap map[string]*imagetypes.UpdateInfo
+	if s.imageService != nil && len(imageIDs) > 0 {
+		updateInfoMap, err = s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
+		if err != nil {
+			// Log error but continue - update info is optional
+			slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
+			updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
+		}
+	} else {
+		updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
+	}
+
 	items := make([]containertypes.Summary, 0, len(dockerContainers))
 	for _, dc := range dockerContainers {
-		items = append(items, containertypes.NewSummary(dc))
+		summary := containertypes.NewSummary(dc)
+		// Attach update info if available
+		if info, exists := updateInfoMap[dc.ImageID]; exists {
+			summary.UpdateInfo = info
+		}
+		items = append(items, summary)
 	}
 
 	config := pagination.Config[containertypes.Summary]{

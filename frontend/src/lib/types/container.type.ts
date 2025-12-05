@@ -1,5 +1,7 @@
 // Base Container Types
 
+import type { ImageUpdateInfoDto } from './image.type';
+
 export interface BaseContainer {
 	id: string;
 	names: string[];
@@ -62,6 +64,7 @@ export interface ContainerSummaryDto extends BaseContainer {
 	hostConfig: ContainerHostConfig;
 	networkSettings: ContainerNetworkSettings;
 	mounts: ContainerMounts[];
+	updateInfo?: ImageUpdateInfoDto;
 }
 
 export interface ContainerPorts {

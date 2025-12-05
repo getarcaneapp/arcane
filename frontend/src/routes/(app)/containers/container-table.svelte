@@ -6,6 +6,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { goto } from '$app/navigation';
@@ -35,6 +36,7 @@
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -57,6 +59,22 @@
 		remove: false,
 		updating: false
 	});
+
+	// Parse image reference into repo and tag
+	function parseImageRef(imageRef: string): { repo: string; tag: string } {
+		// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
+		const lastColon = imageRef.lastIndexOf(':');
+		// Check if colon is part of a tag (not a port in registry URL)
+		const hasTag = lastColon > 0 && !imageRef.substring(lastColon).includes('/');
+
+		if (hasTag) {
+			return {
+				repo: imageRef.substring(0, lastColon),
+				tag: imageRef.substring(lastColon + 1)
+			};
+		}
+		return { repo: imageRef, tag: 'latest' };
+	}
 
 	async function performContainerAction(action: string, id: string) {
 		isLoading[action as keyof typeof isLoading] = true;
@@ -136,6 +154,46 @@
 		});
 	}
 
+	async function handleUpdateContainer(container: ContainerSummaryDto) {
+		const containerName = container.names?.[0]?.replace(/^\//, '') || container.id.substring(0, 12);
+
+		openConfirmDialog({
+			title: m.containers_update_confirm_title(),
+			message: m.containers_update_confirm_message({ name: containerName }),
+			confirm: {
+				label: m.containers_update_container(),
+				action: async () => {
+					isLoading.updating = true;
+					try {
+						toast.info(m.containers_update_pulling_image());
+
+						// Use the new single container update endpoint
+						const result = await containerService.updateContainer(container.id);
+
+						if (result.failed > 0) {
+							const failedItem = result.items?.find((item: any) => item.status === 'failed');
+							toast.error(
+								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : '')
+							);
+						} else if (result.updated > 0) {
+							toast.success(m.containers_update_success({ name: containerName }));
+						} else {
+							toast.info(m.image_update_up_to_date_title());
+						}
+
+						// Refresh containers
+						containers = await containerService.getContainers(requestOptions);
+					} catch (error) {
+						console.error('Container update failed:', error);
+						toast.error(m.containers_update_failed({ name: containerName }));
+					} finally {
+						isLoading.updating = false;
+					}
+				}
+			}
+		});
+	}
+
 	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
 
 	const columns = [
@@ -143,6 +201,7 @@
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: true, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
+		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'status', title: m.common_status() },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
@@ -239,6 +298,18 @@
 	</span>
 {/snippet}
 
+{#snippet UpdateCell({ item }: { item: ContainerSummaryDto })}
+	{@const imageRef = parseImageRef(item.image)}
+	<ImageUpdateItem
+		updateInfo={item.updateInfo}
+		imageId={item.imageId}
+		repo={imageRef.repo}
+		tag={imageRef.tag}
+		onUpdateContainer={() => handleUpdateContainer(item)}
+		debugHasUpdate={true}
+	/>
+{/snippet}
+
 {#snippet ContainerMobileCardSnippet({
 	item,
 	mobileFieldVisibility
@@ -333,6 +404,17 @@
 					<ScanSearchIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
+
+				{#if item.updateInfo?.hasUpdate}
+					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={isLoading.updating || isAnyLoading}>
+						{#if isLoading.updating}
+							<Spinner class="size-4" />
+						{:else}
+							<ArrowUpCircleIcon class="size-4" />
+						{/if}
+						{m.containers_update_container()}
+					</DropdownMenu.Item>
+				{/if}
 
 				{#if item.state !== 'running'}
 					<DropdownMenu.Item onclick={() => performContainerAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>

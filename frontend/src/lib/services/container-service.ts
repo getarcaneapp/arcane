@@ -59,6 +59,11 @@ export class ContainerService extends BaseAPIService {
 
 		return this.handleResponse(this.api.delete(`/environments/${envId}/containers/${containerId}`, { params }));
 	}
+
+	async updateContainer(containerId: string): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
+	}
 }
 
 export const containerService = new ContainerService();

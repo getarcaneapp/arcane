@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	containerregistry "go.getarcane.app/types/containerregistry"
+	imagetypes "go.getarcane.app/types/image"
 )
 
 // Create is used to create a new container.
@@ -445,6 +446,11 @@ type Summary struct {
 	//
 	// Required: true
 	Mounts []Mount `json:"mounts"`
+
+	// UpdateInfo contains image update information for this container.
+	//
+	// Required: false
+	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
 }
 
 // Details represents detailed container information.
