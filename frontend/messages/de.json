@@ -301,7 +301,7 @@
 	"containers_restart_success": "Container erfolgreich neugestartet",
 	"containers_check_updates": "Container aktualisieren",
 	"containers_check_updates_failed": "Aktualisierungsprüfung der Container fehlgeschlagen",
-	"containers_check_updates_success": "Containererfolgreich aktualisiert",
+	"containers_check_updates_success": "Container erfolgreich aktualisiert",
 	"containers_remove_confirm_title": "Bestätigen des Entfernen des Containers",
 	"containers_remove_confirm_message": "Sind Sie sicher das Sie diesen Container löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
 	"containers_remove_force_label": "Entfernen erzwingen (Stopp erzwingen wenn der Container läuft)",
