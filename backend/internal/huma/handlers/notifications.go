@@ -99,7 +99,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.GetAllNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -108,7 +108,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.GetNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -117,7 +117,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CreateOrUpdateNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -126,7 +126,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.DeleteNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -135,7 +135,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/test/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.TestNotification)
 
 	huma.Register(api, huma.Operation{
@@ -144,7 +144,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/apprise",
 		Summary:     "Get Apprise settings",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.GetAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -153,7 +153,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/apprise",
 		Summary:     "Create or update Apprise settings",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CreateOrUpdateAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -162,7 +162,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/apprise/test",
 		Summary:     "Test Apprise notification",
 		Tags:        []string{"Notifications"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.TestAppriseNotification)
 }
 
@@ -187,7 +187,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 
 func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {
 	provider := models.NotificationProvider(input.Provider)
-	
+
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())

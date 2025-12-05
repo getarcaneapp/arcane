@@ -88,8 +88,13 @@ type GetImageUsageCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
+type ImageUsageCountsResponse struct {
+	Success bool              `json:"success"`
+	Data    image.UsageCounts `json:"data"`
+}
+
 type GetImageUsageCountsOutput struct {
-	Body base.ApiResponse[image.UsageCounts]
+	Body ImageUsageCountsResponse
 }
 
 type UploadImageInput struct {
@@ -408,7 +413,7 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 	}
 
 	return &GetImageUsageCountsOutput{
-		Body: base.ApiResponse[image.UsageCounts]{
+		Body: ImageUsageCountsResponse{
 			Success: true,
 			Data: image.UsageCounts{
 				Inuse:     inuse,

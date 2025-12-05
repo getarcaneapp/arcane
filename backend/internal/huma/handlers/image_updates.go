@@ -68,7 +68,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckImageUpdate)
 
 	huma.Register(api, huma.Operation{
@@ -77,7 +77,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -86,7 +86,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -95,7 +95,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check-batch",
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckMultipleImages)
 
 	huma.Register(api, huma.Operation{
@@ -104,7 +104,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check-all",
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckAllImages)
 
 	huma.Register(api, huma.Operation{
@@ -113,7 +113,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
-		Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.GetUpdateSummary)
 }
 

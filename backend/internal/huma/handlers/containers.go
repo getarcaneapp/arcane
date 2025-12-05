@@ -44,17 +44,29 @@ type GetContainerStatusCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
+// ContainerStatusCountsResponse is a dedicated response type to avoid schema name collision
+type ContainerStatusCountsResponse struct {
+	Success bool                        `json:"success"`
+	Data    containertypes.StatusCounts `json:"data"`
+}
+
 type GetContainerStatusCountsOutput struct {
-	Body base.ApiResponse[containertypes.StatusCounts]
+	Body ContainerStatusCountsResponse
 }
 
 type CreateContainerInput struct {
-	EnvironmentID string                `path:"id" doc:"Environment ID"`
-	Body          containertypes.Create `json:"body"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          containertypes.Create
+}
+
+// ContainerCreatedResponse is a dedicated response type
+type ContainerCreatedResponse struct {
+	Success bool                   `json:"success"`
+	Data    containertypes.Created `json:"data"`
 }
 
 type CreateContainerOutput struct {
-	Body base.ApiResponse[containertypes.Created]
+	Body ContainerCreatedResponse
 }
 
 type GetContainerInput struct {
@@ -62,8 +74,14 @@ type GetContainerInput struct {
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
+// ContainerDetailsResponse is a dedicated response type
+type ContainerDetailsResponse struct {
+	Success bool                   `json:"success"`
+	Data    containertypes.Details `json:"data"`
+}
+
 type GetContainerOutput struct {
-	Body base.ApiResponse[containertypes.Details]
+	Body ContainerDetailsResponse
 }
 
 type ContainerActionInput struct {
@@ -71,8 +89,14 @@ type ContainerActionInput struct {
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
+// ContainerActionResponse is a dedicated response type
+type ContainerActionResponse struct {
+	Success bool                 `json:"success"`
+	Data    base.MessageResponse `json:"data"`
+}
+
 type ContainerActionOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
+	Body ContainerActionResponse
 }
 
 type DeleteContainerInput struct {
@@ -83,7 +107,7 @@ type DeleteContainerInput struct {
 }
 
 type DeleteContainerOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
+	Body ContainerActionResponse
 }
 
 // RegisterContainers registers container endpoints.
@@ -211,7 +235,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	}
 
 	return &GetContainerStatusCountsOutput{
-		Body: base.ApiResponse[containertypes.StatusCounts]{
+		Body: ContainerStatusCountsResponse{
 			Success: true,
 			Data: containertypes.StatusCounts{
 				RunningContainers: int(running),
@@ -295,7 +319,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}
 
 	return &CreateContainerOutput{
-		Body: base.ApiResponse[containertypes.Created]{
+		Body: ContainerCreatedResponse{
 			Success: true,
 			Data:    out,
 		},
@@ -315,7 +339,7 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 	details := containertypes.NewDetails(containerInspect)
 
 	return &GetContainerOutput{
-		Body: base.ApiResponse[containertypes.Details]{
+		Body: ContainerDetailsResponse{
 			Success: true,
 			Data:    details,
 		},
@@ -337,7 +361,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 	}
 
 	return &ContainerActionOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container started successfully"},
 		},
@@ -359,7 +383,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 	}
 
 	return &ContainerActionOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container stopped successfully"},
 		},
@@ -381,7 +405,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}
 
 	return &ContainerActionOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container restarted successfully"},
 		},
@@ -403,7 +427,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 
 	return &DeleteContainerOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container deleted successfully"},
 		},

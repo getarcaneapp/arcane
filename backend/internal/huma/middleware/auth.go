@@ -11,6 +11,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 )
 
+const (
+	headerAgentBootstrap = "X-Arcane-Agent-Bootstrap"
+	headerAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	headerApiToken       = "X-API-TOKEN"          // #nosec G101: header name, not a credential
+	headerApiKey         = "X-API-Key"            // #nosec G101: header name, not a credential
+	agentPairingPrefix   = "/api/environments/0/agent/pair"
+)
+
 // ContextKey is a type for context keys used by Huma handlers.
 type ContextKey string
 
@@ -81,8 +89,43 @@ func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models
 }
 
 // tryApiKeyAuth checks if API key authentication should be allowed through.
+// Checks both X-API-TOKEN (primary) and X-API-Key (fallback) headers.
 func tryApiKeyAuth(ctx huma.Context) bool {
-	return ctx.Header("X-API-Key") != ""
+	return ctx.Header(headerApiToken) != "" || ctx.Header(headerApiKey) != ""
+}
+
+// tryAgentAuth checks if the request is from an authenticated agent.
+// Returns a sudo agent user if the agent token is valid.
+func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
+	if cfg == nil || !cfg.AgentMode {
+		return nil, false
+	}
+
+	path := ctx.URL().Path
+
+	// Check for agent bootstrap pairing
+	if strings.HasPrefix(path, agentPairingPrefix) &&
+		cfg.AgentBootstrapToken != "" &&
+		ctx.Header(headerAgentBootstrap) == cfg.AgentBootstrapToken {
+		return createAgentSudoUser(), true
+	}
+
+	// Check for agent token
+	if tok := ctx.Header(headerAgentToken); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
+		return createAgentSudoUser(), true
+	}
+
+	return nil, false
+}
+
+// createAgentSudoUser creates a sudo user for agent authentication.
+func createAgentSudoUser() *models.User {
+	email := "agent@arcane.dev"
+	return &models.User{
+		BaseModel: models.BaseModel{ID: "agent"},
+		Email:     &email,
+		Roles:     []string{"admin"},
+	}
 }
 
 // NewAuthBridge creates a Huma middleware that validates JWT tokens and
@@ -92,6 +135,16 @@ func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(c
 		if authService == nil {
 			next(ctx)
 			return
+		}
+
+		// Check agent authentication first (if in agent mode)
+		if cfg != nil && cfg.AgentMode {
+			if user, ok := tryAgentAuth(ctx, cfg); ok {
+				newCtx := setUserInContext(ctx.Context(), user)
+				ctx = huma.WithContext(ctx, newCtx)
+				next(ctx)
+				return
+			}
 		}
 
 		reqs := parseSecurityRequirements(ctx)
