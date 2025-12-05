@@ -14,7 +14,6 @@ import (
 const (
 	headerAgentBootstrap = "X-Arcane-Agent-Bootstrap"
 	headerAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	headerApiToken       = "X-API-TOKEN"          // #nosec G101: header name, not a credential
 	headerApiKey         = "X-API-Key"            // #nosec G101: header name, not a credential
 	agentPairingPrefix   = "/api/environments/0/agent/pair"
 )
@@ -89,9 +88,8 @@ func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models
 }
 
 // tryApiKeyAuth checks if API key authentication should be allowed through.
-// Checks both X-API-TOKEN (primary) and X-API-Key (fallback) headers.
 func tryApiKeyAuth(ctx huma.Context) bool {
-	return ctx.Header(headerApiToken) != "" || ctx.Header(headerApiKey) != ""
+	return ctx.Header(headerApiKey) != ""
 }
 
 // tryAgentAuth checks if the request is from an authenticated agent.

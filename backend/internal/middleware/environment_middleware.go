@@ -136,8 +136,8 @@ func (m *EnvironmentMiddleware) buildWebSocketHeaders(c *gin.Context, accessToke
 	hdr := http.Header{}
 
 	// Forward API key header if present
-	if apiKey := c.GetHeader("X-Api-Token"); apiKey != "" {
-		hdr.Set("X-Api-Token", apiKey)
+	if apiKey := c.GetHeader("X-Api-Key"); apiKey != "" {
+		hdr.Set("X-Api-Key", apiKey)
 	}
 
 	if auth := c.GetHeader("Authorization"); auth != "" {
