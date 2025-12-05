@@ -2,7 +2,8 @@ package event
 
 import "time"
 
-type Response struct {
+// Event represents an event in API responses.
+type Event struct {
 	// ID of the event.
 	//
 	// Required: true
@@ -79,7 +80,7 @@ type Response struct {
 	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 }
 
-type Create struct {
+type CreateEvent struct {
 	// Type of the event.
 	//
 	// Required: true
@@ -140,7 +141,7 @@ type ListReponse struct {
 	// Events is a list of events.
 	//
 	// Required: true
-	Events []Response `json:"events"`
+	Events []Event `json:"events"`
 
 	// Total number of events.
 	//

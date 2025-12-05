@@ -1,49 +1,59 @@
-import type { IPAM } from 'dockerode';
-
-export interface NetworkCreateDto {
-	Driver?: string;
-	CheckDuplicate?: boolean;
-	Internal?: boolean;
-	Attachable?: boolean;
-	Ingress?: boolean;
-	IPAM?: IPAM;
-	EnableIPv6?: boolean;
-	Options?: Record<string, string>;
-	Labels?: Record<string, string>;
+export interface IPAMConfig {
+	subnet?: string;
+	gateway?: string;
+	ipRange?: string;
+	auxAddress?: Record<string, string>;
 }
 
+export interface IPAM {
+	driver?: string;
+	options?: Record<string, string>;
+	config?: IPAMConfig[];
+}
+
+export interface NetworkCreateOptions {
+	driver?: string;
+	checkDuplicate?: boolean;
+	internal?: boolean;
+	attachable?: boolean;
+	ingress?: boolean;
+	ipam?: IPAM;
+	enableIPv6?: boolean;
+	options?: Record<string, string>;
+	labels?: Record<string, string>;
+}
+
+// Request sent to backend
 export interface NetworkCreateRequest {
 	name: string;
-	options: NetworkCreateDto;
+	options: NetworkCreateOptions;
 }
 
 export interface NetworkUsageCounts {
-	networksInuse: number;
-	networksUnused: number;
-	totalNetworks: number;
+	inuse: number;
+	unused: number;
+	total: number;
 }
 
 export interface ContainerEndpointDto {
-	Name: string;
-	EndpointID: string;
-	MacAddress: string;
-	IPv4Address: string;
-	IPv6Address: string;
+	name: string;
+	endpointId: string;
+	macAddress: string;
+	ipv4Address: string;
+	ipv6Address: string;
 }
 
 export interface IPAMSubnetDto {
-	Subnet: string;
-	Gateway?: string;
-	IPRange?: string;
-	// Support both keys we see in Docker variants
-	AuxAddress?: Record<string, string>;
-	AuxiliaryAddresses?: Record<string, string>;
+	subnet: string;
+	gateway?: string;
+	ipRange?: string;
+	auxAddress?: Record<string, string>;
 }
 
 export interface IPAMDto {
-	Driver: string;
-	Options?: Record<string, string>;
-	Config?: IPAMSubnetDto[];
+	driver: string;
+	options?: Record<string, string>;
+	config?: IPAMSubnetDto[];
 }
 
 export interface NetworkSummaryDto {
@@ -51,7 +61,7 @@ export interface NetworkSummaryDto {
 	name: string;
 	driver: string;
 	scope: string;
-	created: string; // ISO RFC3339 string
+	created: string;
 	options?: Record<string, string> | null;
 	labels?: Record<string, string> | null;
 	inUse: boolean;

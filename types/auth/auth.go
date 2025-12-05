@@ -1,32 +1,39 @@
 package auth
 
+import (
+	"time"
+
+	"go.getarcane.app/types/user"
+)
+
+// Login represents the login request body.
 type Login struct {
-	// Username of the user.
-	//
-	// Required: true
-	Username string `json:"username" binding:"required"`
-
-	// Password of the user.
-	//
-	// Required: true
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"admin"`
+	Password string `json:"password" minLength:"1" doc:"Password of the user"`
 }
 
+// Refresh represents the token refresh request body.
 type Refresh struct {
-	// RefreshToken is the refresh token used to obtain a new access token.
-	//
-	// Required: true
-	RefreshToken string `json:"refreshToken" binding:"required"`
+	RefreshToken string `json:"refreshToken" minLength:"1" doc:"Refresh token used to obtain a new access token"`
 }
 
+// PasswordChange represents the password change request body.
 type PasswordChange struct {
-	// CurrentPassword is the current password of the user.
-	//
-	// Required: false
-	CurrentPassword string `json:"currentPassword"`
+	CurrentPassword string `json:"currentPassword,omitempty" doc:"Current password of the user (required for non-OIDC users)"`
+	NewPassword     string `json:"newPassword" minLength:"8" doc:"New password for the user"`
+}
 
-	// NewPassword is the new password for the user.
-	//
-	// Required: true
-	NewPassword string `json:"newPassword" binding:"required"`
+// LoginResponse represents the successful login response data.
+type LoginResponse struct {
+	Token        string        `json:"token" doc:"JWT access token"`
+	RefreshToken string        `json:"refreshToken" doc:"Refresh token for obtaining new access tokens"`
+	ExpiresAt    time.Time     `json:"expiresAt" doc:"Expiration time of the access token"`
+	User         user.User `json:"user" doc:"Authenticated user information"`
+}
+
+// TokenRefreshResponse represents the successful token refresh response data.
+type TokenRefreshResponse struct {
+	Token        string    `json:"token" doc:"New JWT access token"`
+	RefreshToken string    `json:"refreshToken" doc:"New refresh token"`
+	ExpiresAt    time.Time `json:"expiresAt" doc:"Expiration time of the new access token"`
 }

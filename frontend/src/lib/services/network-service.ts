@@ -1,12 +1,13 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { NetworkSummaryDto, NetworkUsageCounts, NetworkCreateRequest, NetworkCreateDto } from '$lib/types/network.type';
+import type { NetworkSummaryDto, NetworkUsageCounts, NetworkCreateRequest, NetworkCreateOptions } from '$lib/types/network.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import type { NetworkCreateOptions } from 'dockerode';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
+export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
+
 export class NetworkService extends BaseAPIService {
-	async getNetworks(options?: SearchPaginationSortRequest): Promise<Paginated<NetworkSummaryDto>> {
+	async getNetworks(options?: SearchPaginationSortRequest): Promise<NetworksPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/networks`, { params });
@@ -24,7 +25,7 @@ export class NetworkService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/networks/${networkId}`));
 	}
 
-	async createNetwork(name: string, options: NetworkCreateDto): Promise<any> {
+	async createNetwork(name: string, options: NetworkCreateOptions): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const request: NetworkCreateRequest = {
 			name,

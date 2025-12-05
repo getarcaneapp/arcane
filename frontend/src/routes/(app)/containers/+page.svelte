@@ -31,12 +31,10 @@
 			{
 				containers: {
 					fetch: () => containerService.getContainers(requestOptions),
-					onSuccess: (data) => (containers = data),
-					errorMessage: m.common_refresh_failed({ resource: m.containers_title() })
-				},
-				counts: {
-					fetch: () => containerService.getContainerStatusCounts(),
-					onSuccess: (data) => (containerStatusCounts = data),
+					onSuccess: (data) => {
+						containers = data;
+						containerStatusCounts = data.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 };
+					},
 					errorMessage: m.common_refresh_failed({ resource: m.containers_title() })
 				}
 			},
@@ -111,7 +109,13 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards} statCardsColumns={3}>
+<ResourcePageLayout
+	title={m.containers_title()}
+	subtitle={m.containers_subtitle()}
+	{actionButtons}
+	{statCards}
+	statCardsColumns={3}
+>
 	{#snippet mainContent()}
 		<ContainerTable bind:containers bind:selectedIds bind:requestOptions {baseServerUrl} />
 	{/snippet}

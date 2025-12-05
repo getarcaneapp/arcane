@@ -114,3 +114,26 @@ type Result struct {
 	// Required: true
 	Items []ResourceResult `json:"items"`
 }
+
+// Status represents the current status of the updater.
+type Status struct {
+	// UpdatingContainers is the count of containers currently being updated.
+	//
+	// Required: true
+	UpdatingContainers int `json:"updatingContainers"`
+
+	// UpdatingProjects is the count of projects currently being updated.
+	//
+	// Required: true
+	UpdatingProjects int `json:"updatingProjects"`
+
+	// ContainerIds is a list of container IDs currently being updated.
+	//
+	// Required: true
+	ContainerIds []string `json:"containerIds"`
+
+	// ProjectIds is a list of project IDs currently being updated.
+	//
+	// Required: true
+	ProjectIds []string `json:"projectIds"`
+}

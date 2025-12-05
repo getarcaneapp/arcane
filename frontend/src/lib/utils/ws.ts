@@ -171,7 +171,7 @@ export function createStatsWebSocket(opts: {
 	const buildUrl = () => {
 		const envId = opts.getEnvId() || '0';
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${envId}/system/stats/ws`;
+		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats`;
 	};
 
 	return new ReconnectingWebSocket<SystemStats>({
@@ -198,7 +198,7 @@ export function createContainerStatsWebSocket(opts: {
 	const buildUrl = () => {
 		const envId = opts.getEnvId() || '0';
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${envId}/containers/${opts.containerId}/stats/ws`;
+		return `${protocol}://${location.host}/api/environments/${envId}/ws/containers/${opts.containerId}/stats`;
 	};
 
 	return new ReconnectingWebSocket<any>({

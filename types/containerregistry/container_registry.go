@@ -2,7 +2,8 @@ package containerregistry
 
 import "time"
 
-type Response struct {
+// Registry represents a container registry in API responses.
+type ContainerRegistry struct {
 	// ID of the container registry.
 	//
 	// Required: true

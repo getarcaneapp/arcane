@@ -58,7 +58,7 @@ func (s *ApiKeyService) validateApiKeyHash(hash, key string) error {
 	return s.userService.ValidatePassword(hash, key)
 }
 
-func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.Create) (*apikey.ApiKeyCreatedDto, error) {
+func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 	return result, paginationResp, nil
 }
 
-func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.Update) (*apikey.ApiKey, error) {
+func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

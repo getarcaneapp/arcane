@@ -66,7 +66,16 @@ type Test struct {
 	Message *string `json:"message,omitempty"`
 }
 
-type Response struct {
+// TestConnectionRequest is the request body for testing a connection.
+type TestConnectionRequest struct {
+	// ApiUrl is an optional URL to test instead of the saved one.
+	//
+	// Required: false
+	ApiUrl *string `json:"apiUrl,omitempty"`
+}
+
+// Environment represents an environment in API responses.
+type Environment struct {
 	// ID of the environment.
 	//
 	// Required: true
@@ -91,4 +100,20 @@ type Response struct {
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
+}
+
+// AgentPairRequest is the request body for pairing with an agent.
+type AgentPairRequest struct {
+	// Rotate indicates if the token should be rotated.
+	//
+	// Required: false
+	Rotate *bool `json:"rotate,omitempty"`
+}
+
+// AgentPairResponse is the response from pairing with an agent.
+type AgentPairResponse struct {
+	// Token is the pairing token.
+	//
+	// Required: true
+	Token string `json:"token"`
 }

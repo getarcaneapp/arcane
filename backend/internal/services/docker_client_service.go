@@ -105,7 +105,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	return images, inuse, unused, total, nil
 }
 
-func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, totalNetworks int, inuseNetworks int, unusedNetworks int, error error) {
+func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, inuseNetworks int, unusedNetworks int, totalNetworks int, error error) {
 	dockerClient, err := s.GetClient()
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
