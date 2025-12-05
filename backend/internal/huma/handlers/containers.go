@@ -8,6 +8,7 @@ import (
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
@@ -199,6 +200,10 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{Search: input.Search},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
 		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
@@ -207,7 +212,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 
 	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerListError{Err: err}).Error())
 	}
 
 	return &ListContainersOutput{
@@ -233,7 +238,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 
 	_, running, stopped, total, err := h.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerStatusCountsError{Err: err}).Error())
 	}
 
 	return &GetContainerStatusCountsOutput{
@@ -276,7 +281,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	for containerPort, hostPort := range input.Body.Ports {
 		port, err := nat.NewPort("tcp", containerPort)
 		if err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
 		}
 		config.ExposedPorts[port] = struct{}{}
 		portBindings[port] = []nat.PortBinding{{HostPort: hostPort}}
@@ -309,7 +314,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 
 	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerCreationError{Err: err}).Error())
 	}
 
 	out := containertypes.Created{
@@ -335,7 +340,7 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 
 	containerInspect, err := h.containerService.GetContainerByID(ctx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, huma.Error404NotFound((&common.ContainerRetrievalError{Err: err}).Error())
 	}
 
 	details := containertypes.NewDetails(containerInspect)
@@ -359,7 +364,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 	}
 
 	if err := h.containerService.StartContainer(ctx, input.ContainerID, *user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
 	}
 
 	return &ContainerActionOutput{
@@ -381,7 +386,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 	}
 
 	if err := h.containerService.StopContainer(ctx, input.ContainerID, *user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
 	}
 
 	return &ContainerActionOutput{
@@ -403,7 +408,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}
 
 	if err := h.containerService.RestartContainer(ctx, input.ContainerID, *user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
 	}
 
 	return &ContainerActionOutput{
@@ -425,7 +430,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 
 	if err := h.containerService.DeleteContainer(ctx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ContainerDeleteError{Err: err}).Error())
 	}
 
 	return &DeleteContainerOutput{

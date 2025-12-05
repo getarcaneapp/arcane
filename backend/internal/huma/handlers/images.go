@@ -41,6 +41,8 @@ type ListImagesInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
 }
 
 type ListImagesOutput struct {
@@ -230,15 +232,27 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	filters := make(map[string]string)
+	if input.InUse != "" {
+		filters["inUse"] = input.InUse
+	}
+	if input.Updates != "" {
+		filters["updates"] = input.Updates
+	}
+
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{
 			Search: input.Search,
 		},
-		SortParams: pagination.SortParams{},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
 		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
+		Filters: filters,
 	}
 
 	if params.Limit == 0 {
@@ -443,7 +457,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	// Get file from multipart form
 	files := input.RawBody.File["file"]
 	if len(files) == 0 {
-		return nil, huma.Error400BadRequest("file is required")
+		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
 	}
 
 	fileHeader := files[0]
@@ -467,14 +481,14 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	// Open the file
 	file, err := fileHeader.Open()
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to open uploaded file")
+		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
 	}
 	defer file.Close()
 
 	// Load the image
 	result, err := h.imageService.LoadImageFromReader(ctx, file, fileName, *user, maxSizeBytes)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to upload image: %v", err))
+		return nil, huma.Error500InternalServerError((&common.ImageLoadError{Err: err}).Error())
 	}
 
 	return &UploadImageOutput{

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"go.getarcane.app/types/base"
 	"go.getarcane.app/types/imageupdate"
@@ -119,12 +120,12 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 
 func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckImageUpdateInput) (*CheckImageUpdateOutput, error) {
 	if input.ImageRef == "" {
-		return nil, huma.Error400BadRequest("imageRef required")
+		return nil, huma.Error400BadRequest((&common.ImageRefRequiredError{}).Error())
 	}
 
 	result, err := h.imageUpdateService.CheckImageUpdate(ctx, input.ImageRef)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
 
 	return &CheckImageUpdateOutput{
@@ -137,12 +138,12 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 
 func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *CheckImageUpdateByIDInput) (*CheckImageUpdateByIDOutput, error) {
 	if input.ImageID == "" {
-		return nil, huma.Error400BadRequest("imageId required")
+		return nil, huma.Error400BadRequest((&common.ImageIDRequiredError{}).Error())
 	}
 
 	result, err := h.imageUpdateService.CheckImageUpdateByID(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
 
 	return &CheckImageUpdateByIDOutput{
@@ -154,9 +155,13 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 }
 
 func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *CheckMultipleImagesInput) (*CheckMultipleImagesOutput, error) {
+	if len(input.Body.ImageRefs) == 0 {
+		return nil, huma.Error400BadRequest((&common.ImageRefListRequiredError{}).Error())
+	}
+
 	results, err := h.imageUpdateService.CheckMultipleImages(ctx, input.Body.ImageRefs, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
 	}
 
 	return &CheckMultipleImagesOutput{
@@ -170,7 +175,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*CheckAllImagesOutput, error) {
 	results, err := h.imageUpdateService.CheckAllImages(ctx, 0, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.AllImageUpdateCheckError{Err: err}).Error())
 	}
 
 	return &CheckAllImagesOutput{
@@ -184,7 +189,7 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpdateSummaryInput) (*GetUpdateSummaryOutput, error) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.UpdateSummaryError{Err: err}).Error())
 	}
 
 	return &GetUpdateSummaryOutput{

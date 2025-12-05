@@ -248,12 +248,12 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 
 	dockerClient, err := h.dockerService.GetClient()
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("docker connection failed")
+		return nil, huma.Error503ServiceUnavailable((&common.DockerConnectionError{Err: err}).Error())
 	}
 
 	_, err = dockerClient.Ping(ctx)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("docker daemon not responsive")
+		return nil, huma.Error503ServiceUnavailable((&common.DockerPingError{Err: err}).Error())
 	}
 
 	return &SystemHealthOutput{}, nil

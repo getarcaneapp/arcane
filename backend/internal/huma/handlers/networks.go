@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	dockernetwork "github.com/docker/docker/api/types/network"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
@@ -32,6 +33,7 @@ type ListNetworksInput struct {
 	Limit         int    `query:"pagination[limit]" default:"20"`
 	SortCol       string `query:"sort[column]"`
 	SortDir       string `query:"sort[direction]" default:"asc"`
+	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 }
 
 type ListNetworksOutput struct {
@@ -172,16 +174,26 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
+	filters := make(map[string]string)
+	if input.InUse != "" {
+		filters["inUse"] = input.InUse
+	}
+
 	params := pagination.QueryParams{
+		SortParams: pagination.SortParams{
+			Sort:  input.SortCol,
+			Order: pagination.SortOrder(input.SortDir),
+		},
 		PaginationParams: pagination.PaginationParams{
 			Start: (input.Page - 1) * input.Limit,
 			Limit: input.Limit,
 		},
+		Filters: filters,
 	}
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NetworkListError{Err: err}).Error())
 	}
 
 	return &ListNetworksOutput{
@@ -203,7 +215,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*GetNetworkCountsOutput, error) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NetworkUsageCountsError{Err: err}).Error())
 	}
 
 	return &GetNetworkCountsOutput{
@@ -229,12 +241,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 
 	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("mapping error")
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
 
 	return &CreateNetworkOutput{
@@ -248,12 +260,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*GetNetworkOutput, error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, huma.Error404NotFound((&common.NetworkNotFoundError{Err: err}).Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("mapping error")
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
 
 	return &GetNetworkOutput{
@@ -271,7 +283,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	}
 
 	if err := h.networkService.RemoveNetwork(ctx, input.NetworkID, *user); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
 	}
 
 	return &DeleteNetworkOutput{
@@ -285,12 +297,12 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
 	report, err := h.networkService.PruneNetworks(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("mapping error")
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
 
 	return &PruneNetworksOutput{

@@ -328,7 +328,10 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		SearchQuery: pagination.SearchQuery{
 			Search: input.Search,
 		},
-		SortParams: pagination.SortParams{},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
 		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,

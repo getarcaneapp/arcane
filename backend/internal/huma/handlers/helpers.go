@@ -15,13 +15,15 @@ func buildPaginationParams(page, limit int, sortCol, sortDir string) pagination.
 	// Convert page-based to offset-based
 	start := (page - 1) * limit
 	params := pagination.QueryParams{
+		SortParams: pagination.SortParams{
+			Sort:  sortCol,
+			Order: pagination.SortOrder(sortDir),
+		},
 		PaginationParams: pagination.PaginationParams{
 			Start: start,
 			Limit: limit,
 		},
 		Filters: make(map[string]string),
 	}
-	// Note: SortParams has private fields, sorting is handled via ExtractListModifiersQueryParams
-	// For Huma handlers, the service layer handles sorting internally
 	return params
 }

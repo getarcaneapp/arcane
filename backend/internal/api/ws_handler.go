@@ -267,7 +267,7 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Container ID is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
 		return
 	}
 
@@ -351,7 +351,7 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 func (h *WebSocketHandler) ContainerStats(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Container ID is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
 		return
 	}
 
@@ -413,7 +413,7 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string) *ws.Hub {
 func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Container ID is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
 		return
 	}
 
@@ -431,14 +431,14 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{cmd})
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Failed to create exec: %v\r\n", err)))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecCreationError{Err: err}).Error()+"\r\n"))
 		return
 	}
 
 	// Attach to exec
 	stdin, stdout, err := h.containerService.AttachExec(ctx, execID)
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Failed to attach exec: %v\r\n", err)))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecAttachError{Err: err}).Error()+"\r\n"))
 		return
 	}
 	defer stdin.Close()

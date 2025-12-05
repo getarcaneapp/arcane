@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"go.getarcane.app/types/base"
@@ -169,7 +170,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
 	settings, err := h.notificationService.GetAllSettings(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NotificationSettingsListError{Err: err}).Error())
 	}
 
 	responses := make([]notification.Response, len(settings))
@@ -190,7 +191,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, huma.Error404NotFound((&common.NotificationSettingsNotFoundError{}).Error())
 	}
 
 	response := notification.Response{
@@ -204,14 +205,19 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 }
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
+	provider := models.NotificationProvider(input.Body.Provider)
+	if provider != models.NotificationProviderDiscord && provider != models.NotificationProviderEmail {
+		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
+	}
+
 	settings, err := h.notificationService.CreateOrUpdateSettings(
 		ctx,
-		models.NotificationProvider(input.Body.Provider),
+		provider,
 		input.Body.Enabled,
 		models.JSON(input.Body.Config),
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NotificationSettingsUpdateError{Err: err}).Error())
 	}
 
 	response := notification.Response{
@@ -228,7 +234,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NotificationSettingsDeletionError{Err: err}).Error())
 	}
 
 	return &DeleteNotificationSettingsOutput{
@@ -243,7 +249,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.TestNotification(ctx, provider, input.Type); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
 	}
 
 	return &TestNotificationOutput{
@@ -257,7 +263,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *GetAppriseSettingsInput) (*GetAppriseSettingsOutput, error) {
 	settings, err := h.appriseService.GetSettings(ctx)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, huma.Error404NotFound((&common.AppriseSettingsNotFoundError{}).Error())
 	}
 
 	response := notification.AppriseResponse{
@@ -284,7 +290,7 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(ctx context.Context,
 		input.Body.ContainerUpdateTag,
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.AppriseSettingsUpdateError{Err: err}).Error())
 	}
 
 	response := notification.AppriseResponse{
@@ -300,7 +306,7 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(ctx context.Context,
 
 func (h *NotificationHandler) TestAppriseNotification(ctx context.Context, input *TestAppriseNotificationInput) (*TestAppriseNotificationOutput, error) {
 	if err := h.appriseService.TestNotification(ctx); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error500InternalServerError((&common.AppriseTestError{Err: err}).Error())
 	}
 
 	return &TestAppriseNotificationOutput{

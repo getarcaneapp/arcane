@@ -23,14 +23,6 @@ func tokenCookieName(c *gin.Context) string {
 	return InsecureTokenCookieName
 }
 
-func CreateTokenCookie(c *gin.Context, maxAgeInSeconds int, token string) {
-	if maxAgeInSeconds < 0 {
-		maxAgeInSeconds = 0
-	}
-	name := tokenCookieName(c)
-	c.SetCookie(name, token, maxAgeInSeconds, "/", "", isSecure(c), true)
-}
-
 func ClearTokenCookie(c *gin.Context) {
 	name := tokenCookieName(c)
 	c.SetCookie(name, "", -1, "/", "", isSecure(c), true)
@@ -42,22 +34,6 @@ func GetTokenCookie(c *gin.Context) (string, error) {
 		return v, nil
 	}
 	return c.Cookie(InsecureTokenCookieName)
-}
-
-func CreateOidcStateCookie(c *gin.Context, value string, maxAgeInSeconds int) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	if maxAgeInSeconds < 0 {
-		maxAgeInSeconds = 0
-	}
-	c.SetCookie(OidcStateCookieName, value, maxAgeInSeconds, "/", "", c.Request.TLS != nil, true)
-}
-
-func GetOidcStateCookie(c *gin.Context) (string, error) {
-	return c.Cookie(OidcStateCookieName)
-}
-
-func ClearOidcStateCookie(c *gin.Context) {
-	c.SetCookie(OidcStateCookieName, "", -1, "/", "", c.Request.TLS != nil, true)
 }
 
 // BuildTokenCookieString builds a Set-Cookie header string for Huma handlers.
