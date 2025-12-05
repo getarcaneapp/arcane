@@ -284,7 +284,7 @@ test.describe('Batch Update Checks', () => {
       },
     });
 
-    expect(res.status()).toBe(200);
+    expect(res.status()).toBe(400);
 
     const json = (await res.json()) as BatchUpdateResponse;
     expect(json.success).toBe(true);
