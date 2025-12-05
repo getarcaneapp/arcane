@@ -4,11 +4,21 @@ ARG BUILD_TAGS=""
 # Stage 1: Build Frontend
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
 RUN npm install -g --force corepack@v0.34.5 && corepack enable
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+ENV CI=true
 WORKDIR /build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY frontend/package.json ./frontend/package.json
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm fetch
+
+COPY package.json ./
 COPY frontend ./frontend
-RUN --mount=type=cache,target=/root/.pnpm-store pnpm -C frontend install --frozen-lockfile
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install -r --offline
 
 ENV BUILD_PATH=dist
 RUN pnpm -C frontend build
@@ -22,14 +32,15 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \ 
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY ./.arcane.json ./arcane.json
-COPY ./go.work ./go.work
-COPY ./types ./types
-COPY ./cli ./cli
-COPY ./backend/go.mod ./backend/go.sum ./backend/
+COPY go.work ./
+COPY types ./types
+COPY cli ./cli
+COPY backend/go.mod backend/go.sum ./backend/
 WORKDIR /build/backend
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY ./backend ./
+COPY backend ./
+COPY .arcane.json ../arcane.json
+
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
     VERSION=$(jq -r '.version // "dev"' ../arcane.json) && \
