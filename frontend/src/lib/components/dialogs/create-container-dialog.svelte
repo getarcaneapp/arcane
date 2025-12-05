@@ -18,7 +18,7 @@
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import ShieldIcon from '@lucide/svelte/icons/shield';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import type { ContainerCreateOptions } from 'dockerode';
+	import type { ContainerCreateRequest } from '$lib/types/container.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
@@ -26,7 +26,7 @@
 
 	type CreateContainerFormProps = {
 		open: boolean;
-		onSubmit: (data: ContainerCreateOptions) => void;
+		onSubmit: (data: ContainerCreateRequest) => void;
 		isLoading: boolean;
 		availableImages?: string[];
 		availableNetworks?: string[];
@@ -211,11 +211,11 @@
 		});
 
 		// Parse port bindings
-		const dynamicPortBindings: Record<string, Array<{ HostPort: string }>> = {};
+		const dynamicPortBindings: Record<string, Array<{ hostPort: string }>> = {};
 		portMappings.forEach((mapping) => {
 			if (mapping.container.trim() && mapping.host.trim()) {
 				const containerPort = `${mapping.container.trim()}/${mapping.protocol}`;
-				dynamicPortBindings[containerPort] = [{ HostPort: mapping.host.trim() }];
+				dynamicPortBindings[containerPort] = [{ hostPort: mapping.host.trim() }];
 			}
 		});
 
@@ -241,34 +241,27 @@
 		const labels = parseKeyValuePairs(data.labels || '');
 		const exposedPorts = parsePortList(data.exposedPorts || '');
 
-		const options: ContainerCreateOptions = {
+		const options: ContainerCreateRequest = {
 			name: data.containerName.trim(),
-			Image: data.image.trim(),
-			Cmd: data.command.trim() ? data.command.trim().split(' ') : undefined,
-			WorkingDir: data.workingDir.trim() || undefined,
-			User: data.user.trim() || undefined,
-			Hostname: data.hostname.trim() || undefined,
-			Domainname: data.domainname.trim() || undefined,
-			AttachStdout: data.attachStdout,
-			AttachStderr: data.attachStderr,
-			AttachStdin: data.attachStdin,
-			Tty: data.tty,
-			OpenStdin: data.openStdin,
-			StdinOnce: data.stdinOnce,
-			Env: dynamicEnvVars.length > 0 ? dynamicEnvVars : undefined,
-			Labels: Object.keys(labels).length > 0 ? labels : undefined,
-			ExposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
-			HostConfig: {
-				Binds: allBinds.length > 0 ? allBinds : undefined,
-				PortBindings: Object.keys(dynamicPortBindings).length > 0 ? dynamicPortBindings : undefined,
-				NetworkMode: data.networkDisabled ? 'none' : undefined,
-				PublishAllPorts: data.publishAllPorts,
-				Privileged: data.privileged,
-				ReadonlyRootfs: data.readonlyRootfs,
-				AutoRemove: data.autoRemove,
-				RestartPolicy: {
-					Name: data.restartPolicy,
-					MaximumRetryCount: data.restartPolicy === 'on-failure' ? data.restartMaxRetries : undefined
+			image: data.image.trim(),
+			cmd: data.command.trim() ? data.command.trim().split(' ') : undefined,
+			workingDir: data.workingDir.trim() || undefined,
+			user: data.user.trim() || undefined,
+			tty: data.tty,
+			openStdin: data.openStdin,
+			stdinOnce: data.stdinOnce,
+			env: dynamicEnvVars.length > 0 ? dynamicEnvVars : undefined,
+			labels: Object.keys(labels).length > 0 ? labels : undefined,
+			exposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
+			hostConfig: {
+				binds: allBinds.length > 0 ? allBinds : undefined,
+				portBindings: Object.keys(dynamicPortBindings).length > 0 ? dynamicPortBindings : undefined,
+				networkMode: data.networkDisabled ? 'none' : undefined,
+				privileged: data.privileged,
+				autoRemove: data.autoRemove,
+				restartPolicy: {
+					name: data.restartPolicy as 'no' | 'always' | 'on-failure' | 'unless-stopped',
+					maximumRetryCount: data.restartPolicy === 'on-failure' ? data.restartMaxRetries : undefined
 				}
 			}
 		};

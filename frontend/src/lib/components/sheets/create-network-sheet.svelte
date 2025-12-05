@@ -9,7 +9,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import NetworkIcon from '@lucide/svelte/icons/network';
 	import XIcon from '@lucide/svelte/icons/x';
-	import type { NetworkCreateOptions } from 'dockerode';
+	import type { NetworkCreateOptions } from '$lib/types/network.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
@@ -17,7 +17,7 @@
 
 	type CreateNetworkFormProps = {
 		open: boolean;
-		onSubmit: (data: NetworkCreateOptions) => void;
+		onSubmit: (name: string, options: NetworkCreateOptions) => void;
 		isLoading: boolean;
 	};
 
@@ -109,34 +109,33 @@
 		const driverOptions = parseKeyValuePairs(data.driverOptions || '');
 
 		const options: NetworkCreateOptions = {
-			Name: data.networkName.trim(),
-			Driver: data.networkDriver,
-			CheckDuplicate: data.checkDuplicate,
-			Internal: data.internal,
-			Labels: Object.keys(finalLabels).length > 0 ? finalLabels : undefined,
-			Options: Object.keys(driverOptions).length > 0 ? driverOptions : undefined
+			driver: data.networkDriver,
+			checkDuplicate: data.checkDuplicate,
+			internal: data.internal,
+			labels: Object.keys(finalLabels).length > 0 ? finalLabels : undefined,
+			options: Object.keys(driverOptions).length > 0 ? driverOptions : undefined
 		};
 
 		// Add IPAM configuration if enabled
 		if (data.enableIpam && (data.subnet?.trim() || data.gateway?.trim())) {
-			const ipamConfig: { Subnet?: string; Gateway?: string } = {};
+			const ipamConfig: { subnet?: string; gateway?: string } = {};
 
 			if (data.subnet?.trim()) {
-				ipamConfig.Subnet = data.subnet.trim();
+				ipamConfig.subnet = data.subnet.trim();
 			}
 			if (data.gateway?.trim()) {
-				ipamConfig.Gateway = data.gateway.trim();
+				ipamConfig.gateway = data.gateway.trim();
 			}
 
 			if (Object.keys(ipamConfig).length > 0) {
-				options.IPAM = {
-					Driver: 'default',
-					Config: [ipamConfig]
+				options.ipam = {
+					driver: 'default',
+					config: [ipamConfig]
 				};
 			}
 		}
 
-		onSubmit(options);
+		onSubmit(data.networkName.trim(), options);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

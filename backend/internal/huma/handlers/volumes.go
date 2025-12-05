@@ -300,7 +300,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		Name:       input.Body.Name,
 		Driver:     input.Body.Driver,
 		Labels:     input.Body.Labels,
-		DriverOpts: input.Body.Options,
+		DriverOpts: input.Body.DriverOpts,
 	}
 
 	response, err := h.volumeService.CreateVolume(ctx, options, *user)

@@ -144,35 +144,49 @@ type CreateResponse struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// IPAMConfig contains IP address management configuration for a subnet.
+type IPAMConfig struct {
+	Subnet     string            `json:"subnet,omitempty"`
+	Gateway    string            `json:"gateway,omitempty"`
+	IPRange    string            `json:"ipRange,omitempty"`
+	AuxAddress map[string]string `json:"auxAddress,omitempty"`
+}
+
+// IPAM contains IP Address Management configuration.
+type IPAM struct {
+	Driver  string            `json:"driver,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+	Config  []IPAMConfig      `json:"config,omitempty"`
+}
+
 // CreateOptions contains options for creating a network.
-// This matches the frontend's expected format.
 type CreateOptions struct {
 	// Driver is the network driver to use (e.g., bridge, overlay).
-	Driver string `json:"Driver,omitempty"`
+	Driver string `json:"driver,omitempty" doc:"Network driver (e.g., bridge, overlay)"`
 
 	// CheckDuplicate requests daemon to check for networks with same name.
-	CheckDuplicate bool `json:"CheckDuplicate,omitempty"`
+	CheckDuplicate bool `json:"checkDuplicate,omitempty" doc:"Check for duplicate network names"`
 
 	// Internal restricts external access to the network.
-	Internal bool `json:"Internal,omitempty"`
+	Internal bool `json:"internal,omitempty" doc:"Restrict external access to the network"`
 
 	// Attachable allows manual container attachment in swarm mode.
-	Attachable bool `json:"Attachable,omitempty"`
+	Attachable bool `json:"attachable,omitempty" doc:"Allow manual container attachment"`
 
 	// Ingress enables routing-mesh for swarm cluster.
-	Ingress bool `json:"Ingress,omitempty"`
+	Ingress bool `json:"ingress,omitempty" doc:"Enable routing-mesh for swarm cluster"`
 
 	// IPAM configuration for the network.
-	IPAM *network.IPAM `json:"IPAM,omitempty"`
+	IPAM *IPAM `json:"ipam,omitempty" doc:"IP Address Management configuration"`
 
 	// EnableIPv6 enables IPv6 networking.
-	EnableIPv6 bool `json:"EnableIPv6,omitempty"`
+	EnableIPv6 bool `json:"enableIPv6,omitempty" doc:"Enable IPv6 networking"`
 
 	// Options are driver-specific options.
-	Options map[string]string `json:"Options,omitempty"`
+	Options map[string]string `json:"options,omitempty" doc:"Driver-specific options"`
 
 	// Labels are user-defined metadata.
-	Labels map[string]string `json:"Labels,omitempty"`
+	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
 }
 
 // ToDockerCreateOptions converts to Docker SDK CreateOptions.
@@ -182,16 +196,34 @@ func (o CreateOptions) ToDockerCreateOptions() network.CreateOptions {
 		enableIPv6 = &o.EnableIPv6
 	}
 
-	return network.CreateOptions{
+	opts := network.CreateOptions{
 		Driver:     o.Driver,
 		Internal:   o.Internal,
 		Attachable: o.Attachable,
 		Ingress:    o.Ingress,
-		IPAM:       o.IPAM,
 		EnableIPv6: enableIPv6,
 		Options:    o.Options,
 		Labels:     o.Labels,
 	}
+
+	// Convert IPAM if present
+	if o.IPAM != nil {
+		dockerIPAM := &network.IPAM{
+			Driver:  o.IPAM.Driver,
+			Options: o.IPAM.Options,
+		}
+		for _, cfg := range o.IPAM.Config {
+			dockerIPAM.Config = append(dockerIPAM.Config, network.IPAMConfig{
+				Subnet:     cfg.Subnet,
+				Gateway:    cfg.Gateway,
+				IPRange:    cfg.IPRange,
+				AuxAddress: cfg.AuxAddress,
+			})
+		}
+		opts.IPAM = dockerIPAM
+	}
+
+	return opts
 }
 
 type PruneReport struct {

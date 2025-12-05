@@ -5,7 +5,7 @@
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import type { VolumeCreateOptions } from 'dockerode';
+	import type { VolumeCreateRequest } from '$lib/types/volume.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
@@ -13,7 +13,7 @@
 
 	type CreateVolumeFormProps = {
 		open: boolean;
-		onSubmit: (data: VolumeCreateOptions) => void;
+		onSubmit: (data: VolumeCreateRequest) => void;
 		isLoading: boolean;
 	};
 
@@ -71,11 +71,11 @@
 		const driverOpts = parseKeyValuePairs(data.volumeOptText || '');
 		const labels = parseKeyValuePairs(data.volumeLabels || '');
 
-		const volumeOptions: VolumeCreateOptions = {
-			Name: data.volumeName.trim(),
-			Driver: data.volumeDriver,
-			DriverOpts: Object.keys(driverOpts).length ? driverOpts : undefined,
-			Labels: Object.keys(labels).length ? labels : undefined
+		const volumeOptions: VolumeCreateRequest = {
+			name: data.volumeName.trim(),
+			driver: data.volumeDriver,
+			driverOpts: Object.keys(driverOpts).length ? driverOpts : undefined,
+			labels: Object.keys(labels).length ? labels : undefined
 		};
 
 		onSubmit(volumeOptions);
