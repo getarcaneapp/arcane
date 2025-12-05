@@ -65,17 +65,17 @@ type UsageCounts struct {
 	// Inuse is the number of volumes currently in use.
 	//
 	// Required: true
-	Inuse int `json:"volumesInuse"`
+	Inuse int `json:"inuse"`
 
 	// Unused is the number of volumes not in use.
 	//
 	// Required: true
-	Unused int `json:"volumesUnused"`
+	Unused int `json:"unused"`
 
 	// Total is the total number of volumes.
 	//
 	// Required: true
-	Total int `json:"totalVolumes"`
+	Total int `json:"total"`
 }
 
 // PruneReport is the result of a volume prune operation.

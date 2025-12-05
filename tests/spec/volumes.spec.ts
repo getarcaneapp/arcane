@@ -43,7 +43,8 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.locator('p:has-text("Total Volumes") + p')).toHaveText(volumeCount.total.toString());
+    const totalCard = page.locator('div').filter({ hasText: /^Total Volumes/ }).first();
+    await expect(totalCard.locator('p').nth(1)).toHaveText(volumeCount.total.toString());
   });
 
   test('Create Volume Sheet Opens', async ({ page }) => {

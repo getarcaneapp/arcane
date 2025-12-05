@@ -213,9 +213,9 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 		Body: NetworkCountsApiResponse{
 			Success: true,
 			Data: networktypes.UsageCounts{
-				Inuse:  int(inuse),
-				Unused: int(unused),
-				Total:  int(total),
+				Inuse:  inuse,
+				Unused: unused,
+				Total:  total,
 			},
 		},
 	}, nil

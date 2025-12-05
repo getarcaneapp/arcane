@@ -22,6 +22,6 @@ export const load: PageLoad = async () => {
 		networks,
 		networkRequestOptions,
 		// Use counts from the networks response
-		networkUsageCounts: networks.counts ?? { networksInuse: 0, networksUnused: 0, totalNetworks: 0 }
+		networkUsageCounts: networks.counts ?? { inuse: 0, unused: 0, total: 0 }
 	};
 };

@@ -57,17 +57,17 @@ type UsageCounts struct {
 	// Inuse is the number of networks currently in use.
 	//
 	// Required: true
-	Inuse int `json:"networksInuse"`
+	Inuse int `json:"inuse"`
 
 	// Unused is the number of networks not in use.
 	//
 	// Required: true
-	Unused int `json:"networksUnused"`
+	Unused int `json:"unused"`
 
 	// Total is the total number of networks.
 	//
 	// Required: true
-	Total int `json:"totalNetworks"`
+	Total int `json:"total"`
 }
 
 type Inspect struct {

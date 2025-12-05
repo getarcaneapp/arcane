@@ -34,8 +34,9 @@ export async function fetchVolumeCountsWithRetry(page: Page, maxRetries = 3): Pr
     async () => {
       const res = await page.request.get('/api/environments/0/volumes/counts');
       const json = await res.json().catch(() => null);
-      const data = Array.isArray(json) ? json : json?.data?.data ?? json?.data ?? [];
-      return (data ?? []) as VolumeUsageCounts;
+      // API returns { success: true, data: { inuse, unused, total } }
+      const data = json?.data ?? { inuse: 0, unused: 0, total: 0 };
+      return data as VolumeUsageCounts;
     },
     maxRetries,
     800
@@ -85,8 +86,9 @@ export async function fetchNetworksCountsWithRetry(page: Page, maxRetries = 3): 
     async () => {
       const res = await page.request.get('/api/environments/0/networks/counts');
       const json = await res.json().catch(() => null);
-      const data = Array.isArray(json) ? json : json?.data?.data ?? json?.data ?? [];
-      return (data ?? []) as NetworkUsageCounts;
+      // API returns { success: true, data: { inuse, unused, total } }
+      const data = json?.data ?? { inuse: 0, unused: 0, total: 0 };
+      return data as NetworkUsageCounts;
     },
     maxRetries,
     800

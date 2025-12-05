@@ -30,7 +30,7 @@
 					fetch: () => networkService.getNetworks(requestOptions),
 					onSuccess: (data) => {
 						networks = data;
-						networkUsageCounts = data.counts ?? { networksInuse: 0, networksUnused: 0, totalNetworks: 0 };
+						networkUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
 					},
 					errorMessage: m.common_refresh_failed({ resource: m.networks_title() })
 				}
@@ -75,14 +75,14 @@
 	const statCards: StatCardConfig[] = $derived([
 		{
 			title: m.networks_total(),
-			value: networkUsageCounts.totalNetworks,
+			value: networkUsageCounts.total,
 			icon: NetworkIcon,
 			iconColor: 'text-blue-500',
 			class: 'border-l-4 border-l-blue-500'
 		},
 		{
 			title: m.unused_networks(),
-			value: networkUsageCounts.networksUnused,
+			value: networkUsageCounts.unused,
 			icon: EthernetPortIcon,
 			iconColor: 'text-amber-500',
 			class: 'border-l-4 border-l-amber-500'

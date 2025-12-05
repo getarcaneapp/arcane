@@ -30,9 +30,9 @@ export interface NetworkCreateRequest {
 }
 
 export interface NetworkUsageCounts {
-	networksInuse: number;
-	networksUnused: number;
-	totalNetworks: number;
+	inuse: number;
+	unused: number;
+	total: number;
 }
 
 export interface ContainerEndpointDto {

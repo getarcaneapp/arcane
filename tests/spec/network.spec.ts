@@ -25,8 +25,18 @@ test.describe('Networks Page', () => {
 
   test('Stat cards show correct counts', async ({ page }) => {
     await navigateToNetworks(page);
-    await expect(page.locator('p:has-text("Total Networks") + p')).toHaveText(String(networkCount.total));
-    await expect(page.locator('p:has-text("Unused Networks") + p')).toHaveText(String(networkCount.unused));
+
+    // Fetch counts directly in the test to ensure we have fresh data
+    const counts = await fetchNetworksCountsWithRetry(page);
+
+    console.log('Network Counts:', counts);
+
+    // Use the div filter locator to find stat cards
+    const totalValue = page.locator('div').filter({ hasText: 'Total Networks' }).nth(5).locator('p').nth(1);
+    const unusedValue = page.locator('div').filter({ hasText: 'Unused Networks' }).nth(5).locator('p').nth(1);
+
+    await expect(totalValue).toHaveText(String(counts.total));
+    await expect(unusedValue).toHaveText(String(counts.unused));
   });
 
   test('Table displays when networks exist, else empty state', async ({ page }) => {
