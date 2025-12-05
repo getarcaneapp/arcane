@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "Questa è l'unica volta che vedrai questa chiave. Assicurati di copiarla e memorizzarla in modo sicuro.",
 	"api_key_copied_success": "Chiave API copiata negli appunti",
 	"api_key_page_title": "Chiavi API",
-	"api_key_page_description": "Gestisci le chiavi API per l'accesso programmatico ad Arcane",
+	"api_key_page_description": "Gestisci le chiavi API per l'accesso programmatico ad Arcane. Visualizza l'API Reference <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\"></a> per i dettagli di utilizzo.",
 	"api_key_updated_success": "API key \"{name}\" aggiornato con successo",
 	"api_key_update_failed": "Impossibile aggiornare la chiave API \"{name}\"",
 	"api_key_created_success": "Chiave API \"{name}\" creata con successo",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Impossibile eliminare le chiavi API {count}",
 	"common_done": "Fatto",
 	"common_important": "Importante",
-	"select_a_date": "Seleziona una data"
+	"select_a_date": "Seleziona una data",
+	"api_reference": "Riferimento API"
 }
