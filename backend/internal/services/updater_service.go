@@ -312,17 +312,14 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Get container info
-	containers, err := dcli.ContainerList(ctx, container.ListOptions{All: true})
+	containers, err := dcli.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("id", containerID))})
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
 
 	var targetContainer *container.Summary
-	for _, c := range containers {
-		if c.ID == containerID || strings.HasPrefix(c.ID, containerID) {
-			targetContainer = &c
-			break
-		}
+	if len(containers) > 0 {
+		targetContainer = &containers[0]
 	}
 
 	if targetContainer == nil {
