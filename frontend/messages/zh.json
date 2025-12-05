@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "这是您唯一看到此密钥的时间。请确保复制并安全存储它。",
 	"api_key_copied_success": "API 密钥已复制到剪贴板",
 	"api_key_page_title": "API 密钥",
-	"api_key_page_description": "管理 API 密钥用于编程访问奥术符",
+	"api_key_page_description": "Manage API keys for programmatic access to Arcane. View the <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\">API Reference</a> for usage details.",
 	"api_key_updated_success": "API key \"{name}\" updated successfully",
 	"api_key_update_failed": "Failed to update API key \"{name}\"",
 	"api_key_created_success": "API key \"{name}\" created successfully",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Failed to delete {count} API key(s)",
 	"common_done": "完成",
 	"common_important": "重要的",
-	"select_a_date": "选择日期"
+	"select_a_date": "选择日期",
+	"api_reference": "API 参考"
 }
