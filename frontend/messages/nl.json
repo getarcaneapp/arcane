@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "Dit is de enige keer dat je deze sleutel ziet. Zorg ervoor dat je deze kopiëren en veilig opslaat.",
 	"api_key_copied_success": "API-sleutel naar klembord gekopieerd",
 	"api_key_page_title": "API sleutels",
-	"api_key_page_description": "Beheer API-sleutels voor programmatische toegang tot Arcane",
+	"api_key_page_description": "Beheer API-sleutels voor programmatische toegang tot Arcane. Bekijk de <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\">API Referentie</a> voor gebruiksdetails.",
 	"api_key_updated_success": "API-sleutel \"{name}\" succesvol bijgewerkt",
 	"api_key_update_failed": "API-sleutel bijwerken is mislukt \"{name}\"",
 	"api_key_created_success": "API-sleutel \"{name}\" succesvol aangemaakt",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Kan {count} API-sleutel(s) niet verwijderen",
 	"common_done": "Voltooid",
 	"common_important": "Belangrijke",
-	"select_a_date": "Selecteer een datum"
+	"select_a_date": "Selecteer een datum",
+	"api_reference": "API Referentie"
 }
