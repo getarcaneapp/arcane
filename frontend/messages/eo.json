@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "This is the only time you will see this key. Make sure to copy it and store it securely.",
 	"api_key_copied_success": "API key copied to clipboard",
 	"api_key_page_title": "API Keys",
-	"api_key_page_description": "Manage API keys for programmatic access to Arcane",
+	"api_key_page_description": "Manage API keys for programmatic access to Arcane. View the <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\">API Reference</a> for usage details.",
 	"api_key_updated_success": "API key \"{name}\" updated successfully",
 	"api_key_update_failed": "Failed to update API key \"{name}\"",
 	"api_key_created_success": "API key \"{name}\" created successfully",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Failed to delete {count} API key(s)",
 	"common_done": "Done",
 	"common_important": "Important",
-	"select_a_date": "Select a date"
+	"select_a_date": "Select a date",
+	"api_reference": "API Reference"
 }
