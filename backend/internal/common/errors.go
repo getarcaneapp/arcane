@@ -466,12 +466,6 @@ func (e *ImageIDRequiredError) Error() string {
 	return "imageId parameter is required"
 }
 
-type ImageRefListRequiredError struct{}
-
-func (e *ImageRefListRequiredError) Error() string {
-	return "At least one imageRef is required"
-}
-
 type BatchImageUpdateCheckError struct {
 	Err error
 }

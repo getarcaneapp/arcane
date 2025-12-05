@@ -155,8 +155,14 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 }
 
 func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *CheckMultipleImagesInput) (*CheckMultipleImagesOutput, error) {
+	// Empty batch is valid - return empty results
 	if len(input.Body.ImageRefs) == 0 {
-		return nil, huma.Error400BadRequest((&common.ImageRefListRequiredError{}).Error())
+		return &CheckMultipleImagesOutput{
+			Body: base.ApiResponse[imageupdate.BatchResponse]{
+				Success: true,
+				Data:    imageupdate.BatchResponse{},
+			},
+		}, nil
 	}
 
 	results, err := h.imageUpdateService.CheckMultipleImages(ctx, input.Body.ImageRefs, input.Body.Credentials)
