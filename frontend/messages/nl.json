@@ -1086,7 +1086,7 @@
 	"version_info_full_commit": "Volledige Commit Hash",
 	"version_info_go_version": "Go Versie",
 	"version_info_build_time": "Bouw tijd",
-	"version_info_digest": "Afbeelding Samenvatting",
+	"version_info_digest": "Image Samenvatting",
 	"version_info_view_release": "Bekijk Release",
 	"sidebar_management": "Beheer",
 	"sidebar_customization": "Aanpassen",
