@@ -144,6 +144,56 @@ type CreateResponse struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// CreateOptions contains options for creating a network.
+// This matches the frontend's expected format.
+type CreateOptions struct {
+	// Driver is the network driver to use (e.g., bridge, overlay).
+	Driver string `json:"Driver,omitempty"`
+
+	// CheckDuplicate requests daemon to check for networks with same name.
+	CheckDuplicate bool `json:"CheckDuplicate,omitempty"`
+
+	// Internal restricts external access to the network.
+	Internal bool `json:"Internal,omitempty"`
+
+	// Attachable allows manual container attachment in swarm mode.
+	Attachable bool `json:"Attachable,omitempty"`
+
+	// Ingress enables routing-mesh for swarm cluster.
+	Ingress bool `json:"Ingress,omitempty"`
+
+	// IPAM configuration for the network.
+	IPAM *network.IPAM `json:"IPAM,omitempty"`
+
+	// EnableIPv6 enables IPv6 networking.
+	EnableIPv6 bool `json:"EnableIPv6,omitempty"`
+
+	// Options are driver-specific options.
+	Options map[string]string `json:"Options,omitempty"`
+
+	// Labels are user-defined metadata.
+	Labels map[string]string `json:"Labels,omitempty"`
+}
+
+// ToDockerCreateOptions converts to Docker SDK CreateOptions.
+func (o CreateOptions) ToDockerCreateOptions() network.CreateOptions {
+	var enableIPv6 *bool
+	if o.EnableIPv6 {
+		enableIPv6 = &o.EnableIPv6
+	}
+
+	return network.CreateOptions{
+		Driver:     o.Driver,
+		Internal:   o.Internal,
+		Attachable: o.Attachable,
+		Ingress:    o.Ingress,
+		IPAM:       o.IPAM,
+		EnableIPv6: enableIPv6,
+		Options:    o.Options,
+		Labels:     o.Labels,
+	}
+}
+
 type PruneReport struct {
 	// NetworksDeleted is a list of network IDs that were deleted.
 	//

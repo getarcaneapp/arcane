@@ -88,7 +88,6 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	)
 	apiGroup.Use(envMiddleware)
 
-	// Setup Huma API after envMiddleware so environment-scoped routes work
 	_ = huma.SetupAPI(router, apiGroup, cfg, &huma.Services{
 		User:              appServices.User,
 		Auth:              appServices.Auth,
@@ -118,7 +117,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Config:            cfg,
 	})
 
-	// Remaining Gin handlers (WebSocket/streaming - not yet migrated to Huma)
+	// Remaining Gin handlers (WebSocket/streaming)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
 
 	if cfg.Environment != "production" {

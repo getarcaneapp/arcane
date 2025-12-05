@@ -58,9 +58,9 @@ type NetworkCreatedApiResponse struct {
 type CreateNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          struct {
-		Name    string                      `json:"name"`
-		Options dockernetwork.CreateOptions `json:"options"`
-	} `json:"body"`
+		Name    string                     `json:"name" minLength:"1" doc:"Name of the network"`
+		Options networktypes.CreateOptions `json:"options" doc:"Network creation options"`
+	}
 }
 
 type CreateNetworkOutput struct {
@@ -225,7 +225,10 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, input.Body.Options, *user)
+	// Convert to Docker SDK options
+	dockerOptions := input.Body.Options.ToDockerCreateOptions()
+
+	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

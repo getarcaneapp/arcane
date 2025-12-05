@@ -330,6 +330,10 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
+	// Get full image name with tag and credentials
+	fullImageName := input.Body.GetFullImageName()
+	credentials := input.Body.GetCredentials()
+
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
@@ -339,7 +343,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			writer := humaCtx.BodyWriter()
 
-			if err := h.imageService.PullImage(humaCtx.Context(), input.Body.ImageName, writer, *user, input.Body.Credentials); err != nil {
+			if err := h.imageService.PullImage(humaCtx.Context(), fullImageName, writer, *user, credentials); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
