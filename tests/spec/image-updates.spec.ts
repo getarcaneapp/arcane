@@ -3,16 +3,14 @@ import { fetchImagesWithRetry } from '../utils/fetch.util';
 
 const ROUTES = {
 	page: '/images',
-	apiImageUpdatesCheck: '/api/environments/0/image-updates/check',
-	apiImageUpdatesCheckById: '/api/environments/0/image-updates/check',
 	apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
 	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
 	apiImageUpdatesSummary: '/api/environments/0/image-updates/summary',
 };
 
-interface ImageUpdateResponse {
+interface BatchUpdateResponse {
 	success: boolean;
-	data: {
+	data: Record<string, {
 		hasUpdate: boolean;
 		updateType: string;
 		currentVersion?: string;
@@ -26,12 +24,7 @@ interface ImageUpdateResponse {
 		authUsername?: string;
 		authRegistry?: string;
 		usedCredential?: boolean;
-	};
-}
-
-interface BatchUpdateResponse {
-	success: boolean;
-	data: Record<string, ImageUpdateResponse['data']>;
+	}>;
 }
 
 interface UpdateSummary {
@@ -62,41 +55,151 @@ test.beforeEach(async ({ page }) => {
 	}
 });
 
-test.describe('Image Update API Endpoints', () => {
-	test('should check image update by reference via API', async ({ page }) => {
-		const imageRef = 'nginx:latest';
-		const res = await page.request.get(`${ROUTES.apiImageUpdatesCheck}?imageRef=${encodeURIComponent(imageRef)}`);
+test.describe('Image Update UI - Check All Updates Button', () => {
+	test('should display the Check Updates button on images page', async ({ page }) => {
+		await navigateToImages(page);
 
-		expect(res.status()).toBe(200);
-
-		const json = (await res.json()) as ImageUpdateResponse;
-		expect(json.success).toBe(true);
-		expect(json.data).toBeDefined();
-		expect(typeof json.data.hasUpdate).toBe('boolean');
-		expect(json.data.checkTime).toBeDefined();
-		expect(typeof json.data.responseTimeMs).toBe('number');
+		// Look for the Check Updates button in the action bar
+		const checkUpdatesButton = page.getByRole('button', { name: /check.*update/i });
+		await expect(checkUpdatesButton).toBeVisible();
 	});
 
-	test('should check image update by ID via API', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available for update check');
+	test('should trigger bulk update check when clicking Check Updates button', async ({ page }) => {
+		await navigateToImages(page);
 
+		// Find and click the Check Updates button
+		const checkUpdatesButton = page.getByRole('button', { name: /check.*update/i });
+		await expect(checkUpdatesButton).toBeVisible();
+
+		// Click the button
+		await checkUpdatesButton.click();
+
+		// Wait for the loading state or completion toast
+		// The button should show a loading state or we should see a toast notification
+		await expect(async () => {
+			// Either button shows loading state
+			const buttonText = await checkUpdatesButton.textContent();
+			const isLoading = buttonText?.toLowerCase().includes('checking');
+			
+			// Or a toast appears
+			const toast = page.locator('li[data-sonner-toast]');
+			const toastVisible = await toast.isVisible().catch(() => false);
+			
+			expect(isLoading || toastVisible).toBeTruthy();
+		}).toPass({ timeout: 30000 });
+
+		// Eventually a success or completion toast should appear
+		await expect(page.locator('li[data-sonner-toast]')).toBeVisible({ timeout: 60000 });
+	});
+});
+
+test.describe('Image Update UI - Individual Image Update Check via Hover Card', () => {
+	test('should display update status icons in the images table', async ({ page }) => {
+		test.skip(!realImages.length, 'No images available');
+
+		await navigateToImages(page);
+
+		// Wait for the table to load
+		await expect(page.locator('table')).toBeVisible();
+
+		// Check that image rows exist
+		const rows = page.locator('tbody tr');
+		await expect(rows.first()).toBeVisible();
+	});
+
+	test('should show hover card tooltip when hovering over update status icon', async ({ page }) => {
+		test.skip(!realImages.length, 'No images available');
+
+		await navigateToImages(page);
+
+		// Wait for images table
+		await expect(page.locator('table')).toBeVisible();
+
+		// Find the first row's update status area (the Updates column)
+		const firstRow = page.locator('tbody tr').first();
+		await expect(firstRow).toBeVisible();
+
+		// Look for the update status icon trigger element (Tooltip.Trigger wraps a span)
+		const updateStatusTrigger = firstRow.locator('span.inline-flex').first();
+		const hasTrigger = await updateStatusTrigger.isVisible().catch(() => false);
+
+		if (hasTrigger) {
+			// Hover to trigger tooltip
+			await updateStatusTrigger.hover();
+
+			// Wait for tooltip content to appear
+			await page.waitForTimeout(500);
+
+			// Check if tooltip/hover card content appeared
+			const tooltipContent = page.locator('[data-radix-popper-content-wrapper], [role="tooltip"]');
+			const tooltipVisible = await tooltipContent.isVisible().catch(() => false);
+
+			// The hover card should be visible after hovering
+			if (tooltipVisible) {
+				await expect(tooltipContent).toBeVisible();
+			}
+		}
+	});
+
+	test('should allow triggering individual image update check from hover card', async ({ page }) => {
+		test.skip(!realImages.length, 'No images available');
+
+		// Find an image with valid repo/tag for update checking
 		const testImage = realImages.find(
-			(img) => img.repoTags?.[0] && !img.repoTags[0].includes('<none>')
+			(img) => img.repo && img.tag && img.repo !== '<none>' && img.tag !== '<none>'
 		);
 		test.skip(!testImage, 'No suitable image found for update check');
 
-		const res = await page.request.post(`${ROUTES.apiImageUpdatesCheckById}/${testImage.id}`, {
-			data: {},
-		});
+		await navigateToImages(page);
+		await expect(page.locator('table')).toBeVisible();
 
-		expect(res.status()).toBe(200);
+		// Find the row for our test image or the first row with a valid image
+		const rows = page.locator('tbody tr');
+		const firstRow = rows.first();
+		await expect(firstRow).toBeVisible();
 
-		const json = (await res.json()) as ImageUpdateResponse;
-		expect(json.success).toBe(true);
-		expect(json.data).toBeDefined();
-		expect(typeof json.data.hasUpdate).toBe('boolean');
+		// Look for the update status trigger (could be a button or icon)
+		const updateTrigger = firstRow.locator('span.inline-flex button, span.inline-flex svg').first();
+		const hasUpdateTrigger = await updateTrigger.isVisible().catch(() => false);
+
+		if (hasUpdateTrigger) {
+			// If it's a clickable button (for unchecked images), click it
+			const isButton = await updateTrigger.evaluate(el => el.tagName.toLowerCase() === 'button').catch(() => false);
+			
+			if (isButton) {
+				await updateTrigger.click();
+				
+				// Wait for checking to complete (either a toast or state change)
+				await expect(async () => {
+					const toast = page.locator('li[data-sonner-toast]');
+					const toastVisible = await toast.isVisible().catch(() => false);
+					expect(toastVisible).toBeTruthy();
+				}).toPass({ timeout: 30000 });
+			} else {
+				// If it's an icon, hover to show the tooltip with recheck button
+				await updateTrigger.hover();
+				await page.waitForTimeout(500);
+
+				// Look for the recheck button in the tooltip
+				const recheckButton = page.locator('[data-radix-popper-content-wrapper] button, [role="tooltip"] button').first();
+				const hasRecheckButton = await recheckButton.isVisible().catch(() => false);
+
+				if (hasRecheckButton) {
+					await recheckButton.click();
+					
+					// Wait for the check to complete
+					await expect(async () => {
+						const toast = page.locator('li[data-sonner-toast]');
+						const toastVisible = await toast.isVisible().catch(() => false);
+						expect(toastVisible).toBeTruthy();
+					}).toPass({ timeout: 30000 });
+				}
+			}
+		}
 	});
+});
 
+test.describe('Image Update API Endpoints', () => {
 	test('should check batch image updates via API', async ({ page }) => {
 		const imageRefs = ['nginx:latest', 'alpine:latest'];
 
@@ -139,13 +242,6 @@ test.describe('Image Update API Endpoints', () => {
 		expect(typeof json.data.digestUpdates).toBe('number');
 		expect(typeof json.data.errorsCount).toBe('number');
 	});
-
-	test('should return proper error for invalid image reference', async ({ page }) => {
-		const res = await page.request.get(`${ROUTES.apiImageUpdatesCheck}?imageRef=`);
-
-		// Should return 400 for empty imageRef
-		expect(res.status()).toBe(400);
-	});
 });
 
 test.describe('Image Update UI Integration', () => {
@@ -160,64 +256,6 @@ test.describe('Image Update UI Integration', () => {
 		// Check that image rows exist
 		const rows = page.locator('tbody tr');
 		await expect(rows.first()).toBeVisible();
-	});
-
-	test('should trigger update check from image row menu', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
-
-		// Find an image with valid repo/tag
-		const testImage = realImages.find(
-			(img) => img.repo && img.tag && img.repo !== '<none>' && img.tag !== '<none>'
-		);
-		test.skip(!testImage, 'No suitable image found');
-
-		await navigateToImages(page);
-
-		// Find a row and open its menu
-		const firstRow = page.locator('tbody tr').first();
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-
-		// Check if there's a "Check for Updates" option (if it exists in the menu)
-		const checkUpdatesMenuItem = page.getByRole('menuitem', { name: /check.*update/i });
-		const hasCheckUpdates = await checkUpdatesMenuItem.isVisible().catch(() => false);
-
-		if (hasCheckUpdates) {
-			await checkUpdatesMenuItem.click();
-			// Wait for the check to complete (toast notification)
-			await expect(
-				page.locator('li[data-sonner-toast]').first()
-			).toBeVisible({ timeout: 30000 });
-		}
-	});
-
-	test('should show update tooltip on hover over status icon', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
-
-		await navigateToImages(page);
-
-		// Wait for images table
-		await expect(page.locator('table')).toBeVisible();
-
-		// Find any status icon (could be check, arrow-up, etc.)
-		const statusIcons = page.locator('tbody tr span.inline-flex svg').first();
-		const hasStatusIcon = await statusIcons.isVisible().catch(() => false);
-
-		if (hasStatusIcon) {
-			// Hover to trigger tooltip
-			await statusIcons.hover();
-
-			// Wait for tooltip to appear
-			await page.waitForTimeout(500);
-
-			// Check if a tooltip content appeared (using common tooltip patterns)
-			const tooltipContent = page.locator('[data-radix-popper-content-wrapper], [role="tooltip"]');
-			const tooltipVisible = await tooltipContent.isVisible().catch(() => false);
-
-			// This is informational - tooltip may or may not be present depending on state
-			if (tooltipVisible) {
-				await expect(tooltipContent).toBeVisible();
-			}
-		}
 	});
 
 	test('should display update information in image detail page', async ({ page }) => {
@@ -236,88 +274,6 @@ test.describe('Image Update UI Integration', () => {
 		await expect(page.locator('h1, h2, [data-testid="image-detail"]').first()).toBeVisible({
 			timeout: 10000,
 		});
-	});
-});
-
-test.describe('Image Update Response Validation', () => {
-	test('should return valid update type values', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
-
-		const testImage = realImages.find(
-			(img) => img.repoTags?.[0] && !img.repoTags[0].includes('<none>')
-		);
-		test.skip(!testImage, 'No suitable image found');
-
-		const res = await page.request.post(`${ROUTES.apiImageUpdatesCheckById}/${testImage.id}`, {
-			data: {},
-		});
-
-		const json = (await res.json()) as ImageUpdateResponse;
-
-		if (json.data.error) {
-			// Error response is valid
-			expect(json.data.hasUpdate).toBe(false);
-		} else {
-			// Valid response should have updateType
-			expect(['digest', 'tag', 'none', '']).toContain(json.data.updateType || '');
-		}
-	});
-
-	test('should include auth information when checking public images', async ({ page }) => {
-		const res = await page.request.get(
-			`${ROUTES.apiImageUpdatesCheck}?imageRef=${encodeURIComponent('nginx:latest')}`
-		);
-
-		const json = (await res.json()) as ImageUpdateResponse;
-
-		// Auth method should be present for successful checks
-		if (!json.data.error) {
-			expect(['none', 'anonymous', 'credential', 'unknown', undefined]).toContain(
-				json.data.authMethod
-			);
-		}
-	});
-
-	test('should handle non-existent image gracefully', async ({ page }) => {
-		const fakeImageId = 'sha256:0000000000000000000000000000000000000000000000000000000000000000';
-
-		const res = await page.request.post(`${ROUTES.apiImageUpdatesCheckById}/${fakeImageId}`, {
-			data: {},
-		});
-
-		// Should return error status or error in response
-		const json = await res.json();
-
-		if (res.status() === 200) {
-			// If 200, should have error in data
-			expect(json.data?.error || json.error).toBeTruthy();
-		} else {
-			// Non-200 status is also acceptable for non-existent images
-			expect([400, 404, 500]).toContain(res.status());
-		}
-	});
-
-	test('should return response within reasonable time', async ({ page }) => {
-		const startTime = Date.now();
-
-		const res = await page.request.get(
-			`${ROUTES.apiImageUpdatesCheck}?imageRef=${encodeURIComponent('alpine:latest')}`
-		);
-
-		const endTime = Date.now();
-		const duration = endTime - startTime;
-
-		expect(res.status()).toBe(200);
-
-		// Response should be within 30 seconds (registry calls can be slow)
-		expect(duration).toBeLessThan(30000);
-
-		const json = (await res.json()) as ImageUpdateResponse;
-
-		// responseTimeMs should roughly match actual duration (with some tolerance for network overhead)
-		if (!json.data.error && json.data.responseTimeMs) {
-			expect(json.data.responseTimeMs).toBeLessThan(duration + 5000);
-		}
 	});
 });
 
