@@ -80,7 +80,7 @@ type DeleteEnvironmentOutput struct {
 }
 
 type TestConnectionInput struct {
-	ID   string                           `path:"id" doc:"Environment ID"`
+	ID   string                             `path:"id" doc:"Environment ID"`
 	Body *environment.TestConnectionRequest `json:"body,omitempty"`
 }
 
