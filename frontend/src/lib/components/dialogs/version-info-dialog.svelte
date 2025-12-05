@@ -62,15 +62,6 @@
 					{m.version_info_view_release()}
 				</Button>
 			{/if}
-			<Button
-				variant="outline"
-				class="gap-2"
-				onclick={() => window.open(`${window.location.origin}/api/docs`, '_blank')}
-				title="API Documentation"
-			>
-				<ExternalLinkIcon class="size-4" />
-				{m.api_reference()}
-			</Button>
 			<Button variant="outline" size="icon" onclick={() => window.open('https://getarcane.app', '_blank')} title="Documentation">
 				<BookOpenIcon class="size-4" />
 			</Button>
