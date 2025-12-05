@@ -107,4 +107,11 @@ type BatchImageUpdateRequest struct {
 	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
 }
 
+type CheckAllImagesRequest struct {
+	// Credentials is a list of container registry credentials for authentication.
+	//
+	// Required: false
+	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
+}
+
 type BatchResponse map[string]*Response

@@ -43,7 +43,7 @@ type CheckMultipleImagesOutput struct {
 
 type CheckAllImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          imageupdate.BatchImageUpdateRequest
+	Body          imageupdate.CheckAllImagesRequest
 }
 
 type CheckAllImagesOutput struct {
