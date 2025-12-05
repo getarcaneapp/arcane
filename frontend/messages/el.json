@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "Αυτή είναι η μόνη φορά που θα δείτε αυτό το κλειδί. Φροντίστε να το αντιγράψετε και να το αποθηκεύσετε με ασφάλεια.",
 	"api_key_copied_success": "Το κλειδί API αντιγράφηκε στο πρόχειρο",
 	"api_key_page_title": "Κλειδιά API",
-	"api_key_page_description": "Διαχείριση κλειδιών API για προγραμματική πρόσβαση στο Arcane",
+	"api_key_page_description": "Διαχειριστείτε τα κλειδιά API για προγραμματική πρόσβαση στο Arcane. Δείτε το <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\">API Reference</a> για λεπτομέρειες χρήσης.",
 	"api_key_updated_success": "Το κλειδί API \"{name}\" ενημερώθηκε επιτυχώς",
 	"api_key_update_failed": "Αποτυχία ενημέρωσης κλειδιού API \"{name}\"",
 	"api_key_created_success": "API κλειδί \"{name}\" δημιουργήθηκε με επιτυχία",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Αποτυχία διαγραφής {count} κλειδιού(ών) API",
 	"common_done": "Ολοκληρώθηκε",
 	"common_important": "Σημαντικό",
-	"select_a_date": "Επιλέξτε μια ημερομηνία"
+	"select_a_date": "Επιλέξτε μια ημερομηνία",
+	"api_reference": "Αναφορά API"
 }
