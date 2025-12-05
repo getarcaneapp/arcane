@@ -51,6 +51,7 @@
 	});
 
 	let isChecking = $state(false);
+	let isOpen = $state(false);
 
 	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>'));
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
@@ -139,6 +140,11 @@
 		}
 	}
 
+	function handleUpdateContainer() {
+		isOpen = false;
+		onUpdateContainer?.();
+	}
+
 	const updatePriority = $derived.by(() => {
 		if (!effectiveUpdateInfo) return null;
 		if (effectiveUpdateInfo.error)
@@ -203,7 +209,7 @@
 		<div class="border-t border-gray-200/50 bg-gray-50/50 p-3 dark:border-gray-800/50 dark:bg-gray-900/50">
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
-					onclick={onUpdateContainer}
+					onclick={handleUpdateContainer}
 					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-600 hover:shadow-md"
 				>
 					<ArrowUpCircleIcon class="size-3" />
@@ -386,7 +392,7 @@
 
 {#if effectiveUpdateInfo}
 	<Tooltip.Provider>
-		<Tooltip.Root>
+		<Tooltip.Root bind:open={isOpen}>
 			<Tooltip.Trigger>
 				<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
 					{#if hasError}

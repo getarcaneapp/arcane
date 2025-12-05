@@ -539,6 +539,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_start"})
 
+	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerUpdate, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{
+		"oldContainerId": cnt.ID,
+		"newContainerId": resp.ID,
+		"newImage":       newRef,
+	})
+
 	slog.DebugContext(ctx, "updateContainer: update complete", "oldContainerId", cnt.ID, "newContainerId", resp.ID)
 	return nil
 }

@@ -306,7 +306,7 @@
 		repo={imageRef.repo}
 		tag={imageRef.tag}
 		onUpdateContainer={() => handleUpdateContainer(item)}
-		debugHasUpdate={true}
+		debugHasUpdate={false}
 	/>
 {/snippet}
 
