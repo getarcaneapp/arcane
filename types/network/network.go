@@ -144,6 +144,19 @@ type CreateResponse struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// CreateRequest contains the parameters for creating a network.
+type CreateRequest struct {
+	// Name is the name of the network to create.
+	//
+	// Required: true
+	Name string `json:"name" minLength:"1" doc:"Name of the network"`
+
+	// Options contains network creation options.
+	//
+	// Required: false
+	Options CreateOptions `json:"options" doc:"Network creation options"`
+}
+
 // IPAMConfig contains IP address management configuration for a subnet.
 type IPAMConfig struct {
 	Subnet     string            `json:"subnet,omitempty"`

@@ -58,10 +58,7 @@ type NetworkCreatedApiResponse struct {
 
 type CreateNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          struct {
-		Name    string                     `json:"name" minLength:"1" doc:"Name of the network"`
-		Options networktypes.CreateOptions `json:"options" doc:"Network creation options"`
-	}
+	Body          networktypes.CreateRequest
 }
 
 type CreateNetworkOutput struct {

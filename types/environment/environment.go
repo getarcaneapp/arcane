@@ -66,6 +66,14 @@ type Test struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// TestConnectionRequest is the request body for testing a connection.
+type TestConnectionRequest struct {
+	// ApiUrl is an optional URL to test instead of the saved one.
+	//
+	// Required: false
+	ApiUrl *string `json:"apiUrl,omitempty"`
+}
+
 // Environment represents an environment in API responses.
 type Environment struct {
 	// ID of the environment.

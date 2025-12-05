@@ -1,5 +1,11 @@
 package auth
 
+import (
+	"time"
+
+	"go.getarcane.app/types/user"
+)
+
 // OidcUserInfo represents user information retrieved from an OIDC provider.
 type OidcUserInfo struct {
 	// Subject is the unique identifier for the user at the OIDC provider.
@@ -111,4 +117,91 @@ type OidcAuthUrlRequest struct {
 	//
 	// Required: true
 	RedirectUri string `json:"redirectUri"`
+}
+
+// OidcAuthUrlResponse contains the generated OIDC authorization URL.
+type OidcAuthUrlResponse struct {
+	// AuthUrl is the URL to redirect the user to for OIDC authentication.
+	//
+	// Required: true
+	AuthUrl string `json:"authUrl"`
+}
+
+// OidcConfigResponse contains the OIDC client configuration.
+type OidcConfigResponse struct {
+	// ClientID is the OAuth 2.0 client identifier.
+	//
+	// Required: true
+	ClientID string `json:"clientId"`
+
+	// RedirectUri is the URI to redirect to after authentication.
+	//
+	// Required: true
+	RedirectUri string `json:"redirectUri"`
+
+	// IssuerUrl is the OIDC provider's issuer URL.
+	//
+	// Required: true
+	IssuerUrl string `json:"issuerUrl"`
+
+	// AuthorizationEndpoint is the URL of the authorization endpoint.
+	//
+	// Required: true
+	AuthorizationEndpoint string `json:"authorizationEndpoint"`
+
+	// TokenEndpoint is the URL of the token endpoint.
+	//
+	// Required: true
+	TokenEndpoint string `json:"tokenEndpoint"`
+
+	// UserinfoEndpoint is the URL of the userinfo endpoint.
+	//
+	// Required: true
+	UserinfoEndpoint string `json:"userinfoEndpoint"`
+
+	// Scopes is the space-separated list of OAuth scopes requested.
+	//
+	// Required: true
+	Scopes string `json:"scopes"`
+}
+
+// OidcCallbackRequest contains the OIDC callback parameters.
+type OidcCallbackRequest struct {
+	// Code is the authorization code from the OIDC provider.
+	//
+	// Required: true
+	Code string `json:"code"`
+
+	// State is the state parameter from the OIDC provider for CSRF protection.
+	//
+	// Required: true
+	State string `json:"state"`
+}
+
+// OidcCallbackResponse contains the response from OIDC callback processing.
+type OidcCallbackResponse struct {
+	// Success indicates if the authentication was successful.
+	//
+	// Required: true
+	Success bool `json:"success"`
+
+	// Token is the JWT access token.
+	//
+	// Required: true
+	Token string `json:"token"`
+
+	// RefreshToken is the refresh token for obtaining new access tokens.
+	//
+	// Required: true
+	RefreshToken string `json:"refreshToken"`
+
+	// ExpiresAt is the expiration time of the access token.
+	//
+	// Required: true
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	// User contains the authenticated user information.
+	//
+	// Required: true
+	User user.User `json:"user"`
 }

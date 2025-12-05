@@ -80,9 +80,7 @@ type TestContainerRegistryInput struct {
 }
 
 type TestContainerRegistryOutput struct {
-	Body base.ApiResponse[struct {
-		Message string `json:"message"`
-	}]
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 type SyncContainerRegistriesInput struct {
@@ -344,13 +342,9 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 	}
 
 	return &TestContainerRegistryOutput{
-		Body: base.ApiResponse[struct {
-			Message string `json:"message"`
-		}]{
+		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data: struct {
-				Message string `json:"message"`
-			}{
+			Data: base.MessageResponse{
 				Message: testResult["message"].(string),
 			},
 		},

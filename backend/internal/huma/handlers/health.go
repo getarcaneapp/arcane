@@ -5,13 +5,12 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.getarcane.app/types/system"
 )
 
 // HealthOutput is the response for health check
 type HealthOutput struct {
-	Body struct {
-		Status string `json:"status"`
-	}
+	Body system.HealthResponse
 }
 
 // RegisterHealth registers health check routes using Huma.
@@ -25,9 +24,7 @@ func RegisterHealth(api huma.API) {
 		Tags:        []string{"Health"},
 	}, func(ctx context.Context, input *struct{}) (*HealthOutput, error) {
 		return &HealthOutput{
-			Body: struct {
-				Status string `json:"status"`
-			}{
+			Body: system.HealthResponse{
 				Status: "UP",
 			},
 		}, nil

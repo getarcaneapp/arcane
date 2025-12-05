@@ -35,42 +35,23 @@ type GetOidcAuthUrlInput struct {
 
 type GetOidcAuthUrlOutput struct {
 	SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
-	Body      struct {
-		AuthUrl string `json:"authUrl"`
-	}
+	Body      auth.OidcAuthUrlResponse
 }
 
 type HandleOidcCallbackInput struct {
 	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
-	Body            struct {
-		Code  string `json:"code" required:"true" doc:"Authorization code from OIDC provider"`
-		State string `json:"state" required:"true" doc:"State parameter from OIDC provider"`
-	}
+	Body            auth.OidcCallbackRequest
 }
 
 type HandleOidcCallbackOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
-	Body      struct {
-		Success      bool      `json:"success"`
-		Token        string    `json:"token"`
-		RefreshToken string    `json:"refreshToken"`
-		ExpiresAt    time.Time `json:"expiresAt"`
-		User         user.User `json:"user"`
-	}
+	Body      auth.OidcCallbackResponse
 }
 
 type GetOidcConfigInput struct{}
 
 type GetOidcConfigOutput struct {
-	Body struct {
-		ClientID              string `json:"clientId"`
-		RedirectUri           string `json:"redirectUri"`
-		IssuerUrl             string `json:"issuerUrl"`
-		AuthorizationEndpoint string `json:"authorizationEndpoint"`
-		TokenEndpoint         string `json:"tokenEndpoint"`
-		UserinfoEndpoint      string `json:"userinfoEndpoint"`
-		Scopes                string `json:"scopes"`
-	}
+	Body auth.OidcConfigResponse
 }
 
 // ============================================================================
@@ -150,15 +131,7 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, _ *GetOidcConfigInput) 
 	}
 
 	return &GetOidcConfigOutput{
-		Body: struct {
-			ClientID              string `json:"clientId"`
-			RedirectUri           string `json:"redirectUri"`
-			IssuerUrl             string `json:"issuerUrl"`
-			AuthorizationEndpoint string `json:"authorizationEndpoint"`
-			TokenEndpoint         string `json:"tokenEndpoint"`
-			UserinfoEndpoint      string `json:"userinfoEndpoint"`
-			Scopes                string `json:"scopes"`
-		}{
+		Body: auth.OidcConfigResponse{
 			ClientID:              config.ClientID,
 			RedirectUri:           h.oidcService.GetOidcRedirectURL(),
 			IssuerUrl:             config.IssuerURL,
@@ -194,9 +167,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 
 	return &GetOidcAuthUrlOutput{
 		SetCookie: stateCookie,
-		Body: struct {
-			AuthUrl string `json:"authUrl"`
-		}{
+		Body: auth.OidcAuthUrlResponse{
 			AuthUrl: authUrl,
 		},
 	}, nil
@@ -238,13 +209,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 
 	return &HandleOidcCallbackOutput{
 		SetCookie: []string{tokenCookie, clearStateCookie},
-		Body: struct {
-			Success      bool      `json:"success"`
-			Token        string    `json:"token"`
-			RefreshToken string    `json:"refreshToken"`
-			ExpiresAt    time.Time `json:"expiresAt"`
-			User         user.User `json:"user"`
-		}{
+		Body: auth.OidcCallbackResponse{
 			Success:      true,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,

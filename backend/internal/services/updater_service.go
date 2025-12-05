@@ -346,7 +346,7 @@ func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error 
 	return nil
 }
 
-func (s *UpdaterService) GetStatus() map[string]any {
+func (s *UpdaterService) GetStatus() updater.Status {
 	containerIDs := make([]string, 0, len(s.updatingContainers))
 	for id := range s.updatingContainers {
 		containerIDs = append(containerIDs, id)
@@ -356,11 +356,11 @@ func (s *UpdaterService) GetStatus() map[string]any {
 		projectIDs = append(projectIDs, id)
 	}
 
-	return map[string]any{
-		"updatingContainers": len(s.updatingContainers),
-		"updatingProjects":   len(s.updatingProjects),
-		"containerIds":       containerIDs,
-		"projectIds":         projectIDs,
+	return updater.Status{
+		UpdatingContainers: len(s.updatingContainers),
+		UpdatingProjects:   len(s.updatingProjects),
+		ContainerIds:       containerIDs,
+		ProjectIds:         projectIDs,
 	}
 }
 

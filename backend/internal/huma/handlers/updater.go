@@ -33,7 +33,7 @@ type GetUpdaterStatusInput struct {
 }
 
 type GetUpdaterStatusOutput struct {
-	Body base.ApiResponse[map[string]any]
+	Body base.ApiResponse[updater.Status]
 }
 
 type GetUpdaterHistoryInput struct {
@@ -124,7 +124,7 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdater
 	status := h.updaterService.GetStatus()
 
 	return &GetUpdaterStatusOutput{
-		Body: base.ApiResponse[map[string]any]{
+		Body: base.ApiResponse[updater.Status]{
 			Success: true,
 			Data:    status,
 		},

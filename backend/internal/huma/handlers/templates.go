@@ -64,12 +64,7 @@ type GetTemplateContentOutput struct {
 }
 
 type CreateTemplateInput struct {
-	Body struct {
-		Name        string `json:"name" required:"true"`
-		Description string `json:"description"`
-		Content     string `json:"content" required:"true"`
-		EnvContent  string `json:"envContent"`
-	}
+	Body template.CreateRequest
 }
 
 type CreateTemplateOutput struct {
@@ -78,12 +73,7 @@ type CreateTemplateOutput struct {
 
 type UpdateTemplateInput struct {
 	ID   string `path:"id" doc:"Template ID"`
-	Body struct {
-		Name        string `json:"name" required:"true"`
-		Description string `json:"description"`
-		Content     string `json:"content" required:"true"`
-		EnvContent  string `json:"envContent"`
-	}
+	Body template.UpdateRequest
 }
 
 type UpdateTemplateOutput struct {
@@ -109,17 +99,11 @@ type DownloadTemplateOutput struct {
 type GetDefaultTemplatesInput struct{}
 
 type GetDefaultTemplatesOutput struct {
-	Body base.ApiResponse[struct {
-		ComposeTemplate string `json:"composeTemplate"`
-		EnvTemplate     string `json:"envTemplate"`
-	}]
+	Body base.ApiResponse[template.DefaultTemplatesResponse]
 }
 
 type SaveDefaultTemplatesInput struct {
-	Body struct {
-		ComposeContent string `json:"composeContent" required:"true"`
-		EnvContent     string `json:"envContent"`
-	}
+	Body template.SaveDefaultTemplatesRequest
 }
 
 type SaveDefaultTemplatesOutput struct {
@@ -133,12 +117,7 @@ type GetTemplateRegistriesOutput struct {
 }
 
 type CreateTemplateRegistryInput struct {
-	Body struct {
-		Name        string `json:"name" required:"true"`
-		URL         string `json:"url" required:"true"`
-		Description string `json:"description"`
-		Enabled     bool   `json:"enabled"`
-	}
+	Body template.CreateRegistryRequest
 }
 
 type CreateTemplateRegistryOutput struct {
@@ -147,12 +126,7 @@ type CreateTemplateRegistryOutput struct {
 
 type UpdateTemplateRegistryInput struct {
 	ID   string `path:"id" doc:"Registry ID"`
-	Body struct {
-		Name        string `json:"name" required:"true"`
-		URL         string `json:"url" required:"true"`
-		Description string `json:"description"`
-		Enabled     bool   `json:"enabled"`
-	}
+	Body template.UpdateRegistryRequest
 }
 
 type UpdateTemplateRegistryOutput struct {
@@ -172,7 +146,7 @@ type FetchTemplateRegistryInput struct {
 }
 
 type FetchTemplateRegistryOutput struct {
-	Body base.ApiResponse[any]
+	Body base.ApiResponse[template.RemoteRegistry]
 }
 
 type GetGlobalVariablesInput struct{}
@@ -667,15 +641,9 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 	envTemplate := h.templateService.GetEnvTemplate()
 
 	return &GetDefaultTemplatesOutput{
-		Body: base.ApiResponse[struct {
-			ComposeTemplate string `json:"composeTemplate"`
-			EnvTemplate     string `json:"envTemplate"`
-		}]{
+		Body: base.ApiResponse[template.DefaultTemplatesResponse]{
 			Success: true,
-			Data: struct {
-				ComposeTemplate string `json:"composeTemplate"`
-				EnvTemplate     string `json:"envTemplate"`
-			}{
+			Data: template.DefaultTemplatesResponse{
 				ComposeTemplate: composeTemplate,
 				EnvTemplate:     envTemplate,
 			},
@@ -835,13 +803,13 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 		return nil, huma.Error502BadGateway((&common.RegistryFetchError{Err: err}).Error())
 	}
 
-	var registry interface{}
+	var registry template.RemoteRegistry
 	if err := json.Unmarshal(body, &registry); err != nil {
 		return nil, huma.Error502BadGateway((&common.InvalidJSONResponseError{Err: err}).Error())
 	}
 
 	return &FetchTemplateRegistryOutput{
-		Body: base.ApiResponse[any]{
+		Body: base.ApiResponse[template.RemoteRegistry]{
 			Success: true,
 			Data:    registry,
 		},

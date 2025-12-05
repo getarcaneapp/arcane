@@ -81,9 +81,7 @@ type DeleteEnvironmentOutput struct {
 
 type TestConnectionInput struct {
 	ID   string `path:"id" doc:"Environment ID"`
-	Body struct {
-		ApiUrl *string `json:"apiUrl,omitempty"`
-	}
+	Body environment.TestConnectionRequest
 }
 
 type TestConnectionOutput struct {
