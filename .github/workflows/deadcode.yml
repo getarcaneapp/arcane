@@ -1,0 +1,55 @@
+name: Go Deadcode Check
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "backend/**/*.go"
+            - "types/**/*.go"
+            - "cli/**/*.go"
+            - ".github/workflows/deadcode.yml"
+            - ".github/deadcode-matcher.json"
+            - "go.work"
+            - "backend/go.mod"
+            - "backend/go.sum"
+    pull_request:
+        branches: [main]
+        paths:
+            - "backend/**/*.go"
+            - "types/**/*.go"
+            - "cli/**/*.go"
+            - ".github/workflows/deadcode.yml"
+            - ".github/deadcode-matcher.json"
+            - "go.work"
+            - "backend/go.mod"
+            - "backend/go.sum"
+    workflow_dispatch:
+
+jobs:
+    deadcode:
+        name: Run GoLang Deadcode Analysis
+        runs-on: depot-ubuntu-24.04-8
+        permissions:
+            contents: read
+            checks: write
+            pull-requests: write
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Setup Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: backend/go.mod
+                  cache-dependency-path: backend/go.sum
+
+            - name: Install deadcode
+              run: go install golang.org/x/tools/cmd/deadcode@latest
+
+            - name: Add deadcode problem matcher
+              run: echo "::add-matcher::.github/matchers/deadcode-matcher.json"
+
+            - name: Run deadcode analysis
+              working-directory: backend
+              run: deadcode ./...

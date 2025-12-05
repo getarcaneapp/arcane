@@ -262,7 +262,7 @@
 				</Card.Content>
 			</Card.Root>
 
-			{#if network.ipam?.Config && network.ipam.Config.length > 0}
+			{#if network.ipam?.config && network.ipam.config.length > 0}
 				<Card.Root>
 					<Card.Header icon={SettingsIcon}>
 						<div class="flex flex-col space-y-1.5">
@@ -272,23 +272,23 @@
 					</Card.Header>
 					<Card.Content class="p-4">
 						<div class="space-y-3">
-							{#each network.ipam.Config as config, i (i)}
+							{#each network.ipam.config as config, i (i)}
 								<Card.Root variant="outlined">
 									<Card.Content class="p-4">
 										<div class="space-y-2">
-											{#if config.Subnet}
+											{#if config.subnet}
 												<div class="flex flex-col sm:flex-row sm:items-center">
 													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.common_subnet()}:</span>
 													<code
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
 														title="Click to select"
 													>
-														{config.Subnet}
+														{config.subnet}
 													</code>
 												</div>
 											{/if}
 
-											{#if config.Gateway}
+											{#if config.gateway}
 												<div class="flex flex-col sm:flex-row sm:items-center">
 													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
 														>{m.networks_ipam_gateway_label()}:</span
@@ -297,12 +297,12 @@
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
 														title="Click to select"
 													>
-														{config.Gateway}
+														{config.gateway}
 													</code>
 												</div>
 											{/if}
 
-											{#if config.IPRange}
+											{#if config.ipRange}
 												<div class="flex flex-col sm:flex-row sm:items-center">
 													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
 														>{m.networks_ipam_iprange_label()}:</span
@@ -311,16 +311,16 @@
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
 														title="Click to select"
 													>
-														{config.IPRange}
+														{config.ipRange}
 													</code>
 												</div>
 											{/if}
 
-											{#if (config.AuxiliaryAddresses && Object.keys(config.AuxiliaryAddresses).length > 0) || (config.AuxAddress && Object.keys(config.AuxAddress).length > 0)}
+											{#if config.auxAddress && Object.keys(config.auxAddress).length > 0}
 												<div class="mt-3">
 													<p class="text-muted-foreground mb-1 text-sm font-medium">{m.networks_ipam_aux_addresses_label()}:</p>
 													<ul class="ml-4 space-y-1">
-														{#each Object.entries(config.AuxiliaryAddresses ?? config.AuxAddress ?? {}) as [name, addr] (name)}
+														{#each Object.entries(config.auxAddress) as [name, addr] (name)}
 															<li class="flex font-mono text-xs">
 																<span class="text-muted-foreground mr-2">{name}:</span>
 																<code
@@ -338,18 +338,18 @@
 							{/each}
 						</div>
 
-						{#if network.ipam.Driver}
+						{#if network.ipam.driver}
 							<div class="mt-4 flex items-center">
 								<span class="text-muted-foreground mr-2 text-sm font-medium">{m.networks_ipam_driver_label()}:</span>
-								<StatusBadge variant="cyan" text={network.ipam.Driver} />
+								<StatusBadge variant="cyan" text={network.ipam.driver} />
 							</div>
 						{/if}
 
-						{#if network.ipam.Options && Object.keys(network.ipam.Options).length > 0}
+						{#if network.ipam.options && Object.keys(network.ipam.options).length > 0}
 							<div class="mt-4">
 								<p class="text-muted-foreground mb-2 text-sm font-medium">{m.networks_ipam_options_label()}</p>
 								<div class="bg-muted/50 rounded-lg border p-3">
-									{#each Object.entries(network.ipam.Options) as [key, value] (key)}
+									{#each Object.entries(network.ipam.options) as [key, value] (key)}
 										<div class="mb-1 flex justify-between font-mono text-xs last:mb-0">
 											<span class="text-muted-foreground">{key}:</span>
 											<span>{value}</span>
