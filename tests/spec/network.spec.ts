@@ -8,7 +8,7 @@ async function navigateToNetworks(page: Page) {
 }
 
 let realNetworks: NetworkSummary[] = [];
-let networkCount: NetworkUsageCounts = { networksInuse: 0, networksUnused: 0, totalNetworks: 0 };
+let networkCount: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
 test.beforeEach(async ({ page }) => {
   await navigateToNetworks(page);
@@ -25,8 +25,8 @@ test.describe('Networks Page', () => {
 
   test('Stat cards show correct counts', async ({ page }) => {
     await navigateToNetworks(page);
-    await expect(page.locator('p:has-text("Total Networks") + p')).toHaveText(String(networkCount.totalNetworks));
-    await expect(page.locator('p:has-text("Unused Networks") + p')).toHaveText(String(networkCount.networksUnused));
+    await expect(page.locator('p:has-text("Total Networks") + p')).toHaveText(String(networkCount.total));
+    await expect(page.locator('p:has-text("Unused Networks") + p')).toHaveText(String(networkCount.unused));
   });
 
   test('Table displays when networks exist, else empty state', async ({ page }) => {

@@ -1,5 +1,5 @@
 export interface VolumeUsageCounts {
-  volumesInuse: number;
-  volumesUnused: number;
-  totalVolumes: number;
+  inuse: number;
+  unused: number;
+  total: number;
 }

@@ -3,7 +3,7 @@ import { fetchVolumeCountsWithRetry, fetchVolumesWithRetry } from '../utils/fetc
 import { VolumeUsageCounts } from 'types/volumes.type';
 
 let realVolumes: any[] = [];
-let volumeCount: VolumeUsageCounts = { volumesInuse: 0, volumesUnused: 0, totalVolumes: 0 };
+let volumeCount: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/volumes');
@@ -43,7 +43,7 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.locator('p:has-text("Total Volumes") + p')).toHaveText(volumeCount.totalVolumes.toString());
+    await expect(page.locator('p:has-text("Total Volumes") + p')).toHaveText(volumeCount.total.toString());
   });
 
   test('Create Volume Sheet Opens', async ({ page }) => {
