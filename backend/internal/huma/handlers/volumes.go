@@ -117,6 +117,21 @@ type GetVolumeUsageCountsOutput struct {
 	Body base.ApiResponse[VolumeUsageCountsData]
 }
 
+type GetVolumeSizesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// VolumeSizeInfo represents size information for a single volume.
+type VolumeSizeInfo struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	RefCount int64  `json:"refCount"`
+}
+
+type GetVolumeSizesOutput struct {
+	Body base.ApiResponse[[]VolumeSizeInfo]
+}
+
 // RegisterVolumes registers volume management routes using Huma.
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService) {
 	h := &VolumeHandler{
@@ -214,6 +229,19 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetVolumeUsage)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-volume-sizes",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/sizes",
+		Summary:     "Get volume sizes",
+		Description: "Get disk usage sizes for all volumes (slow operation)",
+		Tags:        []string{"Volumes"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetVolumeSizes)
 }
 
 // ListVolumes returns a paginated list of volumes.
@@ -404,6 +432,35 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 				Unused: unused,
 				Total:  total,
 			},
+		},
+	}, nil
+}
+
+// GetVolumeSizes returns disk usage sizes for all volumes.
+// This is a slow operation as it requires calculating disk usage.
+func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*GetVolumeSizesOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	sizes, err := h.volumeService.GetVolumeSizes(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	result := make([]VolumeSizeInfo, 0, len(sizes))
+	for name, info := range sizes {
+		result = append(result, VolumeSizeInfo{
+			Name:     name,
+			Size:     info.Size,
+			RefCount: info.RefCount,
+		})
+	}
+
+	return &GetVolumeSizesOutput{
+		Body: base.ApiResponse[[]VolumeSizeInfo]{
+			Success: true,
+			Data:    result,
 		},
 	}, nil
 }

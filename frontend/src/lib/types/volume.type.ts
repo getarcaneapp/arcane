@@ -38,3 +38,9 @@ export interface VolumeUsageCounts {
 	unused: number;
 	total: number;
 }
+
+export interface VolumeSizeInfo {
+	name: string;
+	size: number;
+	refCount: number;
+}

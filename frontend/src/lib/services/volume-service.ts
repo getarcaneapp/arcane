@@ -5,7 +5,8 @@ import type {
 	VolumeDetailDto,
 	VolumeUsageDto,
 	VolumeUsageCounts,
-	VolumeCreateRequest
+	VolumeCreateRequest,
+	VolumeSizeInfo
 } from '$lib/types/volume.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -33,6 +34,12 @@ export class VolumeService extends BaseAPIService {
 	async getVolumeUsageCounts(): Promise<VolumeUsageCounts> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const res = await this.api.get(`/environments/${envId}/volumes/counts`);
+		return res.data.data;
+	}
+
+	async getVolumeSizes(): Promise<VolumeSizeInfo[]> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const res = await this.api.get(`/environments/${envId}/volumes/sizes`);
 		return res.data.data;
 	}
 
