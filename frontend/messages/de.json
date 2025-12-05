@@ -1402,7 +1402,7 @@
 	"api_key_important_warning": "Dies ist das einzige Mal, dass Sie diesen Schlüssel sehen. Stellen Sie sicher, dass Sie ihn kopieren und ihn sicher speichern.",
 	"api_key_copied_success": "API-Schlüssel in Zwischenablage kopiert",
 	"api_key_page_title": "API-Schlüssel",
-	"api_key_page_description": "API-Schlüssel für programmatischen Zugriff auf Arkane verwalten",
+	"api_key_page_description": "API-Schlüssel für den programmatischen Zugriff auf Arkane verwalten. Siehe <a href=\"/api/docs\" target=\"_blank\" class=\"text-primary hover:underline\">API Referenz</a> für Nutzungsdetails.",
 	"api_key_updated_success": "API-Schlüssel \"{name}\" erfolgreich aktualisiert",
 	"api_key_update_failed": "Fehler beim Aktualisieren des API-Schlüssels \"{name}\"",
 	"api_key_created_success": "API-Schlüssel \"{name}\" erfolgreich erstellt",
@@ -1417,5 +1417,6 @@
 	"api_key_bulk_delete_failed": "Fehler beim Löschen von {count} API-Schlüssel(n)",
 	"common_done": "Fertig",
 	"common_important": "Wichtig",
-	"select_a_date": "Datum auswählen"
+	"select_a_date": "Datum auswählen",
+	"api_reference": "API-Referenz"
 }
