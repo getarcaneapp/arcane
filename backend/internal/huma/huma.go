@@ -323,67 +323,26 @@ func registerHandlers(api huma.API, svc *Services) {
 		systemUpgradeSvc = svc.SystemUpgrade
 		cfg = svc.Config
 	}
-
-	// Health check handlers
 	handlers.RegisterHealth(api)
-
-	// Auth handlers
 	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
-
-	// API Key handlers
 	handlers.RegisterApiKeys(api, apiKeySvc)
-
-	// Application Images handlers
 	handlers.RegisterAppImages(api, appImagesSvc)
-
-	// Project handlers (REST only - WebSocket/streaming stay in Gin)
 	handlers.RegisterProjects(api, projectSvc)
-
-	// User management handlers
 	handlers.RegisterUsers(api, userSvc)
-
-	// Version handlers
 	handlers.RegisterVersion(api, versionSvc)
-
-	// Event handlers
 	handlers.RegisterEvents(api, eventSvc)
-
-	// OIDC handlers (status/config only - URL/callback use Gin for cookies)
 	handlers.RegisterOidc(api, authSvc, oidcSvc)
-
-	// Environment handlers
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, cfg)
-
-	// Container registry handlers
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc)
-
-	// Template handlers
 	handlers.RegisterTemplates(api, templateSvc)
-
-	// Image handlers
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
-
-	// Settings handlers
+	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, cfg)
-
-	// Volume handlers
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-
-	// Container handlers
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
-
-	// Network handlers
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
-
-	// Notification handlers
 	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
-
-	// Updater handlers
 	handlers.RegisterUpdater(api, updaterSvc)
-
-	// Customize handlers
 	handlers.RegisterCustomize(api, customizeSearchSvc)
-
-	// System handlers (WebSocket stats remains in Gin)
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 }
