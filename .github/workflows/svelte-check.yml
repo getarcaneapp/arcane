@@ -49,7 +49,7 @@ jobs:
         run: pnpm --filter arcane-frontend install --frozen-lockfile
 
       - name: Add svelte-check problem matcher
-        run: echo "::add-matcher::.github/svelte-check-matcher.json"
+        run: echo "::add-matcher::.github/matchers/svelte-check-matcher.json"
 
       - name: Build frontend
         run: pnpm --filter arcane-frontend build

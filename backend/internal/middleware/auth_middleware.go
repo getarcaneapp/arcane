@@ -51,19 +51,9 @@ func (m *AuthMiddleware) WithApiKeyValidator(validator ApiKeyValidator) *AuthMid
 	return &clone
 }
 
-func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
-	clone := *m
-	clone.options.AdminRequired = true
-	return &clone
-}
 func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
 	clone := *m
 	clone.options.AdminRequired = false
-	return &clone
-}
-func (m *AuthMiddleware) WithSuccessOptional() *AuthMiddleware {
-	clone := *m
-	clone.options.SuccessOptional = true
 	return &clone
 }
 
@@ -228,35 +218,4 @@ func userHasRole(user *models.User, role string) bool {
 		}
 	}
 	return false
-}
-
-func GetCurrentUserID(c *gin.Context) (string, bool) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		return "", false
-	}
-	userIDStr, ok := userID.(string)
-	return userIDStr, ok
-}
-
-func GetCurrentUser(c *gin.Context) (*models.User, bool) {
-	user, exists := c.Get("currentUser")
-	if !exists {
-		return nil, false
-	}
-	u, ok := user.(*models.User)
-	return u, ok
-}
-
-func RequireAuthentication(c *gin.Context) (*models.User, bool) {
-	user, exists := GetCurrentUser(c)
-	if !exists {
-		c.JSON(http.StatusUnauthorized, models.APIError{
-			Code:    models.APIErrorCodeUnauthorized,
-			Message: "Authentication required",
-		})
-		c.Abort()
-		return nil, false
-	}
-	return user, true
 }

@@ -14,15 +14,17 @@
 	import { format } from 'date-fns';
 	import { truncateString } from '$lib/utils/string.utils';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { VolumeSummaryDto } from '$lib/types/volume.type';
+	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/volume.type';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import bytes from 'bytes';
+
+	type FieldVisibility = Record<string, boolean>;
 
 	let {
 		volumes = $bindable(),
@@ -37,6 +39,21 @@
 	let isLoading = $state({
 		removing: false
 	});
+
+	// Lazy load volume sizes - this is a slow operation
+	let volumeSizesPromise = $state<Promise<Map<string, VolumeSizeInfo>> | null>(null);
+
+	// Start loading sizes when component mounts or volumes change
+	$effect(() => {
+		if (volumes.data.length > 0) {
+			volumeSizesPromise = loadVolumeSizes();
+		}
+	});
+
+	async function loadVolumeSizes(): Promise<Map<string, VolumeSizeInfo>> {
+		const sizes = await volumeService.getVolumeSizes();
+		return new Map(sizes.map((s) => [s.name, s]));
+	}
 
 	async function handleRemoveVolumeConfirm(name: string) {
 		const safeName = name?.trim() || m.common_unknown();
@@ -143,8 +160,21 @@
 {/snippet}
 
 {#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
-	{#if item.size >= 0}
-		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+	{#if volumeSizesPromise}
+		{#await volumeSizesPromise}
+			<span class="text-muted-foreground flex items-center gap-1 text-sm">
+				<LoaderCircleIcon class="size-3 animate-spin" />
+			</span>
+		{:then sizesMap}
+			{@const sizeInfo = sizesMap.get(item.name)}
+			{#if sizeInfo && sizeInfo.size >= 0}
+				<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+			{:else}
+				<span class="text-muted-foreground text-sm">-</span>
+			{/if}
+		{:catch}
+			<span class="text-muted-foreground text-sm">-</span>
+		{/await}
 	{:else}
 		<span class="text-muted-foreground text-sm">-</span>
 	{/if}
@@ -161,7 +191,7 @@
 }: {
 	row: any;
 	item: VolumeSummaryDto;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: FieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
@@ -186,14 +216,6 @@
 				icon: DatabaseIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.driver ?? true
-			},
-			{
-				label: m.common_size(),
-				getValue: (item: VolumeSummaryDto) =>
-					item.usageData && item.usageData.size >= 0 ? bytes.format(item.usageData.size) : '-',
-				icon: HardDriveIcon,
-				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.size ?? true) && !!item.usageData
 			}
 		]}
 		footer={(mobileFieldVisibility.createdAt ?? true)

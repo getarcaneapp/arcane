@@ -6,7 +6,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import CreateVolumeSheet from '$lib/components/sheets/create-volume-sheet.svelte';
-	import type { VolumeCreateOptions } from 'dockerode';
+	import type { VolumeCreateRequest } from '$lib/types/volume.type';
 	import VolumeTable from './volume-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
@@ -29,12 +29,11 @@
 			{
 				volumes: {
 					fetch: () => volumeService.getVolumes(requestOptions),
-					onSuccess: (data) => (volumes = data),
-					errorMessage: m.common_refresh_failed({ resource: m.volumes_title() })
-				},
-				counts: {
-					fetch: () => volumeService.getVolumeUsageCounts(),
-					onSuccess: (data) => (volumeUsageCounts = data),
+					onSuccess: (data) => {
+						volumes = data;
+						// Extract counts from the response - they're included in the list endpoint
+						volumeUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
+					},
 					errorMessage: m.common_refresh_failed({ resource: m.volumes_title() })
 				}
 			},
@@ -44,9 +43,9 @@
 
 	useEnvironmentRefresh(refresh);
 
-	async function handleCreate(options: VolumeCreateOptions) {
+	async function handleCreate(options: VolumeCreateRequest) {
 		isLoading.creating = true;
-		const name = options.Name?.trim() || m.common_unknown();
+		const name = options.name?.trim() || m.common_unknown();
 		handleApiResultWithCallbacks({
 			result: await tryCatch(volumeService.createVolume(options)),
 			message: m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }),
@@ -81,21 +80,21 @@
 	const statCards: StatCardConfig[] = $derived([
 		{
 			title: m.volumes_stat_total(),
-			value: volumeUsageCounts.totalVolumes,
+			value: volumeUsageCounts.total,
 			icon: HardDriveIcon,
 			iconColor: 'text-blue-500',
 			class: 'border-l-4 border-l-blue-500'
 		},
 		{
 			title: m.volumes_stat_used(),
-			value: volumeUsageCounts.volumesInuse,
+			value: volumeUsageCounts.inuse,
 			icon: ArchiveRestoreIcon,
 			iconColor: 'text-green-500',
 			class: 'border-l-4 border-l-green-500'
 		},
 		{
 			title: m.volumes_stat_unused(),
-			value: volumeUsageCounts.volumesUnused,
+			value: volumeUsageCounts.unused,
 			icon: ArchiveXIcon,
 			iconColor: 'text-red-500',
 			class: 'border-l-4 border-l-red-500'

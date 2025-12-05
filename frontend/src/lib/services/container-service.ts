@@ -1,12 +1,18 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { ContainerStatusCounts, ContainerSummaryDto, ContainerStats } from '$lib/types/container.type';
+import type {
+	ContainerStatusCounts,
+	ContainerSummaryDto,
+	ContainerStats,
+	ContainerCreateRequest
+} from '$lib/types/container.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
-import type { ContainerCreateOptions } from 'dockerode';
+
+export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts>;
 
 export class ContainerService extends BaseAPIService {
-	async getContainers(options?: SearchPaginationSortRequest): Promise<Paginated<ContainerSummaryDto>> {
+	async getContainers(options?: SearchPaginationSortRequest): Promise<ContainersPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/containers`, { params });
@@ -30,7 +36,7 @@ export class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/start`));
 	}
 
-	async createContainer(options: ContainerCreateOptions): Promise<any> {
+	async createContainer(options: ContainerCreateRequest): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers`, options));
 	}

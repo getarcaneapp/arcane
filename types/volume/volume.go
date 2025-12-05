@@ -65,17 +65,17 @@ type UsageCounts struct {
 	// Inuse is the number of volumes currently in use.
 	//
 	// Required: true
-	Inuse int `json:"volumesInuse"`
+	Inuse int `json:"inuse"`
 
 	// Unused is the number of volumes not in use.
 	//
 	// Required: true
-	Unused int `json:"volumesUnused"`
+	Unused int `json:"unused"`
 
 	// Total is the total number of volumes.
 	//
 	// Required: true
-	Total int `json:"totalVolumes"`
+	Total int `json:"total"`
 }
 
 // PruneReport is the result of a volume prune operation.
@@ -96,22 +96,22 @@ type Create struct {
 	// Name of the volume.
 	//
 	// Required: true
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" minLength:"1" doc:"Name of the volume"`
 
 	// Driver is the volume driver to use.
 	//
 	// Required: false
-	Driver string `json:"driver"`
+	Driver string `json:"driver,omitempty" doc:"Volume driver (e.g., local, nfs)"`
+
+	// DriverOpts contains driver-specific options.
+	//
+	// Required: false
+	DriverOpts map[string]string `json:"driverOpts,omitempty" doc:"Driver-specific options"`
 
 	// Labels contains user-defined metadata for the volume.
 	//
 	// Required: false
-	Labels map[string]string `json:"labels"`
-
-	// Options contains driver-specific options.
-	//
-	// Required: false
-	Options map[string]string `json:"options"`
+	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
 }
 
 // NewSummary creates a Volume from a docker volume.Volume, calculating InUse

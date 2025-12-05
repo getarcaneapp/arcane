@@ -12,6 +12,51 @@ export interface BaseContainer {
 	status: string;
 }
 
+// Container creation types
+export interface PortBinding {
+	hostIp?: string;
+	hostPort: string;
+}
+
+export interface RestartPolicy {
+	name: 'no' | 'always' | 'on-failure' | 'unless-stopped';
+	maximumRetryCount?: number;
+}
+
+export interface HostConfigCreate {
+	binds?: string[];
+	portBindings?: Record<string, PortBinding[]>;
+	restartPolicy?: RestartPolicy;
+	networkMode?: string;
+	privileged?: boolean;
+	autoRemove?: boolean;
+	memory?: number;
+	memorySwap?: number;
+	nanoCpus?: number;
+	cpuShares?: number;
+}
+
+export interface NetworkingConfig {
+	endpointsConfig?: Record<string, { aliases?: string[] }>;
+}
+
+export interface ContainerCreateRequest {
+	name?: string;
+	image: string;
+	cmd?: string[];
+	entrypoint?: string[];
+	env?: string[];
+	exposedPorts?: Record<string, {}>;
+	hostConfig?: HostConfigCreate;
+	networkingConfig?: NetworkingConfig;
+	labels?: Record<string, string>;
+	workingDir?: string;
+	user?: string;
+	tty?: boolean;
+	openStdin?: boolean;
+	stdinOnce?: boolean;
+}
+
 export interface ContainerSummaryDto extends BaseContainer {
 	ports: ContainerPorts[];
 	hostConfig: ContainerHostConfig;

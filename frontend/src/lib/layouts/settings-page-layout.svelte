@@ -162,7 +162,7 @@
 					</div>
 				</div>
 				{#if description}
-					<p class="text-muted-foreground mt-1 text-sm sm:text-base">{description}</p>
+					<p class="text-muted-foreground mt-1 text-sm sm:text-base">{@html description}</p>
 				{/if}
 			</div>
 		</div>

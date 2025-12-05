@@ -206,6 +206,38 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 	return inUse, containerIDs, nil
 }
 
+// VolumeSizeData holds size information for a volume.
+type VolumeSizeData struct {
+	Size     int64
+	RefCount int64
+}
+
+// GetVolumeSizes returns disk usage data for all volumes.
+// This is a slow operation as it calls Docker's DiskUsage API.
+func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	usageVolumes, err := docker.GetVolumeUsageData(ctx, dockerClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
+	}
+
+	result := make(map[string]VolumeSizeData, len(usageVolumes))
+	for _, v := range usageVolumes {
+		if v.UsageData != nil {
+			result[v.Name] = VolumeSizeData{
+				Size:     v.UsageData.Size,
+				RefCount: v.UsageData.RefCount,
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (s *VolumeService) enrichVolumesWithUsageData(volumes []*volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
 	result := make([]volume.Volume, 0, len(volumes))
 	for _, v := range volumes {
@@ -370,26 +402,45 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
-	if err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", err)
+	// Run volume list and container list in parallel for better performance
+	type volumeListResult struct {
+		volumes []*volume.Volume
+		err     error
+	}
+	type containerMapResult struct {
+		containerMap map[string][]string
+		err          error
 	}
 
-	usageVolumes, duErr := docker.GetVolumeUsageData(ctx, dockerClient)
-	if duErr != nil {
-		slog.WarnContext(ctx, "failed to load volume usage data",
-			slog.String("error", duErr.Error()))
-		usageVolumes = nil
+	volChan := make(chan volumeListResult, 1)
+	containerChan := make(chan containerMapResult, 1)
+
+	go func() {
+		volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
+		volChan <- volumeListResult{volumes: volListBody.Volumes, err: err}
+	}()
+
+	go func() {
+		containerMap, err := s.buildVolumeContainerMap(ctx, dockerClient)
+		containerChan <- containerMapResult{containerMap: containerMap, err: err}
+	}()
+
+	// Wait for both results
+	volResult := <-volChan
+	if volResult.err != nil {
+		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", volResult.err)
 	}
 
-	volumes := s.enrichVolumesWithUsageData(volListBody.Volumes, usageVolumes)
-
-	volumeContainerMap, err := s.buildVolumeContainerMap(ctx, dockerClient)
-	if err != nil {
+	containerResult := <-containerChan
+	volumeContainerMap := containerResult.containerMap
+	if containerResult.err != nil {
 		slog.WarnContext(ctx, "failed to build volume-container map",
-			slog.String("error", err.Error()))
+			slog.String("error", containerResult.err.Error()))
 		volumeContainerMap = make(map[string][]string)
 	}
+
+	// Skip usage data - it's fetched separately via GetVolumeSizes endpoint for lazy loading
+	volumes := s.enrichVolumesWithUsageData(volResult.volumes, nil)
 
 	items := make([]volumetypes.Volume, 0, len(volumes))
 	for _, v := range volumes {

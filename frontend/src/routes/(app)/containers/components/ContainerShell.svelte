@@ -54,7 +54,7 @@
 			const envId = await environmentStore.getCurrentEnvironmentId();
 			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 			const host = window.location.host;
-			websocketUrl = `${protocol}//${host}/api/environments/${envId}/containers/${containerId}/exec/ws?shell=${encodeURIComponent(shell)}`;
+			websocketUrl = `${protocol}//${host}/api/environments/${envId}/ws/containers/${containerId}/exec?cmd=${encodeURIComponent(shell)}`;
 		})();
 	}
 

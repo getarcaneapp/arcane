@@ -23,8 +23,8 @@ type IncludeFile struct {
 	Content string `json:"content"`
 }
 
-// Create is used to create a new project.
-type Create struct {
+// CreateProject is used to create a new project.
+type CreateProject struct {
 	// Name of the project.
 	//
 	// Required: true
@@ -41,8 +41,8 @@ type Create struct {
 	EnvContent *string `json:"envContent,omitempty"`
 }
 
-// Update is used to update a project.
-type Update struct {
+// UpdateProject is used to update a project.
+type UpdateProject struct {
 	// Name of the project.
 	//
 	// Required: false
