@@ -52,13 +52,9 @@
 		baseServerUrl: string;
 	} = $props();
 
-	let isLoading = $state({
-		start: false,
-		stop: false,
-		restart: false,
-		remove: false,
-		updating: false
-	});
+	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
+	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
+	let actionStatus = $state<Record<string, ActionStatus>>({});
 
 	// Parse image reference into repo and tag
 	function parseImageRef(imageRef: string): { repo: string; tag: string } {
@@ -76,15 +72,24 @@
 		return { repo: imageRef, tag: 'latest' };
 	}
 
-	async function performContainerAction(action: string, id: string) {
-		isLoading[action as keyof typeof isLoading] = true;
+	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
+		// Set action status for this specific container
+		if (action === 'start') {
+			actionStatus[id] = 'starting';
+		} else if (action === 'stop') {
+			actionStatus[id] = 'stopping';
+		} else if (action === 'restart') {
+			actionStatus[id] = 'restarting';
+		}
 
 		try {
 			if (action === 'start') {
 				handleApiResultWithCallbacks({
 					result: await tryCatch(containerService.startContainer(id)),
 					message: m.containers_start_failed(),
-					setLoadingState: (value) => (isLoading.start = value),
+					setLoadingState: (value) => {
+						actionStatus[id] = value ? 'starting' : '';
+					},
 					async onSuccess() {
 						toast.success(m.containers_start_success());
 						containers = await containerService.getContainers(requestOptions);
@@ -94,7 +99,9 @@
 				handleApiResultWithCallbacks({
 					result: await tryCatch(containerService.stopContainer(id)),
 					message: m.containers_stop_failed(),
-					setLoadingState: (value) => (isLoading.stop = value),
+					setLoadingState: (value) => {
+						actionStatus[id] = value ? 'stopping' : '';
+					},
 					async onSuccess() {
 						toast.success(m.containers_stop_success());
 						containers = await containerService.getContainers(requestOptions);
@@ -104,7 +111,9 @@
 				handleApiResultWithCallbacks({
 					result: await tryCatch(containerService.restartContainer(id)),
 					message: m.containers_restart_failed(),
-					setLoadingState: (value) => (isLoading.restart = value),
+					setLoadingState: (value) => {
+						actionStatus[id] = value ? 'restarting' : '';
+					},
 					async onSuccess() {
 						toast.success(m.containers_restart_success());
 						containers = await containerService.getContainers(requestOptions);
@@ -114,7 +123,7 @@
 		} catch (error) {
 			console.error('Container action failed:', error);
 			toast.error(m.containers_action_error());
-			isLoading[action as keyof typeof isLoading] = false;
+			actionStatus[id] = '';
 		}
 	}
 
@@ -140,10 +149,13 @@
 				action: async (checkboxStates) => {
 					const force = !!checkboxStates.force;
 					const volumes = !!checkboxStates.volumes;
+					actionStatus[id] = 'removing';
 					handleApiResultWithCallbacks({
 						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
 						message: m.containers_remove_failed(),
-						setLoadingState: (value) => (isLoading.remove = value),
+						setLoadingState: (value) => {
+							actionStatus[id] = value ? 'removing' : '';
+						},
 						async onSuccess() {
 							toast.success(m.containers_remove_success());
 							containers = await containerService.getContainers(requestOptions);
@@ -163,7 +175,7 @@
 			confirm: {
 				label: m.containers_update_container(),
 				action: async () => {
-					isLoading.updating = true;
+					actionStatus[container.id] = 'updating';
 					try {
 						toast.info(m.containers_update_pulling_image());
 
@@ -187,14 +199,14 @@
 						console.error('Container update failed:', error);
 						toast.error(m.containers_update_failed({ name: containerName }));
 					} finally {
-						isLoading.updating = false;
+						actionStatus[container.id] = '';
 					}
 				}
 			}
 		});
 	}
 
-	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
+	const isAnyLoading = $derived(Object.values(actionStatus).some((status) => status !== ''));
 
 	const columns = [
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: true, cell: NameCell },
@@ -273,10 +285,59 @@
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
-	<StatusBadge
-		variant={item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber'}
-		text={capitalizeFirstLetter(item.state)}
-	/>
+	{@const status = actionStatus[item.id]}
+	<div class="flex items-center gap-2">
+		{#if status}
+			<div class="flex items-center gap-1.5">
+				<Spinner class="size-3.5" />
+				<span class="text-xs text-muted-foreground font-medium">
+					{status === 'starting' ? m.common_start() + 'ing...' : status === 'stopping' ? m.common_stop() + 'ping...' : status === 'restarting' ? m.common_restart() + 'ing...' : status === 'updating' ? m.containers_update_container() + 'ing...' : status === 'removing' ? m.common_remove() + 'ing...' : status}
+				</span>
+			</div>
+		{:else}
+			<StatusBadge
+				variant={item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber'}
+				text={capitalizeFirstLetter(item.state)}
+			/>
+		{/if}
+		<div class="flex items-center gap-1">
+			{#if !status && item.state !== 'running'}
+				<Button
+					variant="ghost"
+					size="sm"
+					class="size-7 p-0"
+					onclick={() => performContainerAction('start', item.id)}
+					disabled={isAnyLoading}
+					title={m.common_start()}
+				>
+					<PlayIcon class="size-3.5" />
+				</Button>
+			{:else if !status && item.state === 'running'}
+				<Button
+					variant="ghost"
+					size="sm"
+					class="size-7 p-0"
+					onclick={() => performContainerAction('stop', item.id)}
+					disabled={isAnyLoading}
+					title={m.common_stop()}
+				>
+					<StopCircleIcon class="size-3.5" />
+				</Button>
+			{/if}
+			{#if !status && item.updateInfo?.hasUpdate}
+				<Button
+					variant="ghost"
+					size="sm"
+					class="size-7 p-0"
+					onclick={() => handleUpdateContainer(item)}
+					disabled={isAnyLoading}
+					title={m.containers_update_container()}
+				>
+					<ArrowUpCircleIcon class="size-3.5" />
+				</Button>
+			{/if}
+		</div>
+	</div>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
@@ -389,6 +450,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerSummaryDto })}
+	{@const status = actionStatus[item.id]}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
@@ -406,8 +468,8 @@
 				</DropdownMenu.Item>
 
 				{#if item.updateInfo?.hasUpdate}
-					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={isLoading.updating || isAnyLoading}>
-						{#if isLoading.updating}
+					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
+						{#if status === 'updating'}
 							<Spinner class="size-4" />
 						{:else}
 							<ArrowUpCircleIcon class="size-4" />
@@ -417,8 +479,8 @@
 				{/if}
 
 				{#if item.state !== 'running'}
-					<DropdownMenu.Item onclick={() => performContainerAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
-						{#if isLoading.start}
+					<DropdownMenu.Item onclick={() => performContainerAction('start', item.id)} disabled={status === 'starting' || isAnyLoading}>
+						{#if status === 'starting'}
 							<Spinner class="size-4" />
 						{:else}
 							<PlayIcon class="size-4" />
@@ -428,9 +490,9 @@
 				{:else}
 					<DropdownMenu.Item
 						onclick={() => performContainerAction('restart', item.id)}
-						disabled={isLoading.restart || isAnyLoading}
+						disabled={status === 'restarting' || isAnyLoading}
 					>
-						{#if isLoading.restart}
+						{#if status === 'restarting'}
 							<Spinner class="size-4" />
 						{:else}
 							<RotateCcwIcon class="size-4" />
@@ -438,8 +500,8 @@
 						{m.common_restart()}
 					</DropdownMenu.Item>
 
-					<DropdownMenu.Item onclick={() => performContainerAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
-						{#if isLoading.stop}
+					<DropdownMenu.Item onclick={() => performContainerAction('stop', item.id)} disabled={status === 'stopping' || isAnyLoading}>
+						{#if status === 'stopping'}
 							<Spinner class="size-4" />
 						{:else}
 							<StopCircleIcon class="size-4" />
@@ -453,9 +515,9 @@
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleRemoveContainer(item.id)}
-					disabled={isLoading.remove || isAnyLoading}
+					disabled={status === 'removing' || isAnyLoading}
 				>
-					{#if isLoading.remove}
+					{#if status === 'removing'}
 						<Spinner class="size-4" />
 					{:else}
 						<Trash2Icon class="size-4" />
