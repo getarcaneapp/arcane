@@ -13,6 +13,7 @@
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
@@ -43,6 +44,8 @@
 	let formName = $state('');
 	let formEnabled = $state(false);
 	let formApiUrl = $state('');
+	let formTags = $state<string[]>([]);
+	let newTagInput = $state('');
 
 	// Track current status separately from environment data
 	let currentStatus = $state<'online' | 'offline' | 'error'>('offline');
@@ -52,14 +55,24 @@
 		formName = environment.name;
 		formEnabled = environment.enabled;
 		formApiUrl = environment.apiUrl;
+		formTags = environment.tags ?? [];
 		currentStatus = environment.status;
 	});
+
+	// Helper to compare arrays
+	function arraysEqual(a: string[], b: string[]): boolean {
+		if (a.length !== b.length) return false;
+		const sortedA = [...a].sort();
+		const sortedB = [...b].sort();
+		return sortedA.every((val, idx) => val === sortedB[idx]);
+	}
 
 	// Track changes
 	let hasChanges = $derived(
 		formName !== environment.name ||
 			formEnabled !== environment.enabled ||
-			(environment.id !== '0' && formApiUrl !== environment.apiUrl)
+			(environment.id !== '0' && formApiUrl !== environment.apiUrl) ||
+			!arraysEqual(formTags, environment.tags ?? [])
 	);
 
 	async function refreshEnvironment() {
@@ -71,6 +84,7 @@
 			formName = environment.name;
 			formEnabled = environment.enabled;
 			formApiUrl = environment.apiUrl;
+			formTags = environment.tags ?? [];
 			currentStatus = environment.status;
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
@@ -151,7 +165,8 @@
 			await environmentManagementService.update(environment.id, {
 				name: formName,
 				enabled: formEnabled,
-				apiUrl: formApiUrl
+				apiUrl: formApiUrl,
+				tags: formTags
 			});
 
 			toast.success(m.common_update_success({ resource: m.resource_environment_cap() }));
@@ -179,7 +194,33 @@
 		formName = environment.name;
 		formEnabled = environment.enabled;
 		formApiUrl = environment.apiUrl;
+		formTags = environment.tags ?? [];
+		newTagInput = '';
 		toast.info(m.environments_changes_reset());
+	}
+
+	function addTag() {
+		const tag = newTagInput.trim();
+		if (!tag) return;
+		if (formTags.includes(tag)) {
+			toast.error(m.common_tag_already_exists());
+			return;
+		}
+		formTags = [...formTags, tag];
+		newTagInput = '';
+	}
+
+	function removeTag(tag: string) {
+		formTags = formTags.filter((t) => t !== tag);
+	}
+
+	function handleTagKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' || (event.key === 'Tab' && newTagInput.trim())) {
+			event.preventDefault();
+			addTag();
+		} else if (event.key === 'Backspace' && !newTagInput && formTags.length > 0) {
+			removeTag(formTags[formTags.length - 1]);
+		}
 	}
 
 	async function confirmSwitchAndEdit() {
@@ -329,13 +370,43 @@
 						<div class="mt-1 font-mono text-sm">{environment.id}</div>
 					</div>
 					<div>
-						<Label class="text-muted-foreground text-xs font-medium">Status</Label>
+						<Label class="text-muted-foreground text-xs font-medium">{m.common_status()}</Label>
 						<div class="mt-1">
 							<StatusBadge
 								text={currentStatus === 'online' ? m.common_online() : m.common_offline()}
 								variant={currentStatus === 'online' ? 'green' : 'red'}
 							/>
 						</div>
+					</div>
+				</div>
+
+				<div>
+					<Label for="tag-input" class="text-sm font-medium">{m.common_tags()}</Label>
+					<div 
+						class="border-input bg-background focus-within:ring-ring mt-1.5 flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border px-3 py-2 transition-colors focus-within:ring-1"
+					>
+						{#each formTags as tag}
+							<span 
+								class="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-medium transition-all hover:bg-primary/15"
+							>
+								{tag}
+								<button
+									class="hover:bg-primary/20 -mr-0.5 rounded p-0.5 transition-colors"
+									onclick={(e) => { e.stopPropagation(); removeTag(tag); }}
+									type="button"
+								>
+									<XIcon class="size-3" />
+								</button>
+							</span>
+						{/each}
+						<input
+							id="tag-input"
+							type="text"
+							placeholder={formTags.length === 0 ? m.environments_tags_placeholder() : ''}
+							bind:value={newTagInput}
+							onkeydown={handleTagKeydown}
+							class="placeholder:text-muted-foreground min-w-[120px] flex-1 bg-transparent text-sm outline-none"
+						/>
 					</div>
 				</div>
 			</Card.Content>

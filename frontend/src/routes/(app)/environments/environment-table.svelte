@@ -22,6 +22,7 @@
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import CloudIcon from '@lucide/svelte/icons/cloud';
 	import PowerIcon from '@lucide/svelte/icons/power';
+	import TagIcon from '@lucide/svelte/icons/tag';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -212,6 +213,11 @@
 			cell: EnabledCell
 		},
 		{
+			accessorKey: 'tags',
+			title: m.common_tags(),
+			cell: TagsCell
+		},
+		{
 			accessorKey: 'apiUrl',
 			title: m.environments_api_url(),
 			cell: ApiCell
@@ -220,7 +226,8 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true }
+		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true },
+		{ id: 'tags', label: m.common_tags(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -262,6 +269,22 @@
 	<StatusBadge text={value ? m.common_enabled() : m.common_disabled()} variant={value ? 'green' : 'red'} />
 {/snippet}
 
+{#snippet TagsCell({ value }: { value: unknown })}
+	{@const tags = (value as string[] | undefined) ?? []}
+	{#if tags.length > 0}
+		<div class="flex flex-wrap gap-1">
+			{#each tags.slice(0, 3) as tag}
+				<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">{tag}</span>
+			{/each}
+			{#if tags.length > 3}
+				<span class="text-muted-foreground text-xs">+{tags.length - 3}</span>
+			{/if}
+		</div>
+	{:else}
+		<span class="text-muted-foreground text-xs">—</span>
+	{/if}
+{/snippet}
+
 {#snippet EnvironmentMobileCardSnippet({
 	row,
 	item,
@@ -284,6 +307,13 @@
 				icon: CloudIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.apiUrl ?? true) && !!item.apiUrl
+			},
+			{
+				label: m.common_tags(),
+				getValue: (item: Environment) => item.tags?.join(', ') || null,
+				icon: TagIcon,
+				iconVariant: 'gray' as const,
+				show: (mobileFieldVisibility.tags ?? true) && !!item.tags?.length
 			}
 		]}
 		rowActions={RowActions}

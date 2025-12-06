@@ -16,10 +16,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/search"
 	"github.com/google/uuid"
 	"go.getarcane.app/types/containerregistry"
 	"go.getarcane.app/types/environment"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrFilterNotFound  = errors.New("filter not found")
+	ErrFilterForbidden = errors.New("not authorized to access this filter")
 )
 
 type EnvironmentService struct {
@@ -79,10 +85,23 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	environment.CreatedAt = now
 	environment.UpdatedAt = &now
 
-	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
-		return nil, fmt.Errorf("failed to create environment: %w", err)
+	tags := environment.Tags
+	environment.Tags = nil
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(environment).Error; err != nil {
+			return fmt.Errorf("failed to create environment: %w", err)
+		}
+		if err := s.setEnvironmentTags(tx, environment.ID, tags); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	environment.Tags = tags
 	return environment, nil
 }
 
@@ -94,6 +113,13 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 		}
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
+
+	tags, err := s.getEnvironmentTags(s.db.WithContext(ctx), id)
+	if err != nil {
+		return nil, err
+	}
+	environment.Tags = tags
+
 	return &environment, nil
 }
 
@@ -102,11 +128,9 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	q := s.db.WithContext(ctx).Model(&models.Environment{})
 
 	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		q = q.Where(
-			"name LIKE ? OR api_url LIKE ?",
-			searchPattern, searchPattern,
-		)
+		// Fuzzy search (case-insensitive) or exact match with quotes (case-sensitive)
+		sq := search.BuildSearch(term, s.db.Name(), "name", "api_url")
+		q = q.Where(sq.Clause, sq.Args...)
 	}
 
 	if status := params.Filters["status"]; status != "" {
@@ -121,9 +145,46 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		}
 	}
 
+	if includeTags := params.Filters["tags"]; includeTags != "" {
+		tagList := splitAndTrimTags(includeTags)
+		tagMode := params.Filters["tagMode"]
+		if len(tagList) > 0 {
+			if tagMode == "all" {
+				// ALL mode: environment must have all specified tags
+				q = q.Where("environments.id IN (?)",
+					s.db.Table("environment_tags").
+						Select("environment_id").
+						Where("tag IN ?", tagList).
+						Group("environment_id").
+						Having("COUNT(DISTINCT tag) = ?", len(tagList)))
+			} else {
+				// ANY mode (default): environment must have at least one of the tags
+				q = q.Where("environments.id IN (?)",
+					s.db.Table("environment_tags").
+						Select("environment_id").
+						Where("tag IN ?", tagList))
+			}
+		}
+	}
+
+	// Exclude tags: environment must NOT have any of these tags
+	if excludeTags := params.Filters["excludeTags"]; excludeTags != "" {
+		tagList := splitAndTrimTags(excludeTags)
+		if len(tagList) > 0 {
+			q = q.Where("environments.id NOT IN (?)",
+				s.db.Table("environment_tags").
+					Select("environment_id").
+					Where("tag IN ?", tagList))
+		}
+	}
+
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate environments: %w", err)
+	}
+
+	if err := s.loadTagsForEnvironments(ctx, envs); err != nil {
+		return nil, pagination.Response{}, err
 	}
 
 	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
@@ -138,8 +199,32 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	now := time.Now()
 	updates["updated_at"] = &now
 
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("failed to update environment: %w", err)
+	// Extract tags from updates (handled separately via junction table)
+	var tags []string
+	var hasTags bool
+	if t, ok := updates["tags"]; ok {
+		hasTags = true
+		if tagSlice, ok := t.([]string); ok {
+			tags = tagSlice
+		}
+		delete(updates, "tags")
+	}
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return fmt.Errorf("failed to update environment: %w", err)
+			}
+		}
+		if hasTags {
+			if err := s.setEnvironmentTags(tx, id, tags); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return s.GetEnvironmentByID(ctx, id)
@@ -451,4 +536,211 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		slog.String("environmentName", environment.Name))
 
 	return nil
+}
+
+// ListTags returns all unique tags used across all environments
+func (s *EnvironmentService) ListTags(ctx context.Context) ([]string, error) {
+	var tags []string
+	if err := s.db.WithContext(ctx).
+		Table("environment_tags").
+		Distinct("tag").
+		Order("tag").
+		Pluck("tag", &tags).Error; err != nil {
+		return nil, fmt.Errorf("failed to get environment tags: %w", err)
+	}
+	return tags, nil
+}
+
+// ListFilters returns all saved filters for a given user
+func (s *EnvironmentService) ListFilters(ctx context.Context, userID string) ([]models.EnvironmentFilter, error) {
+	var filters []models.EnvironmentFilter
+	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("name ASC").Find(&filters).Error; err != nil {
+		return nil, fmt.Errorf("failed to list filters: %w", err)
+	}
+	return filters, nil
+}
+
+// GetFilter returns a filter by ID, ensuring it belongs to the user
+func (s *EnvironmentService) GetFilter(ctx context.Context, filterID, userID string) (*models.EnvironmentFilter, error) {
+	var filter models.EnvironmentFilter
+	if err := s.db.WithContext(ctx).Where("id = ?", filterID).First(&filter).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFilterNotFound
+		}
+		return nil, fmt.Errorf("failed to get filter: %w", err)
+	}
+
+	if filter.UserID != userID {
+		return nil, ErrFilterForbidden
+	}
+
+	return &filter, nil
+}
+
+// CreateFilter creates a new saved filter for a user
+func (s *EnvironmentService) CreateFilter(ctx context.Context, filter *models.EnvironmentFilter) (*models.EnvironmentFilter, error) {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// If this filter is being set as default, clear any existing default
+		if filter.IsDefault {
+			if err := tx.Model(&models.EnvironmentFilter{}).
+				Where("user_id = ? AND is_default = ?", filter.UserID, true).
+				Update("is_default", false).Error; err != nil {
+				return fmt.Errorf("failed to clear existing default: %w", err)
+			}
+		}
+
+		if err := tx.Create(filter).Error; err != nil {
+			return fmt.Errorf("failed to create filter: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return filter, nil
+}
+
+// UpdateFilter updates an existing saved filter
+func (s *EnvironmentService) UpdateFilter(ctx context.Context, filterID, userID string, req *environment.FilterUpdate) (*models.EnvironmentFilter, error) {
+	var filter models.EnvironmentFilter
+
+	if err := s.db.WithContext(ctx).Where("id = ?", filterID).First(&filter).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFilterNotFound
+		}
+		return nil, fmt.Errorf("failed to get filter: %w", err)
+	}
+
+	if filter.UserID != userID {
+		return nil, ErrFilterForbidden
+	}
+
+	if req.Name != nil {
+		filter.Name = *req.Name
+	}
+	if req.SearchQuery != nil {
+		filter.SearchQuery = *req.SearchQuery
+	}
+	if req.SelectedTags != nil {
+		filter.SelectedTags = req.SelectedTags
+	}
+	if req.ExcludedTags != nil {
+		filter.ExcludedTags = req.ExcludedTags
+	}
+	if req.TagMode != nil {
+		filter.TagMode = models.EnvironmentFilterTagMode(*req.TagMode)
+	}
+	if req.StatusFilter != nil {
+		filter.StatusFilter = models.EnvironmentFilterStatusFilter(*req.StatusFilter)
+	}
+	if req.GroupBy != nil {
+		filter.GroupBy = models.EnvironmentFilterGroupBy(*req.GroupBy)
+	}
+
+	if req.IsDefault != nil && *req.IsDefault && !filter.IsDefault {
+		if err := s.db.WithContext(ctx).Model(&models.EnvironmentFilter{}).
+			Where("user_id = ? AND is_default = ? AND id != ?", userID, true, filterID).
+			Update("is_default", false).Error; err != nil {
+			return nil, fmt.Errorf("failed to clear existing default: %w", err)
+		}
+	}
+	if req.IsDefault != nil {
+		filter.IsDefault = *req.IsDefault
+	}
+
+	if err := s.db.WithContext(ctx).Save(&filter).Error; err != nil {
+		return nil, fmt.Errorf("failed to update filter: %w", err)
+	}
+
+	return &filter, nil
+}
+
+// DeleteFilter deletes a saved filter
+func (s *EnvironmentService) DeleteFilter(ctx context.Context, filterID, userID string) error {
+	result := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", filterID, userID).Delete(&models.EnvironmentFilter{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete filter: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrFilterNotFound
+	}
+	return nil
+}
+
+// getEnvironmentTags retrieves tags for a single environment
+func (s *EnvironmentService) getEnvironmentTags(db *gorm.DB, envID string) ([]string, error) {
+	var tags []string
+	if err := db.Table("environment_tags").
+		Where("environment_id = ?", envID).
+		Order("tag").
+		Pluck("tag", &tags).Error; err != nil {
+		return nil, fmt.Errorf("failed to get environment tags: %w", err)
+	}
+	return tags, nil
+}
+
+// setEnvironmentTags replaces all tags for an environment
+func (s *EnvironmentService) setEnvironmentTags(tx *gorm.DB, envID string, tags []string) error {
+	// Delete existing tags
+	if err := tx.Where("environment_id = ?", envID).Delete(&models.EnvironmentTag{}).Error; err != nil {
+		return fmt.Errorf("failed to delete existing tags: %w", err)
+	}
+
+	// Insert new tags
+	if len(tags) > 0 {
+		envTags := make([]models.EnvironmentTag, len(tags))
+		for i, tag := range tags {
+			envTags[i] = models.EnvironmentTag{EnvironmentID: envID, Tag: tag}
+		}
+		if err := tx.Create(&envTags).Error; err != nil {
+			return fmt.Errorf("failed to create tags: %w", err)
+		}
+	}
+	return nil
+}
+
+// loadTagsForEnvironments loads tags for multiple environments in a single query
+func (s *EnvironmentService) loadTagsForEnvironments(ctx context.Context, envs []models.Environment) error {
+	if len(envs) == 0 {
+		return nil
+	}
+
+	// Collect environment IDs
+	envIDs := make([]string, len(envs))
+	envMap := make(map[string]*models.Environment, len(envs))
+	for i := range envs {
+		envIDs[i] = envs[i].ID
+		envMap[envs[i].ID] = &envs[i]
+	}
+
+	// Fetch all tags for these environments
+	var envTags []models.EnvironmentTag
+	if err := s.db.WithContext(ctx).
+		Where("environment_id IN ?", envIDs).
+		Order("tag").
+		Find(&envTags).Error; err != nil {
+		return fmt.Errorf("failed to load environment tags: %w", err)
+	}
+
+	// Group tags by environment
+	for _, et := range envTags {
+		if env, ok := envMap[et.EnvironmentID]; ok {
+			env.Tags = append(env.Tags, et.Tag)
+		}
+	}
+
+	return nil
+}
+
+// splitAndTrimTags splits a comma-separated tag string and trims whitespace
+func splitAndTrimTags(tagsStr string) []string {
+	parts := strings.Split(tagsStr, ",")
+	tags := make([]string, 0, len(parts))
+	for _, tag := range parts {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
 }

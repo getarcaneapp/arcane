@@ -1145,6 +1145,58 @@ func (e *VolumeCountsError) Error() string {
 	return fmt.Sprintf("Failed to get volume counts: %v", e.Err)
 }
 
+type FilterNotFoundError struct{}
+
+func (e *FilterNotFoundError) Error() string {
+	return "Filter not found"
+}
+
+type FilterForbiddenError struct{}
+
+func (e *FilterForbiddenError) Error() string {
+	return "Not authorized to access this filter"
+}
+
+type FilterCreationError struct {
+	Err error
+}
+
+func (e *FilterCreationError) Error() string {
+	return fmt.Sprintf("Failed to create filter: %v", e.Err)
+}
+
+type FilterUpdateError struct {
+	Err error
+}
+
+func (e *FilterUpdateError) Error() string {
+	return fmt.Sprintf("Failed to update filter: %v", e.Err)
+}
+
+type FilterDeleteError struct {
+	Err error
+}
+
+func (e *FilterDeleteError) Error() string {
+	return fmt.Sprintf("Failed to delete filter: %v", e.Err)
+}
+
+type FilterListError struct {
+	Err error
+}
+
+func (e *FilterListError) Error() string {
+	return fmt.Sprintf("Failed to list filters: %v", e.Err)
+}
+
+type FilterMappingError struct {
+	Err error
+}
+
+func (e *FilterMappingError) Error() string {
+	return fmt.Sprintf("Failed to map filter: %v", e.Err)
+}
+
 type ApiKeyListError struct {
 	Err error
 }

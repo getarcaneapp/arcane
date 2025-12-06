@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
@@ -111,6 +114,47 @@ type SyncRegistriesInput struct {
 
 type SyncRegistriesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
+}
+
+type ListTagsOutput struct {
+	Body base.ApiResponse[[]string]
+}
+
+type ListFiltersOutput struct {
+	Body base.ApiResponse[[]environment.FilterResponse]
+}
+
+type GetFilterInput struct {
+	FilterID string `path:"filterId" doc:"Filter ID"`
+}
+
+type GetFilterOutput struct {
+	Body base.ApiResponse[environment.FilterResponse]
+}
+
+type CreateFilterInput struct {
+	Body environment.FilterCreate
+}
+
+type CreateFilterOutput struct {
+	Body base.ApiResponse[environment.FilterResponse]
+}
+
+type UpdateFilterInput struct {
+	FilterID string `path:"filterId" doc:"Filter ID"`
+	Body     environment.FilterUpdate
+}
+
+type UpdateFilterOutput struct {
+	Body base.ApiResponse[environment.FilterResponse]
+}
+
+type DeleteFilterInput struct {
+	FilterID string `path:"filterId" doc:"Filter ID"`
+}
+
+type DeleteFilterOutput struct {
+	Body base.ApiResponse[any]
 }
 
 // ============================================================================
@@ -241,6 +285,84 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"ApiKeyAuth": {}},
 		},
 	}, h.SyncRegistries)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "listEnvironmentTags",
+		Method:      "GET",
+		Path:        "/environments/tags",
+		Summary:     "List tags",
+		Description: "List all unique tags used across environments",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListTags)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "listEnvironmentFilters",
+		Method:      "GET",
+		Path:        "/environments/filters",
+		Summary:     "List filters",
+		Description: "List all filters for the current user",
+		Tags:        []string{"Filters"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListFilters)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "createEnvironmentFilter",
+		Method:      "POST",
+		Path:        "/environments/filters",
+		Summary:     "Create a filter",
+		Description: "Create a new filter",
+		Tags:        []string{"Filters"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.CreateFilter)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getEnvironmentFilter",
+		Method:      "GET",
+		Path:        "/environments/filters/{filterId}",
+		Summary:     "Get a filter",
+		Description: "Get a filter by ID",
+		Tags:        []string{"Filters"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetFilter)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "updateEnvironmentFilter",
+		Method:      "PUT",
+		Path:        "/environments/filters/{filterId}",
+		Summary:     "Update a filter",
+		Description: "Update an existing filter",
+		Tags:        []string{"Filters"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UpdateFilter)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deleteEnvironmentFilter",
+		Method:      "DELETE",
+		Path:        "/environments/filters/{filterId}",
+		Summary:     "Delete a filter",
+		Description: "Delete an existing filter",
+		Tags:        []string{"Filters"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DeleteFilter)
 }
 
 // ============================================================================
@@ -515,6 +637,191 @@ func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegi
 	}, nil
 }
 
+// ListTags returns all unique tags used across environments.
+func (h *EnvironmentHandler) ListTags(ctx context.Context, _ *struct{}) (*ListTagsOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	tags, err := h.environmentService.ListTags(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &ListTagsOutput{
+		Body: base.ApiResponse[[]string]{
+			Success: true,
+			Data:    tags,
+		},
+	}, nil
+}
+
+// ListFilters returns all filters for the current user.
+func (h *EnvironmentHandler) ListFilters(ctx context.Context, _ *struct{}) (*ListFiltersOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userID, ok := humamw.GetUserIDFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	filters, err := h.environmentService.ListFilters(ctx, userID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterListError{Err: err}).Error())
+	}
+
+	out, mapErr := mapper.MapSlice[models.EnvironmentFilter, environment.FilterResponse](filters)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterMappingError{Err: mapErr}).Error())
+	}
+
+	return &ListFiltersOutput{
+		Body: base.ApiResponse[[]environment.FilterResponse]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+// GetFilter returns a filter by ID.
+func (h *EnvironmentHandler) GetFilter(ctx context.Context, input *GetFilterInput) (*GetFilterOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userID, ok := humamw.GetUserIDFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	filter, err := h.environmentService.GetFilter(ctx, input.FilterID, userID)
+	if err != nil {
+		if errors.Is(err, services.ErrFilterNotFound) {
+			return nil, huma.Error404NotFound((&common.FilterNotFoundError{}).Error())
+		}
+		if errors.Is(err, services.ErrFilterForbidden) {
+			return nil, huma.Error403Forbidden((&common.FilterForbiddenError{}).Error())
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	out, mapErr := mapper.MapOne[*models.EnvironmentFilter, environment.FilterResponse](filter)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterMappingError{Err: mapErr}).Error())
+	}
+
+	return &GetFilterOutput{
+		Body: base.ApiResponse[environment.FilterResponse]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+// CreateFilter creates a new filter.
+func (h *EnvironmentHandler) CreateFilter(ctx context.Context, input *CreateFilterInput) (*CreateFilterOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userID, ok := humamw.GetUserIDFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	filter := &models.EnvironmentFilter{
+		UserID:       userID,
+		Name:         input.Body.Name,
+		IsDefault:    input.Body.IsDefault,
+		SearchQuery:  input.Body.SearchQuery,
+		SelectedTags: input.Body.SelectedTags,
+		ExcludedTags: input.Body.ExcludedTags,
+		TagMode:      models.EnvironmentFilterTagMode(cmp.Or(input.Body.TagMode, string(models.TagModeAny))),
+		StatusFilter: models.EnvironmentFilterStatusFilter(cmp.Or(input.Body.StatusFilter, string(models.StatusFilterAll))),
+		GroupBy:      models.EnvironmentFilterGroupBy(cmp.Or(input.Body.GroupBy, string(models.GroupByNone))),
+	}
+
+	created, err := h.environmentService.CreateFilter(ctx, filter)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterCreationError{Err: err}).Error())
+	}
+
+	out, mapErr := mapper.MapOne[*models.EnvironmentFilter, environment.FilterResponse](created)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterMappingError{Err: mapErr}).Error())
+	}
+
+	return &CreateFilterOutput{
+		Body: base.ApiResponse[environment.FilterResponse]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+// UpdateFilter updates an existing filter.
+func (h *EnvironmentHandler) UpdateFilter(ctx context.Context, input *UpdateFilterInput) (*UpdateFilterOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userID, ok := humamw.GetUserIDFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	updated, err := h.environmentService.UpdateFilter(ctx, input.FilterID, userID, &input.Body)
+	if err != nil {
+		if errors.Is(err, services.ErrFilterNotFound) {
+			return nil, huma.Error404NotFound((&common.FilterNotFoundError{}).Error())
+		}
+		if errors.Is(err, services.ErrFilterForbidden) {
+			return nil, huma.Error403Forbidden((&common.FilterForbiddenError{}).Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.FilterUpdateError{Err: err}).Error())
+	}
+
+	out, mapErr := mapper.MapOne[*models.EnvironmentFilter, environment.FilterResponse](updated)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.FilterMappingError{Err: mapErr}).Error())
+	}
+
+	return &UpdateFilterOutput{
+		Body: base.ApiResponse[environment.FilterResponse]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+// DeleteFilter deletes a filter.
+func (h *EnvironmentHandler) DeleteFilter(ctx context.Context, input *DeleteFilterInput) (*DeleteFilterOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userID, ok := humamw.GetUserIDFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.environmentService.DeleteFilter(ctx, input.FilterID, userID); err != nil {
+		if errors.Is(err, services.ErrFilterNotFound) {
+			return nil, huma.Error404NotFound((&common.FilterNotFoundError{}).Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.FilterDeleteError{Err: err}).Error())
+	}
+
+	return &DeleteFilterOutput{
+		Body: base.ApiResponse[any]{
+			Success: true,
+			Data:    nil,
+		},
+	}, nil
+}
+
 // ============================================================================
 // Helper Methods
 // ============================================================================
@@ -533,6 +840,10 @@ func (h *EnvironmentHandler) buildUpdateMap(req *environment.Update, isLocalEnv 
 
 	if req.Name != nil {
 		updates["name"] = *req.Name
+	}
+
+	if req.Tags != nil {
+		updates["tags"] = req.Tags
 	}
 
 	return updates
