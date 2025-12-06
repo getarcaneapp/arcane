@@ -72,6 +72,24 @@
 		return { repo: imageRef, tag: 'latest' };
 	}
 
+	function getActionStatusMessage(status: ActionStatus): string {
+		const messages: Record<ActionStatus, () => string> = {
+			starting: () => m.common_action_starting(),
+			stopping: () => m.common_action_stopping(),
+			restarting: () => m.common_action_restarting(),
+			updating: () => m.common_action_updating(),
+			removing: () => m.common_action_removing(),
+			'': () => ''
+		};
+		return messages[status]();
+	}
+
+	function getStateBadgeVariant(state: string): 'green' | 'red' | 'amber' {
+		if (state === 'running') return 'green';
+		if (state === 'exited') return 'red';
+		return 'amber';
+	}
+
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		// Set action status for this specific container
 		if (action === 'start') {
@@ -290,15 +308,12 @@
 		{#if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
-				<span class="text-xs text-muted-foreground font-medium">
-					{status === 'starting' ? m.common_start() + 'ing...' : status === 'stopping' ? m.common_stop() + 'ping...' : status === 'restarting' ? m.common_restart() + 'ing...' : status === 'updating' ? m.containers_update_container() + 'ing...' : status === 'removing' ? m.common_remove() + 'ing...' : status}
+				<span class="text-muted-foreground text-xs font-medium">
+					{getActionStatusMessage(status)}
 				</span>
 			</div>
 		{:else}
-			<StatusBadge
-				variant={item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber'}
-				text={capitalizeFirstLetter(item.state)}
-			/>
+			<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
@@ -479,7 +494,10 @@
 				{/if}
 
 				{#if item.state !== 'running'}
-					<DropdownMenu.Item onclick={() => performContainerAction('start', item.id)} disabled={status === 'starting' || isAnyLoading}>
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('start', item.id)}
+						disabled={status === 'starting' || isAnyLoading}
+					>
 						{#if status === 'starting'}
 							<Spinner class="size-4" />
 						{:else}
@@ -500,7 +518,10 @@
 						{m.common_restart()}
 					</DropdownMenu.Item>
 
-					<DropdownMenu.Item onclick={() => performContainerAction('stop', item.id)} disabled={status === 'stopping' || isAnyLoading}>
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('stop', item.id)}
+						disabled={status === 'stopping' || isAnyLoading}
+					>
 						{#if status === 'stopping'}
 							<Spinner class="size-4" />
 						{:else}

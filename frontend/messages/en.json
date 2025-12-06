@@ -155,6 +155,7 @@
 	"common_action_downloading": "Downloading…",
 	"common_action_restarting": "Restarting…",
 	"common_action_removing": "Removing…",
+	"common_action_updating": "Updating…",
 	"common_action_redeploying": "Redeploying…",
 	"common_action_inspecting": "Inspecting…",
 	"common_action_confirming": "Confirming…",
