@@ -17,6 +17,8 @@ import AlarmClockIcon from '@lucide/svelte/icons/alarm-clock';
 import NavigationIcon from '@lucide/svelte/icons/navigation';
 import FileTextIcon from '@lucide/svelte/icons/file-text';
 import BellIcon from '@lucide/svelte/icons/bell';
+import GitBranchIcon from '@lucide/svelte/icons/git-branch';
+import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 import { m } from '$lib/paraglide/messages';
 
 export type NavigationItem = {
@@ -43,7 +45,9 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			items: [
 				{ title: m.templates_title(), url: '/customize/templates', icon: LayoutTemplateIcon },
 				{ title: m.registries_title(), url: '/customize/registries', icon: LockKeyholeIcon },
-				{ title: m.variables_title(), url: '/customize/variables', icon: FileTextIcon }
+				{ title: m.variables_title(), url: '/customize/variables', icon: FileTextIcon },
+				{ title: m.git_repositories_title(), url: '/customize/git-repositories', icon: GitBranchIcon },
+				{ title: m.gitops_syncs_title(), url: '/customize/gitops-syncs', icon: RefreshCwIcon }
 			]
 		}
 	],
@@ -71,7 +75,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 				{ title: m.navigation_title(), url: '/settings/navigation', icon: NavigationIcon },
 				{ title: m.users_title(), url: '/settings/users', icon: UserIcon },
 				{ title: m.notifications_title(), url: '/settings/notifications', icon: BellIcon },
-				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon },
+				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon }
 			]
 		}
 	]
