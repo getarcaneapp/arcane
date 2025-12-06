@@ -23,14 +23,6 @@ func tokenCookieName(c *gin.Context) string {
 	return InsecureTokenCookieName
 }
 
-func CreateTokenCookie(c *gin.Context, maxAgeInSeconds int, token string) {
-	if maxAgeInSeconds < 0 {
-		maxAgeInSeconds = 0
-	}
-	name := tokenCookieName(c)
-	c.SetCookie(name, token, maxAgeInSeconds, "/", "", isSecure(c), true)
-}
-
 func ClearTokenCookie(c *gin.Context) {
 	name := tokenCookieName(c)
 	c.SetCookie(name, "", -1, "/", "", isSecure(c), true)
@@ -44,18 +36,64 @@ func GetTokenCookie(c *gin.Context) (string, error) {
 	return c.Cookie(InsecureTokenCookieName)
 }
 
-func CreateOidcStateCookie(c *gin.Context, value string, maxAgeInSeconds int) {
-	c.SetSameSite(http.SameSiteLaxMode)
+// BuildTokenCookieString builds a Set-Cookie header string for Huma handlers.
+// Uses the insecure cookie name since we can't detect TLS from context.
+// For secure contexts, the middleware should handle the __Host- prefix.
+func BuildTokenCookieString(maxAgeInSeconds int, token string) string {
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	c.SetCookie(OidcStateCookieName, value, maxAgeInSeconds, "/", "", c.Request.TLS != nil, true)
+	cookie := &http.Cookie{
+		Name:     InsecureTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAgeInSeconds,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
 }
 
-func GetOidcStateCookie(c *gin.Context) (string, error) {
-	return c.Cookie(OidcStateCookieName)
+// BuildClearTokenCookieString builds a Set-Cookie header string to clear the token cookie.
+func BuildClearTokenCookieString() string {
+	cookie := &http.Cookie{
+		Name:     InsecureTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
 }
 
-func ClearOidcStateCookie(c *gin.Context) {
-	c.SetCookie(OidcStateCookieName, "", -1, "/", "", c.Request.TLS != nil, true)
+// BuildOidcStateCookieString builds a Set-Cookie header string for the OIDC state cookie.
+func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) string {
+	if maxAgeInSeconds < 0 {
+		maxAgeInSeconds = 0
+	}
+	cookie := &http.Cookie{
+		Name:     OidcStateCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAgeInSeconds,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
+}
+
+// BuildClearOidcStateCookieString builds a Set-Cookie header string to clear the OIDC state cookie.
+func BuildClearOidcStateCookieString(secure bool) string {
+	cookie := &http.Cookie{
+		Name:     OidcStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+	return cookie.String()
 }

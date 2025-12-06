@@ -77,7 +77,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	return event, nil
 }
 
-func (s *EventService) CreateEventFromDto(ctx context.Context, req event.Create) (*event.Response, error) {
+func (s *EventService) CreateEventFromDto(ctx context.Context, req event.CreateEvent) (*event.Event, error) {
 	severity := models.EventSeverity(req.Severity)
 	if severity == "" {
 		severity = models.EventSeverityInfo
@@ -110,7 +110,7 @@ func (s *EventService) CreateEventFromDto(ctx context.Context, req event.Create)
 	return s.toEventDto(event), nil
 }
 
-func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Response, pagination.Response, error) {
+func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
 	var events []models.Event
 	q := s.db.WithContext(ctx).Model(&models.Event{})
 
@@ -143,7 +143,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Response](events)
+	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -151,7 +151,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	return eventDtos, paginationResp, nil
 }
 
-func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Response, pagination.Response, error) {
+func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
 	var events []models.Event
 	q := s.db.WithContext(ctx).Model(&models.Event{}).Where("environment_id = ?", environmentID)
 
@@ -181,7 +181,7 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Response](events)
+	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -429,13 +429,13 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeUserLogout: {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
 }
 
-func (s *EventService) toEventDto(e *models.Event) *event.Response {
+func (s *EventService) toEventDto(e *models.Event) *event.Event {
 	var metadata map[string]interface{}
 	if e.Metadata != nil {
 		metadata = map[string]interface{}(e.Metadata)
 	}
 
-	return &event.Response{
+	return &event.Event{
 		ID:            e.ID,
 		Type:          string(e.Type),
 		Severity:      string(e.Severity),

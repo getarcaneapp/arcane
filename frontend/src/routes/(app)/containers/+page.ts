@@ -10,11 +10,17 @@ export const load: PageLoad = async () => {
 		sort: { column: 'created', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest);
 
-	const [containers, containerStatusCounts, settings] = await Promise.all([
+	// containers includes counts, settings is separate
+	const [containers, settings] = await Promise.all([
 		containerService.getContainers(containerRequestOptions),
-		containerService.getContainerStatusCounts(),
 		settingsService.getSettings()
 	]);
 
-	return { containers, containerStatusCounts, containerRequestOptions, settings };
+	return {
+		containers,
+		containerRequestOptions,
+		settings,
+		// Use counts from the containers response
+		containerStatusCounts: containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
+	};
 };

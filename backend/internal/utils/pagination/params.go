@@ -36,8 +36,8 @@ func ExtractListModifiersQueryParams(c *gin.Context) QueryParams {
 			Search: search,
 		},
 		SortParams{
-			sort:  sortField,
-			order: SortOrder(sortOrder),
+			Sort:  sortField,
+			Order: SortOrder(sortOrder),
 		},
 		PaginationParams{
 			Start: start,

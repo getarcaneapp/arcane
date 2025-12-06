@@ -401,6 +401,26 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 	return &report, nil
 }
 
+// GetUpdateInfoByImageIDs returns a map of image ID to UpdateInfo for the given image IDs.
+// This is used by the container service to populate update info for containers.
+func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []string) (map[string]*imagetypes.UpdateInfo, error) {
+	if s.db == nil || len(imageIDs) == 0 {
+		return make(map[string]*imagetypes.UpdateInfo), nil
+	}
+
+	var updateRecords []models.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch update records: %w", err)
+	}
+
+	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
+	for i := range updateRecords {
+		result[updateRecords[i].ID] = buildUpdateInfo(&updateRecords[i])
+	}
+
+	return result, nil
+}
+
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {

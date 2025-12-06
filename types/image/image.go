@@ -301,12 +301,44 @@ type PullOptions struct {
 	// ImageName is the name of the image to pull.
 	//
 	// Required: true
-	ImageName string `json:"imageName" binding:"required"`
+	ImageName string `json:"imageName" minLength:"1" doc:"Name of the image to pull (e.g., nginx)"`
+
+	// Tag is the tag of the image to pull. Defaults to 'latest'.
+	//
+	// Required: false
+	Tag string `json:"tag,omitempty" doc:"Tag of the image to pull (e.g., latest)"`
+
+	// Auth for authenticating with private registries (legacy field name).
+	//
+	// Required: false
+	Auth *containerregistry.Credential `json:"auth,omitempty"`
 
 	// Credentials for authenticating with private registries.
 	//
 	// Required: false
 	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
+}
+
+// GetFullImageName returns the image name with tag.
+func (p PullOptions) GetFullImageName() string {
+	if p.Tag != "" && p.Tag != "latest" {
+		return p.ImageName + ":" + p.Tag
+	}
+	if p.Tag == "latest" && !strings.Contains(p.ImageName, ":") {
+		return p.ImageName + ":latest"
+	}
+	return p.ImageName
+}
+
+// GetCredentials returns credentials from either the Auth or Credentials field.
+func (p PullOptions) GetCredentials() []containerregistry.Credential {
+	if len(p.Credentials) > 0 {
+		return p.Credentials
+	}
+	if p.Auth != nil {
+		return []containerregistry.Credential{*p.Auth}
+	}
+	return nil
 }
 
 // NewDetailSummary creates a DetailSummary from a Docker image inspect response.

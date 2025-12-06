@@ -9,6 +9,7 @@
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
 	import { m } from '$lib/paraglide/messages';
@@ -23,23 +24,46 @@
 		repo?: string;
 		tag?: string;
 		onUpdated?: (data: ImageUpdateData) => void;
+		/** Callback when user clicks "Update Container" button */
+		onUpdateContainer?: () => void;
+		/** Debug: force hasUpdate to true for testing */
+		debugHasUpdate?: boolean;
 	}
 
-	let { updateInfo = $bindable(), isLoadingInBackground = false, imageId, repo, tag, onUpdated }: Props = $props();
+	let {
+		updateInfo = $bindable(),
+		isLoadingInBackground = false,
+		imageId,
+		repo,
+		tag,
+		onUpdated,
+		onUpdateContainer,
+		debugHasUpdate
+	}: Props = $props();
+
+	// If debug is enabled, override hasUpdate to true
+	const effectiveUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
+		if (!updateInfo) return undefined;
+		if (debugHasUpdate) {
+			return { ...updateInfo, hasUpdate: true, updateType: updateInfo.updateType || 'tag' };
+		}
+		return updateInfo;
+	});
 
 	let isChecking = $state(false);
+	let isOpen = $state(false);
 
 	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>'));
-	const hasError = $derived(!!updateInfo?.error && updateInfo.error.trim() !== '');
+	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
 	type AuthBadge = { label: string; classes: string };
 
 	const authBadge = $derived.by((): AuthBadge | null => {
-		const mth = updateInfo?.authMethod;
+		const mth = effectiveUpdateInfo?.authMethod;
 		if (!mth) return null;
 
 		if (mth === 'credential') {
-			const user = updateInfo?.authUsername;
+			const user = effectiveUpdateInfo?.authUsername;
 			return {
 				label: user ? m.image_update_auth_credential_with_user({ username: user }) : m.image_update_auth_credential(),
 				classes: 'border-amber-200/60 text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
@@ -61,16 +85,18 @@
 	});
 
 	const currentVersion = $derived(
-		updateInfo?.currentVersion && updateInfo.currentVersion.trim() !== '' ? updateInfo.currentVersion : tag || m.common_unknown()
+		effectiveUpdateInfo?.currentVersion && effectiveUpdateInfo.currentVersion.trim() !== ''
+			? effectiveUpdateInfo.currentVersion
+			: tag || m.common_unknown()
 	);
 
 	const latestVersion = $derived.by((): string | null => {
 		if (hasError) return null;
-		if (updateInfo?.latestVersion && updateInfo.latestVersion.trim() !== '') {
-			return updateInfo.latestVersion;
+		if (effectiveUpdateInfo?.latestVersion && effectiveUpdateInfo.latestVersion.trim() !== '') {
+			return effectiveUpdateInfo.latestVersion;
 		}
-		if (updateInfo?.updateType === 'digest' && updateInfo?.latestDigest) {
-			return updateInfo.latestDigest.slice(7, 19) + '...';
+		if (effectiveUpdateInfo?.updateType === 'digest' && effectiveUpdateInfo?.latestDigest) {
+			return effectiveUpdateInfo.latestDigest.slice(7, 19) + '...';
 		}
 		return null;
 	});
@@ -114,20 +140,26 @@
 		}
 	}
 
+	function handleUpdateContainer() {
+		isOpen = false;
+		onUpdateContainer?.();
+	}
+
 	const updatePriority = $derived.by(() => {
-		if (!updateInfo) return null;
-		if (updateInfo.error)
+		if (!effectiveUpdateInfo) return null;
+		if (effectiveUpdateInfo.error)
 			return { level: 'Error', color: 'text-red-500', description: m.image_update_could_not_query_registry() };
-		if (!updateInfo.hasUpdate) return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
-		if (updateInfo.updateType === 'digest')
+		if (!effectiveUpdateInfo.hasUpdate)
+			return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
+		if (effectiveUpdateInfo.updateType === 'digest')
 			return {
 				level: m.image_update_digest_title(),
 				color: 'text-blue-500',
 				description: m.image_update_digest_desc()
 			};
-		if (updateInfo.updateType === 'tag') {
-			const desc = updateInfo.latestVersion
-				? m.image_update_tag_description_new({ version: updateInfo.latestVersion })
+		if (effectiveUpdateInfo.updateType === 'tag') {
+			const desc = effectiveUpdateInfo.latestVersion
+				? m.image_update_tag_description_new({ version: effectiveUpdateInfo.latestVersion })
 				: m.image_update_tag_description();
 			return { level: m.image_update_version_title(), color: 'text-yellow-500', description: desc };
 		}
@@ -175,19 +207,29 @@
 {#snippet recheckButton()}
 	{#if canCheckUpdate}
 		<div class="border-t border-gray-200/50 bg-gray-50/50 p-3 dark:border-gray-800/50 dark:bg-gray-900/50">
-			<button
-				onclick={checkImageUpdate}
-				disabled={isChecking}
-				class="group flex w-full items-center justify-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow-sm transition-all hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800"
-			>
-				{#if isChecking}
-					<Spinner class="size-3" />
-					{m.common_action_checking()}
-				{:else}
-					<RefreshCwIcon class="size-3 transition-transform group-hover:rotate-45" />
-					{m.image_update_recheck_button()}
-				{/if}
-			</button>
+			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
+				<button
+					onclick={handleUpdateContainer}
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-600 hover:shadow-md"
+				>
+					<ArrowUpCircleIcon class="size-3" />
+					{m.containers_update_container()}
+				</button>
+			{:else}
+				<button
+					onclick={checkImageUpdate}
+					disabled={isChecking}
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow-sm transition-all hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800"
+				>
+					{#if isChecking}
+						<Spinner class="size-3" />
+						{m.common_action_checking()}
+					{:else}
+						<RefreshCwIcon class="size-3 transition-transform group-hover:rotate-45" />
+						{m.image_update_recheck_button()}
+					{/if}
+				</button>
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -207,7 +249,7 @@
 		<div class="space-y-3">
 			<div class="text-xs text-gray-600 dark:text-gray-300">
 				<span class="font-medium">{m.image_update_error_label()}</span>
-				<span class="ml-1 wrap-break-word">{updateInfo?.error}</span>
+				<span class="ml-1 wrap-break-word">{effectiveUpdateInfo?.error}</span>
 			</div>
 			{#if repo && tag}
 				<div class="text-xs text-gray-500 dark:text-gray-400">
@@ -348,16 +390,16 @@
 	</div>
 {/snippet}
 
-{#if updateInfo}
+{#if effectiveUpdateInfo}
 	<Tooltip.Provider>
-		<Tooltip.Root>
+		<Tooltip.Root bind:open={isOpen}>
 			<Tooltip.Trigger>
 				<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
 					{#if hasError}
 						<TriangleAlertIcon class="size-4 text-red-500" />
-					{:else if !updateInfo.hasUpdate}
+					{:else if !effectiveUpdateInfo.hasUpdate}
 						<CircleCheckIcon class="size-4 text-green-500" />
-					{:else if updateInfo.updateType === 'digest'}
+					{:else if effectiveUpdateInfo.updateType === 'digest'}
 						<CircleArrowUpIcon class="size-4 text-blue-500" />
 					{:else}
 						<CircleFadingArrowUpIcon class="size-4 text-yellow-500" />
@@ -373,9 +415,9 @@
 				<div class="overflow-hidden rounded-xl">
 					{#if hasError}
 						{@render errorState()}
-					{:else if !updateInfo.hasUpdate}
+					{:else if !effectiveUpdateInfo.hasUpdate}
 						{@render successState()}
-					{:else if updateInfo.updateType === 'digest'}
+					{:else if effectiveUpdateInfo.updateType === 'digest'}
 						{@render digestUpdateState()}
 					{:else}
 						{@render versionUpdateState()}

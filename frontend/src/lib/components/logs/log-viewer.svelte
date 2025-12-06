@@ -147,8 +147,8 @@
 		const envId = currentEnv?.id || 'local';
 		const basePath =
 			type === 'project'
-				? `/api/environments/${envId}/projects/${projectId}/logs/ws`
-				: `/api/environments/${envId}/containers/${containerId}/logs/ws`;
+				? `/api/environments/${envId}/ws/projects/${projectId}/logs`
+				: `/api/environments/${envId}/ws/containers/${containerId}/logs`;
 		return buildWebSocketEndpoint(`${basePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
 	}
 

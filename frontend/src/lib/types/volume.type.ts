@@ -3,6 +3,13 @@ export interface VolumeUsageData {
 	refCount: number;
 }
 
+export interface VolumeCreateRequest {
+	name: string;
+	driver?: string;
+	driverOpts?: Record<string, string>;
+	labels?: Record<string, string>;
+}
+
 export interface VolumeSummaryDto {
 	id: string;
 	name: string;
@@ -27,7 +34,13 @@ export interface VolumeUsageDto {
 }
 
 export interface VolumeUsageCounts {
-	volumesInuse: number;
-	volumesUnused: number;
-	totalVolumes: number;
+	inuse: number;
+	unused: number;
+	total: number;
+}
+
+export interface VolumeSizeInfo {
+	name: string;
+	size: number;
+	refCount: number;
 }

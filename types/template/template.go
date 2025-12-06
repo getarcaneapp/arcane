@@ -102,7 +102,7 @@ type RemoteRegistry struct {
 }
 
 // Registry represents a local registry configuration.
-type Registry struct {
+type TemplateRegistry struct {
 	BaseRegistry
 
 	// ID is the unique identifier of the registry.
@@ -176,10 +176,128 @@ type Template struct {
 	// Registry is the registry information if the template is from a registry.
 	//
 	// Required: false
-	Registry *Registry `json:"registry,omitempty"`
+	Registry *TemplateRegistry `json:"registry,omitempty"`
 
 	// Metadata contains additional metadata about the template.
 	//
 	// Required: false
-	Metadata *meta.Template `json:"metadata,omitempty"`
+	Metadata *meta.TemplateMeta `json:"metadata,omitempty"`
+}
+
+// CreateRequest represents the request to create a template.
+type CreateRequest struct {
+	// Name of the template.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// Description of the template.
+	//
+	// Required: false
+	Description string `json:"description"`
+
+	// Content is the Docker Compose file content.
+	//
+	// Required: true
+	Content string `json:"content"`
+
+	// EnvContent is the environment file content.
+	//
+	// Required: false
+	EnvContent string `json:"envContent"`
+}
+
+// UpdateRequest represents the request to update a template.
+type UpdateRequest struct {
+	// Name of the template.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// Description of the template.
+	//
+	// Required: false
+	Description string `json:"description"`
+
+	// Content is the Docker Compose file content.
+	//
+	// Required: true
+	Content string `json:"content"`
+
+	// EnvContent is the environment file content.
+	//
+	// Required: false
+	EnvContent string `json:"envContent"`
+}
+
+// DefaultTemplatesResponse contains the default compose and env templates.
+type DefaultTemplatesResponse struct {
+	// ComposeTemplate is the default Docker Compose template content.
+	//
+	// Required: true
+	ComposeTemplate string `json:"composeTemplate"`
+
+	// EnvTemplate is the default environment template content.
+	//
+	// Required: true
+	EnvTemplate string `json:"envTemplate"`
+}
+
+// SaveDefaultTemplatesRequest represents the request to save default templates.
+type SaveDefaultTemplatesRequest struct {
+	// ComposeContent is the Docker Compose template content.
+	//
+	// Required: true
+	ComposeContent string `json:"composeContent"`
+
+	// EnvContent is the environment template content.
+	//
+	// Required: false
+	EnvContent string `json:"envContent"`
+}
+
+// CreateRegistryRequest represents the request to create a template registry.
+type CreateRegistryRequest struct {
+	// Name of the registry.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// URL of the registry.
+	//
+	// Required: true
+	URL string `json:"url"`
+
+	// Description of the registry.
+	//
+	// Required: false
+	Description string `json:"description"`
+
+	// Enabled indicates if the registry is enabled.
+	//
+	// Required: false
+	Enabled bool `json:"enabled"`
+}
+
+// UpdateRegistryRequest represents the request to update a template registry.
+type UpdateRegistryRequest struct {
+	// Name of the registry.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// URL of the registry.
+	//
+	// Required: true
+	URL string `json:"url"`
+
+	// Description of the registry.
+	//
+	// Required: false
+	Description string `json:"description"`
+
+	// Enabled indicates if the registry is enabled.
+	//
+	// Required: false
+	Enabled bool `json:"enabled"`
 }

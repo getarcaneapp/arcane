@@ -15,10 +15,13 @@ export const load: PageLoad = async () => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const [volumes, volumeUsageCounts] = await Promise.all([
-		volumeService.getVolumes(volumeRequestOptions),
-		volumeService.getVolumeUsageCounts()
-	]);
+	// Single API call - counts are included in the response
+	const volumes = await volumeService.getVolumes(volumeRequestOptions);
 
-	return { volumes, volumeRequestOptions, volumeUsageCounts };
+	return {
+		volumes,
+		volumeRequestOptions,
+		// Use counts from the volumes response
+		volumeUsageCounts: volumes.counts ?? { inuse: 0, unused: 0, total: 0 }
+	};
 };

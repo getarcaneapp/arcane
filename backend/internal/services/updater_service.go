@@ -300,6 +300,116 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	return out, nil
 }
 
+// UpdateSingleContainer updates a single container by ID to the latest available image.
+// It pulls the new image, stops the container, removes it, and recreates it with the new image.
+func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
+	start := time.Now()
+	out := &updater.Result{Items: []updater.ResourceResult{}}
+
+	dcli, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("docker connect: %w", err)
+	}
+
+	// Get container info
+	containers, err := dcli.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("id", containerID))})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	var targetContainer *container.Summary
+	if len(containers) > 0 {
+		targetContainer = &containers[0]
+	}
+
+	if targetContainer == nil {
+		return nil, fmt.Errorf("container not found: %s", containerID)
+	}
+
+	containerName := s.getContainerName(*targetContainer)
+
+	// Get the image reference
+	imageRef := targetContainer.Image
+	normalizedRef := s.normalizeRef(imageRef)
+	repo, tag := s.parseRepoAndTag(normalizedRef)
+
+	if repo == "" || tag == "" {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "skipped",
+			Error:        "invalid image reference",
+		})
+		out.Skipped++
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
+	slog.InfoContext(ctx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef)
+
+	// Pull the latest image using the image service
+	if err := s.imageService.PullImage(ctx, normalizedRef, io.Discard, systemUser, nil); err != nil {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "failed",
+			Error:        fmt.Sprintf("pull failed: %v", err),
+		})
+		out.Failed++
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
+	// Inspect container to get full config
+	inspect, err := dcli.ContainerInspect(ctx, targetContainer.ID)
+	if err != nil {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "failed",
+			Error:        fmt.Sprintf("inspect failed: %v", err),
+		})
+		out.Failed++
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
+	// Update the container
+	if err := s.updateContainer(ctx, *targetContainer, inspect, normalizedRef); err != nil {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "failed",
+			Error:        err.Error(),
+		})
+		out.Failed++
+	} else {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "updated",
+		})
+		out.Updated++
+
+		// Clear the update record for this image
+		if err := s.clearImageUpdateRecord(ctx, repo, tag); err != nil {
+			slog.WarnContext(ctx, "failed to clear update record", "repo", repo, "tag", tag, "err", err)
+		}
+	}
+
+	out.Checked = 1
+	out.Duration = time.Since(start).String()
+
+	slog.InfoContext(ctx, "UpdateSingleContainer: complete", "containerID", containerID, "updated", out.Updated, "failed", out.Failed)
+
+	return out, nil
+}
+
 func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -346,7 +456,7 @@ func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error 
 	return nil
 }
 
-func (s *UpdaterService) GetStatus() map[string]any {
+func (s *UpdaterService) GetStatus() updater.Status {
 	containerIDs := make([]string, 0, len(s.updatingContainers))
 	for id := range s.updatingContainers {
 		containerIDs = append(containerIDs, id)
@@ -356,11 +466,11 @@ func (s *UpdaterService) GetStatus() map[string]any {
 		projectIDs = append(projectIDs, id)
 	}
 
-	return map[string]any{
-		"updatingContainers": len(s.updatingContainers),
-		"updatingProjects":   len(s.updatingProjects),
-		"containerIds":       containerIDs,
-		"projectIds":         projectIDs,
+	return updater.Status{
+		UpdatingContainers: len(s.updatingContainers),
+		UpdatingProjects:   len(s.updatingProjects),
+		ContainerIds:       containerIDs,
+		ProjectIds:         projectIDs,
 	}
 }
 
@@ -425,6 +535,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		return fmt.Errorf("start: %w", err)
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_start"})
+
+	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerUpdate, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{
+		"oldContainerId": cnt.ID,
+		"newContainerId": resp.ID,
+		"newImage":       newRef,
+	})
 
 	slog.DebugContext(ctx, "updateContainer: update complete", "oldContainerId", cnt.ID, "newContainerId", resp.ID)
 	return nil

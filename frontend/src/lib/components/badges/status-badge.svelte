@@ -102,14 +102,16 @@
 {/snippet}
 
 {#if tooltip}
-	<Tooltip.Root>
-		<Tooltip.Trigger>
-			{@render BadgeContent()}
-		</Tooltip.Trigger>
-		<Tooltip.Content>
-			<p class="max-w-xs text-xs">{tooltip}</p>
-		</Tooltip.Content>
-	</Tooltip.Root>
+	<Tooltip.Provider>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{@render BadgeContent()}
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<p class="max-w-xs text-xs">{tooltip}</p>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
 {:else}
 	{@render BadgeContent()}
 {/if}

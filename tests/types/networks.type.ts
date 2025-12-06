@@ -1,7 +1,7 @@
 export interface NetworkUsageCounts {
-  networksInuse: number;
-  networksUnused: number;
-  totalNetworks: number;
+  inuse: number;
+  unused: number;
+  total: number;
 }
 
 export type NetworkSummary = {

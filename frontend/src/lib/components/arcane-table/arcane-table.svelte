@@ -89,7 +89,7 @@
 		onRemoveSelected?: (ids: string[]) => void;
 		persistKey?: string;
 		customViewOptions?: Snippet;
-		customTableView?: Snippet<[{ table: TableType<TData> }]>;
+		customTableView?: Snippet<[{ table: TableType<TData>; renderPagination: Snippet }]>;
 		customSettings?: Record<string, unknown>;
 	} = $props();
 
@@ -527,6 +527,10 @@
 	</div>
 {/snippet}
 
+{#snippet PaginationSnippet()}
+	{@render Pagination({ table })}
+{/snippet}
+
 {#snippet MobileCard({ row, item }: MobileCardProps)}
 	{@render mobileCard({ row, item, mobileFieldVisibility })}
 {/snippet}
@@ -576,7 +580,7 @@
 {/snippet}
 
 {#if customTableView}
-	{@render customTableView({ table })}
+	{@render customTableView({ table, renderPagination: PaginationSnippet })}
 {:else if unstyled}
 	<div class="flex h-full min-h-0 flex-col">
 		{#if !withoutSearch}

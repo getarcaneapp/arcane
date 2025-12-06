@@ -7,22 +7,24 @@ RUN npm install -g --force corepack && corepack enable pnpm
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+ENV CI=true
 
 WORKDIR /app
 
-# Copy lockfile first for better layer caching
-COPY pnpm-lock.yaml ./
+# pnpm fetch only requires lockfile
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Fetch dependencies with cache mount
-RUN --mount=type=cache,target=/pnpm/store \
-    pnpm fetch --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm fetch
 
-# Copy package files and install
-COPY package.json pnpm-workspace.yaml ./
-COPY frontend/package.json ./frontend/package.json
+# Copy package files and frontend source
+COPY package.json ./
+COPY frontend ./frontend
 
-RUN --mount=type=cache,target=/pnpm/store \
-    pnpm install --frozen-lockfile --offline
+# Install from the store (offline)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install -r --offline
 
 ENV NODE_ENV=development \
     PORT=3000

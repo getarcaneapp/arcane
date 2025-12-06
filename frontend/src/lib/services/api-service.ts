@@ -7,7 +7,8 @@ function extractServerMessage(data: any, includeErrors = false): string | undefi
 		return inner;
 	}
 	if (inner) {
-		const msg = inner.error || inner.message || inner.error_description;
+		// Support both old format (error/message) and Huma RFC 7807 format (detail)
+		const msg = inner.error || inner.message || inner.detail || inner.error_description;
 		if (msg) return msg;
 		if (includeErrors && Array.isArray(inner.errors) && inner.errors.length) {
 			return inner.errors[0]?.message || inner.errors[0];

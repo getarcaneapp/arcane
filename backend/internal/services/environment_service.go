@@ -123,7 +123,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	return &environment, nil
 }
 
-func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Response, pagination.Response, error) {
+func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
 	var envs []models.Environment
 	q := s.db.WithContext(ctx).Model(&models.Environment{})
 
@@ -187,7 +187,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		return nil, pagination.Response{}, err
 	}
 
-	out, mapErr := mapper.MapSlice[models.Environment, environment.Response](envs)
+	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
 	}

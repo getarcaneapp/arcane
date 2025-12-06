@@ -26,9 +26,10 @@ export type PaginationResponse = {
 	grandTotalItems?: number;
 };
 
-export type Paginated<T> = {
+export type Paginated<T, C = unknown> = {
 	data: T[];
 	pagination: PaginationResponse;
+	counts?: C;
 };
 
 // export interface PaginatedApiResponse<T> {

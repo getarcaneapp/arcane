@@ -123,17 +123,34 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	return &report, nil
 }
 
-func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, error) {
+func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, networktypes.UsageCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
 	}
 
+	inUseByID, inUseByName := s.buildNetworkUsageMaps(containers)
+
+	rawNets, err := dockerClient.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
+	}
+
+	items := s.convertToNetworkSummaries(rawNets, inUseByID, inUseByName)
+	config := s.buildNetworkPaginationConfig()
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+	counts := s.calculateNetworkUsageCounts(items)
+	paginationResp := s.buildPaginationResponse(result, params)
+
+	return result.Items, paginationResp, counts, nil
+}
+
+func (s *NetworkService) buildNetworkUsageMaps(containers []container.Summary) (map[string]bool, map[string]bool) {
 	inUseByID := make(map[string]bool)
 	inUseByName := make(map[string]bool)
 	for _, c := range containers {
@@ -147,12 +164,10 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 			inUseByName[netName] = true
 		}
 	}
+	return inUseByID, inUseByName
+}
 
-	rawNets, err := dockerClient.NetworkList(ctx, network.ListOptions{})
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list Docker networks: %w", err)
-	}
-
+func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) []networktypes.Summary {
 	items := make([]networktypes.Summary, 0, len(rawNets))
 	for _, n := range rawNets {
 		netDto := networktypes.NewSummary(n)
@@ -160,76 +175,101 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		netDto.IsDefault = dockerutil.IsDefaultNetwork(netDto.Name)
 		items = append(items, netDto)
 	}
+	return items
+}
 
-	config := pagination.Config[networktypes.Summary]{
+func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[networktypes.Summary] {
+	return pagination.Config[networktypes.Summary]{
 		SearchAccessors: []pagination.SearchAccessor[networktypes.Summary]{
 			func(n networktypes.Summary) (string, error) { return n.Name, nil },
 			func(n networktypes.Summary) (string, error) { return n.Driver, nil },
 			func(n networktypes.Summary) (string, error) { return n.Scope, nil },
 			func(n networktypes.Summary) (string, error) { return n.ID, nil },
 		},
-		SortBindings: []pagination.SortBinding[networktypes.Summary]{
-			{
-				Key: "name",
-				Fn: func(a, b networktypes.Summary) int {
-					return strings.Compare(a.Name, b.Name)
-				},
-			},
-			{
-				Key: "driver",
-				Fn: func(a, b networktypes.Summary) int {
-					return strings.Compare(a.Driver, b.Driver)
-				},
-			},
-			{
-				Key: "scope",
-				Fn: func(a, b networktypes.Summary) int {
-					return strings.Compare(a.Scope, b.Scope)
-				},
-			},
-			{
-				Key: "created",
-				Fn: func(a, b networktypes.Summary) int {
-					if a.Created.Before(b.Created) {
-						return -1
-					}
-					if a.Created.After(b.Created) {
-						return 1
-					}
-					return 0
-				},
-			},
-			{
-				Key: "inUse",
-				Fn: func(a, b networktypes.Summary) int {
-					if a.InUse == b.InUse {
-						return 0
-					}
-					if a.InUse {
-						return -1
-					}
-					return 1
-				},
-			},
+		SortBindings:    s.buildNetworkSortBindings(),
+		FilterAccessors: s.buildNetworkFilterAccessors(),
+	}
+}
+
+func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[networktypes.Summary] {
+	return []pagination.SortBinding[networktypes.Summary]{
+		{
+			Key: "name",
+			Fn:  func(a, b networktypes.Summary) int { return strings.Compare(a.Name, b.Name) },
 		},
-		FilterAccessors: []pagination.FilterAccessor[networktypes.Summary]{
-			{
-				Key: "inUse",
-				Fn: func(n networktypes.Summary, filterValue string) bool {
-					if filterValue == "true" {
-						return n.InUse
-					}
-					if filterValue == "false" {
-						return !n.InUse
-					}
-					return true
-				},
+		{
+			Key: "driver",
+			Fn:  func(a, b networktypes.Summary) int { return strings.Compare(a.Driver, b.Driver) },
+		},
+		{
+			Key: "scope",
+			Fn:  func(a, b networktypes.Summary) int { return strings.Compare(a.Scope, b.Scope) },
+		},
+		{
+			Key: "created",
+			Fn:  s.compareNetworkCreated,
+		},
+		{
+			Key: "inUse",
+			Fn:  s.compareNetworkInUse,
+		},
+	}
+}
+
+func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {
+	if a.Created.Before(b.Created) {
+		return -1
+	}
+	if a.Created.After(b.Created) {
+		return 1
+	}
+	return 0
+}
+
+func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
+	if a.InUse == b.InUse {
+		return 0
+	}
+	if a.InUse {
+		return -1
+	}
+	return 1
+}
+
+func (s *NetworkService) buildNetworkFilterAccessors() []pagination.FilterAccessor[networktypes.Summary] {
+	return []pagination.FilterAccessor[networktypes.Summary]{
+		{
+			Key: "inUse",
+			Fn: func(n networktypes.Summary, filterValue string) bool {
+				if filterValue == "true" {
+					return n.InUse
+				}
+				if filterValue == "false" {
+					return !n.InUse
+				}
+				return true
 			},
 		},
 	}
+}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+func (s *NetworkService) calculateNetworkUsageCounts(items []networktypes.Summary) networktypes.UsageCounts {
+	counts := networktypes.UsageCounts{
+		Total: len(items),
+	}
+	for _, n := range items {
+		if n.InUse {
+			counts.Inuse++
+		} else if !n.IsDefault {
+			// Only count non-default networks as unused
+			// Default networks (bridge, host, none, ingress) are never "unused"
+			counts.Unused++
+		}
+	}
+	return counts
+}
 
+func (s *NetworkService) buildPaginationResponse(result pagination.FilterResult[networktypes.Summary], params pagination.QueryParams) pagination.Response {
 	totalPages := int64(0)
 	if params.Limit > 0 {
 		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
@@ -240,13 +280,11 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		page = (params.Start / params.Limit) + 1
 	}
 
-	paginationResp := pagination.Response{
+	return pagination.Response{
 		TotalPages:      totalPages,
 		TotalItems:      int64(result.TotalCount),
 		CurrentPage:     page,
 		ItemsPerPage:    params.Limit,
 		GrandTotalItems: int64(result.TotalAvailable),
 	}
-
-	return result.Items, paginationResp, nil
 }
