@@ -155,6 +155,7 @@
 	"common_action_downloading": "正在下载…",
 	"common_action_restarting": "正在重启…",
 	"common_action_removing": "正在移除…",
+	"common_action_updating": "Updating…",
 	"common_action_redeploying": "正在重新部署…",
 	"common_action_inspecting": "正在检查…",
 	"common_action_confirming": "确认中…",
