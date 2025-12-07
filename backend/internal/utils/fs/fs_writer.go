@@ -103,17 +103,22 @@ func WriteEnvFile(projectsRoot, dirPath, content string) error {
 	return nil
 }
 
-// WriteProjectFiles writes both compose and optional env files to a project directory
+// WriteProjectFiles writes both compose and env files to a project directory.
+// An empty .env file is always created to prevent compose-go from failing when
+// the compose file references env_file: .env
 // projectsRoot is the allowed root directory to prevent path traversal attacks
 func WriteProjectFiles(projectsRoot, dirPath, composeContent string, envContent *string) error {
 	if err := WriteComposeFile(projectsRoot, dirPath, composeContent); err != nil {
 		return err
 	}
 
-	if envContent != nil && *envContent != "" {
-		if err := WriteEnvFile(projectsRoot, dirPath, *envContent); err != nil {
-			return err
-		}
+	// Always create a .env file, even if empty, to satisfy compose files that reference env_file: .env
+	envValue := ""
+	if envContent != nil {
+		envValue = *envContent
+	}
+	if err := WriteEnvFile(projectsRoot, dirPath, envValue); err != nil {
+		return err
 	}
 
 	return nil
