@@ -83,7 +83,7 @@ func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
 	return scopes
 }
 
-func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider) oauth2.Config {
+func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider, origin string) oauth2.Config {
 	scopes := strings.Fields(cfg.Scopes)
 	if len(scopes) == 0 {
 		scopes = []string{"email", "profile"}
@@ -94,12 +94,12 @@ func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Pro
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
 		Endpoint:     provider.Endpoint(),
-		RedirectURL:  s.GetOidcRedirectURL(),
+		RedirectURL:  s.GetOidcRedirectURL(origin),
 		Scopes:       scopes,
 	}
 }
 
-func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (string, string, error) {
+func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, origin string) (string, string, error) {
 	config, err := s.getEffectiveConfig(ctx)
 	if err != nil {
 		slog.Error("GenerateAuthURL: failed to get OIDC config", "error", err)
@@ -116,7 +116,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (s
 	nonce := utils.GenerateRandomString(32)
 	codeVerifier := utils.GenerateRandomString(128)
 
-	oauth2Config := s.getOauth2Config(config, provider)
+	oauth2Config := s.getOauth2Config(config, provider, origin)
 
 	authURL := oauth2Config.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
@@ -142,8 +142,11 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string) (s
 	return authURL, encodedState, nil
 }
 
-func (s *OidcService) GetOidcRedirectURL() string {
-	baseUrl := strings.TrimSuffix(s.config.AppUrl, "/")
+func (s *OidcService) GetOidcRedirectURL(origin string) string {
+	baseUrl := origin
+	if baseUrl == "" {
+		baseUrl = strings.TrimSuffix(s.config.AppUrl, "/")
+	}
 	return baseUrl + "/auth/oidc/callback"
 }
 
@@ -198,8 +201,8 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, issuer string) 
 	return v.(*oidc.Provider), nil
 }
 
-func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string) (*oauth2.Token, error) {
-	oauth2Config := s.getOauth2Config(cfg, provider)
+func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string) (*oauth2.Token, error) {
+	oauth2Config := s.getOauth2Config(cfg, provider, origin)
 
 	providerCtx := oidc.ClientContext(ctx, s.httpClient)
 	token, err := oauth2Config.Exchange(providerCtx, code, oauth2.VerifierOption(verifier))
@@ -256,7 +259,7 @@ func (s *OidcService) fetchClaims(ctx context.Context, provider *oidc.Provider, 
 	return claims, nil
 }
 
-func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
+func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState, origin string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
 	slog.Debug("HandleCallback: processing callback", "code_present", code != "", "state_present", state != "")
 
 	stateData, err := s.validateState(state, storedState)
@@ -275,7 +278,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
-	token, err := s.exchangeToken(ctx, cfg, provider, code, stateData.CodeVerifier)
+	token, err := s.exchangeToken(ctx, cfg, provider, code, stateData.CodeVerifier, origin)
 	if err != nil {
 		return nil, nil, err
 	}
