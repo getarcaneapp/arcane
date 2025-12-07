@@ -11,7 +11,8 @@ import { transformPaginationParams } from '$lib/utils/params.util';
 export default class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {
 		const params = transformPaginationParams(options);
-		return this.handleResponse(this.api.get('/git-repositories', { params }));
+		const res = await this.api.get('/git-repositories', { params });
+		return res.data;
 	}
 
 	async getRepository(id: string): Promise<GitRepository> {
