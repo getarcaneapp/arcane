@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
+	import ActivityIcon from 'phosphor-svelte/lib/ChartLine';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { m } from '$lib/paraglide/messages';

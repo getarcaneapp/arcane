@@ -3,11 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
+	import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeft';
+	import SaveIcon from 'phosphor-svelte/lib/FloppyDisk';
+	import RotateCcwIcon from 'phosphor-svelte/lib/ArrowCounterClockwise';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';

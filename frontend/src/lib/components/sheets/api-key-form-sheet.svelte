@@ -3,8 +3,8 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import SaveIcon from '@lucide/svelte/icons/save';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
+	import SaveIcon from 'phosphor-svelte/lib/FloppyDisk';
 	import type { ApiKey } from '$lib/types/api-key.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
@@ -106,8 +106,12 @@
 			/>
 
 			<Sheet.Footer class="flex flex-row gap-2">
-				<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)} disabled={isLoading}
-					>{m.common_cancel()}</Button
+				<Button
+					type="button"
+					class="arcane-button-cancel flex-1"
+					variant="outline"
+					onclick={() => (open = false)}
+					disabled={isLoading}>{m.common_cancel()}</Button
 				>
 				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
 					{#if isLoading}

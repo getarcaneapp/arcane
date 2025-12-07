@@ -1,6 +1,6 @@
 <script lang="ts" generics="TData, TValue">
-	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
-	import CheckIcon from '@lucide/svelte/icons/check';
+	import ListFilterIcon from 'phosphor-svelte/lib/Funnel';
+	import CheckIcon from 'phosphor-svelte/lib/Check';
 	import type { Column } from '@tanstack/table-core';
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Command from '$lib/components/ui/command/index.js';

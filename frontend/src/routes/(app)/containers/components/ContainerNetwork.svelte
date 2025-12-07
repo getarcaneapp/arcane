@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import NetworkIcon from '@lucide/svelte/icons/network';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import TriangleAlert from 'phosphor-svelte/lib/WarningCircle';
 	import { confirmDialogStore } from '.';
 	import Button from '../ui/button/button.svelte';
 	import { Label } from '$lib/components/ui/label';

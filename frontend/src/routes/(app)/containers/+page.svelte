@@ -1,5 +1,5 @@
 <script lang="ts">
-	import BoxIcon from '@lucide/svelte/icons/box';
+	import BoxIcon from 'phosphor-svelte/lib/Package';
 	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';

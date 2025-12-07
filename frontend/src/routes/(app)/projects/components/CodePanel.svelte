@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
 
 	type CodeLanguage = 'yaml' | 'env';
 

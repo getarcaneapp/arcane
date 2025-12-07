@@ -3,8 +3,8 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Checkbox from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import AlertCircleIcon from 'phosphor-svelte/lib/Warning';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { m } from '$lib/paraglide/messages';

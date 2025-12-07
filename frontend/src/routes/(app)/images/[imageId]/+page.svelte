@@ -1,13 +1,13 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import HashIcon from '@lucide/svelte/icons/hash';
-	import CpuIcon from '@lucide/svelte/icons/cpu';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import ClockIcon from 'phosphor-svelte/lib/Clock';
+	import TagIcon from 'phosphor-svelte/lib/Tag';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
+	import HashIcon from 'phosphor-svelte/lib/Hash';
+	import CpuIcon from 'phosphor-svelte/lib/Cpu';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';

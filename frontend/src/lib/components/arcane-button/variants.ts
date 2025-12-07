@@ -1,20 +1,20 @@
 import { tv, type VariantProps } from 'tailwind-variants';
 
-import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
-import PlayIcon from '@lucide/svelte/icons/play';
-import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-import DownloadIcon from '@lucide/svelte/icons/download';
-import Trash2Icon from '@lucide/svelte/icons/trash-2';
-import RefreshCcwDotIcon from '@lucide/svelte/icons/refresh-ccw-dot';
-import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
-import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-import FileTextIcon from '@lucide/svelte/icons/file-text';
-import EditIcon from '@lucide/svelte/icons/edit';
-import CheckIcon from '@lucide/svelte/icons/check';
-import XIcon from '@lucide/svelte/icons/x';
-import SaveIcon from '@lucide/svelte/icons/save';
-import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
-import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
+import CircleStopIcon from 'phosphor-svelte/lib/StopCircle';
+import PlayIcon from 'phosphor-svelte/lib/Play';
+import RotateCcwIcon from 'phosphor-svelte/lib/ArrowCounterClockwise';
+import DownloadIcon from 'phosphor-svelte/lib/Download';
+import Trash2Icon from 'phosphor-svelte/lib/Trash';
+import RefreshCcwDotIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+import RefreshCcwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+import ScanSearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+import FileTextIcon from 'phosphor-svelte/lib/FileText';
+import EditIcon from 'phosphor-svelte/lib/PencilSimple';
+import CheckIcon from 'phosphor-svelte/lib/Check';
+import XIcon from 'phosphor-svelte/lib/X';
+import SaveIcon from 'phosphor-svelte/lib/FloppyDisk';
+import PlusCircleIcon from 'phosphor-svelte/lib/PlusCircle';
+import LayoutTemplateIcon from 'phosphor-svelte/lib/Layout';
 import { m } from '$lib/paraglide/messages';
 
 export const arcaneButtonVariants = tv({

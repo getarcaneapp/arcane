@@ -1,12 +1,12 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import ClockIcon from 'phosphor-svelte/lib/Clock';
+	import TagIcon from 'phosphor-svelte/lib/Tag';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
+	import DatabaseIcon from 'phosphor-svelte/lib/Database';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -17,7 +17,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { format } from 'date-fns';
-	import ContainerIcon from '@lucide/svelte/icons/container';
+	import ContainerIcon from 'phosphor-svelte/lib/Package';
 	import { m } from '$lib/paraglide/messages';
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';

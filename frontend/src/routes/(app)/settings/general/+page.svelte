@@ -4,16 +4,16 @@
 	import { onMount } from 'svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import FolderIcon from '@lucide/svelte/icons/folder';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import PaletteIcon from '@lucide/svelte/icons/palette';
+	import FolderIcon from 'phosphor-svelte/lib/Folder';
+	import UserIcon from 'phosphor-svelte/lib/User';
+	import PaletteIcon from 'phosphor-svelte/lib/Palette';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import SparklesIcon from 'phosphor-svelte/lib/Sparkle';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 

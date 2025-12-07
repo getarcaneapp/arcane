@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
-	import type { Icon as IconType } from '@lucide/svelte';
+	import type { PhosphorIcon } from '$lib/types/icon.type';
 	import type { ClassValue } from 'svelte/elements';
 
 	interface Props {
 		title: string;
 		value: string | number;
-		icon: typeof IconType;
+		icon: PhosphorIcon;
 		iconColor?: string;
 		bgColor?: string;
 		subtitle?: string;

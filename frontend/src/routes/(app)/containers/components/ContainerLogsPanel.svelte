@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -90,16 +90,16 @@
 				</div>
 				<Card.Description>{m.containers_logs_description()}</Card.Description>
 			</div>
-		<LogControls
-			bind:autoScroll
-			bind:autoStartLogs
-			{isStreaming}
-			disabled={!containerId}
-			onStart={handleStart}
-			onStop={handleStop}
-			onClear={handleClear}
-			onRefresh={handleRefresh}
-		/>
+			<LogControls
+				bind:autoScroll
+				bind:autoStartLogs
+				{isStreaming}
+				disabled={!containerId}
+				onStart={handleStart}
+				onStop={handleStop}
+				onClear={handleClear}
+				onRefresh={handleRefresh}
+			/>
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">

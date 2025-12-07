@@ -1,15 +1,15 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import CircleFadingArrowUpIcon from '@lucide/svelte/icons/circle-fading-arrow-up';
-	import CircleArrowUpIcon from '@lucide/svelte/icons/circle-arrow-up';
+	import CircleCheckIcon from 'phosphor-svelte/lib/CheckCircle';
+	import CircleFadingArrowUpIcon from 'phosphor-svelte/lib/ArrowCircleUp';
+	import CircleArrowUpIcon from 'phosphor-svelte/lib/ArrowCircleUp';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
-	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
+	import TriangleAlertIcon from 'phosphor-svelte/lib/WarningCircle';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+	import ArrowRightIcon from 'phosphor-svelte/lib/ArrowRight';
+	import PackageIcon from 'phosphor-svelte/lib/Package';
+	import KeyRoundIcon from 'phosphor-svelte/lib/Key';
+	import ArrowUpCircleIcon from 'phosphor-svelte/lib/ArrowCircleUp';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
 	import { m } from '$lib/paraglide/messages';

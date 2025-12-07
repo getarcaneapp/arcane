@@ -5,12 +5,12 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Snippet } from '$lib/components/ui/snippet';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import UsersIcon from '@lucide/svelte/icons/users';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import PlusIcon from 'phosphor-svelte/lib/Plus';
+	import ExternalLinkIcon from 'phosphor-svelte/lib/ArrowSquareOut';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import UsersIcon from 'phosphor-svelte/lib/Users';
 	import { m } from '$lib/paraglide/messages';
 	import type { TemplateRegistry } from '$lib/types/template.type';
 

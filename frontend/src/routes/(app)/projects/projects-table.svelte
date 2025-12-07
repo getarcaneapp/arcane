@@ -2,12 +2,12 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PenIcon from '@lucide/svelte/icons/pen';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import PenIcon from 'phosphor-svelte/lib/Pen';
+	import PlayIcon from 'phosphor-svelte/lib/Play';
+	import RotateCcwIcon from 'phosphor-svelte/lib/ArrowCounterClockwise';
+	import StopCircleIcon from 'phosphor-svelte/lib/StopCircle';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -20,13 +20,13 @@
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { format } from 'date-fns';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import FolderIcon from '@lucide/svelte/icons/folder';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import FolderIcon from 'phosphor-svelte/lib/Folder';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
+	import CalendarIcon from 'phosphor-svelte/lib/Calendar';
 
 	let {
 		projects = $bindable(),
@@ -181,7 +181,7 @@
 }: {
 	row: any;
 	item: Project;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

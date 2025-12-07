@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import SmartphoneIcon from '@lucide/svelte/icons/smartphone';
-	import XIcon from '@lucide/svelte/icons/x';
-	import MonitorSpeakerIcon from '@lucide/svelte/icons/monitor-speaker';
-	import DockIcon from '@lucide/svelte/icons/dock';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
+	import SmartphoneIcon from 'phosphor-svelte/lib/DeviceMobile';
+	import XIcon from 'phosphor-svelte/lib/X';
+	import MonitorSpeakerIcon from 'phosphor-svelte/lib/Monitor';
+	import DockIcon from 'phosphor-svelte/lib/Sidebar';
 	import { m } from '$lib/paraglide/messages';
 
 	let {

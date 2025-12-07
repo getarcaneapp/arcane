@@ -1,10 +1,10 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import ScanSearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -17,13 +17,13 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
-	import ImageIcon from '@lucide/svelte/icons/image';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
+	import ImageIcon from 'phosphor-svelte/lib/Image';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import ClockIcon from 'phosphor-svelte/lib/Clock';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
 	import { format } from 'date-fns';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 
@@ -241,7 +241,7 @@
 }: {
 	row: any;
 	item: ImageSummaryDto;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

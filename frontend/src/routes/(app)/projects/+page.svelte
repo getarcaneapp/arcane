@@ -1,7 +1,7 @@
 <script lang="ts">
-	import FileStackIcon from '@lucide/svelte/icons/file-stack';
-	import PlayCircleIcon from '@lucide/svelte/icons/play-circle';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
+	import FileStackIcon from 'phosphor-svelte/lib/Files';
+	import PlayCircleIcon from 'phosphor-svelte/lib/PlayCircle';
+	import StopCircleIcon from 'phosphor-svelte/lib/StopCircle';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';

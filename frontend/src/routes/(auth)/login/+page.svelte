@@ -4,10 +4,10 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import LockIcon from '@lucide/svelte/icons/lock';
-	import UserIcon from '@lucide/svelte/icons/user';
+	import CircleAlertIcon from 'phosphor-svelte/lib/Warning';
+	import LogInIcon from 'phosphor-svelte/lib/SignIn';
+	import LockIcon from 'phosphor-svelte/lib/Lock';
+	import UserIcon from 'phosphor-svelte/lib/User';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';

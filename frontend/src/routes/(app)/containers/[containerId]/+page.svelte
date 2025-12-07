@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeft';
+	import CircleAlertIcon from 'phosphor-svelte/lib/Warning';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import ActivityIcon from 'phosphor-svelte/lib/ChartLine';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
+	import DatabaseIcon from 'phosphor-svelte/lib/Database';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';

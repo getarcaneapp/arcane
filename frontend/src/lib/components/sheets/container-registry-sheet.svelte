@@ -4,7 +4,7 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
+	import PackagePlusIcon from 'phosphor-svelte/lib/Package';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';
 	import { z } from 'zod/v4';

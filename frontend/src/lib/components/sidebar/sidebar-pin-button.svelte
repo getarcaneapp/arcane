@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
-	import PinIcon from '@lucide/svelte/icons/pin';
-	import PinOffIcon from '@lucide/svelte/icons/pin-off';
+	import PinIcon from 'phosphor-svelte/lib/PushPin';
+	import PinOffIcon from 'phosphor-svelte/lib/PushPinSlash';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 
 	let {

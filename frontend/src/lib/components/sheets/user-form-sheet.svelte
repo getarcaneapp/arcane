@@ -4,8 +4,8 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
-	import SaveIcon from '@lucide/svelte/icons/save';
+	import UserPlusIcon from 'phosphor-svelte/lib/UserPlus';
+	import SaveIcon from 'phosphor-svelte/lib/FloppyDisk';
 	import type { User } from '$lib/types/user.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';

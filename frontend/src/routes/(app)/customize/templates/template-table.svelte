@@ -2,18 +2,21 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import ScanSearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpen';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
+	import PlusCircleIcon from 'phosphor-svelte/lib/PlusCircle';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { Table as TableType, Row } from '@tanstack/table-core';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
+
+	type TemplateTable = TableType<Template>;
+	type TemplateRow = Row<Template>;
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -22,10 +25,10 @@
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Template } from '$lib/types/template.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
-	import TagIcon from '@lucide/svelte/icons/tag';
+	import TagIcon from 'phosphor-svelte/lib/Tag';
 	import { truncateString } from '$lib/utils/string.utils';
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
 	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
@@ -207,13 +210,11 @@
 {/snippet}
 
 {#snippet TemplateMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: Row<Template>;
 	item: Template;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
@@ -338,14 +339,14 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table }: { table: TableType<Template> })}
+{#snippet GroupedTableView({ table }: { table: TemplateTable })}
 	<div class="mb-4 flex items-center justify-end border-b px-6 py-4">
 		<DataTableViewOptions {table} customViewOptions={CustomViewOptions} />
 	</div>
 	<div class="space-y-4 px-6 pb-6">
 		{#each groupedTemplates ?? [] as [registryName, registryTemplates] (registryName)}
 			{@const registryTemplateIds = new Set(registryTemplates.map((t) => t.id))}
-			{@const registryRows = table.getRowModel().rows.filter((row) => registryTemplateIds.has(row.original.id))}
+			{@const registryRows = table.getRowModel().rows.filter((row: TemplateRow) => registryTemplateIds.has(row.original.id))}
 
 			<DropdownCard
 				id={`template-registry-${registryName}`}
@@ -392,7 +393,7 @@
 
 				<div class="space-y-3 md:hidden">
 					{#each registryRows as row (row.id)}
-						{@render TemplateMobileCardSnippet({ row, item: row.original as Template, mobileFieldVisibility })}
+						{@render TemplateMobileCardSnippet({ item: row.original as Template, mobileFieldVisibility })}
 					{:else}
 						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
 							{m.common_no_results_found()}

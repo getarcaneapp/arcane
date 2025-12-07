@@ -1,6 +1,6 @@
 <script lang="ts">
-	import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
-	import CpuIcon from '@lucide/svelte/icons/cpu';
+	import MemoryStickIcon from 'phosphor-svelte/lib/Memory';
+	import CpuIcon from 'phosphor-svelte/lib/Cpu';
 	import { toast } from 'svelte-sonner';
 	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';

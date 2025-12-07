@@ -2,8 +2,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
+	import PencilIcon from 'phosphor-svelte/lib/Pencil';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';

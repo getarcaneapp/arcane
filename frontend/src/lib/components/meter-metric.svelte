@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import type { Icon as IconType } from '@lucide/svelte';
+	import type { PhosphorIcon } from '$lib/types/icon.type';
 	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
@@ -11,7 +11,7 @@
 		unit?: string;
 		formatValue?: (value: number) => string;
 		maxValue?: number;
-		icon: typeof IconType;
+		icon: PhosphorIcon;
 		loading?: boolean;
 		showAbsoluteValues?: boolean;
 		formatAbsoluteValue?: (value: number) => string;

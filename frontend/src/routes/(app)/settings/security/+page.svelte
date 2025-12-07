@@ -13,12 +13,12 @@
 	import type { Settings } from '$lib/types/settings.type';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import LockIcon from '@lucide/svelte/icons/lock';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import LockIcon from 'phosphor-svelte/lib/Lock';
+	import ClockIcon from 'phosphor-svelte/lib/Clock';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
+	import ShieldCheckIcon from 'phosphor-svelte/lib/ShieldCheck';
+	import CopyIcon from 'phosphor-svelte/lib/Copy';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';

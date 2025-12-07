@@ -2,9 +2,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import SmartphoneIcon from '@lucide/svelte/icons/smartphone';
-	import XIcon from '@lucide/svelte/icons/x';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
+	import SmartphoneIcon from 'phosphor-svelte/lib/DeviceMobile';
+	import XIcon from 'phosphor-svelte/lib/X';
 
 	let {
 		id,

@@ -2,9 +2,9 @@
 	import type { NetworkSummaryDto } from '$lib/types/network.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import ScanSearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -19,9 +19,9 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import RouteIcon from '@lucide/svelte/icons/route';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
+	import RouteIcon from 'phosphor-svelte/lib/Path';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
 
 	type FieldVisibility = Record<string, boolean>;
 

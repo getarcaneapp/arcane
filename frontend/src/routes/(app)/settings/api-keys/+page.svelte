@@ -1,5 +1,5 @@
 <script lang="ts">
-	import KeyIcon from '@lucide/svelte/icons/key';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';

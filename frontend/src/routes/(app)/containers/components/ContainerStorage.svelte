@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import DatabaseIcon from 'phosphor-svelte/lib/Database';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 

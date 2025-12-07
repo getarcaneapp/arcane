@@ -2,8 +2,8 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -13,16 +13,16 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Event } from '$lib/types/event.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import UserIcon from '@lucide/svelte/icons/user';
+	import BellIcon from 'phosphor-svelte/lib/Bell';
+	import TagIcon from 'phosphor-svelte/lib/Tag';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
+	import UserIcon from 'phosphor-svelte/lib/User';
 
 	let {
 		events = $bindable(),
@@ -177,7 +177,7 @@
 }: {
 	row: any;
 	item: Event;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

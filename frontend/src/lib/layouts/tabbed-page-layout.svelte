@@ -2,7 +2,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeft';
 	import type { Snippet } from 'svelte';
 	import { browser } from '$app/environment';
 	import { cn } from '$lib/utils';

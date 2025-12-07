@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from 'bits-ui';
-	import XIcon from '@lucide/svelte/icons/x';
+	import XIcon from 'phosphor-svelte/lib/X';
 	import type { Snippet } from 'svelte';
 	import * as Dialog from './index.js';
 	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';

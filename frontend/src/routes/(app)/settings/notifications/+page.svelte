@@ -14,9 +14,9 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import SendIcon from '@lucide/svelte/icons/send';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import BellIcon from 'phosphor-svelte/lib/Bell';
+	import SendIcon from 'phosphor-svelte/lib/PaperPlaneTilt';
+	import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
 	import settingsStore from '$lib/stores/config-store';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
@@ -688,7 +688,7 @@
 												<SendIcon class="mr-2 h-4 w-4" />
 											{/if}
 											{m.notifications_email_test_button()}
-											<ChevronDownIcon class="ml-2 h-4 w-4" />
+											<CaretDownIcon class="ml-2 h-4 w-4" />
 										</Button>
 									</DropdownMenu.Trigger>
 									<DropdownMenu.Content align="start">

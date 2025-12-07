@@ -2,12 +2,12 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import EyeIcon from '@lucide/svelte/icons/eye';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import MonitorIcon from '@lucide/svelte/icons/monitor';
-	import DownloadIcon from '@lucide/svelte/icons/download';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import EyeIcon from 'phosphor-svelte/lib/Eye';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import MonitorIcon from 'phosphor-svelte/lib/Monitor';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -15,13 +15,13 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { Environment } from '$lib/types/environment.type';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import CloudIcon from '@lucide/svelte/icons/cloud';
-	import PowerIcon from '@lucide/svelte/icons/power';
+	import CloudIcon from 'phosphor-svelte/lib/Cloud';
+	import PowerIcon from 'phosphor-svelte/lib/Power';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -269,7 +269,7 @@
 }: {
 	row: any;
 	item: Environment;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import ScanSearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -17,9 +17,9 @@
 	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/volume.type';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
-	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
+	import DatabaseIcon from 'phosphor-svelte/lib/Database';
+	import CalendarIcon from 'phosphor-svelte/lib/Calendar';
+	import LoaderCircleIcon from 'phosphor-svelte/lib/CircleNotch';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import bytes from 'bytes';

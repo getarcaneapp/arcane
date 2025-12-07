@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import EditIcon from '@lucide/svelte/icons/edit';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import EditIcon from 'phosphor-svelte/lib/PencilSimple';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -12,11 +12,11 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { User } from '$lib/types/user.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
-	import UserIcon from '@lucide/svelte/icons/user';
+	import UserIcon from 'phosphor-svelte/lib/User';
 
 	let {
 		users = $bindable(),
@@ -158,7 +158,7 @@
 }: {
 	row: any;
 	item: User;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

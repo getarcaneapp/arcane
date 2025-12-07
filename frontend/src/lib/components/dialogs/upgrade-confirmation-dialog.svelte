@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
-	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
+	import AlertTriangleIcon from 'phosphor-svelte/lib/WarningCircle';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
+	import CheckCircle2Icon from 'phosphor-svelte/lib/CheckCircle';
 	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { onDestroy } from 'svelte';

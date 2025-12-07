@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { Calendar as CalendarPrimitive } from "bits-ui";
-	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
-	import { buttonVariants, type ButtonVariant } from "$lib/components/ui/button/index.js";
-	import { cn } from "$lib/utils.js";
+	import { Calendar as CalendarPrimitive } from 'bits-ui';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
+	import { buttonVariants, type ButtonVariant } from '$lib/components/ui/button/index.js';
+	import { cn } from '$lib/utils.js';
 
 	let {
 		ref = $bindable(null),
 		class: className,
 		children,
-		variant = "ghost",
+		variant = 'ghost',
 		...restProps
 	}: CalendarPrimitive.NextButtonProps & {
 		variant?: ButtonVariant;
@@ -23,7 +23,7 @@
 	bind:ref
 	class={cn(
 		buttonVariants({ variant }),
-		"size-(--cell-size) select-none bg-transparent p-0 disabled:opacity-50 rtl:rotate-180",
+		'size-(--cell-size) bg-transparent p-0 select-none disabled:opacity-50 rtl:rotate-180',
 		className
 	)}
 	children={children || Fallback}

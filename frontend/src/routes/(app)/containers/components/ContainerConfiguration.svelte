@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import TagIcon from '@lucide/svelte/icons/tag';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
+	import TagIcon from 'phosphor-svelte/lib/Tag';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 

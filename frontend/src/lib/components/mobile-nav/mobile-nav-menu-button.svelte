@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
-	import Grid3x3Icon from '@lucide/svelte/icons/grid-3x3';
+	import Grid3x3Icon from 'phosphor-svelte/lib/SquaresFour';
 
 	let {
 		showLabels = true,

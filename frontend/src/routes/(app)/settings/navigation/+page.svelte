@@ -3,9 +3,9 @@
 	import { z } from 'zod/v4';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import EyeIcon from '@lucide/svelte/icons/eye';
-	import NavigationIcon from '@lucide/svelte/icons/navigation';
-	import SidebarIcon from '@lucide/svelte/icons/sidebar';
+	import EyeIcon from 'phosphor-svelte/lib/Eye';
+	import NavigationIcon from 'phosphor-svelte/lib/Compass';
+	import SidebarIcon from 'phosphor-svelte/lib/Sidebar';
 	import NavigationSettingControl from '$lib/components/navigation-setting-control.svelte';
 	import NavigationModeSettingControl from '$lib/components/navigation-mode-setting-control.svelte';
 	import settingsStore from '$lib/stores/config-store';

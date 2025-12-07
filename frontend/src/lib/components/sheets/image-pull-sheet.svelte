@@ -4,9 +4,9 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
+	import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircle';
+	import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { toast } from 'svelte-sonner';
@@ -297,7 +297,7 @@
 								class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
 							>
 								{m.progress_show_layers()}
-								<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+								<CaretDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
 							</Collapsible.Trigger>
 							<Collapsible.Content>
 								<div class="mt-2 space-y-1.5">

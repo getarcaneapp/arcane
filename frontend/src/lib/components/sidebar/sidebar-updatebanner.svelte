@@ -2,8 +2,8 @@
 	import { cn } from '$lib/utils';
 	import * as Separator from '$lib/components/ui/separator/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import DownloadIcon from '@lucide/svelte/icons/download';
+	import ExternalLink from 'phosphor-svelte/lib/ArrowSquareOut';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import type { User } from '$lib/types/user.type';
@@ -37,7 +37,7 @@
 
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
-	
+
 	// Determine update type and display text
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
@@ -45,7 +45,7 @@
 		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
 		return 'none';
 	});
-	
+
 	const updateDisplayText = $derived.by(() => {
 		if (!versionInformation) return '';
 		if (updateType === 'semver') {
@@ -58,7 +58,7 @@
 		}
 		return '';
 	});
-	
+
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();
 		if (checkingUpgrade) return m.upgrade_checking();

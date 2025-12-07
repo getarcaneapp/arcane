@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import ZapIcon from '@lucide/svelte/icons/zap';
+	import ZapIcon from 'phosphor-svelte/lib/Lightning';
 	import * as Alert from '$lib/components/ui/alert';
 	import type { Settings } from '$lib/types/settings.type';
 	import { z } from 'zod/v4';
@@ -8,13 +8,13 @@
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import TrashIcon from '@lucide/svelte/icons/trash';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import ActivityIcon from 'phosphor-svelte/lib/ChartLine';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+	import TrashIcon from 'phosphor-svelte/lib/Trash';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import BoxesIcon from '@lucide/svelte/icons/boxes';
+	import BoxesIcon from 'phosphor-svelte/lib/Cube';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 

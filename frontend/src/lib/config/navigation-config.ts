@@ -1,28 +1,29 @@
-import { KeyIcon, type Icon as IconType } from '@lucide/svelte';
-import PaletteIcon from '@lucide/svelte/icons/palette';
-import FileStackIcon from '@lucide/svelte/icons/file-stack';
-import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-import HouseIcon from '@lucide/svelte/icons/home';
-import NetworkIcon from '@lucide/svelte/icons/network';
-import ContainerIcon from '@lucide/svelte/icons/container';
-import ImageIcon from '@lucide/svelte/icons/image';
-import SettingsIcon from '@lucide/svelte/icons/settings';
-import DatabaseIcon from '@lucide/svelte/icons/database';
-import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
-import UserIcon from '@lucide/svelte/icons/user';
-import ShieldIcon from '@lucide/svelte/icons/shield';
-import ComputerIcon from '@lucide/svelte/icons/computer';
-import LockKeyholeIcon from '@lucide/svelte/icons/lock-keyhole';
-import AlarmClockIcon from '@lucide/svelte/icons/alarm-clock';
-import NavigationIcon from '@lucide/svelte/icons/navigation';
-import FileTextIcon from '@lucide/svelte/icons/file-text';
-import BellIcon from '@lucide/svelte/icons/bell';
+import KeyIcon from 'phosphor-svelte/lib/Key';
+import type { PhosphorIcon } from '$lib/types/icon.type';
+import PaletteIcon from 'phosphor-svelte/lib/Palette';
+import FileStackIcon from 'phosphor-svelte/lib/Files';
+import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+import HouseIcon from 'phosphor-svelte/lib/House';
+import NetworkIcon from 'phosphor-svelte/lib/Network';
+import ContainerIcon from 'phosphor-svelte/lib/Package';
+import ImageIcon from 'phosphor-svelte/lib/Image';
+import SettingsIcon from 'phosphor-svelte/lib/Gear';
+import DatabaseIcon from 'phosphor-svelte/lib/Database';
+import LayoutTemplateIcon from 'phosphor-svelte/lib/Layout';
+import UserIcon from 'phosphor-svelte/lib/User';
+import ShieldIcon from 'phosphor-svelte/lib/Shield';
+import ComputerIcon from 'phosphor-svelte/lib/Desktop';
+import LockKeyholeIcon from 'phosphor-svelte/lib/LockKey';
+import AlarmClockIcon from 'phosphor-svelte/lib/Clock';
+import NavigationIcon from 'phosphor-svelte/lib/Compass';
+import FileTextIcon from 'phosphor-svelte/lib/FileText';
+import BellIcon from 'phosphor-svelte/lib/Bell';
 import { m } from '$lib/paraglide/messages';
 
 export type NavigationItem = {
 	title: string;
 	url: string;
-	icon: typeof IconType;
+	icon: PhosphorIcon;
 	items?: NavigationItem[];
 };
 
@@ -71,7 +72,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 				{ title: m.navigation_title(), url: '/settings/navigation', icon: NavigationIcon },
 				{ title: m.users_title(), url: '/settings/users', icon: UserIcon },
 				{ title: m.notifications_title(), url: '/settings/notifications', icon: BellIcon },
-				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon },
+				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon }
 			]
 		}
 	]

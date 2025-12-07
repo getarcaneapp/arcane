@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import HeartPulseIcon from '@lucide/svelte/icons/heart-pulse';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
+	import HeartPulseIcon from 'phosphor-svelte/lib/Heartbeat';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';

@@ -3,21 +3,21 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import TestTubeIcon from '@lucide/svelte/icons/test-tube';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import PencilIcon from 'phosphor-svelte/lib/Pencil';
+	import TestTubeIcon from 'phosphor-svelte/lib/TestTube';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import LinkIcon from '@lucide/svelte/icons/link';
+	import PackageIcon from 'phosphor-svelte/lib/Package';
+	import UserIcon from 'phosphor-svelte/lib/User';
+	import LinkIcon from 'phosphor-svelte/lib/Link';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
@@ -203,7 +203,7 @@
 }: {
 	row: any;
 	item: ContainerRegistry;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

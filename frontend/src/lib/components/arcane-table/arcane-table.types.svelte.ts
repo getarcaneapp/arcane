@@ -1,6 +1,8 @@
 import type { Row, Column, FilterFn, ColumnFiltersState, VisibilityState } from '@tanstack/table-core';
 import type { Snippet } from 'svelte';
 
+export type MobileFieldVisibility = Record<string, boolean>;
+
 export type FieldSpec = {
 	id: string;
 	label: string;

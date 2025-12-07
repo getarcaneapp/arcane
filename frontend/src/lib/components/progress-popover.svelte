@@ -6,12 +6,12 @@
 	import * as Item from '$lib/components/ui/item/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import XCircleIcon from '@lucide/svelte/icons/x-circle';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import type { Icon as IconType } from '@lucide/svelte';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
+	import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircle';
+	import XCircleIcon from 'phosphor-svelte/lib/XCircle';
+	import PackageIcon from 'phosphor-svelte/lib/Package';
+	import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
+	import type { PhosphorIcon } from '$lib/types/icon.type';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import {
@@ -34,7 +34,7 @@
 		align?: 'start' | 'center' | 'end';
 		sideOffset?: number;
 		class?: string;
-		icon?: typeof IconType;
+		icon?: PhosphorIcon;
 		iconClass?: string;
 		preventCloseWhileLoading?: boolean;
 		onCancel?: () => void;
@@ -187,7 +187,7 @@
 					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
 				>
 					{m.progress_show_layers()}
-					<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+					<CaretDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
 				</Collapsible.Trigger>
 				<Collapsible.Content>
 					<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">

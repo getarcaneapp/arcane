@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import PaletteIcon from '@lucide/svelte/icons/palette';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import CodeIcon from '@lucide/svelte/icons/code';
+	import SearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import PaletteIcon from 'phosphor-svelte/lib/Palette';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
+	import PackageIcon from 'phosphor-svelte/lib/Package';
+	import CodeIcon from 'phosphor-svelte/lib/Code';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';

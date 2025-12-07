@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
-	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import Loader2Icon from 'phosphor-svelte/lib/CircleNotch';
 	import type { ComponentProps } from 'svelte';
 
 	type Props = ComponentProps<typeof Loader2Icon>;

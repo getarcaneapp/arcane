@@ -3,14 +3,14 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import DownloadIcon from '@lucide/svelte/icons/download';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpen';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
+	import DownloadIcon from 'phosphor-svelte/lib/Download';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import type { Template } from '$lib/types/template.type';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -272,7 +272,7 @@
 								<Card class="border-2">
 									<Collapsible.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left">
 										<div class="flex items-center gap-2">
-											<ChevronDownIcon class="hidden size-4 data-[state=open]:block" />
+											<CaretDownIcon class="hidden size-4 data-[state=open]:block" />
 											<ChevronRightIcon class="block size-4 data-[state=open]:hidden" />
 											<span class="font-semibold">{group.name}</span>
 											<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>

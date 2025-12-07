@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import type { Snippet } from 'svelte';
-	import type { Icon as IconType } from '@lucide/svelte';
+	import type { PhosphorIcon } from '$lib/types/icon.type';
 	import type { Action } from '$lib/components/arcane-button/index.js';
 
 	export interface ActionButton {
@@ -22,7 +22,7 @@
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: typeof IconType;
+		icon: PhosphorIcon;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;

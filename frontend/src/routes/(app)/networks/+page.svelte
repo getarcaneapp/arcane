@@ -1,6 +1,6 @@
 <script lang="ts">
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import EthernetPortIcon from '@lucide/svelte/icons/ethernet-port';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
+	import EthernetPortIcon from 'phosphor-svelte/lib/Plugs';
 	import { toast } from 'svelte-sonner';
 	import type { NetworkCreateOptions } from '$lib/types/network.type';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';

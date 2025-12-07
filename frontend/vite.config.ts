@@ -3,9 +3,9 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { sveltePhosphorOptimize } from 'phosphor-svelte/vite';
 
 export default defineConfig({
-	optimizeDeps: { exclude: ['@lucide/svelte'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit(),

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Icon as IconType } from '@lucide/svelte';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
+	import type { PhosphorIcon } from '$lib/types/icon.type';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 
@@ -14,11 +14,11 @@
 		items: {
 			title: string;
 			url: string;
-			icon?: typeof IconType;
+			icon?: PhosphorIcon;
 			items?: {
 				title: string;
 				url: string;
-				icon?: typeof IconType;
+				icon?: PhosphorIcon;
 			}[];
 		}[];
 	} = $props();

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import { Button } from '$lib/components/ui/button';
-	import CircleXIcon from '@lucide/svelte/icons/circle-x';
+	import CircleXIcon from 'phosphor-svelte/lib/XCircle';
 	import { m } from '$lib/paraglide/messages';
 
 	let {

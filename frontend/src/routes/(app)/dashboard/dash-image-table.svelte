@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ArrowRightIcon from 'phosphor-svelte/lib/ArrowRight';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto } from '$lib/types/image.type';
@@ -12,7 +12,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
 
 	let {
 		images = $bindable(),

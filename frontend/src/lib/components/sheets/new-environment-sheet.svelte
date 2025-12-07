@@ -5,7 +5,7 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ServerIcon from '@lucide/svelte/icons/server';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
 	import * as Card from '$lib/components/ui/card';
 	import type { CreateEnvironmentDTO } from '$lib/types/environment.type';
 	import { z } from 'zod/v4';

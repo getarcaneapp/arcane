@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import KeyIcon from '@lucide/svelte/icons/key';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
 	import { toast } from 'svelte-sonner';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';

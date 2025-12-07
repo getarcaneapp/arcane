@@ -5,8 +5,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from 'bytes';
 	import settingsStore from '$lib/stores/config-store';

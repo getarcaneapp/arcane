@@ -1,5 +1,5 @@
 <script lang="ts" generics="TData">
-	import XIcon from '@lucide/svelte/icons/x';
+	import XIcon from 'phosphor-svelte/lib/X';
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import Button from '$lib/components/ui/button/button.svelte';

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeft';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
+	import CopyIcon from 'phosphor-svelte/lib/Copy';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
-	import WandIcon from '@lucide/svelte/icons/wand';
+	import LayoutTemplateIcon from 'phosphor-svelte/lib/Layout';
+	import WandIcon from 'phosphor-svelte/lib/MagicWand';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -20,14 +20,14 @@
 	import type { Template } from '$lib/types/template.type';
 	import { z } from 'zod/v4';
 	import { arcaneButtonVariants, actionConfigs } from '$lib/components/arcane-button/variants';
-	import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
+	import PlusCircleIcon from 'phosphor-svelte/lib/PlusCircle';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service.js';
 	import { systemService } from '$lib/services/system-service.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronDown from 'phosphor-svelte/lib/CaretDown';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 

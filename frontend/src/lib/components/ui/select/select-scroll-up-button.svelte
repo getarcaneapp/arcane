@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
+	import ChevronUpIcon from 'phosphor-svelte/lib/CaretUp';
 	import { Select as SelectPrimitive } from 'bits-ui';
 	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
 

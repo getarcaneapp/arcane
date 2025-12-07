@@ -10,10 +10,10 @@
 	import { templateService } from '$lib/services/template-service';
 	import { z } from 'zod/v4';
 	import { goto } from '$app/navigation';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import CodeIcon from '@lucide/svelte/icons/code';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import SaveIcon from '@lucide/svelte/icons/save';
+	import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeft';
+	import CodeIcon from 'phosphor-svelte/lib/Code';
+	import FileTextIcon from 'phosphor-svelte/lib/FileText';
+	import SaveIcon from 'phosphor-svelte/lib/FloppyDisk';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { untrack } from 'svelte';
 	import type { Template } from '$lib/types/template.type';

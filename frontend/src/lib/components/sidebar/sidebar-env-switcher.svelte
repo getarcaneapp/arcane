@@ -3,10 +3,10 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import RouterIcon from '@lucide/svelte/icons/router';
-	import ServerIcon from '@lucide/svelte/icons/server';
+	import ChevronsUpDownIcon from 'phosphor-svelte/lib/CaretUpDown';
+	import PlusIcon from 'phosphor-svelte/lib/Plus';
+	import RouterIcon from 'phosphor-svelte/lib/Broadcast';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
 	import { goto } from '$app/navigation';

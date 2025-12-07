@@ -6,9 +6,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { cn } from '$lib/utils';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import XIcon from '@lucide/svelte/icons/x';
+	import CheckIcon from 'phosphor-svelte/lib/Check';
+	import CopyIcon from 'phosphor-svelte/lib/Copy';
+	import XIcon from 'phosphor-svelte/lib/X';
 	import { scale } from 'svelte/transition';
 	import type { CopyButtonProps } from './types';
 

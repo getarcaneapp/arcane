@@ -2,8 +2,8 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as RadioGroup from '$lib/components/ui/radio-group/index.js';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import CheckIcon from '@lucide/svelte/icons/check';
+	import PlusIcon from 'phosphor-svelte/lib/Plus';
+	import CheckIcon from 'phosphor-svelte/lib/Check';
 	import CustomColorDialog from './custom-color.svelte';
 
 	let {

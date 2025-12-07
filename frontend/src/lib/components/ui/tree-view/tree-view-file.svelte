@@ -1,5 +1,5 @@
 <script lang="ts">
-	import FileIcon from '@lucide/svelte/icons/file';
+	import FileIcon from 'phosphor-svelte/lib/File';
 	import { cn } from '$lib/utils';
 	import type { TreeViewFileProps } from './types';
 

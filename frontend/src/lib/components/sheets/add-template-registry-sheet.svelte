@@ -4,8 +4,8 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import AlertCircleIcon from 'phosphor-svelte/lib/Warning';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as Alert from '$lib/components/ui/alert/index.js';

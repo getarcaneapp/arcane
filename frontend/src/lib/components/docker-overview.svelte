@@ -3,10 +3,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import InfoIcon from '@lucide/svelte/icons/info';
 	import DockerIcon from '$lib/icons/docker-icon.svelte';
-	import BoxIcon from '@lucide/svelte/icons/box';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import BoxIcon from 'phosphor-svelte/lib/Cube';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { m } from '$lib/paraglide/messages';

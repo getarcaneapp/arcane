@@ -7,8 +7,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import XIcon from '@lucide/svelte/icons/x';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
+	import XIcon from 'phosphor-svelte/lib/X';
 	import type { NetworkCreateOptions } from '$lib/types/network.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';

@@ -7,9 +7,9 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { authService } from '$lib/services/auth-service';
 	import { toast } from 'svelte-sonner';
-	import CircleAlert from '@lucide/svelte/icons/circle-alert';
-	import Eye from '@lucide/svelte/icons/eye';
-	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import CircleAlert from 'phosphor-svelte/lib/Warning';
+	import Eye from 'phosphor-svelte/lib/Eye';
+	import EyeOff from 'phosphor-svelte/lib/EyeClosed';
 	import { m } from '$lib/paraglide/messages';
 
 	let {

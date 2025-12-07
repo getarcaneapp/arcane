@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import Terminal from '$lib/components/terminal/terminal.svelte';
 	import TerminalControls from '$lib/components/terminal/terminal-controls.svelte';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import TerminalIcon from 'phosphor-svelte/lib/Terminal';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import settingsStore from '$lib/stores/config-store';

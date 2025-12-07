@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import NavigationIcon from '@lucide/svelte/icons/navigation';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import SearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import SettingsIcon from 'phosphor-svelte/lib/Gear';
+	import DatabaseIcon from 'phosphor-svelte/lib/Database';
+	import UserIcon from 'phosphor-svelte/lib/User';
+	import ShieldIcon from 'phosphor-svelte/lib/Shield';
+	import NavigationIcon from 'phosphor-svelte/lib/Compass';
+	import BellIcon from 'phosphor-svelte/lib/Bell';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
-	import HeartPulseIcon from '@lucide/svelte/icons/heart-pulse';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import NetworkIcon from 'phosphor-svelte/lib/Network';
+	import InfoIcon from 'phosphor-svelte/lib/Info';
+	import PlayIcon from 'phosphor-svelte/lib/Play';
+	import StopCircleIcon from 'phosphor-svelte/lib/StopCircle';
+	import HeartPulseIcon from 'phosphor-svelte/lib/Heartbeat';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges';
 	import { m } from '$lib/paraglide/messages';

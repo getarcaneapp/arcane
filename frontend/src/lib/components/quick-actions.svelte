@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import CirclePlayIcon from '@lucide/svelte/icons/circle-play';
-	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import CirclePlayIcon from 'phosphor-svelte/lib/PlayCircle';
+	import CircleStopIcon from 'phosphor-svelte/lib/StopCircle';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { DockerInfo } from '$lib/types/docker-info.type';

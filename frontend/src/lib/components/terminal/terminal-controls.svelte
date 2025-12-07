@@ -2,7 +2,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import RefreshCwIcon from 'phosphor-svelte/lib/ArrowsClockwise';
 	import { m } from '$lib/paraglide/messages';
 
 	let {

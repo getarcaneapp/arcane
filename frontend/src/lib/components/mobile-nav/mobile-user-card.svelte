@@ -2,12 +2,12 @@
 	import * as Button from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { cn } from '$lib/utils';
-	import LogOutIcon from '@lucide/svelte/icons/log-out';
-	import RouterIcon from '@lucide/svelte/icons/router';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import LanguagesIcon from '@lucide/svelte/icons/languages';
-	import Sun from '@lucide/svelte/icons/sun';
-	import Moon from '@lucide/svelte/icons/moon';
+	import LogOutIcon from 'phosphor-svelte/lib/SignOut';
+	import RouterIcon from 'phosphor-svelte/lib/Broadcast';
+	import ServerIcon from 'phosphor-svelte/lib/HardDrives';
+	import LanguagesIcon from 'phosphor-svelte/lib/Translate';
+	import Sun from 'phosphor-svelte/lib/Sun';
+	import Moon from 'phosphor-svelte/lib/Moon';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
 	import { mode, toggleMode } from 'mode-watcher';
@@ -15,7 +15,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { User } from '$lib/types/user.type';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
 	import settingsStore from '$lib/stores/config-store';
 
 	type Props = {
@@ -75,7 +75,7 @@
 				aria-label="Expand user card"
 				class={cn('text-muted-foreground/60 transition-transform duration-200', userCardExpanded && 'rotate-180 transform')}
 			>
-				<ChevronDownIcon class="size-4" />
+				<CaretDownIcon class="size-4" />
 			</div>
 			<form action="/logout" method="POST">
 				<Button.Root

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
-	import ArchiveXIcon from '@lucide/svelte/icons/archive-x';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
+	import ArchiveRestoreIcon from 'phosphor-svelte/lib/Archive';
+	import ArchiveXIcon from 'phosphor-svelte/lib/Archive';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';

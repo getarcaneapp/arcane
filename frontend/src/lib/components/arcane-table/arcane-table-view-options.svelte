@@ -1,5 +1,5 @@
 <script lang="ts" generics="TData">
-	import Settings2Icon from '@lucide/svelte/icons/settings-2';
+	import Settings2Icon from 'phosphor-svelte/lib/Gear';
 	import type { Table } from '@tanstack/table-core';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';

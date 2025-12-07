@@ -5,8 +5,8 @@
 	import * as Button from '$lib/components/ui/button/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { User } from '$lib/types/user.type';
-	import Sun from '@lucide/svelte/icons/sun';
-	import Moon from '@lucide/svelte/icons/moon';
+	import Sun from 'phosphor-svelte/lib/Sun';
+	import Moon from 'phosphor-svelte/lib/Moon';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';

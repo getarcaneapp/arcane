@@ -4,7 +4,7 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import HardDriveIcon from 'phosphor-svelte/lib/HardDrive';
 	import type { VolumeCreateRequest } from '$lib/types/volume.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';

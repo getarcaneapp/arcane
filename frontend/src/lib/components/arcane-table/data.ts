@@ -1,13 +1,13 @@
-import BadgeCheckIcon from '@lucide/svelte/icons/badge-check';
-import BadgeXIcon from '@lucide/svelte/icons/badge-x';
-import CircleFadingArrowUp from '@lucide/svelte/icons/circle-fading-arrow-up';
-import CircleCheck from '@lucide/svelte/icons/circle-check';
-import InfoIcon from '@lucide/svelte/icons/info';
-import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-import CircleXIcon from '@lucide/svelte/icons/circle-x';
-import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-import GlobeIcon from '@lucide/svelte/icons/globe';
+import BadgeCheckIcon from 'phosphor-svelte/lib/SealCheck';
+import BadgeXIcon from 'phosphor-svelte/lib/Seal';
+import CircleFadingArrowUp from 'phosphor-svelte/lib/ArrowCircleUp';
+import CircleCheck from 'phosphor-svelte/lib/CheckCircle';
+import InfoIcon from 'phosphor-svelte/lib/Info';
+import TriangleAlertIcon from 'phosphor-svelte/lib/WarningCircle';
+import CircleXIcon from 'phosphor-svelte/lib/XCircle';
+import CircleCheckIcon from 'phosphor-svelte/lib/CheckCircle';
+import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpen';
+import GlobeIcon from 'phosphor-svelte/lib/Globe';
 import { m } from '$lib/paraglide/messages';
 
 export const usageFilters = [

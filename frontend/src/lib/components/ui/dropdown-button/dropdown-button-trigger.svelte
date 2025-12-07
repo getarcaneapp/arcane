@@ -11,7 +11,7 @@
 </script>
 
 <script lang="ts">
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronDown from 'phosphor-svelte/lib/CaretDown';
 	import { tryUseDropdownButtonRoot } from './dropdown-button.svelte.js';
 	const root = tryUseDropdownButtonRoot();
 

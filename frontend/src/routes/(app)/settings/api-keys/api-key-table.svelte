@@ -1,10 +1,10 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import EditIcon from '@lucide/svelte/icons/edit';
-	import CopyIcon from '@lucide/svelte/icons/copy';
+	import Trash2Icon from 'phosphor-svelte/lib/Trash';
+	import EllipsisIcon from 'phosphor-svelte/lib/DotsThree';
+	import EditIcon from 'phosphor-svelte/lib/PencilSimple';
+	import CopyIcon from 'phosphor-svelte/lib/Copy';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -13,10 +13,10 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ApiKey } from '$lib/types/api-key.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
-	import KeyIcon from '@lucide/svelte/icons/key';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
 	import * as m from '$lib/paraglide/messages.js';
 
 	let {
@@ -194,7 +194,7 @@
 }: {
 	row: any;
 	item: ApiKey;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}

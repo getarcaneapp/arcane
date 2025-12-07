@@ -5,12 +5,12 @@
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { toast } from 'svelte-sonner';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import XIcon from '@lucide/svelte/icons/x';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
-	import CopyIcon from '@lucide/svelte/icons/copy';
+	import PlusIcon from 'phosphor-svelte/lib/Plus';
+	import XIcon from 'phosphor-svelte/lib/X';
+	import SearchIcon from 'phosphor-svelte/lib/MagnifyingGlass';
+	import KeyIcon from 'phosphor-svelte/lib/Key';
+	import AlertCircleIcon from 'phosphor-svelte/lib/Warning';
+	import CopyIcon from 'phosphor-svelte/lib/Copy';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import type { Variable } from '$lib/types/variable.type';

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import LayersIcon from '@lucide/svelte/icons/layers';
+	import GlobeIcon from 'phosphor-svelte/lib/Globe';
+	import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpen';
+	import LayersIcon from 'phosphor-svelte/lib/Stack';
 	import { toast } from 'svelte-sonner';
 	import AddTemplateRegistrySheet from '$lib/components/sheets/add-template-registry-sheet.svelte';
 	import { m } from '$lib/paraglide/messages';

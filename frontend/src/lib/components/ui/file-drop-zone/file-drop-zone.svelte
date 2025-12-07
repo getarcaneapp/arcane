@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import UploadIcon from '@lucide/svelte/icons/upload';
+	import UploadIcon from 'phosphor-svelte/lib/Upload';
 	import { displaySize } from '.';
 	import { useId } from 'bits-ui';
 	import type { FileDropZoneProps, FileRejectedReason } from './types';

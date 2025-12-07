@@ -17,7 +17,7 @@
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import * as Button from '$lib/components/ui/button/index.js';
-	import LogOutIcon from '@lucide/svelte/icons/log-out';
+	import LogOutIcon from 'phosphor-svelte/lib/SignOut';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
 
 	let {

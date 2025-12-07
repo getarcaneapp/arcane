@@ -18,14 +18,14 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
-	import ChevronsLeftIcon from '@lucide/svelte/icons/chevrons-left';
-	import ChevronsRightIcon from '@lucide/svelte/icons/chevrons-right';
-	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
-	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
-	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import EyeOffIcon from '@lucide/svelte/icons/eye-off';
+	import ChevronRightIcon from 'phosphor-svelte/lib/CaretRight';
+	import ChevronLeftIcon from 'phosphor-svelte/lib/CaretLeft';
+	import ChevronsLeftIcon from 'phosphor-svelte/lib/CaretDoubleLeft';
+	import ChevronsRightIcon from 'phosphor-svelte/lib/CaretDoubleRight';
+	import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUp';
+	import ArrowDownIcon from 'phosphor-svelte/lib/ArrowDown';
+	import ChevronsUpDownIcon from 'phosphor-svelte/lib/CaretUpDown';
+	import EyeOffIcon from 'phosphor-svelte/lib/EyeClosed';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
@@ -52,7 +52,7 @@
 	} from './arcane-table.types.svelte';
 	import { buildInitialMobileVisibility, extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import FolderXIcon from '@lucide/svelte/icons/folder-x';
+	import FolderXIcon from 'phosphor-svelte/lib/FolderOpen';
 
 	let {
 		items,

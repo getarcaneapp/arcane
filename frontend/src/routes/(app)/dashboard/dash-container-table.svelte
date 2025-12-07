@@ -2,10 +2,10 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ArrowRightIcon from 'phosphor-svelte/lib/ArrowRight';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import BoxIcon from '@lucide/svelte/icons/box';
+	import BoxIcon from 'phosphor-svelte/lib/Package';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
