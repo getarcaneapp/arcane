@@ -29,6 +29,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
+	import { untrack } from 'svelte';
 
 	type DivAttributes = SvelteHTMLElements['div'];
 	type PlainHeaderProps = { title: string } & DivAttributes;
@@ -103,18 +104,6 @@
 	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
-	$effect(() => {
-		if (persistKey) {
-			prefs = new PersistedState<CompactTablePrefs>(
-				persistKey,
-				{ v: [], f: [], g: '', l: getDefaultLimit() },
-				{ syncTabs: false }
-			);
-		} else {
-			prefs = null;
-		}
-	});
-
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
 	const currentPage = $derived(items.pagination.currentPage ?? requestOptions?.pagination?.page ?? 1);
@@ -126,6 +115,16 @@
 
 	import { onMount } from 'svelte';
 	onMount(() => {
+		// Initialize prefs first
+		if (persistKey && !prefs) {
+			prefs = new PersistedState<CompactTablePrefs>(
+				persistKey,
+				{ v: [], f: [], g: '', l: getDefaultLimit() },
+				{ syncTabs: false }
+			);
+		}
+
+		// Then restore preferences
 		if (!enablePersist) return;
 		const snapshot = extractPersistedPreferences(prefs?.current, getDefaultLimit());
 
@@ -450,19 +449,54 @@
 
 	$effect(() => {
 		const s = requestOptions?.sort;
+		const currentSort = untrack(() => sorting[0]);
+
 		if (!s) {
-			if (sorting.length) sorting = [];
+			if (currentSort) {
+				untrack(() => {
+					sorting = [];
+				});
+			}
 			return;
 		}
+
 		const desc = s.direction === 'desc';
-		if (!sorting[0] || sorting[0].id !== s.column || sorting[0].desc !== desc) {
-			sorting = [{ id: s.column, desc }];
+		if (!currentSort || currentSort.id !== s.column || currentSort.desc !== desc) {
+			untrack(() => {
+				sorting = [{ id: s.column, desc }];
+			});
 		}
 	});
 
+	// Track last persisted settings to prevent infinite loops
+	let lastPersistedSettings: string | null = null;
+	let persistTimeout: ReturnType<typeof setTimeout> | null = null;
+
 	$effect(() => {
 		if (!enablePersist || !prefs) return;
-		prefs.current = { ...prefs.current, c: customSettings };
+
+		// Read current settings without creating dependency on the stringified value
+		const currentSettings = customSettings;
+		const settingsJson = JSON.stringify(currentSettings);
+
+		// Skip if unchanged
+		if (settingsJson === lastPersistedSettings) return;
+
+		// Debounce persistence to prevent rapid updates
+		if (persistTimeout) clearTimeout(persistTimeout);
+
+		persistTimeout = setTimeout(() => {
+			untrack(() => {
+				if (prefs && settingsJson !== lastPersistedSettings) {
+					lastPersistedSettings = settingsJson;
+					prefs.current = { ...prefs.current, c: currentSettings };
+				}
+			});
+		}, 100);
+
+		return () => {
+			if (persistTimeout) clearTimeout(persistTimeout);
+		};
 	});
 </script>
 
