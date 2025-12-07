@@ -123,7 +123,7 @@
 				{ syncTabs: false }
 			);
 		}
-		
+
 		// Then restore preferences
 		if (!enablePersist) return;
 		const snapshot = extractPersistedPreferences(prefs?.current, getDefaultLimit());
@@ -450,7 +450,7 @@
 	$effect(() => {
 		const s = requestOptions?.sort;
 		const currentSort = untrack(() => sorting[0]);
-		
+
 		if (!s) {
 			if (currentSort) {
 				untrack(() => {
@@ -459,7 +459,7 @@
 			}
 			return;
 		}
-		
+
 		const desc = s.direction === 'desc';
 		if (!currentSort || currentSort.id !== s.column || currentSort.desc !== desc) {
 			untrack(() => {
@@ -471,20 +471,20 @@
 	// Track last persisted settings to prevent infinite loops
 	let lastPersistedSettings: string | null = null;
 	let persistTimeout: ReturnType<typeof setTimeout> | null = null;
-	
+
 	$effect(() => {
 		if (!enablePersist || !prefs) return;
-		
+
 		// Read current settings without creating dependency on the stringified value
 		const currentSettings = customSettings;
 		const settingsJson = JSON.stringify(currentSettings);
-		
+
 		// Skip if unchanged
 		if (settingsJson === lastPersistedSettings) return;
-		
+
 		// Debounce persistence to prevent rapid updates
 		if (persistTimeout) clearTimeout(persistTimeout);
-		
+
 		persistTimeout = setTimeout(() => {
 			untrack(() => {
 				if (prefs && settingsJson !== lastPersistedSettings) {
@@ -493,6 +493,10 @@
 				}
 			});
 		}, 100);
+
+		return () => {
+			if (persistTimeout) clearTimeout(persistTimeout);
+		};
 	});
 </script>
 
