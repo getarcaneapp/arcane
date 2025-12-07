@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -182,7 +183,27 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
 func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
+	// Read the body to log it and then restore it for forwarding
+	var bodyBytes []byte
+	var err error
+	if c.Request.Body != nil {
+		bodyBytes, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
+		// Restore the body for forwarding
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
+	slog.DebugContext(c.Request.Context(), "Creating proxy request",
+		"method", c.Request.Method,
+		"target", target,
+		"contentLength", c.Request.ContentLength,
+		"contentType", c.GetHeader("Content-Type"),
+		"bodyLength", len(bodyBytes),
+		"body", string(bodyBytes))
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +213,11 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 	remenv.SetAuthHeader(req, c)
 	remenv.SetAgentToken(req, accessToken)
 	remenv.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
+
+	// Set Content-Length based on actual body size
+	if len(bodyBytes) > 0 {
+		req.ContentLength = int64(len(bodyBytes))
+	}
 
 	return req, nil
 }

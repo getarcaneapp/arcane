@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -544,6 +545,13 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	if input.Body != nil {
 		removeFiles = input.Body.RemoveFiles
 		removeVolumes = input.Body.RemoveVolumes
+		slog.DebugContext(ctx, "DestroyProject handler received body",
+			"removeFiles", removeFiles,
+			"removeVolumes", removeVolumes,
+			"projectID", input.ProjectID)
+	} else {
+		slog.DebugContext(ctx, "DestroyProject handler received nil body",
+			"projectID", input.ProjectID)
 	}
 
 	if err := h.projectService.DestroyProject(ctx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {

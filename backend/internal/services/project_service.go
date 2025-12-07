@@ -722,10 +722,21 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 }
 
 func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user models.User) error {
+	slog.DebugContext(ctx, "DestroyProject service called",
+		"projectID", projectID,
+		"removeFiles", removeFiles,
+		"removeVolumes", removeVolumes,
+		"userID", user.ID,
+		"username", user.Username)
+
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
 	}
+
+	slog.DebugContext(ctx, "Found project to destroy",
+		"projectName", proj.Name,
+		"projectPath", proj.Path)
 
 	if err := s.DownProject(ctx, projectID, systemUser); err != nil {
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)
@@ -750,9 +761,14 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeFiles {
+		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
 		if err := os.RemoveAll(proj.Path); err != nil {
+			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
 			return fmt.Errorf("failed to remove project files: %w", err)
 		}
+		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
+	} else {
+		slog.DebugContext(ctx, "Skipping file removal (removeFiles=false)", "path", proj.Path)
 	}
 
 	if err := s.db.WithContext(ctx).Delete(proj).Error; err != nil {
