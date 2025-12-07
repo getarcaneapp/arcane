@@ -42,7 +42,13 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	err := s.db.WithContext(ctx).Where("id = ?", localEnvID).First(&existingEnv).Error
 
 	if err == nil {
-		// Local environment already exists
+		// Local environment already exists, ensure ApiUrl matches current appUrl
+		if existingEnv.ApiUrl != appUrl {
+			if err := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; err != nil {
+				return fmt.Errorf("failed to update local environment api url: %w", err)
+			}
+			slog.InfoContext(ctx, "updated local environment api url", "id", localEnvID, "url", appUrl)
+		}
 		return nil
 	}
 

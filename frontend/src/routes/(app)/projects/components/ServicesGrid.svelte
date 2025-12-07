@@ -3,6 +3,7 @@
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import HeartPulseIcon from '@lucide/svelte/icons/heart-pulse';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { PortBadge } from '$lib/components/badges';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { m } from '$lib/paraglide/messages';
@@ -23,7 +24,37 @@
 		if (normalized === 'unhealthy') return 'text-red-500';
 		return 'text-amber-500';
 	}
+
+	function parseStringPorts(ports: string[]): any[] {
+		return ports.map((p) => {
+			const [numsPart, proto] = p.split('/');
+			const nums = numsPart.split(':');
+			if (nums.length === 2) {
+				return {
+					publicPort: parseInt(nums[0]),
+					privatePort: parseInt(nums[1]),
+					type: proto || 'tcp'
+				};
+			}
+			return {
+				privatePort: parseInt(nums[0]),
+				type: proto || 'tcp'
+			};
+		});
+	}
 </script>
+
+{#snippet portsDisplay(service: RuntimeService)}
+	{#if service.serviceConfig?.ports && service.serviceConfig.ports.length > 0}
+		<div class="mt-3">
+			<PortBadge ports={service.serviceConfig.ports as any} />
+		</div>
+	{:else if service.ports && service.ports.length > 0}
+		<div class="mt-3">
+			<PortBadge ports={parseStringPorts(service.ports)} />
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet serviceCard(service: RuntimeService)}
 	{@const status = service.status || 'unknown'}
@@ -61,11 +92,7 @@
 									</div>
 								{/if}
 							</div>
-							{#if service.ports && service.ports.length > 0}
-								<div class="text-muted-foreground mt-2 text-xs">
-									{m.common_ports()}: {service.ports.join(', ')}
-								</div>
-							{/if}
+							{@render portsDisplay(service)}
 						</div>
 					</div>
 				</Card.Content>
@@ -86,6 +113,7 @@
 						<p class="text-muted-foreground mt-2 text-xs">
 							{m.compose_service_not_created()}
 						</p>
+						{@render portsDisplay(service)}
 					</div>
 				</div>
 			</Card.Content>

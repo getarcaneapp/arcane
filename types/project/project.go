@@ -108,6 +108,11 @@ type RuntimeService struct {
 	//
 	// Required: false
 	Health *string `json:"health,omitempty"`
+
+	// ServiceConfig is the configuration of the service from the compose file.
+	//
+	// Required: false
+	ServiceConfig *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
 }
 
 // CreateReponse is the response when a project is created.

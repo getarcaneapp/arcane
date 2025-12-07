@@ -47,13 +47,14 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 // Helpers
 
 type ProjectServiceInfo struct {
-	Name          string   `json:"name"`
-	Image         string   `json:"image"`
-	Status        string   `json:"status"`
-	ContainerID   string   `json:"container_id"`
-	ContainerName string   `json:"container_name"`
-	Ports         []string `json:"ports"`
-	Health        *string  `json:"health,omitempty"`
+	Name          string                      `json:"name"`
+	Image         string                      `json:"image"`
+	Status        string                      `json:"status"`
+	ContainerID   string                      `json:"container_id"`
+	ContainerName string                      `json:"container_name"`
+	Ports         []string                    `json:"ports"`
+	Health        *string                     `json:"health,omitempty"`
+	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
 }
 
 func normalizeComposeProjectName(name string) string {
@@ -160,10 +161,21 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	have := map[string]bool{}
 	var services []ProjectServiceInfo
 
+	// Create a map for quick lookup of service config
+	serviceConfigs := make(map[string]composetypes.ServiceConfig)
+	for _, svc := range project.Services {
+		serviceConfigs[svc.Name] = svc
+	}
+
 	for _, c := range containers {
 		var health *string
 		if c.Health != "" {
 			health = &c.Health
+		}
+
+		var svcConfig *composetypes.ServiceConfig
+		if cfg, ok := serviceConfigs[c.Service]; ok {
+			svcConfig = &cfg
 		}
 
 		services = append(services, ProjectServiceInfo{
@@ -174,17 +186,20 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			ContainerName: c.Name,
 			Ports:         formatPorts(c.Publishers),
 			Health:        health,
+			ServiceConfig: svcConfig,
 		})
 		have[c.Service] = true
 	}
 
 	for _, svc := range project.Services {
 		if !have[svc.Name] {
+			svcCopy := svc
 			services = append(services, ProjectServiceInfo{
-				Name:   svc.Name,
-				Image:  svc.Image,
-				Status: "stopped",
-				Ports:  []string{},
+				Name:          svc.Name,
+				Image:         svc.Image,
+				Status:        "stopped",
+				Ports:         []string{},
+				ServiceConfig: &svcCopy,
 			})
 		}
 	}
@@ -285,6 +300,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 				ContainerName: svc.ContainerName,
 				Ports:         svc.Ports,
 				Health:        svc.Health,
+				ServiceConfig: svc.ServiceConfig,
 			}
 		}
 		resp.RuntimeServices = runtimeServices
@@ -1164,6 +1180,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 			ContainerName: s.ContainerName,
 			Ports:         s.Ports,
 			Health:        s.Health,
+			ServiceConfig: s.ServiceConfig,
 		}
 	}
 	resp.RuntimeServices = runtimeServices
