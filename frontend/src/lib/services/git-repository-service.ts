@@ -1,13 +1,17 @@
 import BaseAPIService from './api-service';
-import type { GitRepositoryCreateDto, GitRepositoryUpdateDto, GitRepository } from '$lib/types/gitops.type';
+import type {
+	GitRepositoryCreateDto,
+	GitRepositoryUpdateDto,
+	GitRepository,
+	GitRepositoryTestResponse
+} from '$lib/types/gitops.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
 export default class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/git-repositories', { params });
-		return res.data;
+		return this.handleResponse(this.api.get('/git-repositories', { params }));
 	}
 
 	async getRepository(id: string): Promise<GitRepository> {
@@ -26,7 +30,7 @@ export default class GitRepositoryService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/git-repositories/${id}`));
 	}
 
-	async testRepository(id: string, branch?: string): Promise<any> {
+	async testRepository(id: string, branch?: string): Promise<GitRepositoryTestResponse> {
 		const params = branch ? { branch } : {};
 		return this.handleResponse(this.api.post(`/git-repositories/${id}/test`, {}, { params }));
 	}

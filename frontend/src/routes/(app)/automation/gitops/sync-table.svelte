@@ -110,7 +110,6 @@
 
 	async function handlePerformSync(id: string, name: string) {
 		isLoading.syncing = true;
-		const safeName = name ?? m.common_unknown();
 		const result = await tryCatch(gitOpsSyncService.performSync(id));
 		handleApiResultWithCallbacks({
 			result,
@@ -232,14 +231,7 @@
 	<StatusBadge variant={enabled ? 'green' : 'red'} text={enabled ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
-{#snippet SyncMobileCardSnippet({
-	item,
-	mobileFieldVisibility
-}: {
-	row: any;
-	item: GitOpsSync;
-	mobileFieldVisibility: FieldVisibility;
-})}
+{#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: GitOpsSync; mobileFieldVisibility: FieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: RefreshCwIcon, variant: 'purple' as const }}

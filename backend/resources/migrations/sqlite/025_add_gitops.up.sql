@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS git_repositories (
     token TEXT,
     ssh_key TEXT,
     description TEXT,
-    enabled BOOLEAN NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME
 );

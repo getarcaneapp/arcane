@@ -82,10 +82,15 @@ type GitOpsSync struct {
 	// Required: true
 	ComposePath string `json:"composePath"`
 
-	// ProjectID is the ID of the project to sync to.
+	// ProjectName is the name used to create/identify the project.
 	//
 	// Required: true
-	ProjectID string `json:"projectId"`
+	ProjectName string `json:"projectName"`
+
+	// ProjectID is the ID of the linked project (set after first sync).
+	//
+	// Required: false
+	ProjectID *string `json:"projectId,omitempty"`
 
 	// AutoSync indicates if the sync should run automatically.
 	//
@@ -237,6 +242,7 @@ type CreateSyncRequest struct {
 	ComposePath string `json:"composePath" binding:"required"`
 
 	// ProjectName is the name of the project to create/update.
+	// The actual project will be created on first sync, and ProjectID will be set then.
 	//
 	// Required: true
 	ProjectName string `json:"projectName" binding:"required"`
@@ -323,6 +329,16 @@ type SyncResult struct {
 	SyncedAt time.Time `json:"syncedAt"`
 }
 
+// FileTreeNodeType represents the type of a file tree node.
+type FileTreeNodeType string
+
+const (
+	// FileTreeNodeTypeFile represents a file node.
+	FileTreeNodeTypeFile FileTreeNodeType = "file"
+	// FileTreeNodeTypeDirectory represents a directory node.
+	FileTreeNodeTypeDirectory FileTreeNodeType = "directory"
+)
+
 // FileTreeNode represents a file or directory in the repository.
 type FileTreeNode struct {
 	// Name of the file or directory.
@@ -335,10 +351,10 @@ type FileTreeNode struct {
 	// Required: true
 	Path string `json:"path"`
 
-	// Type indicates if this is a file or directory.
+	// Type indicates if this is a file or directory (use FileTreeNodeTypeFile or FileTreeNodeTypeDirectory).
 	//
 	// Required: true
-	Type string `json:"type"`
+	Type FileTreeNodeType `json:"type"`
 
 	// Size of the file in bytes (0 for directories).
 	//

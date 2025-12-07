@@ -109,8 +109,12 @@ func ValidatePath(repoPath, requestedPath string) error {
 	cleanRepoPath := filepath.Clean(repoPath)
 	cleanRequestedPath := filepath.Clean(filepath.Join(repoPath, requestedPath))
 
-	// Check if the requested path is within the repo
-	if !strings.HasPrefix(cleanRequestedPath, cleanRepoPath) {
+	// Check if the requested path is within the repo using relative path validation
+	rel, err := filepath.Rel(cleanRepoPath, cleanRequestedPath)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
 		return fmt.Errorf("path traversal attempt detected")
 	}
 
@@ -153,9 +157,9 @@ func (c *Client) BrowseTree(repoPath, targetPath string) ([]gitops.FileTreeNode,
 			continue
 		}
 
-		nodeType := "file"
+		nodeType := gitops.FileTreeNodeTypeFile
 		if entry.IsDir() {
-			nodeType = "directory"
+			nodeType = gitops.FileTreeNodeTypeDirectory
 		}
 
 		relativePath := filepath.Join(targetPath, entry.Name())
@@ -209,7 +213,12 @@ func (c *Client) FileExists(repoPath, filePath string) bool {
 }
 
 // ReadFile reads a file from the repository
-func (c *Client) ReadFile(fullPath string) (string, error) {
+func (c *Client) ReadFile(repoPath, filePath string) (string, error) {
+	if err := ValidatePath(repoPath, filePath); err != nil {
+		return "", err
+	}
+
+	fullPath := filepath.Join(repoPath, filePath)
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)

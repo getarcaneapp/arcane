@@ -79,7 +79,7 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const payload: any = {
+		const payload: GitRepositoryCreateDto | GitRepositoryUpdateDto = {
 			name: data.name,
 			url: data.url,
 			authType: selectedAuthType.value,
@@ -162,16 +162,18 @@
 					bind:input={$inputs.token}
 				/>
 			{:else if selectedAuthType.value === 'ssh'}
-				<div class="space-y-2">
-					<Label for="sshKey">{m.git_repository_ssh_key_label()}</Label>
-					<Textarea
-						id="sshKey"
-						bind:value={$inputs.sshKey!.value}
-						placeholder={m.git_repository_ssh_key_placeholder()}
-						rows={6}
-						class="font-mono text-xs"
-					/>
-				</div>
+				{#if $inputs.sshKey}
+					<div class="space-y-2">
+						<Label for="sshKey">{m.git_repository_ssh_key_label()}</Label>
+						<Textarea
+							id="sshKey"
+							bind:value={$inputs.sshKey.value}
+							placeholder={m.git_repository_ssh_key_placeholder()}
+							rows={6}
+							class="font-mono text-xs"
+						/>
+					</div>
+				{/if}
 			{/if}
 
 			<FormInput

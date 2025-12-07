@@ -25,7 +25,7 @@ func (GitRepository) TableName() string {
 type CreateGitRepositoryRequest struct {
 	Name        string  `json:"name" binding:"required"`
 	URL         string  `json:"url" binding:"required"`
-	AuthType    string  `json:"authType" binding:"required"` // none, http, ssh
+	AuthType    string  `json:"authType" binding:"required,oneof=none http ssh"`
 	Username    string  `json:"username,omitempty"`
 	Token       string  `json:"token,omitempty"`
 	SSHKey      string  `json:"sshKey,omitempty"`
@@ -36,7 +36,7 @@ type CreateGitRepositoryRequest struct {
 type UpdateGitRepositoryRequest struct {
 	Name        *string `json:"name,omitempty"`
 	URL         *string `json:"url,omitempty"`
-	AuthType    *string `json:"authType,omitempty"`
+	AuthType    *string `json:"authType,omitempty" binding:"omitempty,oneof=none http ssh"`
 	Username    *string `json:"username,omitempty"`
 	Token       *string `json:"token,omitempty"`
 	SSHKey      *string `json:"sshKey,omitempty"`

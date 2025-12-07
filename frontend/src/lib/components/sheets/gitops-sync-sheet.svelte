@@ -7,7 +7,8 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto } from '$lib/types/gitops.type';
+	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository } from '$lib/types/gitops.type';
+	import type { Project } from '$lib/types/project.type';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { projectService } from '$lib/services/project-service';
 	import { z } from 'zod/v4';
@@ -25,8 +26,8 @@
 	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
 
 	let isEditMode = $derived(!!syncToEdit);
-	let repositories = $state<any[]>([]);
-	let projects = $state<any[]>([]);
+	let repositories = $state<GitRepository[]>([]);
+	let projects = $state<Project[]>([]);
 	let loadingData = $state(true);
 
 	const formSchema = z.object({
@@ -84,7 +85,7 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const payload: any = {
+		const payload: GitOpsSyncCreateDto | GitOpsSyncUpdateDto = {
 			name: data.name,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,

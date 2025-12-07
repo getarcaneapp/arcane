@@ -19,8 +19,6 @@ type GitOpsSync struct {
 	LastSyncStatus *string        `json:"lastSyncStatus,omitempty" search:"status,success,failed,pending,error"`
 	LastSyncError  *string        `json:"lastSyncError,omitempty"`
 	Enabled        bool           `json:"enabled" sortable:"true" search:"enabled,active,disabled"`
-	CreatedAt      time.Time      `json:"createdAt" sortable:"true"`
-	UpdatedAt      time.Time      `json:"updatedAt" sortable:"true"`
 	BaseModel
 }
 

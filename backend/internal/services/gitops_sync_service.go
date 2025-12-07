@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -171,8 +170,6 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, id string, req model
 	}
 	if req.ProjectName != nil {
 		updates["project_name"] = *req.ProjectName
-		// Clear project_id when name changes, will be re-created on next sync
-		updates["project_id"] = nil
 	}
 	if req.AutoSync != nil {
 		updates["auto_sync"] = *req.AutoSync
@@ -280,7 +277,6 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, id string) (*gitops
 	}()
 
 	// Check if compose file exists
-	composePath := filepath.Join(repoPath, sync.ComposePath)
 	if !s.repoService.gitClient.FileExists(repoPath, sync.ComposePath) {
 		result.Message = fmt.Sprintf("Compose file not found at %s", sync.ComposePath)
 		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
@@ -291,7 +287,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, id string) (*gitops
 	}
 
 	// Read compose file content
-	composeContent, err := s.repoService.gitClient.ReadFile(composePath)
+	composeContent, err := s.repoService.gitClient.ReadFile(repoPath, sync.ComposePath)
 	if err != nil {
 		result.Message = "Failed to read compose file"
 		errMsg := err.Error()
@@ -315,7 +311,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, id string) (*gitops
 	// Create project if it doesn't exist
 	if project == nil {
 		// Create project from compose file
-		project, err = s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, models.User{})
+		project, err = s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, systemUser)
 		if err != nil {
 			result.Message = "Failed to create project"
 			errMsg := err.Error()
@@ -326,7 +322,11 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, id string) (*gitops
 		}
 
 		// Update sync with project ID
-		s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Update("project_id", project.ID)
+		if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"project_id": project.ID,
+		}).Error; err != nil {
+			slog.ErrorContext(ctx, "Failed to update sync with project ID", "syncId", id, "projectId", project.ID, "error", err)
+		}
 		slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 	} else {
 		// Update existing project's compose file

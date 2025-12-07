@@ -102,3 +102,7 @@ export interface SyncStatus {
 	lastSyncStatus?: string;
 	lastSyncError?: string;
 }
+
+export interface GitRepositoryTestResponse {
+	message: string;
+}

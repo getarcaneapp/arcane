@@ -13,8 +13,7 @@ import { transformPaginationParams } from '$lib/utils/params.util';
 export default class GitOpsSyncService extends BaseAPIService {
 	async getSyncs(options?: SearchPaginationSortRequest): Promise<Paginated<GitOpsSync>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/gitops-syncs', { params });
-		return res.data;
+		return this.handleResponse(this.api.get('/gitops-syncs', { params }));
 	}
 
 	async getSync(id: string): Promise<GitOpsSync> {
