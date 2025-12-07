@@ -31,10 +31,9 @@
 
 	async function handleRemoveVolumeConfirm(volumeName: string) {
 		const safeName = volumeName?.trim() || m.common_unknown();
-		let message = m.volumes_remove_confirm_message({ name: safeName });
-		if (volume.inUse) {
-			message += `\n\n${m.volumes_remove_in_use_warning()}`;
-		}
+		const message = volume.inUse
+			? `${m.volumes_remove_confirm_message({ name: safeName })}\n\n${m.volumes_remove_in_use_warning()}`
+			: m.volumes_remove_confirm_message({ name: safeName });
 
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_volume() }),
