@@ -22,7 +22,7 @@ const SELECTORS = {
 };
 
 async function openConvertFromDockerRun(page: Page) {
-  const dropdownTrigger = page.locator('button').filter({ has: page.locator('svg.lucide-chevron-down') });
+  const dropdownTrigger = page.locator('#bits-c56');
   await dropdownTrigger.click();
   await page.getByRole('menuitem', { name: 'Convert from Docker Run' }).click();
 }
