@@ -30,17 +30,13 @@
 	import { networkService } from '$lib/services/network-service';
 
 	let { data }: { data: PageData } = $props();
-	let network = $derived(data.network);
 	let errorMessage = $state('');
 
 	let isRemoving = $state(false);
 	let sortCol = $state('name');
 	let sortDir = $state<'asc' | 'desc'>('asc');
 
-	$effect(() => {
-		network = data.network;
-	});
-
+	let network = $derived(data.network);
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? format(new Date(network.created), 'PP p') : m.common_unknown());
 
@@ -57,10 +53,9 @@
 		sortCol = column;
 		sortDir = newSortDir;
 
-		if (network?.id) {
+		if (data.network?.id) {
 			try {
-				const result = await networkService.getNetwork(network.id, sortCol, sortDir);
-				network = result;
+				network = await networkService.getNetwork(data.network.id, sortCol, sortDir);
 			} catch (err) {
 				console.error('Failed to sort network containers:', err);
 				toast.error(m.common_action_failed());
