@@ -2,22 +2,18 @@ import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { networkService } from '$lib/services/network-service';
 
-export const load: PageLoad = async ({ params, url }) => {
+export const load: PageLoad = async ({ params }) => {
 	const { networkId } = params;
-	const sort = url.searchParams.get('sort') || 'name';
-	const order = url.searchParams.get('order') || 'asc';
 
 	try {
-		const network = await networkService.getNetwork(networkId, sort, order);
+		const network = await networkService.getNetwork(networkId);
 
 		if (!network) {
 			throw error(404, 'Network not found');
 		}
 
 		return {
-			network,
-			sort,
-			order
+			network
 		};
 	} catch (err: any) {
 		console.error('Failed to load network:', err);

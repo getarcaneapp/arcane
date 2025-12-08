@@ -30,26 +30,42 @@
 	import { networkService } from '$lib/services/network-service';
 
 	let { data }: { data: PageData } = $props();
-	let { network, sort, order } = $derived(data);
+	let network = $derived(data.network);
 	let errorMessage = $state('');
 
 	let isRemoving = $state(false);
+	let sortCol = $state('name');
+	let sortDir = $state<'asc' | 'desc'>('asc');
+
+	$effect(() => {
+		network = data.network;
+	});
 
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? format(new Date(network.created), 'PP p') : m.common_unknown());
+
 	const connectedContainers = $derived(
 		network?.containersList ??
 			(network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : [])
 	);
+
 	const inUse = $derived(connectedContainers.length > 0);
 	const isPredefined = $derived(network?.name === 'bridge' || network?.name === 'host' || network?.name === 'none');
 
-	function handleSort(column: string) {
-		const newOrder = sort === column && order === 'asc' ? 'desc' : 'asc';
-		const url = new URL(window.location.href);
-		url.searchParams.set('sort', column);
-		url.searchParams.set('order', newOrder);
-		goto(url.toString(), { replaceState: true });
+	async function handleSort(column: string) {
+		const newSortDir: 'asc' | 'desc' = sortCol === column && sortDir === 'asc' ? 'desc' : 'asc';
+		sortCol = column;
+		sortDir = newSortDir;
+
+		if (network?.id) {
+			try {
+				const result = await networkService.getNetwork(network.id, sortCol, sortDir);
+				network = result;
+			} catch (err) {
+				console.error('Failed to sort network containers:', err);
+				toast.error(m.common_action_failed());
+			}
+		}
 	}
 
 	function triggerRemove() {
@@ -395,8 +411,8 @@
 										onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
 									>
 										{m.common_name()}
-										{#if sort === 'name'}
-											{#if order === 'asc'}
+										{#if sortCol === 'name'}
+											{#if sortDir === 'asc'}
 												<ArrowUpIcon class="ml-1 size-3" />
 											{:else}
 												<ArrowDownIcon class="ml-1 size-3" />
@@ -411,8 +427,8 @@
 										onkeydown={(e) => e.key === 'Enter' && handleSort('ip')}
 									>
 										{m.containers_ip_address()}
-										{#if sort === 'ip'}
-											{#if order === 'asc'}
+										{#if sortCol === 'ip'}
+											{#if sortDir === 'asc'}
 												<ArrowUpIcon class="ml-1 size-3" />
 											{:else}
 												<ArrowDownIcon class="ml-1 size-3" />
