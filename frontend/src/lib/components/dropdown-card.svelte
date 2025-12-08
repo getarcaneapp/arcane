@@ -46,7 +46,8 @@
 
 	function onHeaderClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
-		if (target.closest('button, a, [onclick], [role="button"]')) return;
+		const interactive = target.closest('button, a, [onclick], [role="button"]');
+		if (interactive && interactive !== e.currentTarget) return;
 		toggleExpanded();
 	}
 
@@ -90,7 +91,7 @@
 				<Card.Description class="mt-1">{description}</Card.Description>
 			{/if}
 		</div>
-		<Card.Action>
+		<Card.Action class="ml-auto">
 			<Button
 				variant="ghost"
 				size="icon"
