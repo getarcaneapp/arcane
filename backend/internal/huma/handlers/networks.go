@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -299,10 +301,26 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 				valB = b.IPv6Address
 			}
 
-			if input.SortDir == "desc" {
-				return valA > valB
+			// Parse IPs for proper numeric comparison
+			ipA, _, _ := strings.Cut(valA, "/")
+			ipB, _, _ := strings.Cut(valB, "/")
+
+			parsedA := net.ParseIP(ipA)
+			parsedB := net.ParseIP(ipB)
+
+			if parsedA == nil || parsedB == nil {
+				// Fallback to string comparison if parsing fails
+				if input.SortDir == "desc" {
+					return valA > valB
+				}
+				return valA < valB
 			}
-			return valA < valB
+
+			cmp := bytes.Compare(parsedA, parsedB)
+			if input.SortDir == "desc" {
+				return cmp > 0
+			}
+			return cmp < 0
 		}
 
 		// Default to Name
