@@ -37,7 +37,6 @@ abstract class BaseAPIService {
 		this.api.interceptors.response.use(
 			(response) => response,
 			async (error) => {
-				console.log(error);
 				const status = error?.response?.status;
 				const originalRequest = error.config;
 
@@ -72,6 +71,7 @@ abstract class BaseAPIService {
 						'/auth/oidc',
 						'/auth/oidc/login',
 						'/auth/oidc/callback',
+						'/auth/me',
 						'/settings/public'
 					];
 					const isAuthApi = skipAuthPaths.some((p) => reqUrl.startsWith(p));

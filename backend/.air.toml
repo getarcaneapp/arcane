@@ -3,7 +3,7 @@ tmp_dir = ".bin"
 
 [build]
   bin = "./.bin/arcane"
-  cmd = "CGO_ENABLED=0 go build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
+  cmd = "CGO_ENABLED=1 go build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
   exclude_dir = [".bin", "data", "node_modules", ".git"]
   stop_on_error = true
   delay = 500
