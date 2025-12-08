@@ -53,6 +53,38 @@ type Summary struct {
 	IsDefault bool `json:"isDefault"`
 }
 
+type ContainerEndpoint struct {
+	// ID is the unique identifier of the container.
+	//
+	// Required: true
+	ID string `json:"id"`
+
+	// Name of the container.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// EndpointID is the unique identifier of the endpoint.
+	//
+	// Required: true
+	EndpointID string `json:"endpointId"`
+
+	// IPv4Address is the IPv4 address of the container.
+	//
+	// Required: true
+	IPv4Address string `json:"ipv4Address"`
+
+	// IPv6Address is the IPv6 address of the container.
+	//
+	// Required: true
+	IPv6Address string `json:"ipv6Address"`
+
+	// MacAddress is the MAC address of the container.
+	//
+	// Required: true
+	MacAddress string `json:"macAddress"`
+}
+
 type UsageCounts struct {
 	// Inuse is the number of networks currently in use.
 	//
@@ -110,6 +142,11 @@ type Inspect struct {
 	//
 	// Required: true
 	Containers map[string]network.EndpointResource `json:"containers"`
+
+	// ContainersList is a sorted list of containers connected to this network.
+	//
+	// Required: true
+	ContainersList []ContainerEndpoint `json:"containersList"`
 
 	// IPAM contains IP address management configuration.
 	//

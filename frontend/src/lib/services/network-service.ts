@@ -20,9 +20,12 @@ export class NetworkService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getNetwork(networkId: string): Promise<any> {
+	async getNetwork(networkId: string, sort?: string, order?: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/networks/${networkId}`));
+		const params: Record<string, string> = {};
+		if (sort) params['sort[column]'] = sort;
+		if (order) params['sort[direction]'] = order;
+		return this.handleResponse(this.api.get(`/environments/${envId}/networks/${networkId}`, { params }));
 	}
 
 	async createNetwork(name: string, options: NetworkCreateOptions): Promise<any> {
