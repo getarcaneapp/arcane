@@ -13,6 +13,8 @@
 	import ListTreeIcon from '@lucide/svelte/icons/list-tree';
 	import ContainerIcon from '@lucide/svelte/icons/container';
 	import InfoIcon from '@lucide/svelte/icons/info';
+	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
+	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -28,7 +30,7 @@
 	import { networkService } from '$lib/services/network-service';
 
 	let { data }: { data: PageData } = $props();
-	let { network }: { network: NetworkInspectDto | null | undefined } = $derived(data);
+	let { network, sort, order } = $derived(data);
 	let errorMessage = $state('');
 
 	let isRemoving = $state(false);
@@ -36,10 +38,19 @@
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? format(new Date(network.created), 'PP p') : m.common_unknown());
 	const connectedContainers = $derived(
-		network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : []
+		network?.containersList ??
+			(network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : [])
 	);
 	const inUse = $derived(connectedContainers.length > 0);
 	const isPredefined = $derived(network?.name === 'bridge' || network?.name === 'host' || network?.name === 'none');
+
+	function handleSort(column: string) {
+		const newOrder = sort === column && order === 'asc' ? 'desc' : 'asc';
+		const url = new URL(window.location.href);
+		url.searchParams.set('sort', column);
+		url.searchParams.set('order', newOrder);
+		goto(url.toString(), { replaceState: true });
+	}
 
 	function triggerRemove() {
 		if (isPredefined) {
@@ -374,25 +385,66 @@
 					</Card.Header>
 					<Card.Content class="p-4">
 						<Card.Root variant="outlined">
-							<Card.Content class="divide-y p-0">
-								{#each connectedContainers as container (container.id)}
-									<div class="flex flex-col p-3 sm:flex-row sm:items-center">
-										<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-											<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
-												<ContainerIcon class="text-muted-foreground mr-1.5 size-3.5" />
-												{container.Name}
-											</a>
-										</div>
-										<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-											<code
-												class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-												title="Click to select"
-											>
-												{container.IPv4Address || container.IPv6Address || m.common_unknown()}
-											</code>
-										</div>
+							<Card.Content class="p-0">
+								<div class="bg-muted/30 flex flex-col border-b p-3 sm:flex-row sm:items-center">
+									<div
+										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center text-sm font-medium sm:w-1/3"
+										onclick={() => handleSort('name')}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
+									>
+										{m.common_name()}
+										{#if sort === 'name'}
+											{#if order === 'asc'}
+												<ArrowUpIcon class="ml-1 size-3" />
+											{:else}
+												<ArrowDownIcon class="ml-1 size-3" />
+											{/if}
+										{/if}
 									</div>
-								{/each}
+									<div
+										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center pl-0 text-sm font-medium sm:w-2/3 sm:pl-4"
+										onclick={() => handleSort('ip')}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => e.key === 'Enter' && handleSort('ip')}
+									>
+										{m.containers_ip_address()}
+										{#if sort === 'ip'}
+											{#if order === 'asc'}
+												<ArrowUpIcon class="ml-1 size-3" />
+											{:else}
+												<ArrowDownIcon class="ml-1 size-3" />
+											{/if}
+										{/if}
+									</div>
+								</div>
+
+								<div class="divide-y">
+									{#each connectedContainers as container (container.id)}
+										<div class="flex flex-col p-3 sm:flex-row sm:items-center">
+											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
+												<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
+													<ContainerIcon class="text-muted-foreground mr-1.5 size-3.5" />
+													{container.name ?? container.Name}
+												</a>
+											</div>
+											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
+												<code
+													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+													title="Click to select"
+												>
+													{container.ipv4Address ??
+														container.IPv4Address ??
+														container.ipv6Address ??
+														container.IPv6Address ??
+														m.common_unknown()}
+												</code>
+											</div>
+										</div>
+									{/each}
+								</div>
 							</Card.Content>
 						</Card.Root>
 					</Card.Content>

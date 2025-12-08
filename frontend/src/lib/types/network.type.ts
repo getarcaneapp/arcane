@@ -36,6 +36,7 @@ export interface NetworkUsageCounts {
 }
 
 export interface ContainerEndpointDto {
+	id?: string;
 	name: string;
 	endpointId: string;
 	macAddress: string;
@@ -77,6 +78,7 @@ export interface NetworkInspectDto {
 	options?: Record<string, string> | null;
 	labels?: Record<string, string> | null;
 	containers?: Record<string, ContainerEndpointDto> | null;
+	containersList?: ContainerEndpointDto[];
 	ipam?: IPAMDto;
 	internal: boolean;
 	attachable: boolean;

@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	dockernetwork "github.com/docker/docker/api/types/network"
@@ -76,6 +78,8 @@ type NetworkInspectApiResponse struct {
 type GetNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NetworkID     string `path:"networkId" doc:"Network ID"`
+	SortCol       string `query:"sort[column]" default:"name"`
+	SortDir       string `query:"sort[direction]" default:"asc"`
 }
 
 type GetNetworkOutput struct {
@@ -267,6 +271,46 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
+
+	// Populate ContainersList
+	out.ContainersList = make([]networktypes.ContainerEndpoint, 0, len(out.Containers))
+	for id, container := range out.Containers {
+		out.ContainersList = append(out.ContainersList, networktypes.ContainerEndpoint{
+			ID:          id,
+			Name:        container.Name,
+			EndpointID:  container.EndpointID,
+			IPv4Address: container.IPv4Address,
+			IPv6Address: container.IPv6Address,
+			MacAddress:  container.MacAddress,
+		})
+	}
+
+	// Sort ContainersList
+	sort.Slice(out.ContainersList, func(i, j int) bool {
+		a, b := out.ContainersList[i], out.ContainersList[j]
+
+		if input.SortCol == "ip" {
+			valA := a.IPv4Address
+			if valA == "" {
+				valA = a.IPv6Address
+			}
+			valB := b.IPv4Address
+			if valB == "" {
+				valB = b.IPv6Address
+			}
+
+			if input.SortDir == "desc" {
+				return valA > valB
+			}
+			return valA < valB
+		}
+
+		// Default to Name
+		if input.SortDir == "desc" {
+			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
 
 	return &GetNetworkOutput{
 		Body: NetworkInspectApiResponse{
