@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -25,6 +27,7 @@ import (
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/hertg/gopci/pkg/pci"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
@@ -986,17 +989,112 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) 
 	return stats, nil
 }
 
-// getIntelStats collects Intel GPU statistics using intel_gpu_top
+// getIntelStats collects Intel GPU statistics using gopci library
 func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	stats := []GPUStats{
-		{
-			Name:        "Intel GPU",
-			Index:       0,
-			MemoryUsed:  0,
-			MemoryTotal: 0,
-		},
+	// Scan for VGA-compatible devices (class 0x03)
+	gpuClassFilter := func(d *pci.Device) bool {
+		return d.Class.Class() == 0x03 && d.Vendor.ID == 0x8086 // Intel vendor ID
 	}
 
-	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
+	devices, err := pci.Scan(gpuClassFilter)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to scan PCI devices",
+			slog.String("error", err.Error()))
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+	}
+
+	if len(devices) == 0 {
+		slog.DebugContext(ctx, "No Intel GPU devices found via PCI scan")
+		return []GPUStats{{Name: "Intel GPU", Index: 0}}, nil
+	}
+
+	var stats []GPUStats
+	for i, device := range devices {
+		gpuName := fmt.Sprintf("Intel %s", device.Product.Label)
+		if strings.Contains(gpuName, "Device ") {
+			gpuName = fmt.Sprintf("Intel GPU (0x%04x)", device.Product.ID)
+		}
+
+		// Try to read VRAM from sysfs using device address
+		// Note: Intel integrated GPUs use system RAM and typically don't expose
+		// mem_info_vram_* files. Only discrete GPUs (like Intel Arc) have these.
+		var memUsed, memTotal float64
+		sysfsPath := device.SysfsPath()
+
+		// Check for discrete GPU VRAM info
+		if totalData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_total")); err == nil {
+			memTotal, _ = strconv.ParseFloat(strings.TrimSpace(string(totalData)), 64)
+			if usedData, err := os.ReadFile(filepath.Join(sysfsPath, "mem_info_vram_used")); err == nil {
+				memUsed, _ = strconv.ParseFloat(strings.TrimSpace(string(usedData)), 64)
+			}
+		} else {
+			// For integrated GPUs, try reading from i915 gem_objects if available
+			// This requires debugfs access which may not be available in containers
+			i915Path := "/sys/kernel/debug/dri/0/i915_gem_objects"
+			if data, err := os.ReadFile(i915Path); err == nil {
+				// Parse i915_gem_objects output for memory usage
+				// Format contains lines like: "123456 objects, 234567890 bytes"
+				lines := strings.Split(string(data), "\n")
+				for _, line := range lines {
+					if strings.Contains(line, "bytes") && strings.Contains(line, "objects") {
+						fields := strings.Fields(line)
+						if len(fields) >= 3 {
+							if bytes, err := strconv.ParseFloat(fields[2], 64); err == nil {
+								memUsed = bytes
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		stats = append(stats, GPUStats{
+			Name:        gpuName,
+			Index:       i,
+			MemoryUsed:  memUsed,
+			MemoryTotal: memTotal,
+		})
+
+		slog.DebugContext(ctx, "Collected Intel GPU stats via gopci",
+			slog.String("name", gpuName),
+			slog.String("address", device.Address.Hex()),
+			slog.Float64("memory_used_bytes", memUsed),
+			slog.Float64("memory_total_bytes", memTotal))
+	}
+
 	return stats, nil
+}
+
+func readIntelVRAMInfo() (float64, float64, error) {
+	matches, err := filepath.Glob("/sys/class/drm/card*/device/mem_info_vram_total")
+	if err != nil {
+		return 0, 0, fmt.Errorf("glob mem_info_vram_total: %w", err)
+	}
+	for _, totalPath := range matches {
+		total, err := readFloatFromFile(totalPath)
+		if err != nil {
+			continue
+		}
+		usedPath := strings.Replace(totalPath, "mem_info_vram_total", "mem_info_vram_used", 1)
+		used, err := readFloatFromFile(usedPath)
+		if err != nil {
+			// Some drivers may not expose used metrics
+			used = 0
+		}
+		return used, total, nil
+	}
+	return 0, 0, fmt.Errorf("mem_info_vram_total not found")
+}
+
+func readFloatFromFile(path string) (float64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
