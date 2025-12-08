@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -61,28 +61,17 @@
 	}
 </script>
 
-<Sheet.Root bind:open onOpenChange={handleOpenChange}>
-	<Sheet.Content class="p-6">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<SubmitIcon class="text-primary size-5" />
-				</div>
-				<div>
-					<Sheet.Title class="text-xl font-semibold">
-						{isEditMode ? m.api_key_edit_title() : m.api_key_create_title()}
-					</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{#if isEditMode}
-							{m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })}
-						{:else}
-							{m.api_key_create_description()}
-						{/if}
-					</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-
+<ResponsiveDialog.Root
+	bind:open
+	onOpenChange={handleOpenChange}
+	variant="sheet"
+	title={isEditMode ? m.api_key_edit_title() : m.api_key_create_title()}
+	description={isEditMode
+		? m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
+		: m.api_key_create_description()}
+	contentClass="sm:max-w-[500px]"
+>
+	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<FormInput
 				label={m.api_key_name()}
@@ -104,19 +93,21 @@
 				description={m.api_key_expires_at_description()}
 				bind:input={$inputs.expiresAt}
 			/>
-
-			<Sheet.Footer class="flex flex-row gap-2">
-				<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)} disabled={isLoading}
-					>{m.common_cancel()}</Button
-				>
-				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
-					{#if isLoading}
-						<Spinner class="mr-2 size-4" />
-					{/if}
-					<SubmitIcon class="mr-2 size-4" />
-					{isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
-				</Button>
-			</Sheet.Footer>
 		</form>
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+
+	{#snippet footer()}
+		<div class="flex w-full flex-row gap-2">
+			<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)} disabled={isLoading}
+				>{m.common_cancel()}</Button
+			>
+			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
+				{#if isLoading}
+					<Spinner class="mr-2 size-4" />
+				{/if}
+				<SubmitIcon class="mr-2 size-4" />
+				{isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
+			</Button>
+		</div>
+	{/snippet}
+</ResponsiveDialog.Root>

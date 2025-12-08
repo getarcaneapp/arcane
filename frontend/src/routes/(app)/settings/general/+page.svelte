@@ -6,9 +6,6 @@
 	import settingsStore from '$lib/stores/config-store';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
-	import { applyAccentColor } from '$lib/utils/accent-color-util';
-	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Label } from '$lib/components/ui/label';
@@ -21,11 +18,7 @@
 	const formSchema = z.object({
 		projectsDirectory: z.string().min(1, m.general_projects_directory_required()),
 		diskUsagePath: z.string().min(1, m.common_field_required({ field: m.directory_path() })),
-		baseServerUrl: z.string().min(1, m.general_base_url_required()),
-		enableGravatar: z.boolean(),
-		environmentHealthInterval: z.number().int().min(1).max(60),
-		accentColor: z.string(),
-		glassEffectEnabled: z.boolean()
+		environmentHealthInterval: z.number().int().min(1).max(60)
 	});
 
 	let { formInputs, registerOnMount } = $derived(
@@ -33,8 +26,7 @@
 			schema: formSchema,
 			currentSettings,
 			getCurrentSettings: () => $settingsStore || data.settings!,
-			successMessage: m.general_settings_saved(),
-			onReset: () => applyAccentColor(currentSettings.accentColor)
+			successMessage: m.general_settings_saved()
 		})
 	);
 
@@ -79,15 +71,6 @@
 									helpText={m.disk_usage_settings_description()}
 									type="text"
 								/>
-
-								<TextInputWithLabel
-									bind:value={$formInputs.baseServerUrl.value}
-									error={$formInputs.baseServerUrl.error}
-									label={m.general_base_url_label()}
-									placeholder={m.general_base_url_placeholder()}
-									helpText={m.general_base_url_help()}
-									type="text"
-								/>
 							</div>
 						</div>
 
@@ -108,75 +91,6 @@
 									helpText={m.environments_health_check_interval_description()}
 									type="number"
 								/>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Appearance Section -->
-			<div class="space-y-4">
-				<h3 class="text-lg font-medium">Appearance</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<!-- Accent Color -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.accent_color()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.accent_color_description()}</p>
-							</div>
-							<div>
-								<AccentColorPicker
-									previousColor={currentSettings.accentColor}
-									bind:selectedColor={$formInputs.accentColor.value}
-									disabled={isReadOnly}
-								/>
-							</div>
-						</div>
-
-						<Separator />
-
-						<!-- Glass Effect -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.glass_effect_title()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.glass_effect_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="glassEffectEnabled"
-									bind:checked={$formInputs.glassEffectEnabled.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.glassEffectEnabled.value = checked;
-									}}
-								/>
-								<Label for="glassEffectEnabled" class="font-normal">
-									{$formInputs.glassEffectEnabled.value ? m.glass_effect_enabled() : m.glass_effect_disabled()}
-								</Label>
-							</div>
-						</div>
-
-						<Separator />
-
-						<!-- User Avatars -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.general_user_avatars_heading()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.general_user_avatars_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="enableGravatar"
-									bind:checked={$formInputs.enableGravatar.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.enableGravatar.value = checked;
-									}}
-								/>
-								<Label for="enableGravatar" class="font-normal">
-									{m.general_enable_gravatar_label()}
-								</Label>
 							</div>
 						</div>
 					</div>

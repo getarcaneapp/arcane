@@ -28,7 +28,7 @@
 		dockerPruneMode: z.enum(['all', 'dangling']),
 		maxImageUploadSize: z.number().int().min(50).max(5000),
 		defaultShell: z.string(),
-		dockerHost: z.string()
+		baseServerUrl: z.string().min(1, m.general_base_url_required())
 	});
 
 	let pruneMode = $derived(currentSettings.dockerPruneMode);
@@ -114,16 +114,16 @@
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
-								<Label class="text-base">Docker Host</Label>
-								<p class="text-muted-foreground mt-1 text-sm">URI for Docker daemon</p>
+								<Label class="text-base">{m.general_base_url_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.general_base_url_help()}</p>
 							</div>
 							<div class="space-y-4">
 								<TextInputWithLabel
-									bind:value={$formInputs.dockerHost.value}
-									error={$formInputs.dockerHost.error}
-									label="Docker Host"
-									placeholder="unix:///var/run/docker.sock"
-									helpText="URI for Docker daemon (e.g. unix:///var/run/docker.sock or tcp://host:port)"
+									bind:value={$formInputs.baseServerUrl.value}
+									error={$formInputs.baseServerUrl.error}
+									label={m.general_base_url_label()}
+									placeholder={m.general_base_url_placeholder()}
+									helpText={m.general_base_url_help()}
 									type="text"
 								/>
 							</div>

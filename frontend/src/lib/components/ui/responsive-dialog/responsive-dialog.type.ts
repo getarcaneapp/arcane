@@ -51,4 +51,10 @@ export interface ResponsiveDialogProps {
 	 * @default 'sm:max-w-[425px]'
 	 */
 	contentClass?: string;
+
+	/**
+	 * The variant of the dialog on desktop
+	 * @default 'dialog'
+	 */
+	variant?: 'dialog' | 'sheet';
 }

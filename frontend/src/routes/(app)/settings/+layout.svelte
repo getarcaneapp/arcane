@@ -177,7 +177,7 @@
 <div class="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
 	<aside class="bg-background/50 hidden w-64 shrink-0 border-r backdrop-blur-sm md:block">
-		<div class="sticky top-20 p-4">
+		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
 			<nav class="space-y-1">
 				{#each navItems as item}
@@ -201,11 +201,11 @@
 	<main class="min-w-0 flex-1">
 		{#if isSubPage}
 			<div
-				class="bg-background/95 sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg backdrop-blur-md transition-all duration-200 md:static md:mx-0 md:mb-0 md:rounded-none md:border-0 md:bg-transparent md:shadow-none md:backdrop-blur-none"
+				class="bg-background/95 sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg backdrop-blur-md transition-all duration-200 md:hidden"
 			>
-				<div class="px-4 py-3 md:px-8 md:py-4">
+				<div class="px-4 py-3">
 					<div class="flex items-center justify-between gap-4">
-						<div class="flex min-w-0 items-center gap-2 md:hidden">
+						<div class="flex min-w-0 items-center gap-2">
 							<Button
 								variant="ghost"
 								size="sm"
@@ -213,7 +213,7 @@
 								class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
 							>
 								<ArrowLeftIcon class="size-4" />
-								<span class="hidden sm:inline">Back</span>
+								<span class="hidden sm:inline">{m.common_back()}</span>
 							</Button>
 
 							<nav class="flex min-w-0 items-center gap-2 text-sm">
@@ -224,55 +224,11 @@
 									class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
 								>
 									<SettingsIcon class="size-4" />
-									<span>Settings</span>
+									<span>{m.settings_title()}</span>
 								</Button>
 								<ChevronRightIcon class="text-muted-foreground size-4 shrink-0" />
 								<span class="text-foreground truncate font-medium">{pageTitle()}</span>
 							</nav>
-						</div>
-
-						<!-- Desktop Title (only visible on desktop) -->
-						<div class="hidden md:block">
-							<!-- Optional: Add breadcrumbs or title here if needed, but sidebar handles nav -->
-						</div>
-
-						<!-- Save Section - Desktop only -->
-						<div class="ml-auto hidden shrink-0 items-center gap-3 sm:flex">
-							{#if !isReadOnly}
-								{#if formState.hasChanges}
-									<span class="text-xs text-orange-600 dark:text-orange-400"> Unsaved changes </span>
-								{:else if !formState.hasChanges && formState.saveFunction}
-									<span class="text-xs text-green-600 dark:text-green-400"> All changes saved </span>
-								{/if}
-
-								{#if formState.hasChanges && formState.resetFunction}
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => formState.resetFunction && formState.resetFunction()}
-										disabled={formState.isLoading}
-										class="gap-2"
-									>
-										<RotateCcwIcon class="size-4" />
-										<span class="hidden sm:inline">{m.common_reset()}</span>
-									</Button>
-								{/if}
-
-								<Button
-									onclick={handleSave}
-									disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
-									size="sm"
-									class="min-w-[80px] gap-2"
-								>
-									{#if formState.isLoading}
-										<div class="border-background size-4 animate-spin rounded-full border-2 border-t-transparent"></div>
-										<span class="hidden sm:inline">{m.common_saving()}</span>
-									{:else}
-										<SaveIcon class="size-4" />
-										<span class="hidden sm:inline">{m.common_save()}</span>
-									{/if}
-								</Button>
-							{/if}
 						</div>
 					</div>
 				</div>

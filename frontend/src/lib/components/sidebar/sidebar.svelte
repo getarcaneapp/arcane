@@ -45,6 +45,16 @@
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
+
+	// Filter out sub-items for settings on desktop since we have a dedicated settings sidebar
+	const desktopSettingsItems =
+		navigationItems.settingsItems?.map((item) => {
+			if (item.url === '/settings') {
+				const { items, ...rest } = item;
+				return rest;
+			}
+			return item;
+		}) ?? [];
 </script>
 
 <VersionInfoDialog
@@ -78,10 +88,9 @@
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
-		<SidebarItemGroup label={m.sidebar_customization()} items={navigationItems.customizationItems} />
+		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		{#if isAdmin}
-			<SidebarItemGroup label={m.sidebar_environments()} items={navigationItems.environmentItems} />
-			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
+			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
