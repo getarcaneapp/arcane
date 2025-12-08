@@ -13,6 +13,8 @@
 	import ListTreeIcon from 'phosphor-svelte/lib/List';
 	import ContainerIcon from 'phosphor-svelte/lib/Package';
 	import InfoIcon from 'phosphor-svelte/lib/Info';
+	import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUp';
+	import ArrowDownIcon from 'phosphor-svelte/lib/ArrowDown';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
