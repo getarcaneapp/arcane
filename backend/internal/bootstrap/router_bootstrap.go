@@ -37,7 +37,9 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		"GET /api/environments/*/ws/system/stats",
 		"GET /_app/*",
 		"GET /img",
-		"GET /fonts",
+		"GET /api/fonts/sans",
+		"GET /api/fonts/mono",
+		"GET /api/fonts/serif",
 		"GET /api/health",
 		"HEAD /api/health",
 	}
@@ -94,6 +96,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Oidc:              appServices.Oidc,
 		ApiKey:            appServices.ApiKey,
 		AppImages:         appServices.AppImages,
+		Font:              appServices.Font,
 		Project:           appServices.Project,
 		Event:             appServices.Event,
 		Version:           appServices.Version,

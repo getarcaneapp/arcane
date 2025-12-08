@@ -3,16 +3,20 @@
 
 @font-face {
 	font-family: 'Geist';
-	src: url('/fonts/Geist/geist.woff2') format('woff2');
-	font-style: normal;
+	src: url('/api/fonts/sans') format('woff2');
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'Geist Mono';
-	src: url('/fonts/Geist/geist-mono.woff2') format('woff2');
-	font-style: normal;
+	src: url('/api/fonts/mono') format('woff2');
 	font-display: swap;
+}
+
+@font-face {
+	font-family: Calistoga;
+	font-display: swap;
+	src: url('/api/fonts/serif') format('woff2');
 }
 
 @layer base {
@@ -173,7 +177,8 @@
 	--color-sidebar-ring: var(--sidebar-ring);
 
 	--font-sans: 'Geist', system-ui, sans-serif;
-	--font-mono: 'Geist Mono';
+	--font-mono: 'Geist Mono', monospace;
+	--font-serif: Calistoga;
 }
 
 @layer base {
@@ -182,7 +187,7 @@
 	}
 
 	body {
-		@apply bg-background text-foreground font-sans antialiased;
+		@apply bg-background text-foreground antialiased;
 		position: relative;
 	}
 	button {
