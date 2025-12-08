@@ -98,8 +98,12 @@
 
 	{#snippet footer()}
 		<div class="flex w-full flex-row gap-2">
-			<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)} disabled={isLoading}
-				>{m.common_cancel()}</Button
+			<Button
+				type="button"
+				class="arcane-button-cancel flex-1"
+				variant="outline"
+				onclick={() => (open = false)}
+				disabled={isLoading}>{m.common_cancel()}</Button
 			>
 			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
 				{#if isLoading}
