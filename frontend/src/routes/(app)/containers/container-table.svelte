@@ -1,14 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -24,24 +17,32 @@
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import BoxIcon from '@lucide/svelte/icons/box';
-	import ImageIcon from '@lucide/svelte/icons/image';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import ClockIcon from '@lucide/svelte/icons/clock';
 	import { containerService } from '$lib/services/container-service';
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
-	import FolderIcon from '@lucide/svelte/icons/folder';
 	import type { Table as TableType } from '@tanstack/table-core';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
-	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
 	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import {
+		StartIcon,
+		StopIcon,
+		RefreshIcon,
+		TrashIcon,
+		EllipsisIcon,
+		ArrowDownIcon,
+		ArrowRightIcon,
+		BoxIcon,
+		ClockIcon,
+		ImagesIcon,
+		NetworksIcon,
+		ProjectsIcon,
+		InspectIcon,
+		UpdateIcon
+	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -360,7 +361,7 @@
 					disabled={isAnyLoading}
 					title={m.common_start()}
 				>
-					<PlayIcon class="size-3.5" />
+					<StartIcon class="size-3.5" />
 				</Button>
 			{:else if !status && item.state === 'running'}
 				<Button
@@ -371,7 +372,7 @@
 					disabled={isAnyLoading}
 					title={m.common_stop()}
 				>
-					<StopCircleIcon class="size-3.5" />
+					<StopIcon class="size-3.5" />
 				</Button>
 			{/if}
 			{#if !status && item.updateInfo?.hasUpdate}
@@ -383,7 +384,7 @@
 					disabled={isAnyLoading}
 					title={m.containers_update_container()}
 				>
-					<ArrowUpCircleIcon class="size-3.5" />
+					<UpdateIcon class="size-3.5" />
 				</Button>
 			{/if}
 		</div>
@@ -457,7 +458,7 @@
 			{
 				label: m.common_image(),
 				getValue: (item: ContainerSummaryDto) => item.image,
-				icon: ImageIcon,
+				icon: ImagesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility.image ?? true
 			},
@@ -483,7 +484,7 @@
 			{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
 				<div class="flex items-start gap-2.5 border-t pt-3">
 					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
-						<NetworkIcon class="size-3.5 text-sky-500" />
+						<NetworksIcon class="size-3.5 text-sky-500" />
 					</div>
 					<div class="min-w-0 flex-1">
 						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
@@ -513,7 +514,7 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
-					<ScanSearchIcon class="size-4" />
+					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
@@ -522,7 +523,7 @@
 						{#if status === 'updating'}
 							<Spinner class="size-4" />
 						{:else}
-							<ArrowUpCircleIcon class="size-4" />
+							<UpdateIcon class="size-4" />
 						{/if}
 						{m.containers_update_container()}
 					</DropdownMenu.Item>
@@ -536,7 +537,7 @@
 						{#if status === 'starting'}
 							<Spinner class="size-4" />
 						{:else}
-							<PlayIcon class="size-4" />
+							<StartIcon class="size-4" />
 						{/if}
 						{m.common_start()}
 					</DropdownMenu.Item>
@@ -548,7 +549,7 @@
 						{#if status === 'restarting'}
 							<Spinner class="size-4" />
 						{:else}
-							<RotateCcwIcon class="size-4" />
+							<RefreshIcon class="size-4" />
 						{/if}
 						{m.common_restart()}
 					</DropdownMenu.Item>
@@ -560,7 +561,7 @@
 						{#if status === 'stopping'}
 							<Spinner class="size-4" />
 						{:else}
-							<StopCircleIcon class="size-4" />
+							<StopIcon class="size-4" />
 						{/if}
 						{m.common_stop()}
 					</DropdownMenu.Item>
@@ -576,7 +577,7 @@
 					{#if status === 'removing'}
 						<Spinner class="size-4" />
 					{:else}
-						<Trash2Icon class="size-4" />
+						<TrashIcon class="size-4" />
 					{/if}
 					{m.common_remove()}
 				</DropdownMenu.Item>
@@ -646,11 +647,11 @@
 								<Table.Cell colspan={table.getAllColumns().length} class="py-3 font-medium">
 									<div class="flex items-center gap-2">
 										{#if collapsedGroups[projectName]}
-											<ChevronRight class="text-muted-foreground size-4" />
+											<ArrowRightIcon class="text-muted-foreground size-4" />
 										{:else}
-											<ChevronDown class="text-muted-foreground size-4" />
+											<ArrowDownIcon class="text-muted-foreground size-4" />
 										{/if}
-										<FolderIcon class="text-muted-foreground size-4" />
+										<ProjectsIcon class="text-muted-foreground size-4" />
 										<span>{projectName}</span>
 										<span class="text-muted-foreground text-xs font-normal">({projectContainers.length})</span>
 									</div>
@@ -693,7 +694,7 @@
 					id={`container-project-${projectName}`}
 					title={projectName}
 					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
-					icon={FolderIcon}
+					icon={ProjectsIcon}
 				>
 					<div class="space-y-3">
 						{#each projectRows as row (row.id)}

@@ -6,12 +6,6 @@
 	import * as Item from '$lib/components/ui/item/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import XCircleIcon from '@lucide/svelte/icons/x-circle';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import {
@@ -22,6 +16,7 @@
 		showImageLayersState,
 		isIndeterminatePhase
 	} from '$lib/utils/pull-progress';
+	import { DownloadIcon, BoxIcon, ArrowDownIcon, VerifiedCheckIcon, CloseIcon } from '$lib/icons';
 
 	interface Props {
 		open?: boolean;
@@ -34,7 +29,7 @@
 		align?: 'start' | 'center' | 'end';
 		sideOffset?: number;
 		class?: string;
-		icon?: typeof IconType;
+		icon?: typeof DownloadIcon;
 		iconClass?: string;
 		preventCloseWhileLoading?: boolean;
 		onCancel?: () => void;
@@ -111,7 +106,7 @@
 
 	// Get the appropriate icon based on phase
 	const PhaseIcon = $derived.by(() => {
-		if (currentPhase === 'extracting') return PackageIcon;
+		if (currentPhase === 'extracting') return BoxIcon;
 		return icon ?? DownloadIcon;
 	});
 
@@ -143,9 +138,9 @@
 				)}
 			>
 				{#if error}
-					<XCircleIcon class={iconClass} />
+					<CloseIcon class={iconClass} />
 				{:else if isComplete && !loading}
-					<CheckCircleIcon class={iconClass} />
+					<VerifiedCheckIcon class={iconClass} />
 				{:else}
 					<PhaseIcon class={cn(iconClass, loading && 'animate-pulse')} />
 				{/if}
@@ -187,7 +182,7 @@
 					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
 				>
 					{m.progress_show_layers()}
-					<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+					<ArrowDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
 				</Collapsible.Trigger>
 				<Collapsible.Content>
 					<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">

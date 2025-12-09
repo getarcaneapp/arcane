@@ -1,5 +1,4 @@
 <script lang="ts">
-	import KeyIcon from '@lucide/svelte/icons/key';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -14,6 +13,7 @@
 	import { Snippet } from '$lib/components/ui/snippet/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { untrack } from 'svelte';
+	import { ApiKeyIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -109,7 +109,7 @@
 <SettingsPageLayout
 	title={m.api_key_page_title()}
 	description={m.api_key_page_description()}
-	icon={KeyIcon}
+	icon={ApiKeyIcon}
 	pageType="management"
 	{actionButtons}
 	statCardsColumns={3}

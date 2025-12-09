@@ -1,5 +1,4 @@
 <script lang="ts">
-	import BoxIcon from '@lucide/svelte/icons/box';
 	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -12,6 +11,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { BoxIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -68,7 +68,7 @@
 		},
 		{
 			id: 'check-updates',
-			action: 'inspect',
+			action: 'update',
 			label: m.containers_check_updates(),
 			onclick: handleCheckForUpdates,
 			loading: isLoading.checking,
@@ -123,9 +123,6 @@
 	{#snippet additionalContent()}
 		<CreateContainerDialog
 			bind:open={isCreateDialogOpen}
-			availableVolumes={[]}
-			availableNetworks={[]}
-			availableImages={[]}
 			isLoading={isLoading.create}
 			onSubmit={async (options) => {
 				isLoading.create = true;

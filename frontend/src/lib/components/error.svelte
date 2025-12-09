@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import { Button } from '$lib/components/ui/button';
-	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 	import { m } from '$lib/paraglide/messages';
+	import { ErrorNotFoundIcon } from '$lib/icons';
 
 	let {
 		message,
@@ -25,7 +25,7 @@
 	<Empty.Root>
 		<Empty.Header>
 			<Empty.Media variant="icon">
-				<CircleXIcon class="text-destructive size-7" aria-hidden="true" />
+				<ErrorNotFoundIcon class="text-destructive size-20" aria-hidden="true" />
 			</Empty.Media>
 			<Empty.Title>{title}</Empty.Title>
 			<Empty.Description>{message} - {status}</Empty.Description>

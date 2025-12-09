@@ -115,7 +115,7 @@
 			</Button>
 			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
 				{#if isLoading}
-					<Spinner class="mr-2 size-4" />
+					<Spinner class="size-4" />
 				{/if}
 				{m.templates_add_registry_button()}
 			</Button>

@@ -3,16 +3,6 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import MonitorIcon from '@lucide/svelte/icons/monitor';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
@@ -23,7 +13,19 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import {
+		ArrowLeftIcon,
+		RefreshIcon,
+		SettingsIcon,
+		ConnectionIcon,
+		SaveIcon,
+		EnvironmentsIcon,
+		AlertIcon,
+		TestIcon,
+		RegistryIcon,
+		ResetIcon
+	} from '$lib/icons';
 
 	let { data } = $props();
 	let { environment, settings } = $derived(data);
@@ -216,7 +218,7 @@
 
 				{#if hasChanges}
 					<Button variant="outline" size="sm" onclick={handleReset} disabled={isSaving}>
-						<RotateCcwIcon class="mr-2 size-4" />
+						<ResetIcon class="mr-2 size-4" />
 						{m.common_reset()}
 					</Button>
 				{/if}
@@ -234,9 +236,9 @@
 				{#if environment.id !== '0'}
 					<Button variant="outline" onclick={syncRegistries} disabled={isSyncingRegistries}>
 						{#if isSyncingRegistries}
-							<Spinner />
+							<Spinner class="size-4" />
 						{:else}
-							<DatabaseIcon class="mr-2 size-4" />
+							<RegistryIcon class="size-4" />
 						{/if}
 						{m.sync_registries()}
 					</Button>
@@ -244,9 +246,9 @@
 
 				<Button variant="outline" onclick={refreshEnvironment} disabled={isRefreshing}>
 					{#if isRefreshing}
-						<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+						<Spinner class="size-4" />
 					{:else}
-						<RefreshCwIcon class="mr-2 size-4" />
+						<RefreshIcon class="size-4" />
 					{/if}
 					{m.common_refresh()}
 				</Button>
@@ -270,7 +272,7 @@
 			<div
 				class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
 			>
-				<AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
 				<div class="flex-1 space-y-1">
 					<p class="text-sm font-medium">
 						{#if !environment.enabled}
@@ -288,7 +290,7 @@
 
 	<div class="grid gap-6 gap-x-6 gap-y-6 lg:grid-cols-2">
 		<Card.Root class="flex flex-col">
-			<Card.Header icon={MonitorIcon}>
+			<Card.Header icon={EnvironmentsIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<h2>{m.environments_overview_title()}</h2>
@@ -397,7 +399,7 @@
 		{/if}
 
 		<Card.Root class="flex flex-col">
-			<Card.Header icon={GlobeIcon}>
+			<Card.Header icon={ConnectionIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<h2>{m.environments_connection_title()}</h2>
@@ -442,10 +444,10 @@
 
 				<Button onclick={testConnection} disabled={isTestingConnection} class="w-full">
 					{#if isTestingConnection}
-						<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+						<Spinner />
 						{m.environments_testing_connection()}
 					{:else}
-						<TerminalIcon class="mr-2 size-4" />
+						<TestIcon class="mr-2 size-4" />
 						{m.environments_test_connection()}
 					{/if}
 				</Button>
@@ -476,9 +478,9 @@
 					<div class="flex gap-2">
 						<Button onclick={pairOrRotate} disabled={isPairing || !bootstrapToken} class="flex-1">
 							{#if isPairing}
-								<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+								<Spinner class="size-4" />
 							{:else}
-								<SettingsIcon class="mr-2 size-4" />
+								<SettingsIcon class="size-4" />
 							{/if}
 							{m.environments_pair_rotate_action()}
 						</Button>

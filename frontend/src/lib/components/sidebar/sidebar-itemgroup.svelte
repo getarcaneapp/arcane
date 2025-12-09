@@ -1,10 +1,9 @@
 <script lang="ts">
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
+	import { ArrowRightIcon } from '$lib/icons';
 
 	let {
 		items,
@@ -14,11 +13,11 @@
 		items: {
 			title: string;
 			url: string;
-			icon?: typeof IconType;
+			icon?: typeof ArrowRightIcon;
 			items?: {
 				title: string;
 				url: string;
-				icon?: typeof IconType;
+				icon?: typeof ArrowRightIcon;
 			}[];
 		}[];
 	} = $props();
@@ -130,7 +129,7 @@
 														<Icon />
 													{/if}
 													<span>{item.title}</span>
-													<ChevronRightIcon
+													<ArrowRightIcon
 														class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
 													/>
 												</a>

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import GpuIcon from '@lucide/svelte/icons/gpu';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from 'bytes';
 	import type { GPUStats } from '$lib/types/system-stats.type';
+	import { GpuIcon } from '$lib/icons';
 
 	interface Props {
 		gpus?: GPUStats[];
@@ -31,7 +31,8 @@
 					<div class="text-foreground text-sm font-semibold">{m.dashboard_meter_gpu()}</div>
 					{#if gpus && gpus.length > 0}
 						<div class="text-muted-foreground text-xs">
-							{gpus.length} {gpus.length === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}
+							{gpus.length}
+							{gpus.length === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}
 						</div>
 					{/if}
 				</div>
@@ -53,7 +54,7 @@
 						<div class="space-y-1.5">
 							<div class="flex items-center justify-between">
 								<span class="text-foreground text-xs font-medium">{gpu.name}</span>
-								<span class="text-muted-foreground text-[10px] font-mono">
+								<span class="text-muted-foreground font-mono text-[10px]">
 									GPU {gpu.index}
 								</span>
 							</div>

@@ -17,8 +17,8 @@
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import * as Button from '$lib/components/ui/button/index.js';
-	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
+	import { LogoutIcon } from '$lib/icons';
 
 	let {
 		ref = $bindable(null),
@@ -119,7 +119,7 @@
 								type="submit"
 								class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
 							>
-								<LogOutIcon size={16} />
+								<LogoutIcon class="size-5" />
 							</Button.Root>
 						</form>
 					</div>

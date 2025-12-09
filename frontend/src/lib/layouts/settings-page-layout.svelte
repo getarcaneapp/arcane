@@ -1,17 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import type { Action } from '$lib/components/arcane-button/index.js';
 	import { getContext } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import { m } from '$lib/paraglide/messages';
+	import { EllipsisIcon, ResetIcon, SaveIcon, type IconType } from '$lib/icons';
 
 	export interface SettingsActionButton {
 		id: string;
@@ -28,7 +25,7 @@
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: typeof IconType;
+		icon: IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
@@ -40,7 +37,7 @@
 	interface Props {
 		title: string;
 		description?: string;
-		icon: typeof IconType;
+		icon: IconType;
 		pageType?: SettingsPageType;
 		showReadOnlyTag?: boolean;
 		actionButtons?: SettingsActionButton[];
@@ -135,7 +132,7 @@
 										disabled={formState.isLoading}
 										class="gap-2"
 									>
-										<RotateCcwIcon class="size-4" />
+										<ResetIcon class="size-4" />
 										<span class="hidden sm:inline">{m.common_reset()}</span>
 									</Button>
 								{/if}

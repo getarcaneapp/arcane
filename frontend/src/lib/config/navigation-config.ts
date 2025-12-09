@@ -2,7 +2,7 @@ import {
 	ApiKeyIcon,
 	ApperanceIcon,
 	DockerBrandIcon,
-	UserIcon,
+	UsersIcon,
 	SecurityIcon,
 	NotificationsIcon,
 	DashboardIcon,
@@ -54,7 +54,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon },
 				{ title: m.docker_title(), url: '/settings/docker', icon: DockerBrandIcon },
 				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon },
-				{ title: m.users_title(), url: '/settings/users', icon: UserIcon },
+				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon },
 				{ title: m.notifications_title(), url: '/settings/notifications', icon: NotificationsIcon },
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon }
 			]

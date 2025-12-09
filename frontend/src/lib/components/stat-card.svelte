@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import type { ClassValue } from 'svelte/elements';
+	import { type IconType } from '$lib/icons';
 
 	interface Props {
 		title: string;
 		value: string | number;
-		icon: typeof IconType;
+		icon: IconType;
 		iconColor?: string;
 		bgColor?: string;
 		subtitle?: string;
@@ -26,42 +26,36 @@
 
 <div
 	class={cn(
-		'bg-card/90 group hover-lift relative overflow-hidden rounded-xl border p-5 shadow-sm backdrop-blur-sm transition-all duration-300',
+		'bg-card group relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg',
 		iconColor,
 		className
 	)}
 	style="--stat-hover-tint: currentColor;"
 >
 	<div
-		class="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-br from-[var(--stat-hover-tint)]/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+		class="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--stat-hover-tint)]/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
 	></div>
 
-	<div
-		class="pointer-events-none absolute -top-8 -right-8 size-24 rounded-full bg-[var(--stat-hover-tint)]/20 opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100"
-	></div>
-
-	<div class="relative flex items-center justify-between gap-4">
-		<div class="flex-1 space-y-1.5">
-			<p class="text-muted-foreground text-xs font-medium tracking-wider uppercase opacity-80">
+	<div class="relative flex items-start justify-between">
+		<div class="space-y-2">
+			<p class="text-muted-foreground text-sm font-medium tracking-wide">
 				{title}
 			</p>
-			<p class="text-foreground text-2xl font-bold tabular-nums transition-transform duration-300">
+			<h3 class="text-3xl font-bold tracking-tight tabular-nums">
 				{value}
-			</p>
+			</h3>
 			{#if subtitle}
-				<p class="text-muted-foreground text-xs opacity-70">{subtitle}</p>
+				<p class="text-muted-foreground text-xs">{subtitle}</p>
 			{/if}
 		</div>
 
 		<div
 			class={cn(
-				'bg-card/80 relative shrink-0 rounded-xl border border-white/10 p-3 shadow-lg backdrop-blur-sm transition-all duration-300 group-hover:bg-[var(--stat-hover-tint)]/10',
-				'group-hover:-translate-y-0.5 group-hover:shadow-xl',
-				bgColor
+				'flex size-10 items-center justify-center rounded-full transition-colors duration-300',
+				'bg-transparent group-hover:bg-[var(--stat-hover-tint)]/10'
 			)}
 		>
-			<div class="pointer-events-none absolute inset-0 rounded-xl bg-linear-to-br from-white/20 to-transparent opacity-50"></div>
-			<Icon class={cn('relative size-5 transition-transform duration-300', iconColor)} />
+			<Icon class={cn('size-6 transition-transform duration-300 group-hover:scale-110', iconColor)} />
 		</div>
 	</div>
 </div>

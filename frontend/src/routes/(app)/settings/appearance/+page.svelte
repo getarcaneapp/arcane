@@ -2,9 +2,6 @@
 	import { z } from 'zod/v4';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import EyeIcon from '@lucide/svelte/icons/eye';
-	import PaletteIcon from '@lucide/svelte/icons/palette';
-	import NavigationIcon from '@lucide/svelte/icons/navigation';
 	import NavigationSettingControl from '$lib/components/navigation-setting-control.svelte';
 	import NavigationModeSettingControl from '$lib/components/navigation-mode-setting-control.svelte';
 	import settingsStore from '$lib/stores/config-store';
@@ -18,6 +15,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
+	import { ApperanceIcon } from '$lib/icons';
 
 	let { data } = $props();
 	const currentSettings = $derived($settingsStore || data.settings!);
@@ -76,7 +74,7 @@
 <SettingsPageLayout
 	title={m.appearance_title()}
 	description={m.appearance_description()}
-	icon={PaletteIcon}
+	icon={ApperanceIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -198,9 +196,7 @@
 							<div>
 								<NavigationModeSettingControl
 									id="mobileNavigationMode"
-									label=""
 									description=""
-									icon={NavigationIcon}
 									serverValue={$formInputs.mobileNavigationMode.value}
 									localOverride={persistedState.mode}
 									onServerChange={(value) => {
@@ -223,9 +219,7 @@
 							<div>
 								<NavigationSettingControl
 									id="mobileNavigationShowLabels"
-									label=""
 									description=""
-									icon={EyeIcon}
 									serverValue={$formInputs.mobileNavigationShowLabels.value}
 									localOverride={persistedState.showLabels}
 									onServerChange={(value) => {

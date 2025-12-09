@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import type { Snippet } from 'svelte';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import type { Action } from '$lib/components/arcane-button/index.js';
+	import { EllipsisIcon, type IconType } from '$lib/icons';
 
 	export interface ActionButton {
 		id: string;
@@ -22,7 +21,7 @@
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: typeof IconType;
+		icon: IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;

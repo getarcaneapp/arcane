@@ -1,21 +1,12 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import CircleFadingArrowUpIcon from '@lucide/svelte/icons/circle-fading-arrow-up';
-	import CircleArrowUpIcon from '@lucide/svelte/icons/circle-arrow-up';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
-	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
-	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
+	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -181,7 +172,7 @@
 			<div
 				class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap {authBadge.classes}"
 			>
-				<KeyRoundIcon class="size-3 opacity-80" />
+				<ApiKeyIcon class="size-3 opacity-80" />
 				<span>{m.image_update_auth({ label: authBadge.label })}</span>
 			</div>
 		</div>
@@ -192,7 +183,7 @@
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
 			{#if label === m.image_update_current_label()}
-				<PackageIcon class="size-3" />
+				<BoxIcon class="size-3" />
 			{:else}
 				<ArrowRightIcon class="size-3" />
 			{/if}
@@ -212,7 +203,7 @@
 					onclick={handleUpdateContainer}
 					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-600 hover:shadow-md"
 				>
-					<ArrowUpCircleIcon class="size-3" />
+					<CircleArrowUpIcon class="size-3" />
 					{m.containers_update_container()}
 				</button>
 			{:else}
@@ -225,7 +216,7 @@
 						<Spinner class="size-3" />
 						{m.common_action_checking()}
 					{:else}
-						<RefreshCwIcon class="size-3 transition-transform group-hover:rotate-45" />
+						<RefreshIcon class="size-3 transition-transform group-hover:rotate-45" />
 						{m.image_update_recheck_button()}
 					{/if}
 				</button>
@@ -237,7 +228,7 @@
 {#snippet errorState()}
 	<div class="bg-linear-to-br from-rose-50 to-red-50/40 p-4 dark:from-rose-950/20 dark:to-red-950/10">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(TriangleAlertIcon, 'from-rose-500', 'to-red-500', 'shadow-red-500/25')}
+			{@render iconCircle(AlertIcon, 'from-rose-500', 'to-red-500', 'shadow-red-500/25')}
 			<div class="flex-1">
 				<div class="text-sm font-semibold text-red-900 dark:text-red-100">{m.image_update_check_failed_title()}</div>
 				<div class="text-xs text-red-700/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
@@ -264,7 +255,7 @@
 {#snippet successState()}
 	<div class="bg-linear-to-br from-emerald-50 to-green-50/30 p-4 dark:from-emerald-950/20 dark:to-green-950/10">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(CircleCheckIcon, 'from-emerald-500', 'to-green-500', 'shadow-emerald-500/25')}
+			{@render iconCircle(VerifiedCheckIcon, 'from-emerald-500', 'to-green-500', 'shadow-emerald-500/25')}
 			<div class="flex-1">
 				<div class="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
 					{m.image_update_up_to_date_title()}
@@ -327,7 +318,7 @@
 {#snippet versionUpdateState()}
 	<div class="bg-linear-to-br from-amber-50 to-yellow-50/30 p-4 dark:from-amber-950/20 dark:to-yellow-950/10">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(CircleFadingArrowUpIcon, 'from-amber-500', 'to-yellow-500', 'shadow-amber-500/25')}
+			{@render iconCircle(CircleArrowUpIcon, 'from-amber-500', 'to-yellow-500', 'shadow-amber-500/25')}
 			<div class="flex-1">
 				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{m.image_update_version_title()}</div>
 				<div class="text-xs text-amber-700/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
@@ -375,7 +366,7 @@
 {#snippet unknownState()}
 	<div class="bg-linear-to-br from-gray-50 to-slate-50/30 p-4 dark:from-gray-900/20 dark:to-slate-900/10">
 		<div class="flex items-center gap-3">
-			{@render iconCircle(TriangleAlertIcon, 'from-gray-400', 'to-slate-500', 'shadow-gray-400/25')}
+			{@render iconCircle(AlertIcon, 'from-gray-400', 'to-slate-500', 'shadow-gray-400/25')}
 			<div>
 				<div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.image_update_status_unknown()}</div>
 				<div class="text-xs text-gray-700/80 dark:text-gray-300/80">
@@ -396,13 +387,13 @@
 			<Tooltip.Trigger>
 				<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
 					{#if hasError}
-						<TriangleAlertIcon class="size-4 text-red-500" />
+						<AlertIcon class="size-4 text-red-500" />
 					{:else if !effectiveUpdateInfo.hasUpdate}
-						<CircleCheckIcon class="size-4 text-green-500" />
+						<VerifiedCheckIcon class="size-4 text-green-500" />
 					{:else if effectiveUpdateInfo.updateType === 'digest'}
 						<CircleArrowUpIcon class="size-4 text-blue-500" />
 					{:else}
-						<CircleFadingArrowUpIcon class="size-4 text-yellow-500" />
+						<CircleArrowUpIcon class="size-4 text-yellow-500" />
 					{/if}
 				</span>
 			</Tooltip.Trigger>

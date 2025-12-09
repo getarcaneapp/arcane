@@ -6,8 +6,6 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import ProgressPopover from '$lib/components/progress-popover.svelte';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
@@ -18,6 +16,7 @@
 		calculateOverallProgress,
 		areAllLayersComplete
 	} from '$lib/utils/pull-progress';
+	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {

@@ -4,7 +4,6 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import BoxIcon from '@lucide/svelte/icons/box';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
@@ -97,7 +96,7 @@
 		icon={(item) => {
 			const state = item.state;
 			return {
-				component: BoxIcon,
+				component: ContainersIcon,
 				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber'
 			};
 		}}

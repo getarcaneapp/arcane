@@ -1,13 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import PaletteIcon from '@lucide/svelte/icons/palette';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import CodeIcon from '@lucide/svelte/icons/code';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
@@ -16,6 +9,7 @@
 	import type { CustomizeCategory } from '$lib/types/customize-search.type';
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
+	import { SearchIcon, TemplateIcon, ArrowRightIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let searchQuery = $state('');
@@ -27,9 +21,9 @@
 
 	const iconMap: Record<string, any> = {
 		'file-text': FileTextIcon,
-		layers: LayersIcon,
-		package: PackageIcon,
-		code: CodeIcon
+		layers: TemplateIcon,
+		package: RegistryIcon,
+		code: VariableIcon
 	};
 
 	onMount(async () => {
@@ -88,7 +82,7 @@
 	}
 
 	function getIconComponent(iconName: string) {
-		return iconMap[iconName] || PaletteIcon;
+		return iconMap[iconName] || CustomizeIcon;
 	}
 </script>
 
@@ -105,7 +99,7 @@
 						<div
 							class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
 						>
-							<PaletteIcon class="size-4 sm:size-5" />
+							<TemplateIcon class="size-4 sm:size-5" />
 						</div>
 						<div class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-3">
@@ -165,9 +159,7 @@
 									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>
-							<ChevronRightIcon
-								class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors"
-							/>
+							<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
 						</div>
 					</button>
 				</Card>
