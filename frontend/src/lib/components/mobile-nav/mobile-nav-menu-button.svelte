@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
-	import Grid3x3Icon from '@lucide/svelte/icons/grid-3x3';
+	import { MobileNavDrawerIcon } from '$lib/icons';
 
 	let {
 		showLabels = true,
@@ -24,6 +24,6 @@
 	{onclick}
 	data-testid="mobile-nav-open"
 >
-	<Grid3x3Icon size={28} aria-hidden="true" />
+	<MobileNavDrawerIcon class="size-8.5" aria-hidden="true" />
 	<span class="sr-only">{m.mobile_navigation()}</span>
 </button>

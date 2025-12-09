@@ -6,11 +6,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { cn } from '$lib/utils';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import XIcon from '@lucide/svelte/icons/x';
 	import { scale } from 'svelte/transition';
 	import type { CopyButtonProps } from './types';
+	import { CopyIcon, CloseIcon, CheckIcon } from '$lib/icons';
 
 	let {
 		ref = $bindable(null),
@@ -51,7 +49,7 @@
 		</div>
 	{:else if clipboard.status === 'failure'}
 		<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-			<XIcon tabindex={-1} />
+			<CloseIcon tabindex={-1} />
 			<span class="sr-only">Failed to copy</span>
 		</div>
 	{:else}

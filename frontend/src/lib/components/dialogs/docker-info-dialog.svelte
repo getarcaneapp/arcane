@@ -3,14 +3,6 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { Separator } from '$lib/components/ui/separator';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import CpuIcon from '@lucide/svelte/icons/cpu';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import LayersIcon from '@lucide/svelte/icons/layers';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from 'bytes';
@@ -46,17 +38,17 @@
 	contentClass="sm:max-w-[800px]"
 >
 	{#snippet children()}
-		<div class="space-y-6 pt-4">
+		<div class="space-y-4 pt-4">
 			{@render statsSection()}
 
-			<div class="grid gap-6 sm:grid-cols-2">
+			<div class="grid gap-4 sm:grid-cols-2">
 				{@render systemSection()}
 				{@render versionSection()}
 			</div>
 
 			{@render resourcesSection()}
 
-			<div class="grid gap-6 sm:grid-cols-2">
+			<div class="grid gap-4 sm:grid-cols-2">
 				{@render configurationSection()}
 				{@render networkSection()}
 			</div>
@@ -75,28 +67,24 @@
 
 {#snippet statsSection()}
 	<div>
-		<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold">
-			<ActivityIcon class="size-4" />
+		<h3 class="mb-3 text-sm font-semibold">
 			{m.docker_info_stats_section()}
 		</h3>
-		<div class="space-y-3">
-			<div class="grid gap-3 sm:grid-cols-4">
-				{@render statCard(m.common_running(), dockerInfo?.ContainersRunning ?? 0, 'emerald')}
-				{@render statCard(m.docker_info_paused_label(), dockerInfo?.ContainersPaused ?? 0, 'amber')}
-				{@render statCard(m.common_stopped(), dockerInfo?.ContainersStopped ?? 0, 'red')}
-				{@render statCard(m.docker_info_images_label(), dockerInfo?.Images ?? 0, 'neutral', true)}
-			</div>
+		<div class="grid gap-4 sm:grid-cols-4">
+			{@render statCard(m.common_running(), dockerInfo?.ContainersRunning ?? 0, 'emerald', true)}
+			{@render statCard(m.docker_info_paused_label(), dockerInfo?.ContainersPaused ?? 0, 'amber', true)}
+			{@render statCard(m.common_stopped(), dockerInfo?.ContainersStopped ?? 0, 'red', true)}
+			{@render statCard(m.docker_info_images_label(), dockerInfo?.Images ?? 0, 'blue', true)}
 		</div>
 	</div>
 {/snippet}
 
 {#snippet systemSection()}
 	<div class="space-y-3">
-		<h3 class="flex items-center gap-2 text-sm font-semibold">
-			<ServerIcon class="size-4" />
+		<h3 class="text-sm font-semibold">
 			{m.docker_info_system_section()}
 		</h3>
-		<div class="space-y-2 rounded-lg border p-3">
+		<div class="space-y-2 rounded-lg border p-4">
 			{@render infoRow(m.common_name(), dockerInfo?.Name)}
 			{@render infoRow(m.common_id(), dockerInfo?.ID, true, true)}
 			{@render infoRow(m.docker_info_os_label(), dockerInfo?.OperatingSystem)}
@@ -111,11 +99,10 @@
 
 {#snippet versionSection()}
 	<div class="space-y-3">
-		<h3 class="flex items-center gap-2 text-sm font-semibold">
-			<LayersIcon class="size-4" />
+		<h3 class="text-sm font-semibold">
 			{m.docker_info_version_section()}
 		</h3>
-		<div class="space-y-2 rounded-lg border p-3">
+		<div class="space-y-2 rounded-lg border p-4">
 			{@render infoRow(m.docker_info_server_version_label(), dockerInfo?.ServerVersion)}
 			{@render infoRow(m.docker_info_api_version_label(), dockerInfo?.apiVersion)}
 			{@render infoRow(m.docker_info_go_version_label(), dockerInfo?.goVersion)}
@@ -136,27 +123,26 @@
 
 {#snippet resourcesSection()}
 	<div>
-		<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold">
-			<CpuIcon class="size-4" />
+		<h3 class="mb-3 text-sm font-semibold">
 			{m.docker_info_resources_section()}
 		</h3>
-		<div class="grid gap-3 sm:grid-cols-4">
-			<div class="rounded-lg border p-3">
+		<div class="grid gap-4 sm:grid-cols-4">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.common_cpus()}</div>
 				<div class="flex items-center gap-2">
 					<Badge variant="secondary" class="text-base">{dockerInfo?.NCPU ?? 0}</Badge>
 					<span class="text-muted-foreground text-xs">cores</span>
 				</div>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_memory_label()}</div>
 				<Badge variant="secondary" class="text-base">{formattedMemory}</Badge>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_goroutines()}</div>
 				<Badge variant="secondary" class="text-base">{dockerInfo?.NGoroutines ?? 0}</Badge>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_file_descriptors()}</div>
 				<Badge variant="secondary" class="text-base">{dockerInfo?.NFd ?? 0}</Badge>
 			</div>
@@ -166,11 +152,10 @@
 
 {#snippet configurationSection()}
 	<div class="space-y-3">
-		<h3 class="flex items-center gap-2 text-sm font-semibold">
-			<HardDriveIcon class="size-4" />
+		<h3 class="text-sm font-semibold">
 			{m.common_configuration()}
 		</h3>
-		<div class="space-y-2 rounded-lg border p-3">
+		<div class="space-y-2 rounded-lg border p-4">
 			{@render infoRow(m.docker_info_storage_driver_label(), dockerInfo?.Driver)}
 			{@render infoRow(m.docker_info_logging_driver_label(), dockerInfo?.LoggingDriver)}
 			{@render infoRow(m.docker_info_cgroup_driver_label(), dockerInfo?.CgroupDriver)}
@@ -184,11 +169,10 @@
 
 {#snippet networkSection()}
 	<div class="space-y-3">
-		<h3 class="flex items-center gap-2 text-sm font-semibold">
-			<NetworkIcon class="size-4" />
+		<h3 class="text-sm font-semibold">
 			{m.resource_networks_cap()} & {m.docker_info_proxy_label()}
 		</h3>
-		<div class="space-y-2 rounded-lg border p-3">
+		<div class="space-y-2 rounded-lg border p-4">
 			{@render infoRow(
 				m.docker_info_ipv4_forwarding(),
 				dockerInfo?.IPv4Forwarding ? m.common_enabled() : m.common_disabled(),
@@ -204,12 +188,11 @@
 
 {#snippet pluginsSection()}
 	<div>
-		<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold">
-			<LayersIcon class="size-4" />
+		<h3 class="mb-3 text-sm font-semibold">
 			{m.docker_info_plugins_section()}
 		</h3>
-		<div class="grid gap-3 sm:grid-cols-3">
-			<div class="rounded-lg border p-3">
+		<div class="grid gap-4 sm:grid-cols-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.resource_volumes_cap()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each dockerInfo?.Plugins?.Volume ?? [] as plugin}
@@ -219,7 +202,7 @@
 					{/each}
 				</div>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.resource_networks_cap()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each dockerInfo?.Plugins?.Network ?? [] as plugin}
@@ -229,7 +212,7 @@
 					{/each}
 				</div>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_logs_plugin()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each dockerInfo?.Plugins?.Log ?? [] as plugin}
@@ -245,12 +228,11 @@
 
 {#snippet securitySection()}
 	<div>
-		<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold">
-			<ShieldIcon class="size-4" />
+		<h3 class="mb-3 text-sm font-semibold">
 			{m.security_title()} & {m.docker_info_runtimes()}
 		</h3>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<div class="rounded-lg border p-3">
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_security_options()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each dockerInfo?.SecurityOptions ?? [] as opt}
@@ -260,7 +242,7 @@
 					{/each}
 				</div>
 			</div>
-			<div class="rounded-lg border p-3">
+			<div class="rounded-lg border p-4">
 				<div class="text-muted-foreground mb-2 text-xs">{m.docker_info_runtimes()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each Object.keys(dockerInfo?.Runtimes ?? {}) as runtime}
@@ -274,7 +256,12 @@
 	</div>
 {/snippet}
 
-{#snippet statCard(label: string, value: number, color: 'emerald' | 'amber' | 'red' | 'neutral', outline: boolean = false)}
+{#snippet statCard(
+	label: string,
+	value: number,
+	color: 'emerald' | 'amber' | 'red' | 'blue' | 'neutral',
+	outline: boolean = false
+)}
 	{@const colors = {
 		emerald: {
 			bg: 'bg-emerald-500/5',
@@ -288,17 +275,23 @@
 			bg: 'bg-red-500/5',
 			badge: 'border-red-500/30 bg-red-500/15 text-red-600 dark:text-red-300'
 		},
+		blue: {
+			bg: 'bg-blue-500/5',
+			badge: 'border-blue-500/30 bg-blue-500/15 text-blue-600 dark:text-blue-300'
+		},
 		neutral: {
 			bg: '',
 			badge: ''
 		}
 	}}
-	<div class="rounded-lg border p-3 {colors[color].bg}">
+	<div class="rounded-lg border p-4 {colors[color].bg}">
 		<div class="text-muted-foreground mb-2 text-xs">{label}</div>
 		{#if color === 'neutral'}
-			<div class="text-2xl font-semibold tabular-nums">{value}</div>
+			<Badge variant="secondary" class="rounded-md text-2xl font-semibold tabular-nums">
+				{value}
+			</Badge>
 		{:else}
-			<Badge variant={outline ? 'outline' : undefined} class="{colors[color].badge} text-lg">
+			<Badge variant={outline ? 'outline' : undefined} class="{colors[color].badge} rounded-md text-lg">
 				{value}
 			</Badge>
 		{/if}

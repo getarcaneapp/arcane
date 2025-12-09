@@ -5,14 +5,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { cn } from '$lib/utils';
-	import {
-		CalendarDate,
-		DateFormatter,
-		getLocalTimeZone,
-		type DateValue
-	} from '@internationalized/date';
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import { CalendarDate, DateFormatter, getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { CalendarIcon } from '$lib/icons';
 
 	type Props = {
 		value?: Date;
@@ -21,9 +16,7 @@
 
 	let { value = $bindable(undefined), id, ...restProps }: Props = $props();
 
-	let calendarDisplayDate: CalendarDate | undefined = $state(
-		value ? dateToCalendarDate(value) : undefined
-	);
+	let calendarDisplayDate: CalendarDate | undefined = $state(value ? dateToCalendarDate(value) : undefined);
 
 	let open = $state(false);
 
@@ -73,26 +66,16 @@
 				<Button
 					{...props}
 					variant="outline"
-					class={cn(
-						'w-full justify-start text-left font-normal',
-						!value && 'text-muted-foreground'
-					)}
+					class={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
 					aria-label={m.select_a_date()}
 				>
 					<CalendarIcon class="mr-2 size-4" />
-					{calendarDisplayDate
-						? df.format(calendarDisplayDate.toDate(getLocalTimeZone()))
-						: m.select_a_date()}
+					{calendarDisplayDate ? df.format(calendarDisplayDate.toDate(getLocalTimeZone())) : m.select_a_date()}
 				</Button>
 			{/snippet}
 		</Popover.Trigger>
 		<Popover.Content class="w-auto p-0" align="start">
-			<Calendar
-				type="single"
-				bind:value={calendarDisplayDate}
-				onValueChange={handleCalendarInteraction}
-				initialFocus
-			/>
+			<Calendar type="single" bind:value={calendarDisplayDate} onValueChange={handleCalendarInteraction} initialFocus />
 		</Popover.Content>
 	</Popover.Root>
 </div>

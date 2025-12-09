@@ -53,10 +53,7 @@ test.describe('Networks Page', () => {
     await navigateToNetworks(page);
     await page.locator('button:has-text("Create Network")').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
-  });
-
-  test('Create Network', async ({ page }) => {
-    await navigateToNetworks(page);
+    await expect(page.getByRole('heading', { name: 'Create Network' })).toBeVisible();
     await page.locator('button:has-text("Create Network")').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 

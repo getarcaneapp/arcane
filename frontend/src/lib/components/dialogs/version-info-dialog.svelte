@@ -4,11 +4,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import { m } from '$lib/paraglide/messages';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import BookOpenIcon from '@lucide/svelte/icons/book-open';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { getApplicationLogo } from '$lib/utils/image.util';
-	import GithubIcon from '$lib/icons/github-icon.svelte';
+	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '$lib/icons';
 
 	interface Props {
 		open: boolean;

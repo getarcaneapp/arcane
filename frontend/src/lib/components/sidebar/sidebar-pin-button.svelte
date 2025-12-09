@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
-	import PinIcon from '@lucide/svelte/icons/pin';
-	import PinOffIcon from '@lucide/svelte/icons/pin-off';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
+	import { PinOnIcon, PinOffIcon } from '$lib/icons';
 
 	let {
 		ref = $bindable(null),
@@ -44,10 +43,10 @@
 	{...restProps}
 >
 	{#if isPinned}
-		<PinOffIcon size={16} />
+		<PinOnIcon />
 		<span class="sr-only">Unpin sidebar</span>
 	{:else}
-		<PinIcon size={16} />
+		<PinOffIcon />
 		<span class="sr-only">Pin sidebar</span>
 	{/if}
 </Button>

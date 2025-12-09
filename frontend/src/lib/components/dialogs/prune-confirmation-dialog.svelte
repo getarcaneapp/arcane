@@ -3,11 +3,10 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Checkbox from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { m } from '$lib/paraglide/messages';
+	import { TrashIcon, AlertIcon } from '$lib/icons';
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
 
@@ -117,7 +116,7 @@
 
 			{#if pruneVolumes}
 				<Alert.Root variant="destructive" class="mt-2">
-					<AlertCircleIcon class="size-4" />
+					<AlertIcon class="size-4" />
 					<Alert.Title>{m.prune_volumes_warning_title()}</Alert.Title>
 					<Alert.Description>{m.prune_volumes_warning_description()}</Alert.Description>
 				</Alert.Root>
@@ -136,9 +135,9 @@
 			disabled={selectedTypes.length === 0 || isPruning}
 		>
 			{#if isPruning}
-				<Spinner class="mr-2 size-4" /> {m.common_action_pruning()}
+				<Spinner class="size-4" /> {m.common_action_pruning()}
 			{:else}
-				<Trash2Icon class="mr-2 size-4" /> {m.prune_button({ count: selectedTypes.length })}
+				<TrashIcon class="size-4" /> {m.prune_button({ count: selectedTypes.length })}
 			{/if}
 		</Button>
 	{/snippet}

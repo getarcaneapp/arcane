@@ -1,15 +1,15 @@
 <script lang="ts">
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { RegistryIcon } from '$lib/icons';
 
 	type ContainerRegistryFormProps = {
 		open: boolean;
@@ -47,26 +47,25 @@
 		if (!data) return;
 		onSubmit({ registry: data, isEditMode });
 	}
+
+	function handleOpenChange(newOpenState: boolean) {
+		open = newOpenState;
+		if (!newOpenState) {
+			registryToEdit = null;
+		}
+	}
 </script>
 
-<Sheet.Root bind:open>
-	<Sheet.Content class="p-6">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<PackagePlusIcon class="text-primary size-5" />
-				</div>
-				<div>
-					<Sheet.Title class="text-xl font-semibold">
-						{isEditMode ? m.registries_edit_title() : m.common_add_button({ resource: m.resource_registry_cap() })}
-					</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{isEditMode ? m.registries_edit_description() : m.registries_add_description()}
-					</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+<ResponsiveDialog.Root
+	bind:open
+	onOpenChange={handleOpenChange}
+	variant="sheet"
+	title={isEditMode ? m.registries_edit_title() : m.common_add_button({ resource: m.resource_registry_cap() })}
+	description={isEditMode ? m.registries_edit_description() : m.registries_add_description()}
+	contentClass="sm:max-w-[500px]"
+>
+	{#snippet children()}
+		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<FormInput
 				label={m.registries_url()}
 				type="text"
@@ -105,25 +104,27 @@
 				description={m.registries_allow_insecure_description()}
 				bind:checked={$inputs.insecure.value}
 			/>
-
-			<Sheet.Footer class="flex flex-row gap-2">
-				<Button
-					type="button"
-					class="arcane-button-cancel flex-1"
-					variant="outline"
-					onclick={() => (open = false)}
-					disabled={isLoading}
-				>
-					{m.common_cancel()}
-				</Button>
-
-				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
-					{#if isLoading}
-						<Spinner class="mr-2 size-4" />
-					{/if}
-					{isEditMode ? m.registries_save_changes() : m.common_add_button({ resource: m.resource_registry_cap() })}
-				</Button>
-			</Sheet.Footer>
 		</form>
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+
+	{#snippet footer()}
+		<div class="flex w-full flex-row gap-2">
+			<Button
+				type="button"
+				class="arcane-button-cancel flex-1"
+				variant="outline"
+				onclick={() => (open = false)}
+				disabled={isLoading}
+			>
+				{m.common_cancel()}
+			</Button>
+
+			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
+				{#if isLoading}
+					<Spinner class="mr-2 size-4" />
+				{/if}
+				{isEditMode ? m.registries_save_changes() : m.common_add_button({ resource: m.resource_registry_cap() })}
+			</Button>
+		</div>
+	{/snippet}
+</ResponsiveDialog.Root>

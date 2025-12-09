@@ -4,12 +4,12 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import type { VolumeCreateRequest } from '$lib/types/volume.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { AddIcon, VolumesIcon } from '$lib/icons';
 
 	type CreateVolumeFormProps = {
 		open: boolean;
@@ -97,7 +97,7 @@
 		<Sheet.Header class="space-y-3 border-b pb-6">
 			<div class="flex items-center gap-3">
 				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<HardDriveIcon class="text-primary size-5" />
+					<VolumesIcon class="text-primary size-5" />
 				</div>
 				<div>
 					<Sheet.Title data-testid="create-volume-header" class="text-xl font-semibold">{m.create_volume_title()}</Sheet.Title>
@@ -165,10 +165,10 @@
 				>
 				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
 					{#if isLoading}
-						<Spinner class="mr-2 size-4" />
+						<Spinner class="size-4" />
 						{m.common_action_creating()}
 					{:else}
-						<HardDriveIcon class="mr-2 size-4" />
+						<AddIcon class="size-4" />
 						{m.common_create_button({ resource: m.resource_volume_cap() })}
 					{/if}
 				</Button>

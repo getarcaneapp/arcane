@@ -1054,7 +1054,7 @@
 	"docker_info_dialog_description": "Detailed information about your container installation",
 	"docker_info_version_section": "Version Information",
 	"docker_info_system_section": "System Information",
-	"docker_info_stats_section": "Container Statistics",
+	"docker_info_stats_section": "Resource Statistics",
 	"docker_info_api_version_label": "API Version",
 	"docker_info_server_version_label": "Server Version",
 	"docker_info_git_commit_label": "Git Commit",

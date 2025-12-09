@@ -172,9 +172,6 @@ importers:
       paneforge:
         specifier: ^1.0.2
         version: 1.0.2(svelte@5.45.6)
-      ph:house-thin:
-        specifier: link:@iconify-json/ph:house-thin
-        version: link:@iconify-json/ph:house-thin
       runed:
         specifier: ^0.37.0
         version: 0.37.0(@sveltejs/kit@2.49.1(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.45.6)(vite@7.2.7(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.45.6)(vite@7.2.7(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.45.6)(zod@4.1.13)
@@ -193,9 +190,6 @@ importers:
       sveltekit-superforms:
         specifier: ^2.28.0
         version: 2.28.1(@sveltejs/kit@2.49.1(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.45.6)(vite@7.2.7(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.45.6)(vite@7.2.7(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(@types/json-schema@7.0.15)(esbuild@0.27.0)(svelte@5.45.6)(typescript@5.9.3)
-      tabler:
-        specifier: link:@iconify/json/tabler
-        version: link:@iconify/json/tabler
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0

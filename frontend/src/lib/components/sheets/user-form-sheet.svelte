@@ -4,12 +4,11 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
-	import SaveIcon from '@lucide/svelte/icons/save';
 	import type { User } from '$lib/types/user.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { AddIcon, SaveIcon } from '$lib/icons';
 
 	type UserFormProps = {
 		open: boolean;
@@ -31,7 +30,7 @@
 
 	let isEditMode = $derived(!!userToEdit);
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
-	let SubmitIcon = $derived(isEditMode ? SaveIcon : UserPlusIcon);
+	let SubmitIcon = $derived(isEditMode ? SaveIcon : AddIcon);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
 

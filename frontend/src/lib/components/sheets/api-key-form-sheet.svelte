@@ -3,12 +3,11 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import SaveIcon from '@lucide/svelte/icons/save';
 	import type { ApiKey } from '$lib/types/api-key.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ApiKeyIcon, SaveIcon } from '$lib/icons';
 
 	type ApiKeyFormProps = {
 		open: boolean;
@@ -24,7 +23,7 @@
 	let { open = $bindable(false), apiKeyToEdit = $bindable(), onSubmit, isLoading }: ApiKeyFormProps = $props();
 
 	let isEditMode = $derived(!!apiKeyToEdit);
-	let SubmitIcon = $derived(isEditMode ? SaveIcon : KeyIcon);
+	let SubmitIcon = $derived(isEditMode ? SaveIcon : ApiKeyIcon);
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.api_key_name() })),

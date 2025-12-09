@@ -5,13 +5,13 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ServerIcon from '@lucide/svelte/icons/server';
 	import * as Card from '$lib/components/ui/card';
 	import type { CreateEnvironmentDTO } from '$lib/types/environment.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { EnvironmentsIcon } from '$lib/icons';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
@@ -101,7 +101,7 @@
 		<Sheet.Header class="space-y-3 border-b pb-6">
 			<div class="flex items-center gap-3">
 				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<ServerIcon class="text-primary size-5" />
+					<EnvironmentsIcon class="text-primary size-5" />
 				</div>
 				<div>
 					<Sheet.Title class="text-xl font-semibold">{m.environments_title()}</Sheet.Title>
