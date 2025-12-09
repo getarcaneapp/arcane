@@ -1,5 +1,4 @@
 <script lang="ts" generics="TData">
-	import XIcon from '@lucide/svelte/icons/x';
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import Button from '$lib/components/ui/button/button.svelte';
@@ -10,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
+	import { ResetIcon } from '$lib/icons';
 
 	let {
 		table,
@@ -93,7 +93,7 @@
 						class="h-8 px-2 lg:px-3"
 					>
 						{m.common_reset()}
-						<XIcon />
+						<ResetIcon />
 					</Button>
 				{/if}
 			</div>

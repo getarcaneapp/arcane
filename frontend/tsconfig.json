@@ -1,8 +1,8 @@
 {
 	"extends": "./.svelte-kit/tsconfig.json",
 	"compilerOptions": {
-    	"target": "ES2022",
-    	"verbatimModuleSyntax": true,
+		"target": "ES2022",
+		"verbatimModuleSyntax": true,
 		"allowJs": true,
 		"checkJs": true,
 		"esModuleInterop": true,
@@ -11,6 +11,7 @@
 		"skipLibCheck": true,
 		"sourceMap": false,
 		"strict": true,
-		"moduleResolution": "bundler"
+		"moduleResolution": "bundler",
+		"types": ["unplugin-icons/types/svelte"]
 	}
 }

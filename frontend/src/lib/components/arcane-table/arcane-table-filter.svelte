@@ -1,6 +1,4 @@
 <script lang="ts" generics="TData, TValue">
-	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import type { Column } from '@tanstack/table-core';
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Command from '$lib/components/ui/command/index.js';
@@ -11,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import type { Component } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { CheckIcon, FilterIcon } from '$lib/icons';
 
 	let {
 		column,
@@ -41,7 +40,7 @@
 				class="h-8 border-dashed"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
-				<ListFilterIcon />
+				<FilterIcon />
 				{title}
 				{#if selectedValues.size > 0}
 					<Separator orientation="vertical" class="mx-2 h-4" />
@@ -65,7 +64,7 @@
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-[200px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
+	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
 		<Command.Root>
 			<Command.Input placeholder={title} />
 			<Command.List>
@@ -81,23 +80,24 @@
 								const filterValues = Array.from(selectedValues);
 								column?.setFilterValue(filterValues.length ? filterValues : undefined);
 							}}
+							class="gap-2"
 						>
 							{#if showCheckboxes}
 								<div
 									class={cn(
-										'border-primary mr-2 flex size-4 items-center justify-center rounded-sm border',
+										'border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border',
 										isSelected ? 'bg-primary text-primary-foreground' : 'opacity-50 [&_svg]:invisible'
 									)}
 								>
-									<CheckIcon class="size-4" />
+									<CheckIcon class="text-foreground size-6" />
 								</div>
 							{/if}
 							{#if option.icon}
 								{@const Icon = option.icon}
-								<Icon class="text-muted-foreground" />
+								<Icon class="text-muted-foreground shrink-0" />
 							{/if}
 
-							<span>{option.label}</span>
+							<span class="truncate">{option.label}</span>
 						</Command.Item>
 					{/each}
 				</Command.Group>

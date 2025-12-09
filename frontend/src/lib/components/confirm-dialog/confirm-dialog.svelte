@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import { AlertIcon } from '$lib/icons';
 	import { confirmDialogStore } from '.';
 	import Button from '../ui/button/button.svelte';
 	import { Label } from '$lib/components/ui/label';
@@ -30,7 +30,7 @@
 	<Dialog.Content class="w-full max-w-md sm:max-w-lg">
 		<Dialog.Header class="space-y-3">
 			<Dialog.Title class="flex items-start gap-3 text-lg leading-tight font-semibold">
-				<TriangleAlert class="text-destructive mt-0.5 size-5 shrink-0" />
+				<AlertIcon class="text-destructive mt-0.5 size-5 shrink-0" />
 				<span class="min-w-0 break-words">
 					{$confirmDialogStore.title}
 				</span>

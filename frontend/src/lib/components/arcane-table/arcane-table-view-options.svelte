@@ -1,10 +1,10 @@
 <script lang="ts" generics="TData">
-	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 	import type { Table } from '@tanstack/table-core';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
+	import { ViewOptionsIcon } from '$lib/icons';
 
 	let {
 		table,
@@ -27,7 +27,7 @@
 			class: 'h-8'
 		})}
 	>
-		<Settings2Icon />
+		<ViewOptionsIcon />
 		{m.common_view()}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end">

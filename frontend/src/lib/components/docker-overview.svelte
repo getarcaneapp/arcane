@@ -3,13 +3,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import DockerIcon from '$lib/icons/docker-icon.svelte';
-	import BoxIcon from '@lucide/svelte/icons/box';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { m } from '$lib/paraglide/messages';
+	import { DockerBrandIcon, ImagesIcon, ContainersIcon, InfoIcon } from '$lib/icons';
 
 	let {
 		dockerInfo,
@@ -34,7 +31,7 @@
 
 <Card.Root class={className}>
 	{#snippet children()}
-		<Card.Header icon={DockerIcon} iconVariant="primary" class="items-center" {loading}>
+		<Card.Header icon={DockerBrandIcon} iconVariant="primary" class="items-center" {loading}>
 			{#snippet children()}
 				{#if loading}
 					<div class="flex flex-1 flex-col gap-2">
@@ -51,14 +48,14 @@
 						</div>
 						<div class="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
 							<span class="flex items-center gap-1.5">
-								<BoxIcon class="size-3" />
+								<ContainersIcon class="size-3" />
 								<span class="font-medium text-emerald-600">{containersRunning}</span>
 								<span class="text-muted-foreground/70">/</span>
 								<span>{totalContainers}</span>
 							</span>
 							<span class="text-muted-foreground/50">•</span>
 							<span class="flex items-center gap-1.5">
-								<HardDriveIcon class="size-3" />
+								<ImagesIcon class="size-3" />
 								<span>{totalImages}</span>
 								<span class="text-muted-foreground/70">{m.images_title().toLowerCase()}</span>
 							</span>

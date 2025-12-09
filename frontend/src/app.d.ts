@@ -1,4 +1,4 @@
-import type { User } from '$lib/types/user.type';
+import 'unplugin-icons/types/svelte';
 
 declare global {
 	namespace App {

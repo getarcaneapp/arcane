@@ -1,46 +1,49 @@
-import { KeyIcon, type Icon as IconType } from '@lucide/svelte';
-import PaletteIcon from '@lucide/svelte/icons/palette';
-import FileStackIcon from '@lucide/svelte/icons/file-stack';
-import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-import HouseIcon from '@lucide/svelte/icons/home';
-import NetworkIcon from '@lucide/svelte/icons/network';
-import ContainerIcon from '@lucide/svelte/icons/container';
-import ImageIcon from '@lucide/svelte/icons/image';
-import SettingsIcon from '@lucide/svelte/icons/settings';
-import DatabaseIcon from '@lucide/svelte/icons/database';
-import UserIcon from '@lucide/svelte/icons/user';
-import ShieldIcon from '@lucide/svelte/icons/shield';
-import ComputerIcon from '@lucide/svelte/icons/computer';
-import AlarmClockIcon from '@lucide/svelte/icons/alarm-clock';
-import BellIcon from '@lucide/svelte/icons/bell';
+import {
+	ApiKeyIcon,
+	ApperanceIcon,
+	DockerBrandIcon,
+	UserIcon,
+	SecurityIcon,
+	NotificationsIcon,
+	DashboardIcon,
+	ProjectsIcon,
+	EnvironmentsIcon,
+	CustomizeIcon,
+	ContainersIcon,
+	ImagesIcon,
+	NetworksIcon,
+	VolumesIcon,
+	EventsIcon,
+	SettingsIcon
+} from '$lib/icons';
+
 import { m } from '$lib/paraglide/messages';
 
 export type NavigationItem = {
 	title: string;
 	url: string;
-	icon: typeof IconType;
+	icon: any;
 	items?: NavigationItem[];
 };
 
 export const navigationItems: Record<string, NavigationItem[]> = {
 	managementItems: [
-		{ title: m.dashboard_title(), url: '/dashboard', icon: HouseIcon },
-		{ title: m.projects_title(), url: '/projects', icon: FileStackIcon },
-		{ title: m.environments_title(), url: '/environments', icon: ComputerIcon },
-		{ title: m.customize_title(), url: '/customize', icon: PaletteIcon }
+		{ title: m.dashboard_title(), url: '/dashboard', icon: DashboardIcon },
+		{ title: m.projects_title(), url: '/projects', icon: ProjectsIcon },
+		{ title: m.environments_title(), url: '/environments', icon: EnvironmentsIcon },
+		{ title: m.customize_title(), url: '/customize', icon: CustomizeIcon }
 	],
 	resourceItems: [
-		{ title: m.containers_title(), url: '/containers', icon: ContainerIcon },
-		{ title: m.projects_title(), url: '/projects', icon: FileStackIcon },
-		{ title: m.images_title(), url: '/images', icon: ImageIcon },
-		{ title: m.networks_title(), url: '/networks', icon: NetworkIcon },
-		{ title: m.volumes_title(), url: '/volumes', icon: HardDriveIcon }
+		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon },
+		{ title: m.images_title(), url: '/images', icon: ImagesIcon },
+		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon },
+		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon }
 	],
 	settingsItems: [
 		{
 			title: m.events_title(),
 			url: '/events',
-			icon: AlarmClockIcon
+			icon: EventsIcon
 		},
 		{
 			title: m.settings_title(),
@@ -48,12 +51,12 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			icon: SettingsIcon,
 			items: [
 				{ title: m.general_title(), url: '/settings/general', icon: SettingsIcon },
-				{ title: m.appearance_title(), url: '/settings/appearance', icon: PaletteIcon },
-				{ title: m.docker_title(), url: '/settings/docker', icon: DatabaseIcon },
-				{ title: m.security_title(), url: '/settings/security', icon: ShieldIcon },
+				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon },
+				{ title: m.docker_title(), url: '/settings/docker', icon: DockerBrandIcon },
+				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon },
 				{ title: m.users_title(), url: '/settings/users', icon: UserIcon },
-				{ title: m.notifications_title(), url: '/settings/notifications', icon: BellIcon },
-				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: KeyIcon }
+				{ title: m.notifications_title(), url: '/settings/notifications', icon: NotificationsIcon },
+				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon }
 			]
 		}
 	]

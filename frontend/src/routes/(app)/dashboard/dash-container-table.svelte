@@ -2,7 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import BoxIcon from '@lucide/svelte/icons/box';
@@ -14,6 +13,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
+	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 
 	let {
 		containers = $bindable(),
@@ -127,7 +127,7 @@
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
 	<Card.Root class="flex h-full min-h-0 flex-col">
-		<Card.Header icon={BoxIcon} class="shrink-0">
+		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -137,7 +137,7 @@
 				</div>
 				<Button variant="ghost" size="sm" href="/containers" disabled={isLoading}>
 					{m.common_view_all()}
-					<ArrowRightIcon class="ml-2 size-4" />
+					<ArrowRightIcon class="size-4" />
 				</Button>
 			</div>
 		</Card.Header>

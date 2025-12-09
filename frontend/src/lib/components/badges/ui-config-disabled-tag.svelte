@@ -1,7 +1,7 @@
 <script lang="ts">
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
-	import LockIcon from '@lucide/svelte/icons/lock';
+	import { LockIcon } from '$lib/icons';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	const active = $derived.by(() => $settingsStore.uiConfigDisabled);
