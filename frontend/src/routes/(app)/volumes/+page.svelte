@@ -1,7 +1,5 @@
 <script lang="ts">
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
-	import ArchiveXIcon from '@lucide/svelte/icons/archive-x';
+	import { VolumesIcon, VolumeUnusedIcon, VolumeUsedIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -81,21 +79,21 @@
 		{
 			title: m.volumes_stat_total(),
 			value: volumeUsageCounts.total,
-			icon: HardDriveIcon,
+			icon: VolumesIcon,
 			iconColor: 'text-blue-500',
 			class: 'border-l-4 border-l-blue-500'
 		},
 		{
 			title: m.volumes_stat_used(),
 			value: volumeUsageCounts.inuse,
-			icon: ArchiveRestoreIcon,
+			icon: VolumeUsedIcon,
 			iconColor: 'text-green-500',
 			class: 'border-l-4 border-l-green-500'
 		},
 		{
 			title: m.volumes_stat_unused(),
 			value: volumeUsageCounts.unused,
-			icon: ArchiveXIcon,
+			icon: VolumeUnusedIcon,
 			iconColor: 'text-red-500',
 			class: 'border-l-4 border-l-red-500'
 		}

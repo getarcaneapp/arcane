@@ -3,11 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon, SaveIcon, ResetIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
@@ -226,7 +222,7 @@
 									<SettingsIcon class="size-4" />
 									<span>{m.settings_title()}</span>
 								</Button>
-								<ChevronRightIcon class="text-muted-foreground size-4 shrink-0" />
+								<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
 								<span class="text-foreground truncate font-medium">{pageTitle()}</span>
 							</nav>
 						</div>
@@ -263,7 +259,7 @@
 				disabled={formState.isLoading}
 				class="bg-background/80 size-14 rounded-full border-2 shadow-lg backdrop-blur-md"
 			>
-				<RotateCcwIcon class="size-5" />
+				<ResetIcon class="size-5" />
 			</Button>
 		{/if}
 

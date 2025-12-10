@@ -4,12 +4,12 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
+	import { AlertIcon } from '$lib/icons';
 
 	type TemplateRegistryFormProps = {
 		open: boolean;
@@ -94,7 +94,7 @@
 
 			{#if submitError}
 				<Alert.Root class="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
-					<AlertCircleIcon class="size-4" />
+					<AlertIcon class="size-4" />
 					<Alert.Title>{m.templates_registry_validation_error_title()}</Alert.Title>
 					<Alert.Description class="text-sm">{submitError}</Alert.Description>
 				</Alert.Root>

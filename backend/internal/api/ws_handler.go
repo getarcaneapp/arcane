@@ -130,15 +130,10 @@ func NewWebSocketHandler(
 	wsGroup := group.Group("/environments/:id/ws")
 	wsGroup.Use(authMiddleware.WithAdminNotRequired().Add())
 	{
-		// Project endpoints (pull moved to Huma handler)
 		wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
-
-		// Container endpoints
 		wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
 		wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
 		wsGroup.GET("/containers/:containerId/exec", handler.ContainerExec)
-
-		// System endpoints
 		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
 }

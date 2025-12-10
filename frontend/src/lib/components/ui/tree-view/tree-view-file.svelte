@@ -1,5 +1,5 @@
 <script lang="ts">
-	import FileIcon from '@lucide/svelte/icons/file';
+	import { FileTextIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
 	import type { TreeViewFileProps } from './types';
 
@@ -10,7 +10,7 @@
 	{#if icon}
 		{@render icon({ name })}
 	{:else}
-		<FileIcon class="size-4" />
+		<FileTextIcon class="size-4" />
 	{/if}
 	<span>{name}</span>
 </button>

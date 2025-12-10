@@ -1,20 +1,19 @@
 <script lang="ts">
-	import ZapIcon from '@lucide/svelte/icons/zap';
+	import { AlertIcon } from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
 	import type { Settings } from '$lib/types/settings.type';
 	import { z } from 'zod/v4';
 	import { onMount } from 'svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import BoxesIcon from '@lucide/svelte/icons/boxes';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { DockerBrandIcon } from '$lib/icons';
 
 	let { data } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -102,7 +101,7 @@
 <SettingsPageLayout
 	title={m.docker_title()}
 	description={m.docker_description()}
-	icon={BoxesIcon}
+	icon={DockerBrandIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -181,7 +180,7 @@
 
 										{#if $formInputs.pollingInterval.value < 30}
 											<Alert.Root variant="warning">
-												<ZapIcon class="size-4" />
+												<AlertIcon class="size-4" />
 												<Alert.Title>{m.docker_rate_limit_warning_title()}</Alert.Title>
 												<Alert.Description>{m.docker_rate_limit_warning_description()}</Alert.Description>
 											</Alert.Root>

@@ -97,3 +97,7 @@ export { default as ConnectionIcon } from 'virtual:icons/gravity-ui/plug-connect
 export { default as LayersIcon } from 'virtual:icons/solar/layers-minimalistic-linear';
 export { default as HashIcon } from 'virtual:icons/gravity-ui/hashtag';
 export { default as LocalFolderComputerIcon } from 'virtual:icons/streamline/local-storage-folder-remix';
+export { default as MinusIcon } from 'virtual:icons/solar/minus-circle-linear';
+export { default as SendEmailIcon } from 'virtual:icons/solar/plain-2-linear';
+export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';
+export { default as VolumeUsedIcon } from 'virtual:icons/clarity/hard-disk-solid-badged';

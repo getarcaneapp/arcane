@@ -13,9 +13,6 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import SendIcon from '@lucide/svelte/icons/send';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import settingsStore from '$lib/stores/config-store';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
@@ -23,8 +20,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { notificationService } from '$lib/services/notification-service';
 	import type { EmailTLSMode, AppriseSettings } from '$lib/types/notification.type';
-	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { NotificationsIcon, SendEmailIcon, ArrowDownIcon } from '$lib/icons';
 
 	interface FormNotificationSettings {
 		discordEnabled: boolean;
@@ -437,7 +434,7 @@
 <SettingsPageLayout
 	title={m.notifications_title()}
 	description={m.notifications_description()}
-	icon={BellIcon}
+	icon={NotificationsIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -547,7 +544,7 @@
 														{#if isTesting}
 															<Spinner class="mr-2 h-4 w-4" />
 														{:else}
-															<SendIcon class="mr-2 h-4 w-4" />
+															<SendEmailIcon class="mr-2 h-4 w-4" />
 														{/if}
 														{m.notifications_discord_test_button()}
 													</Button>
@@ -708,19 +705,19 @@
 																{#if isTesting}
 																	<Spinner class="mr-2 h-4 w-4" />
 																{:else}
-																	<SendIcon class="mr-2 h-4 w-4" />
+																	<SendEmailIcon class="mr-2 h-4 w-4" />
 																{/if}
 																{m.notifications_email_test_button()}
-																<ChevronDownIcon class="ml-2 h-4 w-4" />
+																<ArrowDownIcon class="ml-2 h-4 w-4" />
 															</Button>
 														</DropdownMenu.Trigger>
 														<DropdownMenu.Content align="start">
 															<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
-																<SendIcon class="mr-2 h-4 w-4" />
+																<SendEmailIcon class="mr-2 h-4 w-4" />
 																{m.notifications_email_test_simple()}
 															</DropdownMenu.Item>
 															<DropdownMenu.Item onclick={() => testNotification('email', 'image-update')}>
-																<SendIcon class="mr-2 h-4 w-4" />
+																<SendEmailIcon class="mr-2 h-4 w-4" />
 																{m.notifications_email_test_image_update()}
 															</DropdownMenu.Item>
 														</DropdownMenu.Content>
@@ -795,7 +792,7 @@
 														{#if isTesting}
 															<Spinner class="mr-2 h-4 w-4" />
 														{:else}
-															<SendIcon class="mr-2 h-4 w-4" />
+															<SendEmailIcon class="mr-2 h-4 w-4" />
 														{/if}
 														{m.notifications_apprise_test_button()}
 													</Button>

@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import { SettingsIcon } from '$lib/icons';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import { Separator } from '$lib/components/ui/separator';

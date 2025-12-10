@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import NavigationIcon from '@lucide/svelte/icons/navigation';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import {
+		SearchIcon,
+		SettingsIcon,
+		UserIcon,
+		SecurityIcon,
+		NotificationsIcon,
+		ArrowRightIcon,
+		DockerBrandIcon,
+		ApiKeyIcon,
+		ApperanceIcon
+	} from '$lib/icons';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
@@ -28,10 +31,12 @@
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
-		database: DatabaseIcon,
-		shield: ShieldIcon,
-		navigation: NavigationIcon,
-		user: UserIcon
+		database: DockerBrandIcon,
+		shield: SecurityIcon,
+		appearance: ApperanceIcon,
+		bell: NotificationsIcon,
+		user: UserIcon,
+		apikey: ApiKeyIcon
 	};
 
 	onMount(async () => {
@@ -170,9 +175,7 @@
 									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>
-							<ChevronRightIcon
-								class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors"
-							/>
+							<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
 						</div>
 					</button>
 				</Card>

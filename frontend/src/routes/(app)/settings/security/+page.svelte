@@ -12,13 +12,11 @@
 	import type { Settings } from '$lib/types/settings.type';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import LockIcon from '@lucide/svelte/icons/lock';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import { LockIcon, InfoIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 
 	let { data }: { data: PageData } = $props();
@@ -107,7 +105,6 @@
 			$formInputs.oidcClientSecret.value !== ''
 	);
 
-	const clipboard = new UseClipboard();
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
 	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
 
@@ -189,11 +186,6 @@
 	function cancelMergeAccounts() {
 		$formInputs.oidcMergeAccounts.value = false;
 		showMergeAccountsAlert = false;
-	}
-
-	function handleCopy(text?: string) {
-		if (!text) return;
-		clipboard.copy(text);
 	}
 
 	onMount(() => {
@@ -373,15 +365,7 @@
 											<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
 											<div class="flex items-center gap-2">
 												<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => handleCopy(redirectUri)}
-													class="shrink-0"
-													title={m.common_copy()}
-												>
-													<CopyIcon class="size-3" />
-												</Button>
+												<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
 											</div>
 										</div>
 									</div>
