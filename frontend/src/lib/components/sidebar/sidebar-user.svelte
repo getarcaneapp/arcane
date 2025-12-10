@@ -147,9 +147,9 @@
 						>
 							<div class="group-hover:bg-muted-foreground/10 rounded-lg bg-transparent p-1 transition-colors duration-200">
 								{#if mode.current === 'dark'}
-									<SunIcon size={16} class="transition-transform duration-200" />
-								{:else}
-									<MoonIcon size={16} class="transition-transform duration-200" />
+								<SunIcon class="size-4 transition-transform duration-200" />
+							{:else}
+								<MoonIcon class="size-4 transition-transform duration-200" />
 								{/if}
 							</div>
 							<span class="font-medium">{m.common_toggle_theme()}</span>

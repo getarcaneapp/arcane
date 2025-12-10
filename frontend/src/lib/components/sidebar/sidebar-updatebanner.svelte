@@ -170,7 +170,7 @@
 						class="group flex items-center justify-between text-blue-600 transition-colors duration-200 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
 					>
 						{@render updateInfo()}
-						<ExternalLinkIcon size={16} class="transition-transform duration-200 group-hover:scale-110" />
+						<ExternalLinkIcon class="size-4 transition-transform duration-200 group-hover:scale-110" />
 					</a>
 
 					{#if shouldShowUpgrade}
@@ -215,7 +215,7 @@
 									class="border-primary/20 bg-primary/15 text-primary hover:bg-primary/25 focus-visible:ring-primary/40 dark:text-primary flex size-8 items-center justify-center rounded-lg border transition-all hover:scale-[1.02] hover:shadow-md focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 									{...props}
 								>
-									<DownloadIcon size={14} />
+									<DownloadIcon class="size-3.5" />
 								</button>
 							{/snippet}
 						</Tooltip.Trigger>
