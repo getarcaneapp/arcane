@@ -8,7 +8,7 @@
 		ports?: ContainerPorts[];
 	}>();
 
-	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? $settingsStore?.serverBaseUrl ?? $settingsStore?.baseUrl ?? '');
+	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? 'http://localhost');
 
 	type NormalizedPort = {
 		hostPort: string | null;
