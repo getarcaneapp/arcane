@@ -9,7 +9,6 @@
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { Environment } from '$lib/types/environment.type';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
@@ -86,18 +85,18 @@
 
 	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.compose_update_projects(),
-			onclick: handleCheckForUpdates,
-			loading: isLoading.updating,
-			disabled: isLoading.updating
-		},
-		{
 			id: 'create',
 			action: 'create',
 			label: m.compose_create_project(),
 			onclick: () => goto('/projects/new')
+		},
+		{
+			id: 'check-updates',
+			action: 'update',
+			label: m.compose_update_projects(),
+			onclick: handleCheckForUpdates,
+			loading: isLoading.updating,
+			disabled: isLoading.updating
 		},
 		{
 			id: 'refresh',
