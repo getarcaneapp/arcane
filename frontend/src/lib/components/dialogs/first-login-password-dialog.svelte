@@ -91,7 +91,7 @@
 						bind:value={currentPassword}
 						placeholder={m.first_login_current_password_placeholder()}
 						required
-						disabled={true}
+						disabled={isLoading}
 					/>
 					<InputGroup.Addon align="inline-end">
 						<InputGroup.Button
