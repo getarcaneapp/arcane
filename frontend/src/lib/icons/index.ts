@@ -5,7 +5,7 @@ export type IconType = Component<SVGAttributes<SVGSVGElement>>;
 
 export { default as DashboardIcon } from 'virtual:icons/tabler/home-filled';
 export { default as ProjectsIcon } from 'virtual:icons/solar/folder-with-files-bold';
-export { default as EnvironmentsIcon } from 'virtual:icons/tabler/server-2';
+export { default as EnvironmentsIcon } from 'virtual:icons/solar/server-minimalistic-linear';
 export { default as CustomizeIcon } from 'virtual:icons/material-symbols/inbox-customize-outline-rounded';
 export { default as ContainersIcon } from 'virtual:icons/carbon/web-services-container';
 export { default as ImagesIcon } from 'virtual:icons/solar/gallery-linear';
@@ -94,3 +94,6 @@ export { default as MoveToFolderIcon } from 'virtual:icons/solar/add-folder-line
 export { default as CommunityIcon } from 'virtual:icons/solar/users-group-two-rounded-linear';
 export { default as FolderOpenIcon } from 'virtual:icons/solar/folder-open-linear';
 export { default as ConnectionIcon } from 'virtual:icons/gravity-ui/plug-connection';
+export { default as LayersIcon } from 'virtual:icons/solar/layers-minimalistic-linear';
+export { default as HashIcon } from 'virtual:icons/gravity-ui/hashtag';
+export { default as LocalFolderComputerIcon } from 'virtual:icons/streamline/local-storage-folder-remix';

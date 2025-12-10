@@ -1,20 +1,21 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import type { PageData } from './$types';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import HashIcon from '@lucide/svelte/icons/hash';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ListTreeIcon from '@lucide/svelte/icons/list-tree';
-	import ContainerIcon from '@lucide/svelte/icons/container';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
-	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
+	import {
+		AlertIcon,
+		VolumesIcon,
+		ClockIcon,
+		TagIcon,
+		LayersIcon,
+		HashIcon,
+		NetworksIcon,
+		GlobeIcon,
+		SettingsIcon,
+		ContainersIcon,
+		InfoIcon,
+		ArrowUpIcon,
+		ArrowDownIcon
+	} from '$lib/icons';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -25,7 +26,6 @@
 	import { goto } from '$app/navigation';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
-	import type { NetworkInspectDto } from '$lib/types/network.type';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 
@@ -156,7 +156,7 @@
 
 	{#if errorMessage}
 		<Alert.Root variant="destructive">
-			<CircleAlertIcon class="mr-2 size-4" />
+			<AlertIcon class="mr-2 size-4" />
 			<Alert.Title>{m.common_action_failed()}</Alert.Title>
 			<Alert.Description>{errorMessage}</Alert.Description>
 		</Alert.Root>
@@ -190,7 +190,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<NetworkIcon class="size-5 text-blue-500" />
+								<NetworksIcon class="size-5 text-blue-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
@@ -202,7 +202,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10 p-2">
-								<HardDriveIcon class="size-5 text-orange-500" />
+								<VolumesIcon class="size-5 text-orange-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
@@ -268,7 +268,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
-								<ListTreeIcon class="size-5 text-indigo-500" />
+								<NetworksIcon class="size-5 text-indigo-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.ipv6_enabled()}</p>
@@ -386,7 +386,7 @@
 
 			{#if connectedContainers.length > 0}
 				<Card.Root>
-					<Card.Header icon={ContainerIcon}>
+					<Card.Header icon={ContainersIcon}>
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>{m.networks_connected_containers_title()}</Card.Title>
 							<Card.Description
@@ -437,7 +437,7 @@
 										<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 												<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
-													<ContainerIcon class="text-muted-foreground mr-1.5 size-3.5" />
+													<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
 													{container.name ?? container.Name}
 												</a>
 											</div>
@@ -521,7 +521,7 @@
 	{:else}
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 			<div class="bg-muted/30 mb-4 rounded-full p-4">
-				<NetworkIcon class="text-muted-foreground size-10 opacity-70" />
+				<NetworksIcon class="text-muted-foreground size-10 opacity-70" />
 			</div>
 			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.networks_title() })}</h2>
 			<p class="text-muted-foreground mb-6">{m.common_not_found_description({ resource: m.networks_title().toLowerCase() })}</p>

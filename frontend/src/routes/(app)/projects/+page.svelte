@@ -1,7 +1,5 @@
 <script lang="ts">
-	import FileStackIcon from '@lucide/svelte/icons/file-stack';
-	import PlayCircleIcon from '@lucide/svelte/icons/play-circle';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
+	import { ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -115,21 +113,21 @@
 		{
 			title: m.compose_total(),
 			value: totalCompose,
-			icon: FileStackIcon,
+			icon: ProjectsIcon,
 			iconColor: 'text-amber-500',
 			class: 'border-l-4 border-l-amber-500'
 		},
 		{
 			title: m.common_running(),
 			value: runningCompose,
-			icon: PlayCircleIcon,
+			icon: StartIcon,
 			iconColor: 'text-green-500',
 			class: 'border-l-4 border-l-green-500'
 		},
 		{
 			title: m.common_stopped(),
 			value: stoppedCompose,
-			icon: StopCircleIcon,
+			icon: StopIcon,
 			iconColor: 'text-red-500',
 			class: 'border-l-4 border-l-red-500'
 		}

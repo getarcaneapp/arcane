@@ -1,12 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import { ArrowLeftIcon, TerminalIcon, CopyIcon, InfoIcon, TemplateIcon, AddIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
-	import WandIcon from '@lucide/svelte/icons/wand';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -20,14 +15,13 @@
 	import type { Template } from '$lib/types/template.type';
 	import { z } from 'zod/v4';
 	import { arcaneButtonVariants, actionConfigs } from '$lib/components/arcane-button/variants';
-	import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service.js';
 	import { systemService } from '$lib/services/system-service.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 
@@ -209,7 +203,7 @@
 												<Spinner class="size-4" />
 												{m.common_action_creating()}
 											{:else}
-												<PlusCircleIcon class="size-4" />
+												<AddIcon class="size-4" />
 												{m.compose_create_project()}
 											{/if}
 										</Button>
@@ -249,7 +243,7 @@
 									disabled={saving || converting || isLoadingTemplateContent}
 									onclick={() => (showTemplateDialog = true)}
 								>
-									<LayoutTemplateIcon class="size-4" />
+									<TemplateIcon class="size-4" />
 									{m.common_use_template()}
 								</DropdownMenu.Item>
 								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (showConverterDialog = true)}>
@@ -270,7 +264,7 @@
 									{#if creatingTemplate}
 										<Spinner class="size-4" />
 									{:else}
-										<WandIcon class="size-4" />
+										<AddIcon class="size-4" />
 									{/if}
 									{m.templates_create_template()}
 								</DropdownMenu.Item>
@@ -374,7 +368,7 @@
 					<Spinner class="mr-2 size-4" />
 					{m.compose_converting()}
 				{:else}
-					<WandIcon class="mr-2 size-4" />
+					<AddIcon class="mr-2 size-4" />
 					{m.compose_convert_action()}
 				{/if}
 			</Button>
