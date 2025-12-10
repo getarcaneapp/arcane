@@ -22,10 +22,6 @@
 	let isCreateDialogOpen = $state(false);
 	let isLoading = $state({ checking: false, create: false, refreshing: false });
 
-	const baseServerUrl = $derived(
-		(data.settings as any)?.serverBaseUrl ?? (data.settings as any)?.baseServerUrl ?? (data.settings as any)?.baseUrl ?? ''
-	);
-
 	async function refresh() {
 		await parallelRefresh(
 			{
@@ -117,7 +113,7 @@
 	statCardsColumns={3}
 >
 	{#snippet mainContent()}
-		<ContainerTable bind:containers bind:selectedIds bind:requestOptions {baseServerUrl} />
+		<ContainerTable bind:containers bind:selectedIds bind:requestOptions />
 	{/snippet}
 
 	{#snippet additionalContent()}

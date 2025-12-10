@@ -49,13 +49,11 @@
 	let {
 		containers = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable(),
-		baseServerUrl = $bindable()
+		requestOptions = $bindable()
 	}: {
 		containers: Paginated<ContainerSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		baseServerUrl: string;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
@@ -321,7 +319,7 @@
 </script>
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} {baseServerUrl} />
+	<PortBadge ports={item.ports ?? []} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
@@ -491,7 +489,7 @@
 							{m.common_ports()}
 						</div>
 						<div class="mt-1">
-							<PortBadge ports={item.ports} {baseServerUrl} />
+							<PortBadge ports={item.ports} />
 						</div>
 					</div>
 				</div>

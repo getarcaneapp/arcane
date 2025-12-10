@@ -265,10 +265,6 @@
 		return d ? format(d, fmt) : 'N/A';
 	}
 
-	const baseServerUrl = $derived(
-		(data?.settings as any)?.serverBaseUrl ?? (data?.settings as any)?.baseServerUrl ?? (data?.settings as any)?.baseUrl ?? ''
-	);
-
 	const backUrl = $derived.by(() => {
 		const from = page.url.searchParams.get('from');
 		const projectId = page.url.searchParams.get('projectId');
@@ -309,7 +305,7 @@
 
 		{#snippet tabContent(activeTab)}
 			<Tabs.Content value="overview" class="h-full">
-				<ContainerOverview {container} {primaryIpAddress} {baseServerUrl} />
+				<ContainerOverview {container} {primaryIpAddress} />
 			</Tabs.Content>
 
 			{#if showStats}

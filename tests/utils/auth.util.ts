@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 async function login(page: Page) {
   await page.goto('/login');
@@ -10,7 +10,8 @@ async function login(page: Page) {
 async function changeDefaultPassword(page: Page, newPassword: string) {
   const dialog = page.getByRole('dialog', { name: 'Change Default Password' });
   await dialog.waitFor({ state: 'visible' });
-  await dialog.getByRole('textbox', { name: 'Current Password' }).fill('arcane-admin');
+  const currentPasswordInput = dialog.getByRole('textbox', { name: 'Current Password' });
+  await expect(currentPasswordInput).toBeDisabled();
   await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill(newPassword);
   await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill(newPassword);
   await dialog.getByRole('button', { name: 'Change Password' }).click();

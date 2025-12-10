@@ -10,10 +10,9 @@
 	interface Props {
 		container: ContainerDetailsDto;
 		primaryIpAddress: string;
-		baseServerUrl: string;
 	}
 
-	let { container, primaryIpAddress, baseServerUrl }: Props = $props();
+	let { container, primaryIpAddress }: Props = $props();
 
 	function parseDockerDate(input: string | Date | undefined | null): Date | null {
 		if (!input) return null;
@@ -352,7 +351,7 @@
 				<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
 					{m.common_port_mappings()}
 				</div>
-				<PortBadge ports={container.ports} {baseServerUrl} />
+				<PortBadge ports={container.ports} />
 			</div>
 		{/if}
 	</Card.Content>
