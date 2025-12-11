@@ -101,3 +101,5 @@ export { default as MinusIcon } from 'virtual:icons/solar/minus-circle-linear';
 export { default as SendEmailIcon } from 'virtual:icons/solar/plain-2-linear';
 export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';
 export { default as VolumeUsedIcon } from 'virtual:icons/clarity/hard-disk-solid-badged';
+export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';
+export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';

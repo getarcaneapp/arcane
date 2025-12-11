@@ -4,7 +4,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, ArrowRightIcon, GithubIcon } from '$lib/icons';
+	import { AlertIcon, LockIcon, UserIcon, ArrowRightIcon, GithubIcon, OpenIdIcon, LoginIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
@@ -202,7 +202,7 @@
 									<div class="mr-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
 									{m.auth_signing_in()}
 								{:else}
-									<ArrowRightIcon class="mr-2 size-4" />
+									<LoginIcon class="mr-2 size-4" />
 									{m.auth_signin_button()}
 								{/if}
 							</Button>
@@ -223,7 +223,7 @@
 
 						{#if showOidcLoginButton && showDivider}
 							<Button onclick={handleOidcLogin} variant="outline" class="hover-lift w-full" size="lg">
-								<ArrowRightIcon class="mr-2 size-4" />
+								<OpenIdIcon class="size-4" />
 								{m.auth_oidc_signin()}
 							</Button>
 						{/if}
