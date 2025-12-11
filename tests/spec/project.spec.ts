@@ -39,9 +39,11 @@ test.describe('Projects Page', () => {
   });
 
   test('should display summary cards with correct counts', async ({ page }) => {
-    await expect(page.locator('p:has-text("Total Projects") + p')).toHaveText(String(projectCounts.totalProjects));
-    await expect(page.locator('p:has-text("Running") + p')).toHaveText(String(projectCounts.runningProjects));
-    await expect(page.locator('p:has-text("Stopped") + p')).toHaveText(String(projectCounts.stoppedProjects));
+    await expect(page.locator('div:has(> p:has-text("Total Projects")) h3').first()).toHaveText(
+      String(projectCounts.totalProjects)
+    );
+    await expect(page.locator('div:has(> p:has-text("Running")) h3').first()).toHaveText(String(projectCounts.runningProjects));
+    await expect(page.locator('div:has(> p:has-text("Stopped")) h3').first()).toHaveText(String(projectCounts.stoppedProjects));
   });
 
   test('should display projects list', async ({ page }) => {

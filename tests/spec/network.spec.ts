@@ -31,9 +31,9 @@ test.describe('Networks Page', () => {
 
     console.log('Network Counts:', counts);
 
-    // Use the div filter locator to find stat cards
-    const totalValue = page.locator('div').filter({ hasText: 'Total Networks' }).nth(5).locator('p').nth(1);
-    const unusedValue = page.locator('div').filter({ hasText: 'Unused Networks' }).nth(5).locator('p').nth(1);
+    // Use the new stat card structure with h3 for values
+    const totalValue = page.locator('div:has(> p:has-text("Total Networks")) h3').first();
+    const unusedValue = page.locator('div:has(> p:has-text("Unused Networks")) h3').first();
 
     await expect(totalValue).toHaveText(String(counts.total));
     await expect(unusedValue).toHaveText(String(counts.unused));
@@ -53,7 +53,7 @@ test.describe('Networks Page', () => {
     await navigateToNetworks(page);
     await page.locator('button:has-text("Create Network")').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Create Network' })).toBeVisible();
+    await expect(page.locator('h2:has-text("Create Network")')).toBeVisible();
     await page.locator('button:has-text("Create Network")').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
