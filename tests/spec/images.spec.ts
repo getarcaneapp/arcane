@@ -38,8 +38,8 @@ test.describe('Images Page', () => {
   test('should display stats cards with correct counts and size', async ({ page }) => {
     await navigateToImages(page);
 
-    await expect(page.locator('p:has-text("Total Images") + p')).toHaveText(imageCounts.totalImages.toString());
-    await expect(page.locator('p:has-text("Total Size") + p')).not.toBeEmpty();
+    await expect(page.locator('div:has(> p:has-text("Total Images")) h3').first()).toHaveText(imageCounts.totalImages.toString());
+    await expect(page.locator('div:has(> p:has-text("Total Size")) h3').first()).not.toBeEmpty();
   });
 
   test('should display the image table when images exist', async ({ page }) => {
@@ -58,7 +58,9 @@ test.describe('Images Page', () => {
   test('should open the Prune Unused Images dialog', async ({ page }) => {
     await navigateToImages(page);
     await page.locator('button:has-text("Prune Unused")').click();
-    await expect(page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')).toBeVisible();
+    await expect(
+      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')
+    ).toBeVisible();
   });
 
   test('should navigate to image details on inspect click', async ({ page }) => {
@@ -105,7 +107,9 @@ test.describe('Images Page', () => {
 
     await page.locator('button:has-text("Prune Unused")').click();
 
-    await expect(page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')).toBeVisible();
+    await expect(
+      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')
+    ).toBeVisible();
 
     await page.locator('button:has-text("Prune Images")').click();
 

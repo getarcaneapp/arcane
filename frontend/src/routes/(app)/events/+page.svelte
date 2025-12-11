@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -11,6 +10,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import { EventsIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -54,7 +54,9 @@
 							result,
 							message: m.events_delete_item_failed({ id: eventId }),
 							setLoadingState: () => {},
-							onSuccess: () => { successCount++; }
+							onSuccess: () => {
+								successCount++;
+							}
 						});
 						if (result.error) failureCount++;
 					}
@@ -75,21 +77,82 @@
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0
-			? [{ id: 'remove-selected', action: 'remove' as const, label: m.events_remove_selected(), onclick: handleDeleteSelected, loading: isLoading.deleting, disabled: isLoading.deleting }]
+			? [
+					{
+						id: 'remove-selected',
+						action: 'remove' as const,
+						label: m.events_remove_selected(),
+						onclick: handleDeleteSelected,
+						loading: isLoading.deleting,
+						disabled: isLoading.deleting
+					}
+				]
 			: []),
-		{ id: 'refresh', action: 'restart' as const, label: m.common_refresh(), onclick: refresh, loading: isLoading.refreshing, disabled: isLoading.refreshing }
+		{
+			id: 'refresh',
+			action: 'restart' as const,
+			label: m.common_refresh(),
+			onclick: refresh,
+			loading: isLoading.refreshing,
+			disabled: isLoading.refreshing
+		}
 	]);
 
 	const statCards: StatCardConfig[] = $derived([
-		{ title: m.events_total(), value: totalEvents, subtitle: m.events_total_subtitle(), icon: ActivityIcon, class: 'border-l-4 border-l-primary' },
-		{ title: m.events_info(), value: infoEvents, subtitle: m.events_info_subtitle(), icon: ActivityIcon, iconColor: 'text-blue-500', bgColor: 'bg-blue-500/10', class: 'border-l-4 border-l-blue-500' },
-		{ title: m.events_success(), value: successEvents, subtitle: m.events_success_subtitle(), icon: ActivityIcon, iconColor: 'text-green-500', bgColor: 'bg-green-500/10', class: 'border-l-4 border-l-green-500' },
-		{ title: m.events_warning(), value: warningEvents, subtitle: m.events_warning_subtitle(), icon: ActivityIcon, iconColor: 'text-yellow-500', bgColor: 'bg-yellow-500/10', class: 'border-l-4 border-l-yellow-500' },
-		{ title: m.events_error(), value: errorEvents, subtitle: m.events_error_subtitle(), icon: ActivityIcon, iconColor: 'text-red-500', bgColor: 'bg-red-500/10', class: 'border-l-4 border-l-red-500' }
+		{
+			title: m.events_total(),
+			value: totalEvents,
+			subtitle: m.events_total_subtitle(),
+			icon: EventsIcon,
+			class: 'border-l-4 border-l-primary'
+		},
+		{
+			title: m.events_info(),
+			value: infoEvents,
+			subtitle: m.events_info_subtitle(),
+			icon: EventsIcon,
+			iconColor: 'text-blue-500',
+			bgColor: 'bg-blue-500/10',
+			class: 'border-l-4 border-l-blue-500'
+		},
+		{
+			title: m.events_success(),
+			value: successEvents,
+			subtitle: m.events_success_subtitle(),
+			icon: EventsIcon,
+			iconColor: 'text-green-500',
+			bgColor: 'bg-green-500/10',
+			class: 'border-l-4 border-l-green-500'
+		},
+		{
+			title: m.events_warning(),
+			value: warningEvents,
+			subtitle: m.events_warning_subtitle(),
+			icon: EventsIcon,
+			iconColor: 'text-yellow-500',
+			bgColor: 'bg-yellow-500/10',
+			class: 'border-l-4 border-l-yellow-500'
+		},
+		{
+			title: m.events_error(),
+			value: errorEvents,
+			subtitle: m.events_error_subtitle(),
+			icon: EventsIcon,
+			iconColor: 'text-red-500',
+			bgColor: 'bg-red-500/10',
+			class: 'border-l-4 border-l-red-500'
+		}
 	]);
 </script>
 
-<ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards} statCardsColumns={5} containerClass="flex h-full flex-col space-y-6">
+<ResourcePageLayout
+	title={m.events_title()}
+	subtitle={m.events_subtitle()}
+	{actionButtons}
+	{statCards}
+	statCardsColumns={5}
+	containerClass="flex h-full flex-col space-y-6"
+>
 	{#snippet mainContent()}
 		<div class="flex-1 overflow-hidden">
 			<EventTable bind:events bind:selectedIds bind:requestOptions />

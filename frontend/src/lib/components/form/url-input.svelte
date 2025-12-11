@@ -4,7 +4,7 @@
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import { ArrowDownIcon } from '$lib/icons';
 
 	type Props = {
 		id?: string;
@@ -46,7 +46,7 @@
 				{#snippet child({ props })}
 					<Button {...props} variant="secondary" class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm" {disabled}>
 						{protocol}://
-						<ChevronDownIcon class="size-3 opacity-50" />
+						<ArrowDownIcon class="size-3 opacity-50" />
 					</Button>
 				{/snippet}
 			</DropdownMenu.Trigger>

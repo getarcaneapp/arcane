@@ -1,14 +1,12 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
-	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
 	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { onDestroy } from 'svelte';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import { cn } from '$lib/utils';
+	import { AlertIcon, InfoIcon, SuccessIcon } from '$lib/icons';
 
 	let {
 		open = $bindable(false),
@@ -153,10 +151,10 @@
 			<div class="space-y-4 py-4">
 				<div class="flex items-center justify-center gap-2 text-sm">
 					{#if upgradeStatus === 'countdown'}
-						<CheckCircle2Icon class="size-5 text-green-500" />
+						<SuccessIcon class="size-5 text-green-500" />
 						<span class="font-medium text-green-600 dark:text-green-400">{m.upgrade_status_complete()}</span>
 					{:else if upgradeStatus === 'ready'}
-						<CheckCircle2Icon class="size-5 animate-pulse text-green-500" />
+						<SuccessIcon class="size-5 animate-pulse text-green-500" />
 						<span class="font-medium text-green-600 dark:text-green-400">{m.upgrade_status_detected()}</span>
 					{:else}
 						<Spinner class="text-primary size-5" />
@@ -210,7 +208,7 @@
 
 				<div class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950/20">
 					<p class="flex items-center gap-2 text-sm font-medium text-orange-800 dark:text-orange-200">
-						<AlertTriangleIcon class="size-4" />
+						<AlertIcon class="size-4" />
 						{m.upgrade_warning_interruption()}
 					</p>
 				</div>

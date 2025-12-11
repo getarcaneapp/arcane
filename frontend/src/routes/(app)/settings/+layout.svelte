@@ -3,17 +3,15 @@
 	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon, SaveIcon, ResetIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
+	import { cn } from '$lib/utils';
+	import { navigationItems } from '$lib/config/navigation-config';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -32,6 +30,17 @@
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
+
+	const navItems = $derived.by(() => {
+		const settingsEntry = navigationItems.settingsItems.find((item) => item.url === '/settings');
+		return (
+			settingsEntry?.items?.map((item) => ({
+				href: item.url,
+				label: item.title,
+				icon: item.icon
+			})) ?? []
+		);
+	});
 
 	// Track mobile nav visibility for FAB positioning
 	let mobileNavVisible = $state(true);
@@ -130,6 +139,10 @@
 				return m.users_title();
 			case 'navigation':
 				return m.navigation_title();
+			case 'notifications':
+				return m.notifications_title();
+			case 'api-keys':
+				return m.api_key_page_title();
 			default:
 				return m.sidebar_settings();
 		}
@@ -157,86 +170,73 @@
 	}
 </script>
 
-{#if isSubPage}
-	<div
-		class="bg-background/95 fixed top-4 z-5 rounded-lg border shadow-lg backdrop-blur-md transition-all duration-200"
-		style="left: {leftPosition()}; right: 1rem;"
-	>
-		<div class="px-4 py-3">
-			<div class="flex items-center justify-between gap-4">
-				<div class="flex min-w-0 items-center gap-2">
-					<Button
-						variant="ghost"
-						size="sm"
-						onclick={goBackToSettings}
-						class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
+<div class="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
+	<!-- Desktop Sidebar -->
+	<aside class="bg-background/50 hidden w-64 shrink-0 border-r backdrop-blur-sm md:block">
+		<div class="sticky top-0 px-3 py-4">
+			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
+			<nav class="space-y-1">
+				{#each navItems as item}
+					{@const isActive = currentPath.startsWith(item.href)}
+					<a
+						href={item.href}
+						class={cn(
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+						)}
 					>
-						<ArrowLeftIcon class="size-4" />
-						<span class="hidden sm:inline">Back</span>
-					</Button>
+						<item.icon class="size-4" />
+						{item.label}
+					</a>
+				{/each}
+			</nav>
+		</div>
+	</aside>
 
-					<nav class="flex min-w-0 items-center gap-2 text-sm">
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={goBackToSettings}
-							class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
-						>
-							<SettingsIcon class="size-4" />
-							<span>Settings</span>
-						</Button>
-						<ChevronRightIcon class="text-muted-foreground size-4 shrink-0" />
-						<span class="text-foreground truncate font-medium">{pageTitle()}</span>
-					</nav>
-				</div>
-
-				<!-- Save Section - Desktop only -->
-				<div class="hidden shrink-0 items-center gap-3 sm:flex">
-					{#if !isReadOnly}
-						{#if formState.hasChanges}
-							<span class="text-xs text-orange-600 dark:text-orange-400"> Unsaved changes </span>
-						{:else if !formState.hasChanges && formState.saveFunction}
-							<span class="text-xs text-green-600 dark:text-green-400"> All changes saved </span>
-						{/if}
-
-						{#if formState.hasChanges && formState.resetFunction}
+	<!-- Main Content -->
+	<main class="min-w-0 flex-1">
+		{#if isSubPage}
+			<div
+				class="bg-background/95 sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg backdrop-blur-md transition-all duration-200 md:hidden"
+			>
+				<div class="px-4 py-3">
+					<div class="flex items-center justify-between gap-4">
+						<div class="flex min-w-0 items-center gap-2">
 							<Button
-								variant="outline"
+								variant="ghost"
 								size="sm"
-								onclick={() => formState.resetFunction && formState.resetFunction()}
-								disabled={formState.isLoading}
-								class="gap-2"
+								onclick={goBackToSettings}
+								class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
 							>
-								<RotateCcwIcon class="size-4" />
-								<span class="hidden sm:inline">{m.common_reset()}</span>
+								<ArrowLeftIcon class="size-4" />
+								<span class="hidden sm:inline">{m.common_back()}</span>
 							</Button>
-						{/if}
 
-						<Button
-							onclick={handleSave}
-							disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
-							size="sm"
-							class="min-w-[80px] gap-2"
-						>
-							{#if formState.isLoading}
-								<div class="border-background size-4 animate-spin rounded-full border-2 border-t-transparent"></div>
-								<span class="hidden sm:inline">{m.common_saving()}</span>
-							{:else}
-								<SaveIcon class="size-4" />
-								<span class="hidden sm:inline">{m.common_save()}</span>
-							{/if}
-						</Button>
-					{/if}
+							<nav class="flex min-w-0 items-center gap-2 text-sm">
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={goBackToSettings}
+									class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
+								>
+									<SettingsIcon class="size-4" />
+									<span>{m.settings_title()}</span>
+								</Button>
+								<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
+								<span class="text-foreground truncate font-medium">{pageTitle()}</span>
+							</nav>
+						</div>
+					</div>
 				</div>
 			</div>
-		</div>
-	</div>
-{/if}
+		{/if}
 
-<div class="settings-container">
-	<div class="settings-content w-full max-w-none" class:pt-20={isSubPage}>
-		{@render children()}
-	</div>
+		<div class="settings-container">
+			<div class="settings-content w-full max-w-none">
+				{@render children()}
+			</div>
+		</div>
+	</main>
 </div>
 
 <!-- Mobile Floating Action Buttons -->
@@ -259,7 +259,7 @@
 				disabled={formState.isLoading}
 				class="bg-background/80 size-14 rounded-full border-2 shadow-lg backdrop-blur-md"
 			>
-				<RotateCcwIcon class="size-5" />
+				<ResetIcon class="size-5" />
 			</Button>
 		{/if}
 

@@ -2,18 +2,10 @@
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
-	import XCircleIcon from '@lucide/svelte/icons/x-circle';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import TagIcon from '@lucide/svelte/icons/tag';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { Event } from '$lib/types/event.type';
-	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { AlertIcon, InfoIcon, EnvironmentsIcon, UserIcon, ClockIcon } from '$lib/icons';
 
 	type Severity = 'success' | 'warning' | 'error' | 'info';
 
@@ -23,8 +15,6 @@
 	}
 
 	let { open = $bindable(), event }: Props = $props();
-
-	const clipboard = new UseClipboard();
 
 	const hasMetadata = $derived(!!event?.metadata && Object.keys(event.metadata ?? {}).length > 0);
 	const eventJson = $derived.by(() => JSON.stringify(event ?? {}, null, 2));
@@ -60,11 +50,6 @@
 		return baseClasses[sev];
 	}
 
-	function handleCopy(text?: string) {
-		if (!text) return;
-		clipboard.copy(text);
-	}
-
 	function handleClose() {
 		open = false;
 	}
@@ -91,11 +76,11 @@
 	<div class="flex items-start gap-3 border-b pb-4">
 		<div class="mt-0.5">
 			{#if severity === 'success'}
-				<CheckCircle2Icon class={getSeverityIconClass(severity) + ' size-6'} />
+				<AlertIcon class={getSeverityIconClass(severity) + ' size-6'} />
 			{:else if severity === 'warning'}
-				<TriangleAlertIcon class={getSeverityIconClass(severity) + ' size-6'} />
+				<AlertIcon class={getSeverityIconClass(severity) + ' size-6'} />
 			{:else if severity === 'error'}
-				<XCircleIcon class={getSeverityIconClass(severity) + ' size-6'} />
+				<AlertIcon class={getSeverityIconClass(severity) + ' size-6'} />
 			{:else}
 				<InfoIcon class={getSeverityIconClass(severity) + ' size-6'} />
 			{/if}
@@ -110,16 +95,12 @@
 				</p>
 			{/if}
 			<div class="mt-3 flex flex-wrap items-center gap-2">
-				<Badge class={`border ${getSeverityBadgeClass(severity)}`}>
-					{event?.severity ?? m.common_unknown()}
-				</Badge>
 				<Badge variant="outline" class="gap-1">
-					<TagIcon class="size-3" />
 					{event?.type ?? m.common_unknown()}
 				</Badge>
 				{#if event?.environmentId}
 					<Badge variant="outline" class="gap-1">
-						<ServerIcon class="size-3" />
+						<EnvironmentsIcon class="size-3" />
 						{m.events_environment_label()}: {event.environmentId}
 					</Badge>
 				{/if}
@@ -154,9 +135,7 @@
 		<div class="text-muted-foreground text-xs">{label}</div>
 		<div class="mt-1 flex items-center justify-between gap-2">
 			<div class="text-sm break-all">{value || '-'}</div>
-			<Button variant="ghost" size="icon" class="size-7" onclick={() => handleCopy(value)} title={copyTitle}>
-				<CopyIcon class="size-4" />
-			</Button>
+			<CopyButton text={value ?? ''} size="icon" class="size-7" title={copyTitle} />
 		</div>
 	</div>
 {/snippet}
@@ -165,16 +144,9 @@
 	<div class="rounded-lg border">
 		<div class="flex items-center justify-between border-b px-3 py-2">
 			<h3 class="text-sm font-medium">{m.events_metadata_title()}</h3>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => handleCopy(metadataJson)}
-				disabled={!hasMetadata}
-				title="Copy metadata JSON"
-			>
-				<CopyIcon class="mr-2 size-3" />
+			<CopyButton text={metadataJson} variant="outline" size="sm" title="Copy metadata JSON">
 				{m.common_copy_json()}
-			</Button>
+			</CopyButton>
 		</div>
 		{#if hasMetadata}
 			<pre class="bg-muted/40 max-h-[40vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{metadataJson}</code
@@ -189,10 +161,9 @@
 	<div class="rounded-lg border">
 		<div class="flex items-center justify-between border-b px-3 py-2">
 			<h3 class="text-sm font-medium">{m.events_raw_event_title()}</h3>
-			<Button variant="outline" size="sm" onclick={() => handleCopy(eventJson)} title={m.events_copy_full_event_json_title()}>
-				<CopyIcon class="mr-2 size-3" />
+			<CopyButton text={eventJson} variant="outline" size="sm" title={m.events_copy_full_event_json_title()}>
 				{m.common_copy_json()}
-			</Button>
+			</CopyButton>
 		</div>
 		<pre class="bg-muted/40 max-h-[40vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{eventJson}</code
 			></pre>

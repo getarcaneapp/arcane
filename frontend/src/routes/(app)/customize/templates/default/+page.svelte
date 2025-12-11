@@ -10,13 +10,10 @@
 	import { templateService } from '$lib/services/template-service';
 	import { z } from 'zod/v4';
 	import { goto } from '$app/navigation';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import CodeIcon from '@lucide/svelte/icons/code';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import SaveIcon from '@lucide/svelte/icons/save';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { untrack } from 'svelte';
 	import type { Template } from '$lib/types/template.type';
+	import { ArrowLeftIcon, CodeIcon, VariableIcon, SaveIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -141,7 +138,7 @@
 		</Card.Root>
 
 		<Card.Root class="flex min-w-0 flex-col lg:col-span-2">
-			<Card.Header icon={FileTextIcon} class="shrink-0">
+			<Card.Header icon={VariableIcon} class="shrink-0">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<h2>{m.templates_env_template_label()}</h2>

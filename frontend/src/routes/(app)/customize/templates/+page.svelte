@@ -1,8 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { toast } from 'svelte-sonner';
 	import AddTemplateRegistrySheet from '$lib/components/sheets/add-template-registry-sheet.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -15,6 +12,7 @@
 	import type { TemplateRegistry } from '$lib/types/template.type';
 	import { untrack } from 'svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -27,12 +25,12 @@
 		{
 			value: 'browse',
 			label: m.templates_browse_templates(),
-			icon: LayersIcon
+			icon: TemplateIcon
 		},
 		{
 			value: 'registries',
 			label: m.templates_manage_registries(),
-			icon: GlobeIcon
+			icon: RegistryIcon
 		}
 	];
 
@@ -160,14 +158,14 @@
 		{
 			title: m.templates_remote_templates(),
 			value: remoteTemplatesCount,
-			icon: GlobeIcon,
+			icon: RegistryIcon,
 			iconColor: 'text-green-500',
 			class: 'border-l-4 border-l-green-500'
 		},
 		{
 			title: m.templates_registries(),
 			value: registries.length,
-			icon: LayersIcon,
+			icon: TemplateIcon,
 			iconColor: 'text-purple-500',
 			class: 'border-l-4 border-l-purple-500'
 		}

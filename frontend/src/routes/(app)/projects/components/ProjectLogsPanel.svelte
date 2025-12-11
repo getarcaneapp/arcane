@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { TerminalIcon } from '$lib/icons';
 
 	let {
 		projectId,
@@ -72,16 +72,16 @@
 				<Card.Description>Real-time project logs</Card.Description>
 			</div>
 			<LogControls
-                bind:autoScroll
-                bind:tailLines
-                bind:autoStartLogs
-                {isStreaming}
-                disabled={!projectId}
-                onStart={handleStart}
-                onStop={handleStop}
-                onClear={handleClear}
-                onRefresh={handleRefresh}
-            />
+				bind:autoScroll
+				bind:tailLines
+				bind:autoStartLogs
+				{isStreaming}
+				disabled={!projectId}
+				onStart={handleStart}
+				onStop={handleStop}
+				onClear={handleClear}
+				onRefresh={handleRefresh}
+			/>
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">

@@ -1,21 +1,24 @@
 import { tv, type VariantProps } from 'tailwind-variants';
 
-import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
-import PlayIcon from '@lucide/svelte/icons/play';
-import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-import DownloadIcon from '@lucide/svelte/icons/download';
-import Trash2Icon from '@lucide/svelte/icons/trash-2';
-import RefreshCcwDotIcon from '@lucide/svelte/icons/refresh-ccw-dot';
-import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
-import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-import FileTextIcon from '@lucide/svelte/icons/file-text';
-import EditIcon from '@lucide/svelte/icons/edit';
-import CheckIcon from '@lucide/svelte/icons/check';
-import XIcon from '@lucide/svelte/icons/x';
-import SaveIcon from '@lucide/svelte/icons/save';
-import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
-import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
 import { m } from '$lib/paraglide/messages';
+import {
+	StopIcon,
+	StartIcon,
+	RefreshIcon,
+	DownloadIcon,
+	TrashIcon,
+	UpdateIcon,
+	EditIcon,
+	CheckIcon,
+	AddIcon,
+	CloseIcon,
+	SaveIcon,
+	RestartIcon,
+	InspectIcon,
+	FileTextIcon,
+	TemplateIcon,
+	type IconType
+} from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
 	base:
@@ -68,13 +71,12 @@ export type Action =
 	| 'cancel'
 	| 'save'
 	| 'create'
-	| 'template';
-
-export type IconCtor = typeof PlayIcon;
+	| 'template'
+	| 'update';
 
 export type ActionConfig = {
 	defaultLabel: string;
-	IconComponent: IconCtor;
+	IconComponent: IconType;
 	tone: ArcaneButtonTone;
 	loadingLabel?: string;
 };
@@ -82,31 +84,31 @@ export type ActionConfig = {
 export const actionConfigs: Record<Action, ActionConfig> = {
 	start: {
 		defaultLabel: m.common_start(),
-		IconComponent: PlayIcon,
+		IconComponent: StartIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_starting()
 	},
 	deploy: {
 		defaultLabel: m.common_up(),
-		IconComponent: PlayIcon,
+		IconComponent: StartIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_deploying()
 	},
 	stop: {
 		defaultLabel: m.common_stop(),
-		IconComponent: CircleStopIcon,
+		IconComponent: StopIcon,
 		tone: 'outline-destructive',
 		loadingLabel: m.common_action_stopping()
 	},
 	remove: {
 		defaultLabel: m.common_remove(),
-		IconComponent: Trash2Icon,
+		IconComponent: TrashIcon,
 		tone: 'outline-destructive',
 		loadingLabel: m.common_action_removing()
 	},
 	restart: {
 		defaultLabel: m.common_restart(),
-		IconComponent: RotateCcwIcon,
+		IconComponent: RestartIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_restarting()
 	},
@@ -118,19 +120,19 @@ export const actionConfigs: Record<Action, ActionConfig> = {
 	},
 	redeploy: {
 		defaultLabel: m.common_redeploy(),
-		IconComponent: RefreshCcwDotIcon,
+		IconComponent: RestartIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_redeploying()
 	},
 	refresh: {
 		defaultLabel: m.common_refresh(),
-		IconComponent: RefreshCcwIcon,
+		IconComponent: RefreshIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_refresh()
 	},
 	inspect: {
 		defaultLabel: m.common_inspect(),
-		IconComponent: ScanSearchIcon,
+		IconComponent: InspectIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_inspecting()
 	},
@@ -144,13 +146,13 @@ export const actionConfigs: Record<Action, ActionConfig> = {
 	save: { defaultLabel: m.common_save(), IconComponent: SaveIcon, tone: 'outline-primary', loadingLabel: m.common_saving() },
 	create: {
 		defaultLabel: m.common_create(),
-		IconComponent: PlusCircleIcon,
+		IconComponent: AddIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_creating()
 	},
 	template: {
 		defaultLabel: m.common_use_template(),
-		IconComponent: LayoutTemplateIcon,
+		IconComponent: TemplateIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_creating()
 	},
@@ -160,5 +162,16 @@ export const actionConfigs: Record<Action, ActionConfig> = {
 		tone: 'ghost',
 		loadingLabel: m.common_action_fetching_logs()
 	},
-	cancel: { defaultLabel: m.common_cancel(), IconComponent: XIcon, tone: 'ghost', loadingLabel: m.common_action_cancelling() }
+	cancel: {
+		defaultLabel: m.common_cancel(),
+		IconComponent: CloseIcon,
+		tone: 'ghost',
+		loadingLabel: m.common_action_cancelling()
+	},
+	update: {
+		defaultLabel: m.common_update(),
+		IconComponent: UpdateIcon,
+		tone: 'outline-primary',
+		loadingLabel: m.common_action_updating()
+	}
 };

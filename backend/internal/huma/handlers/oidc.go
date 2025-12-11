@@ -7,8 +7,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
+	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	"go.getarcane.app/types/auth"
 	"go.getarcane.app/types/user"
 )
@@ -17,11 +19,19 @@ import (
 type OidcHandler struct {
 	authService *services.AuthService
 	oidcService *services.OidcService
+	config      *config.Config
 }
 
 // ============================================================================
 // Input/Output Types
 // ============================================================================
+
+type OidcHeaders struct {
+	Origin          string `header:"Origin"`
+	XForwardedHost  string `header:"X-Forwarded-Host"`
+	XForwardedProto string `header:"X-Forwarded-Proto"`
+	Host            string `header:"Host"`
+}
 
 type GetOidcStatusInput struct{}
 
@@ -30,6 +40,7 @@ type GetOidcStatusOutput struct {
 }
 
 type GetOidcAuthUrlInput struct {
+	OidcHeaders
 	Body auth.OidcAuthUrlRequest
 }
 
@@ -39,6 +50,7 @@ type GetOidcAuthUrlOutput struct {
 }
 
 type HandleOidcCallbackInput struct {
+	OidcHeaders
 	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
 	Body            auth.OidcCallbackRequest
 }
@@ -48,7 +60,9 @@ type HandleOidcCallbackOutput struct {
 	Body      auth.OidcCallbackResponse
 }
 
-type GetOidcConfigInput struct{}
+type GetOidcConfigInput struct {
+	OidcHeaders
+}
 
 type GetOidcConfigOutput struct {
 	Body auth.OidcConfigResponse
@@ -59,8 +73,8 @@ type GetOidcConfigOutput struct {
 // ============================================================================
 
 // RegisterOidc registers all OIDC authentication endpoints using Huma.
-func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *services.OidcService) {
-	h := &OidcHandler{authService: authService, oidcService: oidcService}
+func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *services.OidcService, cfg *config.Config) {
+	h := &OidcHandler{authService: authService, oidcService: oidcService, config: cfg}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-oidc-status",
@@ -120,7 +134,7 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 }
 
 // GetOidcConfig returns the OIDC client configuration.
-func (h *OidcHandler) GetOidcConfig(ctx context.Context, _ *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
+func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
 	if h.authService == nil || h.oidcService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -130,10 +144,16 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, _ *GetOidcConfigInput) 
 		return nil, huma.Error500InternalServerError((&common.OidcConfigError{}).Error())
 	}
 
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+
 	return &GetOidcConfigOutput{
 		Body: auth.OidcConfigResponse{
 			ClientID:              config.ClientID,
-			RedirectUri:           h.oidcService.GetOidcRedirectURL(),
+			RedirectUri:           h.oidcService.GetOidcRedirectURL(origin),
 			IssuerUrl:             config.IssuerURL,
 			AuthorizationEndpoint: config.AuthorizationEndpoint,
 			TokenEndpoint:         config.TokenEndpoint,
@@ -157,7 +177,12 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
 	}
 
-	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri)
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
 	}
@@ -184,8 +209,14 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error400BadRequest((&common.OidcStateCookieError{}).Error())
 	}
 
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+
 	// Process OIDC callback
-	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie)
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin)
 	if err != nil {
 		return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
 	}

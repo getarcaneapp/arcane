@@ -22,8 +22,14 @@ const SELECTORS = {
 };
 
 async function openConvertFromDockerRun(page: Page) {
-  const dropdownTrigger = page.locator('button').filter({ has: page.locator('svg.lucide-chevron-down') });
+  // Wait for the page to be fully loaded and the button group to be visible
+  await page.waitForLoadState('networkidle');
+
+  // Find the dropdown trigger button with chevron-down icon (ChevronDown / ArrowDownIcon)
+  const dropdownTrigger = page.locator('button:has(svg)').filter({ hasText: '' }).last();
   await dropdownTrigger.click();
+
+  // Click the Convert from Docker Run menu item
   await page.getByRole('menuitem', { name: 'Convert from Docker Run' }).click();
 }
 

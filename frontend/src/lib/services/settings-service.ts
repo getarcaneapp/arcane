@@ -7,6 +7,8 @@ type KeyValuePair = { key: string; value: string };
 
 export default class SettingsService extends BaseAPIService {
 	async getSettings(): Promise<Settings> {
+		// Wait for environment store to be initialized before fetching settings
+		await environmentStore.ready;
 		const envId = await environmentStore.getCurrentEnvironmentId();
 
 		// If we're on environment 0, just get all settings normally
@@ -46,6 +48,8 @@ export default class SettingsService extends BaseAPIService {
 	}
 
 	async updateSettings(settings: Partial<Settings>) {
+		// Wait for environment store to be initialized before updating settings
+		await environmentStore.ready;
 		const envId = await environmentStore.getCurrentEnvironmentId();
 
 		const uiSettings: Record<string, any> = {};

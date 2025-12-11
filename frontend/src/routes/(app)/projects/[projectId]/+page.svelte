@@ -4,12 +4,7 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import FileStackIcon from '@lucide/svelte/icons/file-stack';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import LogsIcon from '@lucide/svelte/icons/logs';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -103,7 +98,7 @@
 		{
 			value: 'logs',
 			label: m.compose_nav_logs(),
-			icon: LogsIcon,
+			icon: FileTextIcon,
 			disabled: project?.status !== 'running'
 		}
 	]);
@@ -402,7 +397,7 @@
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
 			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
-				<FileStackIcon class="text-muted-foreground size-10" />
+				<ProjectsIcon class="text-muted-foreground size-10" />
 			</div>
 			<h2 class="mb-3 text-2xl font-medium">{m.common_not_found_title({ resource: m.project() })}</h2>
 			<p class="text-muted-foreground mb-8 max-w-md text-center">

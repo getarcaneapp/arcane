@@ -11,7 +11,7 @@
 </script>
 
 <script lang="ts">
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import { ArrowDownIcon } from '$lib/icons';
 	import { tryUseDropdownButtonRoot } from './dropdown-button.svelte.js';
 	const root = tryUseDropdownButtonRoot();
 
@@ -40,6 +40,6 @@
 	{#if children}
 		{@render children()}
 	{:else}
-		<ChevronDown class="size-4" />
+		<ArrowDownIcon class="size-4" />
 	{/if}
 </button>

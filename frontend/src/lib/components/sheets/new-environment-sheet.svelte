@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ServerIcon from '@lucide/svelte/icons/server';
 	import * as Card from '$lib/components/ui/card';
 	import type { CreateEnvironmentDTO } from '$lib/types/environment.type';
 	import { z } from 'zod/v4';
@@ -96,20 +95,14 @@
 	}
 </script>
 
-<Sheet.Root bind:open>
-	<Sheet.Content class="w-full p-6 sm:max-w-lg">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<ServerIcon class="text-primary size-5" />
-				</div>
-				<div>
-					<Sheet.Title class="text-xl font-semibold">{m.environments_title()}</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">{m.environments_manage_description()}</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-
+<ResponsiveDialog.Root
+	bind:open
+	variant="sheet"
+	title={m.environments_title()}
+	description={m.environments_manage_description()}
+	contentClass="sm:max-w-lg"
+>
+	{#snippet children()}
 		<div class="space-y-6 py-6">
 			<Card.Root class="flex flex-col gap-6 py-3">
 				<Card.Header
@@ -141,7 +134,7 @@
 							bind:input={$inputs.bootstrapToken}
 						/>
 
-						<Button type="submit" class="w-full" disabled={isSubmitting}>
+						<Button type="submit" class="w-full" disabled={isSubmitting} onclick={handleSubmit}>
 							{#if isSubmitting}
 								<Spinner class="mr-2 size-4" />
 							{/if}
@@ -151,5 +144,5 @@
 				</Card.Content>
 			</Card.Root>
 		</div>
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+</ResponsiveDialog.Root>

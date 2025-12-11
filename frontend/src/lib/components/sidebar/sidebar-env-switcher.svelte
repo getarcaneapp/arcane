@@ -1,12 +1,7 @@
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import RouterIcon from '@lucide/svelte/icons/router';
-	import ServerIcon from '@lucide/svelte/icons/server';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
 	import { goto } from '$app/navigation';
@@ -14,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, ArrowsUpDownIcon } from '$lib/icons';
 
 	type Props = {
 		isAdmin?: boolean;
@@ -64,9 +60,9 @@
 						{#if environmentStore.selected}
 							<div class="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
 								{#if environmentStore.selected.id === '0'}
-									<ServerIcon class="size-4" />
+									<EnvironmentsIcon class="size-4" />
 								{:else}
-									<RouterIcon class="size-4" />
+									<RemoteEnvironmentIcon class="size-4" />
 								{/if}
 							</div>
 							<div class="grid flex-1 text-left text-sm leading-tight">
@@ -79,14 +75,14 @@
 							</div>
 						{:else}
 							<div class="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-								<ServerIcon class="size-4" />
+								<EnvironmentsIcon class="size-4" />
 							</div>
 							<div class="grid flex-1 text-left text-sm leading-tight">
 								<span class="truncate font-medium">{m.sidebar_no_environment()}</span>
 								<span class="truncate text-xs">{m.sidebar_select_one()}</span>
 							</div>
 						{/if}
-						<ChevronsUpDownIcon class="ml-auto" />
+						<ArrowsUpDownIcon class="ml-auto" />
 					</Sidebar.MenuButton>
 				{/snippet}
 			</DropdownMenu.Trigger>
@@ -113,7 +109,7 @@
 					{#if environmentStore.available.length === 0}
 						<DropdownMenu.Item disabled class="gap-2 p-2">
 							<div class="flex size-6 items-center justify-center rounded-md border">
-								<ServerIcon class="size-3.5 shrink-0" />
+								<EnvironmentsIcon class="size-3.5 shrink-0" />
 							</div>
 							<span>{m.sidebar_no_environments()}</span>
 						</DropdownMenu.Item>
@@ -137,9 +133,9 @@
 									)}
 								>
 									{#if env.id === '0'}
-										<ServerIcon class={cn('size-3.5 shrink-0', isActive && 'text-primary-foreground')} />
+										<EnvironmentsIcon class={cn('size-3.5 shrink-0', isActive && 'text-primary-foreground')} />
 									{:else}
-										<RouterIcon class={cn('size-3.5 shrink-0', isActive && 'text-primary-foreground')} />
+										<RemoteEnvironmentIcon class={cn('size-3.5 shrink-0', isActive && 'text-primary-foreground')} />
 									{/if}
 								</div>
 								<div class="flex flex-col">
@@ -154,7 +150,7 @@
 							<DropdownMenu.Separator />
 							<DropdownMenu.Item class="text-muted-foreground gap-2 p-2" onSelect={() => goto('/environments')}>
 								<div class="flex size-6 items-center justify-center rounded-md border bg-transparent">
-									<PlusIcon class="size-4" />
+									<AddIcon class="size-4" />
 								</div>
 								<div class="font-medium">View all {environmentStore.available.length} environments</div>
 							</DropdownMenu.Item>
@@ -164,7 +160,7 @@
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item class="gap-2 p-2" onSelect={() => goto('/environments')}>
 							<div class="flex size-6 items-center justify-center rounded-md border bg-transparent">
-								<PlusIcon class="size-4" />
+								<AddIcon class="size-4" />
 							</div>
 							<div class="text-muted-foreground font-medium">{m.sidebar_manage_environments()}</div>
 						</DropdownMenu.Item>

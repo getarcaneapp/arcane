@@ -2,11 +2,13 @@
 	import type { ContainerPorts } from '$lib/types/container.type';
 	import { m } from '$lib/paraglide/messages';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import settingsStore from '$lib/stores/config-store';
 
-	let { ports = [] as ContainerPorts[], baseServerUrl = '' } = $props<{
+	let { ports = [] as ContainerPorts[] } = $props<{
 		ports?: ContainerPorts[];
-		baseServerUrl?: string;
 	}>();
+
+	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? 'http://localhost');
 
 	type NormalizedPort = {
 		hostPort: string | null;

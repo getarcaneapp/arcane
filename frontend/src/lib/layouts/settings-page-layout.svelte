@@ -1,12 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import StatCard from '$lib/components/stat-card.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import type { Action } from '$lib/components/arcane-button/index.js';
+	import { getContext } from 'svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { m } from '$lib/paraglide/messages';
+	import { EllipsisIcon, ResetIcon, SaveIcon, type IconType } from '$lib/icons';
 
 	export interface SettingsActionButton {
 		id: string;
@@ -23,7 +25,7 @@
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: typeof IconType;
+		icon: IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
@@ -35,7 +37,7 @@
 	interface Props {
 		title: string;
 		description?: string;
-		icon: typeof IconType;
+		icon: IconType;
 		pageType?: SettingsPageType;
 		showReadOnlyTag?: boolean;
 		actionButtons?: SettingsActionButton[];
@@ -62,6 +64,14 @@
 
 	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
 	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
+
+	// Get form state from context if available
+	const formState = getContext<{
+		hasChanges: boolean;
+		isLoading: boolean;
+		saveFunction: (() => Promise<void>) | null;
+		resetFunction: (() => void) | null;
+	}>('settingsFormState');
 
 	const getStatCardsGridClass = (columns: typeof statCardsColumns) => {
 		switch (columns) {
@@ -104,6 +114,48 @@
 					<div class="flex shrink-0 items-center gap-2">
 						{#if showReadOnlyTag}
 							<UiConfigDisabledTag />
+						{/if}
+
+						{#if pageType === 'form' && formState && !showReadOnlyTag}
+							<div class="hidden items-center gap-2 sm:flex">
+								{#if formState.hasChanges}
+									<span class="mr-2 text-xs text-orange-600 dark:text-orange-400"> Unsaved changes </span>
+								{:else if !formState.hasChanges && formState.saveFunction}
+									<span class="mr-2 text-xs text-green-600 dark:text-green-400"> All changes saved </span>
+								{/if}
+
+								{#if formState.hasChanges && formState.resetFunction}
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => formState.resetFunction && formState.resetFunction()}
+										disabled={formState.isLoading}
+										class="gap-2"
+									>
+										<ResetIcon class="size-4" />
+										<span class="hidden sm:inline">{m.common_reset()}</span>
+									</Button>
+								{/if}
+
+								<Button
+									onclick={async () => {
+										if (formState.saveFunction) {
+											await formState.saveFunction();
+										}
+									}}
+									disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
+									size="sm"
+									class="min-w-[80px] gap-2"
+								>
+									{#if formState.isLoading}
+										<div class="border-background size-4 animate-spin rounded-full border-2 border-t-transparent"></div>
+										<span class="hidden sm:inline">{m.common_saving()}</span>
+									{:else}
+										<SaveIcon class="size-4" />
+										<span class="hidden sm:inline">{m.common_save()}</span>
+									{/if}
+								</Button>
+							</div>
 						{/if}
 
 						{#if pageType === 'management' && actionButtons.length > 0}

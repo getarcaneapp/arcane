@@ -79,7 +79,7 @@
 <svelte:head><title>{m.layout_title()}</title></svelte:head>
 
 <div class={cn('flex min-h-dvh flex-col', isGlassEnabled ? 'bg-transparent' : 'bg-background')}>
-	{#if !settings}
+	{#if !settings && data.user}
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}
 		{@render children()}

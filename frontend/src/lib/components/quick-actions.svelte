@@ -1,13 +1,9 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import CirclePlayIcon from '@lucide/svelte/icons/circle-play';
-	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
+	import { RefreshIcon, StartIcon, StopIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
 
 	type IsLoadingFlags = {
 		starting: boolean;
@@ -64,7 +60,7 @@
 					{#if isLoading.starting}
 						<Spinner class="size-3.5 text-emerald-500" />
 					{:else}
-						<CirclePlayIcon class="size-4 text-emerald-500" />
+						<StartIcon class="size-4 text-emerald-500" />
 					{/if}
 					<span class="font-medium">{m.quick_actions_start_all()}</span>
 					<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]"
@@ -85,7 +81,7 @@
 					{#if isLoading.stopping}
 						<Spinner class="size-3.5 text-sky-500" />
 					{:else}
-						<CircleStopIcon class="size-4 text-sky-500" />
+						<StopIcon class="size-4 text-sky-500" />
 					{/if}
 					<span class="font-medium">{m.quick_actions_stop_all()}</span>
 					<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]"
@@ -102,7 +98,7 @@
 					{#if isLoading.pruning}
 						<Spinner class="size-3.5 text-red-500" />
 					{:else}
-						<Trash2Icon class="size-4 text-red-500" />
+						<TrashIcon class="size-4 text-red-500" />
 					{/if}
 					<span class="font-medium">{m.quick_actions_prune_system()}</span>
 				</button>
@@ -116,7 +112,7 @@
 					{#if refreshing}
 						<Spinner class="text-primary size-3.5" />
 					{:else}
-						<RefreshCwIcon class="text-primary size-4" />
+						<RefreshIcon class="text-primary size-4" />
 					{/if}
 					<span class="font-medium">{m.common_refresh()}</span>
 				</button>
@@ -196,7 +192,7 @@
 								{#if isLoading.starting}
 									<Spinner class="size-4 text-emerald-400" />
 								{:else}
-									<CirclePlayIcon class="size-5 text-emerald-400" />
+									<StartIcon class="size-5 text-emerald-400" />
 								{/if}
 							</div>
 							<div
@@ -228,7 +224,7 @@
 								{#if isLoading.stopping}
 									<Spinner class="size-4 text-sky-400" />
 								{:else}
-									<CircleStopIcon class="size-5 text-sky-400" />
+									<StopIcon class="size-5 text-sky-400" />
 								{/if}
 							</div>
 							<div
@@ -256,7 +252,7 @@
 								{#if isLoading.pruning}
 									<Spinner class="size-4 text-red-400" />
 								{:else}
-									<Trash2Icon class="size-5 text-red-400" />
+									<TrashIcon class="size-5 text-red-400" />
 								{/if}
 							</div>
 							<div

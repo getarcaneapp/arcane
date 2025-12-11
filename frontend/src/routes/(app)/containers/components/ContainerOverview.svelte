@@ -1,24 +1,18 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
-	import HeartPulseIcon from '@lucide/svelte/icons/heart-pulse';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { format, formatDistanceToNow } from 'date-fns';
+	import { InfoIcon, StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '$lib/icons';
 
 	interface Props {
 		container: ContainerDetailsDto;
 		primaryIpAddress: string;
-		baseServerUrl: string;
 	}
 
-	let { container, primaryIpAddress, baseServerUrl }: Props = $props();
+	let { container, primaryIpAddress }: Props = $props();
 
 	function parseDockerDate(input: string | Date | undefined | null): Date | null {
 		if (!input) return null;
@@ -118,7 +112,7 @@
 				</div>
 				<div class="flex items-center gap-3">
 					<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10">
-						<HardDriveIcon class="size-5 text-blue-500" />
+						<VolumesIcon class="size-5 text-blue-500" />
 					</div>
 					<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all" title="Click to select">
 						{container.image || m.common_na()}
@@ -128,10 +122,10 @@
 
 			{#if container.state?.running}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">Uptime</div>
+					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_uptime()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-500/10">
-							<PlayIcon class="size-5 text-green-500" />
+							<StartIcon class="size-5 text-green-500" />
 						</div>
 						<div class="text-foreground text-base font-semibold">
 							{getUptime(container.state.startedAt)}
@@ -140,13 +134,13 @@
 				</div>
 			{:else}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">Status</div>
+					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10">
-							<StopCircleIcon class="size-5 text-gray-500" />
+							<StopIcon class="size-5 text-gray-500" />
 						</div>
 						<div class="text-foreground text-base font-semibold">
-							{container.state?.status || 'Stopped'}
+							{container.state?.status || m.common_stopped()}
 						</div>
 					</div>
 				</div>
@@ -158,7 +152,7 @@
 				</div>
 				<div class="flex items-center gap-3">
 					<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-purple-500/10">
-						<NetworkIcon class="size-5 text-purple-500" />
+						<NetworksIcon class="size-5 text-purple-500" />
 					</div>
 					<div class="text-foreground cursor-pointer font-mono text-base font-semibold select-all" title="Click to select">
 						{primaryIpAddress}
@@ -168,10 +162,10 @@
 
 			{#if container.state?.health}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">Health Status</div>
+					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_health_status()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10">
-							<HeartPulseIcon class="size-5 text-pink-500" />
+							<HealthIcon class="size-5 text-pink-500" />
 						</div>
 						<StatusBadge
 							variant={container.state.health.status === 'healthy'
@@ -216,7 +210,7 @@
 			{#if container.state?.running}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Started</div>
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_started()}</div>
 						<div class="text-foreground text-sm font-medium">
 							{formatRelativeDate(container.state.startedAt)}
 						</div>
@@ -228,7 +222,7 @@
 			{:else if container.state?.finishedAt && !container.state.finishedAt.startsWith('0001')}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Finished</div>
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_finished()}</div>
 						<div class="text-foreground text-sm font-medium">
 							{formatRelativeDate(container.state.finishedAt)}
 						</div>
@@ -241,7 +235,7 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Restart Policy</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_restart_policy()}</div>
 					<div class="text-foreground text-sm font-medium capitalize">
 						{restartPolicy}
 					</div>
@@ -250,16 +244,16 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Ports</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_ports()}</div>
 					<div class="text-foreground text-sm font-medium">
 						{#if uniquePorts.total === 0}
-							No ports
+							{m.containers_no_ports()}
 						{:else if uniquePorts.published > 0 && uniquePorts.exposed > 0}
-							{uniquePorts.published} published, {uniquePorts.exposed} exposed
+							{m.containers_ports_published_exposed({ published: uniquePorts.published, exposed: uniquePorts.exposed })}
 						{:else if uniquePorts.published > 0}
-							{uniquePorts.published} published
+							{m.containers_ports_published({ published: uniquePorts.published })}
 						{:else}
-							{uniquePorts.exposed} exposed
+							{m.containers_ports_exposed({ exposed: uniquePorts.exposed })}
 						{/if}
 					</div>
 				</Card.Content>
@@ -267,27 +261,27 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Volumes</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_volumes_cap()}</div>
 					<div class="text-foreground text-sm font-medium">
 						{mountCount}
-						{mountCount === 1 ? 'mount' : 'mounts'}
+						{mountCount === 1 ? m.common_mount() : m.common_mounts()}
 					</div>
 				</Card.Content>
 			</Card.Root>
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Networks</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_networks_cap()}</div>
 					<div class="text-foreground text-sm font-medium">
 						{networkCount}
-						{networkCount === 1 ? 'network' : 'networks'}
+						{networkCount === 1 ? m.resource_network() : m.resource_networks()}
 					</div>
 				</Card.Content>
 			</Card.Root>
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Image ID</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_image_id()}</div>
 					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title="Click to select">
 						{container.imageId}
 					</div>
@@ -313,7 +307,7 @@
 			{#if container.config?.user}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">User</div>
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_user_cap()}</div>
 						<div class="text-foreground cursor-pointer font-mono text-sm font-medium select-all" title="Click to select">
 							{container.config.user}
 						</div>
@@ -324,7 +318,7 @@
 			{#if container.config?.entrypoint && container.config.entrypoint.length > 0}
 				<Card.Root variant="subtle" class="sm:col-span-2">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Entrypoint</div>
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_entrypoint()}</div>
 						<div
 							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
 							title="Click to select"
@@ -357,7 +351,7 @@
 				<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
 					{m.common_port_mappings()}
 				</div>
-				<PortBadge ports={container.ports} {baseServerUrl} />
+				<PortBadge ports={container.ports} />
 			</div>
 		{/if}
 	</Card.Content>

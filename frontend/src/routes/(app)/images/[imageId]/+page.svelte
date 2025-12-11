@@ -1,13 +1,5 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import HashIcon from '@lucide/svelte/icons/hash';
-	import CpuIcon from '@lucide/svelte/icons/cpu';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
@@ -20,6 +12,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
+	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let { image } = $derived(data);
@@ -130,7 +123,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<HardDriveIcon class="size-5 text-blue-500" />
+								<VolumesIcon class="size-5 text-blue-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_size()}</p>

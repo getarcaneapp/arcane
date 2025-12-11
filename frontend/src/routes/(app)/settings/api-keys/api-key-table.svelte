@@ -1,10 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import EditIcon from '@lucide/svelte/icons/edit';
-	import CopyIcon from '@lucide/svelte/icons/copy';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -13,11 +10,11 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ApiKey } from '$lib/types/api-key.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
-	import KeyIcon from '@lucide/svelte/icons/key';
 	import * as m from '$lib/paraglide/messages.js';
+	import { ApiKeyIcon, TrashIcon, EllipsisIcon, EditIcon } from '$lib/icons';
 
 	let {
 		apiKeys = $bindable(),
@@ -55,15 +52,6 @@
 	function getStatusVariant(apiKey: ApiKey): 'red' | 'green' {
 		if (isExpired(apiKey.expiresAt)) return 'red';
 		return 'green';
-	}
-
-	async function copyToClipboard(text: string) {
-		try {
-			await navigator.clipboard.writeText(text);
-			toast.success(m.common_copied());
-		} catch {
-			toast.error(m.common_copy_failed());
-		}
 	}
 
 	async function handleDeleteSelected() {
@@ -166,9 +154,7 @@
 {#snippet KeyPrefixCell({ item }: { item: ApiKey })}
 	<div class="flex items-center gap-2">
 		<code class="bg-muted rounded px-2 py-1 text-xs">{item.keyPrefix}...</code>
-		<Button variant="ghost" size="icon" class="size-6" onclick={() => copyToClipboard(item.keyPrefix)}>
-			<CopyIcon class="size-3" />
-		</Button>
+		<CopyButton text={item.keyPrefix} class="size-6" />
 	</div>
 {/snippet}
 
@@ -188,17 +174,15 @@
 {/snippet}
 
 {#snippet ApiKeyMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: ApiKey;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: KeyIcon, variant: 'blue' }}
+		icon={{ component: ApiKeyIcon, variant: 'blue' }}
 		title={(item: ApiKey) => item.name}
 		subtitle={(item: ApiKey) => ((mobileFieldVisibility.keyPrefix ?? true) ? `${item.keyPrefix}...` : null)}
 		badges={[
@@ -211,21 +195,21 @@
 			{
 				label: m.api_key_description_label(),
 				getValue: (item: ApiKey) => item.description || '-',
-				icon: KeyIcon,
+				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.description ?? true
 			},
 			{
 				label: m.api_key_expires_at(),
 				getValue: (item: ApiKey) => (item.expiresAt ? formatDate(item.expiresAt) : m.api_key_expires_never()),
-				icon: KeyIcon,
+				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.expiresAt ?? true
 			},
 			{
 				label: m.api_key_last_used(),
 				getValue: (item: ApiKey) => formatDate(item.lastUsedAt),
-				icon: KeyIcon,
+				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.lastUsedAt ?? true
 			}
@@ -251,7 +235,7 @@
 					{m.common_edit()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
-					<Trash2Icon class="size-4" />
+					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>

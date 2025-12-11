@@ -2,9 +2,6 @@
 	import type { NetworkSummaryDto } from '$lib/types/network.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -19,9 +16,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import RouteIcon from '@lucide/svelte/icons/route';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import { NetworksIcon, GlobeIcon, EllipsisIcon, InspectIcon, TrashIcon } from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -222,7 +217,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item: NetworkSummaryDto) => ({
-			component: NetworkIcon,
+			component: NetworksIcon,
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item: NetworkSummaryDto) => item.name}
@@ -241,7 +236,7 @@
 			{
 				label: m.common_driver(),
 				getValue: (item: NetworkSummaryDto) => capitalizeFirstLetter(item.driver),
-				icon: RouteIcon,
+				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
 				badgeVariant: getDriverVariant(item.driver),
@@ -275,7 +270,7 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => goto(`/networks/${item.id}`)} disabled={isAnyLoading}>
-					<ScanSearchIcon class="size-4" />
+					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
@@ -284,7 +279,7 @@
 					onclick={() => handleDeleteNetwork(item.id, item.name)}
 					disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
 				>
-					<Trash2Icon class="size-4" />
+					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>

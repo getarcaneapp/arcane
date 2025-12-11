@@ -2,8 +2,6 @@
 	import { cn } from '$lib/utils';
 	import * as Separator from '$lib/components/ui/separator/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import DownloadIcon from '@lucide/svelte/icons/download';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import type { User } from '$lib/types/user.type';
@@ -13,6 +11,7 @@
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
+	import { DownloadIcon, ExternalLinkIcon } from '$lib/icons';
 
 	let {
 		isCollapsed,
@@ -37,7 +36,7 @@
 
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
-	
+
 	// Determine update type and display text
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
@@ -45,7 +44,7 @@
 		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
 		return 'none';
 	});
-	
+
 	const updateDisplayText = $derived.by(() => {
 		if (!versionInformation) return '';
 		if (updateType === 'semver') {
@@ -58,7 +57,7 @@
 		}
 		return '';
 	});
-	
+
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();
 		if (checkingUpgrade) return m.upgrade_checking();
@@ -171,7 +170,7 @@
 						class="group flex items-center justify-between text-blue-600 transition-colors duration-200 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
 					>
 						{@render updateInfo()}
-						<ExternalLink size={16} class="transition-transform duration-200 group-hover:scale-110" />
+						<ExternalLinkIcon class="size-4 transition-transform duration-200 group-hover:scale-110" />
 					</a>
 
 					{#if shouldShowUpgrade}
@@ -194,7 +193,7 @@
 									rel="noopener noreferrer"
 									class="flex h-full w-full items-center justify-center text-blue-600 transition-all duration-200 hover:scale-110 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
 								>
-									<ExternalLink size={14} />
+									<ExternalLinkIcon />
 								</a>
 							</div>
 						{/snippet}
@@ -216,7 +215,7 @@
 									class="border-primary/20 bg-primary/15 text-primary hover:bg-primary/25 focus-visible:ring-primary/40 dark:text-primary flex size-8 items-center justify-center rounded-lg border transition-all hover:scale-[1.02] hover:shadow-md focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 									{...props}
 								>
-									<DownloadIcon size={14} />
+									<DownloadIcon class="size-3.5" />
 								</button>
 							{/snippet}
 						</Tooltip.Trigger>

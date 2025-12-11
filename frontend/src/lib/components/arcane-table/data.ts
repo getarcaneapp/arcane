@@ -1,25 +1,16 @@
-import BadgeCheckIcon from '@lucide/svelte/icons/badge-check';
-import BadgeXIcon from '@lucide/svelte/icons/badge-x';
-import CircleFadingArrowUp from '@lucide/svelte/icons/circle-fading-arrow-up';
-import CircleCheck from '@lucide/svelte/icons/circle-check';
-import InfoIcon from '@lucide/svelte/icons/info';
-import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-import CircleXIcon from '@lucide/svelte/icons/circle-x';
-import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-import GlobeIcon from '@lucide/svelte/icons/globe';
 import { m } from '$lib/paraglide/messages';
+import { GlobeIcon, FolderOpenIcon, VerifiedCheckIcon, AlertIcon, InfoIcon, CloseIcon, CheckIcon, UpdateIcon } from '$lib/icons';
 
 export const usageFilters = [
 	{
 		value: true,
 		label: m.common_in_use(),
-		icon: BadgeCheckIcon
+		icon: VerifiedCheckIcon
 	},
 	{
 		value: false,
 		label: m.common_unused(),
-		icon: CircleCheck
+		icon: AlertIcon
 	}
 ];
 
@@ -27,12 +18,12 @@ export const imageUpdateFilters = [
 	{
 		value: true,
 		label: m.images_has_updates(),
-		icon: CircleFadingArrowUp
+		icon: UpdateIcon
 	},
 	{
 		value: false,
 		label: m.images_no_updates(),
-		icon: BadgeXIcon
+		icon: VerifiedCheckIcon
 	}
 ];
 
@@ -45,17 +36,17 @@ export const severityFilters = [
 	{
 		value: 'success',
 		label: m.events_success(),
-		icon: CircleCheckIcon
+		icon: CheckIcon
 	},
 	{
 		value: 'warning',
 		label: m.events_warning(),
-		icon: TriangleAlertIcon
+		icon: AlertIcon
 	},
 	{
 		value: 'error',
 		label: m.events_error(),
-		icon: CircleXIcon
+		icon: CloseIcon
 	}
 ];
 

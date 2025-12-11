@@ -5,14 +5,9 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Snippet } from '$lib/components/ui/snippet';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import UsersIcon from '@lucide/svelte/icons/users';
 	import { m } from '$lib/paraglide/messages';
 	import type { TemplateRegistry } from '$lib/types/template.type';
+	import { TrashIcon, RegistryIcon, CommunityIcon, RefreshIcon, ExternalLinkIcon, AddIcon } from '$lib/icons';
 
 	let {
 		registries,
@@ -39,7 +34,7 @@
 			<p class="text-muted-foreground text-sm">{m.templates_registries_section_description()}</p>
 		</div>
 		<Button onclick={onAddRegistry}>
-			<PlusIcon class="mr-2 size-4" />
+			<AddIcon class="size-4" />
 			{m.common_add_button({ resource: m.resource_registry_cap() })}
 		</Button>
 	</div>
@@ -47,13 +42,13 @@
 	{#if registries.length === 0}
 		<div class="space-y-4">
 			<Alert.Root>
-				<GlobeIcon class="size-4" />
+				<RegistryIcon class="size-4" />
 				<Alert.Title>{m.templates_alert_remote_registries_title()}</Alert.Title>
 				<Alert.Description>{m.templates_alert_remote_registries_description()}</Alert.Description>
 			</Alert.Root>
 
 			<Alert.Root class="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-				<UsersIcon class="size-4" />
+				<CommunityIcon class="size-4" />
 				<Alert.Title>{m.templates_community_registry_title()}</Alert.Title>
 				<Alert.Description class="space-y-2">
 					<p>{m.templates_community_registry_description()}</p>
@@ -98,9 +93,9 @@
 								disabled={isLoading.removing[registry.id]}
 							>
 								{#if isLoading.removing[registry.id]}
-									<RefreshCwIcon class="size-4 animate-spin" />
+									<RefreshIcon class="size-4 animate-spin" />
 								{:else}
-									<Trash2Icon class="size-4" />
+									<TrashIcon class="size-4" />
 								{/if}
 							</Button>
 						</div>

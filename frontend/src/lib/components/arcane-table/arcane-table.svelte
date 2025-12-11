@@ -18,17 +18,10 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
-	import ChevronsLeftIcon from '@lucide/svelte/icons/chevrons-left';
-	import ChevronsRightIcon from '@lucide/svelte/icons/chevrons-right';
-	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
-	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
-	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import EyeOffIcon from '@lucide/svelte/icons/eye-off';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
+	import { untrack } from 'svelte';
 
 	type DivAttributes = SvelteHTMLElements['div'];
 	type PlainHeaderProps = { title: string } & DivAttributes;
@@ -51,7 +44,17 @@
 	} from './arcane-table.types.svelte';
 	import { buildInitialMobileVisibility, extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import FolderXIcon from '@lucide/svelte/icons/folder-x';
+	import {
+		ArrowRightIcon,
+		ArrowLeftIcon,
+		DoubleArrowRightIcon,
+		DoubleArrowLeftIcon,
+		ArrowUpIcon,
+		ArrowDownIcon,
+		ArrowsUpDownIcon,
+		EyeOffIcon,
+		FolderXIcon
+	} from '$lib/icons';
 
 	let {
 		items,
@@ -103,18 +106,6 @@
 	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
-	$effect(() => {
-		if (persistKey) {
-			prefs = new PersistedState<CompactTablePrefs>(
-				persistKey,
-				{ v: [], f: [], g: '', l: getDefaultLimit() },
-				{ syncTabs: false }
-			);
-		} else {
-			prefs = null;
-		}
-	});
-
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
 	const currentPage = $derived(items.pagination.currentPage ?? requestOptions?.pagination?.page ?? 1);
@@ -126,6 +117,16 @@
 
 	import { onMount } from 'svelte';
 	onMount(() => {
+		// Initialize prefs first
+		if (persistKey && !prefs) {
+			prefs = new PersistedState<CompactTablePrefs>(
+				persistKey,
+				{ v: [], f: [], g: '', l: getDefaultLimit() },
+				{ syncTabs: false }
+			);
+		}
+
+		// Then restore preferences
 		if (!enablePersist) return;
 		const snapshot = extractPersistedPreferences(prefs?.current, getDefaultLimit());
 
@@ -450,19 +451,54 @@
 
 	$effect(() => {
 		const s = requestOptions?.sort;
+		const currentSort = untrack(() => sorting[0]);
+
 		if (!s) {
-			if (sorting.length) sorting = [];
+			if (currentSort) {
+				untrack(() => {
+					sorting = [];
+				});
+			}
 			return;
 		}
+
 		const desc = s.direction === 'desc';
-		if (!sorting[0] || sorting[0].id !== s.column || sorting[0].desc !== desc) {
-			sorting = [{ id: s.column, desc }];
+		if (!currentSort || currentSort.id !== s.column || currentSort.desc !== desc) {
+			untrack(() => {
+				sorting = [{ id: s.column, desc }];
+			});
 		}
 	});
 
+	// Track last persisted settings to prevent infinite loops
+	let lastPersistedSettings: string | null = null;
+	let persistTimeout: ReturnType<typeof setTimeout> | null = null;
+
 	$effect(() => {
 		if (!enablePersist || !prefs) return;
-		prefs.current = { ...prefs.current, c: customSettings };
+
+		// Read current settings without creating dependency on the stringified value
+		const currentSettings = customSettings;
+		const settingsJson = JSON.stringify(currentSettings);
+
+		// Skip if unchanged
+		if (settingsJson === lastPersistedSettings) return;
+
+		// Debounce persistence to prevent rapid updates
+		if (persistTimeout) clearTimeout(persistTimeout);
+
+		persistTimeout = setTimeout(() => {
+			untrack(() => {
+				if (prefs && settingsJson !== lastPersistedSettings) {
+					lastPersistedSettings = settingsJson;
+					prefs.current = { ...prefs.current, c: currentSettings };
+				}
+			});
+		}, 100);
+
+		return () => {
+			if (persistTimeout) clearTimeout(persistTimeout);
+		};
 	});
 </script>
 
@@ -507,19 +543,19 @@
 				<div class="flex items-center space-x-1 sm:space-x-2">
 					<Button variant="outline" class="hidden size-8 p-0 lg:flex" onclick={() => setPage(1)} disabled={!canPrev}>
 						<span class="sr-only">{m.common_go_first_page()}</span>
-						<ChevronsLeftIcon />
+						<DoubleArrowLeftIcon />
 					</Button>
 					<Button variant="outline" class="size-8 p-0" onclick={() => setPage(currentPage - 1)} disabled={!canPrev}>
 						<span class="sr-only">{m.common_go_prev_page()}</span>
-						<ChevronLeftIcon />
+						<ArrowLeftIcon />
 					</Button>
 					<Button variant="outline" class="size-8 p-0" onclick={() => setPage(currentPage + 1)} disabled={!canNext}>
 						<span class="sr-only">{m.common_go_next_page()}</span>
-						<ChevronRightIcon />
+						<ArrowRightIcon />
 					</Button>
 					<Button variant="outline" class="hidden size-8 p-0 lg:flex" onclick={() => setPage(totalPages)} disabled={!canNext}>
 						<span class="sr-only">{m.common_go_last_page()}</span>
-						<ChevronsRightIcon />
+						<DoubleArrowRightIcon />
 					</Button>
 				</div>
 			</div>
@@ -554,23 +590,23 @@
 							{:else if column.getIsSorted() === 'asc'}
 								<ArrowUpIcon />
 							{:else}
-								<ChevronsUpDownIcon />
+								<ArrowsUpDownIcon />
 							{/if}
 						</Button>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start">
 					<DropdownMenu.Item onclick={() => column.toggleSorting(false)}>
-						<ArrowUpIcon class="text-muted-foreground/70 mr-2 size-3.5" />
+						<ArrowUpIcon class="text-muted-foreground/70 mr-2 size-4" />
 						{m.common_sort_asc()}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item onclick={() => column.toggleSorting(true)}>
-						<ArrowDownIcon class="text-muted-foreground/70 mr-2 size-3.5" />
+						<ArrowDownIcon class="text-muted-foreground/70 mr-2 size-4" />
 						{m.common_sort_desc()}
 					</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item onclick={() => column.toggleVisibility(false)}>
-						<EyeOffIcon class="text-muted-foreground/70 mr-2 size-3.5" />
+						<EyeOffIcon class="text-muted-foreground/70 mr-2 size-4" />
 						{m.common_hide()}
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>

@@ -2,13 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { Table as TableType, Row } from '@tanstack/table-core';
@@ -22,13 +15,24 @@
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Template } from '$lib/types/template.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
-	import TagIcon from '@lucide/svelte/icons/tag';
 	import { truncateString } from '$lib/utils/string.utils';
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
 	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
+	import {
+		EllipsisIcon,
+		InspectIcon,
+		FolderOpenIcon,
+		GlobeIcon,
+		TrashIcon,
+		DownloadIcon,
+		TagIcon,
+		MoveToFolderIcon
+	} from '$lib/icons';
+
+	type TemplateTable = TableType<Template>;
 
 	let {
 		templates = $bindable(),
@@ -40,10 +44,8 @@
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	let isLoading = $state({
-		deleting: false,
-		downloading: false
-	});
+	let deletingId = $state<string | null>(null);
+	let downloadingId = $state<string | null>(null);
 
 	async function handleDeleteTemplate(id: string, name: string) {
 		openConfirmDialog({
@@ -53,16 +55,17 @@
 				label: m.templates_delete_template(),
 				destructive: true,
 				action: async () => {
-					isLoading.deleting = true;
+					deletingId = id;
 
 					const result = await tryCatch(templateService.deleteTemplate(id));
 					handleApiResultWithCallbacks({
 						result,
 						message: m.common_delete_failed({ resource: `${m.resource_template()} "${name}"` }),
-						setLoadingState: (value) => (isLoading.deleting = value),
+						setLoadingState: (value) => (value ? null : (deletingId = null)),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${name}"` }));
 							templates = await templateService.getTemplates(requestOptions);
+							deletingId = null;
 						}
 					});
 				}
@@ -71,21 +74,20 @@
 	}
 
 	async function handleDownloadTemplate(id: string, name: string) {
-		isLoading.downloading = true;
+		downloadingId = id;
 
 		const result = await tryCatch(templateService.download(id));
 		handleApiResultWithCallbacks({
 			result,
 			message: m.templates_download_failed(),
-			setLoadingState: (value) => (isLoading.downloading = value),
+			setLoadingState: (value) => (value ? null : (downloadingId = null)),
 			onSuccess: async () => {
 				toast.success(m.templates_downloaded_success({ name }));
 				templates = await templateService.getTemplates(requestOptions);
+				downloadingId = null;
 			}
 		});
 	}
-
-	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
 
 	const columns = [
 		{
@@ -121,14 +123,7 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
-
-	let groupByRegistry = $derived.by(() => {
-		return (customSettings.groupByRegistry as boolean) ?? false;
-	});
-
-	function setGroupByRegistry(value: boolean) {
-		customSettings = { ...customSettings, groupByRegistry: value };
-	}
+	let groupByRegistry = $derived((customSettings.groupByRegistry as boolean) ?? false);
 
 	function getRegistryName(template: Template): string {
 		if (template.registry?.name) {
@@ -144,26 +139,25 @@
 		if (!groupByRegistry) return null;
 
 		const groups = new Map<string, Template[]>();
+		const localName = m.templates_local_templates();
+		const unknownName = m.templates_unknown_registry();
 
 		for (const template of templates.data ?? []) {
 			const registryName = getRegistryName(template);
+			const group = groups.get(registryName) ?? [];
+			group.push(template);
 			if (!groups.has(registryName)) {
-				groups.set(registryName, []);
-			}
-			const group = groups.get(registryName);
-			if (group) {
-				group.push(template);
+				groups.set(registryName, group);
 			}
 		}
-		const sortedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
-			if (a === m.templates_local_templates()) return -1;
-			if (b === m.templates_local_templates()) return 1;
-			if (a === m.templates_unknown_registry()) return 1;
-			if (b === m.templates_unknown_registry()) return -1;
+
+		return Array.from(groups.entries()).sort(([a], [b]) => {
+			if (a === localName) return -1;
+			if (b === localName) return 1;
+			if (a === unknownName) return 1;
+			if (b === unknownName) return -1;
 			return a.localeCompare(b);
 		});
-
-		return sortedGroups;
 	});
 </script>
 
@@ -207,13 +201,11 @@
 {/snippet}
 
 {#snippet TemplateMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: Row<Template>;
 	item: Template;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
@@ -273,22 +265,19 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)} disabled={isAnyLoading}>
-					<ScanSearchIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)}>
+					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)} disabled={isAnyLoading}>
-					<PlusCircleIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+					<MoveToFolderIcon class="size-4" />
 					{m.compose_create_project()}
 				</DropdownMenu.Item>
 
 				{#if item.isRemote}
-					<DropdownMenu.Item
-						onclick={() => handleDownloadTemplate(item.id, item.name)}
-						disabled={isLoading.downloading || isAnyLoading}
-					>
-						{#if isLoading.downloading}
+					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
+						{#if downloadingId === item.id}
 							<Spinner class="size-4" />
 						{:else}
 							<DownloadIcon class="size-4" />
@@ -300,12 +289,12 @@
 					<DropdownMenu.Item
 						variant="destructive"
 						onclick={() => handleDeleteTemplate(item.id, item.name)}
-						disabled={isLoading.deleting || isAnyLoading}
+						disabled={deletingId === item.id}
 					>
-						{#if isLoading.deleting}
+						{#if deletingId === item.id}
 							<Spinner class="size-4" />
 						{:else}
-							<Trash2Icon class="size-4" />
+							<TrashIcon class="size-4" />
 						{/if}
 						{m.templates_delete_template()}
 					</DropdownMenu.Item>
@@ -333,12 +322,14 @@
 />
 
 {#snippet CustomViewOptions()}
-	<DropdownMenu.CheckboxItem bind:checked={() => groupByRegistry, (v) => setGroupByRegistry(!!v)}>
+	<DropdownMenu.CheckboxItem
+		bind:checked={() => groupByRegistry, (v) => (customSettings = { ...customSettings, groupByRegistry: !!v })}
+	>
 		{m.templates_group_by_registry()}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table }: { table: TableType<Template> })}
+{#snippet GroupedTableView({ table }: { table: TemplateTable })}
 	<div class="mb-4 flex items-center justify-end border-b px-6 py-4">
 		<DataTableViewOptions {table} customViewOptions={CustomViewOptions} />
 	</div>
@@ -392,7 +383,7 @@
 
 				<div class="space-y-3 md:hidden">
 					{#each registryRows as row (row.id)}
-						{@render TemplateMobileCardSnippet({ row, item: row.original as Template, mobileFieldVisibility })}
+						{@render TemplateMobileCardSnippet({ item: row.original as Template, mobileFieldVisibility })}
 					{:else}
 						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
 							{m.common_no_results_found()}

@@ -59,6 +59,7 @@ export interface RuntimeService {
 	containerName?: string;
 	ports?: string[];
 	health?: string;
+	serviceConfig?: ProjectService;
 }
 
 export interface Project {

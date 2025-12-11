@@ -1,11 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
+	import { VolumesIcon, TerminalIcon } from '$lib/icons';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -16,7 +14,7 @@
 
 <div class="space-y-6">
 	<Card.Root>
-		<Card.Header icon={DatabaseIcon}>
+		<Card.Header icon={VolumesIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
 					<h2>
@@ -42,9 +40,9 @@
 													: 'bg-amber-500/10'}"
 										>
 											{#if mount.type === 'volume'}
-												<DatabaseIcon class="size-5 text-purple-500" />
+												<VolumesIcon class="size-5 text-purple-500" />
 											{:else if mount.type === 'bind'}
-												<HardDriveIcon class="size-5 text-blue-500" />
+												<VolumesIcon class="size-5 text-blue-500" />
 											{:else}
 												<TerminalIcon class="size-5 text-amber-500" />
 											{/if}
@@ -129,7 +127,7 @@
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center">
 					<div class="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-						<DatabaseIcon class="text-muted-foreground size-6" />
+						<VolumesIcon class="text-muted-foreground size-6" />
 					</div>
 					<div class="text-muted-foreground text-sm">{m.containers_no_mounts_configured()}</div>
 				</div>

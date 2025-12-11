@@ -2,8 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -13,16 +11,12 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Event } from '$lib/types/event.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
-	import InfoIcon from '@lucide/svelte/icons/info';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import UserIcon from '@lucide/svelte/icons/user';
+	import { EllipsisIcon, TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
 
 	let {
 		events = $bindable(),
@@ -170,19 +164,11 @@
 	<span class="text-sm">{formatTimestamp(String(value ?? new Date().toISOString()))}</span>
 {/snippet}
 
-{#snippet EventMobileCardSnippet({
-	row,
-	item,
-	mobileFieldVisibility
-}: {
-	row: any;
-	item: Event;
-	mobileFieldVisibility: Record<string, boolean>;
-})}
+{#snippet EventMobileCardSnippet({ item, mobileFieldVisibility }: { item: Event; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={(item: Event) => ({
-			component: BellIcon,
+			component: NotificationsIcon,
 			variant: getIconVariant(item.severity)
 		})}
 		title={(item: Event) => item.title}
@@ -212,7 +198,7 @@
 					if (item.resourceName) parts.push(item.resourceName);
 					return parts.join(' - ');
 				},
-				icon: ServerIcon,
+				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.resource ?? true) && (!!item.resourceType || !!item.resourceName)
 			},
@@ -249,7 +235,7 @@
 					onclick={() => handleDeleteEvent(item.id, item.title)}
 					disabled={isLoading.removing}
 				>
-					<Trash2Icon class="size-4" />
+					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>

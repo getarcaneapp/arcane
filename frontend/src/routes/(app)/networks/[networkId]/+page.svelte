@@ -1,18 +1,21 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import type { PageData } from './$types';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import HashIcon from '@lucide/svelte/icons/hash';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ListTreeIcon from '@lucide/svelte/icons/list-tree';
-	import ContainerIcon from '@lucide/svelte/icons/container';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import {
+		AlertIcon,
+		VolumesIcon,
+		ClockIcon,
+		TagIcon,
+		LayersIcon,
+		HashIcon,
+		NetworksIcon,
+		GlobeIcon,
+		SettingsIcon,
+		ContainersIcon,
+		InfoIcon,
+		ArrowUpIcon,
+		ArrowDownIcon
+	} from '$lib/icons';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -23,23 +26,42 @@
 	import { goto } from '$app/navigation';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
-	import type { NetworkInspectDto } from '$lib/types/network.type';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 
 	let { data }: { data: PageData } = $props();
-	let { network }: { network: NetworkInspectDto | null | undefined } = $derived(data);
 	let errorMessage = $state('');
 
 	let isRemoving = $state(false);
+	let sortCol = $state('name');
+	let sortDir = $state<'asc' | 'desc'>('asc');
 
+	let network = $derived(data.network);
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? format(new Date(network.created), 'PP p') : m.common_unknown());
+
 	const connectedContainers = $derived(
-		network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : []
+		network?.containersList ??
+			(network?.containers ? Object.entries(network.containers).map(([id, info]) => ({ id, ...(info as any) })) : [])
 	);
+
 	const inUse = $derived(connectedContainers.length > 0);
 	const isPredefined = $derived(network?.name === 'bridge' || network?.name === 'host' || network?.name === 'none');
+
+	async function handleSort(column: string) {
+		const newSortDir: 'asc' | 'desc' = sortCol === column && sortDir === 'asc' ? 'desc' : 'asc';
+		sortCol = column;
+		sortDir = newSortDir;
+
+		if (data.network?.id) {
+			try {
+				network = await networkService.getNetwork(data.network.id, sortCol, sortDir);
+			} catch (err) {
+				console.error('Failed to sort network containers:', err);
+				toast.error(m.common_action_failed());
+			}
+		}
+	}
 
 	function triggerRemove() {
 		if (isPredefined) {
@@ -134,7 +156,7 @@
 
 	{#if errorMessage}
 		<Alert.Root variant="destructive">
-			<CircleAlertIcon class="mr-2 size-4" />
+			<AlertIcon class="mr-2 size-4" />
 			<Alert.Title>{m.common_action_failed()}</Alert.Title>
 			<Alert.Description>{errorMessage}</Alert.Description>
 		</Alert.Root>
@@ -168,7 +190,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<NetworkIcon class="size-5 text-blue-500" />
+								<NetworksIcon class="size-5 text-blue-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
@@ -180,7 +202,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10 p-2">
-								<HardDriveIcon class="size-5 text-orange-500" />
+								<VolumesIcon class="size-5 text-orange-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
@@ -246,7 +268,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
-								<ListTreeIcon class="size-5 text-indigo-500" />
+								<NetworksIcon class="size-5 text-indigo-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.ipv6_enabled()}</p>
@@ -364,7 +386,7 @@
 
 			{#if connectedContainers.length > 0}
 				<Card.Root>
-					<Card.Header icon={ContainerIcon}>
+					<Card.Header icon={ContainersIcon}>
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>{m.networks_connected_containers_title()}</Card.Title>
 							<Card.Description
@@ -374,25 +396,66 @@
 					</Card.Header>
 					<Card.Content class="p-4">
 						<Card.Root variant="outlined">
-							<Card.Content class="divide-y p-0">
-								{#each connectedContainers as container (container.id)}
-									<div class="flex flex-col p-3 sm:flex-row sm:items-center">
-										<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-											<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
-												<ContainerIcon class="text-muted-foreground mr-1.5 size-3.5" />
-												{container.Name}
-											</a>
-										</div>
-										<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-											<code
-												class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-												title="Click to select"
-											>
-												{container.IPv4Address || container.IPv6Address || m.common_unknown()}
-											</code>
-										</div>
+							<Card.Content class="p-0">
+								<div class="bg-muted/30 flex flex-col border-b p-3 sm:flex-row sm:items-center">
+									<div
+										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center text-sm font-medium sm:w-1/3"
+										onclick={() => handleSort('name')}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
+									>
+										{m.common_name()}
+										{#if sortCol === 'name'}
+											{#if sortDir === 'asc'}
+												<ArrowUpIcon class="ml-1 size-3" />
+											{:else}
+												<ArrowDownIcon class="ml-1 size-3" />
+											{/if}
+										{/if}
 									</div>
-								{/each}
+									<div
+										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center pl-0 text-sm font-medium sm:w-2/3 sm:pl-4"
+										onclick={() => handleSort('ip')}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => e.key === 'Enter' && handleSort('ip')}
+									>
+										{m.containers_ip_address()}
+										{#if sortCol === 'ip'}
+											{#if sortDir === 'asc'}
+												<ArrowUpIcon class="ml-1 size-3" />
+											{:else}
+												<ArrowDownIcon class="ml-1 size-3" />
+											{/if}
+										{/if}
+									</div>
+								</div>
+
+								<div class="divide-y">
+									{#each connectedContainers as container (container.id)}
+										<div class="flex flex-col p-3 sm:flex-row sm:items-center">
+											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
+												<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
+													<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
+													{container.name ?? container.Name}
+												</a>
+											</div>
+											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
+												<code
+													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+													title="Click to select"
+												>
+													{container.ipv4Address ??
+														container.IPv4Address ??
+														container.ipv6Address ??
+														container.IPv6Address ??
+														m.common_unknown()}
+												</code>
+											</div>
+										</div>
+									{/each}
+								</div>
 							</Card.Content>
 						</Card.Root>
 					</Card.Content>
@@ -458,7 +521,7 @@
 	{:else}
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 			<div class="bg-muted/30 mb-4 rounded-full p-4">
-				<NetworkIcon class="text-muted-foreground size-10 opacity-70" />
+				<NetworksIcon class="text-muted-foreground size-10 opacity-70" />
 			</div>
 			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.networks_title() })}</h2>
 			<p class="text-muted-foreground mb-6">{m.common_not_found_description({ resource: m.networks_title().toLowerCase() })}</p>

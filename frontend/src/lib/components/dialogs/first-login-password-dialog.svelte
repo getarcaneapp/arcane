@@ -1,15 +1,13 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Alert from '$lib/components/ui/alert';
+	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { authService } from '$lib/services/auth-service';
 	import { toast } from 'svelte-sonner';
-	import CircleAlert from '@lucide/svelte/icons/circle-alert';
-	import Eye from '@lucide/svelte/icons/eye';
-	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 
 	let {
@@ -78,16 +76,16 @@
 		>
 			{#if error}
 				<Alert.Root variant="destructive">
-					<CircleAlert class="h-4 w-4" />
-					<Alert.Title>Error</Alert.Title>
+					<AlertIcon class="size-4" />
+					<Alert.Title>{m.error_generic()}</Alert.Title>
 					<Alert.Description>{error}</Alert.Description>
 				</Alert.Root>
 			{/if}
 
 			<div class="space-y-2">
 				<Label for="current-password">{m.first_login_current_password()}</Label>
-				<div class="relative">
-					<Input
+				<InputGroup.Root>
+					<InputGroup.Input
 						id="current-password"
 						type={showCurrentPassword ? 'text' : 'password'}
 						bind:value={currentPassword}
@@ -95,27 +93,28 @@
 						required
 						disabled={isLoading}
 					/>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						class="absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
-						onclick={() => (showCurrentPassword = !showCurrentPassword)}
-						disabled={isLoading}
-					>
-						{#if showCurrentPassword}
-							<EyeOff class="h-4 w-4" />
-						{:else}
-							<Eye class="h-4 w-4" />
-						{/if}
-					</Button>
-				</div>
+					<InputGroup.Addon align="inline-end">
+						<InputGroup.Button
+							type="button"
+							size="icon-xs"
+							onclick={() => (showCurrentPassword = !showCurrentPassword)}
+							disabled={isLoading}
+							aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
+						>
+							{#if showCurrentPassword}
+								<EyeOffIcon />
+							{:else}
+								<EyeOnIcon />
+							{/if}
+						</InputGroup.Button>
+					</InputGroup.Addon>
+				</InputGroup.Root>
 			</div>
 
 			<div class="space-y-2">
 				<Label for="new-password">{m.first_login_new_password()}</Label>
-				<div class="relative">
-					<Input
+				<InputGroup.Root>
+					<InputGroup.Input
 						id="new-password"
 						type={showNewPassword ? 'text' : 'password'}
 						bind:value={newPassword}
@@ -123,27 +122,28 @@
 						required
 						disabled={isLoading}
 					/>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						class="absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
-						onclick={() => (showNewPassword = !showNewPassword)}
-						disabled={isLoading}
-					>
-						{#if showNewPassword}
-							<EyeOff class="h-4 w-4" />
-						{:else}
-							<Eye class="h-4 w-4" />
-						{/if}
-					</Button>
-				</div>
+					<InputGroup.Addon align="inline-end">
+						<InputGroup.Button
+							type="button"
+							size="icon-xs"
+							onclick={() => (showNewPassword = !showNewPassword)}
+							disabled={isLoading}
+							aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+						>
+							{#if showNewPassword}
+								<EyeOffIcon />
+							{:else}
+								<EyeOnIcon />
+							{/if}
+						</InputGroup.Button>
+					</InputGroup.Addon>
+				</InputGroup.Root>
 			</div>
 
 			<div class="space-y-2">
 				<Label for="confirm-password">{m.first_login_confirm_password()}</Label>
-				<div class="relative">
-					<Input
+				<InputGroup.Root>
+					<InputGroup.Input
 						id="confirm-password"
 						type={showConfirmPassword ? 'text' : 'password'}
 						bind:value={confirmPassword}
@@ -151,21 +151,22 @@
 						required
 						disabled={isLoading}
 					/>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						class="absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
-						onclick={() => (showConfirmPassword = !showConfirmPassword)}
-						disabled={isLoading}
-					>
-						{#if showConfirmPassword}
-							<EyeOff class="h-4 w-4" />
-						{:else}
-							<Eye class="h-4 w-4" />
-						{/if}
-					</Button>
-				</div>
+					<InputGroup.Addon align="inline-end">
+						<InputGroup.Button
+							type="button"
+							size="icon-xs"
+							onclick={() => (showConfirmPassword = !showConfirmPassword)}
+							disabled={isLoading}
+							aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+						>
+							{#if showConfirmPassword}
+								<EyeOffIcon />
+							{:else}
+								<EyeOnIcon />
+							{/if}
+						</InputGroup.Button>
+					</InputGroup.Addon>
+				</InputGroup.Root>
 			</div>
 		</form>
 	{/snippet}
@@ -173,7 +174,7 @@
 	{#snippet footer()}
 		<Button type="submit" onclick={handleSubmit} disabled={!isValid || isLoading}>
 			{#if isLoading}
-				<Spinner class="mr-2 h-4 w-4" />
+				<Spinner class="size-4" />
 				{m.first_login_submitting()}
 			{:else}
 				{m.first_login_submit()}
