@@ -1456,5 +1456,8 @@
 	"common_mount": "mount",
 	"common_mounts": "mounts",
 	"common_image_id": "Image ID",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "Classic",
+	"tree_view": "Tree View",
+	"project_view_description": "Switch between classic side-by-side layout and tree view"
 }

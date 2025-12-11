@@ -312,13 +312,12 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full">
-				<!-- Layout Mode Toggle -->
 				<div class="mb-4">
 					<SwitchWithLabel
 						id="layout-mode-toggle"
 						checked={layoutMode === 'tree'}
-						label={layoutMode === 'tree' ? 'Tree View' : 'Classic View'}
-						description="Switch between classic side-by-side layout and tree view"
+						label={layoutMode === 'tree' ? m.tree_view() : m.classic()}
+						description={m.project_view_description()}
 						onCheckedChange={(checked) => {
 							layoutMode = checked ? 'tree' : 'classic';
 							if (checked) {
@@ -331,7 +330,6 @@
 				</div>
 
 				{#if layoutMode === 'tree'}
-					<!-- Tree View Layout -->
 					<div class="flex h-full flex-col gap-4 lg:flex-row">
 						<div
 							class="border-border bg-card flex w-full flex-col overflow-y-auto rounded-lg border lg:h-full lg:w-fit lg:max-w-xs lg:min-w-48"
@@ -414,10 +412,8 @@
 						</div>
 					</div>
 				{:else}
-					<!-- Classic Layout -->
 					<div class="flex h-full flex-col gap-4">
 						{#if project?.includeFiles && project.includeFiles.length > 0}
-							<!-- Include Files Tabs -->
 							<div class="border-border bg-card rounded-lg border">
 								<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
 									{#each project.includeFiles as includeFile}
@@ -438,7 +434,6 @@
 						{/if}
 
 						{#if selectedIncludeTab}
-							<!-- Show selected include file in full width -->
 							{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
 							{#if includeFile}
 								<div class="flex-1">
@@ -452,7 +447,6 @@
 								</div>
 							{/if}
 						{:else}
-							<!-- Side-by-side compose.yaml and .env -->
 							<div class="grid h-full flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
 								<div class="flex h-full flex-col lg:col-span-3">
 									<CodePanel
