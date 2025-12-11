@@ -278,25 +278,51 @@ test.describe('Project Detail Page', () => {
     const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
     await configTab.click();
 
-    const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
-    await expect(projectFilesHeading).toBeVisible();
-
-    const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
-    const envFileButton = page.getByRole('button', { name: '.env' }).first();
-
-    await expect(composeFileButton).toBeVisible();
-    await expect(envFileButton).toBeVisible();
-
-    // Switching files should update the visible code panel title
-    await envFileButton.click();
-    await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
-
-    await composeFileButton.click();
+    // The project config editor supports two layouts:
+    // - classic (default): side-by-side compose.yaml + .env panels
+    // - tree view: file list on the left and a single code panel on the right
     await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
 
-    const includesFolder = page.getByRole('button', { name: 'Includes' });
-    if (await includesFolder.count()) {
-      await expect(includesFolder.first()).toBeVisible();
+    const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
+    const isTreeView = await projectFilesHeading.isVisible();
+
+    if (isTreeView) {
+      const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
+      const envFileButton = page.getByRole('button', { name: '.env' }).first();
+
+      await expect(composeFileButton).toBeVisible();
+      await expect(envFileButton).toBeVisible();
+
+      // Switching files should update the visible code panel title
+      await envFileButton.click();
+      await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+
+      await composeFileButton.click();
+      await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+
+      const includesFolder = page.getByRole('button', { name: 'Includes' });
+      if (await includesFolder.count()) {
+        await expect(includesFolder.first()).toBeVisible();
+      }
+    } else {
+      // Classic layout renders both editors at the same time.
+      await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+
+      // Also validate that we can switch to tree view and see the file list.
+      const layoutSwitch = page.getByRole('switch', { name: /Classic|Tree View/i });
+      if (await layoutSwitch.count()) {
+        await layoutSwitch.click();
+        await expect(projectFilesHeading).toBeVisible();
+
+        const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
+        const envFileButton = page.getByRole('button', { name: '.env' }).first();
+
+        await expect(composeFileButton).toBeVisible();
+        await expect(envFileButton).toBeVisible();
+
+        await envFileButton.click();
+        await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+      }
     }
   });
 
