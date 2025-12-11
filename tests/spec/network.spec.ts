@@ -54,8 +54,6 @@ test.describe('Networks Page', () => {
     await page.locator('button:has-text("Create Network")').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
-    await page.locator('button:has-text("Create Network")').first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
 
     const networkName = `test-network-${Date.now()}`;
     const nameInput = page.getByLabel('Name').first();
