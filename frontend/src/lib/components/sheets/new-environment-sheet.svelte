@@ -39,10 +39,16 @@
 		apiUrl: z.string().min(1, m.environments_server_url_required())
 	});
 
-	const { inputs: newAgentInputs, ...newAgentForm } = createForm<typeof newAgentFormSchema>(newAgentFormSchema, {
-		name: '',
-		apiUrl: ''
+	let newAgentName = $state('');
+
+	let newAgentFormData = $derived({
+		name: newAgentName,
+		apiUrl: newAgentUrlHost
 	});
+
+	let { inputs: newAgentInputs, ...newAgentForm } = $derived(
+		createForm<typeof newAgentFormSchema>(newAgentFormSchema, newAgentFormData)
+	);
 
 	// Reset on open/close
 	$effect(() => {
@@ -50,14 +56,8 @@
 			createdEnvironment = null;
 			newAgentUrlProtocol = 'http';
 			newAgentUrlHost = '';
-			$newAgentInputs.name.value = '';
-			$newAgentInputs.apiUrl.value = '';
+			newAgentName = '';
 		}
-	});
-
-	// Sync UrlInput value with form validation
-	$effect(() => {
-		$newAgentInputs.apiUrl.value = newAgentUrlHost;
 	});
 
 	async function handleNewAgentSubmit() {
