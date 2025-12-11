@@ -621,7 +621,7 @@
 		</div>
 
 		<div class="hidden flex-1 overflow-auto px-6 py-8 md:block">
-			<div class="rounded-md border">
+			<div class="overflow-x-auto rounded-md border">
 				<Table.Root>
 					<Table.Header>
 						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}

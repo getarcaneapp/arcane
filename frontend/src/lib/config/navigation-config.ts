@@ -64,9 +64,9 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 
 export const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.managementItems[0],
+	navigationItems.managementItems[1],
 	navigationItems.resourceItems[0],
-	navigationItems.resourceItems[2],
-	navigationItems.settingsItems[1]
+	navigationItems.resourceItems[1]
 ];
 
 export type MobileNavigationSettings = {
