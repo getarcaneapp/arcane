@@ -110,7 +110,7 @@ jobs:
           docker network create my-test-network || true
 
       - name: Download Arcane Docker image artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: arcane-image
           path: /tmp
