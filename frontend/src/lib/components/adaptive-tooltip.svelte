@@ -48,7 +48,7 @@
 	// Long press state (only used for interactive mode)
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let isLongPressing = $state(false);
-	const LONG_PRESS_DURATION = 500;
+	const LONG_PRESS_DURATION = 200;
 
 	function handleTouchStart() {
 		if (!isTouchDevice.current) return;
@@ -105,14 +105,14 @@
 		}
 	}
 
-	// Cleanup on unmount
-	$effect(() => {
-		return () => {
-			if (longPressTimer) {
-				clearTimeout(longPressTimer);
-			}
-		};
-	});
+	function handleClick(event: MouseEvent) {
+		// Only prevent click if the popover is open (was triggered by long press)
+		// This allows normal clicks/taps to go through when popover is closed
+		if (open) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	}
 </script>
 
 {#if isTouchDevice.current}
@@ -129,7 +129,7 @@
 						ontouchend={handleTouchEnd}
 						ontouchcancel={handleTouchCancel}
 						ontouchmove={handleTouchMove}
-						onclick={(e) => e.preventDefault()}
+						onclick={handleClick}
 					>
 						{@render trigger()}
 					</div>

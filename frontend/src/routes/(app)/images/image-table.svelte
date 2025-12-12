@@ -294,9 +294,9 @@
 		rowActions={RowActions}
 		onclick={(item: ImageSummaryDto) => goto(`/images/${item.id}`)}
 	>
-		{#if (mobileFieldVisibility.updates ?? true) && item.updateInfo !== undefined}
-			<div class="flex flex-wrap gap-x-4 gap-y-3 border-t pt-3">
-				<div class="flex min-w-0 flex-1 basis-[180px] flex-col">
+		{#if mobileFieldVisibility.updates ?? true}
+			<div class="flex items-center gap-x-2 gap-y-2 border-t pt-2">
+				<div class="flex min-w-0 shrink flex-col">
 					<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
 						{m.images_updates()}
 					</div>

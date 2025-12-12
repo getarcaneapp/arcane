@@ -437,6 +437,7 @@
 		side="right"
 		contentClass="max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
 		arrowClasses="bg-popover"
+		interactive
 	>
 		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center">
