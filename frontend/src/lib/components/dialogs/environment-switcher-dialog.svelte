@@ -12,6 +12,8 @@
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
 	import { debounced } from '$lib/utils/utils';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { tick } from 'svelte';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon } from '$lib/icons';
 
 	type Props = {
@@ -23,39 +25,115 @@
 
 	let searchQuery = $state('');
 	let environments = $state<Environment[]>([]);
+	let isLoading = $state(false);
 	let isLoadingMore = $state(false);
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 	let scrollContainer = $state<HTMLDivElement | null>(null);
+	let loadError = $state<string | null>(null);
+	let currentRequestId = 0;
 
 	const PAGE_SIZE = 10;
 
-	// Reactive promise that loads environments based on searchQuery
-	let environmentsPromise = $derived.by(() => {
-		if (!open) return null;
-
-		return (async () => {
-			try {
-				const result = await environmentManagementService.getEnvironments({
-					pagination: { page: 1, limit: PAGE_SIZE },
-					search: searchQuery || undefined,
-					sort: { column: 'name', direction: 'asc' }
-				});
-
-				environments = result.data;
-				currentPage = result.pagination.currentPage;
-				totalPages = result.pagination.totalPages;
-			} catch (error) {
-				console.error('Failed to load environments:', error);
-				toast.error('Failed to load environments');
-				throw error;
-			}
-		})();
+	let requestOptions = $state<SearchPaginationSortRequest>({
+		pagination: { page: 1, limit: PAGE_SIZE },
+		sort: { column: 'name', direction: 'asc' },
+		search: undefined
 	});
 
+	async function resetScrollToTop() {
+		await tick();
+		if (scrollContainer) scrollContainer.scrollTop = 0;
+	}
+
+	function normalizeSearch(query: string): string | undefined {
+		const trimmed = query.trim();
+		return trimmed ? trimmed : undefined;
+	}
+
+	async function fetchEnvironments(options: SearchPaginationSortRequest, append: boolean) {
+		currentRequestId++;
+		const requestId = currentRequestId;
+		loadError = null;
+		requestOptions = options;
+
+		if (append) {
+			isLoadingMore = true;
+		} else {
+			isLoading = true;
+			isLoadingMore = false;
+		}
+
+		try {
+			const result = await environmentManagementService.getEnvironments(options);
+			if (requestId !== currentRequestId) return;
+
+			environments = append ? [...environments, ...result.data] : result.data;
+			currentPage = result.pagination.currentPage;
+			totalPages = result.pagination.totalPages;
+		} catch (error) {
+			if (requestId !== currentRequestId) return;
+			console.error('Failed to load environments:', error);
+			loadError = 'Failed to load environments';
+			toast.error(loadError);
+		} finally {
+			if (requestId !== currentRequestId) return;
+			isLoading = false;
+			isLoadingMore = false;
+		}
+	}
+
+	async function loadInitial() {
+		environments = [];
+		currentPage = 1;
+		totalPages = 1;
+		await resetScrollToTop();
+		const options: SearchPaginationSortRequest = {
+			...requestOptions,
+			search: normalizeSearch(searchQuery),
+			pagination: { page: 1, limit: PAGE_SIZE },
+			sort: { column: 'name', direction: 'asc' }
+		};
+		await fetchEnvironments(options, false);
+	}
+
 	const debouncedSearch = debounced((query: string) => {
-		searchQuery = query;
+		// Prevent stale debounced callbacks from re-applying an old query (e.g. after clearing the input)
+		if (query !== searchQuery) return;
+		const options: SearchPaginationSortRequest = {
+			...requestOptions,
+			search: normalizeSearch(query),
+			pagination: { page: 1, limit: PAGE_SIZE },
+			sort: { column: 'name', direction: 'asc' }
+		};
+		void resetScrollToTop();
+		void fetchEnvironments(options, false);
 	}, 300);
+
+	function clearSearch() {
+		searchQuery = '';
+		const options: SearchPaginationSortRequest = {
+			...requestOptions,
+			search: undefined,
+			pagination: { page: 1, limit: PAGE_SIZE },
+			sort: { column: 'name', direction: 'asc' }
+		};
+		void resetScrollToTop();
+		void fetchEnvironments(options, false);
+	}
+
+	$effect(() => {
+		if (!open) {
+			// Invalidate any inflight request and stop spinners when dialog closes
+			currentRequestId++;
+			return;
+		}
+		// Run outside reactive tracking so we don't refetch on internal state changes
+		queueMicrotask(() => {
+			if (!open) return;
+			void loadInitial();
+		});
+	});
 
 	function handleScroll(e: Event) {
 		const target = e.target as HTMLDivElement;
@@ -70,21 +148,22 @@
 	}
 
 	async function loadMoreEnvironments() {
+		if (isLoading || isLoadingMore) return;
+		if (currentPage >= totalPages) return;
 		isLoadingMore = true;
 		try {
-			const result = await environmentManagementService.getEnvironments({
+			const options: SearchPaginationSortRequest = {
+				...requestOptions,
+				search: normalizeSearch(searchQuery),
 				pagination: { page: currentPage + 1, limit: PAGE_SIZE },
-				search: searchQuery || undefined,
 				sort: { column: 'name', direction: 'asc' }
-			});
-
-			environments = [...environments, ...result.data];
-			currentPage = result.pagination.currentPage;
-			totalPages = result.pagination.totalPages;
+			};
+			await fetchEnvironments(options, true);
 		} catch (error) {
 			console.error('Failed to load more environments:', error);
 			toast.error('Failed to load more environments');
 		} finally {
+			// fetchEnvironments controls isLoadingMore; this is only a safety net.
 			isLoadingMore = false;
 		}
 	}
@@ -119,13 +198,16 @@
 					type="text"
 					placeholder={m.common_search()}
 					value={searchQuery}
-					oninput={(e) => debouncedSearch((e.target as HTMLInputElement).value)}
+					oninput={(e) => {
+						searchQuery = (e.target as HTMLInputElement).value;
+						debouncedSearch(searchQuery);
+					}}
 					class="h-9 pr-10 pl-10"
 				/>
 				{#if searchQuery}
 					<button
 						type="button"
-						onclick={() => (searchQuery = '')}
+						onclick={clearSearch}
 						class="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 transition-colors"
 						title="Clear search"
 					>
@@ -135,68 +217,66 @@
 			</div>
 
 			<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
-				{#await environmentsPromise}
+				{#if isLoading}
 					<div class="flex items-center justify-center py-10">
 						<Spinner class="size-6" />
 					</div>
-				{:then}
-					{#if environments.length === 0}
-						<div class="text-muted-foreground py-10 text-center">
-							<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
-							<p>{m.sidebar_no_environments()}</p>
-						</div>
-					{:else}
-						<div class="space-y-1">
-							{#each environments as env (env.id)}
-								{@const isActive = environmentStore.selected?.id === env.id}
-								{@const isDisabled = !env.enabled}
-								<button
-									type="button"
-									onclick={() => !isActive && !isDisabled && handleSelect(env)}
-									disabled={isDisabled}
-									class={cn(
-										'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
-										isActive && 'bg-primary/10 border-primary border font-medium',
-										!isActive && !isDisabled && 'hover:bg-muted/50',
-										isDisabled && 'cursor-not-allowed opacity-50'
-									)}
-								>
-									<div
-										class={cn(
-											'flex size-8 shrink-0 items-center justify-center rounded-md border',
-											isActive ? 'bg-primary border-primary' : 'border-border'
-										)}
-									>
-										{#if env.id === '0'}
-											<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-										{:else}
-											<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-										{/if}
-									</div>
-									<div class="flex min-w-0 flex-1 flex-col">
-										<span class="truncate">{env.name}</span>
-										<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
-											{getConnectionString(env)}
-										</span>
-									</div>
-									{#if isActive}
-										<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
-									{/if}
-								</button>
-							{/each}
-
-							{#if isLoadingMore}
-								<div class="flex items-center justify-center py-4">
-									<Spinner class="size-5" />
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:catch}
+				{:else if loadError}
 					<div class="text-destructive py-10 text-center">
 						<p>{m.error_generic()}</p>
 					</div>
-				{/await}
+				{:else if environments.length === 0}
+					<div class="text-muted-foreground py-10 text-center">
+						<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
+						<p>{m.sidebar_no_environments()}</p>
+					</div>
+				{:else}
+					<div class="space-y-1">
+						{#each environments as env (env.id)}
+							{@const isActive = environmentStore.selected?.id === env.id}
+							{@const isDisabled = !env.enabled}
+							<button
+								type="button"
+								onclick={() => !isActive && !isDisabled && handleSelect(env)}
+								disabled={isDisabled}
+								class={cn(
+									'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
+									isActive && 'bg-primary/10 border-primary border font-medium',
+									!isActive && !isDisabled && 'hover:bg-muted/50',
+									isDisabled && 'cursor-not-allowed opacity-50'
+								)}
+							>
+								<div
+									class={cn(
+										'flex size-8 shrink-0 items-center justify-center rounded-md border',
+										isActive ? 'bg-primary border-primary' : 'border-border'
+									)}
+								>
+									{#if env.id === '0'}
+										<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+									{:else}
+										<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+									{/if}
+								</div>
+								<div class="flex min-w-0 flex-1 flex-col">
+									<span class="truncate">{env.name}</span>
+									<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
+										{getConnectionString(env)}
+									</span>
+								</div>
+								{#if isActive}
+									<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
+								{/if}
+							</button>
+						{/each}
+
+						{#if isLoadingMore}
+							<div class="flex items-center justify-center py-4">
+								<Spinner class="size-5" />
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/snippet}
@@ -211,13 +291,13 @@
 						goto('/environments');
 					}}
 				>
-					<AddIcon class="mr-1.5 size-4" />
+					<AddIcon class="size-4" />
 					{m.sidebar_manage_environments()}
 				</Button>
 			{:else}
 				<div></div>
 			{/if}
-			<Button variant="ghost" onclick={() => (open = false)}>
+			<Button variant="outline" onclick={() => (open = false)}>
 				{m.common_close()}
 			</Button>
 		</div>
