@@ -53,7 +53,7 @@ jobs:
         run: docker save arcane:playwright-tests -o /tmp/arcane-image.tar
 
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: arcane-image
           path: /tmp/arcane-image.tar
@@ -110,7 +110,7 @@ jobs:
           docker network create my-test-network || true
 
       - name: Download Arcane Docker image artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: arcane-image
           path: /tmp
@@ -139,7 +139,7 @@ jobs:
 
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report-${{ matrix.database.name }}
           path: tests/.report
