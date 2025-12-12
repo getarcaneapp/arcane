@@ -1479,13 +1479,13 @@
 	"environments_docker_compose": "Docker 配置",
 	"environments_new_agent": "新建代理",
 	"environments_existing_agent": "现有代理",
-	"environments_create_new_agent": "Create New Agent Environment",
-	"environments_create_new_agent_description": "Generate an API key and deployment snippets for a new agent.",
-	"environments_production_docker": "Production Docker",
-	"environments_agent_address": "Agent Address",
+	"environments_create_new_agent": "创建新代理环境",
+	"environments_create_new_agent_description": "为新代理生成一个 API 密钥和部署代码片段。",
+	"environments_production_docker": "生产停靠栏",
+	"environments_agent_address": "代理地址",
 	"environments_agent_address_placeholder": "agent.example.com",
-	"environments_agent_address_description": "The URL where your agent will be accessible",
-	"environments_generate_config": "Generate Agent Configuration",
-	"environments_connect_existing_agent": "Connect to Existing Agent",
-	"environments_connect_existing_agent_description": "Connect to an already-running agent using a bootstrap token."
+	"environments_agent_address_description": "您的代理人可以访问的 URL",
+	"environments_generate_config": "生成代理配置",
+	"environments_connect_existing_agent": "连接到现有代理",
+	"environments_connect_existing_agent_description": "使用引导令牌连接到已运行的代理人。"
 }
