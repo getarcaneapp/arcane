@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"go.getarcane.app/types/base"
 	"go.getarcane.app/types/environment"
 )
@@ -39,10 +40,11 @@ type EnvironmentPaginatedResponse struct {
 }
 
 type ListEnvironmentsInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query for filtering by name or API URL"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListEnvironmentsOutput struct {
@@ -307,7 +309,19 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: input.Search,
+		},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+	}
 
 	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params)
 	if err != nil {

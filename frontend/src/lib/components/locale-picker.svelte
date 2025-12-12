@@ -37,7 +37,7 @@
 	async function updateLocale(locale: Locale) {
 		try {
 			if ($userStore) {
-				await userService.update($userStore.id, { ...$userStore, locale });
+				await userService.update($userStore.id, { locale });
 			}
 			await setLocale(locale);
 		} catch (err) {

@@ -39,7 +39,7 @@ jobs:
                   go work sync
 
             - name: Commit changes (if any)
-              uses: stefanzweifel/git-auto-commit-action@v5
+              uses: stefanzweifel/git-auto-commit-action@v7
               with:
                   commit_message: "chore(deps): Synchronize go.mod files via go work sync"
                   branch: ${{ github.head_ref }}
