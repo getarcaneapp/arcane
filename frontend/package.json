@@ -47,7 +47,7 @@
 		"@iconify/json": "^2.2.416",
 		"@inlang/paraglide-js": "2.6.0",
 		"@internationalized/date": "^3.10.0",
-		"@sveltejs/kit": "^2.49.1",
+		"@sveltejs/kit": "^2.49.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tailwindcss/vite": "^4.1.16",
 		"@types/bytes": "^3.1.5",
