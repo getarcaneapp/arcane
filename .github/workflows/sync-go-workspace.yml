@@ -1,0 +1,45 @@
+name: Dependabot Go Workspaces Tidy
+on:
+    pull_request:
+        branches:
+            - main
+        types: [opened, synchronize, reopened]
+        paths:
+            - backend/go.mod
+            - backend/go.sum
+            - types/go.mod
+            - types/go.sum
+            - cli/go.mod
+            - cli/go.sum
+            - go.work
+            - go.work.sum
+
+jobs:
+    tidy:
+        runs-on: ubuntu-latest
+        if: ${{ github.actor == 'dependabot[bot]' }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version: "1.25.4"
+                  cache-dependency-path: |
+                      backend/go.sum
+                      cli/go.sum
+                      types/go.sum
+                      go.work.sum
+
+            - name: Run go work sync and go mod tidy
+              run: |
+                  go work sync
+
+            - name: Commit changes (if any)
+              uses: stefanzweifel/git-auto-commit-action@v5
+              with:
+                  commit_message: "chore(deps): Synchronize go.mod files via go work sync"
+                  branch: ${{ github.head_ref }}

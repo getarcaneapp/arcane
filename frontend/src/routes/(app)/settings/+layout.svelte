@@ -27,6 +27,7 @@
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isGlassEnabled = $derived.by(() => $settingsStore?.glassEffectEnabled ?? false);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
@@ -180,11 +181,11 @@
 
 <div class="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
-	<aside class="bg-background/50 hidden w-64 shrink-0 border-r backdrop-blur-sm md:block">
+	<aside class={cn('hidden w-64 shrink-0 border-r md:block', isGlassEnabled ? 'bg-background/50 backdrop-blur-sm' : 'bg-card')}>
 		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
 			<nav class="space-y-1">
-				{#each navItems as item}
+				{#each navItems as item (item.href)}
 					{@const isActive = currentPath.startsWith(item.href)}
 					<a
 						href={item.href}
@@ -205,7 +206,10 @@
 	<main class="min-w-0 flex-1">
 		{#if isSubPage}
 			<div
-				class="bg-background/95 sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg backdrop-blur-md transition-all duration-200 md:hidden"
+				class={cn(
+					'sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg transition-all duration-200 md:hidden',
+					isGlassEnabled ? 'bg-background/95 backdrop-blur-md' : 'bg-card'
+				)}
 			>
 				<div class="px-4 py-3">
 					<div class="flex items-center justify-between gap-4">
@@ -265,7 +269,7 @@
 				size="lg"
 				onclick={() => formState.resetFunction && formState.resetFunction()}
 				disabled={formState.isLoading}
-				class="bg-background/80 size-14 rounded-full border-2 shadow-lg backdrop-blur-md"
+				class={cn('size-14 rounded-full border-2 shadow-lg', isGlassEnabled ? 'bg-background/80 backdrop-blur-md' : 'bg-card')}
 			>
 				<ResetIcon class="size-5" />
 			</Button>
