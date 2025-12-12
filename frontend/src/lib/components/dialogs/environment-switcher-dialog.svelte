@@ -31,6 +31,7 @@
 	let totalPages = $state(1);
 	let scrollContainer = $state<HTMLDivElement | null>(null);
 	let loadError = $state<string | null>(null);
+	let environmentsPromise = $state<Promise<void> | null>(null);
 	let currentRequestId = 0;
 
 	const PAGE_SIZE = 10;
@@ -51,7 +52,7 @@
 		return trimmed ? trimmed : undefined;
 	}
 
-	async function fetchEnvironments(options: SearchPaginationSortRequest, append: boolean) {
+	async function fetchEnvironments(options: SearchPaginationSortRequest, append: boolean, throwOnError = false) {
 		currentRequestId++;
 		const requestId = currentRequestId;
 		loadError = null;
@@ -76,6 +77,7 @@
 			console.error('Failed to load environments:', error);
 			loadError = 'Failed to load environments';
 			toast.error(loadError);
+			if (throwOnError) throw error;
 		} finally {
 			if (requestId !== currentRequestId) return;
 			isLoading = false;
@@ -94,7 +96,7 @@
 			pagination: { page: 1, limit: PAGE_SIZE },
 			sort: { column: 'name', direction: 'asc' }
 		};
-		await fetchEnvironments(options, false);
+		await fetchEnvironments(options, false, true);
 	}
 
 	const debouncedSearch = debounced((query: string) => {
@@ -106,8 +108,11 @@
 			pagination: { page: 1, limit: PAGE_SIZE },
 			sort: { column: 'name', direction: 'asc' }
 		};
-		void resetScrollToTop();
-		void fetchEnvironments(options, false);
+		environmentsPromise = Promise.resolve().then(async () => {
+			if (query !== searchQuery) return;
+			await resetScrollToTop();
+			await fetchEnvironments(options, false, true);
+		});
 	}, 300);
 
 	function clearSearch() {
@@ -118,20 +123,23 @@
 			pagination: { page: 1, limit: PAGE_SIZE },
 			sort: { column: 'name', direction: 'asc' }
 		};
-		void resetScrollToTop();
-		void fetchEnvironments(options, false);
+		environmentsPromise = Promise.resolve().then(async () => {
+			await resetScrollToTop();
+			await fetchEnvironments(options, false, true);
+		});
 	}
 
 	$effect(() => {
 		if (!open) {
 			// Invalidate any inflight request and stop spinners when dialog closes
 			currentRequestId++;
+			environmentsPromise = null;
 			return;
 		}
-		// Run outside reactive tracking so we don't refetch on internal state changes
-		queueMicrotask(() => {
+		// Assign promise synchronously; the actual load runs in a microtask so we don't track internal state
+		environmentsPromise = Promise.resolve().then(() => {
 			if (!open) return;
-			void loadInitial();
+			return loadInitial();
 		});
 	});
 
@@ -158,10 +166,9 @@
 				pagination: { page: currentPage + 1, limit: PAGE_SIZE },
 				sort: { column: 'name', direction: 'asc' }
 			};
-			await fetchEnvironments(options, true);
-		} catch (error) {
-			console.error('Failed to load more environments:', error);
-			toast.error('Failed to load more environments');
+			await fetchEnvironments(options, true, false);
+		} catch {
+			// fetchEnvironments already handles toasts/errors (and stale-response protection)
 		} finally {
 			// fetchEnvironments controls isLoadingMore; this is only a safety net.
 			isLoadingMore = false;
@@ -217,66 +224,68 @@
 			</div>
 
 			<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
-				{#if isLoading}
+				{#await environmentsPromise}
 					<div class="flex items-center justify-center py-10">
 						<Spinner class="size-6" />
 					</div>
-				{:else if loadError}
+				{:then}
+					{#if environments.length === 0}
+						<div class="text-muted-foreground py-10 text-center">
+							<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
+							<p>{m.sidebar_no_environments()}</p>
+						</div>
+					{:else}
+						<div class="space-y-1">
+							{#each environments as env (env.id)}
+								{@const isActive = environmentStore.selected?.id === env.id}
+								{@const isDisabled = !env.enabled}
+								<button
+									type="button"
+									onclick={() => !isActive && !isDisabled && handleSelect(env)}
+									disabled={isDisabled}
+									class={cn(
+										'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
+										isActive && 'bg-primary/10 border-primary border font-medium',
+										!isActive && !isDisabled && 'hover:bg-muted/50',
+										isDisabled && 'cursor-not-allowed opacity-50'
+									)}
+								>
+									<div
+										class={cn(
+											'flex size-8 shrink-0 items-center justify-center rounded-md border',
+											isActive ? 'bg-primary border-primary' : 'border-border'
+										)}
+									>
+										{#if env.id === '0'}
+											<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+										{:else}
+											<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+										{/if}
+									</div>
+									<div class="flex min-w-0 flex-1 flex-col">
+										<span class="truncate">{env.name}</span>
+										<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
+											{getConnectionString(env)}
+										</span>
+									</div>
+									{#if isActive}
+										<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
+									{/if}
+								</button>
+							{/each}
+
+							{#if isLoadingMore}
+								<div class="flex items-center justify-center py-4">
+									<Spinner class="size-5" />
+								</div>
+							{/if}
+						</div>
+					{/if}
+				{:catch}
 					<div class="text-destructive py-10 text-center">
 						<p>{m.error_generic()}</p>
 					</div>
-				{:else if environments.length === 0}
-					<div class="text-muted-foreground py-10 text-center">
-						<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
-						<p>{m.sidebar_no_environments()}</p>
-					</div>
-				{:else}
-					<div class="space-y-1">
-						{#each environments as env (env.id)}
-							{@const isActive = environmentStore.selected?.id === env.id}
-							{@const isDisabled = !env.enabled}
-							<button
-								type="button"
-								onclick={() => !isActive && !isDisabled && handleSelect(env)}
-								disabled={isDisabled}
-								class={cn(
-									'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
-									isActive && 'bg-primary/10 border-primary border font-medium',
-									!isActive && !isDisabled && 'hover:bg-muted/50',
-									isDisabled && 'cursor-not-allowed opacity-50'
-								)}
-							>
-								<div
-									class={cn(
-										'flex size-8 shrink-0 items-center justify-center rounded-md border',
-										isActive ? 'bg-primary border-primary' : 'border-border'
-									)}
-								>
-									{#if env.id === '0'}
-										<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-									{:else}
-										<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-									{/if}
-								</div>
-								<div class="flex min-w-0 flex-1 flex-col">
-									<span class="truncate">{env.name}</span>
-									<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
-										{getConnectionString(env)}
-									</span>
-								</div>
-								{#if isActive}
-									<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
-								{/if}
-							</button>
-						{/each}
-
-						{#if isLoadingMore}
-							<div class="flex items-center justify-center py-4">
-								<Spinner class="size-5" />
-							</div>
-						{/if}
-					</div>
-				{/if}
+				{/await}
 			</div>
 		</div>
 	{/snippet}
