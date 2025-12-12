@@ -12,11 +12,9 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
-	import { settingsService } from '$lib/services/settings-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import type { Settings } from '$lib/types/settings.type';
 	import {
 		ArrowLeftIcon,
 		RefreshIcon,
@@ -32,10 +30,7 @@
 	} from '$lib/icons';
 
 	let { data } = $props();
-	let { environment } = $derived(data);
-
-	let settings = $state<Settings | null>(null);
-	let isLoadingSettings = $state(false);
+	let { environment, settings } = $derived(data);
 
 	let showSwitchDialog = $state(false);
 
@@ -65,28 +60,6 @@
 		currentStatus = environment.status;
 	});
 
-	// Load settings lazily in the background
-	async function loadSettings() {
-		if (isLoadingSettings) return;
-		isLoadingSettings = true;
-		try {
-			settings = await settingsService.getSettingsForEnvironment(environment.id);
-		} catch {
-			// Settings fetch failed (e.g., remote environment offline) - leave as null
-			settings = null;
-		} finally {
-			isLoadingSettings = false;
-		}
-	}
-
-	$effect(() => {
-		// Re-fetch settings when environment changes
-		const envId = environment.id;
-		if (envId) {
-			loadSettings();
-		}
-	});
-
 	// Track changes
 	let hasChanges = $derived(
 		formName !== environment.name ||
@@ -104,7 +77,6 @@
 			formEnabled = environment.enabled;
 			formApiUrl = environment.apiUrl;
 			currentStatus = environment.status;
-			loadSettings();
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
