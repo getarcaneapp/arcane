@@ -1455,5 +1455,8 @@
 	"common_mount": "mount",
 	"common_mounts": "importi",
 	"common_image_id": "Id Immagine",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "Classico",
+	"tree_view": "Vista Ad Albero",
+	"project_view_description": "Passa tra il layout laterale classico e la vista ad albero"
 }
