@@ -2,7 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto } from '$lib/types/image.type';
@@ -12,7 +11,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -114,7 +113,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item: ImageSummaryDto) => ({
-			component: HardDriveIcon,
+			component: ImagesIcon,
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item: ImageSummaryDto) => {
@@ -140,7 +139,7 @@
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
 	<Card.Root class="flex h-full min-h-0 flex-col">
-		<Card.Header icon={HardDriveIcon} class="shrink-0">
+		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -150,7 +149,7 @@
 				</div>
 				<Button variant="ghost" size="sm" href="/images" disabled={isLoading}>
 					{m.common_view_all()}
-					<ArrowRightIcon class="ml-2 size-4" />
+					<ArrowRightIcon class="size-4" />
 				</Button>
 			</div>
 		</Card.Header>

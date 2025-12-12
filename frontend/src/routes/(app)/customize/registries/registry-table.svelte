@@ -2,25 +2,20 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import TestTubeIcon from '@lucide/svelte/icons/test-tube';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import PackageIcon from '@lucide/svelte/icons/package';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import LinkIcon from '@lucide/svelte/icons/link';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EllipsisIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
 
 	let {
 		registries = $bindable(),
@@ -34,10 +29,8 @@
 		onEditRegistry: (registry: ContainerRegistry) => void;
 	} = $props();
 
-	let isLoading = $state({
-		removing: false,
-		testing: false
-	});
+	let removingId = $state<string | null>(null);
+	let testingId = $state<string | null>(null);
 
 	function getRegistryDisplayName(url: string) {
 		if (!url || url === 'docker.io') return m.registry_docker_hub();
@@ -57,11 +50,10 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
-					isLoading.removing = true;
-
 					let successCount = 0;
 					let failureCount = 0;
 					for (const id of ids) {
+						removingId = id;
 						const reg = registries.data.find((r) => r.id === id);
 						const result = await tryCatch(containerRegistryService.deleteRegistry(id));
 						if (result.error) {
@@ -79,7 +71,7 @@
 					if (failureCount > 0) toast.error(m.registries_bulk_remove_failed({ count: failureCount }));
 
 					selectedIds = [];
-					isLoading.removing = false;
+					removingId = null;
 				}
 			}
 		});
@@ -94,39 +86,38 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
-					isLoading.removing = true;
+					removingId = id;
 
 					const result = await tryCatch(containerRegistryService.deleteRegistry(id));
 					handleApiResultWithCallbacks({
 						result,
 						message: m.registries_delete_failed({ url: safeUrl }),
-						setLoadingState: () => {},
+						setLoadingState: (value) => (value ? null : (removingId = null)),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
 							registries = await containerRegistryService.getRegistries(requestOptions);
+							removingId = null;
 						}
 					});
-
-					isLoading.removing = false;
 				}
 			}
 		});
 	}
 
 	async function handleTest(id: string, url: string) {
-		isLoading.testing = true;
+		testingId = id;
 		const safeUrl = url ?? m.common_unknown();
 		const result = await tryCatch(containerRegistryService.testRegistry(id));
 		handleApiResultWithCallbacks({
 			result,
 			message: m.registries_test_failed({ url: safeUrl }),
-			setLoadingState: () => {},
+			setLoadingState: (value) => (value ? null : (testingId = null)),
 			onSuccess: (resp) => {
 				const msg = (resp as any)?.message ?? m.common_unknown();
 				toast.success(m.registries_test_success({ url: safeUrl, message: msg }));
+				testingId = null;
 			}
 		});
-		isLoading.testing = false;
 	}
 
 	const columns = [
@@ -197,17 +188,15 @@
 {/snippet}
 
 {#snippet RegistryMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: ContainerRegistry;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: PackageIcon, variant: 'purple' as const }}
+		icon={{ component: RegistryIcon, variant: 'purple' as const }}
 		title={(item) => item.url}
 		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
@@ -222,7 +211,7 @@
 			{
 				label: m.common_description(),
 				getValue: (item: ContainerRegistry) => item.description,
-				icon: LinkIcon,
+				icon: ExternalLinkIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.description ?? true) && item.description !== undefined
 			}
@@ -243,16 +232,29 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={isLoading.testing}>
-					<TestTubeIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
+					{#if testingId === item.id}
+						<Spinner class="size-4" />
+					{:else}
+						<TestIcon class="size-4" />
+					{/if}
 					{m.registries_test_connection()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
-					<PencilIcon class="size-4" />
+					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteOne(item.id, item.url)} disabled={isLoading.removing}>
-					<Trash2Icon class="size-4" />
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteOne(item.id, item.url)}
+					disabled={removingId === item.id}
+				>
+					{#if removingId === item.id}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
 					{m.common_remove()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>

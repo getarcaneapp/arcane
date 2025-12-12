@@ -1,5 +1,4 @@
 <script lang="ts">
-	import KeyIcon from '@lucide/svelte/icons/key';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -9,11 +8,12 @@
 	import type { ApiKey, ApiKeyCreated } from '$lib/types/api-key.type';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Snippet } from '$lib/components/ui/snippet/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { untrack } from 'svelte';
+	import { ApiKeyIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -109,7 +109,7 @@
 <SettingsPageLayout
 	title={m.api_key_page_title()}
 	description={m.api_key_page_description()}
-	icon={KeyIcon}
+	icon={ApiKeyIcon}
 	pageType="management"
 	{actionButtons}
 	statCardsColumns={3}
@@ -136,17 +136,13 @@
 
 		<ApiKeyFormSheet bind:open={isDialogOpen.edit} {apiKeyToEdit} onSubmit={handleApiKeySubmit} isLoading={isLoading.editing} />
 
-		<Dialog.Root bind:open={isDialogOpen.showKey}>
-			<Dialog.Content class="!max-w-fit">
-				<Dialog.Header>
-					<Dialog.Title class="flex items-center gap-2">
-						<KeyIcon class="size-5" />
-						{m.api_key_created_title()}
-					</Dialog.Title>
-					<Dialog.Description>
-						{m.api_key_created_description()}
-					</Dialog.Description>
-				</Dialog.Header>
+		<ResponsiveDialog.Root
+			bind:open={isDialogOpen.showKey}
+			title={m.api_key_created_title()}
+			description={m.api_key_created_description()}
+			contentClass="!max-w-fit"
+		>
+			{#snippet children()}
 				<div class="space-y-4 py-4">
 					<div class="bg-muted rounded-lg p-4">
 						<p class="text-muted-foreground mb-2 text-sm font-medium">{m.api_key_your_key()}</p>
@@ -166,10 +162,10 @@
 						</p>
 					</div>
 				</div>
-				<Dialog.Footer>
-					<Button onclick={() => (isDialogOpen.showKey = false)}>{m.common_done()}</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+			{/snippet}
+			{#snippet footer()}
+				<Button onclick={() => (isDialogOpen.showKey = false)}>{m.common_done()}</Button>
+			{/snippet}
+		</ResponsiveDialog.Root>
 	{/snippet}
 </SettingsPageLayout>

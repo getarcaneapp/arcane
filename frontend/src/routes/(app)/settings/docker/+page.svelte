@@ -1,22 +1,19 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import ZapIcon from '@lucide/svelte/icons/zap';
+	import { AlertIcon } from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
 	import type { Settings } from '$lib/types/settings.type';
 	import { z } from 'zod/v4';
 	import { onMount } from 'svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import TrashIcon from '@lucide/svelte/icons/trash';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import BoxesIcon from '@lucide/svelte/icons/boxes';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
+	import { Separator } from '$lib/components/ui/separator';
+	import { Label } from '$lib/components/ui/label';
+	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { DockerBrandIcon } from '$lib/icons';
 
 	let { data } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -29,7 +26,8 @@
 		autoUpdateInterval: z.number().int(),
 		dockerPruneMode: z.enum(['all', 'dangling']),
 		maxImageUploadSize: z.number().int().min(50).max(5000),
-		defaultShell: z.string()
+		defaultShell: z.string(),
+		baseServerUrl: z.string().min(1, m.general_base_url_required())
 	});
 
 	let pruneMode = $derived(currentSettings.dockerPruneMode);
@@ -103,85 +101,120 @@
 <SettingsPageLayout
 	title={m.docker_title()}
 	description={m.docker_description()}
-	icon={BoxesIcon}
+	icon={DockerBrandIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
 	{#snippet mainContent()}
-		<fieldset disabled={isReadOnly} class="relative">
-			<div class="space-y-4 sm:space-y-6">
-				<Card.Root>
-					<Card.Header icon={ActivityIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.docker_image_polling_title()}</Card.Title>
-							<Card.Description>{m.docker_image_polling_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="px-3 py-4 sm:px-6">
-						<div class="space-y-3">
-							<SwitchWithLabel
-								id="pollingEnabled"
-								label={m.docker_enable_polling_label()}
-								description={m.docker_enable_polling_description()}
-								error={$formInputs.pollingEnabled.error}
-								bind:checked={$formInputs.pollingEnabled.value}
-							/>
-
-							{#if $formInputs.pollingEnabled.value}
-								<div class="border-primary/20 space-y-3 border-l-2 pl-3">
-									<SelectWithLabel
-										id="pollingIntervalMode"
-										name="pollingIntervalMode"
-										bind:value={pollingIntervalMode}
-										label={m.docker_polling_interval_label()}
-										placeholder={m.docker_polling_interval_placeholder_select()}
-										options={imagePollingOptions.map(({ value, label, description }) => ({ value, label, description }))}
-									/>
-
-									{#if pollingIntervalMode === 'custom'}
-										<TextInputWithLabel
-											bind:value={$formInputs.pollingInterval.value}
-											error={$formInputs.pollingInterval.error}
-											label={m.custom_polling_interval()}
-											placeholder={m.docker_polling_interval_placeholder()}
-											helpText={m.docker_polling_interval_description()}
-											type="number"
-										/>
-									{/if}
-
-									{#if $formInputs.pollingInterval.value < 30}
-										<Alert.Root variant="warning">
-											<ZapIcon class="size-4" />
-											<Alert.Title>{m.docker_rate_limit_warning_title()}</Alert.Title>
-											<Alert.Description>{m.docker_rate_limit_warning_description()}</Alert.Description>
-										</Alert.Root>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				{#if $formInputs.pollingEnabled.value}
-					<Card.Root>
-						<Card.Header icon={RefreshCwIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.docker_auto_updates_title()}</Card.Title>
-								<Card.Description>{m.docker_auto_updates_description()}</Card.Description>
+		<fieldset disabled={isReadOnly} class="relative space-y-8">
+			<div class="space-y-4">
+				<h3 class="text-lg font-medium">Connection</h3>
+				<div class="bg-card rounded-lg border shadow-sm">
+					<div class="space-y-6 p-6">
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.general_base_url_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.general_base_url_help()}</p>
 							</div>
-						</Card.Header>
-						<Card.Content class="px-3 py-4 sm:px-6">
-							<div class="space-y-3">
-								<SwitchWithLabel
-									id="autoUpdateSwitch"
-									label={m.docker_auto_update_label()}
-									description={m.docker_auto_update_description()}
-									error={$formInputs.autoUpdate.error}
-									bind:checked={$formInputs.autoUpdate.value}
+							<div class="space-y-4">
+								<TextInputWithLabel
+									bind:value={$formInputs.baseServerUrl.value}
+									error={$formInputs.baseServerUrl.error}
+									label={m.general_base_url_label()}
+									placeholder={m.general_base_url_placeholder()}
+									helpText={m.general_base_url_help()}
+									type="text"
 								/>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
 
-								{#if $formInputs.autoUpdate.value}
-									<div class="border-primary/20 border-l-2 pl-3">
+			<!-- Automation Section -->
+			<div class="space-y-4">
+				<h3 class="text-lg font-medium">Automation</h3>
+				<div class="bg-card rounded-lg border shadow-sm">
+					<div class="space-y-6 p-6">
+						<!-- Image Polling -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.docker_image_polling_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.docker_image_polling_description()}</p>
+							</div>
+							<div class="space-y-4">
+								<div class="flex items-center gap-2">
+									<Switch
+										id="pollingEnabled"
+										bind:checked={$formInputs.pollingEnabled.value}
+										onCheckedChange={(checked) => {
+											$formInputs.pollingEnabled.value = checked;
+										}}
+									/>
+									<Label for="pollingEnabled" class="font-normal">
+										{m.docker_enable_polling_label()}
+									</Label>
+								</div>
+
+								{#if $formInputs.pollingEnabled.value}
+									<div class="space-y-3 pt-2">
+										<SelectWithLabel
+											id="pollingIntervalMode"
+											name="pollingIntervalMode"
+											bind:value={pollingIntervalMode}
+											label={m.docker_polling_interval_label()}
+											placeholder={m.docker_polling_interval_placeholder_select()}
+											options={imagePollingOptions.map(({ value, label, description }) => ({ value, label, description }))}
+										/>
+
+										{#if pollingIntervalMode === 'custom'}
+											<TextInputWithLabel
+												bind:value={$formInputs.pollingInterval.value}
+												error={$formInputs.pollingInterval.error}
+												label={m.custom_polling_interval()}
+												placeholder={m.docker_polling_interval_placeholder()}
+												helpText={m.docker_polling_interval_description()}
+												type="number"
+											/>
+										{/if}
+
+										{#if $formInputs.pollingInterval.value < 30}
+											<Alert.Root variant="warning">
+												<AlertIcon class="size-4" />
+												<Alert.Title>{m.docker_rate_limit_warning_title()}</Alert.Title>
+												<Alert.Description>{m.docker_rate_limit_warning_description()}</Alert.Description>
+											</Alert.Root>
+										{/if}
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<Separator />
+
+						<!-- Auto Updates -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.docker_auto_updates_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.docker_auto_updates_description()}</p>
+							</div>
+							<div class="space-y-4">
+								<div class="flex items-center gap-2">
+									<Switch
+										id="autoUpdateSwitch"
+										bind:checked={$formInputs.autoUpdate.value}
+										disabled={!$formInputs.pollingEnabled.value}
+										onCheckedChange={(checked) => {
+											$formInputs.autoUpdate.value = checked;
+										}}
+									/>
+									<Label for="autoUpdateSwitch" class="font-normal">
+										{m.docker_auto_update_label()}
+									</Label>
+								</div>
+
+								{#if $formInputs.autoUpdate.value && $formInputs.pollingEnabled.value}
+									<div class="pt-2">
 										<TextInputWithLabel
 											bind:value={$formInputs.autoUpdateInterval.value}
 											error={$formInputs.autoUpdateInterval.error}
@@ -193,80 +226,90 @@
 									</div>
 								{/if}
 							</div>
-						</Card.Content>
-					</Card.Root>
-				{/if}
-
-				<Card.Root>
-					<Card.Header icon={TrashIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.docker_cleanup_settings_title()}</Card.Title>
-							<Card.Description>{m.docker_cleanup_settings_description()}</Card.Description>
 						</div>
-					</Card.Header>
-					<Card.Content class="px-3 py-4 sm:px-6">
-						<div class="space-y-3">
-							<SelectWithLabel
-								id="dockerPruneMode"
-								name="pruneMode"
-								bind:value={$formInputs.dockerPruneMode.value}
-								error={$formInputs.dockerPruneMode.error}
-								label={m.docker_prune_action_label()}
-								description={pruneModeDescription}
-								placeholder={m.docker_prune_placeholder()}
-								options={pruneModeOptions}
-								onValueChange={(v) => (pruneMode = v as 'all' | 'dangling')}
-							/>
+					</div>
+				</div>
+			</div>
 
-							<TextInputWithLabel
-								bind:value={$formInputs.maxImageUploadSize.value}
-								error={$formInputs.maxImageUploadSize.error}
-								label={m.docker_max_upload_size_label()}
-								placeholder={m.docker_max_upload_size_placeholder()}
-								helpText={m.docker_max_upload_size_description()}
-								type="number"
-							/>
-						</div>
-					</Card.Content>
-				</Card.Root>
+			<!-- Maintenance Section -->
+			<div class="space-y-4">
+				<h3 class="text-lg font-medium">Maintenance</h3>
+				<div class="bg-card rounded-lg border shadow-sm">
+					<div class="space-y-6 p-6">
+						<!-- Cleanup Settings -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.docker_cleanup_settings_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.docker_cleanup_settings_description()}</p>
+							</div>
+							<div class="space-y-4">
+								<SelectWithLabel
+									id="dockerPruneMode"
+									name="pruneMode"
+									bind:value={$formInputs.dockerPruneMode.value}
+									error={$formInputs.dockerPruneMode.error}
+									label={m.docker_prune_action_label()}
+									description={pruneModeDescription}
+									placeholder={m.docker_prune_placeholder()}
+									options={pruneModeOptions}
+									onValueChange={(v) => (pruneMode = v as 'all' | 'dangling')}
+								/>
 
-				<Card.Root>
-					<Card.Header icon={TerminalIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.docker_terminal_settings_title()}</Card.Title>
-							<Card.Description>{m.docker_terminal_settings_description()}</Card.Description>
+								<TextInputWithLabel
+									bind:value={$formInputs.maxImageUploadSize.value}
+									error={$formInputs.maxImageUploadSize.error}
+									label={m.docker_max_upload_size_label()}
+									placeholder={m.docker_max_upload_size_placeholder()}
+									helpText={m.docker_max_upload_size_description()}
+									type="number"
+								/>
+							</div>
 						</div>
-					</Card.Header>
-					<Card.Content class="px-3 py-4 sm:px-6">
-						<div class="space-y-3">
-							<SelectWithLabel
-								id="shellSelectValue"
-								name="shellSelectValue"
-								bind:value={shellSelectValue}
-								label={m.docker_default_shell_label()}
-								description={m.docker_default_shell_description()}
-								placeholder={m.docker_default_shell_placeholder()}
-								options={[
-									...shellOptions,
-									{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
-								]}
-							/>
+					</div>
+				</div>
+			</div>
 
-							{#if shellSelectValue === 'custom'}
-								<div class="border-primary/20 border-l-2 pl-3">
-									<TextInputWithLabel
-										bind:value={$formInputs.defaultShell.value}
-										error={$formInputs.defaultShell.error}
-										label={m.custom()}
-										placeholder={m.docker_shell_custom_path_placeholder()}
-										helpText={m.docker_shell_custom_path_help()}
-										type="text"
-									/>
-								</div>
-							{/if}
+			<!-- Terminal Section -->
+			<div class="space-y-4">
+				<h3 class="text-lg font-medium">Terminal</h3>
+				<div class="bg-card rounded-lg border shadow-sm">
+					<div class="space-y-6 p-6">
+						<!-- Terminal Settings -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.docker_terminal_settings_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.docker_terminal_settings_description()}</p>
+							</div>
+							<div class="space-y-4">
+								<SelectWithLabel
+									id="shellSelectValue"
+									name="shellSelectValue"
+									bind:value={shellSelectValue}
+									label={m.docker_default_shell_label()}
+									description={m.docker_default_shell_description()}
+									placeholder={m.docker_default_shell_placeholder()}
+									options={[
+										...shellOptions,
+										{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
+									]}
+								/>
+
+								{#if shellSelectValue === 'custom'}
+									<div class="pt-2">
+										<TextInputWithLabel
+											bind:value={$formInputs.defaultShell.value}
+											error={$formInputs.defaultShell.error}
+											label={m.custom()}
+											placeholder={m.docker_shell_custom_path_placeholder()}
+											helpText={m.docker_shell_custom_path_help()}
+											type="text"
+										/>
+									</div>
+								{/if}
+							</div>
 						</div>
-					</Card.Content>
-				</Card.Root>
+					</div>
+				</div>
 			</div>
 		</fieldset>
 	{/snippet}

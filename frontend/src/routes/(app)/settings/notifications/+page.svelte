@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -14,9 +13,6 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import SendIcon from '@lucide/svelte/icons/send';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import settingsStore from '$lib/stores/config-store';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
@@ -24,6 +20,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { notificationService } from '$lib/services/notification-service';
 	import type { EmailTLSMode, AppriseSettings } from '$lib/types/notification.type';
+	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { NotificationsIcon, SendEmailIcon, ArrowDownIcon } from '$lib/icons';
 
 	interface FormNotificationSettings {
 		discordEnabled: boolean;
@@ -67,14 +65,8 @@
 		containerUpdateTag: ''
 	});
 
-	const hasUnsavedChanges = $derived.by(() => {
-		const formData = form.validate();
-		if (!formData) return false;
-
-		const formChanged = JSON.stringify(formData) !== JSON.stringify(currentSettings);
-		const appriseChanged = JSON.stringify(appriseSettings) !== JSON.stringify(savedAppriseSettings);
-		return formChanged || appriseChanged;
-	});
+	// IMPORTANT: don't call `form.validate()` inside a `$derived` — it updates stores and will throw
+	// `state_unsafe_mutation`, which can make buttons appear unresponsive until refresh.
 	let currentSettings = $state<FormNotificationSettings>({
 		discordEnabled: false,
 		discordWebhookUrl: '',
@@ -381,7 +373,7 @@
 	}
 
 	async function testNotification(provider: 'discord' | 'email', testType: string = 'simple') {
-		if (hasUnsavedChanges) {
+		if (formHasChanges) {
 			pendingTestAction = () => executeTest(provider, testType);
 			showUnsavedDialog = true;
 			return;
@@ -402,7 +394,7 @@
 		}
 	}
 	async function testAppriseNotification() {
-		if (hasUnsavedChanges) {
+		if (formHasChanges) {
 			pendingTestAction = executeAppriseTest;
 			showUnsavedDialog = true;
 			return;
@@ -436,7 +428,7 @@
 <SettingsPageLayout
 	title={m.notifications_title()}
 	description={m.notifications_description()}
-	icon={BellIcon}
+	icon={NotificationsIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -455,319 +447,357 @@
 					<Tabs.Trigger value="apprise">{m.notifications_tab_apprise()}</Tabs.Trigger>
 				</Tabs.List>
 
-				<Tabs.Content value="built-in" class="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
-					<Card.Root>
-						<Card.Header icon={BellIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.notifications_discord_title()}</Card.Title>
-								<Card.Description>{m.notifications_discord_description()}</Card.Description>
-							</div>
-						</Card.Header>
-						<Card.Content class="space-y-4 px-3 py-4 sm:px-6">
-							<SwitchWithLabel
-								id="discord-enabled"
-								bind:checked={$formInputs.discordEnabled.value}
-								disabled={isReadOnly}
-								label={m.notifications_discord_enabled_label()}
-								description={m.notifications_discord_enabled_description()}
-							/>
-
-							{#if $formInputs.discordEnabled.value}
-								<div class="space-y-4 border-l-2 pl-4">
-									<TextInputWithLabel
-										bind:value={$formInputs.discordWebhookUrl.value}
-										disabled={isReadOnly}
-										label={m.notifications_discord_webhook_url_label()}
-										placeholder={m.notifications_discord_webhook_url_placeholder()}
-										type="text"
-										autocomplete="off"
-										helpText={m.notifications_discord_webhook_url_help()}
-									/>
-									{#if $formInputs.discordWebhookUrl.error}
-										<p class="text-destructive -mt-2 text-sm">{$formInputs.discordWebhookUrl.error}</p>
-									{/if}
-
-									<TextInputWithLabel
-										bind:value={$formInputs.discordUsername.value}
-										disabled={isReadOnly}
-										label={m.notifications_discord_username_label()}
-										placeholder={m.notifications_discord_username_placeholder()}
-										type="text"
-										autocomplete="off"
-										helpText={m.notifications_discord_username_help()}
-									/>
-
-									<TextInputWithLabel
-										bind:value={$formInputs.discordAvatarUrl.value}
-										disabled={isReadOnly}
-										label={m.notifications_discord_avatar_url_label()}
-										placeholder={m.notifications_discord_avatar_url_placeholder()}
-										type="text"
-										autocomplete="off"
-										helpText={m.notifications_discord_avatar_url_help()}
-									/>
-
-									<div class="space-y-3 pt-2">
-										<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
-										<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
-										<div class="space-y-2">
-											<SwitchWithLabel
-												id="discord-event-image-update"
-												bind:checked={$formInputs.discordEventImageUpdate.value}
+				<Tabs.Content value="built-in" class="mt-4 space-y-8 sm:mt-6">
+					<!-- Discord Section -->
+					<div class="space-y-4">
+						<h3 class="text-lg font-medium">Discord</h3>
+						<div class="bg-card rounded-lg border shadow-sm">
+							<div class="space-y-6 p-6">
+								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+									<div>
+										<Label class="text-base">{m.notifications_discord_title()}</Label>
+										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_discord_description()}</p>
+									</div>
+									<div class="space-y-4">
+										<div class="flex items-center gap-2">
+											<Switch
+												id="discord-enabled"
+												bind:checked={$formInputs.discordEnabled.value}
 												disabled={isReadOnly}
-												label={m.notifications_event_image_update_label()}
-												description={m.notifications_event_image_update_description()}
+												onCheckedChange={(checked) => {
+													$formInputs.discordEnabled.value = checked;
+												}}
 											/>
-											<SwitchWithLabel
-												id="discord-event-container-update"
-												bind:checked={$formInputs.discordEventContainerUpdate.value}
-												disabled={isReadOnly}
-												label={m.notifications_event_container_update_label()}
-												description={m.notifications_event_container_update_description()}
-											/>
+											<Label for="discord-enabled" class="font-normal">
+												{m.notifications_discord_enabled_label()}
+											</Label>
 										</div>
-									</div>
-								</div>
-							{/if}
-						</Card.Content>
-						<Card.Footer class="flex gap-2 px-3 py-4 sm:px-6">
-							{#if $formInputs.discordEnabled.value}
-								<Button variant="outline" onclick={() => testNotification('discord')} disabled={isReadOnly || isTesting}>
-									{#if isTesting}
-										<Spinner class="mr-2 h-4 w-4" />
-									{:else}
-										<SendIcon class="mr-2 h-4 w-4" />
-									{/if}
-									{m.notifications_discord_test_button()}
-								</Button>
-							{/if}
-						</Card.Footer>
-					</Card.Root>
-					<Card.Root>
-						<Card.Header icon={BellIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.notifications_email_title()}</Card.Title>
-								<Card.Description>{m.notifications_email_description()}</Card.Description>
-							</div>
-						</Card.Header>
-						<Card.Content class="space-y-4 px-3 py-4 sm:px-6">
-							<SwitchWithLabel
-								id="email-enabled"
-								bind:checked={$formInputs.emailEnabled.value}
-								disabled={isReadOnly}
-								label={m.notifications_email_enabled_label()}
-								description={m.notifications_email_enabled_description()}
-							/>
 
-							{#if $formInputs.emailEnabled.value}
-								<div class="space-y-4 border-l-2 pl-4">
-									<div class="grid grid-cols-2 gap-4">
-										<TextInputWithLabel
-											bind:value={$formInputs.emailSmtpHost.value}
-											disabled={isReadOnly}
-											label={m.notifications_email_smtp_host_label()}
-											placeholder={m.notifications_email_smtp_host_placeholder()}
-											type="text"
-											autocomplete="off"
-											helpText={m.notifications_email_smtp_host_help()}
-										/>
-										{#if $formInputs.emailSmtpHost.error}
-											<p class="text-destructive col-span-2 -mt-2 text-sm">{$formInputs.emailSmtpHost.error}</p>
-										{/if}
+										{#if $formInputs.discordEnabled.value}
+											<div class="space-y-4 pt-2">
+												<TextInputWithLabel
+													bind:value={$formInputs.discordWebhookUrl.value}
+													disabled={isReadOnly}
+													label={m.notifications_discord_webhook_url_label()}
+													placeholder={m.notifications_discord_webhook_url_placeholder()}
+													type="text"
+													autocomplete="off"
+													helpText={m.notifications_discord_webhook_url_help()}
+												/>
+												{#if $formInputs.discordWebhookUrl.error}
+													<p class="text-destructive -mt-2 text-sm">{$formInputs.discordWebhookUrl.error}</p>
+												{/if}
 
-										<div class="space-y-2">
-											<Label for="smtp-port">{m.notifications_email_smtp_port_label()}</Label>
-											<Input
-												id="smtp-port"
-												type="number"
-												bind:value={$formInputs.emailSmtpPort.value}
-												disabled={isReadOnly}
-												autocomplete="off"
-												placeholder={m.notifications_email_smtp_port_placeholder()}
-											/>
-											<p class="text-muted-foreground text-sm">{m.notifications_email_smtp_port_help()}</p>
-										</div>
-									</div>
+												<TextInputWithLabel
+													bind:value={$formInputs.discordUsername.value}
+													disabled={isReadOnly}
+													label={m.notifications_discord_username_label()}
+													placeholder={m.notifications_discord_username_placeholder()}
+													type="text"
+													autocomplete="off"
+													helpText={m.notifications_discord_username_help()}
+												/>
 
-									<div class="grid grid-cols-2 gap-4">
-										<TextInputWithLabel
-											bind:value={$formInputs.emailSmtpUsername.value}
-											disabled={isReadOnly}
-											label={m.notifications_email_username_label()}
-											placeholder={m.notifications_email_username_placeholder()}
-											type="text"
-											autocomplete="off"
-											helpText={m.notifications_email_username_help()}
-										/>
+												<TextInputWithLabel
+													bind:value={$formInputs.discordAvatarUrl.value}
+													disabled={isReadOnly}
+													label={m.notifications_discord_avatar_url_label()}
+													placeholder={m.notifications_discord_avatar_url_placeholder()}
+													type="text"
+													autocomplete="off"
+													helpText={m.notifications_discord_avatar_url_help()}
+												/>
 
-										<TextInputWithLabel
-											bind:value={$formInputs.emailSmtpPassword.value}
-											disabled={isReadOnly}
-											label={m.notifications_email_password_label()}
-											placeholder={m.notifications_email_password_placeholder()}
-											type="password"
-											autocomplete="new-password"
-											helpText={m.notifications_email_password_help()}
-										/>
-									</div>
+												<div class="space-y-3 pt-2">
+													<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
+													<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
+													<div class="space-y-2">
+														<SwitchWithLabel
+															id="discord-event-image-update"
+															bind:checked={$formInputs.discordEventImageUpdate.value}
+															disabled={isReadOnly}
+															label={m.notifications_event_image_update_label()}
+															description={m.notifications_event_image_update_description()}
+														/>
+														<SwitchWithLabel
+															id="discord-event-container-update"
+															bind:checked={$formInputs.discordEventContainerUpdate.value}
+															disabled={isReadOnly}
+															label={m.notifications_event_container_update_label()}
+															description={m.notifications_event_container_update_description()}
+														/>
+													</div>
+												</div>
 
-									<TextInputWithLabel
-										bind:value={$formInputs.emailFromAddress.value}
-										disabled={isReadOnly}
-										label={m.notifications_email_from_address_label()}
-										placeholder={m.notifications_email_from_address_placeholder()}
-										type="email"
-										autocomplete="off"
-										helpText={m.notifications_email_from_address_help()}
-									/>
-									{#if $formInputs.emailFromAddress.error}
-										<p class="text-destructive -mt-2 text-sm">{$formInputs.emailFromAddress.error}</p>
-									{/if}
-
-									<div class="space-y-2">
-										<Label for="to-addresses">{m.notifications_email_to_addresses_label()}</Label>
-										<Textarea
-											id="to-addresses"
-											bind:value={$formInputs.emailToAddresses.value}
-											disabled={isReadOnly}
-											autocomplete="off"
-											placeholder={m.notifications_email_to_addresses_placeholder()}
-											rows={2}
-										/>
-										{#if $formInputs.emailToAddresses.error}
-											<p class="text-destructive text-sm">{$formInputs.emailToAddresses.error}</p>
-										{:else}
-											<p class="text-muted-foreground text-sm">{m.notifications_email_to_addresses_help()}</p>
+												<div class="pt-2">
+													<Button
+														variant="outline"
+														onclick={() => testNotification('discord')}
+														disabled={isReadOnly || isTesting}
+													>
+														{#if isTesting}
+															<Spinner class="mr-2 h-4 w-4" />
+														{:else}
+															<SendEmailIcon class="mr-2 h-4 w-4" />
+														{/if}
+														{m.notifications_discord_test_button()}
+													</Button>
+												</div>
+											</div>
 										{/if}
 									</div>
+								</div>
+							</div>
+						</div>
+					</div>
 
-									<SelectWithLabel
-										id="email-tls-mode"
-										label={m.notifications_email_tls_mode_label()}
-										bind:value={$formInputs.emailTlsMode.value}
-										disabled={isReadOnly}
-										placeholder={m.notifications_email_tls_mode_placeholder()}
-										options={[
-											{ value: 'none', label: 'None' },
-											{ value: 'starttls', label: 'StartTLS' },
-											{ value: 'ssl', label: 'SSL/TLS' }
-										]}
-										description={m.notifications_email_tls_mode_description()}
-									/>
-									<div class="space-y-3 pt-2">
-										<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
-										<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
-										<div class="space-y-2">
-											<SwitchWithLabel
-												id="email-event-image-update"
-												bind:checked={$formInputs.emailEventImageUpdate.value}
+					<!-- Email Section -->
+					<div class="space-y-4">
+						<h3 class="text-lg font-medium">Email</h3>
+						<div class="bg-card rounded-lg border shadow-sm">
+							<div class="space-y-6 p-6">
+								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+									<div>
+										<Label class="text-base">{m.notifications_email_title()}</Label>
+										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_email_description()}</p>
+									</div>
+									<div class="space-y-4">
+										<div class="flex items-center gap-2">
+											<Switch
+												id="email-enabled"
+												bind:checked={$formInputs.emailEnabled.value}
 												disabled={isReadOnly}
-												label={m.notifications_event_image_update_label()}
-												description={m.notifications_event_image_update_description()}
+												onCheckedChange={(checked) => {
+													$formInputs.emailEnabled.value = checked;
+												}}
 											/>
-											<SwitchWithLabel
-												id="email-event-container-update"
-												bind:checked={$formInputs.emailEventContainerUpdate.value}
-												disabled={isReadOnly}
-												label={m.notifications_event_container_update_label()}
-												description={m.notifications_event_container_update_description()}
-											/>
+											<Label for="email-enabled" class="font-normal">
+												{m.notifications_email_enabled_label()}
+											</Label>
 										</div>
+
+										{#if $formInputs.emailEnabled.value}
+											<div class="space-y-4 pt-2">
+												<div class="grid grid-cols-2 gap-4">
+													<TextInputWithLabel
+														bind:value={$formInputs.emailSmtpHost.value}
+														disabled={isReadOnly}
+														label={m.notifications_email_smtp_host_label()}
+														placeholder={m.notifications_email_smtp_host_placeholder()}
+														type="text"
+														autocomplete="off"
+														helpText={m.notifications_email_smtp_host_help()}
+													/>
+													{#if $formInputs.emailSmtpHost.error}
+														<p class="text-destructive col-span-2 -mt-2 text-sm">{$formInputs.emailSmtpHost.error}</p>
+													{/if}
+
+													<div class="space-y-2">
+														<Label for="smtp-port">{m.notifications_email_smtp_port_label()}</Label>
+														<Input
+															id="smtp-port"
+															type="number"
+															bind:value={$formInputs.emailSmtpPort.value}
+															disabled={isReadOnly}
+															autocomplete="off"
+															placeholder={m.notifications_email_smtp_port_placeholder()}
+														/>
+														<p class="text-muted-foreground text-sm">{m.notifications_email_smtp_port_help()}</p>
+													</div>
+												</div>
+
+												<div class="grid grid-cols-2 gap-4">
+													<TextInputWithLabel
+														bind:value={$formInputs.emailSmtpUsername.value}
+														disabled={isReadOnly}
+														label={m.notifications_email_username_label()}
+														placeholder={m.notifications_email_username_placeholder()}
+														type="text"
+														autocomplete="off"
+														helpText={m.notifications_email_username_help()}
+													/>
+
+													<TextInputWithLabel
+														bind:value={$formInputs.emailSmtpPassword.value}
+														disabled={isReadOnly}
+														label={m.notifications_email_password_label()}
+														placeholder={m.notifications_email_password_placeholder()}
+														type="password"
+														autocomplete="new-password"
+														helpText={m.notifications_email_password_help()}
+													/>
+												</div>
+
+												<TextInputWithLabel
+													bind:value={$formInputs.emailFromAddress.value}
+													disabled={isReadOnly}
+													label={m.notifications_email_from_address_label()}
+													placeholder={m.notifications_email_from_address_placeholder()}
+													type="email"
+													autocomplete="off"
+													helpText={m.notifications_email_from_address_help()}
+												/>
+												{#if $formInputs.emailFromAddress.error}
+													<p class="text-destructive -mt-2 text-sm">{$formInputs.emailFromAddress.error}</p>
+												{/if}
+
+												<div class="space-y-2">
+													<Label for="to-addresses">{m.notifications_email_to_addresses_label()}</Label>
+													<Textarea
+														id="to-addresses"
+														bind:value={$formInputs.emailToAddresses.value}
+														disabled={isReadOnly}
+														autocomplete="off"
+														placeholder={m.notifications_email_to_addresses_placeholder()}
+														rows={2}
+													/>
+													{#if $formInputs.emailToAddresses.error}
+														<p class="text-destructive text-sm">{$formInputs.emailToAddresses.error}</p>
+													{:else}
+														<p class="text-muted-foreground text-sm">{m.notifications_email_to_addresses_help()}</p>
+													{/if}
+												</div>
+
+												<SelectWithLabel
+													id="email-tls-mode"
+													label={m.notifications_email_tls_mode_label()}
+													bind:value={$formInputs.emailTlsMode.value}
+													disabled={isReadOnly}
+													placeholder={m.notifications_email_tls_mode_placeholder()}
+													options={[
+														{ value: 'none', label: 'None' },
+														{ value: 'starttls', label: 'StartTLS' },
+														{ value: 'ssl', label: 'SSL/TLS' }
+													]}
+													description={m.notifications_email_tls_mode_description()}
+												/>
+												<div class="space-y-3 pt-2">
+													<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
+													<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
+													<div class="space-y-2">
+														<SwitchWithLabel
+															id="email-event-image-update"
+															bind:checked={$formInputs.emailEventImageUpdate.value}
+															disabled={isReadOnly}
+															label={m.notifications_event_image_update_label()}
+															description={m.notifications_event_image_update_description()}
+														/>
+														<SwitchWithLabel
+															id="email-event-container-update"
+															bind:checked={$formInputs.emailEventContainerUpdate.value}
+															disabled={isReadOnly}
+															label={m.notifications_event_container_update_label()}
+															description={m.notifications_event_container_update_description()}
+														/>
+													</div>
+												</div>
+
+												<div class="pt-2">
+													<DropdownMenu.Root>
+														<DropdownMenu.Trigger>
+															<Button variant="outline" disabled={isReadOnly || isTesting}>
+																{#if isTesting}
+																	<Spinner class="mr-2 h-4 w-4" />
+																{:else}
+																	<SendEmailIcon class="mr-2 h-4 w-4" />
+																{/if}
+																{m.notifications_email_test_button()}
+																<ArrowDownIcon class="ml-2 h-4 w-4" />
+															</Button>
+														</DropdownMenu.Trigger>
+														<DropdownMenu.Content align="start">
+															<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
+																<SendEmailIcon class="mr-2 h-4 w-4" />
+																{m.notifications_email_test_simple()}
+															</DropdownMenu.Item>
+															<DropdownMenu.Item onclick={() => testNotification('email', 'image-update')}>
+																<SendEmailIcon class="mr-2 h-4 w-4" />
+																{m.notifications_email_test_image_update()}
+															</DropdownMenu.Item>
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
+												</div>
+											</div>
+										{/if}
 									</div>
 								</div>
-							{/if}
-						</Card.Content>
-						<Card.Footer class="flex gap-2 px-3 py-4 sm:px-6">
-							{#if $formInputs.emailEnabled.value}
-								<DropdownMenu.Root>
-									<DropdownMenu.Trigger>
-										<Button variant="outline" disabled={isReadOnly || isTesting}>
-											{#if isTesting}
-												<Spinner class="mr-2 h-4 w-4" />
-											{:else}
-												<SendIcon class="mr-2 h-4 w-4" />
-											{/if}
-											{m.notifications_email_test_button()}
-											<ChevronDownIcon class="ml-2 h-4 w-4" />
-										</Button>
-									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="start">
-										<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
-											<SendIcon class="mr-2 h-4 w-4" />
-											{m.notifications_email_test_simple()}
-										</DropdownMenu.Item>
-										<DropdownMenu.Item onclick={() => testNotification('email', 'image-update')}>
-											<SendIcon class="mr-2 h-4 w-4" />
-											{m.notifications_email_test_image_update()}
-										</DropdownMenu.Item>
-									</DropdownMenu.Content>
-								</DropdownMenu.Root>
-							{/if}
-						</Card.Footer>
-					</Card.Root>
+							</div>
+						</div>
+					</div>
 				</Tabs.Content>
 
 				<Tabs.Content value="apprise" class="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
-					<Card.Root>
-						<Card.Header icon={BellIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.notifications_apprise_title()}</Card.Title>
-								<Card.Description>{m.notifications_apprise_description()}</Card.Description>
-							</div>
-						</Card.Header>
-						<Card.Content class="space-y-4 px-3 py-4 sm:px-6">
-							<SwitchWithLabel
-								id="apprise-enabled"
-								bind:checked={appriseSettings.enabled}
-								disabled={isReadOnly}
-								label={m.notifications_apprise_enabled_label()}
-								description={m.notifications_apprise_enabled_description()}
-							/>
-							{#if appriseSettings.enabled}
-								<div class="space-y-4 border-l-2 pl-4">
-									<TextInputWithLabel
-										bind:value={appriseSettings.apiUrl}
-										disabled={isReadOnly}
-										label={m.notifications_apprise_api_url_label()}
-										placeholder={m.notifications_apprise_api_url_placeholder()}
-										type="url"
-										autocomplete="off"
-										helpText={m.notifications_apprise_api_url_help()}
-									/>
-									<TextInputWithLabel
-										bind:value={appriseSettings.imageUpdateTag}
-										disabled={isReadOnly}
-										label={m.notifications_apprise_image_tag_label()}
-										placeholder={m.notifications_apprise_image_tag_placeholder()}
-										type="text"
-										autocomplete="off"
-										helpText={m.notifications_apprise_image_tag_help()}
-									/>
-									<TextInputWithLabel
-										bind:value={appriseSettings.containerUpdateTag}
-										disabled={isReadOnly}
-										label={m.notifications_apprise_container_tag_label()}
-										placeholder={m.notifications_apprise_container_tag_placeholder()}
-										type="text"
-										autocomplete="off"
-										helpText={m.notifications_apprise_container_tag_help()}
-									/>
+					<div class="space-y-4">
+						<h3 class="text-lg font-medium">Apprise</h3>
+						<div class="bg-card rounded-lg border shadow-sm">
+							<div class="space-y-6 p-6">
+								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+									<div>
+										<Label class="text-base">{m.notifications_apprise_title()}</Label>
+										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_apprise_description()}</p>
+									</div>
+									<div class="space-y-4">
+										<div class="flex items-center gap-2">
+											<Switch
+												id="apprise-enabled"
+												bind:checked={appriseSettings.enabled}
+												disabled={isReadOnly}
+												onCheckedChange={(checked) => {
+													appriseSettings.enabled = checked;
+												}}
+											/>
+											<Label for="apprise-enabled" class="font-normal">
+												{m.notifications_apprise_enabled_label()}
+											</Label>
+										</div>
+
+										{#if appriseSettings.enabled}
+											<div class="space-y-4 pt-2">
+												<TextInputWithLabel
+													bind:value={appriseSettings.apiUrl}
+													disabled={isReadOnly}
+													label={m.notifications_apprise_api_url_label()}
+													placeholder={m.notifications_apprise_api_url_placeholder()}
+													type="url"
+													autocomplete="off"
+													helpText={m.notifications_apprise_api_url_help()}
+												/>
+												<TextInputWithLabel
+													bind:value={appriseSettings.imageUpdateTag}
+													disabled={isReadOnly}
+													label={m.notifications_apprise_image_tag_label()}
+													placeholder={m.notifications_apprise_image_tag_placeholder()}
+													type="text"
+													autocomplete="off"
+													helpText={m.notifications_apprise_image_tag_help()}
+												/>
+												<TextInputWithLabel
+													bind:value={appriseSettings.containerUpdateTag}
+													disabled={isReadOnly}
+													label={m.notifications_apprise_container_tag_label()}
+													placeholder={m.notifications_apprise_container_tag_placeholder()}
+													type="text"
+													autocomplete="off"
+													helpText={m.notifications_apprise_container_tag_help()}
+												/>
+
+												<div class="pt-2">
+													<Button variant="outline" onclick={() => testAppriseNotification()} disabled={isReadOnly || isTesting}>
+														{#if isTesting}
+															<Spinner class="mr-2 h-4 w-4" />
+														{:else}
+															<SendEmailIcon class="mr-2 h-4 w-4" />
+														{/if}
+														{m.notifications_apprise_test_button()}
+													</Button>
+												</div>
+											</div>
+										{/if}
+									</div>
 								</div>
-							{/if}
-						</Card.Content>
-						<Card.Footer class="flex gap-2 px-3 py-4 sm:px-6">
-							{#if appriseSettings.enabled}
-								<Button variant="outline" onclick={() => testAppriseNotification()} disabled={isReadOnly || isTesting}>
-									{#if isTesting}
-										<Spinner class="mr-2 h-4 w-4" />
-									{:else}
-										<SendIcon class="mr-2 h-4 w-4" />
-									{/if}
-									{m.notifications_apprise_test_button()}
-								</Button>
-							{/if}
-						</Card.Footer>
-					</Card.Root>
+							</div>
+						</div>
+					</div>
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

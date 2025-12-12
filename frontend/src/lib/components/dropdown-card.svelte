@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import type { Icon as IconType } from '@lucide/svelte';
 	import { onMount, type Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { Button } from './ui/button';
 	import * as Card from './ui/card';
+	import { ArrowDownIcon } from '$lib/icons';
 
 	let {
 		id,
@@ -20,7 +19,7 @@
 		title: string;
 		description?: string;
 		defaultExpanded?: boolean;
-		icon?: typeof IconType;
+		icon?: typeof ArrowDownIcon;
 		badge?: Snippet;
 		children: Snippet;
 	} = $props();
@@ -46,7 +45,8 @@
 
 	function onHeaderClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
-		if (target.closest('button, a, [onclick], [role="button"]')) return;
+		const interactive = target.closest('button, a, [onclick], [role="button"]');
+		if (interactive && interactive !== e.currentTarget) return;
 		toggleExpanded();
 	}
 
@@ -90,7 +90,7 @@
 				<Card.Description class="mt-1">{description}</Card.Description>
 			{/if}
 		</div>
-		<Card.Action>
+		<Card.Action class="ml-auto">
 			<Button
 				variant="ghost"
 				size="icon"
@@ -98,7 +98,7 @@
 				aria-label={expanded ? 'Collapse section' : 'Expand section'}
 				onclick={() => toggleExpanded()}
 			>
-				<ChevronDownIcon class={cn('size-5 transition-transform duration-200', expanded && 'rotate-180')} />
+				<ArrowDownIcon class={cn('size-5 transition-transform duration-200', expanded && 'rotate-180')} />
 			</Button>
 		</Card.Action>
 	</Card.Header>

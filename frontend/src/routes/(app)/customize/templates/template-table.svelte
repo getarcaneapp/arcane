@@ -2,16 +2,9 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import PlusCircleIcon from '@lucide/svelte/icons/plus-circle';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { Table as TableType, Row } from '@tanstack/table-core';
+	import type { Table as TableType } from '@tanstack/table-core';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import { goto } from '$app/navigation';
@@ -22,13 +15,29 @@
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Template } from '$lib/types/template.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
-	import TagIcon from '@lucide/svelte/icons/tag';
 	import { truncateString } from '$lib/utils/string.utils';
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
-	import { DataTableViewOptions } from '$lib/components/arcane-table/index.js';
+	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
+	import { PersistedState } from 'runed';
+	import { onMount } from 'svelte';
+	import {
+		EllipsisIcon,
+		InspectIcon,
+		FolderOpenIcon,
+		GlobeIcon,
+		TrashIcon,
+		DownloadIcon,
+		TagIcon,
+		MoveToFolderIcon,
+		ArrowDownIcon,
+		ArrowRightIcon,
+		RegistryIcon
+	} from '$lib/icons';
+
+	type TemplateTable = TableType<Template>;
 
 	let {
 		templates = $bindable(),
@@ -40,10 +49,8 @@
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	let isLoading = $state({
-		deleting: false,
-		downloading: false
-	});
+	let deletingId = $state<string | null>(null);
+	let downloadingId = $state<string | null>(null);
 
 	async function handleDeleteTemplate(id: string, name: string) {
 		openConfirmDialog({
@@ -53,16 +60,17 @@
 				label: m.templates_delete_template(),
 				destructive: true,
 				action: async () => {
-					isLoading.deleting = true;
+					deletingId = id;
 
 					const result = await tryCatch(templateService.deleteTemplate(id));
 					handleApiResultWithCallbacks({
 						result,
 						message: m.common_delete_failed({ resource: `${m.resource_template()} "${name}"` }),
-						setLoadingState: (value) => (isLoading.deleting = value),
+						setLoadingState: (value) => (value ? null : (deletingId = null)),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${name}"` }));
 							templates = await templateService.getTemplates(requestOptions);
+							deletingId = null;
 						}
 					});
 				}
@@ -71,21 +79,20 @@
 	}
 
 	async function handleDownloadTemplate(id: string, name: string) {
-		isLoading.downloading = true;
+		downloadingId = id;
 
 		const result = await tryCatch(templateService.download(id));
 		handleApiResultWithCallbacks({
 			result,
 			message: m.templates_download_failed(),
-			setLoadingState: (value) => (isLoading.downloading = value),
+			setLoadingState: (value) => (value ? null : (downloadingId = null)),
 			onSuccess: async () => {
 				toast.success(m.templates_downloaded_success({ name }));
 				templates = await templateService.getTemplates(requestOptions);
+				downloadingId = null;
 			}
 		});
 	}
-
-	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
 
 	const columns = [
 		{
@@ -121,14 +128,37 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
+	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
+	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 
-	let groupByRegistry = $derived.by(() => {
-		return (customSettings.groupByRegistry as boolean) ?? false;
+	onMount(() => {
+		collapsedGroupsState = new PersistedState<Record<string, boolean>>('template-groups-collapsed', {});
 	});
 
-	function setGroupByRegistry(value: boolean) {
-		customSettings = { ...customSettings, groupByRegistry: value };
+	let groupByRegistry = $derived((customSettings.groupByRegistry as boolean) ?? false);
+
+	function toggleGroup(groupName: string) {
+		if (!collapsedGroupsState) return;
+		collapsedGroupsState.current = {
+			...collapsedGroupsState.current,
+			[groupName]: !collapsedGroupsState.current[groupName]
+		};
 	}
+
+	function onToggleMobileField(fieldId: string) {
+		mobileFieldVisibility = {
+			...mobileFieldVisibility,
+			[fieldId]: !mobileFieldVisibility[fieldId]
+		};
+	}
+
+	const mobileFieldsForOptions = $derived(
+		mobileFields.map((field) => ({
+			id: field.id,
+			label: field.label,
+			visible: mobileFieldVisibility[field.id] ?? field.defaultVisible ?? true
+		}))
+	);
 
 	function getRegistryName(template: Template): string {
 		if (template.registry?.name) {
@@ -144,26 +174,25 @@
 		if (!groupByRegistry) return null;
 
 		const groups = new Map<string, Template[]>();
+		const localName = m.templates_local_templates();
+		const unknownName = m.templates_unknown_registry();
 
 		for (const template of templates.data ?? []) {
 			const registryName = getRegistryName(template);
+			const group = groups.get(registryName) ?? [];
+			group.push(template);
 			if (!groups.has(registryName)) {
-				groups.set(registryName, []);
-			}
-			const group = groups.get(registryName);
-			if (group) {
-				group.push(template);
+				groups.set(registryName, group);
 			}
 		}
-		const sortedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
-			if (a === m.templates_local_templates()) return -1;
-			if (b === m.templates_local_templates()) return 1;
-			if (a === m.templates_unknown_registry()) return 1;
-			if (b === m.templates_unknown_registry()) return -1;
+
+		return Array.from(groups.entries()).sort(([a], [b]) => {
+			if (a === localName) return -1;
+			if (b === localName) return 1;
+			if (a === unknownName) return 1;
+			if (b === unknownName) return -1;
 			return a.localeCompare(b);
 		});
-
-		return sortedGroups;
 	});
 </script>
 
@@ -207,13 +236,11 @@
 {/snippet}
 
 {#snippet TemplateMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: Row<Template>;
 	item: Template;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
@@ -273,22 +300,19 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)} disabled={isAnyLoading}>
-					<ScanSearchIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)}>
+					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)} disabled={isAnyLoading}>
-					<PlusCircleIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+					<MoveToFolderIcon class="size-4" />
 					{m.compose_create_project()}
 				</DropdownMenu.Item>
 
 				{#if item.isRemote}
-					<DropdownMenu.Item
-						onclick={() => handleDownloadTemplate(item.id, item.name)}
-						disabled={isLoading.downloading || isAnyLoading}
-					>
-						{#if isLoading.downloading}
+					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
+						{#if downloadingId === item.id}
 							<Spinner class="size-4" />
 						{:else}
 							<DownloadIcon class="size-4" />
@@ -300,12 +324,12 @@
 					<DropdownMenu.Item
 						variant="destructive"
 						onclick={() => handleDeleteTemplate(item.id, item.name)}
-						disabled={isLoading.deleting || isAnyLoading}
+						disabled={deletingId === item.id}
 					>
-						{#if isLoading.deleting}
+						{#if deletingId === item.id}
 							<Spinner class="size-4" />
 						{:else}
-							<Trash2Icon class="size-4" />
+							<TrashIcon class="size-4" />
 						{/if}
 						{m.templates_delete_template()}
 					</DropdownMenu.Item>
@@ -333,73 +357,117 @@
 />
 
 {#snippet CustomViewOptions()}
-	<DropdownMenu.CheckboxItem bind:checked={() => groupByRegistry, (v) => setGroupByRegistry(!!v)}>
+	<DropdownMenu.CheckboxItem
+		bind:checked={() => groupByRegistry, (v) => (customSettings = { ...customSettings, groupByRegistry: !!v })}
+	>
 		{m.templates_group_by_registry()}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table }: { table: TableType<Template> })}
-	<div class="mb-4 flex items-center justify-end border-b px-6 py-4">
-		<DataTableViewOptions {table} customViewOptions={CustomViewOptions} />
-	</div>
-	<div class="space-y-4 px-6 pb-6">
-		{#each groupedTemplates ?? [] as [registryName, registryTemplates] (registryName)}
-			{@const registryTemplateIds = new Set(registryTemplates.map((t) => t.id))}
-			{@const registryRows = table.getRowModel().rows.filter((row) => registryTemplateIds.has(row.original.id))}
+{#snippet GroupedTableView({ table, renderPagination }: { table: TemplateTable; renderPagination: import('svelte').Snippet })}
+	<div class="flex h-full flex-col">
+		<div class="shrink-0 border-b">
+			<DataTableToolbar
+				{table}
+				{selectedIds}
+				selectionDisabled={true}
+				mobileFields={mobileFieldsForOptions}
+				{onToggleMobileField}
+				customViewOptions={CustomViewOptions}
+			/>
+		</div>
 
-			<DropdownCard
-				id={`template-registry-${registryName}`}
-				title={registryName}
-				description={`${registryTemplates.length} ${registryTemplates.length === 1 ? m.resource_template() : m.resource_templates()}`}
-				icon={registryName === m.templates_local_templates() ? FolderOpenIcon : GlobeIcon}
-			>
-				<div class="hidden md:block">
-					<Table.Root
-						class="**:data-[slot='table-container']:rounded-none **:data-[slot='table-container']:border-0 **:data-[slot='table-container']:bg-transparent **:data-[slot='table-container']:shadow-none **:data-[slot='table-container']:backdrop-filter-none"
-					>
-						<Table.Header class="border-border/40 border-t">
-							{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-								<Table.Row>
-									{#each headerGroup.headers as header (header.id)}
-										<Table.Head colspan={header.colSpan}>
-											{#if !header.isPlaceholder}
-												<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-											{/if}
-										</Table.Head>
-									{/each}
-								</Table.Row>
-							{/each}
-						</Table.Header>
-						<Table.Body>
-							{#each registryRows as row (row.id)}
-								<Table.Row data-state={(selectedIds ?? []).includes((row.original as Template).id) && 'selected'}>
-									{#each row.getVisibleCells() as cell (cell.id)}
-										<Table.Cell>
-											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-										</Table.Cell>
-									{/each}
-								</Table.Row>
-							{:else}
-								<Table.Row>
-									<Table.Cell colspan={table.getAllColumns().length} class="h-24 text-center"
-										>{m.common_no_results_found()}</Table.Cell
+		<div class="hidden flex-1 overflow-auto px-6 py-8 md:block">
+			<div class="overflow-x-auto rounded-md border">
+				<Table.Root>
+					<Table.Header>
+						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
+							<Table.Row>
+								{#each headerGroup.headers as header (header.id)}
+									<Table.Head colspan={header.colSpan}>
+										{#if !header.isPlaceholder}
+											<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
+										{/if}
+									</Table.Head>
+								{/each}
+							</Table.Row>
+						{/each}
+					</Table.Header>
+					<Table.Body>
+						{#each groupedTemplates ?? [] as [registryName, registryTemplates] (registryName)}
+							<Table.Row
+								class="bg-muted/50 hover:bg-muted/60 cursor-pointer transition-colors"
+								onclick={() => toggleGroup(registryName)}
+							>
+								<Table.Cell colspan={table.getAllColumns().length} class="py-3 font-medium">
+									<div class="flex items-center gap-2">
+										{#if collapsedGroups[registryName]}
+											<ArrowRightIcon class="text-muted-foreground size-4" />
+										{:else}
+											<ArrowDownIcon class="text-muted-foreground size-4" />
+										{/if}
+										{#if registryName === m.templates_local_templates()}
+											<FolderOpenIcon class="text-muted-foreground size-4" />
+										{:else}
+											<RegistryIcon class="text-muted-foreground size-4" />
+										{/if}
+										<span>{registryName}</span>
+										<span class="text-muted-foreground text-xs font-normal">({registryTemplates.length})</span>
+									</div>
+								</Table.Cell>
+							</Table.Row>
+
+							{#if !collapsedGroups[registryName]}
+								{@const registryTemplateIds = new Set(registryTemplates.map((t) => t.id))}
+								{@const registryRows = table
+									.getRowModel()
+									.rows.filter((row) => registryTemplateIds.has((row.original as Template).id))}
+
+								{#each registryRows as row (row.id)}
+									<Table.Row
+										data-state={(selectedIds ?? []).includes((row.original as Template).id) && 'selected'}
+										class="hover:bg-primary/5 transition-colors"
 									>
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
+										{#each row.getVisibleCells() as cell, i (cell.id)}
+											<Table.Cell class={i === 0 ? 'pl-12' : ''}>
+												<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+											</Table.Cell>
+										{/each}
+									</Table.Row>
+								{/each}
+							{/if}
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+		</div>
 
-				<div class="space-y-3 md:hidden">
-					{#each registryRows as row (row.id)}
-						{@render TemplateMobileCardSnippet({ row, item: row.original as Template, mobileFieldVisibility })}
-					{:else}
-						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
-							{m.common_no_results_found()}
-						</div>
-					{/each}
-				</div>
-			</DropdownCard>
-		{/each}
+		<div class="space-y-4 px-6 py-2 md:hidden">
+			{#each groupedTemplates ?? [] as [registryName, registryTemplates] (registryName)}
+				{@const registryTemplateIds = new Set(registryTemplates.map((t) => t.id))}
+				{@const registryRows = table.getRowModel().rows.filter((row) => registryTemplateIds.has((row.original as Template).id))}
+
+				<DropdownCard
+					id={`template-registry-${registryName}`}
+					title={registryName}
+					description={`${registryTemplates.length} ${registryTemplates.length === 1 ? m.resource_template() : m.resource_templates()}`}
+					icon={registryName === m.templates_local_templates() ? FolderOpenIcon : RegistryIcon}
+				>
+					<div class="space-y-3">
+						{#each registryRows as row (row.id)}
+							{@render TemplateMobileCardSnippet({ item: row.original as Template, mobileFieldVisibility })}
+						{:else}
+							<div class="h-24 flex items-center justify-center text-center text-muted-foreground">
+								{m.common_no_results_found()}
+							</div>
+						{/each}
+					</div>
+				</DropdownCard>
+			{/each}
+		</div>
+
+		<div class="shrink-0 border-t px-2 py-4">
+			{@render renderPagination()}
+		</div>
 	</div>
 {/snippet}

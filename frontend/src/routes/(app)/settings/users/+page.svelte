@@ -1,5 +1,5 @@
 <script lang="ts">
-	import UsersIcon from '@lucide/svelte/icons/users';
+	import { UsersIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';

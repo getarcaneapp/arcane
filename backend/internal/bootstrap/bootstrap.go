@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -75,6 +77,13 @@ func Bootstrap(ctx context.Context) error {
 		},
 		appServices.Settings.MigrateOidcConfigToFields)
 
+	// Handle agent auto-pairing with API key
+	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
+		if err := handleAgentBootstrapPairing(appCtx, cfg, httpClient); err != nil {
+			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
+		}
+	}
+
 	scheduler, err := initializeScheduler()
 	if err != nil {
 		return fmt.Errorf("failed to create job scheduler: %w", err)
@@ -89,6 +98,37 @@ func Bootstrap(ctx context.Context) error {
 	}
 
 	slog.InfoContext(appCtx, "Arcane shutdown complete")
+	return nil
+}
+
+func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {
+	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
+
+	pairURL := strings.TrimRight(cfg.ManagerApiUrl, "/") + "/api/environments/pair"
+
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create pairing request: %w", err)
+	}
+
+	req.Header.Set("X-API-Key", cfg.AgentToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("pairing request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
+
 	return nil
 }
 

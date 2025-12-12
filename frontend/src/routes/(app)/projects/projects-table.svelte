@@ -2,12 +2,7 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PenIcon from '@lucide/svelte/icons/pen';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -20,13 +15,11 @@
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { format } from 'date-fns';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import FolderIcon from '@lucide/svelte/icons/folder';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon } from '$lib/icons';
 
 	let {
 		projects = $bindable(),
@@ -181,12 +174,12 @@
 }: {
 	row: any;
 	item: Project;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
 		icon={(item: Project) => ({
-			component: FolderIcon,
+			component: FolderOpenIcon,
 			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber'
 		})}
 		title={(item: Project) => item.name}
@@ -238,7 +231,7 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
-					<PenIcon class="size-4" />
+					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
 
@@ -247,7 +240,7 @@
 						{#if isLoading.start}
 							<Spinner class="size-4" />
 						{:else}
-							<PlayIcon class="size-4" />
+							<StartIcon class="size-4" />
 						{/if}
 						{m.common_up()}
 					</DropdownMenu.Item>
@@ -259,7 +252,7 @@
 						{#if isLoading.restart}
 							<Spinner class="size-4" />
 						{:else}
-							<RotateCcwIcon class="size-4" />
+							<RestartIcon class="size-4" />
 						{/if}
 						{m.common_restart()}
 					</DropdownMenu.Item>
@@ -268,7 +261,7 @@
 						{#if isLoading.stop}
 							<Spinner class="size-4" />
 						{:else}
-							<StopCircleIcon class="size-4" />
+							<StopIcon class="size-4" />
 						{/if}
 						{m.common_down()}
 					</DropdownMenu.Item>
@@ -278,7 +271,7 @@
 					{#if isLoading.pull}
 						<Spinner class="size-4" />
 					{:else}
-						<RotateCcwIcon class="size-4" />
+						<RestartIcon class="size-4" />
 					{/if}
 					{m.compose_pull_redeploy()}
 				</DropdownMenu.Item>
@@ -293,7 +286,7 @@
 					{#if isLoading.remove}
 						<Spinner class="size-4" />
 					{:else}
-						<Trash2Icon class="size-4" />
+						<TrashIcon class="size-4" />
 					{/if}
 					{m.compose_destroy()}
 				</DropdownMenu.Item>

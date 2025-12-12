@@ -3,20 +3,22 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import DownloadIcon from '@lucide/svelte/icons/download';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import type { Template } from '$lib/types/template.type';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import {
+		ArrowDownIcon,
+		ArrowRightIcon,
+		RegistryIcon,
+		ProjectsIcon,
+		DownloadIcon,
+		SettingsIcon,
+		FileTextIcon
+	} from '$lib/icons';
 
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
@@ -166,9 +168,9 @@
 				<div class="mb-2">
 					<Badge variant="secondary" class="text-xs">
 						{#if template.isRemote}
-							<GlobeIcon class="mr-1 size-3" />
+							<RegistryIcon class="size-3" />
 						{:else}
-							<FolderOpenIcon class="mr-1 size-3" />
+							<ProjectsIcon class="size-3" />
 						{/if}
 						{template.registry?.name ?? (template.isRemote ? m.templates_remote() : m.templates_local())}
 					</Badge>
@@ -200,17 +202,17 @@
 							disabled={loadingStates.has(`download-${template.id}`)}
 						>
 							{#if loadingStates.has(`download-${template.id}`)}
-								<Spinner class="mr-1 size-3" />
+								<Spinner class="size-3" />
 								{m.common_action_downloading()}
 							{:else}
-								<DownloadIcon class="mr-1 size-3" />
+								<DownloadIcon class="size-3" />
 								{m.templates_download()}
 							{/if}
 						</Button>
 					{/if}
 					<Button size="sm" onclick={() => handleSelect(template)} disabled={loadingStates.has(template.id)}>
 						{#if loadingStates.has(template.id)}
-							<Spinner class="mr-1 size-3" />
+							<Spinner class="size-3" />
 							{m.common_loading()}
 						{:else}
 							{m.templates_use_now()}
@@ -272,8 +274,8 @@
 								<Card class="border-2">
 									<Collapsible.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left">
 										<div class="flex items-center gap-2">
-											<ChevronDownIcon class="hidden size-4 data-[state=open]:block" />
-											<ChevronRightIcon class="block size-4 data-[state=open]:hidden" />
+											<ArrowDownIcon class="hidden size-4 data-[state=open]:block" />
+											<ArrowRightIcon class="block size-4 data-[state=open]:hidden" />
 											<span class="font-semibold">{group.name}</span>
 											<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
 										</div>

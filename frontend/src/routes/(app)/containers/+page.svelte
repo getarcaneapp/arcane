@@ -1,5 +1,4 @@
 <script lang="ts">
-	import BoxIcon from '@lucide/svelte/icons/box';
 	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -12,6 +11,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { BoxIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -21,10 +21,6 @@
 	let selectedIds = $state([]);
 	let isCreateDialogOpen = $state(false);
 	let isLoading = $state({ checking: false, create: false, refreshing: false });
-
-	const baseServerUrl = $derived(
-		(data.settings as any)?.serverBaseUrl ?? (data.settings as any)?.baseServerUrl ?? (data.settings as any)?.baseUrl ?? ''
-	);
 
 	async function refresh() {
 		await parallelRefresh(
@@ -68,7 +64,7 @@
 		},
 		{
 			id: 'check-updates',
-			action: 'inspect',
+			action: 'update',
 			label: m.containers_check_updates(),
 			onclick: handleCheckForUpdates,
 			loading: isLoading.checking,
@@ -117,15 +113,12 @@
 	statCardsColumns={3}
 >
 	{#snippet mainContent()}
-		<ContainerTable bind:containers bind:selectedIds bind:requestOptions {baseServerUrl} />
+		<ContainerTable bind:containers bind:selectedIds bind:requestOptions />
 	{/snippet}
 
 	{#snippet additionalContent()}
 		<CreateContainerDialog
 			bind:open={isCreateDialogOpen}
-			availableVolumes={[]}
-			availableNetworks={[]}
-			availableImages={[]}
 			isLoading={isLoading.create}
 			onSubmit={async (options) => {
 				isLoading.create = true;

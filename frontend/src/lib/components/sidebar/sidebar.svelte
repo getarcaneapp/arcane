@@ -17,8 +17,8 @@
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import * as Button from '$lib/components/ui/button/index.js';
-	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
+	import { LogoutIcon } from '$lib/icons';
 
 	let {
 		ref = $bindable(null),
@@ -45,6 +45,16 @@
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
+
+	// Filter out sub-items for settings on desktop since we have a dedicated settings sidebar
+	const desktopSettingsItems =
+		navigationItems.settingsItems?.map((item) => {
+			if (item.url === '/settings') {
+				const { items, ...rest } = item;
+				return rest;
+			}
+			return item;
+		}) ?? [];
 </script>
 
 <VersionInfoDialog
@@ -78,11 +88,10 @@
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
-		<SidebarItemGroup label={m.automation_title()} items={navigationItems.automationItems} />
-		<SidebarItemGroup label={m.sidebar_customization()} items={navigationItems.customizationItems} />
+		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
+    <SidebarItemGroup label={m.automation_title()} items={navigationItems.automationItems} />
 		{#if isAdmin}
-			<SidebarItemGroup label={m.sidebar_environments()} items={navigationItems.environmentItems} />
-			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
+			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
@@ -111,7 +120,7 @@
 								type="submit"
 								class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
 							>
-								<LogOutIcon size={16} />
+								<LogoutIcon class="size-5" />
 							</Button.Root>
 						</form>
 					</div>

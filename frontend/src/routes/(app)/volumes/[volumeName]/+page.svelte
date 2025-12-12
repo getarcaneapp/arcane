@@ -1,12 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TagIcon from '@lucide/svelte/icons/tag';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import InfoIcon from '@lucide/svelte/icons/info';
+	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -17,7 +11,6 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { format } from 'date-fns';
-	import ContainerIcon from '@lucide/svelte/icons/container';
 	import { m } from '$lib/paraglide/messages';
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
@@ -121,7 +114,7 @@
 					<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10 p-2">
-								<DatabaseIcon class="size-5 text-gray-500" />
+								<BoxIcon class="size-5 text-gray-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
@@ -133,7 +126,7 @@
 
 						<div class="flex items-start gap-3">
 							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<HardDriveIcon class="size-5 text-blue-500" />
+								<VolumesIcon class="size-5 text-blue-500" />
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
@@ -199,7 +192,7 @@
 			</Card.Root>
 
 			<Card.Root>
-				<Card.Header icon={ContainerIcon}>
+				<Card.Header icon={ContainersIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>{m.volumes_containers_using_title()}</Card.Title>
 						<Card.Description>{m.volumes_containers_using_description()}</Card.Description>
@@ -213,7 +206,7 @@
 									<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 										<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 											<a href="/containers/{c.id}" class="text-primary flex items-center hover:underline">
-												<ContainerIcon class="text-muted-foreground mr-1.5 size-3.5" />
+												<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
 												{c.name}
 											</a>
 										</div>
@@ -277,7 +270,7 @@
 
 			{#if volume.options && Object.keys(volume.options).length > 0}
 				<Card.Root>
-					<Card.Header icon={HardDriveIcon}>
+					<Card.Header icon={VolumesIcon}>
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>{m.common_driver_options()}</Card.Title>
 							<Card.Description>{m.volumes_driver_options_description()}</Card.Description>
@@ -319,7 +312,7 @@
 	{:else}
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 			<div class="bg-muted/30 mb-4 rounded-full p-4">
-				<DatabaseIcon class="text-muted-foreground size-10 opacity-70" />
+				<BoxIcon class="text-muted-foreground size-10 opacity-70" />
 			</div>
 			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.volumes_title() })}</h2>
 			<p class="text-muted-foreground mb-6">{m.common_not_found_description({ resource: m.volumes_title().toLowerCase() })}</p>

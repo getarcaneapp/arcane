@@ -4,21 +4,26 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import FolderIcon from '@lucide/svelte/icons/folder';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import CodeIcon from '@lucide/svelte/icons/code';
-	import BoxIcon from '@lucide/svelte/icons/box';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import {
+		TrashIcon,
+		ArrowLeftIcon,
+		ProjectsIcon,
+		FileTextIcon,
+		CodeIcon,
+		TemplateIcon,
+		DownloadIcon,
+		GlobeIcon,
+		ContainersIcon,
+		BoxIcon,
+		VariableIcon,
+		MoveToFolderIcon
+	} from '$lib/icons';
 
 	let { data } = $props();
 
@@ -111,7 +116,7 @@
 				</Badge>
 			{:else}
 				<Badge variant="secondary" class="gap-1">
-					<LayersIcon class="size-3" />
+					<TemplateIcon class="size-3" />
 					{m.templates_local()}
 				</Badge>
 			{/if}
@@ -123,7 +128,7 @@
 		</div>
 		<div class="flex flex-col gap-2 sm:flex-row">
 			<Button onclick={() => goto(`/projects/new?templateId=${template.id}`)} class="w-full gap-2 sm:w-auto">
-				<FolderIcon class="size-4" />
+				<MoveToFolderIcon class="size-4" />
 				{m.compose_create_project()}
 			</Button>
 
@@ -143,7 +148,7 @@
 					onclick={() => goto(`/customize/templates/${localVersionOfRemote()?.id}`)}
 					class="w-full gap-2 sm:w-auto"
 				>
-					<FolderIcon class="size-4" />
+					<ProjectsIcon class="size-4" />
 					{m.templates_view_local_version()}
 				</Button>
 			{/if}
@@ -154,7 +159,7 @@
 						<Spinner class="size-4" />
 						{m.common_action_deleting()}
 					{:else}
-						<Trash2Icon class="size-4" />
+						<TrashIcon class="size-4" />
 						{m.templates_delete_template()}
 					{/if}
 				</Button>
@@ -166,7 +171,7 @@
 		<Card.Root variant="subtle">
 			<Card.Content class="flex items-center gap-4 p-4">
 				<div class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-					<BoxIcon class="size-6 text-blue-500" />
+					<ContainersIcon class="size-6 text-blue-500" />
 				</div>
 				<div class="min-w-0 flex-1">
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.compose_services()}</div>
@@ -180,7 +185,7 @@
 		<Card.Root variant="subtle">
 			<Card.Content class="flex items-center gap-4 p-4">
 				<div class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-purple-500/10">
-					<FileTextIcon class="size-6 text-purple-500" />
+					<VariableIcon class="size-6 text-purple-500" />
 				</div>
 				<div class="min-w-0 flex-1">
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
@@ -217,7 +222,7 @@
 		<div class="flex min-w-0 flex-col gap-6 lg:col-span-1">
 			{#if services?.length}
 				<Card.Root class="min-w-0 flex-shrink-0">
-					<Card.Header icon={BoxIcon}>
+					<Card.Header icon={ContainersIcon}>
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>
 								<h2>{m.services()}</h2>
@@ -242,7 +247,7 @@
 
 			{#if envVars?.length}
 				<Card.Root class="min-w-0 flex-shrink-0">
-					<Card.Header icon={FileTextIcon}>
+					<Card.Header icon={VariableIcon}>
 						<div class="flex flex-col space-y-1.5">
 							<Card.Title>
 								<h2>{m.common_environment_variables()}</h2>

@@ -9,47 +9,38 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ContainerIcon from '@lucide/svelte/icons/container';
-	import XIcon from '@lucide/svelte/icons/x';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import BoxIcon from '@lucide/svelte/icons/box';
-	import VariableIcon from '@lucide/svelte/icons/variable';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import type { ContainerCreateRequest } from '$lib/types/container.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import {
+		SettingsIcon,
+		SecurityIcon,
+		AddIcon,
+		NetworksIcon,
+		VolumesIcon,
+		CloseIcon,
+		VariableIcon,
+		ContainersIcon
+	} from '$lib/icons';
 
 	type CreateContainerFormProps = {
 		open: boolean;
 		onSubmit: (data: ContainerCreateRequest) => void;
 		isLoading: boolean;
-		availableImages?: string[];
-		availableNetworks?: string[];
-		availableVolumes?: string[];
 	};
 
-	let {
-		open = $bindable(false),
-		onSubmit,
-		isLoading,
-		availableImages = [],
-		availableNetworks = [],
-		availableVolumes = []
-	}: CreateContainerFormProps = $props();
+	let { open = $bindable(false), onSubmit, isLoading }: CreateContainerFormProps = $props();
 
 	let selectedTab = $state('basic');
 
 	const tabItems: TabItem[] = [
-		{ value: 'basic', label: m.common_basic(), icon: BoxIcon },
+		{ value: 'basic', label: m.common_basic(), icon: ContainersIcon },
 		{ value: 'environment', label: m.tabs_environment(), icon: VariableIcon },
-		{ value: 'ports', label: m.common_ports(), icon: NetworkIcon },
-		{ value: 'volumes', label: m.tabs_volumes(), icon: DatabaseIcon },
-		{ value: 'network', label: m.tabs_network_security(), icon: ShieldIcon },
+		{ value: 'ports', label: m.common_ports(), icon: NetworksIcon },
+		{ value: 'volumes', label: m.tabs_volumes(), icon: VolumesIcon },
+		{ value: 'network', label: m.tabs_network_security(), icon: SecurityIcon },
 		{ value: 'advanced', label: m.tabs_advanced(), icon: SettingsIcon }
 	];
 
@@ -446,12 +437,12 @@
 													disabled={isLoading || envVars.length <= 1}
 													class="text-destructive hover:text-destructive shrink-0"
 												>
-													<XIcon class="size-4" />
+													<CloseIcon class="size-4" />
 												</Button>
 											</div>
 										{/each}
 										<Button type="button" variant="outline" size="sm" onclick={addEnvVar} disabled={isLoading} class="w-full">
-											<PlusIcon class="mr-2 size-4" />
+											<AddIcon class="mr-2 size-4" />
 											{m.add_env_var_button()}
 										</Button>
 									</div>
@@ -525,7 +516,7 @@
 															disabled={isLoading || portMappings.length <= 1}
 															class="text-destructive hover:text-destructive shrink-0"
 														>
-															<XIcon class="size-4" />
+															<CloseIcon class="size-4" />
 														</Button>
 													</div>
 												</div>
@@ -539,7 +530,7 @@
 											disabled={isLoading}
 											class="w-full"
 										>
-											<PlusIcon class="mr-2 size-4" />
+											<AddIcon class="mr-2 size-4" />
 											{m.add_port_mapping_button()}
 										</Button>
 									</div>
@@ -602,7 +593,7 @@
 														disabled={isLoading || volumeMounts.length <= 1}
 														class="text-destructive hover:text-destructive shrink-0 self-end sm:self-auto"
 													>
-														<XIcon class="size-4" />
+														<CloseIcon class="size-4" />
 													</Button>
 												</div>
 												<div class="flex items-center space-x-2 pl-0 sm:pl-3">
@@ -619,7 +610,7 @@
 											disabled={isLoading}
 											class="w-full"
 										>
-											<PlusIcon class="mr-2 size-4" />
+											<AddIcon class="mr-2 size-4" />
 											{m.add_volume_mount_button()}
 										</Button>
 									</div>
@@ -754,10 +745,10 @@
 			</Button>
 			<Button type="submit" form="create-container-form" disabled={isLoading} class="w-full sm:w-auto">
 				{#if isLoading}
-					<Spinner class="mr-2 size-4" />
+					<Spinner class="size-4" />
 					{m.common_action_creating()}
 				{:else}
-					<ContainerIcon class="mr-2 size-4" />
+					<AddIcon class="size-4" />
 					{m.common_create_button({ resource: m.resource_container_cap() })}
 				{/if}
 			</Button>

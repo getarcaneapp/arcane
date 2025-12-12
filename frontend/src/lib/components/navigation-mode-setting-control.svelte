@@ -1,17 +1,11 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import SmartphoneIcon from '@lucide/svelte/icons/smartphone';
-	import XIcon from '@lucide/svelte/icons/x';
-	import MonitorSpeakerIcon from '@lucide/svelte/icons/monitor-speaker';
-	import DockIcon from '@lucide/svelte/icons/dock';
 	import { m } from '$lib/paraglide/messages';
+	import { CloseIcon, EnvironmentsIcon, SmartphoneIcon, MonitorSpeakerIcon, DockIcon, type IconType } from '$lib/icons';
 
 	let {
 		id,
-		label,
 		description,
-		icon: Icon,
 		serverValue,
 		localOverride,
 		onServerChange,
@@ -20,9 +14,7 @@
 		serverDisabled = false
 	}: {
 		id: string;
-		label: string;
 		description: string;
-		icon: any;
 		serverValue: 'floating' | 'docked';
 		localOverride?: 'floating' | 'docked';
 		onServerChange: (value: 'floating' | 'docked') => void;
@@ -40,18 +32,8 @@
 >
 	<div class="flex h-full flex-col space-y-3">
 		<div class="flex items-start gap-3">
-			<div
-				class={`flex size-7 flex-shrink-0 items-center justify-center rounded-lg ring-1 sm:size-8 ${hasOverride ? 'bg-orange-500/10 text-orange-600 ring-orange-500/20 dark:text-orange-400' : 'bg-primary/10 text-primary ring-primary/20'}`}
-			>
-				<Icon class="size-3 sm:size-4" />
-			</div>
-
 			<div class="min-w-0 flex-1">
 				<div class="mb-1 flex items-start justify-between gap-2">
-					<div class="min-w-0 flex-1">
-						<h4 class="text-sm leading-tight font-medium">{label}</h4>
-					</div>
-
 					{#if hasOverride}
 						<Button
 							variant="ghost"
@@ -60,7 +42,7 @@
 							class="h-6 w-6 flex-shrink-0 p-0 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
 							title={m.clear_local_override()}
 						>
-							<XIcon class="size-3" />
+							<CloseIcon class="size-3" />
 						</Button>
 					{/if}
 				</div>
@@ -72,7 +54,7 @@
 			<div class="bg-background/50 rounded-md border">
 				<div class="flex items-center justify-between p-2 sm:p-3">
 					<div class="flex min-w-0 flex-1 items-center gap-2">
-						<ServerIcon class="text-muted-foreground size-3 flex-shrink-0 sm:size-4" />
+						<EnvironmentsIcon class="text-muted-foreground size-3 flex-shrink-0 sm:size-4" />
 						<div class="min-w-0 flex-1">
 							<p class="text-xs leading-tight font-medium">{m.server_default()}</p>
 							<p class="text-muted-foreground hidden text-xs leading-tight sm:block">{m.applies_to_all_users()}</p>

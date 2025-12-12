@@ -7,6 +7,8 @@ export type FieldSpec = {
 	defaultVisible?: boolean;
 };
 
+export type MobileFieldVisibility = Record<string, boolean>;
+
 export type ColumnSpec<T> = {
 	accessorKey?: keyof T & string;
 	accessorFn?: (row: T) => any;

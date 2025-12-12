@@ -2,30 +2,34 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import EyeIcon from '@lucide/svelte/icons/eye';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import MonitorIcon from '@lucide/svelte/icons/monitor';
-	import DownloadIcon from '@lucide/svelte/icons/download';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { Environment } from '$lib/types/environment.type';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import CloudIcon from '@lucide/svelte/icons/cloud';
-	import PowerIcon from '@lucide/svelte/icons/power';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import {
+		EllipsisIcon,
+		EyeOnIcon,
+		TrashIcon,
+		EnvironmentsIcon,
+		InspectIcon,
+		UpdateIcon,
+		StatsIcon,
+		EyeOffIcon,
+		TestIcon
+	} from '$lib/icons';
 
 	let {
 		environments = $bindable(),
@@ -230,7 +234,7 @@
 	<div class="flex items-center gap-3">
 		<div class="relative">
 			<div class="bg-muted flex size-8 items-center justify-center rounded-lg">
-				<MonitorIcon class="text-muted-foreground size-4" />
+				<EnvironmentsIcon class="text-muted-foreground size-4" />
 			</div>
 			<div
 				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {item.status === 'online'
@@ -238,6 +242,11 @@
 					: 'bg-red-500'}"
 			></div>
 		</div>
+		{#if environmentStore.selected?.id === item.id}
+			<Badge variant="default" class="border-blue-500/20 bg-blue-500/10 text-blue-600">
+				{m.common_current()}
+			</Badge>
+		{/if}
 		<div class="flex flex-col gap-0.5 leading-tight">
 			<button
 				class="text-foreground-primary h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium hover:underline"
@@ -245,13 +254,15 @@
 			>
 				{item.name}
 			</button>
-			<div class="text-muted-foreground font-mono text-xs leading-tight">{item.apiUrl}</div>
+			<span class="text-muted-foreground font-mono text-xs leading-tight">{item.apiUrl}</span>
 		</div>
 	</div>
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: unknown })}
-	<StatusBadge text={capitalizeFirstLetter(String(value)) || m.common_unknown()} variant={value === 'online' ? 'green' : 'red'} />
+	{@const statusValue = String(value)}
+	{@const variant = statusValue === 'online' ? 'green' : statusValue === 'pending' ? 'amber' : 'red'}
+	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
 {/snippet}
 
 {#snippet ApiCell({ value }: { value: unknown })}
@@ -263,25 +274,26 @@
 {/snippet}
 
 {#snippet EnvironmentMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: Environment;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: CloudIcon, variant: 'emerald' }}
+		icon={{ component: StatsIcon, variant: 'emerald' }}
 		title={(item: Environment) => item.name || item.id}
 		subtitle={(item: Environment) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
-		badges={[{ variant: 'green', text: m.sidebar_environment_label() }]}
+		badges={[
+			{ variant: 'green', text: m.sidebar_environment_label() },
+			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
+		]}
 		fields={[
 			{
 				label: m.environments_api_url(),
 				getValue: (item: Environment) => item.apiUrl,
-				icon: CloudIcon,
+				icon: StatsIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.apiUrl ?? true) && !!item.apiUrl
 			}
@@ -318,16 +330,16 @@
 					}}
 					disabled={!item.enabled || environmentStore.selected?.id === item.id}
 				>
-					<MonitorIcon class="size-4" />
+					<EnvironmentsIcon class="size-4" />
 					{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
-					<EyeIcon class="size-4" />
+					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
-					<TerminalIcon class="size-4" />
+					<TestIcon class="size-4" />
 					{m.environments_test_connection()}
 				</DropdownMenu.Item>
 				{#if item.id !== '0'}
@@ -337,13 +349,18 @@
 							onclick={() => handleUpgradeClick(item)}
 							disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
 						>
-							<DownloadIcon class="size-4" />
+							<UpdateIcon class="size-4" />
 							{upgradingEnvironmentId === item.id ? m.upgrade_in_progress() : m.upgrade_to_version({ version: 'Latest' })}
 						</DropdownMenu.Item>
 					{/if}
 					<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
-						<PowerIcon class="size-4" />
-						{item.enabled ? m.common_disable() : m.common_enable()}
+						{#if item.enabled}
+							<EyeOffIcon class="size-4" />
+							{m.common_disable()}
+						{:else}
+							<EyeOnIcon class="size-4" />
+							{m.common_disable()}
+						{/if}
 					</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item
@@ -351,7 +368,7 @@
 						onclick={() => handleDeleteOne(item.id, item.name)}
 						disabled={isLoading.removing}
 					>
-						<Trash2Icon class="size-4" />
+						<TrashIcon class="size-4" />
 						{m.common_delete()}
 					</DropdownMenu.Item>
 				{/if}

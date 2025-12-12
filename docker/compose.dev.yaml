@@ -55,6 +55,7 @@ services:
       - GIN_MODE=debug
       - ENVIRONMENT=development
       - PORT=3552
+      - LOG_LEVEL=debug
       - APP_URL=http://localhost:3000
       - PUID=1000
       - PGID=1000
@@ -78,6 +79,7 @@ services:
       start_period: 40s
 
   arcane-agent:
+    profiles: ["agent"]
     build:
       context: ..
       dockerfile: docker/Dockerfile.dev
@@ -93,7 +95,8 @@ services:
       - LOG_LEVEL=debug
       - PORT=3553
       - AGENT_MODE=true
-      - AGENT_BOOTSTRAP_TOKEN=development-bootstrap-token
+      - AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      - MANAGER_API_URL=http://backend:3552
       - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
       - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
       - DATABASE_URL=file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate
@@ -126,15 +129,21 @@ networks:
   arcane-dev:
     driver: bridge
     name: arcane-dev-network
+    external: true
 
 volumes:
   arcane-dev-data:
     name: arcane-dev-data
+    external: true
   agent-dev-data:
     name: agent-dev-data
+    external: true
   go-build-cache:
     name: arcane-go-build-cache
+    external: true
   go-mod-cache:
     name: arcane-go-mod-cache
+    external: true
   pnpm-cache:
     name: arcane-pnpm-cache
+    external: true

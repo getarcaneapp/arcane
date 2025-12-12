@@ -26,13 +26,14 @@ type EnvironmentService struct {
 	db            *database.DB
 	httpClient    *http.Client
 	dockerService *DockerClientService
+	eventService  *EventService
 }
 
-func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService) *EnvironmentService {
+func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &EnvironmentService{db: db, httpClient: httpClient, dockerService: dockerService}
+	return &EnvironmentService{db: db, httpClient: httpClient, dockerService: dockerService, eventService: eventService}
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
@@ -78,9 +79,14 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	return nil
 }
 
-func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment *models.Environment) (*models.Environment, error) {
+func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment *models.Environment, userID, username *string) (*models.Environment, error) {
 	environment.ID = uuid.New().String()
-	environment.Status = string(models.EnvironmentStatusOffline)
+
+	// Only set status to offline if not already set (e.g., API key flow sets it to pending)
+	if environment.Status == "" {
+		environment.Status = string(models.EnvironmentStatusOffline)
+	}
+
 	now := time.Now()
 	environment.CreatedAt = now
 	environment.UpdatedAt = &now
@@ -88,6 +94,9 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
 		return nil, fmt.Errorf("failed to create environment: %w", err)
 	}
+
+	// Create event in background
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), environment.ID, environment.Name, models.EventTypeEnvironmentCreate, "Environment Created", fmt.Sprintf("Environment '%s' was created", environment.Name), models.EventSeveritySuccess, userID, username)
 
 	return environment, nil
 }
@@ -140,7 +149,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
-func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]interface{}) (*models.Environment, error) {
+func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]interface{}, userID, username *string) (*models.Environment, error) {
 	now := time.Now()
 	updates["updated_at"] = &now
 
@@ -148,13 +157,33 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 		return nil, fmt.Errorf("failed to update environment: %w", err)
 	}
 
-	return s.GetEnvironmentByID(ctx, id)
+	updated, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create event in background (skip for local environment)
+	if id != "0" {
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, models.EventTypeEnvironmentUpdate, "Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), models.EventSeverityInfo, userID, username)
+	}
+
+	return updated, nil
 }
 
-func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string) error {
+func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, userID, username *string) error {
+	// Get environment details before deletion
+	env, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
 	if err := s.db.WithContext(ctx).Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("failed to delete environment: %w", err)
 	}
+
+	// Create event in background
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, models.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), models.EventSeverityWarning, userID, username)
+
 	return nil
 }
 
@@ -228,6 +257,17 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 }
 
 func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context, id, status string) error {
+	// Don't update status for pending environments - they're waiting for agent pairing
+	var currentEnv models.Environment
+	if err := s.db.WithContext(ctx).Select("status").Where("id = ?", id).First(&currentEnv).Error; err != nil {
+		return fmt.Errorf("failed to check environment status: %w", err)
+	}
+
+	if currentEnv.Status == string(models.EnvironmentStatusPending) {
+		slog.DebugContext(ctx, "skipping status update for pending environment", "environment_id", id)
+		return nil
+	}
+
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":     status,
@@ -251,7 +291,44 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	}
 	return nil
 }
+func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
+	resourceType := "environment"
+	resourceID := envID
+	resourceName := envName
+	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
+		Type:          eventType,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		ResourceType:  &resourceType,
+		ResourceID:    &resourceID,
+		ResourceName:  &resourceName,
+		UserID:        userID,
+		Username:      username,
+		EnvironmentID: &envID,
+	})
+}
 
+func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, encryptedKey string, userID, username string, envName string) error {
+	// Update environment with new API key and set to pending status
+	updates := map[string]interface{}{
+		"api_key_id":   newApiKeyID,
+		"access_token": encryptedKey,
+		"status":       string(models.EnvironmentStatusPending),
+		"last_seen":    nil, // Clear last seen time
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update environment with new API key: %w", err)
+	}
+
+	// Create event log in background
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, &userID, &username)
+
+	return nil
+}
+
+// Deprecated - Use the Api Key flow
 func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl, bootstrapToken string) (string, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -338,6 +415,51 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 	return creds, nil
 }
 
+// DeploymentSnippets contains deployment configuration snippets for an environment.
+type DeploymentSnippets struct {
+	DockerRun     string
+	DockerCompose string
+}
+
+// GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
+func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, envAddress string, apiKey string) (*DeploymentSnippets, error) {
+	managerURL := strings.TrimRight(envAddress, "/")
+
+	dockerRun := fmt.Sprintf(`docker run -d \
+  --name arcane-agent \
+  --restart unless-stopped \
+  -e AGENT_MODE=true \
+  -e AGENT_TOKEN=%s \
+  -e MANAGER_API_URL=%s \
+  -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v arcane-data:/data \
+  ghcr.io/getarcaneapp/arcane-headless:latest`, apiKey, managerURL)
+
+	dockerCompose := fmt.Sprintf(`services:
+  arcane-agent:
+    image: ghcr.io/getarcaneapp/arcane-headless:latest
+    container_name: arcane-agent
+    restart: unless-stopped
+    environment:
+      - AGENT_MODE=true
+      - AGENT_TOKEN=%s
+      - MANAGER_API_URL=%s
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - arcane-data:/data
+
+volumes:
+  arcane-data:`, apiKey, managerURL)
+
+	return &DeploymentSnippets{
+		DockerRun:     dockerRun,
+		DockerCompose: dockerCompose,
+	}, nil
+}
+
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
 	// Get the environment
@@ -412,9 +534,18 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Use appropriate auth header based on environment type
 	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
-		slog.DebugContext(ctx, "Set agent token header for sync request")
+		// For API key-based environments, AccessToken contains the API key
+		if environment.ApiKeyID != nil && *environment.ApiKeyID != "" {
+			req.Header.Set("X-API-KEY", *environment.AccessToken)
+			slog.DebugContext(ctx, "Set API key header for sync request")
+		} else {
+			// Legacy bootstrap token-based environments
+			req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+			slog.DebugContext(ctx, "Set agent token header for sync request")
+		}
 	} else {
 		slog.WarnContext(ctx, "No access token available for environment sync",
 			slog.String("environmentID", environmentID))

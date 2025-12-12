@@ -2,11 +2,10 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
+	import { InfoIcon, EditIcon } from '$lib/icons';
 
 	let {
 		value = $bindable(),
@@ -109,7 +108,7 @@
 		{#if canEdit}
 			<div class="flex items-center justify-center">
 				<span class="text-muted-foreground flex items-center gap-0.5 text-[8px] whitespace-nowrap opacity-30">
-					<PencilIcon class="size-1.5" />
+					<EditIcon class="size-1.5" />
 					{m.tap_to_edit()}
 				</span>
 			</div>
@@ -145,7 +144,7 @@
 					title="Edit name"
 					onclick={beginEdit}
 				>
-					<PencilIcon class="size-3.5" />
+					<EditIcon class="size-3.5" />
 				</Button>
 			{:else}
 				<Tooltip.Provider>

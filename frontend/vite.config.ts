@@ -3,6 +3,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import Icons from 'unplugin-icons/vite';
 
 export default defineConfig({
 	optimizeDeps: { exclude: ['@lucide/svelte'] },
@@ -15,7 +16,11 @@ export default defineConfig({
 			cookieName: 'locale',
 			strategy: ['cookie', 'preferredLanguage', 'baseLocale']
 		}),
-		devtoolsJson()
+		devtoolsJson(),
+		Icons({
+			compiler: 'svelte',
+			autoInstall: true
+		})
 	],
 	build: {
 		target: 'es2022',

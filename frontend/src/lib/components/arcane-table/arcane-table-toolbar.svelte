@@ -1,5 +1,4 @@
 <script lang="ts" generics="TData">
-	import XIcon from '@lucide/svelte/icons/x';
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import Button from '$lib/components/ui/button/button.svelte';
@@ -9,6 +8,8 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
+	import { cn } from '$lib/utils';
+	import { ResetIcon } from '$lib/icons';
 
 	let {
 		table,
@@ -17,7 +18,8 @@
 		onRemoveSelected,
 		mobileFields = [],
 		onToggleMobileField,
-		customViewOptions
+		customViewOptions,
+		class: className
 	}: {
 		table: Table<TData>;
 		selectedIds?: string[];
@@ -26,6 +28,7 @@
 		mobileFields?: { id: string; label: string; visible: boolean }[];
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
+		class?: string;
 	} = $props();
 
 	const isFiltered = $derived(table.getState().columnFilters.length > 0 || !!table.getState().globalFilter);
@@ -42,7 +45,7 @@
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 </script>
 
-<div class="flex flex-col gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+<div class={cn('flex flex-col gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-between', className)}>
 	<div class="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center sm:justify-between">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
 			<div class="flex items-center gap-2">
@@ -59,9 +62,9 @@
 
 				<div class="md:hidden">
 					{#if mobileFields.length > 0 && onToggleMobileField}
-						<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} />
+						<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
 					{:else}
-						<DataTableViewOptions {table} />
+						<DataTableViewOptions {table} {customViewOptions} />
 					{/if}
 				</div>
 			</div>
@@ -90,7 +93,7 @@
 						class="h-8 px-2 lg:px-3"
 					>
 						{m.common_reset()}
-						<XIcon />
+						<ResetIcon />
 					</Button>
 				{/if}
 			</div>

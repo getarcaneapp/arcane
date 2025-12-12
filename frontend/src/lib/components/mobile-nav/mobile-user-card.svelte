@@ -2,12 +2,6 @@
 	import * as Button from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { cn } from '$lib/utils';
-	import LogOutIcon from '@lucide/svelte/icons/log-out';
-	import RouterIcon from '@lucide/svelte/icons/router';
-	import ServerIcon from '@lucide/svelte/icons/server';
-	import LanguagesIcon from '@lucide/svelte/icons/languages';
-	import Sun from '@lucide/svelte/icons/sun';
-	import Moon from '@lucide/svelte/icons/moon';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Environment } from '$lib/types/environment.type';
 	import { mode, toggleMode } from 'mode-watcher';
@@ -15,8 +9,16 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { User } from '$lib/types/user.type';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import settingsStore from '$lib/stores/config-store';
+	import {
+		ArrowDownIcon,
+		MoonIcon,
+		SunIcon,
+		LogoutIcon,
+		EnvironmentsIcon,
+		RemoteEnvironmentIcon,
+		LanguageIcon
+	} from '$lib/icons';
 
 	type Props = {
 		user: User;
@@ -75,7 +77,7 @@
 				aria-label="Expand user card"
 				class={cn('text-muted-foreground/60 transition-transform duration-200', userCardExpanded && 'rotate-180 transform')}
 			>
-				<ChevronDownIcon class="size-4" />
+				<ArrowDownIcon class="size-8" />
 			</div>
 			<form action="/logout" method="POST">
 				<Button.Root
@@ -86,7 +88,7 @@
 					class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-10 w-10 rounded-xl transition-all duration-200 hover:scale-105"
 					onclick={(e) => e.stopPropagation()}
 				>
-					<LogOutIcon size={16} />
+					<LogoutIcon class="size-5" />
 				</Button.Root>
 			</form>
 		</div>
@@ -100,9 +102,9 @@
 						<div class="flex items-start gap-3">
 							<div class="bg-primary/10 text-primary flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg">
 								{#if environmentStore.selected?.id === '0'}
-									<ServerIcon class="size-4" />
+									<EnvironmentsIcon class="size-4" />
 								{:else}
-									<RouterIcon class="size-4" />
+									<RemoteEnvironmentIcon class="size-4" />
 								{/if}
 							</div>
 							<div class="min-w-0 flex-1">
@@ -141,7 +143,7 @@
 				<div class="bg-background/50 border-border/20 rounded-2xl border p-4">
 					<div class="flex h-full items-center gap-3">
 						<div class="bg-primary/10 text-primary flex aspect-square size-8 items-center justify-center rounded-lg">
-							<LanguagesIcon class="size-4" />
+							<LanguageIcon class="size-4" />
 						</div>
 						<div class="min-w-0 flex-1">
 							<div class="text-muted-foreground/70 mb-1 text-xs font-medium tracking-widest uppercase">
@@ -161,9 +163,9 @@
 					<button class="flex h-full w-full items-center gap-3 text-left" onclick={toggleMode}>
 						<div class="bg-primary/10 text-primary flex aspect-square size-8 items-center justify-center rounded-lg">
 							{#if isDarkMode}
-								<Sun class="size-4" />
+								<SunIcon class="size-4" />
 							{:else}
-								<Moon class="size-4" />
+								<MoonIcon class="size-4" />
 							{/if}
 						</div>
 						<div class="flex min-w-0 flex-1 flex-col justify-center">

@@ -1,7 +1,5 @@
 <script lang="ts">
-	import FileStackIcon from '@lucide/svelte/icons/file-stack';
-	import PlayCircleIcon from '@lucide/svelte/icons/play-circle';
-	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
+	import { ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -11,7 +9,6 @@
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { Environment } from '$lib/types/environment.type';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
@@ -88,18 +85,18 @@
 
 	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.compose_update_projects(),
-			onclick: handleCheckForUpdates,
-			loading: isLoading.updating,
-			disabled: isLoading.updating
-		},
-		{
 			id: 'create',
 			action: 'create',
 			label: m.compose_create_project(),
 			onclick: () => goto('/projects/new')
+		},
+		{
+			id: 'check-updates',
+			action: 'update',
+			label: m.compose_update_projects(),
+			onclick: handleCheckForUpdates,
+			loading: isLoading.updating,
+			disabled: isLoading.updating
 		},
 		{
 			id: 'refresh',
@@ -115,21 +112,21 @@
 		{
 			title: m.compose_total(),
 			value: totalCompose,
-			icon: FileStackIcon,
+			icon: ProjectsIcon,
 			iconColor: 'text-amber-500',
 			class: 'border-l-4 border-l-amber-500'
 		},
 		{
 			title: m.common_running(),
 			value: runningCompose,
-			icon: PlayCircleIcon,
+			icon: StartIcon,
 			iconColor: 'text-green-500',
 			class: 'border-l-4 border-l-green-500'
 		},
 		{
 			title: m.common_stopped(),
 			value: stoppedCompose,
-			icon: StopCircleIcon,
+			icon: StopIcon,
 			iconColor: 'text-red-500',
 			class: 'border-l-4 border-l-red-500'
 		}

@@ -4,17 +4,13 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import LockIcon from '@lucide/svelte/icons/lock';
-	import UserIcon from '@lucide/svelte/icons/user';
+	import { AlertIcon, LockIcon, UserIcon, ArrowRightIcon, GithubIcon, OpenIdIcon, LoginIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
 	import { getApplicationLogo } from '$lib/utils/image.util';
-	import GithubIcon from '$lib/icons/github-icon.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -116,7 +112,7 @@
 				<div class="space-y-4">
 					{#if data.error}
 						<Alert.Root variant="destructive" class="glass-light">
-							<CircleAlertIcon class="size-4" />
+							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
 							<Alert.Description>
 								{#if data.error === 'oidc_invalid_response'}
@@ -142,7 +138,7 @@
 
 					{#if error}
 						<Alert.Root variant="destructive" class="glass-light">
-							<CircleAlertIcon class="size-4" />
+							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_failed_title()}</Alert.Title>
 							<Alert.Description>{error}</Alert.Description>
 						</Alert.Root>
@@ -150,7 +146,7 @@
 
 					{#if !showLocalLoginForm && !showOidcLoginButton}
 						<Alert.Root variant="destructive" class="glass-light">
-							<CircleAlertIcon class="size-4" />
+							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
 							<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
 						</Alert.Root>
@@ -158,7 +154,7 @@
 
 					{#if showOidcLoginButton && !showLocalLoginForm}
 						<Button onclick={handleOidcLogin} class="hover-lift w-full" size="lg">
-							<LogInIcon class="mr-2 size-4" />
+							<ArrowRightIcon class="mr-2 size-4" />
 							{m.auth_oidc_signin()}
 						</Button>
 					{/if}
@@ -206,7 +202,7 @@
 									<div class="mr-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
 									{m.auth_signing_in()}
 								{:else}
-									<LogInIcon class="mr-2 size-4" />
+									<LoginIcon class="mr-2 size-4" />
 									{m.auth_signin_button()}
 								{/if}
 							</Button>
@@ -227,7 +223,7 @@
 
 						{#if showOidcLoginButton && showDivider}
 							<Button onclick={handleOidcLogin} variant="outline" class="hover-lift w-full" size="lg">
-								<LogInIcon class="mr-2 size-4" />
+								<OpenIdIcon class="size-4" />
 								{m.auth_oidc_signin()}
 							</Button>
 						{/if}

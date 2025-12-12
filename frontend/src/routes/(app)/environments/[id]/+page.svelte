@@ -3,16 +3,6 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import MonitorIcon from '@lucide/svelte/icons/monitor';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import SaveIcon from '@lucide/svelte/icons/save';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
@@ -23,7 +13,21 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { CopyButton } from '$lib/components/ui/copy-button';
+	import {
+		ArrowLeftIcon,
+		RefreshIcon,
+		ConnectionIcon,
+		SaveIcon,
+		EnvironmentsIcon,
+		AlertIcon,
+		TestIcon,
+		RegistryIcon,
+		ResetIcon,
+		ApiKeyIcon,
+		DockerBrandIcon
+	} from '$lib/icons';
 
 	let { data } = $props();
 	let { environment, settings } = $derived(data);
@@ -34,10 +38,11 @@
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
-	let isPairing = $state(false);
 	let isSaving = $state(false);
 	let isSyncingRegistries = $state(false);
-	let bootstrapToken = $state('');
+	let isRegeneratingKey = $state(false);
+	let showRegenerateDialog = $state(false);
+	let regeneratedApiKey = $state<string | null>(null);
 
 	// Form state
 	let formName = $state('');
@@ -45,7 +50,7 @@
 	let formApiUrl = $state('');
 
 	// Track current status separately from environment data
-	let currentStatus = $state<'online' | 'offline' | 'error'>('offline');
+	let currentStatus = $state<'online' | 'offline' | 'error' | 'pending'>('offline');
 
 	// Initialize form values and status
 	$effect(() => {
@@ -123,24 +128,6 @@
 			isTestingConnection = false;
 		}
 	}
-	async function pairOrRotate() {
-		if (!bootstrapToken) {
-			toast.error(m.environments_bootstrap_required());
-			return;
-		}
-		try {
-			isPairing = true;
-			await environmentManagementService.update(environment.id, { bootstrapToken });
-			toast.success(m.environments_agent_paired_success());
-			bootstrapToken = '';
-			await invalidateAll();
-		} catch (e) {
-			console.error(e);
-			toast.error(m.environments_agent_pair_failed());
-		} finally {
-			isPairing = false;
-		}
-	}
 
 	async function handleSave() {
 		if (!hasChanges || isSaving) return;
@@ -182,6 +169,31 @@
 		toast.info(m.environments_changes_reset());
 	}
 
+	async function handleRegenerateApiKey() {
+		try {
+			isRegeneratingKey = true;
+
+			// Delete the old API key and create a new one
+			const result = await environmentManagementService.update(environment.id, {
+				regenerateApiKey: true
+			});
+
+			if (result.apiKey) {
+				regeneratedApiKey = result.apiKey;
+				toast.success(m.environments_regenerate_key_success());
+				await invalidateAll();
+			} else {
+				toast.error(m.environments_regenerate_key_failed());
+			}
+		} catch (error) {
+			console.error('Failed to regenerate API key:', error);
+			toast.error(m.environments_regenerate_key_failed());
+		} finally {
+			isRegeneratingKey = false;
+			showRegenerateDialog = false;
+		}
+	}
+
 	async function confirmSwitchAndEdit() {
 		try {
 			await environmentStore.setEnvironment(environment);
@@ -216,7 +228,7 @@
 
 				{#if hasChanges}
 					<Button variant="outline" size="sm" onclick={handleReset} disabled={isSaving}>
-						<RotateCcwIcon class="mr-2 size-4" />
+						<ResetIcon class="mr-2 size-4" />
 						{m.common_reset()}
 					</Button>
 				{/if}
@@ -234,9 +246,9 @@
 				{#if environment.id !== '0'}
 					<Button variant="outline" onclick={syncRegistries} disabled={isSyncingRegistries}>
 						{#if isSyncingRegistries}
-							<Spinner />
+							<Spinner class="size-4" />
 						{:else}
-							<DatabaseIcon class="mr-2 size-4" />
+							<RegistryIcon class="size-4" />
 						{/if}
 						{m.sync_registries()}
 					</Button>
@@ -244,9 +256,9 @@
 
 				<Button variant="outline" onclick={refreshEnvironment} disabled={isRefreshing}>
 					{#if isRefreshing}
-						<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+						<Spinner class="size-4" />
 					{:else}
-						<RefreshCwIcon class="mr-2 size-4" />
+						<RefreshIcon class="size-4" />
 					{/if}
 					{m.common_refresh()}
 				</Button>
@@ -270,7 +282,7 @@
 			<div
 				class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
 			>
-				<AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
 				<div class="flex-1 space-y-1">
 					<p class="text-sm font-medium">
 						{#if !environment.enabled}
@@ -288,7 +300,7 @@
 
 	<div class="grid gap-6 gap-x-6 gap-y-6 lg:grid-cols-2">
 		<Card.Root class="flex flex-col">
-			<Card.Header icon={MonitorIcon}>
+			<Card.Header icon={EnvironmentsIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<h2>{m.environments_overview_title()}</h2>
@@ -343,7 +355,7 @@
 
 		{#if settings}
 			<Card.Root class="flex flex-col">
-				<Card.Header icon={SettingsIcon}>
+				<Card.Header icon={DockerBrandIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
 							<h2>{m.environments_docker_settings_title()}</h2>
@@ -397,7 +409,7 @@
 		{/if}
 
 		<Card.Root class="flex flex-col">
-			<Card.Header icon={GlobeIcon}>
+			<Card.Header icon={ConnectionIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<h2>{m.environments_connection_title()}</h2>
@@ -442,10 +454,10 @@
 
 				<Button onclick={testConnection} disabled={isTestingConnection} class="w-full">
 					{#if isTestingConnection}
-						<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+						<Spinner />
 						{m.environments_testing_connection()}
 					{:else}
-						<TerminalIcon class="mr-2 size-4" />
+						<TestIcon class="mr-2 size-4" />
 						{m.environments_test_connection()}
 					{/if}
 				</Button>
@@ -454,42 +466,71 @@
 
 		{#if environment.id !== '0'}
 			<Card.Root class="flex flex-col">
-				<Card.Header icon={SettingsIcon}>
+				<Card.Header icon={ApiKeyIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
-							<h2>{m.environments_pair_rotate_title()}</h2>
+							<h2>{m.environments_agent_config_title()}</h2>
 						</Card.Title>
-						<Card.Description>{m.environments_pair_rotate_description()}</Card.Description>
+						<Card.Description>{m.environments_agent_config_description()}</Card.Description>
 					</div>
 				</Card.Header>
 				<Card.Content class="space-y-4 p-4">
-					<div>
-						<Label for="bootstrap-token" class="text-sm font-medium">{m.environments_bootstrap_label()}</Label>
-						<Input
-							id="bootstrap-token"
-							type="password"
-							placeholder={m.environments_bootstrap_placeholder()}
-							bind:value={bootstrapToken}
-							class="mt-1.5"
-						/>
-					</div>
-					<div class="flex gap-2">
-						<Button onclick={pairOrRotate} disabled={isPairing || !bootstrapToken} class="flex-1">
-							{#if isPairing}
-								<RefreshCwIcon class="mr-2 size-4 animate-spin" />
+					{#if regeneratedApiKey}
+						<div class="space-y-4">
+							<div class="space-y-2">
+								<div class="text-sm font-medium">{m.environments_new_api_key()}</div>
+								<div class="flex items-center gap-2">
+									<code class="bg-muted flex-1 rounded-md px-3 py-2 font-mono text-sm break-all">
+										{regeneratedApiKey}
+									</code>
+									<CopyButton text={regeneratedApiKey} size="icon" class="size-7" />
+								</div>
+								<p class="text-muted-foreground text-xs">{m.environments_api_key_save_warning()}</p>
+							</div>
+							<Button variant="outline" onclick={() => (regeneratedApiKey = null)} class="w-full">
+								{m.common_dismiss()}
+							</Button>
+						</div>
+					{:else}
+						<div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
+							<p class="font-medium">{m.environments_regenerate_warning_title()}</p>
+							<p class="mt-1">{m.environments_regenerate_warning_message()}</p>
+						</div>
+						<Button
+							variant="destructive"
+							onclick={() => (showRegenerateDialog = true)}
+							disabled={isRegeneratingKey}
+							class="w-full"
+						>
+							{#if isRegeneratingKey}
+								<Spinner class="size-4" />
 							{:else}
-								<SettingsIcon class="mr-2 size-4" />
+								<ResetIcon class="size-4" />
 							{/if}
-							{m.environments_pair_rotate_action()}
+							{m.environments_regenerate_api_key()}
 						</Button>
-						<Button variant="outline" onclick={() => (bootstrapToken = '')} disabled={isPairing}>
-							{m.common_clear()}
-						</Button>
-					</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		{/if}
 	</div>
+
+	<AlertDialog.Root bind:open={showRegenerateDialog}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>{m.environments_regenerate_dialog_title()}</AlertDialog.Title>
+				<AlertDialog.Description>
+					{m.environments_regenerate_dialog_message()}
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={handleRegenerateApiKey}>
+					{m.environments_regenerate_api_key()}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 
 	<AlertDialog.Root bind:open={showSwitchDialog}>
 		<AlertDialog.Content>

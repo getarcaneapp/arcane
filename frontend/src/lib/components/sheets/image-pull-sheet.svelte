@@ -1,12 +1,9 @@
 <script lang="ts">
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { toast } from 'svelte-sonner';
@@ -25,6 +22,7 @@
 		showImageLayersState,
 		isIndeterminatePhase
 	} from '$lib/utils/pull-progress';
+	import { ArrowDownIcon, SuccessIcon, DownloadIcon } from '$lib/icons';
 
 	type ImagePullFormProps = {
 		open: boolean;
@@ -226,38 +224,15 @@
 	}
 </script>
 
-<Sheet.Root bind:open onOpenChange={handleOpenChange}>
-	<Sheet.Content class="p-6">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div
-					class={cn(
-						'flex size-10 shrink-0 items-center justify-center rounded-lg',
-						pullError && 'bg-destructive/10 text-destructive',
-						hasReachedComplete && !pullError && 'bg-green-500/10 text-green-500',
-						!showPullUI && 'bg-primary/10 text-primary',
-						isPulling && !pullError && !hasReachedComplete && 'bg-primary/10 text-primary'
-					)}
-				>
-					{#if hasReachedComplete && !pullError}
-						<CheckCircleIcon class="size-5" />
-					{:else}
-						<DownloadIcon class={cn('size-5', isPulling && 'animate-pulse')} />
-					{/if}
-				</div>
-				<div class="min-w-0 flex-1">
-					<Sheet.Title class="text-xl font-semibold">{m.images_pull_image()}</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{#if showPullUI && currentImageName}
-							<span class="block truncate" title={currentImageName}>{currentImageName}</span>
-						{:else}
-							{m.images_pull_description()}
-						{/if}
-					</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-
+<ResponsiveDialog.Root
+	bind:open
+	onOpenChange={handleOpenChange}
+	variant="sheet"
+	title={m.images_pull_image()}
+	description={showPullUI && currentImageName ? currentImageName : m.images_pull_description()}
+	contentClass="sm:max-w-[600px]"
+>
+	{#snippet children()}
 		{#if showPullUI}
 			<!-- Pull progress UI -->
 			<div class="space-y-4 py-6">
@@ -297,7 +272,7 @@
 								class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
 							>
 								{m.progress_show_layers()}
-								<ChevronDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+								<ArrowDownIcon class={cn('size-4 transition-transform', showImageLayersState.current && 'rotate-180')} />
 							</Collapsible.Trigger>
 							<Collapsible.Content>
 								<div class="mt-2 space-y-1.5">
@@ -338,19 +313,8 @@
 					{/if}
 				{/if}
 			</div>
-
-			{#if pullError}
-				<Sheet.Footer class="flex flex-row gap-2">
-					<Button type="button" class="flex-1" variant="outline" onclick={() => resetState()}>
-						{m.common_retry()}
-					</Button>
-					<Button type="button" class="flex-1" onclick={() => (open = false)}>
-						{m.common_close()}
-					</Button>
-				</Sheet.Footer>
-			{/if}
 		{:else}
-			<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+			<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 				<FormInput
 					label={m.images_image_name_label()}
 					type="text"
@@ -365,17 +329,30 @@
 					description={m.images_tag_description()}
 					bind:input={$inputs.tag}
 				/>
-
-				<Sheet.Footer class="flex flex-row gap-2">
-					<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)}>
-						{m.common_cancel()}
-					</Button>
-					<Button type="submit" class="arcane-button-create flex-1">
-						<DownloadIcon class="mr-2 size-4" />
-						{m.images_pull_image()}
-					</Button>
-				</Sheet.Footer>
 			</form>
 		{/if}
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+
+	{#snippet footer()}
+		{#if pullError}
+			<div class="flex w-full flex-row gap-2">
+				<Button type="button" class="flex-1" variant="outline" onclick={() => resetState()}>
+					{m.common_retry()}
+				</Button>
+				<Button type="button" class="flex-1" onclick={() => (open = false)}>
+					{m.common_close()}
+				</Button>
+			</div>
+		{:else if !showPullUI}
+			<div class="flex w-full flex-row gap-2">
+				<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)}>
+					{m.common_cancel()}
+				</Button>
+				<Button type="submit" class="arcane-button-create flex-1" onclick={handleSubmit}>
+					<DownloadIcon class="mr-2 size-4" />
+					{m.images_pull_image()}
+				</Button>
+			</div>
+		{/if}
+	{/snippet}
+</ResponsiveDialog.Root>

@@ -25,6 +25,11 @@ type Create struct {
 	//
 	// Required: false
 	BootstrapToken *string `json:"bootstrapToken,omitempty"`
+
+	// UseApiKey indicates if an API key should be generated for pairing.
+	//
+	// Required: false
+	UseApiKey *bool `json:"useApiKey,omitempty"`
 }
 
 type Update struct {
@@ -52,6 +57,11 @@ type Update struct {
 	//
 	// Required: false
 	BootstrapToken *string `json:"bootstrapToken,omitempty"`
+
+	// RegenerateApiKey indicates whether to regenerate the API key.
+	//
+	// Required: false
+	RegenerateApiKey *bool `json:"regenerateApiKey,omitempty"`
 }
 
 type Test struct {
@@ -100,6 +110,10 @@ type Environment struct {
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
+	// ApiKey is returned only when creating or regenerating
+	//
+	// Required: false
+	ApiKey *string `json:"apiKey,omitempty"`
 }
 
 // AgentPairRequest is the request body for pairing with an agent.

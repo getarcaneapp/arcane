@@ -43,11 +43,8 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    const totalCard = page
-      .locator('div')
-      .filter({ hasText: /^Total Volumes/ })
-      .first();
-    await expect(totalCard.locator('p').nth(1)).toHaveText(volumeCount.total.toString());
+    const totalValue = page.locator('div:has(> p:has-text("Total Volumes")) h3').first();
+    await expect(totalValue).toHaveText(volumeCount.total.toString());
   });
 
   test('Create Volume Sheet Opens', async ({ page }) => {
@@ -120,7 +117,18 @@ test.describe('Volumes Page', () => {
 
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
-    const volumeRow = page.locator(`tr:has-text("${volumeInUse.name}")`);
+
+    // Volume names can be truncated in the table (e.g. long hashes), so we anchor on the link title
+    // which preserves the full name.
+    const searchInput = page.getByPlaceholder('Search…');
+    if (await searchInput.count()) {
+      await searchInput.fill(volumeInUse.name);
+    }
+
+    const volumeLink = page.locator(`table a[title="${volumeInUse.name}"]`).first();
+    await expect(volumeLink).toBeVisible();
+
+    const volumeRow = volumeLink.locator('xpath=ancestor::tr[1]');
     await volumeRow.getByRole('button', { name: 'Open menu' }).click();
 
     await expect(page.getByRole('menuitem', { name: 'Remove' })).toBeDisabled();

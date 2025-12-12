@@ -61,6 +61,14 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		return
 	}
 
+	// Only proxy requests with additional path segments after the environment ID
+	// Examples: /api/environments/{id}/containers, /api/environments/{id}/projects
+	// Not proxied: /api/environments/{id} (management operations)
+	if !m.hasResourcePath(c, envID) {
+		c.Next()
+		return
+	}
+
 	// Resolve remote environment
 	apiURL, accessToken, enabled, err := m.resolver(c.Request.Context(), envID)
 	if err != nil || apiURL == "" {
@@ -89,6 +97,41 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	} else {
 		m.proxyHTTP(c, target, accessToken)
 	}
+}
+
+// hasResourcePath checks if the request has additional path segments after the environment ID.
+// Returns true for paths like /api/environments/{id}/containers (should be proxied)
+// Returns false for paths like /api/environments/{id} or management endpoints (should be handled locally)
+func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bool {
+	path := c.Request.URL.Path
+	prefix := "/api/environments/" + envID
+
+	// If there's content after the environment ID path, check if it's a management endpoint
+	suffix := strings.TrimPrefix(path, prefix)
+
+	// No suffix means it's exactly /api/environments/{id} - management endpoint
+	if len(suffix) <= 1 || !strings.HasPrefix(suffix, "/") {
+		return false
+	}
+
+	// Check if it's a management endpoint that should NOT be proxied
+	// These are environment management operations handled by the manager
+	managementEndpoints := []string{
+		"/test",
+		"/heartbeat",
+		"/sync-registries",
+		"/deployment",
+		"/agent/pair",
+	}
+
+	for _, endpoint := range managementEndpoints {
+		if suffix == endpoint {
+			return false
+		}
+	}
+
+	// It's a resource operation (e.g., "/containers", "/images") - should be proxied
+	return true
 }
 
 // extractEnvironmentID gets the environment ID from the request.

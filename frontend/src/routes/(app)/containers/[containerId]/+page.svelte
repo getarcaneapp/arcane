@@ -1,15 +1,5 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import CircleAlertIcon from '@lucide/svelte/icons/alert-circle';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import NetworkIcon from '@lucide/svelte/icons/network';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -35,6 +25,18 @@
 	import ContainerShell from '../components/ContainerShell.svelte';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import {
+		ArrowLeftIcon,
+		AlertIcon,
+		RefreshIcon,
+		VolumesIcon,
+		FileTextIcon,
+		SettingsIcon,
+		NetworksIcon,
+		TerminalIcon,
+		ContainersIcon,
+		StatsIcon
+	} from '$lib/icons';
 
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
@@ -219,13 +221,13 @@
 	const showShell = $derived(!!container?.state?.running);
 
 	const tabItems = $derived<TabItem[]>([
-		{ value: 'overview', label: m.common_overview(), icon: HardDriveIcon },
-		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: ActivityIcon }] : []),
+		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
+		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
 		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
-		...(hasNetworks ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworkIcon }] : []),
-		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: DatabaseIcon }] : [])
+		...(hasNetworks ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
+		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
 	]);
 
 	$effect(() => {
@@ -262,10 +264,6 @@
 		const d = parseDockerDate(input);
 		return d ? format(d, fmt) : 'N/A';
 	}
-
-	const baseServerUrl = $derived(
-		(data?.settings as any)?.serverBaseUrl ?? (data?.settings as any)?.baseServerUrl ?? (data?.settings as any)?.baseUrl ?? ''
-	);
 
 	const backUrl = $derived.by(() => {
 		const from = page.url.searchParams.get('from');
@@ -307,7 +305,7 @@
 
 		{#snippet tabContent(activeTab)}
 			<Tabs.Content value="overview" class="h-full">
-				<ContainerOverview {container} {primaryIpAddress} {baseServerUrl} />
+				<ContainerOverview {container} {primaryIpAddress} />
 			</Tabs.Content>
 
 			{#if showStats}
@@ -371,7 +369,7 @@
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
 			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
-				<CircleAlertIcon class="text-muted-foreground size-10" />
+				<AlertIcon class="text-muted-foreground size-10" />
 			</div>
 			<h2 class="mb-3 text-2xl font-medium">{m.common_not_found_title({ resource: m.container() })}</h2>
 			<p class="text-muted-foreground mb-8 max-w-md text-center">
@@ -379,11 +377,11 @@
 			</p>
 			<div class="flex justify-center gap-4">
 				<Button variant="outline" href="/containers">
-					<ArrowLeftIcon class="mr-2 size-4" />
+					<ArrowLeftIcon class="size-4" />
 					{m.common_back_to({ resource: m.containers_title() })}
 				</Button>
 				<Button variant="default" onclick={refreshData}>
-					<RefreshCwIcon class="mr-2 size-4" />
+					<RefreshIcon class="size-4" />
 					{m.common_retry()}
 				</Button>
 			</div>

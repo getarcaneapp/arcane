@@ -5,14 +5,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from 'bytes';
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
+	import { VolumesIcon, SettingsIcon } from '$lib/icons';
 
 	let {
 		diskUsage,
@@ -74,7 +73,7 @@
 
 <Card.Root class={className}>
 	{#snippet children()}
-		<Card.Header icon={HardDriveIcon} iconVariant="primary" compact {loading}>
+		<Card.Header icon={VolumesIcon} iconVariant="primary" compact {loading}>
 			{#snippet children()}
 				<div class="min-w-0 flex-1">
 					<div class="text-foreground text-sm font-semibold">{m.dashboard_meter_disk()}</div>

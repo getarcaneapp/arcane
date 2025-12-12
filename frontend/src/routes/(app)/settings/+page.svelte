@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import UserIcon from '@lucide/svelte/icons/user';
-	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import NavigationIcon from '@lucide/svelte/icons/navigation';
-	import BellIcon from '@lucide/svelte/icons/bell';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import {
+		SearchIcon,
+		SettingsIcon,
+		UserIcon,
+		SecurityIcon,
+		NotificationsIcon,
+		ArrowRightIcon,
+		DockerBrandIcon,
+		ApiKeyIcon,
+		ApperanceIcon
+	} from '$lib/icons';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
@@ -16,6 +19,7 @@
 	import { settingsSearchService } from '$lib/services/settings-search';
 	import type { SettingsCategory } from '$lib/types/settings-search.type';
 	import { debounced } from '$lib/utils/utils';
+	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 
 	let { data } = $props();
 	let searchQuery = $state('');
@@ -27,10 +31,12 @@
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
-		database: DatabaseIcon,
-		shield: ShieldIcon,
-		navigation: NavigationIcon,
-		user: UserIcon
+		database: DockerBrandIcon,
+		shield: SecurityIcon,
+		appearance: ApperanceIcon,
+		bell: NotificationsIcon,
+		user: UserIcon,
+		apikey: ApiKeyIcon
 	};
 
 	onMount(async () => {
@@ -115,33 +121,37 @@
 									<UiConfigDisabledTag />
 								</div>
 							</div>
-							<p class="text-muted-foreground mt-1 text-sm sm:text-base">Configure and customize your Arcane experience</p>
+							<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.settings_subtitle()}</p>
 						</div>
 					</div>
 				</div>
 
 				<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
-					<SearchIcon class="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-					<input
-						type="text"
-						placeholder="Search settings..."
-						value={searchQuery}
-						oninput={(e) => {
-							searchQuery = e.currentTarget.value;
-							debouncedSearch(e.currentTarget.value);
-						}}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') {
-								performSearch((e.currentTarget as HTMLInputElement).value, true);
-							}
-						}}
-						class="bg-background/50 border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 pl-10 text-sm backdrop-blur-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-					/>
-					{#if showSearchResults}
-						<Button variant="ghost" size="sm" onclick={clearSearch} class="absolute top-1/2 right-2 h-6 w-6 -translate-y-1/2 p-0">
-							×
-						</Button>
-					{/if}
+					<InputGroup.Root>
+						<InputGroup.Input
+							placeholder={m.settings_search_placeholder()}
+							value={searchQuery}
+							oninput={(e) => {
+								searchQuery = e.currentTarget.value;
+								debouncedSearch(e.currentTarget.value);
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									performSearch((e.currentTarget as HTMLInputElement).value, true);
+								}
+							}}
+						/>
+						<InputGroup.Addon>
+							{#if showSearchResults}
+								<Button variant="ghost" size="sm" onclick={clearSearch} class="h-6 w-6 p-0">
+									<span class="sr-only">{m.settings_clear_search()}</span>
+									×
+								</Button>
+							{:else}
+								<SearchIcon />
+							{/if}
+						</InputGroup.Addon>
+					</InputGroup.Root>
 				</div>
 			</div>
 		</div>
@@ -165,9 +175,7 @@
 									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>
-							<ChevronRightIcon
-								class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors"
-							/>
+							<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
 						</div>
 					</button>
 				</Card>
@@ -177,8 +185,7 @@
 		<div class="space-y-6 sm:space-y-8">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<h2 class="text-base font-semibold sm:text-lg">
-					Search Results for "{searchQuery}" ({searchResults.length}
-					{searchResults.length === 1 ? 'result' : 'results'})
+					{m.settings_search_results({ query: searchQuery, count: searchResults.length })}
 				</h2>
 			</div>
 
@@ -187,13 +194,13 @@
 					<div
 						class="border-primary mx-auto mb-3 size-8 animate-spin rounded-full border-4 border-t-transparent sm:mb-4 sm:size-12"
 					></div>
-					<p class="text-muted-foreground text-sm sm:text-base">Searching...</p>
+					<p class="text-muted-foreground text-sm sm:text-base">{m.settings_searching()}</p>
 				</div>
 			{:else if searchResults.length === 0}
 				<div class="py-8 text-center sm:py-12">
 					<SearchIcon class="text-muted-foreground mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
-					<h3 class="mb-2 text-base font-medium sm:text-lg">No settings found</h3>
-					<p class="text-muted-foreground text-sm sm:text-base">Try adjusting your search terms or browse categories above.</p>
+					<h3 class="mb-2 text-base font-medium sm:text-lg">{m.settings_no_results()}</h3>
+					<p class="text-muted-foreground text-sm sm:text-base">{m.settings_no_results_description()}</p>
 				</div>
 			{:else}
 				<div class="space-y-4 sm:space-y-6">
@@ -210,7 +217,7 @@
 										</div>
 									</div>
 									<Button variant="outline" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
-										Go to Page
+										{m.settings_go_to_page()}
 									</Button>
 								</div>
 							</div>
@@ -218,7 +225,7 @@
 							<!-- Show matching settings with descriptions -->
 							{#if result.matchingSettings && result.matchingSettings.length > 0}
 								<div class="space-y-3 p-4 sm:p-6">
-									<h4 class="text-muted-foreground mb-3 text-sm font-medium">Matching Settings:</h4>
+									<h4 class="text-muted-foreground mb-3 text-sm font-medium">{m.settings_matching_settings()}</h4>
 									{#each result.matchingSettings as setting}
 										<div class="bg-background/60 border-primary/20 rounded-md border-l-2 p-3">
 											<div class="flex items-start justify-between gap-3">
@@ -236,7 +243,7 @@
 															{/each}
 															{#if setting.keywords.length > 6}
 																<span class="text-muted-foreground px-2 py-0.5 text-xs">
-																	+{setting.keywords.length - 6} more
+																	{m.settings_more_keywords({ count: setting.keywords.length - 6 })}
 																</span>
 															{/if}
 														</div>

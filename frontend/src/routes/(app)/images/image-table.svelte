@@ -1,10 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -17,15 +13,13 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
-	import ImageIcon from '@lucide/svelte/icons/image';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import ClockIcon from '@lucide/svelte/icons/clock';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
 	import { format } from 'date-fns';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
+	import { DownloadIcon, TrashIcon, EllipsisIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -241,12 +235,12 @@
 }: {
 	row: any;
 	item: ImageSummaryDto;
-	mobileFieldVisibility: Record<string, boolean>;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
 		icon={(item) => ({
-			component: ImageIcon,
+			component: ImagesIcon,
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item) => {
@@ -266,14 +260,14 @@
 			{
 				label: m.common_size(),
 				getValue: (item: ImageSummaryDto) => bytes.format(Number(item.size ?? 0)),
-				icon: HardDriveIcon,
+				icon: VolumesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility.size ?? true
 			},
 			{
 				label: m.images_repository(),
 				getValue: (item: ImageSummaryDto) => (item.repo && item.repo !== '<none>' ? item.repo : m.images_untagged()),
-				icon: ImageIcon,
+				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility.repo ?? true
 			},
@@ -285,7 +279,7 @@
 					}
 					return item.tag && item.tag !== '<none>' ? item.tag : m.images_untagged();
 				},
-				icon: ImageIcon,
+				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility.repoTags ?? true
 			}
@@ -334,7 +328,7 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
-					<ScanSearchIcon class="size-4" />
+					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item
@@ -354,7 +348,7 @@
 					{#if isLoading.removing}
 						<Spinner class="size-4" />
 					{:else}
-						<Trash2Icon class="size-4" />
+						<TrashIcon class="size-4" />
 					{/if}
 					{m.common_remove()}
 				</DropdownMenu.Item>

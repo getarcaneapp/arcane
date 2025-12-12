@@ -1,9 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -15,16 +12,13 @@
 	import { truncateString } from '$lib/utils/string.utils';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/volume.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
-	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import bytes from 'bytes';
-
-	type FieldVisibility = Record<string, boolean>;
+	import { TrashIcon, EllipsisIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
+	import { Spinner } from '$lib/components/ui/spinner';
 
 	let {
 		volumes = $bindable(),
@@ -163,7 +157,7 @@
 	{#if volumeSizesPromise}
 		{#await volumeSizesPromise}
 			<span class="text-muted-foreground flex items-center gap-1 text-sm">
-				<LoaderCircleIcon class="size-3 animate-spin" />
+				<Spinner class="size-4" />
 			</span>
 		{:then sizesMap}
 			{@const sizeInfo = sizesMap.get(item.name)}
@@ -185,18 +179,16 @@
 {/snippet}
 
 {#snippet VolumeMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: VolumeSummaryDto;
-	mobileFieldVisibility: FieldVisibility;
+	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
 		icon={(item) => ({
-			component: DatabaseIcon,
+			component: VolumesIcon,
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item) => item.name}
@@ -213,7 +205,7 @@
 			{
 				label: m.common_driver(),
 				getValue: (item: VolumeSummaryDto) => item.driver,
-				icon: DatabaseIcon,
+				icon: VolumesIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.driver ?? true
 			}
@@ -243,11 +235,11 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => goto(`/volumes/${item.id}`)}>
-					<ScanSearchIcon class="size-4" />
+					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item variant="destructive" onclick={() => handleRemoveVolumeConfirm(item.name)} disabled={item.inUse}>
-					<Trash2Icon class="size-4" />
+					<TrashIcon class="size-4" />
 					{m.common_remove()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>

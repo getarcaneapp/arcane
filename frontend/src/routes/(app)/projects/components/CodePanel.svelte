@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import { CodeIcon } from '$lib/icons';
 
 	type CodeLanguage = 'yaml' | 'env';
 
@@ -23,7 +23,7 @@
 </script>
 
 <Card.Root class="flex h-full flex-col">
-	<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+	<Card.Header icon={CodeIcon} class="flex-shrink-0 items-center">
 		<Card.Title>
 			<h2>
 				{title}

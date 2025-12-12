@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import UploadIcon from '@lucide/svelte/icons/upload';
+	import { UpdateIcon } from '$lib/icons';
 	import { displaySize } from '.';
 	import { useId } from 'bits-ui';
 	import type { FileDropZoneProps, FileRejectedReason } from './types';
@@ -136,7 +136,7 @@
 			<div
 				class="border-border text-muted-foreground flex size-14 place-items-center justify-center rounded-full border border-dashed"
 			>
-				<UploadIcon class="size-7" />
+				<UpdateIcon class="size-7" />
 			</div>
 			<div class="flex flex-col gap-0.5 text-center">
 				<span class="text-muted-foreground font-medium">{m.file_drop_zone_drag_drop()}</span>

@@ -47,9 +47,13 @@
 		<div class="relative h-full w-full overflow-hidden">
 			<div class="bg-primary/25 absolute inset-0"></div>
 
-			<span class="bar absolute inset-y-0 w-1/3"></span>
+			<div class="bar absolute inset-y-0 left-0 w-1/3">
+				<div class="peg absolute top-0 right-0 h-full w-3"></div>
+			</div>
 
-			<span class="peg absolute top-0 right-0 h-full w-3"></span>
+			<div class="bar absolute inset-y-0 left-0 w-1/3" style="animation-delay: -1s;">
+				<div class="peg absolute top-0 right-0 h-full w-3"></div>
+			</div>
 
 			<span class="sr-only">{m.common_loading()}</span>
 		</div>
@@ -63,7 +67,7 @@
 
 	.bar {
 		background: var(--arcane-primary);
-		animation: arcane-slide 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+		animation: arcane-slide 2s linear infinite;
 		box-shadow:
 			0 0 12px var(--arcane-primary),
 			0 0 2px var(--arcane-primary);
@@ -81,16 +85,16 @@
 
 	@keyframes arcane-slide {
 		0% {
-			transform: translateX(-120%);
+			transform: translateX(-100%);
 		}
 		100% {
-			transform: translateX(520%);
+			transform: translateX(300%);
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.bar {
-			animation-duration: 2s;
+			animation-duration: 4s;
 		}
 	}
 </style>

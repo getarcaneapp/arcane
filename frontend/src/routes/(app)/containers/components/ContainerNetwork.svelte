@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import NetworkIcon from '@lucide/svelte/icons/network';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
+	import { NetworksIcon } from '$lib/icons';
 
 	interface NetworkConfig {
 		IPAddress?: string;
@@ -23,7 +23,7 @@
 
 <div class="space-y-6">
 	<Card.Root>
-		<Card.Header icon={NetworkIcon}>
+		<Card.Header icon={NetworksIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
 					<h2>
@@ -41,7 +41,7 @@
 							<Card.Content class="p-4">
 								<div class="border-border mb-4 flex items-center gap-3 border-b pb-4">
 									<div class="rounded-lg bg-blue-500/10 p-2">
-										<NetworkIcon class="size-5 text-blue-500" />
+										<NetworksIcon class="size-5 text-blue-500" />
 									</div>
 									<div class="min-w-0 flex-1">
 										<div class="text-foreground text-base font-semibold break-all">

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { m } from '$lib/paraglide/messages';
 	import { PersistedState } from 'runed';
+	import { RefreshIcon } from '$lib/icons';
 
 	let {
 		autoScroll = $bindable(),
@@ -104,7 +104,7 @@
 			aria-label={m.log_refresh_aria_label()}
 			title={m.common_refresh()}
 		>
-			<RefreshCwIcon class="size-4" />
+			<RefreshIcon class="size-4" />
 		</Button>
 	</div>
 </div>

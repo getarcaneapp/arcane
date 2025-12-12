@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from 'bytes';
 	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '$lib/types/container.type';
+	import { StatsIcon } from '$lib/icons';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -161,7 +161,7 @@
 {/snippet}
 
 <Card.Root>
-	<Card.Header icon={ActivityIcon}>
+	<Card.Header icon={StatsIcon}>
 		<div class="flex flex-col space-y-1.5">
 			<Card.Title>
 				<h2>

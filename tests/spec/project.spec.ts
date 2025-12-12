@@ -39,9 +39,11 @@ test.describe('Projects Page', () => {
   });
 
   test('should display summary cards with correct counts', async ({ page }) => {
-    await expect(page.locator('p:has-text("Total Projects") + p')).toHaveText(String(projectCounts.totalProjects));
-    await expect(page.locator('p:has-text("Running") + p')).toHaveText(String(projectCounts.runningProjects));
-    await expect(page.locator('p:has-text("Stopped") + p')).toHaveText(String(projectCounts.stoppedProjects));
+    await expect(page.locator('div:has(> p:has-text("Total Projects")) h3').first()).toHaveText(
+      String(projectCounts.totalProjects)
+    );
+    await expect(page.locator('div:has(> p:has-text("Running")) h3').first()).toHaveText(String(projectCounts.runningProjects));
+    await expect(page.locator('div:has(> p:has-text("Stopped")) h3').first()).toHaveText(String(projectCounts.stoppedProjects));
   });
 
   test('should display projects list', async ({ page }) => {
@@ -126,6 +128,28 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('button', { name: 'My New Project' }).click();
     await page.getByRole('textbox', { name: 'My New Project' }).fill('test-project');
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+  });
+
+  test('should enable Create Project after entering a valid name', async ({ page }) => {
+    const observedErrors: string[] = [];
+    page.on('pageerror', (err) => observedErrors.push(String(err?.message ?? err)));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') observedErrors.push(msg.text());
+    });
+
+    const createProjectButton = page.getByRole('button', { name: 'Create Project', exact: true });
+    await expect(createProjectButton).toBeVisible();
+
+    // Open the inline name editor and set a valid name.
+    await page.getByRole('button', { name: 'My New Project' }).click();
+    await page.getByRole('textbox', { name: 'My New Project' }).fill('test-project');
+    await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+
+    // The button should become enabled once name + compose content are present.
+    await expect(createProjectButton).toBeEnabled();
+
+    const stateUnsafe = observedErrors.filter((e) => e.includes('state_unsafe_mutation'));
+    expect(stateUnsafe, `Unexpected state_unsafe_mutation errors: ${stateUnsafe.join('\n')}`).toHaveLength(0);
   });
 
   test('should create a new project successfully', async ({ page }) => {
@@ -276,25 +300,51 @@ test.describe('Project Detail Page', () => {
     const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
     await configTab.click();
 
-    const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
-    await expect(projectFilesHeading).toBeVisible();
-
-    const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
-    const envFileButton = page.getByRole('button', { name: '.env' }).first();
-
-    await expect(composeFileButton).toBeVisible();
-    await expect(envFileButton).toBeVisible();
-
-    // Switching files should update the visible code panel title
-    await envFileButton.click();
-    await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
-
-    await composeFileButton.click();
+    // The project config editor supports two layouts:
+    // - classic (default): side-by-side compose.yaml + .env panels
+    // - tree view: file list on the left and a single code panel on the right
     await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
 
-    const includesFolder = page.getByRole('button', { name: 'Includes' });
-    if (await includesFolder.count()) {
-      await expect(includesFolder.first()).toBeVisible();
+    const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
+    const isTreeView = await projectFilesHeading.isVisible();
+
+    if (isTreeView) {
+      const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
+      const envFileButton = page.getByRole('button', { name: '.env' }).first();
+
+      await expect(composeFileButton).toBeVisible();
+      await expect(envFileButton).toBeVisible();
+
+      // Switching files should update the visible code panel title
+      await envFileButton.click();
+      await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+
+      await composeFileButton.click();
+      await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+
+      const includesFolder = page.getByRole('button', { name: 'Includes' });
+      if (await includesFolder.count()) {
+        await expect(includesFolder.first()).toBeVisible();
+      }
+    } else {
+      // Classic layout renders both editors at the same time.
+      await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+
+      // Also validate that we can switch to tree view and see the file list.
+      const layoutSwitch = page.getByRole('switch', { name: /Classic|Tree View/i });
+      if (await layoutSwitch.count()) {
+        await layoutSwitch.click();
+        await expect(projectFilesHeading).toBeVisible();
+
+        const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
+        const envFileButton = page.getByRole('button', { name: '.env' }).first();
+
+        await expect(composeFileButton).toBeVisible();
+        await expect(envFileButton).toBeVisible();
+
+        await envFileButton.click();
+        await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+      }
     }
   });
 

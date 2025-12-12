@@ -5,14 +5,13 @@
 	import * as Button from '$lib/components/ui/button/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { User } from '$lib/types/user.type';
-	import Sun from '@lucide/svelte/icons/sun';
-	import Moon from '@lucide/svelte/icons/moon';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import { getDefaultProfilePicture } from '$lib/utils/image.util';
+	import { SunIcon, MoonIcon } from '$lib/icons';
 
 	let { user, isCollapsed }: { user: User; isCollapsed: boolean } = $props();
 	const sidebar = useSidebar();
@@ -148,9 +147,9 @@
 						>
 							<div class="group-hover:bg-muted-foreground/10 rounded-lg bg-transparent p-1 transition-colors duration-200">
 								{#if mode.current === 'dark'}
-									<Sun size={16} class="transition-transform duration-200" />
+									<SunIcon class="size-4 transition-transform duration-200" />
 								{:else}
-									<Moon size={16} class="transition-transform duration-200" />
+									<MoonIcon class="size-4 transition-transform duration-200" />
 								{/if}
 							</div>
 							<span class="font-medium">{m.common_toggle_theme()}</span>

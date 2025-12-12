@@ -3,19 +3,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { toast } from 'svelte-sonner';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import XIcon from '@lucide/svelte/icons/x';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
-	import CopyIcon from '@lucide/svelte/icons/copy';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
 	import type { Variable } from '$lib/types/variable.type';
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { AddIcon, SearchIcon, CloseIcon, AlertIcon, VariableIcon, CopyIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
@@ -164,7 +159,7 @@
 					<Card.Content class="px-3 py-4 sm:px-6">
 						<div class="flex items-start gap-3">
 							<div class="text-primary mt-0.5 shrink-0">
-								<AlertCircleIcon class="size-5" />
+								<AlertIcon class="size-5" />
 							</div>
 							<div class="space-y-1 text-sm">
 								<p class="text-foreground font-medium">{m.variables_about_title()}</p>
@@ -181,7 +176,7 @@
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div class="flex items-center gap-3">
 								<div class="bg-primary/10 text-primary ring-primary/20 flex size-8 items-center justify-center rounded-lg ring-1">
-									<KeyIcon class="size-4" />
+									<VariableIcon class="size-4" />
 								</div>
 								<div>
 									<Card.Title class="text-base">{m.common_environment_variables()}</Card.Title>
@@ -201,7 +196,7 @@
 									<Input type="text" placeholder={m.common_search()} bind:value={searchQuery} class="h-9 pl-10" />
 								</div>
 								<Button type="button" size="sm" onclick={addEnvVar} disabled={isLoading} class="shrink-0">
-									<PlusIcon class="mr-1.5 size-4" />
+									<AddIcon class="mr-1.5 size-4" />
 									{m.variables_add_button()}
 								</Button>
 							</div>
@@ -217,7 +212,7 @@
 							</div>
 						{:else if filteredVars.length === 0}
 							<div class="text-muted-foreground flex flex-col items-center justify-center py-12 text-center">
-								<KeyIcon class="mb-3 size-12 opacity-20" />
+								<VariableIcon class="mb-3 size-12 opacity-20" />
 								<p class="text-sm font-medium">{m.variables_no_variables_title()}</p>
 								<p class="text-xs">{m.variables_no_variables_description()}</p>
 							</div>
@@ -261,49 +256,18 @@
 													onkeydown={(e) => handleKeyDown(e, actualIndex)}
 												/>
 												<InputGroup.Addon align="inline-end">
-													<Tooltip.Provider>
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																{#snippet child({ props })}
-																	<InputGroup.Button
-																		{...props}
-																		variant="ghost"
-																		aria-label={m.duplicate()}
-																		size="icon-xs"
-																		onclick={() => duplicateEnvVar(actualIndex)}
-																		disabled={isLoading}
-																	>
-																		<CopyIcon />
-																	</InputGroup.Button>
-																{/snippet}
-															</Tooltip.Trigger>
-															<Tooltip.Content>
-																<p>{m.duplicate()}</p>
-															</Tooltip.Content>
-														</Tooltip.Root>
-													</Tooltip.Provider>
-													<Tooltip.Provider>
-														<Tooltip.Root>
-															<Tooltip.Trigger>
-																{#snippet child({ props })}
-																	<InputGroup.Button
-																		{...props}
-																		variant="ghost"
-																		aria-label={m.common_remove()}
-																		size="icon-xs"
-																		onclick={() => removeEnvVar(actualIndex)}
-																		disabled={isLoading}
-																		class="text-destructive hover:text-destructive"
-																	>
-																		<XIcon />
-																	</InputGroup.Button>
-																{/snippet}
-															</Tooltip.Trigger>
-															<Tooltip.Content>
-																<p>{m.common_remove()}</p>
-															</Tooltip.Content>
-														</Tooltip.Root>
-													</Tooltip.Provider>
+													<CopyButton text={envVar.value} variant="ghost" tabindex={-1} />
+													<InputGroup.Button
+														variant="ghost"
+														aria-label={m.common_remove()}
+														size="icon-xs"
+														onclick={() => removeEnvVar(actualIndex)}
+														disabled={isLoading}
+														class="text-destructive hover:text-destructive"
+														title={m.common_remove()}
+													>
+														<CloseIcon />
+													</InputGroup.Button>
 												</InputGroup.Addon>
 											</InputGroup.Root>
 										</div>

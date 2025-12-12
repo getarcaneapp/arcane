@@ -17,7 +17,7 @@ import (
 const (
 	headerAgentBootstrap = "X-Arcane-Agent-Bootstrap"
 	headerAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	headerApiToken       = "X-API-TOKEN"          // #nosec G101: header name, not a credential
+	headerApiKey         = "X-API-KEY"            // #nosec G101: header name, not a credential
 	agentPairingPrefix   = "/api/environments/0/agent/pair"
 )
 
@@ -74,8 +74,8 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, agentPairingPrefix) &&
-		m.cfg.AgentBootstrapToken != "" &&
-		c.GetHeader(headerAgentBootstrap) == m.cfg.AgentBootstrapToken {
+		m.cfg.AgentToken != "" &&
+		c.GetHeader(headerAgentBootstrap) == m.cfg.AgentToken {
 		slog.Info("Agent auth: bootstrap pairing accepted", "path", c.Request.URL.Path, "method", c.Request.Method)
 		agentSudo(c)
 		return
@@ -100,9 +100,9 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 }
 
 func (m *AuthMiddleware) managerAuth(c *gin.Context) {
-	// First, check for API token in X-API-TOKEN header
-	if apiToken := c.GetHeader(headerApiToken); apiToken != "" && m.apiKeyValidator != nil {
-		user, err := m.apiKeyValidator.ValidateApiKey(c.Request.Context(), apiToken)
+	// First, check for API key in X-API-KEY header
+	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
+		user, err := m.apiKeyValidator.ValidateApiKey(c.Request.Context(), apiKey)
 		if err == nil && user != nil {
 			isAdmin := userHasRole(user, "admin")
 			if m.options.AdminRequired && !isAdmin {
@@ -188,7 +188,7 @@ func isPreflight(c *gin.Context) bool {
 }
 
 func agentSudo(c *gin.Context) {
-	email := "agent@arcane.dev"
+	email := "agent@getarcane.app"
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     &email,
