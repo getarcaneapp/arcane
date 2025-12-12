@@ -100,6 +100,55 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req api
 	}, nil
 }
 
+func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string, userID string) (*apikey.ApiKeyCreatedDto, error) {
+	rawKey, err := s.generateApiKey()
+	if err != nil {
+		return nil, err
+	}
+
+	keyHash, err := s.hashApiKey(rawKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash API key: %w", err)
+	}
+
+	keyPrefix := rawKey[:len(apiKeyPrefix)+apiKeyPrefixLen]
+
+	envIDShort := environmentID
+	if len(environmentID) > 8 {
+		envIDShort = environmentID[:8]
+	}
+	name := fmt.Sprintf("Environment Bootstrap Key - %s", envIDShort)
+	description := "Auto-generated key for environment pairing"
+
+	ak := &models.ApiKey{
+		Name:          name,
+		Description:   &description,
+		KeyHash:       keyHash,
+		KeyPrefix:     keyPrefix,
+		UserID:        userID,
+		EnvironmentID: &environmentID,
+	}
+
+	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
+		return nil, fmt.Errorf("failed to create environment API key: %w", err)
+	}
+
+	return &apikey.ApiKeyCreatedDto{
+		ApiKey: apikey.ApiKey{
+			ID:          ak.ID,
+			Name:        ak.Name,
+			Description: ak.Description,
+			KeyPrefix:   ak.KeyPrefix,
+			UserID:      ak.UserID,
+			ExpiresAt:   ak.ExpiresAt,
+			LastUsedAt:  ak.LastUsedAt,
+			CreatedAt:   ak.CreatedAt,
+			UpdatedAt:   ak.UpdatedAt,
+		},
+		Key: rawKey,
+	}, nil
+}
+
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
@@ -235,6 +284,31 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 			}
 
 			return user, nil
+		}
+	}
+
+	return nil, ErrApiKeyInvalid
+}
+
+func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {
+	if !strings.HasPrefix(rawKey, apiKeyPrefix) {
+		return nil, ErrApiKeyInvalid
+	}
+
+	keyPrefix := rawKey[:len(apiKeyPrefix)+apiKeyPrefixLen]
+
+	var apiKeys []models.ApiKey
+	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+		return nil, fmt.Errorf("failed to find API keys: %w", err)
+	}
+
+	for _, apiKey := range apiKeys {
+		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
+			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
+				return nil, ErrApiKeyExpired
+			}
+
+			return apiKey.EnvironmentID, nil
 		}
 	}
 

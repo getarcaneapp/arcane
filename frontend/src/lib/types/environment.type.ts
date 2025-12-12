@@ -1,4 +1,4 @@
-export type EnvironmentStatus = 'online' | 'offline' | 'error';
+export type EnvironmentStatus = 'online' | 'offline' | 'error' | 'pending';
 
 export type Environment = {
 	id: string;
@@ -7,12 +7,14 @@ export type Environment = {
 	status: EnvironmentStatus;
 	enabled: boolean;
 	lastSeen?: string;
+	apiKey?: string;
 };
 
 export interface CreateEnvironmentDTO {
 	apiUrl: string;
 	name: string;
 	bootstrapToken?: string;
+	useApiKey?: boolean;
 }
 
 export interface UpdateEnvironmentDTO {
@@ -20,4 +22,10 @@ export interface UpdateEnvironmentDTO {
 	name?: string;
 	enabled?: boolean;
 	bootstrapToken?: string;
+	regenerateApiKey?: boolean;
+}
+
+export interface DeploymentSnippets {
+	dockerRun: string;
+	dockerCompose: string;
 }

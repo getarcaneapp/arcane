@@ -38,6 +38,11 @@ export default class EnvironmentManagementService extends BaseAPIService {
 	async syncRegistries(environmentId: string): Promise<void> {
 		await this.api.post(`/environments/${environmentId}/sync-registries`);
 	}
+
+	async getDeploymentSnippets(environmentId: string): Promise<{ dockerRun: string; dockerCompose: string }> {
+		const res = await this.api.get(`/environments/${environmentId}/deployment`);
+		return res.data.data as { dockerRun: string; dockerCompose: string };
+	}
 }
 
 export const environmentManagementService = new EnvironmentManagementService();

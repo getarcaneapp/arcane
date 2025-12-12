@@ -46,6 +46,11 @@ const (
 	EventTypeSystemAutoUpdate EventType = "system.auto_update"
 	EventTypeSystemUpgrade    EventType = "system.upgrade"
 
+	EventTypeEnvironmentCreate            EventType = "environment.create"
+	EventTypeEnvironmentUpdate            EventType = "environment.update"
+	EventTypeEnvironmentDelete            EventType = "environment.delete"
+	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"
+
 	// Event severities
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"
