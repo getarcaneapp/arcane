@@ -262,6 +262,7 @@
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'ipaddress', title: m.containers_ip_address(), cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
@@ -317,6 +318,17 @@
 		return sortedGroups.length > 0 ? sortedGroups : null;
 	});
 </script>
+
+{#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
+	{#if item.networkSettings?.networks && Object.keys(item.networkSettings.networks).length > 0}
+		{@const firstNetwork = Object.values(item.networkSettings.networks)[0] as NetworkConfig}
+		<span class="font-mono text-sm">
+			{firstNetwork?.IPAddress ?? firstNetwork?.ipAddress ?? m.common_na()}
+		</span>
+	{:else}
+		<span class="text-sm">{m.common_na()}</span>
+	{/if}
+{/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
 	<PortBadge ports={item.ports ?? []} />
