@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
 	import { CodeIcon } from '$lib/icons';
 
 	type CodeLanguage = 'yaml' | 'env';
@@ -22,7 +22,7 @@
 	} = $props();
 </script>
 
-<Card.Root class="flex h-full flex-col">
+<Card.Root class="mb-10 flex h-full min-h-0 flex-col overflow-hidden">
 	<Card.Header icon={CodeIcon} class="flex-shrink-0 items-center">
 		<Card.Title>
 			<h2>
@@ -30,12 +30,12 @@
 			</h2>
 		</Card.Title>
 	</Card.Header>
-	<Card.Content class="flex-grow p-0">
-		<div class="h-full [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-			<CodeEditor bind:value {language} {placeholder} />
-			{#if error}
-				<p class="text-destructive mt-2 text-xs">{error}</p>
-			{/if}
+	<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">
+		<div class="relative z-10 min-h-0 flex-1">
+			<CodeEditor bind:value {language} {placeholder} fontSize="13px" />
 		</div>
+		{#if error}
+			<p class="text-destructive px-4 py-2 text-xs">{error}</p>
+		{/if}
 	</Card.Content>
 </Card.Root>
