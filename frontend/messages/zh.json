@@ -1455,5 +1455,8 @@
 	"common_mount": "挂载",
 	"common_mounts": "挂载",
 	"common_image_id": "图像 ID",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "经典",
+	"tree_view": "树视图",
+	"project_view_description": "在传统旁边布局和树形视图之间切换"
 }
