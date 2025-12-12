@@ -1455,5 +1455,8 @@
 	"common_mount": "Monter",
 	"common_mounts": "montures",
 	"common_image_id": "ID de l'image",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "Classique",
+	"tree_view": "Vue arborescence",
+	"project_view_description": "Basculer entre la mise en page classique côte à côte et l'arborescence"
 }
