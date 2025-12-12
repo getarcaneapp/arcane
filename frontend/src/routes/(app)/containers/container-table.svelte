@@ -23,7 +23,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
@@ -390,16 +390,16 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+	<AdaptiveTooltip>
+		{#snippet trigger()}
+			<span class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
 				{item.image}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<p>{item.image}</p>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+			</span>
+		{/snippet}
+		{#snippet content()}
+			<p>{item.image}</p>
+		{/snippet}
+	</AdaptiveTooltip>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}

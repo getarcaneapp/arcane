@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
@@ -382,95 +382,87 @@
 {/snippet}
 
 {#if effectiveUpdateInfo}
-	<Tooltip.Provider>
-		<Tooltip.Root bind:open={isOpen}>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
-					{#if hasError}
-						<AlertIcon class="size-4 text-red-500" />
-					{:else if !effectiveUpdateInfo.hasUpdate}
-						<VerifiedCheckIcon class="size-4 text-green-500" />
-					{:else if effectiveUpdateInfo.updateType === 'digest'}
-						<CircleArrowUpIcon class="size-4 text-blue-500" />
-					{:else}
-						<CircleArrowUpIcon class="size-4 text-yellow-500" />
-					{/if}
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[280px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{#if hasError}
-						{@render errorState()}
-					{:else if !effectiveUpdateInfo.hasUpdate}
-						{@render successState()}
-					{:else if effectiveUpdateInfo.updateType === 'digest'}
-						{@render digestUpdateState()}
-					{:else}
-						{@render versionUpdateState()}
-					{/if}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<AdaptiveTooltip
+		bind:open={isOpen}
+		side="right"
+		contentClass="max-w-[280px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		arrowClasses="bg-popover"
+	>
+		{#snippet trigger()}
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
+				{#if hasError}
+					<AlertIcon class="size-4 text-red-500" />
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					<VerifiedCheckIcon class="size-4 text-green-500" />
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					<CircleArrowUpIcon class="size-4 text-blue-500" />
+				{:else}
+					<CircleArrowUpIcon class="size-4 text-yellow-500" />
+				{/if}
+			</span>
+		{/snippet}
+		{#snippet content()}
+			<div class="overflow-hidden rounded-xl">
+				{#if hasError}
+					{@render errorState()}
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					{@render successState()}
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					{@render digestUpdateState()}
+				{:else}
+					{@render versionUpdateState()}
+				{/if}
+			</div>
+		{/snippet}
+	</AdaptiveTooltip>
 {:else if isLoadingInBackground || isChecking}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center">
-					<Spinner class="size-4 text-blue-400" />
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[220px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{@render loadingState()}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<AdaptiveTooltip
+		side="right"
+		contentClass="max-w-[220px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		arrowClasses="bg-popover"
+	>
+		{#snippet trigger()}
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				<Spinner class="size-4 text-blue-400" />
+			</span>
+		{/snippet}
+		{#snippet content()}
+			<div class="overflow-hidden rounded-xl">
+				{@render loadingState()}
+			</div>
+		{/snippet}
+	</AdaptiveTooltip>
 {:else}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center">
-					{#if canCheckUpdate}
-						<button
-							onclick={checkImageUpdate}
-							disabled={isChecking}
-							class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
-						>
-							{#if isChecking}
-								<Spinner class="h-2 w-2 text-blue-400" />
-							{:else}
-								<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
-							{/if}
-						</button>
-					{:else}
-						<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
-							<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
-						</div>
-					{/if}
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{@render unknownState()}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<AdaptiveTooltip
+		side="right"
+		contentClass="max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		arrowClasses="bg-popover"
+	>
+		{#snippet trigger()}
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				{#if canCheckUpdate}
+					<button
+						onclick={checkImageUpdate}
+						disabled={isChecking}
+						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
+					>
+						{#if isChecking}
+							<Spinner class="h-2 w-2 text-blue-400" />
+						{:else}
+							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+						{/if}
+					</button>
+				{:else}
+					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
+						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+					</div>
+				{/if}
+			</span>
+		{/snippet}
+		{#snippet content()}
+			<div class="overflow-hidden rounded-xl">
+				{@render unknownState()}
+			</div>
+		{/snippet}
+	</AdaptiveTooltip>
 {/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
-	import * as Tooltip from '$lib/components/ui/tooltip';
+	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
 
 	type Variant =
 		| 'red'
@@ -102,16 +102,14 @@
 {/snippet}
 
 {#if tooltip}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				{@render BadgeContent()}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<p class="max-w-xs text-xs">{tooltip}</p>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<AdaptiveTooltip>
+		{#snippet trigger()}
+			{@render BadgeContent()}
+		{/snippet}
+		{#snippet content()}
+			<p class="max-w-xs text-xs">{tooltip}</p>
+		{/snippet}
+	</AdaptiveTooltip>
 {:else}
 	{@render BadgeContent()}
 {/if}
