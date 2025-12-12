@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
-	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+	import { IsTouchDevice } from '$lib/hooks/is-touch-device.svelte.js';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -34,12 +34,12 @@
 		content
 	}: Props = $props();
 
-	const isMobile = new IsMobile();
+	const isTouchDevice = new IsTouchDevice();
 </script>
 
-{#if isMobile.current}
+{#if isTouchDevice.current}
 	<Popover.Root bind:open>
-		<Popover.Trigger class="*:pointer-events-none">
+		<Popover.Trigger>
 			{@render trigger()}
 		</Popover.Trigger>
 		<Popover.Content {side} {align} class={contentClass}>
