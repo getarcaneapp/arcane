@@ -1479,13 +1479,13 @@
 	"environments_docker_compose": "Σύνθεση Docker",
 	"environments_new_agent": "Νέος Παράγοντας",
 	"environments_existing_agent": "Υπάρχων Πράκτορας",
-	"environments_create_new_agent": "Create New Agent Environment",
-	"environments_create_new_agent_description": "Generate an API key and deployment snippets for a new agent.",
-	"environments_production_docker": "Production Docker",
-	"environments_agent_address": "Agent Address",
+	"environments_create_new_agent": "Δημιουργία Νέου Περιβάλλοντος Παράγοντα",
+	"environments_create_new_agent_description": "Δημιουργήστε ένα κλειδί API και αποσπάσματα ανάπτυξης για ένα νέο πράκτορα.",
+	"environments_production_docker": "Προσάρτηση Παραγωγής",
+	"environments_agent_address": "Διεύθυνση Παράγοντα",
 	"environments_agent_address_placeholder": "agent.example.com",
-	"environments_agent_address_description": "The URL where your agent will be accessible",
-	"environments_generate_config": "Generate Agent Configuration",
-	"environments_connect_existing_agent": "Connect to Existing Agent",
-	"environments_connect_existing_agent_description": "Connect to an already-running agent using a bootstrap token."
+	"environments_agent_address_description": "Το URL όπου ο πράκτορας σας θα είναι προσβάσιμος",
+	"environments_generate_config": "Δημιουργία Διαμόρφωσης Παράγοντα",
+	"environments_connect_existing_agent": "Σύνδεση σε υπάρχοντα παράγοντα",
+	"environments_connect_existing_agent_description": "Συνδεθείτε σε έναν ήδη εκτελούμενο πράκτορα χρησιμοποιώντας ένα διακριτικό bootstrap."
 }
