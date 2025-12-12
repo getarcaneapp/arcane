@@ -36,7 +36,7 @@ type Config struct {
 	LogLevel                string
 	AgentMode               bool
 	AgentToken              string
-	AgentBootstrapToken     string
+	ManagerApiUrl           string
 	UpdateCheckDisabled     bool
 	UIConfigurationDisabled bool
 	AnalyticsDisabled       bool
@@ -66,7 +66,7 @@ func Load() *Config {
 		LogLevel:                strings.ToLower(getEnvOrDefault("LOG_LEVEL", "info")),
 		AgentMode:               getBoolEnvOrDefault("AGENT_MODE", false),
 		AgentToken:              os.Getenv("AGENT_TOKEN"),
-		AgentBootstrapToken:     os.Getenv("AGENT_BOOTSTRAP_TOKEN"),
+		ManagerApiUrl:           os.Getenv("MANAGER_API_URL"),
 		UpdateCheckDisabled:     getBoolEnvOrDefault("UPDATE_CHECK_DISABLED", false),
 		UIConfigurationDisabled: getBoolEnvOrDefault("UI_CONFIGURATION_DISABLED", false),
 		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),

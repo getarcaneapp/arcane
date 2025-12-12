@@ -14,17 +14,19 @@
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import {
 		ArrowLeftIcon,
 		RefreshIcon,
-		SettingsIcon,
 		ConnectionIcon,
 		SaveIcon,
 		EnvironmentsIcon,
 		AlertIcon,
 		TestIcon,
 		RegistryIcon,
-		ResetIcon
+		ResetIcon,
+		ApiKeyIcon,
+		DockerBrandIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -36,10 +38,11 @@
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
-	let isPairing = $state(false);
 	let isSaving = $state(false);
 	let isSyncingRegistries = $state(false);
-	let bootstrapToken = $state('');
+	let isRegeneratingKey = $state(false);
+	let showRegenerateDialog = $state(false);
+	let regeneratedApiKey = $state<string | null>(null);
 
 	// Form state
 	let formName = $state('');
@@ -47,7 +50,7 @@
 	let formApiUrl = $state('');
 
 	// Track current status separately from environment data
-	let currentStatus = $state<'online' | 'offline' | 'error'>('offline');
+	let currentStatus = $state<'online' | 'offline' | 'error' | 'pending'>('offline');
 
 	// Initialize form values and status
 	$effect(() => {
@@ -125,24 +128,6 @@
 			isTestingConnection = false;
 		}
 	}
-	async function pairOrRotate() {
-		if (!bootstrapToken) {
-			toast.error(m.environments_bootstrap_required());
-			return;
-		}
-		try {
-			isPairing = true;
-			await environmentManagementService.update(environment.id, { bootstrapToken });
-			toast.success(m.environments_agent_paired_success());
-			bootstrapToken = '';
-			await invalidateAll();
-		} catch (e) {
-			console.error(e);
-			toast.error(m.environments_agent_pair_failed());
-		} finally {
-			isPairing = false;
-		}
-	}
 
 	async function handleSave() {
 		if (!hasChanges || isSaving) return;
@@ -182,6 +167,31 @@
 		formEnabled = environment.enabled;
 		formApiUrl = environment.apiUrl;
 		toast.info(m.environments_changes_reset());
+	}
+
+	async function handleRegenerateApiKey() {
+		try {
+			isRegeneratingKey = true;
+
+			// Delete the old API key and create a new one
+			const result = await environmentManagementService.update(environment.id, {
+				regenerateApiKey: true
+			});
+
+			if (result.apiKey) {
+				regeneratedApiKey = result.apiKey;
+				toast.success(m.environments_regenerate_key_success());
+				await invalidateAll();
+			} else {
+				toast.error(m.environments_regenerate_key_failed());
+			}
+		} catch (error) {
+			console.error('Failed to regenerate API key:', error);
+			toast.error(m.environments_regenerate_key_failed());
+		} finally {
+			isRegeneratingKey = false;
+			showRegenerateDialog = false;
+		}
 	}
 
 	async function confirmSwitchAndEdit() {
@@ -345,7 +355,7 @@
 
 		{#if settings}
 			<Card.Root class="flex flex-col">
-				<Card.Header icon={SettingsIcon}>
+				<Card.Header icon={DockerBrandIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
 							<h2>{m.environments_docker_settings_title()}</h2>
@@ -456,42 +466,71 @@
 
 		{#if environment.id !== '0'}
 			<Card.Root class="flex flex-col">
-				<Card.Header icon={SettingsIcon}>
+				<Card.Header icon={ApiKeyIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
-							<h2>{m.environments_pair_rotate_title()}</h2>
+							<h2>{m.environments_agent_config_title()}</h2>
 						</Card.Title>
-						<Card.Description>{m.environments_pair_rotate_description()}</Card.Description>
+						<Card.Description>{m.environments_agent_config_description()}</Card.Description>
 					</div>
 				</Card.Header>
 				<Card.Content class="space-y-4 p-4">
-					<div>
-						<Label for="bootstrap-token" class="text-sm font-medium">{m.environments_bootstrap_label()}</Label>
-						<Input
-							id="bootstrap-token"
-							type="password"
-							placeholder={m.environments_bootstrap_placeholder()}
-							bind:value={bootstrapToken}
-							class="mt-1.5"
-						/>
-					</div>
-					<div class="flex gap-2">
-						<Button onclick={pairOrRotate} disabled={isPairing || !bootstrapToken} class="flex-1">
-							{#if isPairing}
+					{#if regeneratedApiKey}
+						<div class="space-y-4">
+							<div class="space-y-2">
+								<div class="text-sm font-medium">{m.environments_new_api_key()}</div>
+								<div class="flex items-center gap-2">
+									<code class="bg-muted flex-1 rounded-md px-3 py-2 font-mono text-sm break-all">
+										{regeneratedApiKey}
+									</code>
+									<CopyButton text={regeneratedApiKey} size="icon" class="size-7" />
+								</div>
+								<p class="text-muted-foreground text-xs">{m.environments_api_key_save_warning()}</p>
+							</div>
+							<Button variant="outline" onclick={() => (regeneratedApiKey = null)} class="w-full">
+								{m.common_dismiss()}
+							</Button>
+						</div>
+					{:else}
+						<div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
+							<p class="font-medium">{m.environments_regenerate_warning_title()}</p>
+							<p class="mt-1">{m.environments_regenerate_warning_message()}</p>
+						</div>
+						<Button
+							variant="destructive"
+							onclick={() => (showRegenerateDialog = true)}
+							disabled={isRegeneratingKey}
+							class="w-full"
+						>
+							{#if isRegeneratingKey}
 								<Spinner class="size-4" />
 							{:else}
-								<SettingsIcon class="size-4" />
+								<ResetIcon class="size-4" />
 							{/if}
-							{m.environments_pair_rotate_action()}
+							{m.environments_regenerate_api_key()}
 						</Button>
-						<Button variant="outline" onclick={() => (bootstrapToken = '')} disabled={isPairing}>
-							{m.common_clear()}
-						</Button>
-					</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		{/if}
 	</div>
+
+	<AlertDialog.Root bind:open={showRegenerateDialog}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>{m.environments_regenerate_dialog_title()}</AlertDialog.Title>
+				<AlertDialog.Description>
+					{m.environments_regenerate_dialog_message()}
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={handleRegenerateApiKey}>
+					{m.environments_regenerate_api_key()}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 
 	<AlertDialog.Root bind:open={showSwitchDialog}>
 		<AlertDialog.Content>

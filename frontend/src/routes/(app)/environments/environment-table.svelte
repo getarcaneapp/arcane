@@ -260,7 +260,9 @@
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: unknown })}
-	<StatusBadge text={capitalizeFirstLetter(String(value)) || m.common_unknown()} variant={value === 'online' ? 'green' : 'red'} />
+	{@const statusValue = String(value)}
+	{@const variant = statusValue === 'online' ? 'green' : statusValue === 'pending' ? 'amber' : 'red'}
+	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
 {/snippet}
 
 {#snippet ApiCell({ value }: { value: unknown })}

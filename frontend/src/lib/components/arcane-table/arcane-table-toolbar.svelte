@@ -62,9 +62,9 @@
 
 				<div class="md:hidden">
 					{#if mobileFields.length > 0 && onToggleMobileField}
-						<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} />
+						<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
 					{:else}
-						<DataTableViewOptions {table} />
+						<DataTableViewOptions {table} {customViewOptions} />
 					{/if}
 				</div>
 			</div>

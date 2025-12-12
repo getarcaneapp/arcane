@@ -70,6 +70,8 @@
 	);
 
 	const visibleFields = $derived(fields.filter((f) => f.show !== false));
+	const subtitleValue = $derived(subtitle?.(item));
+	const hasSubtitle = $derived(!!subtitleValue);
 
 	function getIconBgClass(variant: IconVariant): string {
 		const map: Record<IconVariant, string> = {
@@ -100,7 +102,7 @@
 	}
 </script>
 
-<div class={cn('group relative w-full px-3 py-3', className)}>
+<div class={cn('group relative w-full px-3 py-2', className)}>
 	<Card.Root
 		variant="subtle"
 		class={cn(
@@ -109,80 +111,81 @@
 		)}
 		onclick={onclick ? () => onclick(item) : undefined}
 	>
-		<Card.Content class={cn('flex flex-col text-left', compact ? 'gap-3 p-3' : 'gap-4 p-4')}>
-			<!-- Main Row -->
-			<div class="flex items-start gap-4">
+		<Card.Content class={cn('flex flex-col text-left', compact ? 'gap-2 p-3' : 'gap-2.5 p-3')}>
+			<!-- Header Row: Icon + Title/Subtitle + Actions -->
+			<div class={cn('flex gap-2.5', hasSubtitle ? 'items-start' : 'items-center')}>
 				{#if resolvedIcon}
 					{@const IconComponent = resolvedIcon.component}
 					<div
 						class={cn(
-							'flex shrink-0 items-center justify-center rounded-xl ring-1 backdrop-blur-sm transition-transform duration-200 ring-inset group-hover:scale-105',
-							compact ? 'size-9' : 'size-11',
+							'flex shrink-0 items-center justify-center rounded-lg ring-1 backdrop-blur-sm transition-transform duration-200 ring-inset group-hover:scale-105',
+							compact ? 'size-8' : 'size-9',
 							getIconBgClass(resolvedIcon.variant),
 							'ring-white/5'
 						)}
 					>
-						<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), compact ? 'size-4.5' : 'size-5')} />
+						<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), compact ? 'size-3.5' : 'size-4')} />
 					</div>
 				{/if}
 				<div class="min-w-0 flex-1">
-					<h3 class={cn('truncate leading-snug font-semibold', compact ? 'text-sm' : 'text-[15px]')} title={title(item)}>
+					<h3
+						class={cn('leading-snug font-semibold', compact ? 'text-sm' : 'text-sm', hasSubtitle ? 'truncate' : 'line-clamp-2')}
+						title={title(item)}
+					>
 						{title(item)}
 					</h3>
-					{#if subtitle}
-						{@const subtitleValue = subtitle(item)}
-						{#if subtitleValue}
-							<p
-								class={cn(
-									'text-muted-foreground mt-1.5 truncate leading-relaxed font-medium',
-									compact ? 'text-[11px]' : 'text-xs'
-								)}
-							>
-								{subtitleValue}
-							</p>
-						{/if}
+					{#if hasSubtitle}
+						<p class={cn('text-muted-foreground truncate font-mono', compact ? 'text-[10px]' : 'text-[11px]')}>
+							{subtitleValue}
+						</p>
 					{/if}
 				</div>
-				<div class="flex shrink-0 items-center gap-2">
+				{#if rowActions}
+					<div class="shrink-0">
+						{@render rowActions({ item })}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Badges Row -->
+			{#if resolvedBadges.length > 0}
+				<div class="flex flex-wrap items-center gap-1">
 					{#each resolvedBadges as badge}
 						<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
 					{/each}
-					{#if rowActions}
-						{@render rowActions({ item })}
-					{/if}
 				</div>
-			</div>
+			{/if}
 
 			<!-- Additional Fields -->
 			{#if visibleFields.length > 0}
 				{#if !compact}
-					<div class="-mx-4 flex flex-wrap gap-x-6 gap-y-4 px-4">
+					<div class="flex flex-wrap gap-x-4 gap-y-2">
 						{#each visibleFields as field}
 							{@const value = field.getValue(item)}
 							{#if value !== null && value !== undefined}
-								<div class="flex min-w-0 flex-1 basis-[150px] items-start gap-3">
+								<div class="flex min-w-0 flex-1 basis-[140px] items-center gap-2">
 									{#if field.icon}
 										{@const FieldIcon = field.icon}
 										<div
 											class={cn(
-												'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-white/5 backdrop-blur-sm ring-inset',
+												'flex size-6 shrink-0 items-center justify-center rounded-md ring-1 ring-white/5 ring-inset',
 												field.iconVariant ? getIconBgClass(field.iconVariant) : 'bg-muted/40'
 											)}
 										>
 											<FieldIcon
-												class={cn(field.iconVariant ? getIconTextClass(field.iconVariant) : 'text-muted-foreground', 'size-4')}
+												class={cn(field.iconVariant ? getIconTextClass(field.iconVariant) : 'text-muted-foreground', 'size-3')}
 											/>
 										</div>
 									{/if}
-									<div class="min-w-0 flex-1 pt-0.5">
-										<div class="text-muted-foreground/70 mb-1 text-[10px] leading-tight font-semibold tracking-wider uppercase">
+									<div class="min-w-0 flex-1">
+										<div class="text-muted-foreground/70 text-[9px] font-medium tracking-wide uppercase">
 											{field.label}
 										</div>
-										<div class="text-sm leading-snug font-medium">
+										<div class="truncate text-xs leading-snug font-medium">
 											{#if field.type === 'badge' && field.badgeVariant}
-												<StatusBadge variant={field.badgeVariant} text={String(value)} />
+												<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
 											{:else if field.type === 'mono'}
-												<span class="font-mono text-xs">{value}</span>
+												<span class="font-mono text-[11px]">{value}</span>
 											{:else if field.type === 'component' && field.component}
 												{@render field.component(value)}
 											{:else}
@@ -229,12 +232,12 @@
 			{@const footerValue = footer.getValue(item)}
 			{#if footerValue}
 				{@const FooterIcon = footer.icon}
-				<Card.Footer class="bg-muted/30 border-border/40 flex items-center gap-3 border-t px-4 py-3.5 backdrop-blur-sm">
-					<FooterIcon class="text-muted-foreground size-4" />
-					<span class="text-muted-foreground/70 text-[10px] font-semibold tracking-wider uppercase">
+				<Card.Footer class="bg-muted/30 border-border/40 flex items-center gap-2 border-t px-3 py-2">
+					<FooterIcon class="text-muted-foreground size-3.5" />
+					<span class="text-muted-foreground/70 text-[9px] font-medium tracking-wide uppercase">
 						{footer.label}
 					</span>
-					<span class="text-foreground ml-auto font-mono text-xs font-medium">
+					<span class="text-foreground ml-auto font-mono text-[11px] font-medium">
 						{footerValue}
 					</span>
 				</Card.Footer>

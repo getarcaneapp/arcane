@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon, SaveIcon, ResetIcon } from '$lib/icons';
@@ -159,6 +159,14 @@
 	// Set context so forms can update the header state
 	setContext('settingsFormState', formState);
 
+	// Reset form state before navigating to a new page
+	beforeNavigate(() => {
+		formState.hasChanges = false;
+		formState.isLoading = false;
+		formState.saveFunction = null;
+		formState.resetFunction = null;
+	});
+
 	function goBackToSettings() {
 		goto('/settings');
 	}
@@ -240,7 +248,7 @@
 </div>
 
 <!-- Mobile Floating Action Buttons -->
-{#if isSubPage && !isReadOnly}
+{#if isSubPage && !isReadOnly && formState.saveFunction}
 	<div
 		class="fixed right-4 z-50 flex flex-col gap-3 transition-all duration-300 ease-out sm:hidden"
 		style="bottom: {scrollToHideEnabled && !mobileNavVisible
