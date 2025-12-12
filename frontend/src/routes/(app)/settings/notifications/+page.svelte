@@ -65,14 +65,8 @@
 		containerUpdateTag: ''
 	});
 
-	const hasUnsavedChanges = $derived.by(() => {
-		const formData = form.validate();
-		if (!formData) return false;
-
-		const formChanged = JSON.stringify(formData) !== JSON.stringify(currentSettings);
-		const appriseChanged = JSON.stringify(appriseSettings) !== JSON.stringify(savedAppriseSettings);
-		return formChanged || appriseChanged;
-	});
+	// IMPORTANT: don't call `form.validate()` inside a `$derived` — it updates stores and will throw
+	// `state_unsafe_mutation`, which can make buttons appear unresponsive until refresh.
 	let currentSettings = $state<FormNotificationSettings>({
 		discordEnabled: false,
 		discordWebhookUrl: '',
@@ -379,7 +373,7 @@
 	}
 
 	async function testNotification(provider: 'discord' | 'email', testType: string = 'simple') {
-		if (hasUnsavedChanges) {
+		if (formHasChanges) {
 			pendingTestAction = () => executeTest(provider, testType);
 			showUnsavedDialog = true;
 			return;
@@ -400,7 +394,7 @@
 		}
 	}
 	async function testAppriseNotification() {
-		if (hasUnsavedChanges) {
+		if (formHasChanges) {
 			pendingTestAction = executeAppriseTest;
 			showUnsavedDialog = true;
 			return;

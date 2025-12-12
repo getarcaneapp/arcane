@@ -130,6 +130,28 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
   });
 
+  test('should enable Create Project after entering a valid name', async ({ page }) => {
+    const observedErrors: string[] = [];
+    page.on('pageerror', (err) => observedErrors.push(String(err?.message ?? err)));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') observedErrors.push(msg.text());
+    });
+
+    const createProjectButton = page.getByRole('button', { name: 'Create Project', exact: true });
+    await expect(createProjectButton).toBeVisible();
+
+    // Open the inline name editor and set a valid name.
+    await page.getByRole('button', { name: 'My New Project' }).click();
+    await page.getByRole('textbox', { name: 'My New Project' }).fill('test-project');
+    await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+
+    // The button should become enabled once name + compose content are present.
+    await expect(createProjectButton).toBeEnabled();
+
+    const stateUnsafe = observedErrors.filter((e) => e.includes('state_unsafe_mutation'));
+    expect(stateUnsafe, `Unexpected state_unsafe_mutation errors: ${stateUnsafe.join('\n')}`).toHaveLength(0);
+  });
+
   test('should create a new project successfully', async ({ page }) => {
     const projectName = `test-project-${Date.now()}`;
     let createdProjectId: string | null = null;

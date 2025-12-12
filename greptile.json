@@ -2,7 +2,7 @@
   "labels": [],
   "comment": "**Disclaimer** Greptiles Reviews use AI, make sure to check over its work",
   "fixWithAI": true,
-  "strictness": 2,
+  "strictness": 1,
   "statusCheck": true,
   "commentTypes": ["syntax", "logic", "style"],
   "instructions": "",

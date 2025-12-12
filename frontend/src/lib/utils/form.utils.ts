@@ -74,8 +74,8 @@ export function createForm<T extends z.ZodType<any, any>>(schema: T, initialValu
 
 		const values = Object.fromEntries(
 			Object.entries(inputs).map(([key, input]) => {
-				input.value = trimValue(input.value);
-				return [key, input.value];
+				// Trim values for submission, but don't mutate the store value in-place.
+				return [key, trimValue(input.value)];
 			})
 		) as z.infer<T>;
 
