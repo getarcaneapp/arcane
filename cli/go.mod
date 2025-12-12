@@ -2,9 +2,6 @@ module go.getarcane.app/cli
 
 go 1.25.4
 
-// TODO: Remove this replace directive after merging the types module
-replace go.getarcane.app/types => ../types
-
 require (
 	github.com/fatih/color v1.18.0
 	github.com/olekukonko/tablewriter v0.0.5

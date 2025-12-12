@@ -49,7 +49,7 @@ import (
 	"go.getarcane.app/cli/internal/client"
 	"go.getarcane.app/cli/internal/logger"
 	"go.getarcane.app/cli/internal/output"
-	clitypes "go.getarcane.app/cli/internal/types"
+	"go.getarcane.app/cli/internal/types"
 	"go.getarcane.app/types/image"
 	"go.withmatt.com/size"
 )
@@ -81,7 +81,7 @@ var imagesListCmd = &cobra.Command{
 			return err
 		}
 
-		path := clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionList, c.EnvID())
+		path := types.Endpoints.Images(c.EnvID())
 
 		// Parse the path to handle query params
 		u, err := url.Parse(path)
@@ -177,7 +177,7 @@ var imagesGetCmd = &cobra.Command{
 		}
 
 		imageID := args[0]
-		path := fmt.Sprintf("%s/%s", clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionGet, c.EnvID()), imageID)
+		path := types.Endpoints.Image(c.EnvID(), imageID)
 
 		log.Debugf("Getting image details from: %s", path)
 
@@ -272,7 +272,7 @@ var imagesRemoveCmd = &cobra.Command{
 		}
 
 		imageID := args[0]
-		path := fmt.Sprintf("%s/%s", clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionDelete, c.EnvID()), imageID)
+		path := types.Endpoints.Image(c.EnvID(), imageID)
 
 		if removeForce {
 			u, err := url.Parse(path)
@@ -335,7 +335,7 @@ var imagesPullCmd = &cobra.Command{
 		}
 
 		imageName := args[0]
-		path := clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionPull, c.EnvID())
+		path := types.Endpoints.ImagesPull(c.EnvID())
 
 		log.Debugf("Pulling image from: %s", path)
 
@@ -459,7 +459,7 @@ var imagesPruneCmd = &cobra.Command{
 			return err
 		}
 
-		path := clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionPrune, c.EnvID())
+		path := types.Endpoints.ImagesPrune(c.EnvID())
 
 		log.Debugf("Pruning images from: %s", path)
 
@@ -557,7 +557,7 @@ var imagesCountsCmd = &cobra.Command{
 			return err
 		}
 
-		path := clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionCounts, c.EnvID())
+		path := types.Endpoints.ImagesCounts(c.EnvID())
 
 		log.Debugf("Getting image counts from: %s", path)
 
@@ -611,7 +611,7 @@ var imagesUploadCmd = &cobra.Command{
 		}
 
 		filePath := args[0]
-		path := clitypes.Endpoints.UseImageEndpoint(clitypes.ImageEndpointActionUpload, c.EnvID())
+		path := types.Endpoints.ImagesUpload(c.EnvID())
 
 		log.Debugf("Uploading image from file: %s to %s", filePath, path)
 

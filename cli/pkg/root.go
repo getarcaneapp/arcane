@@ -36,11 +36,17 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/cli/internal/config"
 	"go.getarcane.app/cli/internal/logger"
+	"go.getarcane.app/cli/pkg/apikeys"
+	"go.getarcane.app/cli/pkg/auth"
 	configClient "go.getarcane.app/cli/pkg/config"
 	"go.getarcane.app/cli/pkg/containers"
+	"go.getarcane.app/cli/pkg/environments"
 	"go.getarcane.app/cli/pkg/generate"
 	"go.getarcane.app/cli/pkg/images"
+	"go.getarcane.app/cli/pkg/networks"
+	// "go.getarcane.app/cli/pkg/projects"
 	"go.getarcane.app/cli/pkg/version"
+	"go.getarcane.app/cli/pkg/volumes"
 )
 
 var (
@@ -91,6 +97,18 @@ func init() {
 	rootCmd.AddCommand(configClient.ConfigCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
+
+	// Authentication
+	rootCmd.AddCommand(auth.AuthCmd)
+
+	// Core resource management
 	rootCmd.AddCommand(containers.ContainersCmd)
 	rootCmd.AddCommand(images.ImagesCmd)
+	rootCmd.AddCommand(volumes.VolumesCmd)
+	rootCmd.AddCommand(networks.NetworksCmd)
+	// rootCmd.AddCommand(projects.ProjectsCmd)
+
+	// Management
+	rootCmd.AddCommand(apikeys.ApiKeysCmd)
+	rootCmd.AddCommand(environments.EnvironmentsCmd)
 }
