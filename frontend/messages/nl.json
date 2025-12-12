@@ -1455,5 +1455,8 @@
 	"common_mount": "Koppelen",
 	"common_mounts": "mounten",
 	"common_image_id": "Afbeelding ID",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "Klassiek",
+	"tree_view": "Boomstructuur weergave",
+	"project_view_description": "Schakel tussen klassieke zijkant en boomweergave"
 }
