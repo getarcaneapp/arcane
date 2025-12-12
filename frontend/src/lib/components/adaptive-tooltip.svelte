@@ -15,7 +15,7 @@
 		arrowClasses?: string;
 		/** Control open state externally */
 		open?: boolean;
-		/** Delay before showing (only applies to Tooltip on desktop) */
+		/** Delay before showing. Hover time for tooltip, long press time for interactive elements on touch devices. */
 		delayDuration?: number;
 		/**
 		 * Enable long-press mode for interactive elements on touch devices.
@@ -35,7 +35,7 @@
 		contentClass = '',
 		arrowClasses = '',
 		open = $bindable(false),
-		delayDuration = 0,
+		delayDuration = 500,
 		interactive = false,
 		trigger,
 		content
@@ -48,7 +48,6 @@
 	// Long press state (only used for interactive mode)
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let isLongPressing = $state(false);
-	const LONG_PRESS_DURATION = 200;
 
 	function handleTouchStart() {
 		if (!isTouchDevice.current) return;
@@ -62,7 +61,7 @@
 		longPressTimer = setTimeout(() => {
 			isLongPressing = true;
 			open = true;
-		}, LONG_PRESS_DURATION);
+		}, delayDuration);
 	}
 
 	function handleTouchEnd(event: TouchEvent) {
