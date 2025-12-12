@@ -30,21 +30,25 @@
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 	let scrollContainer = $state<HTMLDivElement | null>(null);
+	let lastScrollTop = $state(0);
 	let loadError = $state<string | null>(null);
 	let environmentsPromise = $state<Promise<void> | null>(null);
 	let currentRequestId = 0;
 
 	const PAGE_SIZE = 10;
 
-	let requestOptions = $state<SearchPaginationSortRequest>({
+	const DEFAULT_REQUEST_OPTIONS: SearchPaginationSortRequest = {
 		pagination: { page: 1, limit: PAGE_SIZE },
 		sort: { column: 'name', direction: 'asc' },
 		search: undefined
-	});
+	};
+
+	let requestOptions = $state<SearchPaginationSortRequest>(DEFAULT_REQUEST_OPTIONS);
 
 	async function resetScrollToTop() {
 		await tick();
 		if (scrollContainer) scrollContainer.scrollTop = 0;
+		lastScrollTop = 0;
 	}
 
 	function normalizeSearch(query: string): string | undefined {
@@ -99,6 +103,40 @@
 		await fetchEnvironments(options, false, true);
 	}
 
+	function resetDialogState() {
+		// Invalidate any inflight request
+		currentRequestId++;
+		searchQuery = '';
+		requestOptions = DEFAULT_REQUEST_OPTIONS;
+		lastScrollTop = 0;
+		environmentsPromise = null;
+		loadError = null;
+		// Keep environments around or clear? Clear so reopening always shows a clean slate
+		environments = [];
+		currentPage = 1;
+		totalPages = 1;
+	}
+
+	function startInitialLoad() {
+		environmentsPromise = Promise.resolve().then(() => loadInitial());
+	}
+
+	function closeDialog() {
+		open = false;
+		resetDialogState();
+	}
+
+	function openSession(node: HTMLElement) {
+		// Runs when the dialog content mounts (i.e., when `open` becomes true)
+		startInitialLoad();
+		return {
+			destroy() {
+				// Runs when the dialog content unmounts (i.e., when `open` becomes false)
+				resetDialogState();
+			}
+		};
+	}
+
 	const debouncedSearch = debounced((query: string) => {
 		// Prevent stale debounced callbacks from re-applying an old query (e.g. after clearing the input)
 		if (query !== searchQuery) return;
@@ -129,23 +167,16 @@
 		});
 	}
 
-	$effect(() => {
-		if (!open) {
-			// Invalidate any inflight request and stop spinners when dialog closes
-			currentRequestId++;
-			environmentsPromise = null;
-			return;
-		}
-		// Assign promise synchronously; the actual load runs in a microtask so we don't track internal state
-		environmentsPromise = Promise.resolve().then(() => {
-			if (!open) return;
-			return loadInitial();
-		});
-	});
-
 	function handleScroll(e: Event) {
 		const target = e.target as HTMLDivElement;
 		const { scrollTop, scrollHeight, clientHeight } = target;
+
+		// If content isn't scrollable yet, don't auto-fetch more pages.
+		if (scrollHeight <= clientHeight) return;
+
+		// Only react to downward scrolling; prevents programmatic scrollTop resets from triggering load-more loops.
+		if (scrollTop <= lastScrollTop) return;
+		lastScrollTop = scrollTop;
 
 		// Load more when user scrolls near the bottom (within 50px)
 		if (scrollHeight - scrollTop - clientHeight < 50) {
@@ -179,7 +210,7 @@
 		if (!env || !env.enabled) return;
 		try {
 			await environmentStore.setEnvironment(env);
-			open = false;
+			closeDialog();
 			toast.success(m.environments_switched_to({ name: env.name }));
 		} catch (error) {
 			console.error('Failed to set environment:', error);
@@ -199,6 +230,9 @@
 <ResponsiveDialog bind:open title={m.sidebar_select_environment()} contentClass="max-w-2xl">
 	{#snippet children()}
 		<div class="m-2 flex flex-col gap-4">
+			{#if open}
+				<div class="hidden" use:openSession aria-hidden="true"></div>
+			{/if}
 			<div class="relative">
 				<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
 				<Input
@@ -296,7 +330,7 @@
 				<Button
 					variant="outline"
 					onclick={() => {
-						open = false;
+						closeDialog();
 						goto('/environments');
 					}}
 				>
@@ -306,7 +340,7 @@
 			{:else}
 				<div></div>
 			{/if}
-			<Button variant="outline" onclick={() => (open = false)}>
+			<Button variant="outline" onclick={closeDialog}>
 				{m.common_close()}
 			</Button>
 		</div>
