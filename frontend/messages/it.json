@@ -1479,13 +1479,13 @@
 	"environments_docker_compose": "Composizione Docker",
 	"environments_new_agent": "Nuovo Agente",
 	"environments_existing_agent": "Agente Esistente",
-	"environments_create_new_agent": "Create New Agent Environment",
-	"environments_create_new_agent_description": "Generate an API key and deployment snippets for a new agent.",
-	"environments_production_docker": "Production Docker",
-	"environments_agent_address": "Agent Address",
+	"environments_create_new_agent": "Crea Un Nuovo Ambiente Agente",
+	"environments_create_new_agent_description": "Genera una chiave API e snippet di distribuzione per un nuovo agente.",
+	"environments_production_docker": "Docker Di Produzione",
+	"environments_agent_address": "Indirizzo Dell'Agente",
 	"environments_agent_address_placeholder": "agent.example.com",
-	"environments_agent_address_description": "The URL where your agent will be accessible",
-	"environments_generate_config": "Generate Agent Configuration",
-	"environments_connect_existing_agent": "Connect to Existing Agent",
-	"environments_connect_existing_agent_description": "Connect to an already-running agent using a bootstrap token."
+	"environments_agent_address_description": "L'URL dove il tuo agente sarà accessibile",
+	"environments_generate_config": "Genera Configurazione Agente",
+	"environments_connect_existing_agent": "Connettiti ad un agente esistente",
+	"environments_connect_existing_agent_description": "Connettiti a un agente già in esecuzione usando un token di bootstrap."
 }
