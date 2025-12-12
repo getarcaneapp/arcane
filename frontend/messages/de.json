@@ -1455,5 +1455,8 @@
 	"common_mount": "einnehmen",
 	"common_mounts": "Reittiere",
 	"common_image_id": "Bild-ID",
-	"common_entrypoint": "Entrypoint"
+	"common_entrypoint": "Entrypoint",
+	"classic": "Klassisch",
+	"tree_view": "Baumansicht",
+	"project_view_description": "Zwischen klassischem Seitenlayout und Baumansicht wechseln"
 }
