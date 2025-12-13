@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
@@ -320,16 +320,14 @@
 						<div class="text-muted-foreground text-xs">{m.environments_enable_disable_description()}</div>
 					</div>
 					{#if environment.id === '0'}
-						<Tooltip.Provider>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<Switch id="env-enabled" disabled={true} bind:checked={formEnabled} />
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p>{m.environments_local_setting_disabled()}</p>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
+						<AdaptiveTooltip>
+							{#snippet trigger()}
+								<Switch id="env-enabled" disabled={true} bind:checked={formEnabled} />
+							{/snippet}
+							{#snippet content()}
+								<p>{m.environments_local_setting_disabled()}</p>
+							{/snippet}
+						</AdaptiveTooltip>
 					{:else}
 						<Switch id="env-enabled" bind:checked={formEnabled} />
 					{/if}
@@ -421,24 +419,22 @@
 				<div>
 					<Label for="api-url" class="text-sm font-medium">{m.environments_api_url()}</Label>
 					{#if environment.id === '0'}
-						<Tooltip.Provider>
-							<Tooltip.Root>
-								<Tooltip.Trigger class="w-full">
-									<Input
-										id="api-url"
-										type="url"
-										bind:value={formApiUrl}
-										class="mt-1.5 font-mono"
-										placeholder={m.environments_api_url_placeholder()}
-										disabled={true}
-										required
-									/>
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p>{m.environments_local_setting_disabled()}</p>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
+						<AdaptiveTooltip>
+							{#snippet trigger()}
+								<Input
+									id="api-url"
+									type="url"
+									bind:value={formApiUrl}
+									class="mt-1.5 w-full font-mono"
+									placeholder={m.environments_api_url_placeholder()}
+									disabled={true}
+									required
+								/>
+							{/snippet}
+							{#snippet content()}
+								<p>{m.environments_local_setting_disabled()}</p>
+							{/snippet}
+						</AdaptiveTooltip>
 					{:else}
 						<Input
 							id="api-url"

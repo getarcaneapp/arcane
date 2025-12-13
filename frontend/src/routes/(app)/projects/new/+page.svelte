@@ -10,7 +10,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import type { Template } from '$lib/types/template.type';
 	import { z } from 'zod/v4';
@@ -185,44 +185,43 @@
 
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
-					<Tooltip.Provider>
-						<Tooltip.Root open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<span {...props}>
-										<Button
-											disabled={!$inputs.name.value ||
-												!$inputs.composeContent.value ||
-												saving ||
-												converting ||
-												isLoadingTemplateContent}
-											onclick={() => handleSubmit()}
-											class={`${templateBtnClass} gap-2 rounded-r-none hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
-										>
-											{#if saving}
-												<Spinner class="size-4" />
-												{m.common_action_creating()}
-											{:else}
-												<AddIcon class="size-4" />
-												{m.compose_create_project()}
-											{/if}
-										</Button>
-									</span>
-								{/snippet}
-							</Tooltip.Trigger>
+					<AdaptiveTooltip
+						open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}
+						contentClass="arcane-tooltip-content max-w-[280px]"
+					>
+						{#snippet trigger()}
+							<span>
+								<Button
+									disabled={!$inputs.name.value ||
+										!$inputs.composeContent.value ||
+										saving ||
+										converting ||
+										isLoadingTemplateContent}
+									onclick={() => handleSubmit()}
+									class={`${templateBtnClass} gap-2 rounded-r-none hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
+								>
+									{#if saving}
+										<Spinner class="size-4" />
+										{m.common_action_creating()}
+									{:else}
+										<AddIcon class="size-4" />
+										{m.compose_create_project()}
+									{/if}
+								</Button>
+							</span>
+						{/snippet}
+						{#snippet content()}
 							{#if $inputs.name.value === ''}
-								<Tooltip.Content class="arcane-tooltip-content max-w-[280px]">
-									<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
-									<p class="text-muted-foreground text-xs">
-										{m.compose_project_name_tooltip_description()}
-									</p>
-									<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
-										{m.compose_project_name_tooltip_example()}
-									</p>
-								</Tooltip.Content>
+								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
+								<p class="text-muted-foreground text-xs">
+									{m.compose_project_name_tooltip_description()}
+								</p>
+								<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
+									{m.compose_project_name_tooltip_example()}
+								</p>
 							{/if}
-						</Tooltip.Root>
-					</Tooltip.Provider>
+						{/snippet}
+					</AdaptiveTooltip>
 
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger>

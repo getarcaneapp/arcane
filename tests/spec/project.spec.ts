@@ -137,7 +137,7 @@ test.describe('New Compose Project Page', () => {
       if (msg.type() === 'error') observedErrors.push(msg.text());
     });
 
-    const createProjectButton = page.getByRole('button', { name: 'Create Project', exact: true });
+    const createProjectButton = page.locator('form#create-project-form').getByRole('button', { name: 'Create Project', exact: true });
     await expect(createProjectButton).toBeVisible();
 
     // Open the inline name editor and set a valid name.
