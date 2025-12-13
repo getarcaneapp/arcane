@@ -59,6 +59,7 @@ services:
       - APP_URL=http://localhost:3000
       - PUID=1000
       - PGID=1000
+      - LOG_LEVEL=debug
       - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
       - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
       - DATABASE_URL=file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate
@@ -91,6 +92,7 @@ services:
     environment:
       - GIN_MODE=debug
       - ENVIRONMENT=development
+      - LOG_LEVEL=debug
       - PORT=3553
       - AGENT_MODE=true
       - AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

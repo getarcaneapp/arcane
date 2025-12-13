@@ -32,6 +32,18 @@ const (
 	EventTypeProjectUpdate EventType = "project.update"
 	EventTypeProjectError  EventType = "project.error"
 
+	EventTypeGitRepositoryCreate EventType = "git.repository.create"
+	EventTypeGitRepositoryUpdate EventType = "git.repository.update"
+	EventTypeGitRepositoryDelete EventType = "git.repository.delete"
+	EventTypeGitRepositoryTest   EventType = "git.repository.test"
+	EventTypeGitRepositoryError  EventType = "git.repository.error"
+
+	EventTypeGitSyncCreate EventType = "git.sync.create"
+	EventTypeGitSyncUpdate EventType = "git.sync.update"
+	EventTypeGitSyncDelete EventType = "git.sync.delete"
+	EventTypeGitSyncRun    EventType = "git.sync.run"
+	EventTypeGitSyncError  EventType = "git.sync.error"
+
 	EventTypeVolumeCreate EventType = "volume.create"
 	EventTypeVolumeDelete EventType = "volume.delete"
 	EventTypeVolumeError  EventType = "volume.error"

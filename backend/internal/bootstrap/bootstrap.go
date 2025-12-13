@@ -26,7 +26,7 @@ func Bootstrap(ctx context.Context) error {
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)
-	slog.InfoContext(ctx, "Arcane is starting")
+	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
