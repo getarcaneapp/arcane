@@ -1,6 +1,5 @@
 # git-cliff ~ configuration file
 # https://git-cliff.org/docs/configuration
-# originally from pocket-id
 
 [remote.github]
 owner = "getarcaneapp"
@@ -12,15 +11,27 @@ filter_unconventional = true
 tag_pattern = "v[0-9]*"
 commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
 commit_parsers = [
-        { message = "^feat", group = "<!-- 0 --> New features" },
-        { message = "^fix", group = "<!-- 1 --> Bug fixes" },
-        { message = "^perf", group = "<!-- 2 --> Performance Improvements" },
-        { message = "^docs", group = "<!-- 3 --> Documentation", default_scope = "other" },
-        { message = "^chore\\(deps\\)", group = "<!-- 4 --> Dependencies" },
+  { message = "^feat\\(cli\\)", group = "<!-- 01 --> CLI - New features" },
+  { message = "^feat\\(types\\)", group = "<!-- 02 --> Types - New features" },
+  { message = "^feat", group = "<!-- 00 --> Backend - New features" },
+
+  { message = "^fix\\(cli\\)", group = "<!-- 11 --> CLI - Bug fixes" },
+  { message = "^fix\\(types\\)", group = "<!-- 12 --> Types - Bug fixes" },
+  { message = "^fix", group = "<!-- 10 --> Backend - Bug fixes" },
+
+  { message = "^perf\\(cli\\)", group = "<!-- 21 --> CLI - Performance improvements" },
+  { message = "^perf\\(types\\)", group = "<!-- 22 --> Types - Performance improvements" },
+  { message = "^perf", group = "<!-- 20 --> Backend - Performance improvements" },
+
+  { message = "^docs\\(cli\\)", group = "<!-- 31 --> CLI - Documentation", default_scope = "other" },
+  { message = "^docs\\(types\\)", group = "<!-- 32 --> Types - Documentation", default_scope = "other" },
+  { message = "^docs", group = "<!-- 30 --> Backend - Documentation", default_scope = "other" },
+
+  { message = "^chore\\(deps\\)", group = "<!-- 40 --> Dependencies" },
         { message = "^chore", skip = true },
         { message = "^release", skip = true },
         { message = "update translations via Crowdin", skip = true },
-        { message = ".*", group = "<!-- 5 --> Other", default_scope = "other"},
+  { message = ".*", group = "<!-- 50 --> Other", default_scope = "other"},
 ]
 filter_commits = false
 

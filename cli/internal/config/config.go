@@ -17,7 +17,7 @@
 //
 // Version and Revision variables are set at build time via ldflags:
 //
-//	go build -ldflags "-X go.getarcane.app/cli/internal/config.Version=1.0.0"
+//	go build -ldflags "-X github.com/getarcaneapp/arcane/cli/internal/config.Version=1.0.0"
 package config
 
 import (
@@ -25,7 +25,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.getarcane.app/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"gopkg.in/yaml.v3"
 )
 

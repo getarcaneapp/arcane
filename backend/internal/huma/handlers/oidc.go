@@ -11,8 +11,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
-	"go.getarcane.app/types/auth"
-	"go.getarcane.app/types/user"
+	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/types/user"
 )
 
 // OidcHandler handles OIDC authentication endpoints.

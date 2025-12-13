@@ -17,9 +17,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	containertypes "go.getarcane.app/types/container"
-	"go.getarcane.app/types/containerregistry"
-	imagetypes "go.getarcane.app/types/image"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 )
 
 type ContainerService struct {

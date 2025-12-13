@@ -15,8 +15,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/project"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/project"
 )
 
 // ProjectHandler provides Huma-based project management endpoints.

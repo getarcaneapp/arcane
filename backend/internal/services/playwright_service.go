@@ -8,7 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/apikey"
+	"github.com/getarcaneapp/arcane/types/apikey"
 )
 
 type PlaywrightService struct {

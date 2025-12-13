@@ -22,7 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"go.getarcane.app/types/settings"
+	"github.com/getarcaneapp/arcane/types/settings"
 )
 
 type SettingsService struct {

@@ -11,9 +11,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"go.getarcane.app/types/auth"
 )
 
 var (

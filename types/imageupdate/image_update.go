@@ -3,7 +3,7 @@ package imageupdate
 import (
 	"time"
 
-	containerregistry "go.getarcane.app/types/containerregistry"
+	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
 type Response struct {

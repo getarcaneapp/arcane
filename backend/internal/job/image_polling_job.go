@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/go-co-op/gocron/v2"
-	"go.getarcane.app/types/containerregistry"
 )
 
 type ImagePollingJob struct {

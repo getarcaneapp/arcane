@@ -1,6 +1,6 @@
 package category
 
-import "go.getarcane.app/types/meta"
+import "github.com/getarcaneapp/arcane/types/meta"
 
 // Category represents a category with associated metadata and settings.
 type Category struct {

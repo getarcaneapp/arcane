@@ -8,9 +8,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"go.getarcane.app/types/category"
-	"go.getarcane.app/types/meta"
-	"go.getarcane.app/types/search"
+	"github.com/getarcaneapp/arcane/types/category"
+	"github.com/getarcaneapp/arcane/types/meta"
+	"github.com/getarcaneapp/arcane/types/search"
 )
 
 type CustomizeSearchService struct {

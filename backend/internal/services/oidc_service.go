@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"go.getarcane.app/types/auth"
+	"github.com/getarcaneapp/arcane/types/auth"
 )
 
 type OidcService struct {

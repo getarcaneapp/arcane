@@ -23,8 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
-	"go.getarcane.app/types/containerregistry"
-	"go.getarcane.app/types/project"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/project"
 	"gorm.io/gorm"
 )
 

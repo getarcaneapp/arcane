@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
-	"go.getarcane.app/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 

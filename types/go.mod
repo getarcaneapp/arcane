@@ -1,4 +1,4 @@
-module go.getarcane.app/types
+module github.com/getarcaneapp/arcane/types
 
 go 1.25.4
 
