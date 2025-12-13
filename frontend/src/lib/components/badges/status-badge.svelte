@@ -82,7 +82,7 @@
 	const badgeClasses = $derived(
 		cn(
 			// base
-			'inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full font-medium',
+			'inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full font-medium',
 			sizeStyles[size as Size],
 			// subtle border and translucency
 			'ring-1 ring-inset transition-colors',
