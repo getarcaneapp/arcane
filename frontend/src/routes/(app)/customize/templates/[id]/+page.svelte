@@ -3,7 +3,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
@@ -212,9 +212,9 @@
 					<Card.Description>{m.templates_service_definitions()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="min-h-[500px] flex-grow p-0 lg:h-full">
-				<div class="h-full rounded-t-none rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-					<CodeEditor bind:value={compose} language="yaml" readOnly={true} />
+			<Card.Content class="flex min-h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
+				<div class="min-h-0 min-w-0 flex-1 rounded-t-none rounded-b-xl">
+					<CodeEditor bind:value={compose} language="yaml" readOnly={true} fontSize="13px" />
 				</div>
 			</Card.Content>
 		</Card.Root>
@@ -282,9 +282,9 @@
 							<Card.Description>{m.templates_raw_env_config()}</Card.Description>
 						</div>
 					</Card.Header>
-					<Card.Content class="h-[500px] flex-grow p-0 lg:h-full">
-						<div class="h-full rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-							<CodeEditor bind:value={env} language="env" readOnly={true} />
+					<Card.Content class="flex h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
+						<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+							<CodeEditor bind:value={env} language="env" readOnly={true} fontSize="13px" />
 						</div>
 					</Card.Content>
 				</Card.Root>

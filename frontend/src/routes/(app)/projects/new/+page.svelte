@@ -277,7 +277,7 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<div class="mx-auto h-full max-w-full">
+		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col gap-4 p-6 pb-10">
 				<div class="block flex-shrink-0 sm:hidden">
 					<EditableName

@@ -28,7 +28,7 @@ self.MonacoEnvironment = {
 import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/ini/ini.contribution.js';
 
-// Import editor styles
+// Import editor implementation
 import 'monaco-editor/esm/vs/editor/editor.all.js';
 
 // Import YAML providers for Docker Compose
