@@ -315,7 +315,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	if err := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); err != nil {
+	if err := h.imageService.RemoveImage(ctx, input.EnvironmentID, input.ImageID, input.Force, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageRemovalError{Err: err}).Error())
 	}
 
@@ -357,7 +357,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			writer := humaCtx.BodyWriter()
 
-			if err := h.imageService.PullImage(humaCtx.Context(), fullImageName, writer, *user, credentials); err != nil {
+			if err := h.imageService.PullImage(humaCtx.Context(), input.EnvironmentID, fullImageName, writer, *user, credentials); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
@@ -486,7 +486,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	defer file.Close()
 
 	// Load the image
-	result, err := h.imageService.LoadImageFromReader(ctx, file, fileName, *user, maxSizeBytes)
+	result, err := h.imageService.LoadImageFromReader(ctx, input.EnvironmentID, file, fileName, *user, maxSizeBytes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageLoadError{Err: err}).Error())
 	}

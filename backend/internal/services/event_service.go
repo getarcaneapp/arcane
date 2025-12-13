@@ -283,15 +283,17 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventT
 	title := s.generateEventTitle(eventType, username)
 	description := s.generateEventDescription(eventType, "user", username)
 	severity := s.getEventSeverity(eventType)
+	environmentID := "0"
 
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:        eventType,
-		Severity:    severity,
-		Title:       title,
-		Description: description,
-		UserID:      &userID,
-		Username:    &username,
-		Metadata:    metadata,
+		Type:          eventType,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		UserID:        &userID,
+		Username:      &username,
+		EnvironmentID: &environmentID,
+		Metadata:      metadata,
 	})
 	return err
 }

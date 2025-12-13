@@ -43,16 +43,16 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 	return &networkInspect, nil
 }
 
-func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options network.CreateOptions, user models.User) (*network.CreateResponse, error) {
+func (s *NetworkService) CreateNetwork(ctx context.Context, environmentID string, name string, options network.CreateOptions, user models.User) (*network.CreateResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, environmentID, err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	response, err := dockerClient.NetworkCreate(ctx, name, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, environmentID, err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
 
@@ -61,17 +61,17 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		"driver": options.Driver,
 		"name":   name,
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, environmentID, metadata); logErr != nil {
 		fmt.Printf("Could not log network creation action: %s\n", logErr)
 	}
 
 	return &response, nil
 }
 
-func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user models.User) error {
+func (s *NetworkService) RemoveNetwork(ctx context.Context, environmentID string, id string, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, "", user.ID, user.Username, environmentID, err, models.JSON{"action": "delete"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
@@ -84,7 +84,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 	}
 
 	if err := dockerClient.NetworkRemove(ctx, id); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, environmentID, err, models.JSON{"action": "delete"})
 		return fmt.Errorf("failed to remove network: %w", err)
 	}
 
@@ -92,14 +92,14 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 		"action":    "delete",
 		"networkId": id,
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, environmentID, metadata); logErr != nil {
 		fmt.Printf("Could not log network delete action: %s\n", logErr)
 	}
 
 	return nil
 }
 
-func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneReport, error) {
+func (s *NetworkService) PruneNetworks(ctx context.Context, environmentID string) (*network.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -116,7 +116,7 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 		"action":          "prune",
 		"networksDeleted": len(report.NetworksDeleted),
 	}
-	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, environmentID, metadata); logErr != nil {
 		fmt.Printf("Could not log network prune action: %s\n", logErr)
 	}
 

@@ -312,7 +312,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		}
 	}
 
-	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
+	containerJSON, err := h.containerService.CreateContainer(ctx, input.EnvironmentID, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerCreationError{Err: err}).Error())
 	}
@@ -363,7 +363,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.containerService.StartContainer(ctx, input.ContainerID, *user); err != nil {
+	if err := h.containerService.StartContainer(ctx, input.EnvironmentID, input.ContainerID, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
 	}
 
@@ -385,7 +385,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.containerService.StopContainer(ctx, input.ContainerID, *user); err != nil {
+	if err := h.containerService.StopContainer(ctx, input.EnvironmentID, input.ContainerID, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
 	}
 
@@ -407,7 +407,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.containerService.RestartContainer(ctx, input.ContainerID, *user); err != nil {
+	if err := h.containerService.RestartContainer(ctx, input.EnvironmentID, input.ContainerID, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
 	}
 
@@ -429,7 +429,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.containerService.DeleteContainer(ctx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
+	if err := h.containerService.DeleteContainer(ctx, input.EnvironmentID, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerDeleteError{Err: err}).Error())
 	}
 

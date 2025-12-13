@@ -28,6 +28,7 @@ type SystemService struct {
 	volumeService    *VolumeService
 	networkService   *NetworkService
 	settingsService  *SettingsService
+	eventService     *EventService
 }
 
 func NewSystemService(
@@ -38,6 +39,7 @@ func NewSystemService(
 	volumeService *VolumeService,
 	networkService *NetworkService,
 	settingsService *SettingsService,
+	eventService *EventService,
 ) *SystemService {
 	return &SystemService{
 		db:               db,
@@ -47,6 +49,7 @@ func NewSystemService(
 		volumeService:    volumeService,
 		networkService:   networkService,
 		settingsService:  settingsService,
+		eventService:     eventService,
 	}
 }
 
@@ -170,6 +173,70 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		slog.Uint64("space_reclaimed", result.SpaceReclaimed),
 		slog.Int("error_count", len(result.Errors)))
 
+	// Emit an event for prune completion (helps debugging across environments).
+	if s.eventService != nil {
+		envID := "0"
+		resourceType := "system"
+		resourceID := "prune"
+		resourceName := "prune"
+
+		severity := models.EventSeveritySuccess
+		title := "System prune completed"
+		description := "System prune completed successfully"
+		if len(result.Errors) > 0 {
+			// If we reclaimed anything, treat as warning; otherwise it's a failure.
+			reclaimedSomething := result.SpaceReclaimed > 0 ||
+				len(result.ContainersPruned) > 0 ||
+				len(result.ImagesDeleted) > 0 ||
+				len(result.VolumesDeleted) > 0 ||
+				len(result.NetworksDeleted) > 0
+			if reclaimedSomething {
+				severity = models.EventSeverityWarning
+				title = "System prune completed with errors"
+				description = "System prune completed, but some operations failed"
+			} else {
+				severity = models.EventSeverityError
+				title = "System prune failed"
+				description = "System prune failed"
+			}
+		}
+
+		metadata := models.JSON{
+			"request": map[string]any{
+				"containers":   req.Containers,
+				"images":       req.Images,
+				"volumes":      req.Volumes,
+				"networks":     req.Networks,
+				"buildCache":   req.BuildCache,
+				"danglingOnly": req.Dangling,
+			},
+			"result": map[string]any{
+				"success":          result.Success,
+				"containersPruned": len(result.ContainersPruned),
+				"imagesDeleted":    len(result.ImagesDeleted),
+				"volumesDeleted":   len(result.VolumesDeleted),
+				"networksDeleted":  len(result.NetworksDeleted),
+				"spaceReclaimed":   result.SpaceReclaimed,
+				"errorCount":       len(result.Errors),
+			},
+			"errors": result.Errors,
+		}
+		username := systemUser.Username
+
+		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
+			Type:          models.EventTypeSystemPrune,
+			Severity:      severity,
+			Title:         title,
+			Description:   description,
+			ResourceType:  &resourceType,
+			ResourceID:    &resourceID,
+			ResourceName:  &resourceName,
+			Username:      &username,
+			EnvironmentID: &envID,
+			Metadata:      metadata,
+		})
+	}
+
 	return result, nil
 }
 
@@ -237,7 +304,7 @@ func (s *SystemService) StartAllContainers(ctx context.Context) (*containertypes
 	return s.performBatchContainerAction(ctx, containers, "start",
 		func(c container.Summary) bool { return c.State != "running" },
 		func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, systemUser)
+			return s.containerService.StartContainer(ctx, "0", id, systemUser)
 		}), nil
 }
 
@@ -253,7 +320,7 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context) (*contain
 	return s.performBatchContainerAction(ctx, containers, "start",
 		func(c container.Summary) bool { return c.State == "exited" },
 		func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, systemUser)
+			return s.containerService.StartContainer(ctx, "0", id, systemUser)
 		}), nil
 }
 
@@ -272,7 +339,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*containertypes.
 			return c.Labels == nil || c.Labels["com.getarcaneapp.arcane.server"] != "true"
 		},
 		func(ctx context.Context, id string) error {
-			return s.containerService.StopContainer(ctx, id, systemUser)
+			return s.containerService.StopContainer(ctx, "0", id, systemUser)
 		}), nil
 }
 
@@ -380,7 +447,7 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAl
 	// With all=true, it will remove both named and anonymous unused volumes
 	// With all=false, it only removes anonymous (unnamed) unused volumes
 	allVolumes := true
-	report, err := s.volumeService.PruneVolumesWithOptions(ctx, allVolumes)
+	report, err := s.volumeService.PruneVolumesWithOptions(ctx, "0", allVolumes)
 	if err != nil {
 		return err
 	}
@@ -396,7 +463,7 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAl
 
 func (s *SystemService) pruneNetworks(ctx context.Context, result *system.PruneAllResult) error {
 	// Note: Docker API only prunes networks that are NOT in use by any containers
-	report, err := s.networkService.PruneNetworks(ctx)
+	report, err := s.networkService.PruneNetworks(ctx, "0")
 	if err != nil {
 		return err
 	}

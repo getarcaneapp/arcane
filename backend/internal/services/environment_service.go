@@ -461,11 +461,17 @@ volumes:
 }
 
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
-func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
+func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string, user *models.User) error {
 	// Get the environment
 	environment, err := s.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {
 		return fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	var userID, username *string
+	if user != nil {
+		userID = &user.ID
+		username = &user.Username
 	}
 
 	// Don't sync to local environment (ID "0")
@@ -557,6 +563,10 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), environmentID, environment.Name, models.EventTypeEnvironmentSyncRegistries,
+			"Registry sync failed",
+			fmt.Sprintf("Failed to sync registries to environment '%s': %s", environment.Name, err.Error()),
+			models.EventSeverityError, userID, username)
 		return fmt.Errorf("failed to send sync request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -566,6 +576,10 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		slog.ErrorContext(ctx, "Sync request failed",
 			slog.Int("statusCode", resp.StatusCode),
 			slog.String("response", string(body)))
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), environmentID, environment.Name, models.EventTypeEnvironmentSyncRegistries,
+			"Registry sync failed",
+			fmt.Sprintf("Failed to sync registries to environment '%s' (status %d)", environment.Name, resp.StatusCode),
+			models.EventSeverityError, userID, username)
 		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -576,16 +590,29 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), environmentID, environment.Name, models.EventTypeEnvironmentSyncRegistries,
+			"Registry sync failed",
+			fmt.Sprintf("Failed to decode registry sync response for environment '%s': %s", environment.Name, err.Error()),
+			models.EventSeverityError, userID, username)
 		return fmt.Errorf("failed to decode sync response: %w", err)
 	}
 
 	if !result.Success {
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), environmentID, environment.Name, models.EventTypeEnvironmentSyncRegistries,
+			"Registry sync failed",
+			fmt.Sprintf("Registry sync failed for environment '%s': %s", environment.Name, result.Data.Message),
+			models.EventSeverityError, userID, username)
 		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 
 	slog.InfoContext(ctx, "Successfully synced registries to environment",
 		slog.String("environmentID", environmentID),
 		slog.String("environmentName", environment.Name))
+
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), environmentID, environment.Name, models.EventTypeEnvironmentSyncRegistries,
+		"Registries synced",
+		fmt.Sprintf("Successfully synced registries to environment '%s'", environment.Name),
+		models.EventSeveritySuccess, userID, username)
 
 	return nil
 }

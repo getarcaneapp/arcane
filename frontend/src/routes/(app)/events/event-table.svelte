@@ -16,6 +16,7 @@
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { EllipsisIcon, TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
 
 	let {
@@ -69,13 +70,19 @@
 				destructive: true,
 				action: async () => {
 					isLoading.removing = true;
+					let envId = LOCAL_DOCKER_ENVIRONMENT_ID;
+					try {
+						envId = await environmentStore.getCurrentEnvironmentId();
+					} catch {
+						// fallback to local
+					}
 					handleApiResultWithCallbacks({
-						result: await tryCatch(eventService.delete(eventId)),
+						result: await tryCatch(eventService.deleteForEnvironment(envId, eventId)),
 						message: m.events_delete_failed({ title: safeTitle }),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.events_delete_success({ title: safeTitle }));
-							events = await eventService.getEvents(requestOptions);
+							events = await eventService.getEventsForEnvironment(envId, requestOptions);
 						}
 					});
 				}
@@ -249,7 +256,16 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => (events = await eventService.getEvents(options))}
+	onRefresh={async (options) => {
+		let envId = LOCAL_DOCKER_ENVIRONMENT_ID;
+		try {
+			envId = await environmentStore.getCurrentEnvironmentId();
+		} catch {
+			// fallback to local
+		}
+		events = await eventService.getEventsForEnvironment(envId, options);
+		return events;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

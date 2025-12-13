@@ -103,7 +103,7 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 			if env.ID != "0" {
 				go func(envID, envName string) {
 					syncCtx := context.WithoutCancel(ctx)
-					if err := j.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
+					if err := j.environmentService.SyncRegistriesToEnvironment(syncCtx, envID, nil); err != nil {
 						slog.WarnContext(syncCtx, "failed to sync registries during health check",
 							"environment_id", envID,
 							"environment_name", envName,

@@ -77,22 +77,22 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	return &v, nil
 }
 
-func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateOptions, user models.User) (*volumetypes.Volume, error) {
+func (s *VolumeService) CreateVolume(ctx context.Context, environmentID string, options volume.CreateOptions, user models.User) (*volumetypes.Volume, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, environmentID, err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, environmentID, err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
 	vol, err := dockerClient.VolumeInspect(ctx, created.Name)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Name, created.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Name, created.Name, user.ID, user.Username, environmentID, err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
@@ -101,7 +101,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 		"driver": vol.Driver,
 		"name":   vol.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, environmentID, metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume creation action",
 			slog.String("volume", vol.Name),
 			slog.String("error", logErr.Error()))
@@ -113,15 +113,15 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 	return &dtoVol, nil
 }
 
-func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
+func (s *VolumeService) DeleteVolume(ctx context.Context, environmentID string, name string, force bool, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, environmentID, err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if err := dockerClient.VolumeRemove(ctx, name, force); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, environmentID, err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove volume: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		"action": "delete",
 		"name":   name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, environmentID, metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume deletion action",
 			slog.String("volume", name),
 			slog.String("error", logErr.Error()))
@@ -138,11 +138,11 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	return nil
 }
 
-func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneReport, error) {
-	return s.PruneVolumesWithOptions(ctx, false)
+func (s *VolumeService) PruneVolumes(ctx context.Context, environmentID string) (*volumetypes.PruneReport, error) {
+	return s.PruneVolumesWithOptions(ctx, environmentID, false)
 }
 
-func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (*volumetypes.PruneReport, error) {
+func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, environmentID string, all bool) (*volumetypes.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -173,7 +173,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		"volumesDeleted": len(report.VolumesDeleted),
 		"spaceReclaimed": report.SpaceReclaimed,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, environmentID, metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action",
 			slog.String("error", logErr.Error()))
 	}

@@ -7,6 +7,7 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
@@ -26,8 +27,14 @@
 	const totalEvents = $derived(events?.pagination?.totalItems || 0);
 
 	async function refresh() {
+		let envId = LOCAL_DOCKER_ENVIRONMENT_ID;
+		try {
+			envId = await environmentStore.getCurrentEnvironmentId();
+		} catch {
+			// fallback to local
+		}
 		await simpleRefresh(
-			() => eventService.getEvents(requestOptions),
+			() => eventService.getEventsForEnvironment(envId, requestOptions),
 			(data) => (events = data),
 			m.common_refresh_failed({ resource: m.events_title() }),
 			(v) => (isLoading.refreshing = v)

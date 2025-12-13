@@ -40,6 +40,15 @@
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
+	const templateTypeColumn = $derived.by(() => {
+		if (!typeColumn) return undefined;
+		// The local/remote "Type" filter is intended for the Templates table, where the
+		// column is derived from a boolean accessorFn (isRemote). Avoid applying it
+		// to other tables (e.g., Events) where `type` is a string.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const def = (typeColumn as any)?.columnDef;
+		return typeof def?.accessorFn === 'function' ? typeColumn : undefined;
+	});
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
@@ -70,8 +79,8 @@
 			</div>
 
 			<div class="flex flex-wrap items-center gap-2 sm:gap-0 sm:space-x-2">
-				{#if typeColumn}
-					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+				{#if templateTypeColumn}
+					<DataTableFacetedFilter column={templateTypeColumn} title={m.common_type()} options={templateTypeFilters} />
 				{/if}
 				{#if usageColumn}
 					<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />

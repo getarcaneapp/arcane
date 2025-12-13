@@ -245,7 +245,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	// Convert to Docker SDK options
 	dockerOptions := input.Body.Options.ToDockerCreateOptions()
 
-	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+	response, err := h.networkService.CreateNetwork(ctx, input.EnvironmentID, input.Body.Name, dockerOptions, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
 	}
@@ -344,7 +344,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.networkService.RemoveNetwork(ctx, input.NetworkID, *user); err != nil {
+	if err := h.networkService.RemoveNetwork(ctx, input.EnvironmentID, input.NetworkID, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
 	}
 
@@ -357,7 +357,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
-	report, err := h.networkService.PruneNetworks(ctx)
+	report, err := h.networkService.PruneNetworks(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
 	}

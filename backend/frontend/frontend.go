@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-//go:embed all:dist/*
+//go:embed all:dist
 var frontendFS embed.FS
 
 const indexHtmlFileConstant = "index.html"
