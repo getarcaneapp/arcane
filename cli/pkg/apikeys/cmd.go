@@ -95,7 +95,6 @@ var createCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
-		// expiresAt, _ := cmd.Flags().GetString("expires-at")
 
 		c, err := client.NewFromConfig()
 		if err != nil {
