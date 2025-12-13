@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list API keys: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[apikey.ApiKey]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -125,7 +125,7 @@ var createCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to create API key: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[apikey.ApiKeyCreatedDto]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -181,7 +181,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete API key: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
@@ -216,7 +216,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get API key: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[apikey.ApiKey]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

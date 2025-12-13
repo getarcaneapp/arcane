@@ -54,7 +54,7 @@ var containersListCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[container.Summary]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -108,7 +108,7 @@ var containersGetCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.Details]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -150,7 +150,7 @@ var containersStartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to start container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.ActionResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -187,7 +187,7 @@ var containersStopCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to stop container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.ActionResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -224,7 +224,7 @@ var containersRestartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to restart container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.ActionResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -261,7 +261,7 @@ var containersUpdateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to update container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.ActionResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -312,7 +312,7 @@ var containersDeleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete container: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.ActionResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -348,7 +348,7 @@ var containersCountsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get container counts: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.StatusCounts]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

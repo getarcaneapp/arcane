@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list networks: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[network.Summary]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -109,7 +109,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete network: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
@@ -140,7 +140,7 @@ var countsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get network counts: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[network.UsageCounts]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -191,7 +191,7 @@ var pruneCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to prune networks: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[network.PruneReport]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

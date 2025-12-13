@@ -35,7 +35,7 @@ var appriseGetCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get apprise config: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[notification.AppriseResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -75,7 +75,7 @@ var settingsGetCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get settings: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]notification.Response]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

@@ -45,7 +45,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list registries: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[containerregistry.ContainerRegistry]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -101,7 +101,7 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to sync registries: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
@@ -133,7 +133,7 @@ var testCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to test registry: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
@@ -179,7 +179,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete registry: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Registry deleted successfully")
 		return nil

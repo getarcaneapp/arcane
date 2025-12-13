@@ -47,7 +47,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list templates: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]template.Template]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -103,7 +103,7 @@ var allCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list all templates: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]template.Template]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -159,7 +159,7 @@ var defaultCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get default templates: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.DefaultTemplatesResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -197,7 +197,7 @@ var contentCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get template content: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.TemplateContent]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -243,7 +243,7 @@ var registriesCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list registries: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]template.TemplateRegistry]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -295,7 +295,7 @@ var variablesCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list variables: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]env.Variable]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -355,7 +355,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete template: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Template deleted successfully")
 		return nil
@@ -390,7 +390,7 @@ var deleteRegistryCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete registry: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Template registry deleted successfully")
 		return nil

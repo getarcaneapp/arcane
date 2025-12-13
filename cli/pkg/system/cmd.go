@@ -72,7 +72,7 @@ var dockerInfoCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get docker info: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[dockerinfo.Info]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -111,7 +111,7 @@ var containersStartAllCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to start all containers: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Started all containers")
 		return nil
@@ -132,7 +132,7 @@ var containersStopAllCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to stop all containers: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Stopped all containers")
 		return nil

@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list events: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -107,7 +107,7 @@ var listEnvCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list environment events: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -178,7 +178,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete event: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Event deleted successfully")
 		return nil

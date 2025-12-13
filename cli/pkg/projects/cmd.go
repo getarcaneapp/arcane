@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list projects: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[project.Details]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -110,7 +110,7 @@ var destroyCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to destroy project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Project %s destroyed successfully", args[0])
 		return nil
@@ -132,7 +132,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[project.Details]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -173,7 +173,7 @@ var upCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to start project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Project %s started successfully", args[0])
 		return nil
@@ -195,7 +195,7 @@ var downCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to stop project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Project %s stopped successfully", args[0])
 		return nil
@@ -217,7 +217,7 @@ var restartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to restart project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Project %s restarted successfully", args[0])
 		return nil
@@ -239,7 +239,7 @@ var redeployCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to redeploy project: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Project %s redeployed successfully", args[0])
 		return nil
@@ -261,7 +261,7 @@ var pullCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to pull images: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Images pulled successfully for project %s", args[0])
 		return nil
@@ -282,7 +282,7 @@ var countsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get project counts: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[map[string]interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

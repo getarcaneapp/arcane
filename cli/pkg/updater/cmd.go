@@ -35,7 +35,7 @@ var statusCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get updater status: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Status]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -72,7 +72,7 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to run updater: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Result]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -112,7 +112,7 @@ var historyCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get updater history: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]updater.Result]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

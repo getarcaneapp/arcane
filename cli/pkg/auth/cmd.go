@@ -74,7 +74,7 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -133,7 +133,7 @@ var logoutCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("logout failed: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Clear token from config regardless of API response
 		cfg, err := config.Load()
@@ -175,7 +175,7 @@ var meCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get user info: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -248,7 +248,7 @@ var passwordCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("password change failed: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
@@ -297,7 +297,7 @@ var refreshCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("token refresh failed: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[auth.TokenRefreshResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

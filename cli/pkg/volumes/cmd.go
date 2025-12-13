@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list volumes: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[volume.Volume]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -108,7 +108,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete volume: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Volume %s deleted successfully", args[0])
 		return nil
@@ -129,7 +129,7 @@ var countsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get volume counts: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -182,7 +182,7 @@ var pruneCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to prune volumes: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -217,7 +217,7 @@ var sizesCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get volume sizes: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -258,7 +258,7 @@ var usageCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get volume usage: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[interface{}]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

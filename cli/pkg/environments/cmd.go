@@ -46,7 +46,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to list environments: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -113,7 +113,7 @@ var deleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to delete environment: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		output.Success("Environment deleted successfully")
 		return nil
@@ -135,7 +135,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -176,7 +176,7 @@ var testCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to test environment: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]

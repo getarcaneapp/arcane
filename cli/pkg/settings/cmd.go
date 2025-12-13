@@ -37,7 +37,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get settings: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]settings.SettingDto]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -84,7 +84,7 @@ var categoriesCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get categories: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]category.Category]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -136,7 +136,7 @@ var searchCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to search settings: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[search.Response]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

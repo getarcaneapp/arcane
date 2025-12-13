@@ -35,7 +35,7 @@ var checkCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to check updates: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[imageupdate.BatchResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -79,7 +79,7 @@ var checkAllCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to check all updates: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[imageupdate.BatchResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -124,7 +124,7 @@ var checkImageCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to check image update: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[imageupdate.Response]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -167,7 +167,7 @@ var summaryCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get summary: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[imageupdate.Summary]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
