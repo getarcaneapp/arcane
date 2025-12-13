@@ -211,7 +211,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 				"danglingOnly": req.Dangling,
 			},
 			"result": map[string]any{
-				"success":         result.Success,
+				"success":          result.Success,
 				"containersPruned": len(result.ContainersPruned),
 				"imagesDeleted":    len(result.ImagesDeleted),
 				"volumesDeleted":   len(result.VolumesDeleted),

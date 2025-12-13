@@ -286,14 +286,14 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventT
 	environmentID := "0"
 
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:        eventType,
-		Severity:    severity,
-		Title:       title,
-		Description: description,
-		UserID:      &userID,
-		Username:    &username,
+		Type:          eventType,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		UserID:        &userID,
+		Username:      &username,
 		EnvironmentID: &environmentID,
-		Metadata:    metadata,
+		Metadata:      metadata,
 	})
 	return err
 }
