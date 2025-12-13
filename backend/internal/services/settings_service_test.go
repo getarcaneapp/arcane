@@ -62,6 +62,26 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Default in DB is false
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.False(t, settings1.OidcMergeAccounts.IsTrue())
+
+	// Env override should take precedence
+	t.Setenv("OIDC_MERGE_ACCOUNTS", "true")
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.True(t, settings2.OidcMergeAccounts.IsTrue())
+}
+
 func TestSettingsService_GetSetHelpers(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -115,56 +135,6 @@ func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 	var sv models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv).Error)
 	require.Equal(t, k1, sv.Value)
-}
-
-func TestSettingsService_SyncOidcEnvToDatabase(t *testing.T) {
-	// Set env BEFORE creating service so config loader (if any) sees them
-	t.Setenv("OIDC_ENABLED", "false")
-	t.Setenv("OIDC_CLIENT_ID", "cid")
-	t.Setenv("OIDC_CLIENT_SECRET", "csec")
-	t.Setenv("OIDC_ISSUER_URL", "https://issuer.example")
-	t.Setenv("OIDC_SCOPES", "openid profile email")
-	t.Setenv("OIDC_ADMIN_CLAIM", "roles")
-	t.Setenv("OIDC_ADMIN_VALUE", "admin")
-
-	ctx := context.Background()
-	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-
-	// (Re)load settings after env prepared
-	vars, err := svc.SyncOidcEnvToDatabase(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, vars)
-
-	var enabled models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcEnabled").First(&enabled).Error)
-	require.Equal(t, "true", enabled.Value)
-
-	// Check individual OIDC fields (new approach)
-	var clientId models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientId").First(&clientId).Error)
-	require.Equal(t, "cid", clientId.Value)
-
-	var clientSecret models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&clientSecret).Error)
-	require.Equal(t, "csec", clientSecret.Value)
-
-	var issuerUrl models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcIssuerUrl").First(&issuerUrl).Error)
-	require.Equal(t, "https://issuer.example", issuerUrl.Value)
-
-	var scopes models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
-	require.Equal(t, "openid profile email", scopes.Value)
-
-	var adminClaim models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminClaim").First(&adminClaim).Error)
-	require.Equal(t, "roles", adminClaim.Value)
-
-	var adminValue models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcAdminValue").First(&adminValue).Error)
-	require.Equal(t, "admin", adminValue.Value)
 }
 
 func TestSettingsService_UpdateSettings_MergeOidcSecret(t *testing.T) {

@@ -284,13 +284,14 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.Oi
 
 		// If merge accounts is enabled, try to find existing user by email
 		if mergeEnabled && userInfo.Email != "" {
-			// Require email verification from OIDC provider before merging
-			if !userInfo.EmailVerified {
-				return nil, false, errors.New("email not verified by OIDC provider; cannot merge accounts")
-			}
-
 			existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
 			if emailErr == nil && existingUser != nil {
+				// Only require email verification when we are actually merging into an existing account.
+				// Some providers omit `email_verified` for first-time users; that should not prevent user creation.
+				if !userInfo.EmailVerified {
+					return nil, false, errors.New("email not verified by OIDC provider; cannot merge accounts")
+				}
+
 				// Found existing user with matching email - merge the accounts
 				slog.Info("Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
 				if mergeErr := s.mergeOidcWithExistingUser(ctx, existingUser, userInfo, tokenResp); mergeErr != nil {

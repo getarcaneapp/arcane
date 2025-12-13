@@ -64,7 +64,7 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, syncOidcFunc func(context.Context) error, migrateOidcFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, migrateOidcFunc func(context.Context) error) {
 	if cfg.AgentMode {
 		return
 	}
@@ -77,12 +77,6 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 	if migrateOidcFunc != nil {
 		if err := migrateOidcFunc(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to migrate OIDC config to individual fields", "error", err.Error())
-		}
-	}
-
-	if cfg.OidcEnabled {
-		if err := syncOidcFunc(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to sync OIDC environment variables to database", "error", err.Error())
 		}
 	}
 }
