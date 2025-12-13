@@ -2,7 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
 	import { createForm } from '$lib/utils/form.utils';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -84,7 +84,7 @@
 	}
 </script>
 
-<div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
+<div class="container mx-auto flex h-dvh min-h-0 max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
 	<div class="space-y-3 sm:space-y-4">
 		<Button variant="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
@@ -113,8 +113,8 @@
 		</div>
 	</div>
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-stretch">
-		<Card.Root class="flex min-w-0 flex-col lg:col-span-3">
+	<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-5 lg:items-stretch">
+		<Card.Root class="flex h-full min-h-0 min-w-0 flex-col lg:col-span-3">
 			<Card.Header icon={CodeIcon} class="shrink-0">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -123,9 +123,14 @@
 					<Card.Description>{m.templates_service_definitions()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="min-h-[500px] grow p-0 lg:h-full">
-				<div class="h-full rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-					<CodeEditor bind:value={$inputs.composeContent.value} language="yaml" readOnly={saving || isLoadingTemplate} />
+			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+					<CodeEditor
+						bind:value={$inputs.composeContent.value}
+						language="yaml"
+						readOnly={saving || isLoadingTemplate}
+						fontSize="13px"
+					/>
 				</div>
 			</Card.Content>
 			{#if $inputs.composeContent.error}
@@ -137,7 +142,7 @@
 			{/if}
 		</Card.Root>
 
-		<Card.Root class="flex min-w-0 flex-col lg:col-span-2">
+		<Card.Root class="flex h-full min-h-0 min-w-0 flex-col lg:col-span-2">
 			<Card.Header icon={VariableIcon} class="shrink-0">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -146,9 +151,14 @@
 					<Card.Description>{m.templates_default_config_values()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="min-h-[500px] grow p-0 lg:h-full">
-				<div class="h-full rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-					<CodeEditor bind:value={$inputs.envContent.value} language="env" readOnly={saving || isLoadingTemplate} />
+			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+					<CodeEditor
+						bind:value={$inputs.envContent.value}
+						language="env"
+						readOnly={saving || isLoadingTemplate}
+						fontSize="13px"
+					/>
 				</div>
 			</Card.Content>
 			{#if $inputs.envContent.error}

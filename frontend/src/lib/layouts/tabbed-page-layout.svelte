@@ -35,18 +35,23 @@
 		showFloatingHeader = false
 	}: Props = $props();
 
+	let scrollContainer = $state<HTMLDivElement | null>(null);
+
 	$effect(() => {
-		if (browser) {
-			const onScroll = () => {
-				showFloatingHeader = window.scrollY > 100;
-			};
-			window.addEventListener('scroll', onScroll);
-			return () => window.removeEventListener('scroll', onScroll);
-		}
+		if (!browser) return;
+		const getScrollTop = () => (scrollContainer ? scrollContainer.scrollTop : window.scrollY);
+		const onScroll = () => {
+			showFloatingHeader = getScrollTop() > 100;
+		};
+
+		const target: Window | HTMLDivElement = scrollContainer ?? window;
+		target.addEventListener('scroll', onScroll as EventListener);
+		onScroll();
+		return () => target.removeEventListener('scroll', onScroll as EventListener);
 	});
 </script>
 
-<div class={cn('bg-background flex min-h-0 flex-col', className)}>
+<div class={cn('bg-background flex h-dvh min-h-0 flex-col', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		<div
 			class="sticky top-0 border-b transition-all duration-300"
@@ -94,8 +99,8 @@
 			</div>
 		{/if}
 
-		<div class="min-h-0 flex-1 overflow-hidden">
-			<div class="h-full px-1 py-4 sm:px-4">
+		<div class="min-h-0 flex-1 overflow-y-auto" bind:this={scrollContainer}>
+			<div class="h-full px-1 py-4 pb-6 sm:px-4">
 				{@render tabContent(selectedTab)}
 			</div>
 		</div>
