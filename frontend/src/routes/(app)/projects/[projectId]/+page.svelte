@@ -23,6 +23,7 @@
 	import ServicesGrid from '../components/ServicesGrid.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 
@@ -82,6 +83,8 @@
 	let envOpen = $state(true);
 	let includeFilesPanelStates = $state<Record<string, boolean>>({});
 	let selectedFile = $state<'compose' | 'env' | string>('compose');
+	let layoutMode = $state<'classic' | 'tree'>('classic');
+	let selectedIncludeTab = $state<string | null>(null);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -110,13 +113,15 @@
 		composeOpen: boolean;
 		envOpen: boolean;
 		autoScroll: boolean;
+		layoutMode: 'classic' | 'tree';
 	};
 
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
 		tab: 'compose',
 		composeOpen: true,
 		envOpen: true,
-		autoScroll: true
+		autoScroll: true,
+		layoutMode: 'classic'
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
@@ -136,6 +141,11 @@
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
+
+		// Auto-detect layout mode based on includeFiles
+		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
+		const defaultMode = hasIncludes ? 'tree' : 'classic';
+		layoutMode = cur.layoutMode ?? defaultMode;
 
 		// Initialize include file states
 		if (project?.includeFiles) {
@@ -202,7 +212,8 @@
 			tab: selectedTab,
 			composeOpen,
 			envOpen,
-			autoScroll: autoScrollStackLogs
+			autoScroll: autoScrollStackLogs,
+			layoutMode
 		};
 	}
 
@@ -301,87 +312,167 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full">
-				<div class="flex h-full flex-col gap-4 lg:flex-row">
-					<div
-						class="border-border bg-card flex w-full flex-col overflow-y-auto rounded-lg border lg:h-full lg:w-fit lg:max-w-xs lg:min-w-48"
-					>
-						<div class="border-border border-b p-3">
-							<h3 class="text-sm font-medium">Project Files</h3>
+				<div class="mb-4">
+					<SwitchWithLabel
+						id="layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						label={layoutMode === 'tree' ? m.tree_view() : m.classic()}
+						description={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							if (checked) {
+								selectedFile = 'compose';
+								selectedIncludeTab = null;
+							}
+							persistPrefs();
+						}}
+					/>
+				</div>
+
+				{#if layoutMode === 'tree'}
+					<div class="flex h-full flex-col gap-4 lg:flex-row">
+						<div
+							class="border-border bg-card flex w-full flex-col overflow-y-auto rounded-lg border lg:h-full lg:w-fit lg:max-w-xs lg:min-w-48"
+						>
+							<div class="border-border border-b p-3">
+								<h3 class="text-sm font-medium">Project Files</h3>
+							</div>
+							<div class="p-2">
+								<TreeView.Root class="p-2">
+									<TreeView.File
+										name="compose.yaml"
+										onclick={() => (selectedFile = 'compose')}
+										class={selectedFile === 'compose' ? 'bg-accent' : ''}
+									>
+										{#snippet icon()}
+											<FileTextIcon class="size-4 text-blue-500" />
+										{/snippet}
+									</TreeView.File>
+
+									<TreeView.File
+										name=".env"
+										onclick={() => (selectedFile = 'env')}
+										class={selectedFile === 'env' ? 'bg-accent' : ''}
+									>
+										{#snippet icon()}
+											<FileTextIcon class="size-4 text-green-500" />
+										{/snippet}
+									</TreeView.File>
+
+									{#if project?.includeFiles && project.includeFiles.length > 0}
+										<TreeView.Folder name="Includes">
+											{#each project.includeFiles as includeFile}
+												<TreeView.File
+													name={includeFile.relativePath}
+													onclick={() => (selectedFile = includeFile.relativePath)}
+													class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FileTextIcon class="size-4 text-amber-500" />
+													{/snippet}
+												</TreeView.File>
+											{/each}
+										</TreeView.Folder>
+									{/if}
+								</TreeView.Root>
+							</div>
 						</div>
-						<div class="p-2">
-							<TreeView.Root class="p-2">
-								<TreeView.File
-									name="compose.yaml"
-									onclick={() => (selectedFile = 'compose')}
-									class={selectedFile === 'compose' ? 'bg-accent' : ''}
-								>
-									{#snippet icon()}
-										<FileTextIcon class="size-4 text-blue-500" />
-									{/snippet}
-								</TreeView.File>
 
-								<TreeView.File
-									name=".env"
-									onclick={() => (selectedFile = 'env')}
-									class={selectedFile === 'env' ? 'bg-accent' : ''}
-								>
-									{#snippet icon()}
-										<FileTextIcon class="size-4 text-green-500" />
-									{/snippet}
-								</TreeView.File>
-
-								{#if project?.includeFiles && project.includeFiles.length > 0}
-									<TreeView.Folder name="Includes">
-										{#each project.includeFiles as includeFile}
-											<TreeView.File
-												name={includeFile.relativePath}
-												onclick={() => (selectedFile = includeFile.relativePath)}
-												class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-											>
-												{#snippet icon()}
-													<FileTextIcon class="size-4 text-amber-500" />
-												{/snippet}
-											</TreeView.File>
-										{/each}
-									</TreeView.Folder>
+						<div class="flex h-full flex-1 flex-col">
+							{#if selectedFile === 'compose'}
+								<CodePanel
+									bind:open={composeOpen}
+									title="compose.yaml"
+									language="yaml"
+									bind:value={$inputs.composeContent.value}
+									placeholder={m.compose_compose_placeholder()}
+									error={$inputs.composeContent.error ?? undefined}
+								/>
+							{:else if selectedFile === 'env'}
+								<CodePanel
+									bind:open={envOpen}
+									title=".env"
+									language="env"
+									bind:value={$inputs.envContent.value}
+									placeholder={m.compose_env_placeholder()}
+									error={$inputs.envContent.error ?? undefined}
+								/>
+							{:else}
+								{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+								{#if includeFile}
+									<CodePanel
+										bind:open={includeFilesPanelStates[includeFile.relativePath]}
+										title={includeFile.relativePath}
+										language="yaml"
+										bind:value={includeFilesState[includeFile.relativePath]}
+										placeholder="# Include file content"
+									/>
 								{/if}
-							</TreeView.Root>
+							{/if}
 						</div>
 					</div>
+				{:else}
+					<div class="flex h-full flex-col gap-4">
+						{#if project?.includeFiles && project.includeFiles.length > 0}
+							<div class="border-border bg-card rounded-lg border">
+								<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
+									{#each project.includeFiles as includeFile}
+										<Button
+											variant={selectedIncludeTab === includeFile.relativePath ? 'default' : 'ghost'}
+											size="sm"
+											class="flex-shrink-0"
+											onclick={() => {
+												selectedIncludeTab = selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
+											}}
+										>
+											<FileTextIcon class="mr-2 size-4 text-amber-500" />
+											{includeFile.relativePath}
+										</Button>
+									{/each}
+								</div>
+							</div>
+						{/if}
 
-					<div class="flex h-full flex-1 flex-col">
-						{#if selectedFile === 'compose'}
-							<CodePanel
-								bind:open={composeOpen}
-								title="compose.yaml"
-								language="yaml"
-								bind:value={$inputs.composeContent.value}
-								placeholder={m.compose_compose_placeholder()}
-								error={$inputs.composeContent.error ?? undefined}
-							/>
-						{:else if selectedFile === 'env'}
-							<CodePanel
-								bind:open={envOpen}
-								title=".env"
-								language="env"
-								bind:value={$inputs.envContent.value}
-								placeholder={m.compose_env_placeholder()}
-								error={$inputs.envContent.error ?? undefined}
-							/>
-						{:else}
-							{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+						{#if selectedIncludeTab}
+							{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
 							{#if includeFile}
-								<CodePanel
-									bind:open={includeFilesPanelStates[includeFile.relativePath]}
-									title={includeFile.relativePath}
-									language="yaml"
-									bind:value={includeFilesState[includeFile.relativePath]}
-									placeholder="# Include file content"
-								/>
+								<div class="flex-1">
+									<CodePanel
+										bind:open={includeFilesPanelStates[includeFile.relativePath]}
+										title={includeFile.relativePath}
+										language="yaml"
+										bind:value={includeFilesState[includeFile.relativePath]}
+										placeholder="# Include file content"
+									/>
+								</div>
 							{/if}
+						{:else}
+							<div class="grid h-full flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
+								<div class="flex h-full flex-col lg:col-span-3">
+									<CodePanel
+										bind:open={composeOpen}
+										title="compose.yaml"
+										language="yaml"
+										bind:value={$inputs.composeContent.value}
+										placeholder={m.compose_compose_placeholder()}
+										error={$inputs.composeContent.error ?? undefined}
+									/>
+								</div>
+
+								<div class="flex h-full flex-col lg:col-span-2">
+									<CodePanel
+										bind:open={envOpen}
+										title=".env"
+										language="env"
+										bind:value={$inputs.envContent.value}
+										placeholder={m.compose_env_placeholder()}
+										error={$inputs.envContent.error ?? undefined}
+									/>
+								</div>
+							</div>
 						{/if}
 					</div>
-				</div>
+				{/if}
 			</Tabs.Content>
 
 			<Tabs.Content value="logs" class="h-full">

@@ -7,10 +7,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"go.getarcane.app/types/base"
 	"go.getarcane.app/types/environment"
 )
@@ -21,6 +23,8 @@ const localDockerEnvironmentID = "0"
 type EnvironmentHandler struct {
 	environmentService *services.EnvironmentService
 	settingsService    *services.SettingsService
+	apiKeyService      *services.ApiKeyService
+	eventService       *services.EventService
 	cfg                *config.Config
 }
 
@@ -36,10 +40,11 @@ type EnvironmentPaginatedResponse struct {
 }
 
 type ListEnvironmentsInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query for filtering by name or API URL"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListEnvironmentsOutput struct {
@@ -50,8 +55,13 @@ type CreateEnvironmentInput struct {
 	Body environment.Create
 }
 
+type EnvironmentWithApiKey struct {
+	environment.Environment
+	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"`
+}
+
 type CreateEnvironmentOutput struct {
-	Body base.ApiResponse[environment.Environment]
+	Body base.ApiResponse[EnvironmentWithApiKey]
 }
 
 type GetEnvironmentInput struct {
@@ -113,15 +123,38 @@ type SyncRegistriesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type PairEnvironmentInput struct {
+	XAPIKey string `header:"X-API-Key" doc:"API key for environment pairing"`
+}
+
+type PairEnvironmentOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DeploymentSnippet struct {
+	DockerRun     string `json:"dockerRun" doc:"Docker run command snippet"`
+	DockerCompose string `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+}
+
+type GetDeploymentSnippetsInput struct {
+	ID string `path:"id" doc:"Environment ID"`
+}
+
+type GetDeploymentSnippetsOutput struct {
+	Body base.ApiResponse[DeploymentSnippet]
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
 
 // RegisterEnvironments registers all environment management endpoints.
-func RegisterEnvironments(api huma.API, environmentService *services.EnvironmentService, settingsService *services.SettingsService, cfg *config.Config) {
+func RegisterEnvironments(api huma.API, environmentService *services.EnvironmentService, settingsService *services.SettingsService, apiKeyService *services.ApiKeyService, eventService *services.EventService, cfg *config.Config) {
 	h := &EnvironmentHandler{
 		environmentService: environmentService,
 		settingsService:    settingsService,
+		apiKeyService:      apiKeyService,
+		eventService:       eventService,
 		cfg:                cfg,
 	}
 
@@ -182,7 +215,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 		Method:      "DELETE",
 		Path:        "/environments/{id}",
 		Summary:     "Delete an environment",
-		Description: "Delete a Docker environment",
+		Description: "Delete a Arcane environment",
 		Tags:        []string{"Environments"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -195,7 +228,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 		Method:      "POST",
 		Path:        "/environments/{id}/test",
 		Summary:     "Test environment connection",
-		Description: "Test connectivity to a Docker environment",
+		Description: "Test connectivity to a Arcane environment",
 		Tags:        []string{"Environments"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -241,6 +274,29 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"ApiKeyAuth": {}},
 		},
 	}, h.SyncRegistries)
+
+	huma.Register(api, huma.Operation{
+		OperationID:  "pairEnvironment",
+		Method:       "POST",
+		Path:         "/environments/pair",
+		Summary:      "Pair agent with manager",
+		Description:  "Agent sends API key to complete environment pairing",
+		Tags:         []string{"Environments"},
+		MaxBodyBytes: 1024,
+	}, h.PairEnvironment)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getDeploymentSnippets",
+		Method:      "GET",
+		Path:        "/environments/{id}/deployment",
+		Summary:     "Get deployment snippets",
+		Description: "Get Docker run and compose snippets for environment deployment",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetDeploymentSnippets)
 }
 
 // ============================================================================
@@ -253,7 +309,19 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: input.Search,
+		},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+	}
 
 	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params)
 	if err != nil {
@@ -277,8 +345,13 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 
 // CreateEnvironment creates a new environment.
 func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*CreateEnvironmentOutput, error) {
-	if h.environmentService == nil {
+	if h.environmentService == nil || h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
 	env := &models.Environment{
@@ -292,6 +365,56 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		env.Enabled = *input.Body.Enabled
 	}
 
+	// Determine pairing method
+	useApiKey := input.Body.UseApiKey != nil && *input.Body.UseApiKey
+
+	if useApiKey {
+		// New API key-based pairing flow
+		env.Status = string(models.EnvironmentStatusPending)
+
+		created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
+		if err != nil {
+			return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
+		}
+
+		// Generate API key for environment
+		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
+			return nil, huma.Error500InternalServerError("Failed to create environment API key")
+		}
+
+		// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
+		encryptedKey := apiKeyDto.Key // Store the full key
+
+		// Link API key to environment and store encrypted key for manager use
+		updates := map[string]interface{}{
+			"api_key_id":   apiKeyDto.ID,
+			"access_token": encryptedKey,
+		}
+		created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
+			return nil, huma.Error500InternalServerError("Failed to link API key")
+		}
+
+		out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
+		if mapErr != nil {
+			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		}
+
+		return &CreateEnvironmentOutput{
+			Body: base.ApiResponse[EnvironmentWithApiKey]{
+				Success: true,
+				Data: EnvironmentWithApiKey{
+					Environment: out,
+					ApiKey:      &apiKeyDto.Key,
+				},
+			},
+		}, nil
+	}
+
+	// Legacy pairing flows
 	if (input.Body.AccessToken == nil || *input.Body.AccessToken == "") && input.Body.BootstrapToken != nil && *input.Body.BootstrapToken != "" {
 		token, err := h.environmentService.PairAgentWithBootstrap(ctx, input.Body.ApiUrl, *input.Body.BootstrapToken)
 		if err != nil {
@@ -303,7 +426,7 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		env.AccessToken = input.Body.AccessToken
 	}
 
-	created, err := h.environmentService.CreateEnvironment(ctx, env)
+	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
 	}
@@ -325,9 +448,11 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	}
 
 	return &CreateEnvironmentOutput{
-		Body: base.ApiResponse[environment.Environment]{
+		Body: base.ApiResponse[EnvironmentWithApiKey]{
 			Success: true,
-			Data:    out,
+			Data: EnvironmentWithApiKey{
+				Environment: out,
+			},
 		},
 	}, nil
 }
@@ -370,7 +495,13 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, err
 	}
 
-	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates)
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	var userID, username *string
+	if user != nil {
+		userID = &user.ID
+		username = &user.Username
+	}
+	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
 	if updateErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentUpdateError{Err: updateErr}).Error())
 	}
@@ -381,6 +512,53 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
+
+	// If regenerating API key, return the new key
+	var newApiKey *string
+	if input.Body.RegenerateApiKey != nil && *input.Body.RegenerateApiKey {
+		user, exists := humamw.GetCurrentUserFromContext(ctx)
+		if !exists {
+			return nil, huma.Error401Unauthorized("Unauthorized")
+		}
+
+		// Delete existing API key if any
+		if updated.ApiKeyID != nil {
+			_ = h.apiKeyService.DeleteApiKey(ctx, *updated.ApiKeyID)
+		}
+
+		// Generate new API key
+		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, input.ID, user.ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to create new environment API key", "environmentID", input.ID, "error", err.Error())
+			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
+		}
+
+		// Use service method to update environment and create event
+		encryptedKey := apiKeyDto.Key
+		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, encryptedKey, user.ID, user.Username, updated.Name)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentID", input.ID, "error", err.Error())
+			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
+		}
+
+		// Fetch updated environment
+		updated, err = h.environmentService.GetEnvironmentByID(ctx, input.ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to fetch updated environment", "environmentID", input.ID, "error", err.Error())
+			return nil, huma.Error500InternalServerError("Failed to fetch updated environment")
+		}
+
+		// Re-map with updated environment data
+		out, mapErr = mapper.MapOne[*models.Environment, environment.Environment](updated)
+		if mapErr != nil {
+			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		}
+
+		newApiKey = &apiKeyDto.Key
+	}
+
+	// Set the API key on the response if regenerated
+	out.ApiKey = newApiKey
 
 	return &UpdateEnvironmentOutput{
 		Body: base.ApiResponse[environment.Environment]{
@@ -400,7 +578,13 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error400BadRequest((&common.LocalEnvironmentDeletionError{}).Error())
 	}
 
-	if err := h.environmentService.DeleteEnvironment(ctx, input.ID); err != nil {
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	var userID, username *string
+	if user != nil {
+		userID = &user.ID
+		username = &user.Username
+	}
+	if err := h.environmentService.DeleteEnvironment(ctx, input.ID, userID, username); err != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentDeletionError{Err: err}).Error())
 	}
 
@@ -588,4 +772,88 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, update
 			}
 		}(environmentID, updated.Name)
 	}
+}
+
+// PairEnvironment handles agent pairing callback with API key.
+func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*PairEnvironmentOutput, error) {
+	if h.environmentService == nil || h.apiKeyService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.XAPIKey == "" {
+		return nil, huma.Error400BadRequest("X-API-Key header is required")
+	}
+
+	envID, err := h.apiKeyService.GetEnvironmentByApiKey(ctx, input.XAPIKey)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to validate API key for pairing", "error", err.Error())
+		return nil, huma.Error401Unauthorized("Invalid API key")
+	}
+
+	if envID == nil {
+		return nil, huma.Error400BadRequest("API key is not linked to an environment")
+	}
+
+	env, err := h.environmentService.GetEnvironmentByID(ctx, *envID)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to get environment", "environmentID", *envID, "error", err.Error())
+		return nil, huma.Error404NotFound("Environment not found")
+	}
+
+	if env.Status != string(models.EnvironmentStatusPending) {
+		return nil, huma.Error400BadRequest("Environment is not in pending status")
+	}
+
+	updates := map[string]interface{}{
+		"status": string(models.EnvironmentStatusOnline),
+	}
+	_, err = h.environmentService.UpdateEnvironment(ctx, *envID, updates, nil, nil)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to update environment status", "environmentID", *envID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to complete pairing")
+	}
+
+	slog.InfoContext(ctx, "Environment pairing completed", "environmentID", *envID, "environmentName", env.Name)
+
+	return &PairEnvironmentOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Environment pairing completed successfully",
+			},
+		},
+	}, nil
+}
+
+// GetDeploymentSnippets returns deployment snippets for an environment.
+func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*GetDeploymentSnippetsOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("Environment not found")
+	}
+
+	if env.ApiKeyID == nil {
+		return nil, huma.Error400BadRequest("Environment does not have an API key configured")
+	}
+
+	// Generate snippets with placeholder for API key
+	snippets, err := h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.AppUrl, "<YOUR_API_KEY>")
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentID", input.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
+	}
+
+	return &GetDeploymentSnippetsOutput{
+		Body: base.ApiResponse[DeploymentSnippet]{
+			Success: true,
+			Data: DeploymentSnippet{
+				DockerRun:     snippets.DockerRun,
+				DockerCompose: snippets.DockerCompose,
+			},
+		},
+	}, nil
 }

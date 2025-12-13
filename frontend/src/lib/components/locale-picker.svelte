@@ -29,15 +29,18 @@
 		eo: 'Esperanto',
 		es: 'Español',
 		fr: 'Français',
-		nl: 'Nederlands',
 		it: 'Italiano',
-		zh: 'Chinese'
+		ja: '日本語',
+		nl: 'Nederlands',
+		'pt-BR': 'Português brasileiro',
+		ru: 'Русский',
+		zh: '中文'
 	};
 
 	async function updateLocale(locale: Locale) {
 		try {
 			if ($userStore) {
-				await userService.update($userStore.id, { ...$userStore, locale });
+				await userService.update($userStore.id, { locale });
 			}
 			await setLocale(locale);
 		} catch (err) {

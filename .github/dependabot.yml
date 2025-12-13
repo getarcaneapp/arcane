@@ -7,7 +7,7 @@ updates:
     open-pull-requests-limit: 10
 
   - package-ecosystem: 'gomod'
-    directory: '/backend'
+    directory: '/'
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 10

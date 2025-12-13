@@ -99,7 +99,7 @@
 						<div
 							class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
 						>
-							<TemplateIcon class="size-4 sm:size-5" />
+							<CustomizeIcon class="size-4 sm:size-5" />
 						</div>
 						<div class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-3">

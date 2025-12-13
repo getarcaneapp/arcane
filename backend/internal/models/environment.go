@@ -9,6 +9,7 @@ type Environment struct {
 	Enabled     bool       `json:"enabled" sortable:"true"`
 	LastSeen    *time.Time `json:"lastSeen" gorm:"column:last_seen"`
 	AccessToken *string    `json:"-" gorm:"column:access_token"`
+	ApiKeyID    *string    `json:"-" gorm:"column:api_key_id"`
 
 	BaseModel
 }
@@ -21,4 +22,5 @@ const (
 	EnvironmentStatusOnline  EnvironmentStatus = "online"
 	EnvironmentStatusOffline EnvironmentStatus = "offline"
 	EnvironmentStatusError   EnvironmentStatus = "error"
+	EnvironmentStatusPending EnvironmentStatus = "pending"
 )

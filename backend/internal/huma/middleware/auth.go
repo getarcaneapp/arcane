@@ -103,8 +103,8 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 
 	// Check for agent bootstrap pairing
 	if strings.HasPrefix(path, agentPairingPrefix) &&
-		cfg.AgentBootstrapToken != "" &&
-		ctx.Header(headerAgentBootstrap) == cfg.AgentBootstrapToken {
+		cfg.AgentToken != "" &&
+		ctx.Header(headerAgentBootstrap) == cfg.AgentToken {
 		return createAgentSudoUser(), true
 	}
 
@@ -118,7 +118,7 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 
 // createAgentSudoUser creates a sudo user for agent authentication.
 func createAgentSudoUser() *models.User {
-	email := "agent@arcane.dev"
+	email := "agent@getarcane.app"
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     &email,
