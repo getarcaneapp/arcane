@@ -1,8 +1,8 @@
 package template
 
 import (
-	"go.getarcane.app/types/env"
-	"go.getarcane.app/types/meta"
+	"github.com/getarcaneapp/arcane/types/env"
+	"github.com/getarcaneapp/arcane/types/meta"
 )
 
 // BaseTemplate contains common fields shared by all template types.

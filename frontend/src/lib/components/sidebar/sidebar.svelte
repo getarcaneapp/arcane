@@ -6,6 +6,7 @@
 	import SidebarItemGroup from './sidebar-itemgroup.svelte';
 	import SidebarUser from './sidebar-user.svelte';
 	import SidebarEnvSwitcher from './sidebar-env-switcher.svelte';
+	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
@@ -45,6 +46,7 @@
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
+	let envSwitcherOpen = $state(false);
 
 	// Filter out sub-items for settings on desktop since we have a dedicated settings sidebar
 	const desktopSettingsItems =
@@ -63,6 +65,8 @@
 	versionInfo={versionInformation}
 />
 
+<EnvironmentSwitcherDialog bind:open={envSwitcherOpen} {isAdmin} />
+
 <Sidebar.Root {collapsible} {variant} {...restProps}>
 	<Sidebar.Header class={isCollapsed ? 'gap-0 p-1 pb-2' : ''}>
 		{#if isCollapsed}
@@ -80,10 +84,10 @@
 		</div>
 		{#if isCollapsed}
 			<div class="flex justify-center px-1">
-				<SidebarEnvSwitcher {isAdmin} />
+				<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} />
 			</div>
 		{:else}
-			<SidebarEnvSwitcher {isAdmin} />
+			<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} />
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>

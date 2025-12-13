@@ -13,10 +13,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"go.getarcane.app/types/base"
-	containertypes "go.getarcane.app/types/container"
-	"go.getarcane.app/types/dockerinfo"
-	"go.getarcane.app/types/system"
+	"github.com/getarcaneapp/arcane/types/base"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
+	"github.com/getarcaneapp/arcane/types/dockerinfo"
+	"github.com/getarcaneapp/arcane/types/system"
 )
 
 // SystemHandler handles system management endpoints.

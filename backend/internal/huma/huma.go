@@ -14,7 +14,7 @@ import (
 )
 
 // customSchemaNamer creates unique schema names using package prefix for types
-// from go.getarcane.app/types to avoid conflicts between packages that have
+// from github.com/getarcaneapp/arcane/types to avoid conflicts between packages that have
 // types with the same name (e.g., image.Summary vs env.Summary).
 func customSchemaNamer(t reflect.Type, hint string) string {
 	name := huma.DefaultSchemaNamer(t, hint)
@@ -36,8 +36,8 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 	}
 
 	// For types from our types package, prefix with the package name
-	if strings.HasPrefix(pkgPath, "go.getarcane.app/types/") {
-		// Extract package name (e.g., "image" from "go.getarcane.app/types/image")
+	if strings.HasPrefix(pkgPath, "github.com/getarcaneapp/arcane/types/") {
+		// Extract package name (e.g., "image" from "github.com/getarcaneapp/arcane/types/image")
 		parts := strings.Split(pkgPath, "/")
 		if len(parts) > 0 {
 			pkgName := parts[len(parts)-1]
@@ -84,19 +84,19 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 		return prefix + name
 	}
 
-	// Handle generic types like base.ApiResponse[T] where T is from go.getarcane.app/types
+	// Handle generic types like base.ApiResponse[T] where T is from github.com/getarcaneapp/arcane/types
 	// The name will be something like "BaseApiResponseUsageCounts" and we need to
 	// differentiate based on the inner type's package
-	if strings.HasPrefix(pkgPath, "go.getarcane.app/types/base") {
+	if strings.HasPrefix(pkgPath, "github.com/getarcaneapp/arcane/types/base") {
 		// Check if this is a generic type by looking at string representation
 		typeName := t.String()
 		// For generics, Go's String() returns something like:
-		// "base.ApiResponse[go.getarcane.app/types/volume.UsageCounts]"
-		if strings.Contains(typeName, "[") && strings.Contains(typeName, "go.getarcane.app/types/") {
+		// "base.ApiResponse[github.com/getarcaneapp/arcane/types/volume.UsageCounts]"
+		if strings.Contains(typeName, "[") && strings.Contains(typeName, "github.com/getarcaneapp/arcane/types/") {
 			// Extract the inner package name
-			start := strings.Index(typeName, "go.getarcane.app/types/")
+			start := strings.Index(typeName, "github.com/getarcaneapp/arcane/types/")
 			if start != -1 {
-				rest := typeName[start+len("go.getarcane.app/types/"):]
+				rest := typeName[start+len("github.com/getarcaneapp/arcane/types/"):]
 				end := strings.Index(rest, ".")
 				if end != -1 {
 					innerPkg := rest[:end]

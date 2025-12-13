@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"go.getarcane.app/types/updater"
+	"github.com/getarcaneapp/arcane/types/updater"
 )
 
 type UpdaterService struct {

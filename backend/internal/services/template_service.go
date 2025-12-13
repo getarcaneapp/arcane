@@ -23,9 +23,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	templateutil "github.com/getarcaneapp/arcane/backend/internal/utils/template"
+	"github.com/getarcaneapp/arcane/types/env"
+	tmpl "github.com/getarcaneapp/arcane/types/template"
 	"github.com/google/uuid"
-	"go.getarcane.app/types/env"
-	tmpl "go.getarcane.app/types/template"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )

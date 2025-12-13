@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"go.getarcane.app/types/settings"
+	"github.com/getarcaneapp/arcane/types/settings"
 )
 
 func setupSettingsTestDB(t *testing.T) *database.DB {

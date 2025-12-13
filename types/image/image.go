@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/image"
-	containerregistry "go.getarcane.app/types/containerregistry"
+	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
 type UpdateInfo struct {

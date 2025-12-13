@@ -11,8 +11,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
 // ContainerRegistryHandler handles container registry management endpoints.

@@ -33,14 +33,30 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/cli/internal/config"
-	"go.getarcane.app/cli/internal/logger"
-	configClient "go.getarcane.app/cli/pkg/config"
-	"go.getarcane.app/cli/pkg/containers"
-	"go.getarcane.app/cli/pkg/generate"
-	"go.getarcane.app/cli/pkg/images"
-	"go.getarcane.app/cli/pkg/version"
+	"github.com/getarcaneapp/arcane/cli/internal/config"
+	"github.com/getarcaneapp/arcane/cli/internal/logger"
+	"github.com/getarcaneapp/arcane/cli/pkg/apikeys"
+	"github.com/getarcaneapp/arcane/cli/pkg/auth"
+	configClient "github.com/getarcaneapp/arcane/cli/pkg/config"
+	"github.com/getarcaneapp/arcane/cli/pkg/containers"
+	"github.com/getarcaneapp/arcane/cli/pkg/environments"
+	"github.com/getarcaneapp/arcane/cli/pkg/events"
+	"github.com/getarcaneapp/arcane/cli/pkg/generate"
+	"github.com/getarcaneapp/arcane/cli/pkg/images"
+	"github.com/getarcaneapp/arcane/cli/pkg/imageupdates"
+	"github.com/getarcaneapp/arcane/cli/pkg/networks"
+	"github.com/getarcaneapp/arcane/cli/pkg/notifications"
+	"github.com/getarcaneapp/arcane/cli/pkg/projects"
+	"github.com/getarcaneapp/arcane/cli/pkg/registries"
+	"github.com/getarcaneapp/arcane/cli/pkg/settings"
+	"github.com/getarcaneapp/arcane/cli/pkg/system"
+	"github.com/getarcaneapp/arcane/cli/pkg/templates"
+	"github.com/getarcaneapp/arcane/cli/pkg/updater"
+	"github.com/getarcaneapp/arcane/cli/pkg/users"
+	"github.com/getarcaneapp/arcane/cli/pkg/version"
+	"github.com/getarcaneapp/arcane/cli/pkg/volumes"
 )
 
 var (
@@ -77,8 +93,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	err := rootCmd.ExecuteContext(context.Background())
-	if err != nil {
+	if err := fang.Execute(context.Background(), rootCmd); err != nil {
 		os.Exit(1)
 	}
 }
@@ -91,6 +106,29 @@ func init() {
 	rootCmd.AddCommand(configClient.ConfigCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
+
+	// Authentication
+	rootCmd.AddCommand(auth.AuthCmd)
+
+	// Core resource management
 	rootCmd.AddCommand(containers.ContainersCmd)
 	rootCmd.AddCommand(images.ImagesCmd)
+	rootCmd.AddCommand(volumes.VolumesCmd)
+	rootCmd.AddCommand(networks.NetworksCmd)
+	rootCmd.AddCommand(projects.ProjectsCmd)
+
+	// Management
+	rootCmd.AddCommand(apikeys.ApiKeysCmd)
+	rootCmd.AddCommand(environments.EnvironmentsCmd)
+	rootCmd.AddCommand(users.UsersCmd)
+
+	// Advanced features
+	rootCmd.AddCommand(registries.RegistriesCmd)
+	rootCmd.AddCommand(templates.TemplatesCmd)
+	rootCmd.AddCommand(settings.SettingsCmd)
+	rootCmd.AddCommand(notifications.NotificationsCmd)
+	rootCmd.AddCommand(imageupdates.ImageUpdatesCmd)
+	rootCmd.AddCommand(system.SystemCmd)
+	rootCmd.AddCommand(updater.UpdaterCmd)
+	rootCmd.AddCommand(events.EventsCmd)
 }

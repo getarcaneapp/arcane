@@ -13,8 +13,8 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/image"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/image"
 )
 
 // ImageHandler provides Huma-based image management endpoints.

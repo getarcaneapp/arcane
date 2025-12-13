@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"strings"
 
-	"go.getarcane.app/types/env"
+	"github.com/getarcaneapp/arcane/types/env"
 )
 
 // ParseEnvContent parses environment variables from .env file content

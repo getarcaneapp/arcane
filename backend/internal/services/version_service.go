@@ -13,7 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
-	"go.getarcane.app/types/version"
+	"github.com/getarcaneapp/arcane/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 

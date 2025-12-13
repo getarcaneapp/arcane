@@ -6,8 +6,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	containerregistry "go.getarcane.app/types/containerregistry"
-	imagetypes "go.getarcane.app/types/image"
+	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 )
 
 // Create is used to create a new container.

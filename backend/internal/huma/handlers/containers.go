@@ -12,8 +12,8 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/base"
-	containertypes "go.getarcane.app/types/container"
+	"github.com/getarcaneapp/arcane/types/base"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
 )
 
 type ContainerHandler struct {

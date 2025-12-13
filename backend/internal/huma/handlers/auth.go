@@ -12,9 +12,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"go.getarcane.app/types/auth"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/user"
+	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/user"
 )
 
 type AuthHandler struct {

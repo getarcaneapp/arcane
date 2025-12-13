@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"go.getarcane.app/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
 type AppriseService struct {

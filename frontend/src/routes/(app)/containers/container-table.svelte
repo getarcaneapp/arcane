@@ -255,6 +255,16 @@
 		};
 	}
 
+	function getContainerIpAddress(container: ContainerSummaryDto): string | null {
+		const networks = container.networkSettings?.networks;
+		if (!networks) return null;
+		for (const networkName in networks) {
+			const network = networks[networkName];
+			if (network?.ipAddress) return network.ipAddress;
+		}
+		return null;
+	}
+
 	const columns = $derived([
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
@@ -262,6 +272,7 @@
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
@@ -317,6 +328,11 @@
 		return sortedGroups.length > 0 ? sortedGroups : null;
 	});
 </script>
+
+{#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
+	{@const ip = getContainerIpAddress(item)}
+	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
+{/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
 	<PortBadge ports={item.ports ?? []} />

@@ -1,6 +1,6 @@
 package notification
 
-import "go.getarcane.app/types/base"
+import "github.com/getarcaneapp/arcane/types/base"
 
 // Provider is the type for notification provider identifiers.
 type Provider string

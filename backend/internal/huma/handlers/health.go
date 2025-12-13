@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.getarcane.app/types/system"
+	"github.com/getarcaneapp/arcane/types/system"
 )
 
 // HealthOutput is the response for health check

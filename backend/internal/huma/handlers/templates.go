@@ -9,9 +9,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/env"
-	"go.getarcane.app/types/template"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/env"
+	"github.com/getarcaneapp/arcane/types/template"
 )
 
 // TemplateHandler handles template management endpoints.

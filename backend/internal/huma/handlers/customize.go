@@ -8,8 +8,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"go.getarcane.app/types/category"
-	"go.getarcane.app/types/search"
+	"github.com/getarcaneapp/arcane/types/category"
+	"github.com/getarcaneapp/arcane/types/search"
 )
 
 // CustomizeHandler handles customization search endpoints.

@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"go.getarcane.app/types/version"
+	"github.com/getarcaneapp/arcane/types/version"
 )
 
 // VersionHandler handles version information endpoints.
