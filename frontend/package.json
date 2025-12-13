@@ -44,7 +44,7 @@
 		"svelte-codemirror-editor": "^2.1.0"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.416",
+		"@iconify/json": "^2.2.417",
 		"@inlang/paraglide-js": "2.6.0",
 		"@internationalized/date": "^3.10.0",
 		"@sveltejs/kit": "^2.49.2",
