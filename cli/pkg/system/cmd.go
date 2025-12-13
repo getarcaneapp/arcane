@@ -36,7 +36,7 @@ var pruneCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to prune: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[system.PruneAllResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
