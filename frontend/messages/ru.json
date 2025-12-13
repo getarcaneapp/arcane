@@ -49,7 +49,7 @@
 	"common_architecture": "Architecture",
 	"common_port_mappings": "Port Mappings",
 	"common_exposed_ports": "Exposed Ports",
-	"common_open_menu": "Open menu",
+	"common_open_menu": "",
 	"common_inspect": "Inspect",
 	"common_view": "View",
 	"common_scope": "Scope",
