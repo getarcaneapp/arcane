@@ -129,6 +129,36 @@ type UpdateProjectIncludeOutput struct {
 	Body base.ApiResponse[project.Details]
 }
 
+type CreateProjectCustomFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.CreateCustomFile
+}
+
+type CreateProjectCustomFileOutput struct {
+	Body base.ApiResponse[project.Details]
+}
+
+type UpdateProjectCustomFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.UpdateCustomFile
+}
+
+type UpdateProjectCustomFileOutput struct {
+	Body base.ApiResponse[project.Details]
+}
+
+type RemoveProjectCustomFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.RemoveCustomFile
+}
+
+type RemoveProjectCustomFileOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type RestartProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
@@ -291,6 +321,45 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"ApiKeyAuth": {}},
 		},
 	}, h.UpdateProjectInclude)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-project-custom-file",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Summary:     "Create project custom file",
+		Description: "Create a custom file within a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.CreateProjectCustomFile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-project-custom-file",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Summary:     "Update project custom file",
+		Description: "Update a custom file within a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UpdateProjectCustomFile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "remove-project-custom-file",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Summary:     "Remove project custom file",
+		Description: "Remove a custom file from a project (does not delete from disk)",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.RemoveProjectCustomFile)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "restart-project",
@@ -618,6 +687,84 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+// CreateProjectCustomFile creates a custom file within a project.
+func (h *ProjectHandler) CreateProjectCustomFile(ctx context.Context, input *CreateProjectCustomFileInput) (*CreateProjectCustomFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	if err := h.projectService.CreateProjectCustomFile(ctx, input.ProjectID, input.Body.Path); err != nil {
+		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &CreateProjectCustomFileOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+// UpdateProjectCustomFile updates a custom file within a project.
+func (h *ProjectHandler) UpdateProjectCustomFile(ctx context.Context, input *UpdateProjectCustomFileInput) (*UpdateProjectCustomFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	if err := h.projectService.UpdateProjectCustomFile(ctx, input.ProjectID, input.Body.Path, input.Body.Content); err != nil {
+		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &UpdateProjectCustomFileOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+// RemoveProjectCustomFile removes a custom file from a project's manifest (does not delete from disk).
+func (h *ProjectHandler) RemoveProjectCustomFile(ctx context.Context, input *RemoveProjectCustomFileInput) (*RemoveProjectCustomFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	if err := h.projectService.RemoveProjectCustomFile(ctx, input.ProjectID, input.Body.Path); err != nil {
+		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+	}
+
+	return &RemoveProjectCustomFileOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Custom file removed successfully",
+			},
 		},
 	}, nil
 }

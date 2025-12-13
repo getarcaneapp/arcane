@@ -103,3 +103,6 @@ export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-sol
 export { default as VolumeUsedIcon } from 'virtual:icons/clarity/hard-disk-solid-badged';
 export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';
 export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';
+export { default as FileSymlinkIcon } from 'virtual:icons/solar/link-round-angle-linear';
+export { default as FilePenIcon } from 'virtual:icons/solar/document-add-linear';
+export { default as UnlinkIcon } from 'virtual:icons/solar/link-broken-minimalistic-linear';
