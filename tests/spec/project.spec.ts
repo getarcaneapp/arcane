@@ -160,7 +160,7 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-    const composeEditor = page.locator('.cm-editor').first();
+    const composeEditor = page.locator('.monaco-editor').first();
     await expect(composeEditor).toBeVisible();
 
     const composeContent = composeEditor.locator('.cm-content[contenteditable]');
@@ -170,7 +170,7 @@ test.describe('New Compose Project Page', () => {
     await page.evaluate((text) => navigator.clipboard.writeText(text), TEST_COMPOSE_YAML);
     await page.keyboard.press('ControlOrMeta+V');
 
-    const envEditor = page.locator('.cm-editor').nth(1);
+    const envEditor = page.locator('.monaco-editor').nth(1);
     await expect(envEditor).toBeVisible();
 
     const envContent = envEditor.locator('.cm-content[contenteditable]');
