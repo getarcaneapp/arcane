@@ -697,22 +697,26 @@
 														<DropdownMenu.Trigger>
 															<Button variant="outline" disabled={isReadOnly || isTesting}>
 																{#if isTesting}
-																	<Spinner class="mr-2 h-4 w-4" />
+																	<Spinner class="size-4" />
 																{:else}
-																	<SendEmailIcon class="mr-2 h-4 w-4" />
+																	<SendEmailIcon class="size-4" />
 																{/if}
 																{m.notifications_email_test_button()}
-																<ArrowDownIcon class="ml-2 h-4 w-4" />
+																<ArrowDownIcon class="ml-2 size-4" />
 															</Button>
 														</DropdownMenu.Trigger>
 														<DropdownMenu.Content align="start">
 															<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
-																<SendEmailIcon class="mr-2 h-4 w-4" />
+																<SendEmailIcon class="size-4" />
 																{m.notifications_email_test_simple()}
 															</DropdownMenu.Item>
 															<DropdownMenu.Item onclick={() => testNotification('email', 'image-update')}>
-																<SendEmailIcon class="mr-2 h-4 w-4" />
+																<SendEmailIcon class="size-4" />
 																{m.notifications_email_test_image_update()}
+															</DropdownMenu.Item>
+															<DropdownMenu.Item onclick={() => testNotification('email', 'batch-image-update')}>
+																<SendEmailIcon class="size-4" />
+																{m.notifications_email_test_batch_image_update()}
 															</DropdownMenu.Item>
 														</DropdownMenu.Content>
 													</DropdownMenu.Root>
