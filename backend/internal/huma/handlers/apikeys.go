@@ -10,8 +10,8 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/apikey"
-	"go.getarcane.app/types/base"
+	"github.com/getarcaneapp/arcane/types/apikey"
+	"github.com/getarcaneapp/arcane/types/base"
 )
 
 // ApiKeyHandler provides Huma-based API key management endpoints.

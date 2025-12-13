@@ -15,8 +15,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/base"
-	networktypes "go.getarcane.app/types/network"
+	"github.com/getarcaneapp/arcane/types/base"
+	networktypes "github.com/getarcaneapp/arcane/types/network"
 )
 
 type NetworkHandler struct {

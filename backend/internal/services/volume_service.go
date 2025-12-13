@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	volumetypes "go.getarcane.app/types/volume"
+	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 )
 
 type VolumeService struct {

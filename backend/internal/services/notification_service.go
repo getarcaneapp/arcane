@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
-	"go.getarcane.app/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
 type NotificationService struct {

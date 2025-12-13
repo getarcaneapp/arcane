@@ -9,8 +9,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"go.getarcane.app/types/auth"
 )
 
 func newTestAuthService(secret string) *AuthService {

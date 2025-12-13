@@ -14,9 +14,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/converter"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
+	"github.com/getarcaneapp/arcane/types/system"
 	"github.com/goccy/go-yaml"
-	containertypes "go.getarcane.app/types/container"
-	"go.getarcane.app/types/system"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/apikey"
+	"github.com/getarcaneapp/arcane/types/apikey"
 	"gorm.io/gorm"
 )
 

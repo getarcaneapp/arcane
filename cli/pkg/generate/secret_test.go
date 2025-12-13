@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	gen "go.getarcane.app/cli/pkg/generate"
+	gen "github.com/getarcaneapp/arcane/cli/pkg/generate"
 )
 
 // captureOutput captures stdout produced by fn and returns it as a string.

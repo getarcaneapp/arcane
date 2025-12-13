@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
-	"go.getarcane.app/types"
+	"github.com/getarcaneapp/arcane/types"
 )
 
 var registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)

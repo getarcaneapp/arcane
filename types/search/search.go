@@ -1,6 +1,6 @@
 package search
 
-import "go.getarcane.app/types/category"
+import "github.com/getarcaneapp/arcane/types/category"
 
 // Request represents a search request.
 type Request struct {

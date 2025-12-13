@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/signals"
-	"go.getarcane.app/cli/pkg/generate"
 )
 
 var rootCmd = &cobra.Command{
@@ -38,7 +37,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
 }
 

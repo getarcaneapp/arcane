@@ -7,8 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
 type ImageUpdateHandler struct {

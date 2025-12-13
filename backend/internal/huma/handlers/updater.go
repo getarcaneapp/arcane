@@ -8,8 +8,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/updater"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/updater"
 )
 
 // UpdaterHandler provides Huma-based updater management endpoints.

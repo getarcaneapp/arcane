@@ -11,10 +11,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/category"
-	"go.getarcane.app/types/search"
-	"go.getarcane.app/types/settings"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/category"
+	"github.com/getarcaneapp/arcane/types/search"
+	"github.com/getarcaneapp/arcane/types/settings"
 )
 
 // SettingsHandler provides Huma-based settings management endpoints.

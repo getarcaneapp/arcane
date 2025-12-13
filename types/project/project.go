@@ -2,7 +2,7 @@ package project
 
 import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"go.getarcane.app/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
 // IncludeFile represents an included file within a project.

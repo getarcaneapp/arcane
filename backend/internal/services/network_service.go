@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	networktypes "go.getarcane.app/types/network"
+	networktypes "github.com/getarcaneapp/arcane/types/network"
 )
 
 type NetworkService struct {

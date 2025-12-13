@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/user"
+	"github.com/getarcaneapp/arcane/types/user"
 )
 
 type Argon2Params struct {
