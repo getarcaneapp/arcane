@@ -94,7 +94,10 @@ var deleteCmd = &cobra.Command{
 		if !forceFlag {
 			fmt.Printf("Are you sure you want to delete environment %s? (y/N): ", args[0])
 			var response string
-			fmt.Scanln(&response)
+			if _, err := fmt.Scanln(&response); err != nil {
+				fmt.Println("Cancelled")
+				return nil
+			}
 			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 				fmt.Println("Cancelled")
 				return nil
@@ -178,8 +181,9 @@ var testCmd = &cobra.Command{
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
-				fmt.Println(string(resultBytes))
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
 			}
 			return nil
 		}

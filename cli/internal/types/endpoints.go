@@ -24,8 +24,8 @@ type ArcaneApiEndpoints struct {
 	OIDCCallbackEndpoint string
 
 	// API Keys
-	ApiKeysEndpoint       string
-	ApiKeyEndpoint        string
+	ApiKeysEndpoint string
+	ApiKeyEndpoint  string
 
 	// Users
 	UsersEndpoint string
@@ -56,8 +56,8 @@ type ArcaneApiEndpoints struct {
 	ImagesUploadEndpoint string
 
 	// Image Updates
-	ImageUpdatesCheckEndpoint     string
-	ImageUpdatesCheckAllEndpoint  string
+	ImageUpdatesCheckEndpoint      string
+	ImageUpdatesCheckAllEndpoint   string
 	ImageUpdatesCheckBatchEndpoint string
 	ImageUpdatesCheckByIdEndpoint  string
 	ImageUpdatesSummaryEndpoint    string
@@ -77,27 +77,27 @@ type ArcaneApiEndpoints struct {
 	VolumeUsageEndpoint   string
 
 	// Projects (Stacks)
-	ProjectsEndpoint           string
-	ProjectEndpoint            string
-	ProjectsCountsEndpoint     string
-	ProjectDestroyEndpoint     string
-	ProjectUpEndpoint          string
-	ProjectDownEndpoint        string
-	ProjectRestartEndpoint     string
-	ProjectRedeployEndpoint    string
-	ProjectPullEndpoint        string
-	ProjectIncludesEndpoint    string
+	ProjectsEndpoint        string
+	ProjectEndpoint         string
+	ProjectsCountsEndpoint  string
+	ProjectDestroyEndpoint  string
+	ProjectUpEndpoint       string
+	ProjectDownEndpoint     string
+	ProjectRestartEndpoint  string
+	ProjectRedeployEndpoint string
+	ProjectPullEndpoint     string
+	ProjectIncludesEndpoint string
 
 	// System
-	SystemPruneEndpoint              string
-	SystemHealthEndpoint             string
-	SystemDockerInfoEndpoint         string
-	SystemConvertEndpoint            string
-	SystemContainersStartAllEndpoint string
-	SystemContainersStopAllEndpoint  string
+	SystemPruneEndpoint                  string
+	SystemHealthEndpoint                 string
+	SystemDockerInfoEndpoint             string
+	SystemConvertEndpoint                string
+	SystemContainersStartAllEndpoint     string
+	SystemContainersStopAllEndpoint      string
 	SystemContainersStartStoppedEndpoint string
-	SystemUpgradeCheckEndpoint       string
-	SystemUpgradeEndpoint            string
+	SystemUpgradeCheckEndpoint           string
+	SystemUpgradeEndpoint                string
 
 	// Updater
 	UpdaterStatusEndpoint  string
@@ -105,8 +105,8 @@ type ArcaneApiEndpoints struct {
 	UpdaterHistoryEndpoint string
 
 	// Settings
-	SettingsEndpoint       string
-	SettingsPublicEndpoint string
+	SettingsEndpoint           string
+	SettingsPublicEndpoint     string
 	SettingsCategoriesEndpoint string
 	SettingsSearchEndpoint     string
 
@@ -118,16 +118,16 @@ type ArcaneApiEndpoints struct {
 	NotificationTestEndpoint         string
 
 	// Container Registries
-	ContainerRegistriesEndpoint     string
-	ContainerRegistryEndpoint       string
-	ContainerRegistrySyncEndpoint   string
-	ContainerRegistryTestEndpoint   string
+	ContainerRegistriesEndpoint       string
+	ContainerRegistryEndpoint         string
+	ContainerRegistrySyncEndpoint     string
+	ContainerRegistryTestEndpoint     string
 	EnvironmentSyncRegistriesEndpoint string
 
 	// Events
-	EventsEndpoint              string
-	EventEndpoint               string
-	EventsEnvironmentEndpoint   string
+	EventsEndpoint            string
+	EventEndpoint             string
+	EventsEnvironmentEndpoint string
 
 	// Templates
 	TemplatesEndpoint           string
@@ -244,15 +244,15 @@ var Endpoints = ArcaneApiEndpoints{
 	ProjectIncludesEndpoint: "/api/environments/%s/projects/%s/includes",
 
 	// System
-	SystemPruneEndpoint:                      "/api/environments/%s/system/prune",
-	SystemHealthEndpoint:                     "/api/environments/%s/system/health",
-	SystemDockerInfoEndpoint:                 "/api/environments/%s/system/docker/info",
-	SystemConvertEndpoint:                    "/api/environments/%s/system/convert",
-	SystemContainersStartAllEndpoint:         "/api/environments/%s/system/containers/start-all",
-	SystemContainersStopAllEndpoint:          "/api/environments/%s/system/containers/stop-all",
-	SystemContainersStartStoppedEndpoint:     "/api/environments/%s/system/containers/start-stopped",
-	SystemUpgradeCheckEndpoint:               "/api/environments/%s/system/upgrade/check",
-	SystemUpgradeEndpoint:                    "/api/environments/%s/system/upgrade",
+	SystemPruneEndpoint:                  "/api/environments/%s/system/prune",
+	SystemHealthEndpoint:                 "/api/environments/%s/system/health",
+	SystemDockerInfoEndpoint:             "/api/environments/%s/system/docker/info",
+	SystemConvertEndpoint:                "/api/environments/%s/system/convert",
+	SystemContainersStartAllEndpoint:     "/api/environments/%s/system/containers/start-all",
+	SystemContainersStopAllEndpoint:      "/api/environments/%s/system/containers/stop-all",
+	SystemContainersStartStoppedEndpoint: "/api/environments/%s/system/containers/start-stopped",
+	SystemUpgradeCheckEndpoint:           "/api/environments/%s/system/upgrade/check",
+	SystemUpgradeEndpoint:                "/api/environments/%s/system/upgrade",
 
 	// Updater
 	UpdaterStatusEndpoint:  "/api/environments/%s/updater/status",
@@ -273,10 +273,10 @@ var Endpoints = ArcaneApiEndpoints{
 	NotificationTestEndpoint:         "/api/environments/%s/notifications/test/%s",
 
 	// Container Registries
-	ContainerRegistriesEndpoint:      "/api/container-registries",
-	ContainerRegistryEndpoint:        "/api/container-registries/%s",
-	ContainerRegistrySyncEndpoint:    "/api/container-registries/sync",
-	ContainerRegistryTestEndpoint:    "/api/container-registries/%s/test",
+	ContainerRegistriesEndpoint:       "/api/container-registries",
+	ContainerRegistryEndpoint:         "/api/container-registries/%s",
+	ContainerRegistrySyncEndpoint:     "/api/container-registries/sync",
+	ContainerRegistryTestEndpoint:     "/api/container-registries/%s/test",
 	EnvironmentSyncRegistriesEndpoint: "/api/environments/%s/sync-registries",
 
 	// Events
@@ -314,144 +314,280 @@ var Endpoints = ArcaneApiEndpoints{
 }
 
 // Auth endpoints
-func (e ArcaneApiEndpoints) AuthLogin() string { return e.AuthLoginEndpoint }
-func (e ArcaneApiEndpoints) AuthLogout() string { return e.AuthLogoutEndpoint }
-func (e ArcaneApiEndpoints) AuthMe() string { return e.AuthMeEndpoint }
+func (e ArcaneApiEndpoints) AuthLogin() string    { return e.AuthLoginEndpoint }
+func (e ArcaneApiEndpoints) AuthLogout() string   { return e.AuthLogoutEndpoint }
+func (e ArcaneApiEndpoints) AuthMe() string       { return e.AuthMeEndpoint }
 func (e ArcaneApiEndpoints) AuthPassword() string { return e.AuthPasswordEndpoint }
-func (e ArcaneApiEndpoints) AuthRefresh() string { return e.AuthRefreshEndpoint }
+func (e ArcaneApiEndpoints) AuthRefresh() string  { return e.AuthRefreshEndpoint }
 
 // OIDC endpoints
-func (e ArcaneApiEndpoints) OIDCStatus() string { return e.OIDCStatusEndpoint }
-func (e ArcaneApiEndpoints) OIDCConfig() string { return e.OIDCConfigEndpoint }
-func (e ArcaneApiEndpoints) OIDCUrl() string { return e.OIDCUrlEndpoint }
+func (e ArcaneApiEndpoints) OIDCStatus() string   { return e.OIDCStatusEndpoint }
+func (e ArcaneApiEndpoints) OIDCConfig() string   { return e.OIDCConfigEndpoint }
+func (e ArcaneApiEndpoints) OIDCUrl() string      { return e.OIDCUrlEndpoint }
 func (e ArcaneApiEndpoints) OIDCCallback() string { return e.OIDCCallbackEndpoint }
 
 // API Key endpoints
-func (e ArcaneApiEndpoints) ApiKeys() string { return e.ApiKeysEndpoint }
+func (e ArcaneApiEndpoints) ApiKeys() string         { return e.ApiKeysEndpoint }
 func (e ArcaneApiEndpoints) ApiKey(id string) string { return fmt.Sprintf(e.ApiKeyEndpoint, id) }
 
 // User endpoints
-func (e ArcaneApiEndpoints) Users() string { return e.UsersEndpoint }
+func (e ArcaneApiEndpoints) Users() string         { return e.UsersEndpoint }
 func (e ArcaneApiEndpoints) User(id string) string { return fmt.Sprintf(e.UserEndpoint, id) }
 
 // Environment endpoints
 func (e ArcaneApiEndpoints) Environments() string { return e.EnvironmentsEndpoint }
-func (e ArcaneApiEndpoints) Environment(id string) string { return fmt.Sprintf(e.EnvironmentEndpoint, id) }
+func (e ArcaneApiEndpoints) Environment(id string) string {
+	return fmt.Sprintf(e.EnvironmentEndpoint, id)
+}
 func (e ArcaneApiEndpoints) EnvironmentPair() string { return e.EnvironmentPairEndpoint }
-func (e ArcaneApiEndpoints) EnvironmentAgent(envID string) string { return fmt.Sprintf(e.EnvironmentAgentEndpoint, envID) }
-func (e ArcaneApiEndpoints) EnvironmentTest(envID string) string { return fmt.Sprintf(e.EnvironmentTestEndpoint, envID) }
+func (e ArcaneApiEndpoints) EnvironmentAgent(envID string) string {
+	return fmt.Sprintf(e.EnvironmentAgentEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) EnvironmentTest(envID string) string {
+	return fmt.Sprintf(e.EnvironmentTestEndpoint, envID)
+}
 
 // Container endpoints
-func (e ArcaneApiEndpoints) Containers(envID string) string { return fmt.Sprintf(e.ContainersEndpoint, envID) }
-func (e ArcaneApiEndpoints) Container(envID, containerID string) string { return fmt.Sprintf(e.ContainerEndpoint, envID, containerID) }
-func (e ArcaneApiEndpoints) ContainerStart(envID, containerID string) string { return fmt.Sprintf(e.ContainerStartEndpoint, envID, containerID) }
-func (e ArcaneApiEndpoints) ContainerStop(envID, containerID string) string { return fmt.Sprintf(e.ContainerStopEndpoint, envID, containerID) }
-func (e ArcaneApiEndpoints) ContainerRestart(envID, containerID string) string { return fmt.Sprintf(e.ContainerRestartEndpoint, envID, containerID) }
-func (e ArcaneApiEndpoints) ContainerUpdate(envID, containerID string) string { return fmt.Sprintf(e.ContainerUpdateEndpoint, envID, containerID) }
-func (e ArcaneApiEndpoints) ContainersCounts(envID string) string { return fmt.Sprintf(e.ContainersCountsEndpoint, envID) }
+func (e ArcaneApiEndpoints) Containers(envID string) string {
+	return fmt.Sprintf(e.ContainersEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) Container(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerEndpoint, envID, containerID)
+}
+func (e ArcaneApiEndpoints) ContainerStart(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerStartEndpoint, envID, containerID)
+}
+func (e ArcaneApiEndpoints) ContainerStop(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerStopEndpoint, envID, containerID)
+}
+func (e ArcaneApiEndpoints) ContainerRestart(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerRestartEndpoint, envID, containerID)
+}
+func (e ArcaneApiEndpoints) ContainerUpdate(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerUpdateEndpoint, envID, containerID)
+}
+func (e ArcaneApiEndpoints) ContainersCounts(envID string) string {
+	return fmt.Sprintf(e.ContainersCountsEndpoint, envID)
+}
 
 // Image endpoints
 func (e ArcaneApiEndpoints) Images(envID string) string { return fmt.Sprintf(e.ImagesEndpoint, envID) }
-func (e ArcaneApiEndpoints) Image(envID, imageID string) string { return fmt.Sprintf(e.ImageEndpoint, envID, imageID) }
-func (e ArcaneApiEndpoints) ImagesPull(envID string) string { return fmt.Sprintf(e.ImagesPullEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImagesPrune(envID string) string { return fmt.Sprintf(e.ImagesPruneEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImagesCounts(envID string) string { return fmt.Sprintf(e.ImagesCountsEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImagesUpload(envID string) string { return fmt.Sprintf(e.ImagesUploadEndpoint, envID) }
+func (e ArcaneApiEndpoints) Image(envID, imageID string) string {
+	return fmt.Sprintf(e.ImageEndpoint, envID, imageID)
+}
+func (e ArcaneApiEndpoints) ImagesPull(envID string) string {
+	return fmt.Sprintf(e.ImagesPullEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImagesPrune(envID string) string {
+	return fmt.Sprintf(e.ImagesPruneEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImagesCounts(envID string) string {
+	return fmt.Sprintf(e.ImagesCountsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
+	return fmt.Sprintf(e.ImagesUploadEndpoint, envID)
+}
 
 // Image Update endpoints
-func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string { return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImageUpdatesCheckAll(envID string) string { return fmt.Sprintf(e.ImageUpdatesCheckAllEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImageUpdatesCheckBatch(envID string) string { return fmt.Sprintf(e.ImageUpdatesCheckBatchEndpoint, envID) }
-func (e ArcaneApiEndpoints) ImageUpdatesCheckById(envID, imageID string) string { return fmt.Sprintf(e.ImageUpdatesCheckByIdEndpoint, envID, imageID) }
-func (e ArcaneApiEndpoints) ImageUpdatesSummary(envID string) string { return fmt.Sprintf(e.ImageUpdatesSummaryEndpoint, envID) }
+func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string {
+	return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImageUpdatesCheckAll(envID string) string {
+	return fmt.Sprintf(e.ImageUpdatesCheckAllEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImageUpdatesCheckBatch(envID string) string {
+	return fmt.Sprintf(e.ImageUpdatesCheckBatchEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ImageUpdatesCheckById(envID, imageID string) string {
+	return fmt.Sprintf(e.ImageUpdatesCheckByIdEndpoint, envID, imageID)
+}
+func (e ArcaneApiEndpoints) ImageUpdatesSummary(envID string) string {
+	return fmt.Sprintf(e.ImageUpdatesSummaryEndpoint, envID)
+}
 
 // Network endpoints
-func (e ArcaneApiEndpoints) Networks(envID string) string { return fmt.Sprintf(e.NetworksEndpoint, envID) }
-func (e ArcaneApiEndpoints) Network(envID, networkID string) string { return fmt.Sprintf(e.NetworkEndpoint, envID, networkID) }
-func (e ArcaneApiEndpoints) NetworksCounts(envID string) string { return fmt.Sprintf(e.NetworksCountsEndpoint, envID) }
-func (e ArcaneApiEndpoints) NetworksPrune(envID string) string { return fmt.Sprintf(e.NetworksPruneEndpoint, envID) }
+func (e ArcaneApiEndpoints) Networks(envID string) string {
+	return fmt.Sprintf(e.NetworksEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) Network(envID, networkID string) string {
+	return fmt.Sprintf(e.NetworkEndpoint, envID, networkID)
+}
+func (e ArcaneApiEndpoints) NetworksCounts(envID string) string {
+	return fmt.Sprintf(e.NetworksCountsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) NetworksPrune(envID string) string {
+	return fmt.Sprintf(e.NetworksPruneEndpoint, envID)
+}
 
 // Volume endpoints
-func (e ArcaneApiEndpoints) Volumes(envID string) string { return fmt.Sprintf(e.VolumesEndpoint, envID) }
-func (e ArcaneApiEndpoints) Volume(envID, volumeName string) string { return fmt.Sprintf(e.VolumeEndpoint, envID, volumeName) }
-func (e ArcaneApiEndpoints) VolumesCounts(envID string) string { return fmt.Sprintf(e.VolumesCountsEndpoint, envID) }
-func (e ArcaneApiEndpoints) VolumesPrune(envID string) string { return fmt.Sprintf(e.VolumesPruneEndpoint, envID) }
-func (e ArcaneApiEndpoints) VolumesSizes(envID string) string { return fmt.Sprintf(e.VolumesSizesEndpoint, envID) }
-func (e ArcaneApiEndpoints) VolumeUsage(envID, volumeName string) string { return fmt.Sprintf(e.VolumeUsageEndpoint, envID, volumeName) }
+func (e ArcaneApiEndpoints) Volumes(envID string) string {
+	return fmt.Sprintf(e.VolumesEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) Volume(envID, volumeName string) string {
+	return fmt.Sprintf(e.VolumeEndpoint, envID, volumeName)
+}
+func (e ArcaneApiEndpoints) VolumesCounts(envID string) string {
+	return fmt.Sprintf(e.VolumesCountsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) VolumesPrune(envID string) string {
+	return fmt.Sprintf(e.VolumesPruneEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) VolumesSizes(envID string) string {
+	return fmt.Sprintf(e.VolumesSizesEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) VolumeUsage(envID, volumeName string) string {
+	return fmt.Sprintf(e.VolumeUsageEndpoint, envID, volumeName)
+}
 
 // Project endpoints
-func (e ArcaneApiEndpoints) Projects(envID string) string { return fmt.Sprintf(e.ProjectsEndpoint, envID) }
-func (e ArcaneApiEndpoints) Project(envID, projectID string) string { return fmt.Sprintf(e.ProjectEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectsCounts(envID string) string { return fmt.Sprintf(e.ProjectsCountsEndpoint, envID) }
-func (e ArcaneApiEndpoints) ProjectDestroy(envID, projectID string) string { return fmt.Sprintf(e.ProjectDestroyEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectUp(envID, projectID string) string { return fmt.Sprintf(e.ProjectUpEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectDown(envID, projectID string) string { return fmt.Sprintf(e.ProjectDownEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectRestart(envID, projectID string) string { return fmt.Sprintf(e.ProjectRestartEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectRedeploy(envID, projectID string) string { return fmt.Sprintf(e.ProjectRedeployEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectPull(envID, projectID string) string { return fmt.Sprintf(e.ProjectPullEndpoint, envID, projectID) }
-func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string { return fmt.Sprintf(e.ProjectIncludesEndpoint, envID, projectID) }
+func (e ArcaneApiEndpoints) Projects(envID string) string {
+	return fmt.Sprintf(e.ProjectsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) Project(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectsCounts(envID string) string {
+	return fmt.Sprintf(e.ProjectsCountsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) ProjectDestroy(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectDestroyEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectUp(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectUpEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectDown(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectDownEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectRestart(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectRestartEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectRedeploy(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectRedeployEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectPull(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectPullEndpoint, envID, projectID)
+}
+func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
+	return fmt.Sprintf(e.ProjectIncludesEndpoint, envID, projectID)
+}
 
 // System endpoints
-func (e ArcaneApiEndpoints) SystemPrune(envID string) string { return fmt.Sprintf(e.SystemPruneEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemHealth(envID string) string { return fmt.Sprintf(e.SystemHealthEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemDockerInfo(envID string) string { return fmt.Sprintf(e.SystemDockerInfoEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemConvert(envID string) string { return fmt.Sprintf(e.SystemConvertEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemContainersStartAll(envID string) string { return fmt.Sprintf(e.SystemContainersStartAllEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemContainersStopAll(envID string) string { return fmt.Sprintf(e.SystemContainersStopAllEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemContainersStartStopped(envID string) string { return fmt.Sprintf(e.SystemContainersStartStoppedEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemUpgradeCheck(envID string) string { return fmt.Sprintf(e.SystemUpgradeCheckEndpoint, envID) }
-func (e ArcaneApiEndpoints) SystemUpgrade(envID string) string { return fmt.Sprintf(e.SystemUpgradeEndpoint, envID) }
+func (e ArcaneApiEndpoints) SystemPrune(envID string) string {
+	return fmt.Sprintf(e.SystemPruneEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemHealth(envID string) string {
+	return fmt.Sprintf(e.SystemHealthEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemDockerInfo(envID string) string {
+	return fmt.Sprintf(e.SystemDockerInfoEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemConvert(envID string) string {
+	return fmt.Sprintf(e.SystemConvertEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemContainersStartAll(envID string) string {
+	return fmt.Sprintf(e.SystemContainersStartAllEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemContainersStopAll(envID string) string {
+	return fmt.Sprintf(e.SystemContainersStopAllEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemContainersStartStopped(envID string) string {
+	return fmt.Sprintf(e.SystemContainersStartStoppedEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemUpgradeCheck(envID string) string {
+	return fmt.Sprintf(e.SystemUpgradeCheckEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SystemUpgrade(envID string) string {
+	return fmt.Sprintf(e.SystemUpgradeEndpoint, envID)
+}
 
 // Updater endpoints
-func (e ArcaneApiEndpoints) UpdaterStatus(envID string) string { return fmt.Sprintf(e.UpdaterStatusEndpoint, envID) }
-func (e ArcaneApiEndpoints) UpdaterRun(envID string) string { return fmt.Sprintf(e.UpdaterRunEndpoint, envID) }
-func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string { return fmt.Sprintf(e.UpdaterHistoryEndpoint, envID) }
+func (e ArcaneApiEndpoints) UpdaterStatus(envID string) string {
+	return fmt.Sprintf(e.UpdaterStatusEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) UpdaterRun(envID string) string {
+	return fmt.Sprintf(e.UpdaterRunEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string {
+	return fmt.Sprintf(e.UpdaterHistoryEndpoint, envID)
+}
 
 // Settings endpoints
-func (e ArcaneApiEndpoints) Settings(envID string) string { return fmt.Sprintf(e.SettingsEndpoint, envID) }
-func (e ArcaneApiEndpoints) SettingsPublic(envID string) string { return fmt.Sprintf(e.SettingsPublicEndpoint, envID) }
+func (e ArcaneApiEndpoints) Settings(envID string) string {
+	return fmt.Sprintf(e.SettingsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) SettingsPublic(envID string) string {
+	return fmt.Sprintf(e.SettingsPublicEndpoint, envID)
+}
 func (e ArcaneApiEndpoints) SettingsCategories() string { return e.SettingsCategoriesEndpoint }
-func (e ArcaneApiEndpoints) SettingsSearch() string { return e.SettingsSearchEndpoint }
+func (e ArcaneApiEndpoints) SettingsSearch() string     { return e.SettingsSearchEndpoint }
 
 // Notification endpoints
-func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string { return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID) }
-func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string { return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID) }
-func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string { return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID) }
-func (e ArcaneApiEndpoints) NotificationSetting(envID, provider string) string { return fmt.Sprintf(e.NotificationSettingEndpoint, envID, provider) }
-func (e ArcaneApiEndpoints) NotificationTest(envID, provider string) string { return fmt.Sprintf(e.NotificationTestEndpoint, envID, provider) }
+func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
+	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
+	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
+	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) NotificationSetting(envID, provider string) string {
+	return fmt.Sprintf(e.NotificationSettingEndpoint, envID, provider)
+}
+func (e ArcaneApiEndpoints) NotificationTest(envID, provider string) string {
+	return fmt.Sprintf(e.NotificationTestEndpoint, envID, provider)
+}
 
 // Container Registry endpoints
 func (e ArcaneApiEndpoints) ContainerRegistries() string { return e.ContainerRegistriesEndpoint }
-func (e ArcaneApiEndpoints) ContainerRegistry(id string) string { return fmt.Sprintf(e.ContainerRegistryEndpoint, id) }
+func (e ArcaneApiEndpoints) ContainerRegistry(id string) string {
+	return fmt.Sprintf(e.ContainerRegistryEndpoint, id)
+}
 func (e ArcaneApiEndpoints) ContainerRegistrySync() string { return e.ContainerRegistrySyncEndpoint }
-func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string { return fmt.Sprintf(e.ContainerRegistryTestEndpoint, id) }
-func (e ArcaneApiEndpoints) EnvironmentSyncRegistries(envID string) string { return fmt.Sprintf(e.EnvironmentSyncRegistriesEndpoint, envID) }
+func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string {
+	return fmt.Sprintf(e.ContainerRegistryTestEndpoint, id)
+}
+func (e ArcaneApiEndpoints) EnvironmentSyncRegistries(envID string) string {
+	return fmt.Sprintf(e.EnvironmentSyncRegistriesEndpoint, envID)
+}
 
 // Event endpoints
-func (e ArcaneApiEndpoints) Events() string { return e.EventsEndpoint }
+func (e ArcaneApiEndpoints) Events() string         { return e.EventsEndpoint }
 func (e ArcaneApiEndpoints) Event(id string) string { return fmt.Sprintf(e.EventEndpoint, id) }
-func (e ArcaneApiEndpoints) EventsEnvironment(envID string) string { return fmt.Sprintf(e.EventsEnvironmentEndpoint, envID) }
+func (e ArcaneApiEndpoints) EventsEnvironment(envID string) string {
+	return fmt.Sprintf(e.EventsEnvironmentEndpoint, envID)
+}
 
 // Template endpoints
-func (e ArcaneApiEndpoints) Templates() string { return e.TemplatesEndpoint }
-func (e ArcaneApiEndpoints) Template(id string) string { return fmt.Sprintf(e.TemplateEndpoint, id) }
-func (e ArcaneApiEndpoints) TemplatesAll() string { return e.TemplatesAllEndpoint }
-func (e ArcaneApiEndpoints) TemplatesDefault() string { return e.TemplatesDefaultEndpoint }
-func (e ArcaneApiEndpoints) TemplatesFetch() string { return e.TemplatesFetchEndpoint }
+func (e ArcaneApiEndpoints) Templates() string           { return e.TemplatesEndpoint }
+func (e ArcaneApiEndpoints) Template(id string) string   { return fmt.Sprintf(e.TemplateEndpoint, id) }
+func (e ArcaneApiEndpoints) TemplatesAll() string        { return e.TemplatesAllEndpoint }
+func (e ArcaneApiEndpoints) TemplatesDefault() string    { return e.TemplatesDefaultEndpoint }
+func (e ArcaneApiEndpoints) TemplatesFetch() string      { return e.TemplatesFetchEndpoint }
 func (e ArcaneApiEndpoints) TemplatesRegistries() string { return e.TemplatesRegistriesEndpoint }
-func (e ArcaneApiEndpoints) TemplateRegistry(id string) string { return fmt.Sprintf(e.TemplateRegistryEndpoint, id) }
+func (e ArcaneApiEndpoints) TemplateRegistry(id string) string {
+	return fmt.Sprintf(e.TemplateRegistryEndpoint, id)
+}
 func (e ArcaneApiEndpoints) TemplatesVariables() string { return e.TemplatesVariablesEndpoint }
-func (e ArcaneApiEndpoints) TemplateContent(id string) string { return fmt.Sprintf(e.TemplateContentEndpoint, id) }
-func (e ArcaneApiEndpoints) TemplateDownload(id string) string { return fmt.Sprintf(e.TemplateDownloadEndpoint, id) }
+func (e ArcaneApiEndpoints) TemplateContent(id string) string {
+	return fmt.Sprintf(e.TemplateContentEndpoint, id)
+}
+func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
+	return fmt.Sprintf(e.TemplateDownloadEndpoint, id)
+}
 
 // Deployment & Heartbeat endpoints
-func (e ArcaneApiEndpoints) Deployment(envID string) string { return fmt.Sprintf(e.DeploymentEndpoint, envID) }
-func (e ArcaneApiEndpoints) Heartbeat(envID string) string { return fmt.Sprintf(e.HeartbeatEndpoint, envID) }
+func (e ArcaneApiEndpoints) Deployment(envID string) string {
+	return fmt.Sprintf(e.DeploymentEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) Heartbeat(envID string) string {
+	return fmt.Sprintf(e.HeartbeatEndpoint, envID)
+}
 
 // Version & Health endpoints
 func (e ArcaneApiEndpoints) AppVersion() string { return e.AppVersionEndpoint }
-func (e ArcaneApiEndpoints) Version() string { return e.VersionEndpoint }
-func (e ArcaneApiEndpoints) Health() string { return e.HealthEndpoint }
+func (e ArcaneApiEndpoints) Version() string    { return e.VersionEndpoint }
+func (e ArcaneApiEndpoints) Health() string     { return e.HealthEndpoint }
 
 // Legacy methods for backwards compatibility
 func (e ArcaneApiEndpoints) FormatContainers(envID string) string {

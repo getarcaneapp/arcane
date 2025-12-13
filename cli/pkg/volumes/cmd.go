@@ -89,7 +89,10 @@ var deleteCmd = &cobra.Command{
 		if !forceFlag {
 			fmt.Printf("Are you sure you want to delete volume %s? (y/N): ", args[0])
 			var response string
-			fmt.Scanln(&response)
+			if _, err := fmt.Scanln(&response); err != nil {
+				fmt.Println("Cancelled")
+				return nil
+			}
 			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 				fmt.Println("Cancelled")
 				return nil
@@ -143,7 +146,10 @@ var countsCmd = &cobra.Command{
 		}
 
 		output.Header("Volume Usage Counts")
-		resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
+		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal volume counts: %w", err)
+		}
 		fmt.Println(string(resultBytes))
 		return nil
 	},
@@ -157,7 +163,10 @@ var pruneCmd = &cobra.Command{
 		if !forceFlag {
 			fmt.Print("Are you sure you want to prune unused volumes? (y/N): ")
 			var response string
-			fmt.Scanln(&response)
+			if _, err := fmt.Scanln(&response); err != nil {
+				fmt.Println("Cancelled")
+				return nil
+			}
 			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 				fmt.Println("Cancelled")
 				return nil
@@ -225,7 +234,10 @@ var sizesCmd = &cobra.Command{
 		}
 
 		output.Header("Volume Sizes")
-		resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
+		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal volume sizes: %w", err)
+		}
 		fmt.Println(string(resultBytes))
 		return nil
 	},
@@ -263,7 +275,10 @@ var usageCmd = &cobra.Command{
 		}
 
 		output.Header("Volume Usage: %s", args[0])
-		resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
+		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal volume usage: %w", err)
+		}
 		fmt.Println(string(resultBytes))
 		return nil
 	},

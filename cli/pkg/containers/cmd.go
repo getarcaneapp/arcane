@@ -292,7 +292,10 @@ var containersDeleteCmd = &cobra.Command{
 		if !forceFlag {
 			fmt.Printf("Are you sure you want to delete container %s? (y/N): ", shortID(args[0]))
 			var response string
-			fmt.Scanln(&response)
+			if _, err := fmt.Scanln(&response); err != nil {
+				fmt.Println("Cancelled")
+				return nil
+			}
 			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 				fmt.Println("Cancelled")
 				return nil

@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	headerAPIToken = "X-API-TOKEN" //nolint:gosec
+	headerAPIKey   = "X-API-KEY" //nolint:gosec
 	defaultTimeout = 30 * time.Second
 	defaultEnvID   = "0"
 )
@@ -49,6 +49,7 @@ const (
 type Client struct {
 	baseURL    string
 	apiKey     string
+	jwtToken   string
 	envID      string
 	httpClient *http.Client
 }
@@ -68,8 +69,30 @@ func New(cfg *types.Config) (*Client, error) {
 	}
 
 	return &Client{
+		baseURL:  cfg.ServerURL,
+		apiKey:   cfg.APIKey,
+		jwtToken: cfg.JWTToken,
+		envID:    envID,
+		httpClient: &http.Client{
+			Timeout: defaultTimeout,
+		},
+	}, nil
+}
+
+// NewUnauthenticated creates a client that can call unauthenticated endpoints
+// (e.g. /api/auth/login). It only validates that server_url is configured.
+func NewUnauthenticated(cfg *types.Config) (*Client, error) {
+	if err := cfg.ValidateServerURL(); err != nil {
+		return nil, err
+	}
+
+	envID := cfg.DefaultEnvironment
+	if envID == "" {
+		envID = defaultEnvID
+	}
+
+	return &Client{
 		baseURL: cfg.ServerURL,
-		apiKey:  cfg.APIKey,
 		envID:   envID,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
@@ -86,6 +109,15 @@ func NewFromConfig() (*Client, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return New(cfg)
+}
+
+// NewFromConfigUnauthenticated loads config and returns an unauthenticated client.
+func NewFromConfigUnauthenticated() (*Client, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return NewUnauthenticated(cfg)
 }
 
 // SetEnvironment changes the environment ID for subsequent requests.
@@ -143,11 +175,23 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 
 	var bodyReader io.Reader
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		switch v := body.(type) {
+		case []byte:
+			// Callers commonly pre-marshal JSON and pass the raw bytes.
+			// Treat as already-encoded JSON to avoid double-marshalling.
+			bodyReader = bytes.NewReader(v)
+		case json.RawMessage:
+			bodyReader = bytes.NewReader(v)
+		case io.Reader:
+			// Allow streaming bodies when needed.
+			bodyReader = v
+		default:
+			jsonBody, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			}
+			bodyReader = bytes.NewReader(jsonBody)
 		}
-		bodyReader = bytes.NewReader(jsonBody)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
@@ -155,7 +199,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set(headerAPIToken, c.apiKey)
+	c.applyAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -189,7 +233,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set(headerAPIToken, c.apiKey)
+	c.applyAuth(req)
 	req.Header.Set("Accept", "application/json")
 
 	for k, v := range headers {
@@ -202,6 +246,17 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 	}
 
 	return resp, nil
+}
+
+func (c *Client) applyAuth(req *http.Request) {
+	// Prefer JWT bearer token if present.
+	if c.jwtToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.jwtToken)
+		return
+	}
+	if c.apiKey != "" {
+		req.Header.Set(headerAPIKey, c.apiKey)
+	}
 }
 
 // Get makes a GET request to the specified path.

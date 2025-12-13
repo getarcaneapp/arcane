@@ -41,10 +41,19 @@ import (
 	configClient "go.getarcane.app/cli/pkg/config"
 	"go.getarcane.app/cli/pkg/containers"
 	"go.getarcane.app/cli/pkg/environments"
+	"go.getarcane.app/cli/pkg/events"
 	"go.getarcane.app/cli/pkg/generate"
 	"go.getarcane.app/cli/pkg/images"
+	"go.getarcane.app/cli/pkg/imageupdates"
 	"go.getarcane.app/cli/pkg/networks"
-	// "go.getarcane.app/cli/pkg/projects"
+	"go.getarcane.app/cli/pkg/notifications"
+	"go.getarcane.app/cli/pkg/projects"
+	"go.getarcane.app/cli/pkg/registries"
+	"go.getarcane.app/cli/pkg/settings"
+	"go.getarcane.app/cli/pkg/system"
+	"go.getarcane.app/cli/pkg/templates"
+	"go.getarcane.app/cli/pkg/updater"
+	"go.getarcane.app/cli/pkg/users"
 	"go.getarcane.app/cli/pkg/version"
 	"go.getarcane.app/cli/pkg/volumes"
 )
@@ -106,9 +115,20 @@ func init() {
 	rootCmd.AddCommand(images.ImagesCmd)
 	rootCmd.AddCommand(volumes.VolumesCmd)
 	rootCmd.AddCommand(networks.NetworksCmd)
-	// rootCmd.AddCommand(projects.ProjectsCmd)
+	rootCmd.AddCommand(projects.ProjectsCmd)
 
 	// Management
 	rootCmd.AddCommand(apikeys.ApiKeysCmd)
 	rootCmd.AddCommand(environments.EnvironmentsCmd)
+	rootCmd.AddCommand(users.UsersCmd)
+
+	// Advanced features
+	rootCmd.AddCommand(registries.RegistriesCmd)
+	rootCmd.AddCommand(templates.TemplatesCmd)
+	rootCmd.AddCommand(settings.SettingsCmd)
+	rootCmd.AddCommand(notifications.NotificationsCmd)
+	rootCmd.AddCommand(imageupdates.ImageUpdatesCmd)
+	rootCmd.AddCommand(system.SystemCmd)
+	rootCmd.AddCommand(updater.UpdaterCmd)
+	rootCmd.AddCommand(events.EventsCmd)
 }

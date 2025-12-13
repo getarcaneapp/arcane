@@ -13,6 +13,7 @@ import (
 var (
 	setServerURL   string
 	setAPIKey      string
+	setJWTToken    string
 	setEnvironment string
 	setLogLevel    string
 )
@@ -36,13 +37,14 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Config file: %s\n\n", path)
 		fmt.Printf("Server URL:          %s\n", maskIfEmpty(cfg.ServerURL, "(not set)"))
 		fmt.Printf("API Key:             %s\n", maskAPIKey(cfg.APIKey))
+		fmt.Printf("JWT Token:           %s\n", maskAPIKey(cfg.JWTToken))
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
 
 		if cfg.IsConfigured() {
 			fmt.Println("\n✓ Configuration is complete")
 		} else {
-			fmt.Println("\n✗ Configuration is incomplete. Run: arcane api config set --help")
+			fmt.Println("\n✗ Configuration is incomplete. Run: arcane config set --help")
 		}
 
 		return nil
@@ -55,9 +57,10 @@ var configSetCmd = &cobra.Command{
 	Long: `Set configuration values for connecting to an Arcane server.
 
 Examples:
-  arcane api config set --server-url http://localhost:3553
-  arcane api config set --api-key arc_xxxxxxxxxxxxx
-  arcane api config set --server-url http://my-server:3553 --api-key arc_xxxxxxxxxxxxx`,
+	arcane config set --server-url http://localhost:3553
+	arcane config set --api-key arc_xxxxxxxxxxxxx
+	arcane auth login --username admin
+	arcane config set --jwt-token eyJhbGciOi...`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -74,7 +77,17 @@ Examples:
 
 		if setAPIKey != "" {
 			cfg.APIKey = setAPIKey
+			// If switching to API key auth, clear any existing JWT token.
+			cfg.JWTToken = ""
 			fmt.Printf("Set api_key = %s\n", maskAPIKey(setAPIKey))
+			updated = true
+		}
+
+		if setJWTToken != "" {
+			cfg.JWTToken = setJWTToken
+			// If switching to JWT auth, clear any existing API key.
+			cfg.APIKey = ""
+			fmt.Printf("Set jwt_token = %s\n", maskAPIKey(setJWTToken))
 			updated = true
 		}
 
@@ -91,7 +104,7 @@ Examples:
 		}
 
 		if !updated {
-			return fmt.Errorf("no configuration values provided. Use --server-url, --api-key, --environment, or --log-level")
+			return fmt.Errorf("no configuration values provided. Use --server-url, --api-key, --jwt-token, --environment, or --log-level")
 		}
 
 		if err := config.Save(cfg); err != nil {
@@ -139,7 +152,12 @@ var configTestCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)
 		}
-		req.Header.Set("X-API-TOKEN", cfg.APIKey)
+		// Prefer JWT bearer if present, else API key.
+		if cfg.JWTToken != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.JWTToken)
+		} else {
+			req.Header.Set("X-API-KEY", cfg.APIKey)
+		}
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
@@ -165,6 +183,7 @@ func init() {
 
 	configSetCmd.Flags().StringVar(&setServerURL, "server-url", "", "Arcane server URL (e.g., http://localhost:3553)")
 	configSetCmd.Flags().StringVar(&setAPIKey, "api-key", "", "API key for authentication")
+	configSetCmd.Flags().StringVar(&setJWTToken, "jwt-token", "", "JWT access token for authentication (Bearer token)")
 	configSetCmd.Flags().StringVar(&setEnvironment, "environment", "", "Default environment ID")
 	configSetCmd.Flags().StringVar(&setLogLevel, "log-level", "", "Default log level (debug, info, warn, error)")
 }

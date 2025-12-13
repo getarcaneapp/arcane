@@ -3,6 +3,8 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -34,9 +36,11 @@ var loginCmd = &cobra.Command{
 
 		if username == "" {
 			fmt.Print("Username: ")
-			fmt.Scanln(&username)
+			if _, err := fmt.Scanln(&username); err != nil {
+				return fmt.Errorf("failed to read username: %w", err)
+			}
 		}
-		
+
 		if password == "" {
 			fmt.Print("Password: ")
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
@@ -49,7 +53,11 @@ var loginCmd = &cobra.Command{
 
 		c, err := client.NewFromConfig()
 		if err != nil {
-			return err
+			// Login should work even when no auth has been configured yet.
+			c, err = client.NewFromConfigUnauthenticated()
+			if err != nil {
+				return err
+			}
 		}
 
 		loginReq := auth.Login{
@@ -68,9 +76,21 @@ var loginCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("login failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		}
+
 		var result base.ApiResponse[auth.LoginResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
+		}
+		if !result.Success || result.Data.Token == "" {
+			return fmt.Errorf("login failed: unexpected response from server")
 		}
 
 		if jsonOutput {
@@ -87,13 +107,14 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
-		cfg.APIKey = result.Data.Token
+		cfg.JWTToken = result.Data.Token
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save token: %w", err)
 		}
 
 		output.Success("Login successful")
-		output.KeyValue("JWT token saved to config", "~/.config/arcane/config.yaml")
+		path, _ := config.ConfigPath()
+		output.KeyValue("JWT token saved to config", path)
 		return nil
 	},
 }
@@ -119,7 +140,7 @@ var logoutCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
-		cfg.APIKey = ""
+		cfg.JWTToken = ""
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("failed to clear token: %w", err)
 		}
@@ -127,18 +148,19 @@ var logoutCmd = &cobra.Command{
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
-				fmt.Println(string(resultBytes))
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
 			}
 			return nil
 		}
 
 		output.Success("Logout successful")
-		output.KeyValue("JWT token cleared from config", "")
+		path, _ := config.ConfigPath()
+		output.KeyValue("JWT token cleared from config", path)
 		return nil
 	},
 }
-
 var meCmd = &cobra.Command{
 	Use:          "me",
 	Short:        "Get current user information",
@@ -170,7 +192,10 @@ var meCmd = &cobra.Command{
 		}
 
 		output.Header("Current User")
-		userBytes, _ := json.MarshalIndent(result.Data, "", "  ")
+		userBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal user data: %w", err)
+		}
 		fmt.Println(string(userBytes))
 		return nil
 	},
@@ -193,7 +218,7 @@ var passwordCmd = &cobra.Command{
 			currentPassword = string(bytePassword)
 			fmt.Println()
 		}
-		
+
 		if newPassword == "" {
 			fmt.Print("New password: ")
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
@@ -228,8 +253,9 @@ var passwordCmd = &cobra.Command{
 		if jsonOutput {
 			var result base.ApiResponse[interface{}]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				resultBytes, _ := json.MarshalIndent(result.Data, "", "  ")
-				fmt.Println(string(resultBytes))
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
 			}
 			return nil
 		}
@@ -248,7 +274,9 @@ var refreshCmd = &cobra.Command{
 
 		if refreshToken == "" {
 			fmt.Print("Refresh token: ")
-			fmt.Scanln(&refreshToken)
+			if _, err := fmt.Scanln(&refreshToken); err != nil {
+				return fmt.Errorf("failed to read refresh token: %w", err)
+			}
 		}
 
 		c, err := client.NewFromConfig()
@@ -290,13 +318,14 @@ var refreshCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
-		cfg.APIKey = result.Data.Token
+		cfg.JWTToken = result.Data.Token
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save token: %w", err)
 		}
 
 		output.Success("Token refreshed successfully")
-		output.KeyValue("New JWT token saved to config", "~/.config/arcane/config.yaml")
+		path, _ := config.ConfigPath()
+		output.KeyValue("New JWT token saved to config", path)
 		return nil
 	},
 }
