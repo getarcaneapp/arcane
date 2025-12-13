@@ -31,17 +31,19 @@ type Config struct {
 	OidcAdminClaim   string
 	OidcAdminValue   string
 
-	DockerHost              string
-	LogJson                 bool
-	LogLevel                string
-	AgentMode               bool
-	AgentToken              string
-	ManagerApiUrl           string
-	UpdateCheckDisabled     bool
-	UIConfigurationDisabled bool
-	AnalyticsDisabled       bool
-	GPUMonitoringEnabled    bool
-	GPUType                 string
+	DockerHost                string
+	LogJson                   bool
+	LogLevel                  string
+	AgentMode                 bool
+	AgentToken                string
+	ManagerApiUrl             string
+	UpdateCheckDisabled       bool
+	UIConfigurationDisabled   bool
+	AnalyticsDisabled         bool
+	GPUMonitoringEnabled      bool
+	GPUType                   string
+	CustomFilesAllowTraversal bool
+	CustomFilesAllowedPaths   string
 }
 
 func Load() *Config {
@@ -61,17 +63,19 @@ func Load() *Config {
 		OidcAdminClaim:   getEnvOrDefault("OIDC_ADMIN_CLAIM", ""),
 		OidcAdminValue:   getEnvOrDefault("OIDC_ADMIN_VALUE", ""),
 
-		DockerHost:              getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"),
-		LogJson:                 getBoolEnvOrDefault("LOG_JSON", false),
-		LogLevel:                strings.ToLower(getEnvOrDefault("LOG_LEVEL", "info")),
-		AgentMode:               getBoolEnvOrDefault("AGENT_MODE", false),
-		AgentToken:              os.Getenv("AGENT_TOKEN"),
-		ManagerApiUrl:           os.Getenv("MANAGER_API_URL"),
-		UpdateCheckDisabled:     getBoolEnvOrDefault("UPDATE_CHECK_DISABLED", false),
-		UIConfigurationDisabled: getBoolEnvOrDefault("UI_CONFIGURATION_DISABLED", false),
-		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
-		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
-		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
+		DockerHost:                getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		LogJson:                   getBoolEnvOrDefault("LOG_JSON", false),
+		LogLevel:                  strings.ToLower(getEnvOrDefault("LOG_LEVEL", "info")),
+		AgentMode:                 getBoolEnvOrDefault("AGENT_MODE", false),
+		AgentToken:                os.Getenv("AGENT_TOKEN"),
+		ManagerApiUrl:             os.Getenv("MANAGER_API_URL"),
+		UpdateCheckDisabled:       getBoolEnvOrDefault("UPDATE_CHECK_DISABLED", false),
+		UIConfigurationDisabled:   getBoolEnvOrDefault("UI_CONFIGURATION_DISABLED", false),
+		AnalyticsDisabled:         getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
+		GPUMonitoringEnabled:      getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
+		GPUType:                   getEnvOrDefault("GPU_TYPE", "auto"),
+		CustomFilesAllowTraversal: getBoolEnvOrDefault("CUSTOM_FILES_ALLOW_TRAVERSAL", false),
+		CustomFilesAllowedPaths:   os.Getenv("CUSTOM_FILES_ALLOWED_PATHS"),
 	}
 }
 

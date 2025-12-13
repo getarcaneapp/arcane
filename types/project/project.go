@@ -23,6 +23,19 @@ type IncludeFile struct {
 	Content string `json:"content"`
 }
 
+// CustomFile represents a custom user-defined file within a project.
+type CustomFile struct {
+	// Path to the custom file (relative or absolute).
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Content is the file content.
+	//
+	// Required: true
+	Content string `json:"content"`
+}
+
 // CreateProject is used to create a new project.
 type CreateProject struct {
 	// Name of the project.
@@ -70,6 +83,36 @@ type UpdateIncludeFile struct {
 	//
 	// Required: true
 	Content string `json:"content" binding:"required"`
+}
+
+// CreateCustomFile is used to register/create a custom file within a project.
+type CreateCustomFile struct {
+	// Path to the custom file. Can be relative (e.g., "config/app.yaml")
+	// or absolute if CUSTOM_FILES_ALLOWED_PATHS is configured.
+	//
+	// Required: true
+	Path string `json:"path" binding:"required"`
+}
+
+// UpdateCustomFile is used to update a custom file within a project.
+type UpdateCustomFile struct {
+	// Path to the custom file.
+	//
+	// Required: true
+	Path string `json:"path" binding:"required"`
+
+	// Content is the file content.
+	//
+	// Required: true
+	Content string `json:"content" binding:"required"`
+}
+
+// RemoveCustomFile is used to remove a custom file from a project's manifest.
+type RemoveCustomFile struct {
+	// Path to the custom file.
+	//
+	// Required: true
+	Path string `json:"path" binding:"required"`
 }
 
 // RuntimeService contains live container status information for a service.
@@ -204,6 +247,11 @@ type Details struct {
 	//
 	// Required: false
 	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
+
+	// CustomFiles is a list of custom user-defined files in the project.
+	//
+	// Required: false
+	CustomFiles []CustomFile `json:"customFiles,omitempty"`
 
 	// Status is the current status of the project.
 	//

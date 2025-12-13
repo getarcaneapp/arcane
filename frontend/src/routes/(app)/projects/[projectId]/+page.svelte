@@ -3,8 +3,20 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
+	import {
+		ArrowLeftIcon,
+		ProjectsIcon,
+		LayersIcon,
+		SettingsIcon,
+		FileTextIcon,
+		FileSymlinkIcon,
+		FilePenIcon,
+		AddIcon,
+		UnlinkIcon
+	} from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -49,6 +61,11 @@
 	let originalEnvContent = $state(untrack(() => data.editorState.originalEnvContent || ''));
 	let includeFilesState = $state<Record<string, string>>({});
 	let originalIncludeFiles = $state<Record<string, string>>({});
+	let customFilesState = $state<Record<string, string>>({});
+	let originalCustomFiles = $state<Record<string, string>>({});
+	let customFilesPanelStates = $state<Record<string, boolean>>({});
+	let showAddCustomFileDialog = $state(false);
+	let newCustomFileName = $state('');
 
 	const formSchema = z.object({
 		name: z
@@ -71,7 +88,8 @@
 		$inputs.name.value !== originalName ||
 			$inputs.composeContent.value !== originalComposeContent ||
 			$inputs.envContent.value !== originalEnvContent ||
-			JSON.stringify(includeFilesState) !== JSON.stringify(originalIncludeFiles)
+			JSON.stringify(includeFilesState) !== JSON.stringify(originalIncludeFiles) ||
+			JSON.stringify(customFilesState) !== JSON.stringify(originalCustomFiles)
 	);
 
 	let canEditName = $derived(!isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running');
@@ -159,6 +177,19 @@
 			includeFilesState = newIncludeState;
 			originalIncludeFiles = { ...newIncludeState };
 		}
+
+		// Initialize custom file states
+		if (project?.customFiles) {
+			const newCustomState: Record<string, string> = {};
+			project.customFiles.forEach((file) => {
+				newCustomState[file.path] = file.content;
+				if (!(file.path in customFilesPanelStates)) {
+					customFilesPanelStates[file.path] = true;
+				}
+			});
+			customFilesState = newCustomState;
+			originalCustomFiles = { ...newCustomState };
+		}
 	});
 
 	async function handleSaveChanges() {
@@ -188,15 +219,69 @@
 					}
 				}
 
+				// Then update any changed custom files
+				for (const relativePath of Object.keys(customFilesState)) {
+					if (customFilesState[relativePath] !== originalCustomFiles[relativePath]) {
+						const customResult = await tryCatch(
+							projectService.updateProjectCustomFile(projectId, relativePath, customFilesState[relativePath])
+						);
+						if (customResult.error) {
+							toast.error(`Failed to update ${relativePath}: ${customResult.error.message || 'Unknown error'}`);
+							return;
+						}
+					}
+				}
+
 				toast.success('Project updated successfully!');
 				originalName = updatedStack.name;
 				originalComposeContent = $inputs.composeContent.value;
 				originalEnvContent = $inputs.envContent.value;
 				originalIncludeFiles = { ...includeFilesState };
+				originalCustomFiles = { ...customFilesState };
 				await new Promise((resolve) => setTimeout(resolve, 200));
 				await invalidateAll();
 			}
 		});
+	}
+
+	async function handleAddCustomFile() {
+		if (!newCustomFileName.trim()) {
+			toast.error('Please enter a file name');
+			return;
+		}
+
+		const relativePath = newCustomFileName.trim();
+		const result = await tryCatch(projectService.createProjectCustomFile(projectId, relativePath));
+		if (result.error) {
+			toast.error(`Failed to add file: ${result.error.message || 'Unknown error'}`);
+			return;
+		}
+
+		toast.success(`Added ${relativePath}`);
+		showAddCustomFileDialog = false;
+		newCustomFileName = '';
+		await invalidateAll();
+	}
+
+	async function handleRemoveCustomFile(filePath: string) {
+		const result = await tryCatch(projectService.removeProjectCustomFile(projectId, filePath));
+		if (result.error) {
+			toast.error(`Failed to remove file: ${result.error.message || 'Unknown error'}`);
+			return;
+		}
+
+		// Remove from local state
+		delete customFilesState[filePath];
+		delete originalCustomFiles[filePath];
+		delete customFilesPanelStates[filePath];
+
+		// Reset selected file if it was the removed one
+		if (selectedFile === `custom:${filePath}`) {
+			selectedFile = 'compose';
+		}
+
+		toast.success(`Removed ${filePath}`);
+		await invalidateAll();
 	}
 
 	function saveNameIfChanged() {
@@ -368,12 +453,35 @@
 													class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
 												>
 													{#snippet icon()}
-														<FileTextIcon class="size-4 text-amber-500" />
+														<FileSymlinkIcon class="size-4 text-amber-500" />
 													{/snippet}
 												</TreeView.File>
 											{/each}
 										</TreeView.Folder>
 									{/if}
+
+									<TreeView.Folder name="Custom Files">
+										{#if project?.customFiles && project.customFiles.length > 0}
+											{#each project.customFiles as customFile}
+												<TreeView.File
+													name={customFile.path}
+													onclick={() => (selectedFile = `custom:${customFile.path}`)}
+													class={selectedFile === `custom:${customFile.path}` ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FilePenIcon class="size-4 text-purple-500" />
+													{/snippet}
+												</TreeView.File>
+											{/each}
+										{/if}
+										<button
+											class="hover:bg-accent text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs"
+											onclick={() => (showAddCustomFileDialog = true)}
+										>
+											<AddIcon class="size-4" />
+											<span>Add file...</span>
+										</button>
+									</TreeView.Folder>
 								</TreeView.Root>
 							</div>
 						</div>
@@ -397,6 +505,34 @@
 									placeholder={m.compose_env_placeholder()}
 									error={$inputs.envContent.error ?? undefined}
 								/>
+							{:else if selectedFile.startsWith('custom:')}
+								{@const customPath = selectedFile.replace('custom:', '')}
+								{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
+								{#if customFile}
+									<div class="flex h-full flex-col">
+										<div class="mb-2 flex items-center justify-between">
+											<div class="flex items-center gap-2">
+												<FilePenIcon class="size-4 text-purple-500" />
+												<span class="text-sm font-medium">{customFile.path}</span>
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="text-muted-foreground hover:text-foreground"
+												onclick={() => handleRemoveCustomFile(customFile.path)}
+											>
+												<UnlinkIcon class="size-4" />
+											</Button>
+										</div>
+										<CodePanel
+											bind:open={customFilesPanelStates[customFile.path]}
+											title={customFile.path}
+											language="yaml"
+											bind:value={customFilesState[customFile.path]}
+											placeholder="# Custom file content"
+										/>
+									</div>
+								{/if}
 							{:else}
 								{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 								{#if includeFile}
@@ -413,38 +549,95 @@
 					</div>
 				{:else}
 					<div class="flex h-full flex-col gap-4">
-						{#if project?.includeFiles && project.includeFiles.length > 0}
+						{#if (project?.includeFiles && project.includeFiles.length > 0) || (project?.customFiles && project.customFiles.length > 0)}
 							<div class="border-border bg-card rounded-lg border">
 								<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
-									{#each project.includeFiles as includeFile}
-										<Button
-											variant={selectedIncludeTab === includeFile.relativePath ? 'default' : 'ghost'}
-											size="sm"
-											class="flex-shrink-0"
-											onclick={() => {
-												selectedIncludeTab = selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
-											}}
-										>
-											<FileTextIcon class="mr-2 size-4 text-amber-500" />
-											{includeFile.relativePath}
-										</Button>
-									{/each}
+									{#if project?.includeFiles}
+										{#each project.includeFiles as includeFile}
+											<Button
+												variant={selectedIncludeTab === includeFile.relativePath ? 'default' : 'ghost'}
+												size="sm"
+												class="shrink-0"
+												onclick={() => {
+													selectedIncludeTab = selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
+												}}
+											>
+												<FileSymlinkIcon class="mr-2 size-4 text-amber-500" />
+												{includeFile.relativePath}
+											</Button>
+										{/each}
+									{/if}
+									{#if project?.customFiles}
+										{#each project.customFiles as customFile}
+											<Button
+												variant={selectedIncludeTab === `custom:${customFile.path}` ? 'default' : 'ghost'}
+												size="sm"
+												class="shrink-0"
+												onclick={() => {
+													selectedIncludeTab =
+														selectedIncludeTab === `custom:${customFile.path}` ? null : `custom:${customFile.path}`;
+												}}
+											>
+												<FilePenIcon class="mr-2 size-4 text-purple-500" />
+												{customFile.path}
+											</Button>
+										{/each}
+									{/if}
+									<Button
+										variant="ghost"
+										size="sm"
+										class="text-muted-foreground shrink-0"
+										onclick={() => (showAddCustomFileDialog = true)}
+									>
+										<AddIcon class="mr-2 size-4" />
+										Add file
+									</Button>
 								</div>
 							</div>
 						{/if}
 
 						{#if selectedIncludeTab}
-							{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
-							{#if includeFile}
-								<div class="flex-1">
-									<CodePanel
-										bind:open={includeFilesPanelStates[includeFile.relativePath]}
-										title={includeFile.relativePath}
-										language="yaml"
-										bind:value={includeFilesState[includeFile.relativePath]}
-										placeholder="# Include file content"
-									/>
-								</div>
+							{#if selectedIncludeTab.startsWith('custom:')}
+								{@const customPath = selectedIncludeTab.replace('custom:', '')}
+								{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
+								{#if customFile}
+									<div class="flex-1">
+										<div class="mb-2 flex items-center justify-between">
+											<div class="flex items-center gap-2">
+												<FilePenIcon class="size-4 text-purple-500" />
+												<span class="text-sm font-medium">{customFile.path}</span>
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="text-muted-foreground hover:text-foreground"
+												onclick={() => handleRemoveCustomFile(customFile.path)}
+											>
+												<UnlinkIcon class="size-4" />
+											</Button>
+										</div>
+										<CodePanel
+											bind:open={customFilesPanelStates[customFile.path]}
+											title={customFile.path}
+											language="yaml"
+											bind:value={customFilesState[customFile.path]}
+											placeholder="# Custom file content"
+										/>
+									</div>
+								{/if}
+							{:else}
+								{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
+								{#if includeFile}
+									<div class="flex-1">
+										<CodePanel
+											bind:open={includeFilesPanelStates[includeFile.relativePath]}
+											title={includeFile.relativePath}
+											language="yaml"
+											bind:value={includeFilesState[includeFile.relativePath]}
+											placeholder="# Include file content"
+										/>
+									</div>
+								{/if}
 							{/if}
 						{:else}
 							<div class="grid h-full flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
@@ -501,3 +694,34 @@
 		</div>
 	</div>
 {/if}
+
+<Dialog.Root bind:open={showAddCustomFileDialog}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Add Custom File</Dialog.Title>
+			<Dialog.Description>
+				Add an existing file or create a new empty file. If the file already exists, its content will be preserved. Use relative
+				paths like "config/settings.yaml" or absolute paths if configured.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 py-4">
+			<div class="grid gap-2">
+				<label for="custom-file-name" class="text-sm font-medium">File Path</label>
+				<Input
+					id="custom-file-name"
+					placeholder="config/my-file.yaml"
+					bind:value={newCustomFileName}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							handleAddCustomFile();
+						}
+					}}
+				/>
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showAddCustomFileDialog = false)}>Cancel</Button>
+			<Button onclick={handleAddCustomFile}>Create File</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
