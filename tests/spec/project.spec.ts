@@ -163,21 +163,30 @@ test.describe('New Compose Project Page', () => {
     const composeEditor = page.locator('.monaco-editor').first();
     await expect(composeEditor).toBeVisible();
 
-    const composeContent = composeEditor.locator('.cm-content[contenteditable]');
-    await composeContent.focus();
+    // Wait for Monaco to actually render its view before attempting input.
+    await expect(composeEditor.locator('.view-lines')).toBeVisible();
+
+    // Monaco may create the internal input textarea lazily (e.g. only after focus).
+    // Click first, then wait for textarea.inputarea to appear.
+    await composeEditor.click({ position: { x: 20, y: 20 } });
+    await expect(composeEditor.locator('textarea')).toHaveCount(1);
     await page.keyboard.press('ControlOrMeta+A');
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.evaluate((text) => navigator.clipboard.writeText(text), TEST_COMPOSE_YAML);
-    await page.keyboard.press('ControlOrMeta+V');
+    await page.keyboard.insertText(TEST_COMPOSE_YAML);
+
+    // Basic sanity check that the new content rendered (visible lines only).
+    await expect(composeEditor.locator('.view-lines')).toContainText('redis');
 
     const envEditor = page.locator('.monaco-editor').nth(1);
     await expect(envEditor).toBeVisible();
 
-    const envContent = envEditor.locator('.cm-content[contenteditable]');
-    await envContent.focus();
+    await expect(envEditor.locator('.view-lines')).toBeVisible();
+
+    await envEditor.click({ position: { x: 20, y: 20 } });
+    await expect(envEditor.locator('textarea')).toHaveCount(1);
     await page.keyboard.press('ControlOrMeta+A');
-    await page.evaluate((text) => navigator.clipboard.writeText(text), TEST_ENV_FILE);
-    await page.keyboard.press('ControlOrMeta+V');
+    await page.keyboard.insertText(TEST_ENV_FILE);
+
+    await expect(envEditor.locator('.view-lines')).toContainText('REDIS');
 
     await page.route('/api/environments/*/projects', async (route) => {
       if (route.request().method() === 'POST') {
@@ -217,10 +226,12 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('tab', { name: /Services/i }).click();
     await page.waitForLoadState('networkidle');
 
-    const serviceNameWhenStopped = page.getByRole('heading', { name: 'redis', exact: true });
+    const servicesPanel = page.locator('[role="tabpanel"][data-state="active"]');
+
+    const serviceNameWhenStopped = servicesPanel.getByRole('heading', { name: 'redis', exact: true });
     await expect(serviceNameWhenStopped).toBeVisible();
 
-    const containerNameWhenStopped = page.getByRole('link', { name: 'test-redis-container redis' });
+    const containerNameWhenStopped = servicesPanel.getByRole('link', { name: 'test-redis-container redis' });
     await expect(containerNameWhenStopped).not.toBeVisible();
 
     const deployButton = page.getByRole('button', { name: 'Up', exact: true }).filter({ hasText: 'Up' }).last();
@@ -229,14 +240,11 @@ test.describe('New Compose Project Page', () => {
     await page.waitForTimeout(5000);
     await page.waitForLoadState('networkidle');
 
-    const containerNameElement = page.getByRole('link', { name: 'test-redis-container redis' });
+    const containerNameElement = servicesPanel.getByRole('link', { name: 'test-redis-container redis' });
     await expect(containerNameElement).toBeVisible({ timeout: 15000 });
 
-    const serviceBadge = page.locator('text=redis').first();
-    await expect(serviceBadge).toBeVisible();
-
-    const statusBadge = page.locator('text=Running').first();
-    await expect(statusBadge).toBeVisible();
+    await expect(servicesPanel.getByRole('heading', { name: 'redis', exact: true })).toBeVisible();
+    await expect(servicesPanel.getByText('Running', { exact: true })).toBeVisible();
   });
 });
 
@@ -275,13 +283,15 @@ test.describe('Project Detail Page', () => {
 
     await page.getByRole('tab', { name: /Services/i }).click();
 
-    const nginxService = page.getByText(/nginx/i);
-    const emptyState = page.getByText(/No services found/i);
+  	const servicesPanel = page.locator('[role="tabpanel"][data-state="active"]');
+
+    const nginxService = servicesPanel.getByRole('heading', { name: /nginx/i });
+    const emptyState = servicesPanel.getByText(/No services found/i);
 
     if ((await nginxService.count()) > 0) {
       await expect(nginxService.first()).toBeVisible();
     } else {
-      const anyServiceBadge = page.locator('text=/running|stopped|unknown/i').first();
+      const anyServiceBadge = servicesPanel.locator('text=/running|stopped|unknown/i').first();
       if ((await anyServiceBadge.count()) > 0) {
         await expect(anyServiceBadge).toBeVisible();
       } else {
