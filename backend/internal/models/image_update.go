@@ -23,6 +23,8 @@ type ImageUpdateRecord struct {
 	AuthRegistry   *string `json:"authRegistry,omitempty" gorm:"column:auth_registry"`
 	UsedCredential bool    `json:"usedCredential,omitempty" gorm:"column:used_credential"`
 
+	NotificationSent bool `json:"notificationSent" gorm:"column:notification_sent;default:false"`
+
 	BaseModel
 }
 

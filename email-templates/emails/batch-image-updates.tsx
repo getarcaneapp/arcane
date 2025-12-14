@@ -8,18 +8,32 @@ interface BatchImageUpdatesEmailProps {
   appURL: string;
   updateCount: number;
   checkTime: string;
+  imageList?: string[];
 }
 
-export const BatchImageUpdatesEmail = ({ logoURL, appURL, updateCount, checkTime }: BatchImageUpdatesEmailProps) => {
+export const BatchImageUpdatesEmail = ({
+  logoURL,
+  appURL,
+  updateCount,
+  checkTime,
+  imageList = [],
+}: BatchImageUpdatesEmailProps) => {
+  // Handle both array (preview) and string (template placeholder)
+  const images = Array.isArray(imageList) ? imageList : [];
+
+  // For template generation, always include image list section with placeholder text
+  // This will be replaced with Go template range syntax
+  const showImageList = images.length > 0 || typeof imageList === 'string';
+
   return (
     <BaseTemplate logoURL={logoURL} appURL={appURL}>
       <CardHeader title="Image Updates Available" />
 
       <Section style={{ marginTop: '24px' }}>
         <Text style={mainTextStyle}>
-          {updateCount === 1
-            ? `1 container image has an update available.`
-            : `${updateCount} container images have updates available.`}
+          {updateCount === 1 ?
+            `1 container image has an update available.`
+          : `${updateCount} container images have updates available.`}
         </Text>
       </Section>
 
@@ -44,6 +58,19 @@ export const BatchImageUpdatesEmail = ({ logoURL, appURL, updateCount, checkTime
           </Column>
         </Row>
       </Section>
+
+      {showImageList && (
+        <Section style={imageListSectionStyle}>
+          <Text style={imageListHeaderStyle}>Images with Updates:</Text>
+          {images.length > 0 ?
+            images.map((image, index) => (
+              <Text key={index} style={imageItemStyle}>
+                • {image}
+              </Text>
+            ))
+          : <Text style={imageItemStyle}>IMAGELIST_PLACEHOLDER</Text>}
+        </Section>
+      )}
 
       <Section style={{ marginTop: '24px' }}>
         <Text style={footerStyle}>Log in to Arcane to view details and update your containers.</Text>
@@ -112,14 +139,47 @@ const footerStyle = {
   margin: '0',
 };
 
+const imageListSectionStyle = {
+  marginTop: '24px',
+  backgroundColor: 'rgba(15, 23, 42, 0.3)',
+  border: '1px solid rgba(148, 163, 184, 0.1)',
+  padding: '16px',
+  borderRadius: '8px',
+};
+
+const imageListHeaderStyle = {
+  fontSize: '14px',
+  fontWeight: '600' as const,
+  color: '#94a3b8',
+  margin: '0 0 12px 0',
+};
+
+const imageItemStyle = {
+  fontSize: '13px',
+  lineHeight: '20px',
+  color: '#cbd5e1',
+  margin: '4px 0',
+  fontFamily: 'monospace',
+};
+
 BatchImageUpdatesEmail.TemplateProps = {
   ...sharedTemplateProps,
   updateCount: '{{.UpdateCount}}',
   checkTime: '{{.CheckTime}}',
+  imageList: 'TEMPLATE_PLACEHOLDER', // This triggers the image list section to render
 };
 
 BatchImageUpdatesEmail.PreviewProps = {
   ...sharedPreviewProps,
   updateCount: 7,
   checkTime: '2025-10-27 15:30:00 UTC',
+  imageList: [
+    'ghcr.io/linuxserver/plex:latest',
+    'postgres:16-alpine',
+    'redis:7.2-alpine',
+    'nginx:latest',
+    'traefik:v3.0',
+    'portainer/portainer-ce:latest',
+    'grafana/grafana:latest',
+  ],
 };
