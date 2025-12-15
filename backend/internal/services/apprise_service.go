@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -34,6 +36,67 @@ type AppriseNotificationPayload struct {
 	Type   string   `json:"type,omitempty"`
 	Tag    []string `json:"tag,omitempty"`
 	Format string   `json:"format,omitempty"`
+}
+
+type NtfyNotificationPayload struct {
+	Topic    string   `json:"topic,omitempty"`
+	Message  string   `json:"message"`
+	Title    string   `json:"title,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Priority int      `json:"priority,omitempty"`
+}
+
+type ntfyURLInfo struct {
+	isNtfy   bool
+	httpURL  string
+	topic    string
+}
+
+func parseNtfyURL(apiURL string) ntfyURLInfo {
+	apiURL = strings.TrimSpace(apiURL)
+
+	if strings.HasPrefix(apiURL, "ntfys://") {
+		rest := strings.TrimPrefix(apiURL, "ntfys://")
+		parts := strings.SplitN(rest, "/", 2)
+		host := parts[0]
+		topic := ""
+		if len(parts) > 1 {
+			topic = strings.Trim(parts[1], "/")
+		}
+		httpURL := "https://" + host
+		if topic != "" {
+			httpURL = httpURL + "/" + topic
+		}
+		return ntfyURLInfo{isNtfy: true, httpURL: httpURL, topic: topic}
+	}
+
+	if strings.HasPrefix(apiURL, "ntfy://") {
+		rest := strings.TrimPrefix(apiURL, "ntfy://")
+		parts := strings.SplitN(rest, "/", 2)
+		host := parts[0]
+		topic := ""
+		if len(parts) > 1 {
+			topic = strings.Trim(parts[1], "/")
+		}
+		httpURL := "http://" + host
+		if topic != "" {
+			httpURL = httpURL + "/" + topic
+		}
+		return ntfyURLInfo{isNtfy: true, httpURL: httpURL, topic: topic}
+	}
+
+	parsed, err := url.Parse(apiURL)
+	if err != nil {
+		return ntfyURLInfo{isNtfy: false, httpURL: apiURL, topic: ""}
+	}
+
+	host := strings.ToLower(parsed.Host)
+	if strings.Contains(host, "ntfy") {
+		topic := strings.Trim(parsed.Path, "/")
+		return ntfyURLInfo{isNtfy: true, httpURL: apiURL, topic: topic}
+	}
+
+	return ntfyURLInfo{isNtfy: false, httpURL: apiURL, topic: ""}
 }
 
 func (s *AppriseService) GetSettings(ctx context.Context) (*models.AppriseSettings, error) {
@@ -97,26 +160,62 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 		}
 	}
 
-	payload := AppriseNotificationPayload{
-		Title:  title,
-		Body:   body,
-		Type:   "info",
-		Tag:    tags,
-		Format: format,
+	ntfyInfo := parseNtfyURL(settings.APIURL)
+
+	var jsonData []byte
+	var targetURL string
+
+	if ntfyInfo.isNtfy {
+		ntfyPayload := NtfyNotificationPayload{
+			Message:  body,
+			Title:    title,
+			Tags:     tags,
+			Priority: 3,
+		}
+
+		if ntfyInfo.topic != "" {
+			targetURL = ntfyInfo.httpURL
+		} else {
+			ntfyPayload.Topic = "arcane"
+			parsed, _ := url.Parse(ntfyInfo.httpURL)
+			parsed.Path = ""
+			targetURL = parsed.String()
+		}
+
+		jsonData, err = json.Marshal(ntfyPayload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal ntfy payload: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Sending ntfy notification",
+			slog.String("url", targetURL),
+			slog.String("title", title),
+			slog.String("topic", ntfyInfo.topic),
+			slog.Any("tags", tags))
+	} else {
+		payload := AppriseNotificationPayload{
+			Title:  title,
+			Body:   body,
+			Type:   "info",
+			Tag:    tags,
+			Format: format,
+		}
+
+		jsonData, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal notification payload: %w", err)
+		}
+
+		targetURL = settings.APIURL
+
+		slog.InfoContext(ctx, "Sending Apprise notification",
+			slog.String("url", settings.APIURL),
+			slog.String("title", title),
+			slog.Any("tags", tags),
+			slog.String("type", string(notificationType)))
 	}
 
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal notification payload: %w", err)
-	}
-
-	slog.InfoContext(ctx, "Sending Apprise notification",
-		slog.String("url", settings.APIURL),
-		slog.String("title", title),
-		slog.Any("tags", tags),
-		slog.String("type", string(notificationType)))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, settings.APIURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -129,19 +228,18 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	}
 	defer resp.Body.Close()
 
-	// Read response body for debugging
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	bodyString := string(bodyBytes)
 
 	if resp.StatusCode != http.StatusOK {
-		slog.ErrorContext(ctx, "Apprise API returned error",
+		slog.ErrorContext(ctx, "Notification API returned error",
 			slog.Int("status", resp.StatusCode),
 			slog.String("response", bodyString),
-			slog.String("url", settings.APIURL))
-		return fmt.Errorf("apprise API returned status %d: %s", resp.StatusCode, bodyString)
+			slog.String("url", targetURL))
+		return fmt.Errorf("notification API returned status %d: %s", resp.StatusCode, bodyString)
 	}
 
-	slog.InfoContext(ctx, "Apprise notification sent successfully",
+	slog.InfoContext(ctx, "Notification sent successfully",
 		slog.Int("status", resp.StatusCode),
 		slog.String("response", bodyString))
 
