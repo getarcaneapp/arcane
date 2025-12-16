@@ -282,13 +282,20 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 
 func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id string) error {
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"last_seen":  &now,
-		"status":     string(models.EnvironmentStatusOnline),
-		"updated_at": &now,
-	}).Error; err != nil {
-		return fmt.Errorf("failed to update environment heartbeat: %w", err)
+
+	// Use Exec with raw SQL for better performance
+	// Only update if last_seen is NULL or older than 30 seconds to reduce write frequency
+	result := s.db.WithContext(ctx).Exec(`
+		UPDATE environments 
+		SET last_seen = ?, status = ?, updated_at = ?
+		WHERE id = ? 
+		AND (last_seen IS NULL OR last_seen < ?)
+	`, &now, string(models.EnvironmentStatusOnline), &now, id, now.Add(-30*time.Second))
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
 	}
+
 	return nil
 }
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
