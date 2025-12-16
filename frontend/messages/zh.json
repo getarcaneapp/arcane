@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "从普通连接启动TLS(默认) 升级，SSL/TLS使用从启动开始加密。没有加密。",
 	"notifications_email_test_simple": "简单测试电子邮件",
 	"notifications_email_test_image_update": "图片更新电子邮件",
+	"notifications_email_test_batch_image_update": "批量图像更新电子邮件",
 	"notifications_apprise_title": "应用集成",
 	"notifications_apprise_description": "配置 Apprise API 以实现多个服务的统一通知",
 	"notifications_apprise_enabled_label": "启用 Apprise",
