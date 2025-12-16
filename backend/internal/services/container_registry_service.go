@@ -239,7 +239,7 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 
 // fetchDigestFromRegistry queries the Docker registry API for the image digest
 func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, repository, tag string) (string, error) {
-	registryURL, repoPath := parseRegistryAndRepo(repository)
+	registryURL, repoPath := s.parseRegistryAndRepo(ctx, repository)
 	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repoPath, tag)
 
 	reqCtx, cancel := context.WithTimeout(ctx, registryCheckTimeout)
@@ -319,7 +319,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 		return "", fmt.Errorf("no auth realm found")
 	}
 
-	registryURL, repoPath := parseRegistryAndRepo(repository)
+	registryURL, repoPath := s.parseRegistryAndRepo(ctx, repository)
 
 	tokenURL := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, repoPath)
 
@@ -528,23 +528,62 @@ func parseImageReference(imageRef string) (repository, tag string) {
 }
 
 // parseRegistryAndRepo splits a repository into registry URL and repo path using distribution/reference
-func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
+// It also resolves registry redirects (e.g., custom domains that point to Docker Hub)
+func (s *ContainerRegistryService) parseRegistryAndRepo(ctx context.Context, repository string) (registryURL, repoPath string) {
 	named, err := ref.ParseNormalizedNamed(repository)
 	if err != nil {
 		return "https://registry-1.docker.io", "library/" + repository
 	}
 
 	domain := ref.Domain(named)
-	repoPath = ref.Path(named)
+	originalRepoPath := ref.Path(named)
 
-	registryURL, err = registry.GetRegistryAddress(named.Name())
-	if err != nil {
-		registryURL = "https://" + domain
-	} else {
-		registryURL = "https://" + registryURL
+	// Determine the URL scheme (http or https) based on registry configuration
+	scheme := s.getRegistryScheme(ctx, domain)
+
+	// Check if this is a redirect domain (like docker.umami.is)
+	redirectCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	resolvedDomain, isDockerHub := registry.ResolveRegistryRedirect(redirectCtx, domain)
+	if isDockerHub && domain != "docker.io" && domain != registry.DefaultRegistryDomain {
+		// This is a custom domain redirecting to Docker Hub
+		// The repository path should be used as-is on Docker Hub
+		slog.Info("Resolved registry redirect to Docker Hub", "original_domain", domain, "resolved_domain", resolvedDomain, "repo_path", originalRepoPath)
+
+		// Docker Hub always uses HTTPS
+		return "https://" + resolvedDomain, originalRepoPath
 	}
 
-	return registryURL, repoPath
+	// Normal registry resolution
+	registryURL, err = registry.GetRegistryAddress(named.Name())
+	if err != nil {
+		registryURL = scheme + "://" + domain
+	} else {
+		registryURL = scheme + "://" + registryURL
+	}
+
+	return registryURL, originalRepoPath
+}
+
+// getRegistryScheme determines whether a registry should use http or https
+// based on stored registry configuration
+func (s *ContainerRegistryService) getRegistryScheme(ctx context.Context, domain string) string {
+	registries, err := s.GetEnabledRegistries(ctx)
+	if err != nil {
+		return "https" // Default to secure
+	}
+
+	// Convert to registry configs for the util function
+	configs := make([]registry.RegistryConfig, len(registries))
+	for i, reg := range registries {
+		configs[i] = registry.RegistryConfig{
+			URL:      reg.URL,
+			Insecure: reg.Insecure,
+		}
+	}
+
+	return registry.GetRegistryScheme(domain, configs)
 }
 
 // parseWWWAuth parses the WWW-Authenticate header using the registry client
