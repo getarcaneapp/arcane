@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "Les mises à jour de StartTLS (par défaut) à partir d'une connexion simple. SSL/TLS utilise le chiffrement depuis le début. Aucun n'utilise de chiffrement.",
 	"notifications_email_test_simple": "Courriel de test simple",
 	"notifications_email_test_image_update": "Email de mise à jour de l'image",
+	"notifications_email_test_batch_image_update": "Email de mise à jour d'images par lots",
 	"notifications_apprise_title": "Intégration Apprise",
 	"notifications_apprise_description": "Configurer l'API Apprise pour des notifications unifiées à travers plusieurs services",
 	"notifications_apprise_enabled_label": "Activer l'Apprise",
