@@ -610,7 +610,7 @@ func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID s
 			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
 			digestChanged := existingRecord.LatestDigest != updateRecord.LatestDigest
 			versionChanged := existingRecord.LatestVersion != updateRecord.LatestVersion
-			
+
 			// Reset notification_sent if the update state changed in any way
 			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
 				updateRecord.NotificationSent = false
@@ -981,20 +981,20 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		"duration", time.Since(startBatch))
 
 	if s.notificationService != nil {
-		// Use a fresh context with timeout for notifications to avoid context cancellation issues
-		// when called from scheduled jobs where the parent context may be canceled
-		notifCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use a context with timeout for notifications
+		notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
 		// Get only the updates that haven't been notified yet
 		unnotifiedUpdates, err := s.GetUnnotifiedUpdates(notifCtx)
-		if err != nil {
+		switch {
+		case err != nil:
 			slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
-		} else if len(unnotifiedUpdates) > 0 {
+		case len(unnotifiedUpdates) > 0:
 			// Convert unnotified records to the format expected by notification service
 			updatesToNotify := make(map[string]*imageupdate.Response)
 			imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
-			
+
 			for imageID, record := range unnotifiedUpdates {
 				// Construct image ref from repository and tag
 				imageRef := fmt.Sprintf("%s:%s", record.Repository, record.Tag)
@@ -1017,7 +1017,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 			}
 
 			slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
-			
+
 			if notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify); notifErr != nil {
 				slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
 			} else {
@@ -1026,7 +1026,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 					slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
 				}
 			}
-		} else {
+		default:
 			slog.DebugContext(ctx, "No new updates to notify")
 		}
 	}
