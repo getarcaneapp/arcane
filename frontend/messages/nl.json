@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "StartTLS (standaard) upgrades van platte verbinding. SSL/TLS gebruikt encryptie van start. Geen gebruikt geen encryptie.",
 	"notifications_email_test_simple": "Eenvoudige test e-mail",
 	"notifications_email_test_image_update": "E-mail voor afbeelding bijwerken",
+	"notifications_email_test_batch_image_update": "Batch image updates e-mail",
 	"notifications_apprise_title": "Integratie met Apprise",
 	"notifications_apprise_description": "Configureer Apprise API voor uniforme meldingen over meerdere services",
 	"notifications_apprise_enabled_label": "Inschakelen Apprise",
