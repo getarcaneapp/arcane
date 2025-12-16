@@ -73,26 +73,52 @@ jobs:
           echo "manager=ghcr.io/${REPO_OWNER,,}/arcane" >> $GITHUB_OUTPUT
           echo "agent=ghcr.io/${REPO_OWNER,,}/arcane-headless" >> $GITHUB_OUTPUT
 
-      - name: Build and push manager image
+      # Alpine variants (base :next tag)
+      - name: Build and push manager image (Alpine)
         uses: depot/build-push-action@v1
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.image-names.outputs.manager }}:next
-          file: docker/Dockerfile-static
+          file: docker/next-builds/Dockerfile-static
           build-args: |
             VERSION=next
             REVISION=${{ github.sha }}
 
-      - name: Build and push agent image
+      - name: Build and push agent image (Alpine)
         uses: depot/build-push-action@v1
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.image-names.outputs.agent }}:next
-          file: docker/Dockerfile-agent-static
+          file: docker/next-builds/Dockerfile-agent-static
+          build-args: |
+            VERSION=next
+            REVISION=${{ github.sha }}
+
+      # Distroless variants (:next-distroless tag)
+      - name: Build and push manager image (Distroless)
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.image-names.outputs.manager }}:next-distroless
+          file: docker/next-builds/Dockerfile-next-distroless
+          build-args: |
+            VERSION=next
+            REVISION=${{ github.sha }}
+
+      - name: Build and push agent image (Distroless)
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.image-names.outputs.agent }}:next-distroless
+          file: docker/next-builds/Dockerfile-agent-distroless
           build-args: |
             VERSION=next
             REVISION=${{ github.sha }}
