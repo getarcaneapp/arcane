@@ -52,7 +52,23 @@ async function buildTemplateFile(Component: any, templateName: string, isPlainTe
   });
 
   // Normalize quotes
-  const normalized = rendered.replace(/&quot;/g, '"');
+  let normalized = rendered.replace(/&quot;/g, '"');
+
+  // Post-process: Replace special placeholders with Go template syntax
+  // This allows us to inject Go template loops that can't be rendered by React
+  if (isPlainText) {
+    // For plain text, use simple line-by-line rendering
+    normalized = normalized.replace(
+      /IMAGELIST_PLACEHOLDER/g,
+      '{{range .ImageList}}• {{.}}\n{{end}}'
+    );
+  } else {
+    // For HTML, wrap each item in a paragraph tag with proper styling
+    normalized = normalized.replace(
+      /<p[^>]*>IMAGELIST_PLACEHOLDER<\/p>/g,
+      '{{range .ImageList}}<p style="font-size:13px;line-height:20px;color:#cbd5e1;margin:4px 0;font-family:monospace">• {{.}}</p>{{end}}'
+    );
+  }
 
   // Enforce line length: prefer tag boundaries, never spaces
   const maxLen = isPlainText ? 78 : 998; // RFC-safe

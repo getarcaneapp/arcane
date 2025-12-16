@@ -34,7 +34,6 @@ import (
 	"runtime"
 
 	"github.com/charmbracelet/fang"
-	"github.com/spf13/cobra"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/pkg/apikeys"
@@ -57,6 +56,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/users"
 	"github.com/getarcaneapp/arcane/cli/pkg/version"
 	"github.com/getarcaneapp/arcane/cli/pkg/volumes"
+	"github.com/spf13/cobra"
 )
 
 var (

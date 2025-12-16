@@ -71,10 +71,6 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
-		func(ctx context.Context) error {
-			_, err := appServices.Settings.SyncOidcEnvToDatabase(ctx)
-			return err
-		},
 		appServices.Settings.MigrateOidcConfigToFields)
 
 	// Handle agent auto-pairing with API key

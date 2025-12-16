@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
+	"github.com/spf13/cobra"
 )
 
 var (
