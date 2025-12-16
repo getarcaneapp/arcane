@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { MobileNavigationSettings } from '$lib/config/navigation-config';
+	import type { MobileNavigationSettings, NavigationItem } from '$lib/config/navigation-config';
 	import { getAvailableMobileNavItems } from '$lib/config/navigation-config';
 	import MobileNavItem from './mobile-nav-item.svelte';
 	import MobileNavMenuButton from './mobile-nav-menu-button.svelte';
@@ -9,25 +9,28 @@
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
 	import './styles.css';
+	import type { User } from '$lib/types/user.type';
 
 	let {
 		navigationSettings,
-		user = null,
+		user,
 		versionInformation = null,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
-		user?: any;
+		user?: User | null;
 		versionInformation?: any;
 		class?: string;
 	} = $props();
 
 	const pinnedItems = $derived.by(() => {
-		if (!navigationSettings?.pinnedItems) return [];
+		// Use user's mobile dock tabs from backend if available, otherwise fallback to navigation settings
+		const tabUrls = user?.mobileDockTabs || navigationSettings?.pinnedItems || [];
+		if (tabUrls.length === 0) return [];
 		const availableItems = getAvailableMobileNavItems();
-		return navigationSettings.pinnedItems
-			.map((url) => availableItems.find((item) => item.url === url))
-			.filter((item) => item !== undefined);
+		return tabUrls
+			.map((url: string) => availableItems.find((item) => item.url === url))
+			.filter((item): item is NavigationItem => item !== undefined);
 	});
 
 	const currentPath = $derived(page.url.pathname);

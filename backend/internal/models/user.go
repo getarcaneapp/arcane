@@ -14,6 +14,7 @@ type User struct {
 	LastLogin              *time.Time  `json:"lastLogin,omitempty" gorm:"column:last_login" sortable:"true"`
 	Locale                 *string     `json:"locale,omitempty" gorm:"column:locale"`
 	RequiresPasswordChange bool        `json:"requiresPasswordChange" gorm:"column:requires_password_change"`
+	MobileDockTabs         StringSlice `json:"mobileDockTabs,omitempty" gorm:"column:mobile_dock_tabs;type:text;default:'[\"/dashboard\",\"/projects\",\"/containers\",\"/images\"]'"`
 
 	// OIDC provider tokens
 	OidcAccessToken          *string    `json:"-" gorm:"type:text"`

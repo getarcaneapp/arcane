@@ -271,6 +271,11 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	if input.Body.Locale != nil {
 		userModel.Locale = input.Body.Locale
 	}
+	if input.Body.MobileDockTabs != nil {
+		if len(input.Body.MobileDockTabs) == 4 {
+			userModel.MobileDockTabs = input.Body.MobileDockTabs
+		}
+	}
 
 	if input.Body.Password != nil && *input.Body.Password != "" {
 		hashedPassword, err := h.userService.HashPassword(*input.Body.Password)

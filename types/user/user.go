@@ -12,11 +12,12 @@ type CreateUser struct {
 
 // UpdateUser represents the request body for updating a user.
 type UpdateUser struct {
-	DisplayName *string  `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
-	Email       *string  `json:"email,omitempty" format:"email" doc:"Email address of the user"`
-	Roles       []string `json:"roles,omitempty" doc:"Roles assigned to the user"`
-	Locale      *string  `json:"locale,omitempty" doc:"Locale preference of the user"`
-	Password    *string  `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
+	DisplayName    *string  `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
+	Email          *string  `json:"email,omitempty" format:"email" doc:"Email address of the user"`
+	Roles          []string `json:"roles,omitempty" doc:"Roles assigned to the user"`
+	Locale         *string  `json:"locale,omitempty" doc:"Locale preference of the user"`
+	Password       *string  `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
+	MobileDockTabs []string `json:"mobileDockTabs,omitempty" minItems:"4" maxItems:"4" doc:"Mobile dock tab URLs (must be exactly 4)" example:"[\"/dashboard\",\"/projects\",\"/containers\",\"/images\"]"`
 }
 
 // User represents a user in API responses.
@@ -31,4 +32,5 @@ type User struct {
 	CreatedAt              string   `json:"createdAt,omitempty" doc:"Date and time when the user was created"`
 	UpdatedAt              string   `json:"updatedAt,omitempty" doc:"Date and time when the user was last updated"`
 	RequiresPasswordChange bool     `json:"requiresPasswordChange" doc:"Whether the user must change their password"`
+	MobileDockTabs         []string `json:"mobileDockTabs,omitempty" doc:"Mobile dock tab URLs (4 items)" example:"[\"/dashboard\",\"/projects\",\"/containers\",\"/images\"]"`
 }

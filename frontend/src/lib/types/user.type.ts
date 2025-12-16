@@ -13,6 +13,7 @@ export type User = {
 	oidcSubjectId?: string;
 	locale?: Locale;
 	requiresPasswordChange?: boolean;
+	mobileDockTabs?: string[];
 };
 
 export type CreateUser = Omit<

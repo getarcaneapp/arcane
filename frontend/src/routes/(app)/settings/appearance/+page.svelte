@@ -4,7 +4,9 @@
 	import { toast } from 'svelte-sonner';
 	import NavigationSettingControl from '$lib/components/navigation-setting-control.svelte';
 	import NavigationModeSettingControl from '$lib/components/navigation-mode-setting-control.svelte';
+	import MobileDockTabSelector from '$lib/components/mobile-dock-tab-selector.svelte';
 	import settingsStore from '$lib/stores/config-store';
+	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import { navigationSettingsOverridesStore, resetNavigationVisibility } from '$lib/utils/navigation.utils';
 	import { SettingsPageLayout } from '$lib/layouts';
@@ -16,10 +18,13 @@
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
 	import { ApperanceIcon } from '$lib/icons';
+	import { userService } from '$lib/services/user-service';
+	import { defaultMobilePinnedItems } from '$lib/config/navigation-config';
 
 	let { data } = $props();
 	const currentSettings = $derived($settingsStore || data.settings!);
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
+	const currentUser = $derived(data.user);
 
 	const formSchema = z.object({
 		mobileNavigationMode: z.enum(['floating', 'docked']),
@@ -32,6 +37,33 @@
 
 	// Track local override state using the shared store
 	let persistedState = $state(navigationSettingsOverridesStore.current);
+
+	// Track mobile dock tabs
+	const getInitialDockTabs = () => currentUser?.mobileDockTabs || defaultMobilePinnedItems.map((item) => item.url);
+	let mobileDockTabs = $state<string[]>(getInitialDockTabs());
+	let initialMobileDockTabs = $state<string[]>(getInitialDockTabs());
+	const mobileDockTabsChanged = $derived(JSON.stringify(mobileDockTabs) !== JSON.stringify(initialMobileDockTabs));
+
+	async function saveMobileDockTabs() {
+		if (!currentUser || mobileDockTabs.length !== 4) {
+			toast.error(m.mobile_dock_tabs_required());
+			return;
+		}
+
+		try {
+			await userService.update(currentUser.id, { mobileDockTabs });
+			await userStore.reload();
+			initialMobileDockTabs = [...mobileDockTabs];
+			toast.success('Mobile dock tabs saved successfully');
+		} catch (error) {
+			toast.error('Failed to save mobile dock tabs');
+			console.error('Error saving mobile dock tabs:', error);
+		}
+	}
+
+	function resetMobileDockTabs() {
+		mobileDockTabs = [...initialMobileDockTabs];
+	}
 
 	// Sidebar context is only available in desktop view
 	let sidebar: ReturnType<typeof useSidebar> | null = null;
@@ -229,6 +261,38 @@
 									onClearOverride={() => clearLocalOverride('showLabels')}
 									serverDisabled={isReadOnly}
 								/>
+							</div>
+						</div>
+
+						<Separator />
+
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.mobile_dock_customization_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.mobile_dock_customization_description()}</p>
+							</div>
+							<div class="space-y-3">
+								<MobileDockTabSelector bind:selectedTabs={mobileDockTabs} disabled={isReadOnly} />
+								{#if mobileDockTabsChanged}
+									<div class="flex gap-2">
+										<button
+											type="button"
+											class="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-sm font-medium"
+											onclick={saveMobileDockTabs}
+											disabled={mobileDockTabs.length !== 4 || isReadOnly}
+										>
+											{m.common_save()}
+										</button>
+										<button
+											type="button"
+											class="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm font-medium"
+											onclick={resetMobileDockTabs}
+											disabled={isReadOnly}
+										>
+											{m.common_reset()}
+										</button>
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
