@@ -35,7 +35,7 @@
 	"common_subnet": "Subnet",
 	"common_shell": "Shell",
 	"common_ports": "Ports",
-	"common_type": "Type",
+	"common_type": "Тип",
 	"common_environment_variables": "Environment Variables",
 	"common_always": "Always",
 	"common_working_directory": "Working Directory",
