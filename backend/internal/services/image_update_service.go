@@ -608,8 +608,8 @@ func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID s
 		if err := tx.Where("id = ?", imageID).First(&existingRecord).Error; err == nil {
 			// Existing record found - check if we need to reset notification_sent
 			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-			digestChanged := existingRecord.LatestDigest != updateRecord.LatestDigest
-			versionChanged := existingRecord.LatestVersion != updateRecord.LatestVersion
+			digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
+			versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
 
 			// Reset notification_sent if the update state changed in any way
 			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
