@@ -9,6 +9,7 @@ DROP INDEX IF EXISTS idx_users_username;
 DROP INDEX IF EXISTS idx_users_email;
 DROP INDEX IF EXISTS idx_users_oidc_subject_id;
 DROP INDEX IF EXISTS idx_image_updates_has_update;
+DROP INDEX IF EXISTS idx_image_updates_has_update_notification;
 DROP INDEX IF EXISTS idx_image_updates_check_time;
 DROP INDEX IF EXISTS idx_image_updates_notification_sent;
 DROP INDEX IF EXISTS idx_notification_settings_enabled;

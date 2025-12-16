@@ -8,6 +8,7 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_oidc_subject_id ON users (oidc_subject_id);
 CREATE INDEX IF NOT EXISTS idx_image_updates_has_update ON image_updates (has_update);
+CREATE INDEX IF NOT EXISTS idx_image_updates_has_update_notification ON image_updates (has_update, notification_sent);
 CREATE INDEX IF NOT EXISTS idx_image_updates_check_time ON image_updates (check_time);
 CREATE INDEX IF NOT EXISTS idx_image_updates_notification_sent ON image_updates (notification_sent);
 CREATE INDEX IF NOT EXISTS idx_notification_settings_enabled ON notification_settings (enabled);
