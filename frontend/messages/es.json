@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "Actualizaciones de StartTLS (por defecto) desde conexión plana. SSL/TLS utiliza el cifrado desde el inicio. Ninguna usa cifrado.",
 	"notifications_email_test_simple": "Email de prueba simple",
 	"notifications_email_test_image_update": "Actualizar imagen",
+	"notifications_email_test_batch_image_update": "Email de Actualizaciones de Imagen Lote",
 	"notifications_apprise_title": "Integración rapaz",
 	"notifications_apprise_description": "Configurar API de Apple para notificaciones unificadas a través de múltiples servicios",
 	"notifications_apprise_enabled_label": "Habilitar aviso",
