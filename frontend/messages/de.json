@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "\"StartTLS (Standard)\": Verbindung zunächst unverschlüsselt, später verschlüsselt. \"SSL/TLS\": Verschlüsselung von Anfang an. \"None\": keine Verschlüsselung.",
 	"notifications_email_test_simple": "Einfache Test-E-Mail",
 	"notifications_email_test_image_update": "Image-Update E-Mail",
+	"notifications_email_test_batch_image_update": "Stapelbild-Updates E-Mail",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Apprise-API für einheitliche Benachrichtigungen für mehrere Dienste konfigurieren",
 	"notifications_apprise_enabled_label": "Apprise aktivieren",
