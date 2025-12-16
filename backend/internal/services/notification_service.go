@@ -23,6 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
+const logoURLPath = "/api/app-images/logo?full=true"
+
 type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
@@ -393,9 +395,11 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 }
 
 func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
+	logoURL := s.config.AppUrl + logoURLPath
 	data := map[string]interface{}{
-		"LogoURL":       "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL":       logoURL,
 		"AppURL":        s.config.AppUrl,
+		"Environment":   "Local Docker",
 		"ImageRef":      imageRef,
 		"HasUpdate":     updateInfo.HasUpdate,
 		"UpdateType":    updateInfo.UpdateType,
@@ -595,9 +599,11 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 }
 
 func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
+	logoURL := s.config.AppUrl + logoURLPath
 	data := map[string]interface{}{
-		"LogoURL":       "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL":       logoURL,
 		"AppURL":        s.config.AppUrl,
+		"Environment":   "Local Docker",
 		"ContainerName": containerName,
 		"ImageRef":      imageRef,
 		"OldDigest":     truncateDigest(oldDigest),
@@ -660,6 +666,36 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		if testType == "image-update" {
 			return s.sendEmailNotification(ctx, "nginx:latest", testUpdate, setting.Config)
 		}
+		if testType == "batch-image-update" {
+			// Create test batch updates with multiple images
+			testUpdates := map[string]*imageupdate.Response{
+				"nginx:latest": {
+					HasUpdate:      true,
+					UpdateType:     "digest",
+					CurrentDigest:  "sha256:abc123def456789012345678901234567890",
+					LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
+					CheckTime:      time.Now(),
+					ResponseTimeMs: 100,
+				},
+				"postgres:16-alpine": {
+					HasUpdate:      true,
+					UpdateType:     "digest",
+					CurrentDigest:  "sha256:def456abc123789012345678901234567890",
+					LatestDigest:   "sha256:ghi789xyz012345678901234567890123456",
+					CheckTime:      time.Now(),
+					ResponseTimeMs: 120,
+				},
+				"redis:7.2-alpine": {
+					HasUpdate:      true,
+					UpdateType:     "digest",
+					CurrentDigest:  "sha256:123456789abc012345678901234567890def",
+					LatestDigest:   "sha256:456789012def345678901234567890123abc",
+					CheckTime:      time.Now(),
+					ResponseTimeMs: 95,
+				},
+			}
+			return s.sendBatchEmailNotification(ctx, testUpdates, setting.Config)
+		}
 		return s.sendTestEmail(ctx, setting.Config)
 	default:
 		return fmt.Errorf("unknown provider: %s", provider)
@@ -720,8 +756,9 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 }
 
 func (s *NotificationService) renderTestEmailTemplate() (string, string, error) {
+	logoURL := s.config.AppUrl + logoURLPath
 	data := map[string]interface{}{
-		"LogoURL": "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL": logoURL,
 		"AppURL":  s.config.AppUrl,
 	}
 
@@ -989,11 +1026,19 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 }
 
 func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*imageupdate.Response) (string, string, error) {
+	// Build list of image names
+	imageList := make([]string, 0, len(updates))
+	for imageRef := range updates {
+		imageList = append(imageList, imageRef)
+	}
+
+	logoURL := s.config.AppUrl + logoURLPath
 	data := map[string]interface{}{
-		"LogoURL":     "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/images/logo-full.svg",
+		"LogoURL":     logoURL,
 		"AppURL":      s.config.AppUrl,
 		"UpdateCount": len(updates),
 		"CheckTime":   time.Now().Format(time.RFC1123),
+		"ImageList":   imageList,
 	}
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/batch-image-updates_html.tmpl")
