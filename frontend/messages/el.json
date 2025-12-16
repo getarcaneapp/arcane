@@ -1350,6 +1350,7 @@
 	"notifications_email_tls_mode_description": "Εκκίνηση TLS (προεπιλογή) αναβαθμίσεις από απλή σύνδεση. Το SSL/TLS χρησιμοποιεί κρυπτογράφηση από την αρχή. Δεν χρησιμοποιεί καμία κρυπτογράφηση.",
 	"notifications_email_test_simple": "Απλό Δοκιμαστικό Email",
 	"notifications_email_test_image_update": "Email Ενημέρωσης Image",
+	"notifications_email_test_batch_image_update": "Email Ενημερώσεων Εικόνας Παρτίδας",
 	"notifications_apprise_title": "Ενσωμάτωση Apprise",
 	"notifications_apprise_description": "Ρύθμιση του Apprise API για ενοποιημένες ειδοποιήσεις σε πολλαπλές υπηρεσίες",
 	"notifications_apprise_enabled_label": "Ενεργοποίηση Apprise",
