@@ -1,6 +1,7 @@
 package image
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -148,9 +149,15 @@ type PruneReport struct {
 // It extracts deleted and untagged image IDs from the Docker API response,
 // combining both types into a single list and converting space reclaimed to int64.
 func NewPruneReport(src image.PruneReport) PruneReport {
+	// Safely convert uint64 to int64, capping at MaxInt64 to prevent overflow
+	spaceReclaimed := int64(src.SpaceReclaimed)
+	if src.SpaceReclaimed > math.MaxInt64 {
+		spaceReclaimed = math.MaxInt64
+	}
+
 	out := PruneReport{
 		ImagesDeleted:  make([]string, 0, len(src.ImagesDeleted)),
-		SpaceReclaimed: int64(src.SpaceReclaimed),
+		SpaceReclaimed: spaceReclaimed,
 	}
 	for _, d := range src.ImagesDeleted {
 		if d.Deleted != "" {
