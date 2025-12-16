@@ -64,15 +64,22 @@ build_platform() {
       "$output_path" "$os" "$arch" "$cgo_enabled" "${BUILD_TAGS:+ tags=$BUILD_TAGS}"
   fi
 
-  local build_flags=()
-  [ -n "$BUILD_TAGS" ] && build_flags=(-tags "$BUILD_TAGS")
-
-  if [ -n "$arm_version" ]; then
-    GOARM="$arm_version" CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
-      go build "${build_flags[@]}" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+  if [ -n "$BUILD_TAGS" ]; then
+    if [ -n "$arm_version" ]; then
+      GOARM="$arm_version" CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
+        go build -tags "$BUILD_TAGS" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+    else
+      CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
+        go build -tags "$BUILD_TAGS" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+    fi
   else
-    CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
-      go build "${build_flags[@]}" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+    if [ -n "$arm_version" ]; then
+      GOARM="$arm_version" CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
+        go build -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+    else
+      CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
+        go build -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+    fi
   fi
   echo "Done"
 }
