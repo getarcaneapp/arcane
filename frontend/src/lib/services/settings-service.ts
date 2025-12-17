@@ -109,11 +109,10 @@ export default class SettingsService extends BaseAPIService {
 	}
 
 	private parseValue(key: string, value: string) {
-		if (key === 'onboardingSteps' || key === 'registryCredentials' || key === 'templateRegistries') {
+		if (key === 'registryCredentials' || key === 'templateRegistries') {
 			try {
 				return JSON.parse(value);
 			} catch {
-				if (key === 'onboardingSteps') return {};
 				return [];
 			}
 		}

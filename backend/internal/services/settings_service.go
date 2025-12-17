@@ -101,8 +101,6 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		OnboardingCompleted:        models.SettingVariable{Value: "false"},
-		OnboardingSteps:            models.SettingVariable{Value: "[]"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
