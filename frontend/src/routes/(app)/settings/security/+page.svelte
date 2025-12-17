@@ -10,7 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
-	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
@@ -413,8 +413,8 @@
 							</div>
 							<div>
 								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-									<AdaptiveTooltip side="top">
-										{#snippet trigger()}
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
 											<Button
 												variant={$formInputs.authPasswordPolicy.value === 'basic' ? 'default' : 'outline'}
 												class={$formInputs.authPasswordPolicy.value === 'basic'
@@ -424,14 +424,14 @@
 												type="button"
 												>{m.common_basic()}
 											</Button>
-										{/snippet}
-										{#snippet content()}
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
 											{m.security_password_policy_basic_tooltip()}
-										{/snippet}
-									</AdaptiveTooltip>
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-									<AdaptiveTooltip side="top">
-										{#snippet trigger()}
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
 											<Button
 												variant={$formInputs.authPasswordPolicy.value === 'standard' ? 'default' : 'outline'}
 												class={$formInputs.authPasswordPolicy.value === 'standard'
@@ -441,14 +441,14 @@
 												type="button"
 												>{m.security_password_policy_standard()}
 											</Button>
-										{/snippet}
-										{#snippet content()}
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
 											{m.security_password_policy_standard_tooltip()}
-										{/snippet}
-									</AdaptiveTooltip>
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-									<AdaptiveTooltip side="top">
-										{#snippet trigger()}
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
 											<Button
 												variant={$formInputs.authPasswordPolicy.value === 'strong' ? 'default' : 'outline'}
 												class={$formInputs.authPasswordPolicy.value === 'strong'
@@ -458,11 +458,11 @@
 												type="button"
 												>{m.security_password_policy_strong()}
 											</Button>
-										{/snippet}
-										{#snippet content()}
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
 											{m.security_password_policy_strong_tooltip()}
-										{/snippet}
-									</AdaptiveTooltip>
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 								</div>
 							</div>
 						</div>

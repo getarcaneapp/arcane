@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ContainerPorts } from '$lib/types/container.type';
 	import { m } from '$lib/paraglide/messages';
-	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import settingsStore from '$lib/stores/config-store';
 
 	let { ports = [] as ContainerPorts[] } = $props<{
@@ -82,8 +82,8 @@
 {:else}
 	<div class="flex flex-wrap gap-1.5">
 		{#each published as p, i (i)}
-			<AdaptiveTooltip interactive>
-				{#snippet trigger()}
+			<ArcaneTooltip.Root interactive>
+				<ArcaneTooltip.Trigger>
 					<a
 						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-1 text-[11px] shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 						href={toHref(p.hostPort!)}
@@ -95,17 +95,17 @@
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
 						{/if}
 					</a>
-				{/snippet}
-				{#snippet content()}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
 					<p class="text-xs">
 						Published: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
 					</p>
-				{/snippet}
-			</AdaptiveTooltip>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		{/each}
 		{#each exposedOnly as p, i (i)}
-			<AdaptiveTooltip>
-				{#snippet trigger()}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
 					<span
 						class="bg-background/50 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 shadow-sm"
 					>
@@ -114,13 +114,13 @@
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
 						{/if}
 					</span>
-				{/snippet}
-				{#snippet content()}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
 					<p class="text-xs">
 						Exposed: {p.containerPort}{p.proto ? `/${p.proto}` : ''} (not published to host)
 					</p>
-				{/snippet}
-			</AdaptiveTooltip>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		{/each}
 	</div>
 {/if}

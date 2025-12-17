@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
@@ -382,13 +382,10 @@
 {/snippet}
 
 {#if effectiveUpdateInfo}
-	<AdaptiveTooltip
+	<ArcaneTooltip.Root
 		bind:open={isOpen}
-		side="right"
-		contentClass="max-w-[280px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-		arrowClasses="bg-popover"
 	>
-		{#snippet trigger()}
+		<ArcaneTooltip.Trigger>
 			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
 				{#if hasError}
 					<AlertIcon class="size-4 text-red-500" />
@@ -400,8 +397,11 @@
 					<CircleArrowUpIcon class="size-4 text-yellow-500" />
 				{/if}
 			</span>
-		{/snippet}
-		{#snippet content()}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content
+			side="right"
+			class="max-w-[280px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		>
 			<div class="overflow-hidden rounded-xl">
 				{#if hasError}
 					{@render errorState()}
@@ -413,33 +413,27 @@
 					{@render versionUpdateState()}
 				{/if}
 			</div>
-		{/snippet}
-	</AdaptiveTooltip>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {:else if isLoadingInBackground || isChecking}
-	<AdaptiveTooltip
-		side="right"
-		contentClass="max-w-[220px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-		arrowClasses="bg-popover"
-	>
-		{#snippet trigger()}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
 			<span class="mr-2 inline-flex size-4 items-center justify-center">
 				<Spinner class="size-4 text-blue-400" />
 			</span>
-		{/snippet}
-		{#snippet content()}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content
+			side="right"
+			class="max-w-[220px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		>
 			<div class="overflow-hidden rounded-xl">
 				{@render loadingState()}
 			</div>
-		{/snippet}
-	</AdaptiveTooltip>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {:else}
-	<AdaptiveTooltip
-		side="right"
-		contentClass="max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-		arrowClasses="bg-popover"
-		interactive
-	>
-		{#snippet trigger()}
+	<ArcaneTooltip.Root interactive>
+		<ArcaneTooltip.Trigger>
 			<span class="mr-2 inline-flex size-4 items-center justify-center">
 				{#if canCheckUpdate}
 					<button
@@ -459,11 +453,14 @@
 					</div>
 				{/if}
 			</span>
-		{/snippet}
-		{#snippet content()}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content
+			side="right"
+			class="max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
+		>
 			<div class="overflow-hidden rounded-xl">
 				{@render unknownState()}
 			</div>
-		{/snippet}
-	</AdaptiveTooltip>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/if}

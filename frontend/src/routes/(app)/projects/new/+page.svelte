@@ -10,7 +10,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import AdaptiveTooltip from '$lib/components/adaptive-tooltip.svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import type { Template } from '$lib/types/template.type';
 	import { z } from 'zod/v4';
@@ -146,7 +146,8 @@
 
 	const templateBtnClass = arcaneButtonVariants({
 		tone: actionConfigs.template?.tone ?? 'outline-primary',
-		size: 'default'
+		size: 'default',
+		hoverEffect: 'none'
 	});
 
 	const dropdownContentClass =
@@ -185,20 +186,20 @@
 
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
-					<AdaptiveTooltip
+					<ArcaneTooltip.Root
 						open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}
-						contentClass="arcane-tooltip-content max-w-[280px]"
 					>
-						{#snippet trigger()}
+						<ArcaneTooltip.Trigger>
 							<span>
 								<Button
+									variant="ghost"
 									disabled={!$inputs.name.value ||
 										!$inputs.composeContent.value ||
 										saving ||
 										converting ||
 										isLoadingTemplateContent}
 									onclick={() => handleSubmit()}
-									class={`${templateBtnClass} gap-2 rounded-r-none hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
+									class={`${templateBtnClass} gap-2 rounded-r-none`}
 								>
 									{#if saving}
 										<Spinner class="size-4" />
@@ -209,8 +210,8 @@
 									{/if}
 								</Button>
 							</span>
-						{/snippet}
-						{#snippet content()}
+						</ArcaneTooltip.Trigger>
+						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
 							{#if $inputs.name.value === ''}
 								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
 								<p class="text-muted-foreground text-xs">
@@ -220,17 +221,13 @@
 									{m.compose_project_name_tooltip_example()}
 								</p>
 							{/if}
-						{/snippet}
-					</AdaptiveTooltip>
+						</ArcaneTooltip.Content>
+					</ArcaneTooltip.Root>
 
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger>
 							{#snippet child({ props })}
-								<Button
-									{...props}
-									class={`${templateBtnClass} -ml-px rounded-l-none px-2 hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
-									variant="outline"
-								>
+								<Button {...props} class={`${templateBtnClass} -ml-px rounded-l-none px-2`} variant="ghost">
 									<ChevronDown class="size-4" />
 								</Button>
 							{/snippet}
