@@ -1,7 +1,7 @@
 {
   "name": "arcane-email-templates",
   "version": "1.0.0",
-  "packageManager": "pnpm@10.24.0",
+  "packageManager": "pnpm@10.26.0",
   "engines": {
     "node": ">=25"
   },

@@ -329,17 +329,25 @@
 				errors.push(m.notifications_saved_failed({ provider: 'Email', error: errorMsg }));
 			}
 
-			// Save Apprise settings
-			try {
-				await notificationService.updateAppriseSettings(appriseSettings);
-			} catch (error: any) {
-				const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
-				errors.push(m.notifications_saved_failed({ provider: 'Apprise', error: errorMsg }));
+			// Save Apprise settings only if they changed
+			const appriseChanged =
+				appriseSettings.enabled !== savedAppriseSettings.enabled ||
+				appriseSettings.apiUrl !== savedAppriseSettings.apiUrl ||
+				appriseSettings.imageUpdateTag !== savedAppriseSettings.imageUpdateTag ||
+				appriseSettings.containerUpdateTag !== savedAppriseSettings.containerUpdateTag;
+
+			if (appriseChanged) {
+				try {
+					await notificationService.updateAppriseSettings(appriseSettings);
+					savedAppriseSettings = { ...appriseSettings };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
+					errors.push(m.notifications_saved_failed({ provider: 'Apprise', error: errorMsg }));
+				}
 			}
 
 			if (errors.length === 0) {
 				currentSettings = formData;
-				savedAppriseSettings = { ...appriseSettings };
 				toast.success(m.general_settings_saved());
 			} else {
 				errors.forEach((err) => toast.error(err));

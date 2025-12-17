@@ -69,6 +69,29 @@ export interface NetworkSummaryDto {
 	isDefault?: boolean;
 }
 
+export interface ConfigReference {
+	Network?: string;
+}
+
+export interface PeerInfo {
+	Name?: string;
+	IP?: string;
+}
+
+export interface Task {
+	Name?: string;
+	EndpointID?: string;
+	EndpointIP?: string;
+	Info?: Record<string, string>;
+}
+
+export interface ServiceInfo {
+	VIP?: string;
+	Ports?: string[];
+	LocalLBIndex?: number;
+	Tasks?: Task[];
+}
+
 export interface NetworkInspectDto {
 	id: string;
 	name: string;
@@ -84,4 +107,9 @@ export interface NetworkInspectDto {
 	attachable: boolean;
 	ingress: boolean;
 	enableIPv6?: boolean;
+	enableIPv4?: boolean;
+	configFrom?: ConfigReference;
+	configOnly?: boolean;
+	peers?: PeerInfo[];
+	services?: Record<string, ServiceInfo>;
 }

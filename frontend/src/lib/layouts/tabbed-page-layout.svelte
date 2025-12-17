@@ -85,7 +85,9 @@
 
 		{#if showFloatingHeader}
 			<div class="fixed top-4 left-1/2 z-30 -translate-x-1/2 transition-all duration-300 ease-in-out">
-				<div class="glass-medium bubble-shadow-lg border-border/50 rounded-xl border px-4 py-3">
+				<div
+					class="bg-popover/90 supports-[backdrop-filter]:bg-popover/80 bubble-shadow-lg border-border/50 rounded-xl border px-4 py-3 backdrop-blur-md"
+				>
 					<div class="flex items-center gap-4">
 						<div class="min-w-0">
 							{@render headerInfo()}

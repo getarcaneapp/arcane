@@ -18,8 +18,23 @@ import (
 )
 
 const (
+	apiEnvironmentsPrefix  = "/api/environments/"
 	environmentsPathMarker = "/environments/"
-	proxyTimeout           = 60 * time.Second
+
+	managementEndpointTest           = "/test"
+	managementEndpointHeartbeat      = "/heartbeat"
+	managementEndpointSyncRegistries = "/sync-registries"
+	managementEndpointDeployment     = "/deployment"
+	managementEndpointAgentPair      = "/agent/pair"
+
+	errEnvironmentNotFound      = "Environment not found"
+	errEnvironmentDisabled      = "Environment is disabled"
+	errFailedCreateProxyRequest = "Failed to create proxy request"
+	errProxyRequestFailedPrefix = "Proxy request failed:"
+
+	// proxyTimeout is intentionally generous because some proxied operations
+	// (e.g., image pulls with progress streaming) can take multiple minutes.
+	proxyTimeout = 30 * time.Minute
 )
 
 // EnvResolver resolves an environment ID to its connection details.
@@ -74,7 +89,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	if err != nil || apiURL == "" {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Environment not found"},
+			"data":    gin.H{"error": errEnvironmentNotFound},
 		})
 		c.Abort()
 		return
@@ -83,7 +98,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	if !enabled {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Environment is disabled"},
+			"data":    gin.H{"error": errEnvironmentDisabled},
 		})
 		c.Abort()
 		return
@@ -104,7 +119,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 // Returns false for paths like /api/environments/{id} or management endpoints (should be handled locally)
 func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bool {
 	path := c.Request.URL.Path
-	prefix := "/api/environments/" + envID
+	prefix := apiEnvironmentsPrefix + envID
 
 	// If there's content after the environment ID path, check if it's a management endpoint
 	suffix := strings.TrimPrefix(path, prefix)
@@ -117,11 +132,11 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 	// Check if it's a management endpoint that should NOT be proxied
 	// These are environment management operations handled by the manager
 	managementEndpoints := []string{
-		"/test",
-		"/heartbeat",
-		"/sync-registries",
-		"/deployment",
-		"/agent/pair",
+		managementEndpointTest,
+		managementEndpointHeartbeat,
+		managementEndpointSyncRegistries,
+		managementEndpointDeployment,
+		managementEndpointAgentPair,
 	}
 
 	for _, endpoint := range managementEndpoints {
@@ -163,14 +178,14 @@ func (m *EnvironmentMiddleware) extractEnvironmentID(c *gin.Context) string {
 // buildTargetURL constructs the proxy target URL.
 func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL string) string {
 	// Remove the environment prefix from the path
-	prefix := "/api/environments/" + envID
+	prefix := apiEnvironmentsPrefix + envID
 	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
 	if suffix != "" && !strings.HasPrefix(suffix, "/") {
 		suffix = "/" + suffix
 	}
 
 	// Build target: apiURL + /api/environments/{localID} + suffix
-	target := strings.TrimRight(apiURL, "/") + path.Join("/api/environments/", m.localID) + suffix
+	target := strings.TrimRight(apiURL, "/") + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 
 	// Append query string if present
 	if qs := c.Request.URL.RawQuery; qs != "" {
@@ -182,14 +197,14 @@ func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL str
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
 func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
-	return strings.EqualFold(c.GetHeader("Upgrade"), "websocket") ||
-		strings.Contains(strings.ToLower(c.GetHeader("Connection")), "upgrade")
+	return strings.EqualFold(c.GetHeader(remenv.HeaderUpgrade), "websocket") ||
+		strings.Contains(strings.ToLower(c.GetHeader(remenv.HeaderConnection)), remenv.ConnectionUpgradeToken)
 }
 
 // proxyWebSocket handles WebSocket proxy requests.
 func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, accessToken *string, envID string) {
-	wsTarget := httpToWebSocketURL(target)
-	headers := m.buildWebSocketHeaders(c, accessToken)
+	wsTarget := remenv.HTTPToWebSocketURL(target)
+	headers := remenv.BuildWebSocketHeaders(c, accessToken)
 
 	if err := wsutil.ProxyHTTP(c.Writer, c.Request, wsTarget, headers); err != nil {
 		slog.Error("websocket proxy failed", "env_id", envID, "target", wsTarget, "err", err)
@@ -203,7 +218,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"data":    gin.H{"error": "Failed to create proxy request"},
+			"data":    gin.H{"error": errFailedCreateProxyRequest},
 		})
 		c.Abort()
 		return
@@ -213,7 +228,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"success": false,
-			"data":    gin.H{"error": fmt.Sprintf("Proxy request failed: %v", err)},
+			"data":    gin.H{"error": fmt.Sprintf("%s %v", errProxyRequestFailedPrefix, err)},
 		})
 		c.Abort()
 		return
@@ -238,13 +253,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
-	slog.DebugContext(c.Request.Context(), "Creating proxy request",
-		"method", c.Request.Method,
-		"target", target,
-		"contentLength", c.Request.ContentLength,
-		"contentType", c.GetHeader("Content-Type"),
-		"bodyLength", len(bodyBytes),
-		"body", string(bodyBytes))
+	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
 	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, bytes.NewBuffer(bodyBytes))
 	if err != nil {
@@ -272,49 +281,10 @@ func (m *EnvironmentMiddleware) writeProxyResponse(c *gin.Context, resp *http.Re
 
 	c.Status(resp.StatusCode)
 	if c.Request.Method != http.MethodHead {
-		_, _ = io.Copy(c.Writer, resp.Body)
-	}
-}
-
-// buildWebSocketHeaders creates headers for WebSocket proxy requests.
-func (m *EnvironmentMiddleware) buildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
-	headers := http.Header{}
-
-	// Forward API key if present
-	if apiKey := c.GetHeader("X-Api-Key"); apiKey != "" {
-		headers.Set("X-Api-Key", apiKey)
-	}
-
-	// Forward authorization (header or cookie)
-	if auth := c.GetHeader("Authorization"); auth != "" {
-		headers.Set("Authorization", auth)
-	} else if token, err := c.Cookie("token"); err == nil && token != "" {
-		headers.Set("Authorization", "Bearer "+token)
-	}
-
-	// Forward cookies if no other auth is present
-	if headers.Get("Authorization") == "" && headers.Get("X-Api-Token") == "" {
-		if cookies := c.Request.Header.Get("Cookie"); cookies != "" {
-			headers.Set("Cookie", cookies)
-		}
-	}
-
-	// Set agent token for remote environment authentication
-	if accessToken != nil && *accessToken != "" {
-		headers.Set("X-Arcane-Agent-Token", *accessToken)
-	}
-
-	return headers
-}
-
-// httpToWebSocketURL converts an HTTP(S) URL to WS(S).
-func httpToWebSocketURL(url string) string {
-	switch {
-	case strings.HasPrefix(url, "https://"):
-		return "wss://" + strings.TrimPrefix(url, "https://")
-	case strings.HasPrefix(url, "http://"):
-		return "ws://" + strings.TrimPrefix(url, "http://")
-	default:
-		return url
+		// Ensure headers are sent before streaming the body.
+		// This is critical for streaming responses (e.g., JSON line streams) where
+		// clients expect incremental updates.
+		c.Writer.WriteHeaderNow()
+		remenv.CopyBodyWithFlush(c.Writer, resp.Body)
 	}
 }
