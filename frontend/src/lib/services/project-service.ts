@@ -67,6 +67,26 @@ export class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/includes`, payload));
 	}
 
+	async createProjectCustomFile(projectId: string, path: string): Promise<Project> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const payload = { path };
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/custom-files`, payload));
+	}
+
+	async updateProjectCustomFile(projectId: string, path: string, content: string): Promise<Project> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const payload = { path, content };
+		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/custom-files`, payload));
+	}
+
+	async removeProjectCustomFile(projectId: string, path: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const payload = { path };
+		await this.handleResponse(
+			this.api.delete(`/environments/${envId}/projects/${projectId}/custom-files`, { data: payload })
+		);
+	}
+
 	async restartProject(projectId: string): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`));
