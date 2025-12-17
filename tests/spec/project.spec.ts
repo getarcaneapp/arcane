@@ -122,7 +122,7 @@ test.describe('New Compose Project Page', () => {
   });
 
   test('should validate required fields', async ({ page }) => {
-    const createButton = page.getByRole('button', { name: 'Create' }).first();
+    const createButton = page.getByRole('button', { name: 'Create Project' });
     await expect(createButton).toBeDisabled();
 
     await page.getByRole('button', { name: 'My New Project' }).click();
@@ -137,7 +137,9 @@ test.describe('New Compose Project Page', () => {
       if (msg.type() === 'error') observedErrors.push(msg.text());
     });
 
-    await expect(page.getByRole('button', { name: 'Create Project', exact: true })).toBeVisible();
+    const createButton = page.getByText('Create Project')
+
+    await expect(createButton).toBeVisible();
 
     // Open the inline name editor and set a valid name.
     await page.getByRole('button', { name: 'My New Project' }).click();
@@ -145,7 +147,7 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
     // The button should become enabled once name + compose content are present.
-    await expect(page.getByRole('button', { name: 'Create Project', exact: true })).toBeEnabled();
+    await expect(createButton).toBeEnabled();
 
     const stateUnsafe = observedErrors.filter((e) => e.includes('state_unsafe_mutation'));
     expect(stateUnsafe, `Unexpected state_unsafe_mutation errors: ${stateUnsafe.join('\n')}`).toHaveLength(0);
@@ -200,7 +202,6 @@ test.describe('New Compose Project Page', () => {
       }
     });
 
-    // const createButton = page.getByRole('button', { name: 'Create Project', exact: true });
     const createButton = page.getByText('Create Project')
     await createButton.click();
 
