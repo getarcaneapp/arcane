@@ -2,18 +2,11 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
-	import type { Snippet } from 'svelte';
-	import type { HTMLButtonAttributes } from 'svelte/elements';
+	import { Tooltip as TooltipPrimitive } from 'bits-ui';
 
-	let {
-		children,
-		child,
-		class: className,
-		...restProps
-	}: HTMLButtonAttributes & {
-		children?: Snippet;
-		child?: Snippet<[{ props: Record<string, unknown> }]>;
-	} = $props();
+	type ChildProps = { props: Record<string, unknown> };
+
+	let { children, child, class: className }: TooltipPrimitive.TriggerProps = $props();
 
 	const ctx = getArcaneTooltipContext();
 
@@ -80,10 +73,9 @@
 {#if ctx.isTouch}
 	{#if ctx.interactive}
 		<Popover.Trigger>
-			{#snippet child({ props }: { props: Record<string, unknown> })}
+			{#snippet child({ props }: ChildProps)}
 				<span
 					{...props}
-					{...restProps as any}
 					class={className}
 					ontouchstart={handleTouchStart}
 					ontouchend={handleTouchEnd}
@@ -102,9 +94,9 @@
 			{/snippet}
 		</Popover.Trigger>
 	{:else}
-		<Popover.Trigger class={className} {...restProps as any}>
+		<Popover.Trigger class={className}>
 			{#if child}
-				{#snippet child({ props }: { props: Record<string, unknown> })}
+				{#snippet child({ props }: ChildProps)}
 					{@render child({ props })}
 				{/snippet}
 			{:else}
@@ -113,9 +105,9 @@
 		</Popover.Trigger>
 	{/if}
 {:else}
-	<Tooltip.Trigger class={className} {...restProps as any}>
+	<Tooltip.Trigger class={className}>
 		{#if child}
-			{#snippet child({ props }: { props: Record<string, unknown> })}
+			{#snippet child({ props }: ChildProps)}
 				{@render child({ props })}
 			{/snippet}
 		{:else}
