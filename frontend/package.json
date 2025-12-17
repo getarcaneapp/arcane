@@ -26,7 +26,7 @@
 		"@codemirror/legacy-modes": "^6.5.2",
 		"@codemirror/lint": "^6.9.1",
 		"@codemirror/state": "^6.5.2",
-		"@codemirror/view": "^6.38.8",
+		"@codemirror/view": "^6.39.4",
 		"@lezer/highlight": "^1.2.3",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@tanstack/table-core": "^8.21.3",
