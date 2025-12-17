@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -818,6 +819,33 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: scanning containers for matching images", "containers", len(list), "oldIDMatches", len(oldIDToNewRef), "oldRefMatches", len(oldRefToNewRef))
 
+	// Precompute normalized tag->newRef mapping (fallback path when image ID match is not available)
+	updatedNorm := map[string]string{}
+	for oldRef, nr := range oldRefToNewRef {
+		updatedNorm[s.normalizeRef(oldRef)] = nr
+	}
+
+	// Build a map of compose project name -> Arcane project ID to allow project-level reconciliation.
+	// Compose labels store the normalized project name (lowercase, digits, dashes, underscores).
+	projectIDByComposeName := map[string]string{}
+	if s.projectService != nil {
+		projs, perr := s.projectService.ListAllProjects(ctx)
+		if perr != nil {
+			slog.WarnContext(ctx, "restartContainersUsingOldIDs: failed to list projects for compose mapping", "error", perr)
+		} else {
+			for _, p := range projs {
+				cn := loader.NormalizeProjectName(p.Name)
+				if cn == "" {
+					continue
+				}
+				projectIDByComposeName[cn] = p.ID
+			}
+		}
+	}
+
+	// Track compose projects that should be reconciled using Docker Compose rather than recreating containers.
+	affectedComposeProjects := map[string]struct{}{}
+
 	var results []updater.ResourceResult
 	for _, c := range list {
 		// Skip containers with opt-out label
@@ -845,10 +873,6 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			match = inspect.Image
 		} else {
 			// Fallback: resolve tags and match by tag
-			updatedNorm := map[string]string{}
-			for oldRef, nr := range oldRefToNewRef {
-				updatedNorm[s.normalizeRef(oldRef)] = nr
-			}
 			for _, t := range s.getNormalizedTagsForContainer(ctx, dcli, inspect) {
 				if nr, ok := updatedNorm[t]; ok {
 					newRef = nr
@@ -873,6 +897,26 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			NewImages:    map[string]string{"main": s.normalizeRef(newRef)},
 		}
 
+		// If this container is part of a Compose project, avoid low-level recreation.
+		// Recreating Compose-managed containers directly can break dependency setups (notably
+		// network_mode: "service:<name>" which becomes "container:<id>" at runtime). After
+		// the dependency container is recreated, the old container ID becomes invalid and
+		// dependent services fail to recreate (showing up as "Not created").
+		composeProject := ""
+		if c.Labels != nil {
+			composeProject = c.Labels["com.docker.compose.project"]
+		}
+		if composeProject == "" && inspect.Config != nil && inspect.Config.Labels != nil {
+			composeProject = inspect.Config.Labels["com.docker.compose.project"]
+		}
+		if composeProject != "" {
+			affectedComposeProjects[composeProject] = struct{}{}
+			res.Status = "skipped"
+			res.Error = "compose project reconciliation scheduled"
+			results = append(results, res)
+			continue
+		}
+
 		if err := s.updateContainer(ctx, c, inspect, newRef); err != nil {
 			res.Status = "failed"
 			res.Error = err.Error()
@@ -895,6 +939,46 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			}
 		}
 		results = append(results, res)
+	}
+
+	// For any affected Compose projects, run a Compose-level convergence to recreate/start services as needed.
+	// This mirrors `docker compose up` behavior and ensures dependency ordering and container-id references are correct.
+	if len(affectedComposeProjects) > 0 && s.projectService != nil {
+		for composeName := range affectedComposeProjects {
+			projectID, ok := projectIDByComposeName[composeName]
+			if !ok {
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: compose project not found in Arcane DB; skipping reconcile", "composeProject", composeName)
+				results = append(results, updater.ResourceResult{
+					ResourceID:   composeName,
+					ResourceName: composeName,
+					ResourceType: "project",
+					Status:       "skipped",
+					Error:        "compose project not managed by Arcane",
+				})
+				continue
+			}
+
+			slog.InfoContext(ctx, "restartContainersUsingOldIDs: reconciling compose project after image updates", "composeProject", composeName, "projectID", projectID)
+			if err := s.projectService.DeployProject(ctx, projectID, systemUser); err != nil {
+				results = append(results, updater.ResourceResult{
+					ResourceID:   projectID,
+					ResourceName: composeName,
+					ResourceType: "project",
+					Status:       "failed",
+					Error:        err.Error(),
+				})
+				continue
+			}
+
+			results = append(results, updater.ResourceResult{
+				ResourceID:      projectID,
+				ResourceName:    composeName,
+				ResourceType:    "project",
+				Status:          "updated",
+				UpdateApplied:   true,
+				UpdateAvailable: true,
+			})
+		}
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: completed scanning", "results", len(results))
 	return results, nil
