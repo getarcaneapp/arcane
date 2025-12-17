@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key" // #nosec G101: header name, not a credential
+	HeaderAPIKey        = "X-Api-Key"   // #nosec G101: header name, not a credential
 	HeaderAPIToken      = "X-Api-Token" // #nosec G101: header name, not a credential
 	HeaderAuthorization = "Authorization"
 	HeaderCookie        = "Cookie"
