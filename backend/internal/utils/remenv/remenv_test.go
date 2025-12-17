@@ -2,6 +2,7 @@ package remenv
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -94,7 +95,7 @@ func TestSetAuthHeader_ForwardsAPITokenAndAuthorization(t *testing.T) {
 	c.Request.Header.Set(HeaderAPIToken, "api-token")
 	c.Request.Header.Set(HeaderAuthorization, "Bearer auth")
 
-	req, err := http.NewRequest(http.MethodGet, "http://remote", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
 
 	SetAuthHeader(req, c)
@@ -109,7 +110,7 @@ func TestSetAuthHeader_UsesCookieTokenWhenNoAuthorization(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
 	c.Request.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
 
-	req, err := http.NewRequest(http.MethodGet, "http://remote", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
 
 	SetAuthHeader(req, c)
@@ -117,7 +118,7 @@ func TestSetAuthHeader_UsesCookieTokenWhenNoAuthorization(t *testing.T) {
 }
 
 func TestSetAgentToken(t *testing.T) {
-	req, err := http.NewRequest(http.MethodGet, "http://remote", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
 
 	SetAgentToken(req, nil)
@@ -129,7 +130,7 @@ func TestSetAgentToken(t *testing.T) {
 }
 
 func TestSetForwardedHeaders(t *testing.T) {
-	req, err := http.NewRequest(http.MethodGet, "http://remote", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
 
 	SetForwardedHeaders(req, "1.2.3.4", "example.com")
