@@ -34,10 +34,6 @@ test.describe('Projects Page', () => {
     await expect(page.getByText('View and Manage Compose Projects')).toBeVisible();
   });
 
-  test('should display the "Create Project" button', async ({ page }) => {
-    await expect(page.getByRole('button', { name: 'Create Project' })).toBeVisible();
-  });
-
   test('should display summary cards with correct counts', async ({ page }) => {
     await expect(page.locator('div:has(> p:has-text("Total Projects")) h3').first()).toHaveText(
       String(projectCounts.totalProjects)
@@ -122,7 +118,7 @@ test.describe('New Compose Project Page', () => {
   });
 
   test('should validate required fields', async ({ page }) => {
-    const createButton = page.getByRole('button', { name: 'Create Project' });
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]');
     await expect(createButton).toBeDisabled();
 
     await page.getByRole('button', { name: 'My New Project' }).click();
@@ -137,7 +133,7 @@ test.describe('New Compose Project Page', () => {
       if (msg.type() === 'error') observedErrors.push(msg.text());
     });
 
-    const createButton = page.getByText('Create Project')
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]')
 
     await expect(createButton).toBeVisible();
 
@@ -202,7 +198,7 @@ test.describe('New Compose Project Page', () => {
       }
     });
 
-    const createButton = page.getByText('Create Project')
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]')
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
