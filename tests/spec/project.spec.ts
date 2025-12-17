@@ -133,7 +133,7 @@ test.describe('New Compose Project Page', () => {
       if (msg.type() === 'error') observedErrors.push(msg.text());
     });
 
-    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]')
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]');
 
     await expect(createButton).toBeVisible();
 
