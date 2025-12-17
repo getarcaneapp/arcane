@@ -30,7 +30,7 @@
 		"@lezer/highlight": "^1.2.3",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@tanstack/table-core": "^8.21.3",
-		"@uiw/codemirror-themes": "^4.25.2",
+		"@uiw/codemirror-themes": "^4.25.4",
 		"@xterm/addon-fit": "^0.10.0",
 		"@xterm/xterm": "^5.5.0",
 		"ansi-to-html": "^0.7.2",
