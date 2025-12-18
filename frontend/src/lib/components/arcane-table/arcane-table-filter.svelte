@@ -65,7 +65,7 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
-		<Command.Root>
+		<Command.Root class="rounded-none bg-transparent">
 			<Command.Input placeholder={title} />
 			<Command.List>
 				<Command.Empty>{m.common_no_results_found()}</Command.Empty>
