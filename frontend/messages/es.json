@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "La URL a la que su agente será accesible",
 	"environments_generate_config": "Generar configuración del agente",
 	"environments_connect_existing_agent": "Conectar al agente existente",
-	"environments_connect_existing_agent_description": "Conectarse a un agente que ya está ejecutándose usando un token de arranque."
+	"environments_connect_existing_agent_description": "Conectarse a un agente que ya está ejecutándose usando un token de arranque.",
+	"project_files": "Archivos de proyecto"
 }
