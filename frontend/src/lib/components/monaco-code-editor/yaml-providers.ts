@@ -231,7 +231,7 @@ function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position):
 				if (parentKey === null) {
 					parentKey = match[1];
 					currentIndent = lineIndent;
-				} else if (grandParentKey === null) {
+				} else {
 					grandParentKey = match[1];
 					break;
 				}
