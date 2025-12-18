@@ -33,7 +33,7 @@
 		"js-yaml": "^4.1.1",
 		"monaco-editor": "^0.55.1",
 		"prettier": "^3.7.4",
-		"prettier-plugin-svelte": "^3.4.0",
+		"prettier-plugin-svelte": "^3.4.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",
 		"svelte": "^5.46.0",
 		"@sveltejs/kit": "^2.49.2"
