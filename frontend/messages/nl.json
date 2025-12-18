@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "De URL waar uw agent toegankelijk is",
 	"environments_generate_config": "Genereer Agentconfiguratie",
 	"environments_connect_existing_agent": "Verbinding maken met bestaande agent",
-	"environments_connect_existing_agent_description": "Maak verbinding met een reeds actieve agent via een bootstrap token."
+	"environments_connect_existing_agent_description": "Maak verbinding met een reeds actieve agent via een bootstrap token.",
+	"project_files": "Project bestanden"
 }
