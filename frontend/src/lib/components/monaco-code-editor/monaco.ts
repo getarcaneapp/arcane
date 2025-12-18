@@ -7,7 +7,7 @@ import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 
 // Configure Monaco to use Vite's native web worker support
 self.MonacoEnvironment = {
-	getWorker: function (_: any, label: string) {
+	getWorker: function (_: string, label: string) {
 		if (label === 'json') {
 			return new jsonWorker();
 		}

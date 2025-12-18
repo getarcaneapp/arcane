@@ -14,14 +14,12 @@
 	let {
 		value = $bindable(''),
 		language = 'yaml' as CodeLanguage,
-		placeholder = '',
 		readOnly = false,
 		fontSize = '12px',
 		fileUri = undefined
 	}: {
 		value: string;
 		language: CodeLanguage;
-		placeholder?: string;
 		readOnly?: boolean;
 		fontSize?: string;
 		fileUri?: string;
@@ -31,6 +29,7 @@
 	let editor: monaco.editor.IStandaloneCodeEditor;
 	let resizeObserver: ResizeObserver | null = null;
 	let model: monaco.editor.ITextModel | null = null;
+	let ownsModel = false;
 
 	function validateYaml() {
 		if (!model || language !== 'yaml' || readOnly) {
@@ -42,14 +41,15 @@
 		try {
 			jsyaml.load(content);
 			monaco.editor.setModelMarkers(model, 'yaml-linter', []);
-		} catch (e: any) {
+		} catch (e: unknown) {
 			const markers: monaco.editor.IMarkerData[] = [];
-			const mark = e.mark;
+			const err = e as { mark?: { line: number; column: number }; reason?: string; message?: string };
+			const mark = err.mark;
 
 			if (mark) {
 				markers.push({
 					severity: monaco.MarkerSeverity.Error,
-					message: e.reason || e.message,
+					message: err.reason || err.message || 'YAML error',
 					startLineNumber: mark.line + 1,
 					startColumn: mark.column + 1,
 					endLineNumber: mark.line + 1,
@@ -58,7 +58,7 @@
 			} else {
 				markers.push({
 					severity: monaco.MarkerSeverity.Error,
-					message: e.message,
+					message: err.message || 'YAML error',
 					startLineNumber: 1,
 					startColumn: 1,
 					endLineNumber: 1,
@@ -79,7 +79,9 @@
 
 		// Create or get model with proper URI for LSP features
 		const uri = fileUri ? monaco.Uri.parse(fileUri) : monaco.Uri.parse(`inmemory://model-${Date.now()}.${langId}`);
-		model = monaco.editor.getModel(uri) || monaco.editor.createModel(value, langId, uri);
+		const existingModel = monaco.editor.getModel(uri);
+		ownsModel = !existingModel;
+		model = existingModel || monaco.editor.createModel(value, langId, uri);
 
 		editor = monaco.editor.create(editorElement, {
 			model: model,
@@ -139,7 +141,7 @@
 		resizeObserver?.disconnect();
 		resizeObserver = null;
 		editor?.dispose();
-		// Note: Don't dispose the model as it may be reused
+		if (ownsModel) model?.dispose();
 	});
 </script>
 
