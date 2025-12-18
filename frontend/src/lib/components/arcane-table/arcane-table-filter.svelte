@@ -37,7 +37,7 @@
 				{...props}
 				variant="outline"
 				size="sm"
-				class="h-8 border-dashed"
+				class="h-8 min-w-24 border-dashed"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
 				<FilterIcon />
