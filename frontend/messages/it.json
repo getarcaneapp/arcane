@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "L'URL dove il tuo agente sarà accessibile",
 	"environments_generate_config": "Genera Configurazione Agente",
 	"environments_connect_existing_agent": "Connettiti ad un agente esistente",
-	"environments_connect_existing_agent_description": "Connettiti a un agente già in esecuzione usando un token di bootstrap."
+	"environments_connect_existing_agent_description": "Connettiti a un agente già in esecuzione usando un token di bootstrap.",
+	"project_files": "File Progetto"
 }
