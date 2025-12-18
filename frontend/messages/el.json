@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "Το URL όπου ο πράκτορας σας θα είναι προσβάσιμος",
 	"environments_generate_config": "Δημιουργία Διαμόρφωσης Παράγοντα",
 	"environments_connect_existing_agent": "Σύνδεση σε υπάρχοντα παράγοντα",
-	"environments_connect_existing_agent_description": "Συνδεθείτε σε έναν ήδη εκτελούμενο πράκτορα χρησιμοποιώντας ένα διακριτικό bootstrap."
+	"environments_connect_existing_agent_description": "Συνδεθείτε σε έναν ήδη εκτελούμενο πράκτορα χρησιμοποιώντας ένα διακριτικό bootstrap.",
+	"project_files": "Αρχεία Έργου"
 }
