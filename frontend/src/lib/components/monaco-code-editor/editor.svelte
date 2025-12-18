@@ -1,13 +1,8 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { monaco, initShiki } from './monaco';
 	import { mode } from 'mode-watcher';
 	import jsyaml from 'js-yaml';
-
-	function getCurrentTheme(): string {
-		const isDark = mode.current === 'dark';
-		return isDark ? 'catppuccin-mocha' : 'catppuccin-latte';
-	}
 
 	type CodeLanguage = 'yaml' | 'env';
 
@@ -27,31 +22,22 @@
 		autoHeight?: boolean;
 	} = $props();
 
-	let editorElement: HTMLDivElement;
-	let editor: monaco.editor.IStandaloneCodeEditor;
+	let editorElement = $state<HTMLDivElement>();
+	let editor = $state.raw<monaco.editor.IStandaloneCodeEditor | null>(null);
+	let model = $state.raw<monaco.editor.ITextModel | null>(null);
+	let ownsModel = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
-	let model: monaco.editor.ITextModel | null = null;
-	let ownsModel = false;
 
-	function updateHeight() {
-		if (!editor || !editorElement || !autoHeight) return;
-		const contentHeight = editor.getContentHeight();
-		editorElement.style.height = `${contentHeight}px`;
-		editor.layout();
-	}
+	const langId = $derived(language === 'env' ? 'ini' : language);
+	const theme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
 
-	function validateYaml() {
-		if (!model || language !== 'yaml' || readOnly) {
-			if (model) monaco.editor.setModelMarkers(model, 'yaml-linter', []);
-			return;
-		}
+	const markers = $derived.by(() => {
+		if (!model || language !== 'yaml' || readOnly) return [];
 
-		const content = model.getValue();
 		try {
-			jsyaml.load(content);
-			monaco.editor.setModelMarkers(model, 'yaml-linter', []);
+			jsyaml.load(value);
+			return [];
 		} catch (e: unknown) {
-			const markers: monaco.editor.IMarkerData[] = [];
 			const err = e as { mark?: { line: number; column: number }; reason?: string; message?: string };
 			const mark = err.mark;
 
@@ -60,30 +46,39 @@
 				const lineNumber = Math.min(Math.max(1, mark.line + 1), lineCount);
 				const maxColumn = model.getLineMaxColumn(lineNumber);
 
-				markers.push({
-					severity: monaco.MarkerSeverity.Error,
-					message: err.reason || err.message || 'YAML error',
-					startLineNumber: lineNumber,
-					startColumn: Math.min(mark.column + 1, maxColumn),
-					endLineNumber: lineNumber,
-					endColumn: maxColumn
-				});
-			} else {
-				markers.push({
+				return [
+					{
+						severity: monaco.MarkerSeverity.Error,
+						message: err.reason || err.message || 'YAML error',
+						startLineNumber: lineNumber,
+						startColumn: Math.min(mark.column + 1, maxColumn),
+						endLineNumber: lineNumber,
+						endColumn: maxColumn
+					}
+				];
+			}
+			return [
+				{
 					severity: monaco.MarkerSeverity.Error,
 					message: err.message || 'YAML error',
 					startLineNumber: 1,
 					startColumn: 1,
 					endLineNumber: 1,
 					endColumn: 1
-				});
-			}
-			monaco.editor.setModelMarkers(model, 'yaml-linter', markers);
+				}
+			];
 		}
+	});
+
+	function updateHeight() {
+		if (!editor || !editorElement || !autoHeight) return;
+		const contentHeight = editor.getContentHeight();
+		editorElement.style.height = `${contentHeight}px`;
+		editor.layout();
 	}
 
 	onMount(async () => {
-		const langId = language === 'env' ? 'ini' : language;
+		if (!editorElement) return;
 
 		await initShiki(monaco);
 
@@ -99,8 +94,8 @@
 		editor = monaco.editor.create(editorElement, {
 			model: model,
 			automaticLayout: false,
-			theme: getCurrentTheme(),
-			readOnly: readOnly,
+			theme,
+			readOnly,
 			fontSize: parseInt(fontSize.replace('px', '')),
 			minimap: { enabled: false },
 			scrollBeyondLastLine: false,
@@ -117,57 +112,74 @@
 
 		model.onDidChangeContent(() => {
 			value = model?.getValue() || '';
-			validateYaml();
-			if (autoHeight) updateHeight();
 		});
-
-		if (autoHeight) {
-			editor.onDidContentSizeChange(() => {
-				updateHeight();
-			});
-			updateHeight();
-		}
 
 		resizeObserver = new ResizeObserver(() => {
-			editor?.layout();
+			requestAnimationFrame(() => {
+				editor?.layout();
+			});
 		});
 		resizeObserver.observe(editorElement);
-
-		editor.layout();
-		validateYaml();
 	});
 
+	onDestroy(() => {
+		resizeObserver?.disconnect();
+		editor?.dispose();
+		if (ownsModel) model?.dispose();
+	});
+
+	// Sync value to model
 	$effect(() => {
 		if (model && value !== model.getValue()) {
 			model.setValue(value);
 		}
 	});
 
+	// Sync language
 	$effect(() => {
 		if (model) {
-			const langId = language === 'env' ? 'ini' : language;
 			monaco.editor.setModelLanguage(model, langId);
-			validateYaml();
 		}
 	});
 
+	// Sync markers
+	$effect(() => {
+		if (model) {
+			monaco.editor.setModelMarkers(model, 'yaml-linter', markers);
+		}
+	});
+
+	// Sync options and layout
 	$effect(() => {
 		if (editor) {
-			editor.updateOptions({ readOnly });
-			validateYaml();
+			editor.updateOptions({
+				readOnly,
+				theme,
+				fontSize: parseInt(fontSize.replace('px', '')),
+				scrollbar: autoHeight
+					? {
+							vertical: 'hidden',
+							handleMouseWheel: false
+						}
+					: {
+							vertical: 'auto',
+							handleMouseWheel: true
+						}
+			});
+
+			if (autoHeight) {
+				editor.onDidContentSizeChange(updateHeight);
+				updateHeight();
+			} else {
+				if (editorElement) editorElement.style.height = '';
+				editor.layout();
+			}
 		}
 	});
 
-	// Watch for theme changes and update globally
+	// Global theme sync
 	$effect(() => {
-		monaco.editor.setTheme(getCurrentTheme());
-	});
-
-	onDestroy(() => {
-		resizeObserver?.disconnect();
-		resizeObserver = null;
-		editor?.dispose();
-		if (ownsModel) model?.dispose();
+		monaco.editor.setTheme(theme);
 	});
 </script>
 
