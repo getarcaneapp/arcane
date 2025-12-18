@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "您的代理人可以访问的 URL",
 	"environments_generate_config": "生成代理配置",
 	"environments_connect_existing_agent": "连接到现有代理",
-	"environments_connect_existing_agent_description": "使用引导令牌连接到已运行的代理人。"
+	"environments_connect_existing_agent_description": "使用引导令牌连接到已运行的代理人。",
+	"project_files": "工程文件"
 }
