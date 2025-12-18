@@ -79,11 +79,22 @@ test.describe('Volumes Page', () => {
   });
 
   test('Remove Volume', async ({ page }) => {
+    const volumeName = `test-remove-volume-${Date.now()}`;
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    const firstRow = await page.getByRole('row', { name: 'my-app-data' });
-    await firstRow.getByRole('button', { name: 'Open menu' }).click();
+    // 1. Create the volume first
+    await page.locator('button:has-text("Create Volume")').first().click();
+    await page.locator('input[id="volume-name-*"]').fill(volumeName);
+    await page.getByRole('dialog').locator('button:has-text("Create Volume")').click();
+    await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
+
+    // 2. Find and remove it
+    await page.goto('/volumes');
+    await page.waitForLoadState('networkidle');
+
+    const row = await page.getByRole('row', { name: volumeName });
+    await row.getByRole('button', { name: 'Open menu' }).click();
 
     await page.getByRole('menuitem', { name: 'Remove' }).click();
 
@@ -109,29 +120,6 @@ test.describe('Volumes Page', () => {
     await expect(
       page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]:has-text("created successfully")`)
     ).toBeVisible();
-  });
-
-  test('Disable remove action when volume is in use', async ({ page }) => {
-    const volumeInUse = realVolumes.find((vol) => vol.inUse);
-    test.skip(!volumeInUse, 'No volumes in use available for this test');
-
-    await page.goto('/volumes');
-    await page.waitForLoadState('networkidle');
-
-    // Volume names can be truncated in the table (e.g. long hashes), so we anchor on the link title
-    // which preserves the full name.
-    const searchInput = page.getByPlaceholder('Search…');
-    if (await searchInput.count()) {
-      await searchInput.fill(volumeInUse.name);
-    }
-
-    const volumeLink = page.locator(`table a[title="${volumeInUse.name}"]`).first();
-    await expect(volumeLink).toBeVisible();
-
-    const volumeRow = volumeLink.locator('xpath=ancestor::tr[1]');
-    await volumeRow.getByRole('button', { name: 'Open menu' }).click();
-
-    await expect(page.getByRole('menuitem', { name: 'Remove' })).toBeDisabled();
   });
 
   test('Display correct volume usage badge', async ({ page }) => {

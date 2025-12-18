@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
+	import * as Card from '$lib/components/ui/card';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
@@ -333,13 +334,13 @@
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
 							<div class="flex h-full min-h-0 flex-col gap-4 lg:flex-row">
-								<div
-									class="border-border bg-card flex w-full flex-col overflow-y-auto rounded-lg border lg:h-full lg:w-fit lg:max-w-xs lg:min-w-48"
-								>
-									<div class="border-border border-b p-3">
-										<h3 class="text-sm font-medium">Project Files</h3>
-									</div>
-									<div class="p-2">
+								<Card.Root class="mb-10 flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
+									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+										<Card.Title>
+											<h2>{m.project_files()}</h2>
+										</Card.Title>
+									</Card.Header>
+									<Card.Content class="min-h-0 flex-1 overflow-y-auto p-2">
 										<TreeView.Root class="p-2">
 											<TreeView.File
 												name="compose.yaml"
@@ -377,8 +378,8 @@
 												</TreeView.Folder>
 											{/if}
 										</TreeView.Root>
-									</div>
-								</div>
+									</Card.Content>
+								</Card.Root>
 
 								<div class="flex h-full min-h-0 flex-1 flex-col">
 									{#if selectedFile === 'compose'}

@@ -102,7 +102,7 @@
 		{/if}
 
 		<div class="min-h-0 flex-1 overflow-y-auto" bind:this={scrollContainer}>
-			<div class="h-full px-1 py-4 pb-6 sm:px-4">
+			<div class="h-full px-1 py-4 pb-2 sm:px-4">
 				{@render tabContent(selectedTab)}
 			</div>
 		</div>

@@ -25,9 +25,7 @@
 <Card.Root class="mb-10 flex h-full min-h-0 flex-col overflow-hidden">
 	<Card.Header icon={CodeIcon} class="flex-shrink-0 items-center">
 		<Card.Title>
-			<h2>
-				{title}
-			</h2>
+			<h2>{title}</h2>
 		</Card.Title>
 	</Card.Header>
 	<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">

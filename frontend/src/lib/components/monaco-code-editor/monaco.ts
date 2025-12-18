@@ -33,17 +33,47 @@ import 'monaco-editor/esm/vs/editor/editor.all.js';
 
 // Import YAML providers for Docker Compose
 import { registerYamlProviders } from './yaml-providers';
+import { shikiToMonaco } from '@shikijs/monaco';
+import { createHighlighter } from 'shiki';
 
-// Import themes
-import draculaTheme from './dracula-theme.json';
-import lightTheme from './light-theme.json';
 
-// Define themes
-monaco.editor.defineTheme('dracula', draculaTheme as any);
-monaco.editor.defineTheme('github-light', lightTheme as any);
+/**
+ * Initialize Shiki highlighter for Monaco
+ */
+let shikiPromise: Promise<void> | null = null;
+
+export async function initShiki(monacoInstance: typeof monaco) {
+	if (shikiPromise) return shikiPromise;
+
+	shikiPromise = (async () => {
+		const highlighter = await createHighlighter({
+			themes: ['catppuccin-mocha', 'catppuccin-latte'],
+			langs: ['yaml', 'ini']
+		});
+
+		// Register the languageIds first. Only registered languages will be highlighted.
+		const registeredLanguages = monacoInstance.languages.getLanguages().map((lang) => lang.id);
+		const langsToRegister = ['yaml', 'ini'];
+
+		for (const lang of langsToRegister) {
+			if (!registeredLanguages.includes(lang)) {
+				monacoInstance.languages.register({ id: lang });
+			}
+		}
+
+		// Register the themes from Shiki, and provide syntax highlighting for Monaco.
+		shikiToMonaco(highlighter, monacoInstance);
+	})();
+
+	return shikiPromise;
+}
 
 // Register YAML language providers
 registerYamlProviders(monaco);
+
+if (typeof window !== 'undefined') {
+	(window as any).monaco = monaco;
+}
 
 export { monaco };
 export type Monaco = typeof monaco;

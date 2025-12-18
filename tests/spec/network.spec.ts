@@ -29,8 +29,6 @@ test.describe('Networks Page', () => {
     // Fetch counts directly in the test to ensure we have fresh data
     const counts = await fetchNetworksCountsWithRetry(page);
 
-    console.log('Network Counts:', counts);
-
     // Use the new stat card structure with h3 for values
     const totalValue = page.locator('div:has(> p:has-text("Total Networks")) h3').first();
     const unusedValue = page.locator('div:has(> p:has-text("Unused Networks")) h3').first();
@@ -77,9 +75,22 @@ test.describe('Networks Page', () => {
   });
 
   test('Remove Network from table', async ({ page }) => {
-    const networkName = 'my-test-network';
+    const networkName = `test-remove-network-${Date.now()}`;
     await navigateToNetworks(page);
 
+    // 1. Create the network first
+    await page.locator('button:has-text("Create Network")').first().click();
+    const nameInput = page.getByLabel('Name').first();
+    if (await nameInput.isVisible().catch(() => false)) {
+      await nameInput.fill(networkName);
+    } else {
+      await page.locator('input[id^="network-name-"]').first().fill(networkName);
+    }
+    await page.getByRole('dialog').locator('button:has-text("Create Network")').click();
+    await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
+
+    // 2. Find and remove it
+    await navigateToNetworks(page);
     const row = page.locator('tbody tr', { has: page.getByText(networkName) }).first();
     await expect(row).toBeVisible();
 

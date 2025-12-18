@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { monaco } from './monaco';
+	import { monaco, initShiki } from './monaco';
 	import { mode } from 'mode-watcher';
+	import jsyaml from 'js-yaml';
 
 	function getCurrentTheme(): string {
-		return mode.current === 'dark' ? 'dracula' : 'github-light';
+		const isDark = mode.current === 'dark';
+		return isDark ? 'catppuccin-mocha' : 'catppuccin-latte';
 	}
 
 	type CodeLanguage = 'yaml' | 'env';
@@ -30,8 +32,47 @@
 	let resizeObserver: ResizeObserver | null = null;
 	let model: monaco.editor.ITextModel | null = null;
 
+	function validateYaml() {
+		if (!model || language !== 'yaml' || readOnly) {
+			if (model) monaco.editor.setModelMarkers(model, 'yaml-linter', []);
+			return;
+		}
+
+		const content = model.getValue();
+		try {
+			jsyaml.load(content);
+			monaco.editor.setModelMarkers(model, 'yaml-linter', []);
+		} catch (e: any) {
+			const markers: monaco.editor.IMarkerData[] = [];
+			const mark = e.mark;
+
+			if (mark) {
+				markers.push({
+					severity: monaco.MarkerSeverity.Error,
+					message: e.reason || e.message,
+					startLineNumber: mark.line + 1,
+					startColumn: mark.column + 1,
+					endLineNumber: mark.line + 1,
+					endColumn: model.getLineMaxColumn(mark.line + 1)
+				});
+			} else {
+				markers.push({
+					severity: monaco.MarkerSeverity.Error,
+					message: e.message,
+					startLineNumber: 1,
+					startColumn: 1,
+					endLineNumber: 1,
+					endColumn: 1
+				});
+			}
+			monaco.editor.setModelMarkers(model, 'yaml-linter', markers);
+		}
+	}
+
 	onMount(async () => {
 		const langId = language === 'env' ? 'ini' : language;
+
+		await initShiki(monaco);
 
 		// Small delay to ensure container is sized
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -55,6 +96,7 @@
 
 		model.onDidChangeContent(() => {
 			value = model?.getValue() || '';
+			validateYaml();
 		});
 
 		resizeObserver = new ResizeObserver(() => {
@@ -64,6 +106,7 @@
 
 		// Force layout update
 		editor.layout();
+		validateYaml();
 	});
 
 	$effect(() => {
@@ -76,19 +119,20 @@
 		if (model) {
 			const langId = language === 'env' ? 'ini' : language;
 			monaco.editor.setModelLanguage(model, langId);
+			validateYaml();
 		}
 	});
 
 	$effect(() => {
 		if (editor) {
 			editor.updateOptions({ readOnly });
+			validateYaml();
 		}
 	});
 
 	// Watch for theme changes and update globally
 	$effect(() => {
-		const themeName = mode.current === 'dark' ? 'dracula' : 'github-light';
-		monaco.editor.setTheme(themeName);
+		monaco.editor.setTheme(getCurrentTheme());
 	});
 
 	onDestroy(() => {

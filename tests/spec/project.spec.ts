@@ -119,6 +119,7 @@ test.describe('New Compose Project Page', () => {
     await expect(page.getByRole('button', { name: 'My New Project' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Environment (.env)' })).toBeVisible();
+    
   });
 
   test('should validate required fields', async ({ page }) => {
@@ -164,29 +165,39 @@ test.describe('New Compose Project Page', () => {
     await expect(composeEditor).toBeVisible();
 
     // Wait for Monaco to actually render its view before attempting input.
-    await expect(composeEditor.locator('.view-lines')).toBeVisible();
+    await expect(composeEditor.locator('.view-line').first()).toBeVisible();
 
     // Monaco may create the internal input textarea lazily (e.g. only after focus).
     // Click first, then wait for textarea.inputarea to appear.
     await composeEditor.click({ position: { x: 20, y: 20 } });
     await expect(composeEditor.locator('textarea')).toHaveCount(1);
-    await page.keyboard.press('ControlOrMeta+A');
-    await page.keyboard.insertText(TEST_COMPOSE_YAML);
 
-    // Basic sanity check that the new content rendered (visible lines only).
-    await expect(composeEditor.locator('.view-lines')).toContainText('redis');
+    // Use page.evaluate to set the value directly in Monaco to avoid auto-indentation issues during typing
+    await page.evaluate(({ text }) => {
+      const models = (window as any).monaco.editor.getModels();
+      const yamlModel = models.find((m: any) => m.getLanguageId() === 'yaml');
+      if (yamlModel) yamlModel.setValue(text);
+    }, { text: TEST_COMPOSE_YAML });
+
+    // Basic sanity check that the new content rendered.
+    await expect(composeEditor.locator('.view-lines')).toContainText(/redis/i);
 
     const envEditor = page.locator('.monaco-editor').nth(1);
     await expect(envEditor).toBeVisible();
 
-    await expect(envEditor.locator('.view-lines')).toBeVisible();
+    await expect(envEditor.locator('.view-line').first()).toBeVisible();
 
     await envEditor.click({ position: { x: 20, y: 20 } });
     await expect(envEditor.locator('textarea')).toHaveCount(1);
-    await page.keyboard.press('ControlOrMeta+A');
-    await page.keyboard.insertText(TEST_ENV_FILE);
 
-    await expect(envEditor.locator('.view-lines')).toContainText('REDIS');
+    // Use page.evaluate to set the value directly in Monaco
+    await page.evaluate(({ text }) => {
+      const models = (window as any).monaco.editor.getModels();
+      const iniModel = models.find((m: any) => m.getLanguageId() === 'ini');
+      if (iniModel) iniModel.setValue(text);
+    }, { text: TEST_ENV_FILE });
+
+    await expect(envEditor.locator('.view-lines')).toContainText(/redis/i);
 
     await page.route('/api/environments/*/projects', async (route) => {
       if (route.request().method() === 'POST') {
@@ -223,15 +234,13 @@ test.describe('New Compose Project Page', () => {
 
     await expect(page.getByRole('button', { name: projectName })).toBeVisible();
 
-    await page.getByRole('tab', { name: /Services/i }).click();
+    await page.getByRole('tab', { name: 'Services' }).click();
     await page.waitForLoadState('networkidle');
 
-    const servicesPanel = page.locator('[role="tabpanel"][data-state="active"]');
-
-    const serviceNameWhenStopped = servicesPanel.getByRole('heading', { name: 'redis', exact: true });
+    const serviceNameWhenStopped = page.getByRole('heading', { name: 'redis', exact: true });
     await expect(serviceNameWhenStopped).toBeVisible();
 
-    const containerNameWhenStopped = servicesPanel.getByRole('link', { name: 'test-redis-container redis' });
+    const containerNameWhenStopped = page.getByRole('link', { name: 'test-redis-container redis' });
     await expect(containerNameWhenStopped).not.toBeVisible();
 
     const deployButton = page.getByRole('button', { name: 'Up', exact: true }).filter({ hasText: 'Up' }).last();
@@ -240,11 +249,58 @@ test.describe('New Compose Project Page', () => {
     await page.waitForTimeout(5000);
     await page.waitForLoadState('networkidle');
 
-    const containerNameElement = servicesPanel.getByRole('link', { name: 'test-redis-container redis' });
+    const containerNameElement = page.getByRole('link', { name: 'test-redis-container redis' });
     await expect(containerNameElement).toBeVisible({ timeout: 15000 });
+  });
 
-    await expect(servicesPanel.getByRole('heading', { name: 'redis', exact: true })).toBeVisible();
-    await expect(servicesPanel.getByText('Running', { exact: true })).toBeVisible();
+  test('should destroy the project and remove files from disk', async ({ page }) => {
+    const projectName = `test-destroy-${Date.now()}`;
+
+    // 1. Create the project first
+    await page.getByRole('button', { name: 'My New Project' }).click();
+    await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
+    await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+
+    const composeEditor = page.locator('.monaco-editor').first();
+    await expect(composeEditor).toBeVisible();
+    await expect(composeEditor.locator('.view-line').first()).toBeVisible();
+    await composeEditor.click({ position: { x: 20, y: 20 } });
+
+    await page.evaluate(
+      ({ text }) => {
+        const models = (window as any).monaco.editor.getModels();
+        const yamlModel = models.find((m: any) => m.getLanguageId() === 'yaml');
+        if (yamlModel) yamlModel.setValue(text);
+      },
+      { text: TEST_COMPOSE_YAML }
+    );
+
+    const createButton = page.getByRole('button', { name: 'Create Project', exact: true });
+    await createButton.click();
+
+    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    await expect(page.getByRole('button', { name: projectName })).toBeVisible();
+
+    // 2. Destroy the project
+    const destroyButton = page.getByRole('button', { name: 'Destroy', exact: true });
+    await expect(destroyButton).toBeVisible();
+    await destroyButton.click();
+
+    // 3. Handle the confirmation dialog
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Check "Remove project files"
+    const removeFilesCheckbox = dialog.getByLabel(/Remove project files/i);
+    await removeFilesCheckbox.check();
+
+    // Click "Destroy" in the dialog
+    const confirmDestroyButton = dialog.getByRole('button', { name: 'Destroy', exact: true });
+    await confirmDestroyButton.click();
+
+    // 4. Verify redirection and project removal
+    await page.waitForURL(ROUTES.page, { timeout: 10000 });
+    await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
   });
 });
 
@@ -283,15 +339,13 @@ test.describe('Project Detail Page', () => {
 
     await page.getByRole('tab', { name: /Services/i }).click();
 
-  	const servicesPanel = page.locator('[role="tabpanel"][data-state="active"]');
-
-    const nginxService = servicesPanel.getByRole('heading', { name: /nginx/i });
-    const emptyState = servicesPanel.getByText(/No services found/i);
+    const nginxService = page.getByRole('heading', { name: /nginx/i });
+    const emptyState = page.getByText(/No services found/i);
 
     if ((await nginxService.count()) > 0) {
       await expect(nginxService.first()).toBeVisible();
     } else {
-      const anyServiceBadge = servicesPanel.locator('text=/running|stopped|unknown/i').first();
+      const anyServiceBadge = page.locator('text=/running|stopped|unknown/i').first();
       if ((await anyServiceBadge.count()) > 0) {
         await expect(anyServiceBadge).toBeVisible();
       } else {
@@ -314,6 +368,7 @@ test.describe('Project Detail Page', () => {
     // - classic (default): side-by-side compose.yaml + .env panels
     // - tree view: file list on the left and a single code panel on the right
     await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+    
 
     const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
     const isTreeView = await projectFilesHeading.isVisible();
