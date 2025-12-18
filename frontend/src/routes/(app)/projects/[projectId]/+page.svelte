@@ -334,7 +334,7 @@
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
 							<div class="flex h-full min-h-0 flex-col gap-4 lg:flex-row">
-								<Card.Root class="mb-10 flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
+								<Card.Root class="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
 									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 										<Card.Title>
 											<h2>{m.project_files()}</h2>
@@ -406,6 +406,7 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
+												autoHeight={true}
 											/>
 										{/if}
 									{/if}
@@ -437,18 +438,17 @@
 								{#if selectedIncludeTab}
 									{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
 									{#if includeFile}
-										<div class="flex-1">
-											<CodePanel
-												bind:open={includeFilesPanelStates[includeFile.relativePath]}
-												title={includeFile.relativePath}
-												language="yaml"
-												bind:value={includeFilesState[includeFile.relativePath]}
-											/>
-										</div>
+										<CodePanel
+											bind:open={includeFilesPanelStates[includeFile.relativePath]}
+											title={includeFile.relativePath}
+											language="yaml"
+											bind:value={includeFilesState[includeFile.relativePath]}
+											autoHeight={true}
+										/>
 									{/if}
 								{:else}
-									<div class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
-										<div class="flex min-h-0 flex-col lg:col-span-3">
+									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1">
+										<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
 											<CodePanel
 												bind:open={composeOpen}
 												title="compose.yaml"
@@ -458,7 +458,7 @@
 											/>
 										</div>
 
-										<div class="flex min-h-0 flex-col lg:col-span-2">
+										<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
 											<CodePanel
 												bind:open={envOpen}
 												title=".env"

@@ -51,7 +51,7 @@
 	});
 </script>
 
-<div class={cn('bg-background flex h-dvh min-h-0 flex-col', className)}>
+<div class={cn('bg-background flex h-full min-h-0 flex-col', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		<div
 			class="sticky top-0 border-b transition-all duration-300"
@@ -102,7 +102,7 @@
 		{/if}
 
 		<div class="min-h-0 flex-1 overflow-y-auto" bind:this={scrollContainer}>
-			<div class="h-full px-1 py-4 pb-2 sm:px-4">
+			<div class="flex h-full min-h-0 flex-col px-1 py-4 pb-2 sm:px-4">
 				{@render tabContent(selectedTab)}
 			</div>
 		</div>

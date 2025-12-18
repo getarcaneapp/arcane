@@ -1,33 +1,276 @@
 import type * as Monaco from 'monaco-editor';
 
 /**
- * Docker Compose schema definitions for auto-completion and validation
+ * Arcane-specific extensions to the Docker Compose spec
  */
-const composeSchema = {
-	version: ['3.8', '3.9', '3'],
-	services: {
-		image: 'Image name (e.g., nginx:latest)',
-		container_name: 'Custom container name',
-		ports: 'Port mappings (e.g., "8080:80")',
-		volumes: 'Volume mounts',
-		environment: 'Environment variables',
-		networks: 'Networks to attach',
-		depends_on: 'Service dependencies',
-		command: 'Override default command',
-		entrypoint: 'Override entrypoint',
-		restart: ['no', 'always', 'on-failure', 'unless-stopped'],
-		build: 'Build configuration',
-		labels: 'Container labels',
-		healthcheck: 'Health check configuration',
-		deploy: 'Deploy configuration (Swarm mode)',
-		configs: 'Configuration references',
-		secrets: 'Secret references'
+const ARCANE_CUSTOM_SCHEMA = {
+	properties: {
+		models: {
+			type: 'object',
+			description: 'Language models that will be used by your application.'
+		}
 	},
-	networks: 'Network definitions',
-	volumes: 'Volume definitions',
-	configs: 'Config definitions',
-	secrets: 'Secret definitions'
+	definitions: {
+		model: {
+			type: 'object',
+			description: 'Language Model for the Compose application.',
+			properties: {
+				name: { type: 'string', description: 'Custom name for this model.' },
+				model: { type: 'string', description: 'Language Model to run.' },
+				context_size: { type: 'integer' },
+				runtime_flags: {
+					type: 'array',
+					items: { type: 'string' },
+					description: 'Raw runtime flags to pass to the inference engine.'
+				}
+			},
+			required: ['model']
+		}
+	}
 };
+
+/**
+ * Schema Manager to handle Docker Compose specification
+ */
+class ComposeSchemaManager {
+	private schema: any = ARCANE_CUSTOM_SCHEMA;
+	private suggestionsMap: Map<string, any[]> = new Map();
+
+	constructor() {
+		this.parseSchema();
+		this.fetchLatestSchema();
+	}
+
+	private async fetchLatestSchema() {
+		try {
+			const response = await fetch(
+				'https://raw.githubusercontent.com/compose-spec/compose-go/refs/heads/main/schema/compose-spec.json'
+			);
+			if (response.ok) {
+				const latestSchema = await response.json();
+				// Merge latest official schema with our custom fields
+				this.schema = {
+					...latestSchema,
+					properties: {
+						...(latestSchema.properties || {}),
+						...ARCANE_CUSTOM_SCHEMA.properties
+					},
+					definitions: {
+						...(latestSchema.definitions || {}),
+						...ARCANE_CUSTOM_SCHEMA.definitions
+					}
+				};
+				// Clear and re-parse
+				this.suggestionsMap.clear();
+				this.parseSchema();
+			}
+		} catch (e) {
+			console.error('Failed to fetch latest Docker Compose schema', e);
+		}
+	}
+
+	private parseSchema() {
+		// 1. Parse Root properties
+		const rootSuggestions: any[] = [];
+		if (this.schema.properties) {
+			for (const [key, value] of Object.entries(this.schema.properties)) {
+				const val = value as any;
+				rootSuggestions.push({
+					label: key,
+					kind: 1, // Property
+					documentation: this.getDescription(val),
+					insertText: this.generateInsertText(key, val)
+				});
+			}
+		}
+		this.suggestionsMap.set('root', rootSuggestions);
+
+		// 2. Parse all definitions dynamically
+		if (this.schema.definitions) {
+			for (const [defName, defValue] of Object.entries(this.schema.definitions)) {
+				const def = defValue as any;
+				if (def.properties) {
+					const suggestions: any[] = [];
+					for (const [key, value] of Object.entries(def.properties)) {
+						const val = value as any;
+						suggestions.push({
+							label: key,
+							kind: 1, // Property
+							documentation: this.getDescription(val),
+							insertText: this.generateInsertText(key, val)
+						});
+					}
+					this.suggestionsMap.set(defName, suggestions);
+				}
+			}
+		}
+	}
+
+	private getDescription(val: any): string {
+		if (!val) return '';
+		if (val.description) return val.description;
+
+		// Resolve $ref
+		if (val.$ref) {
+			const defName = val.$ref.split('/').pop();
+			const def = this.schema.definitions?.[defName];
+			if (def && def.description) return def.description;
+			if (def) return this.getDescription(def);
+		}
+
+		// Resolve oneOf/anyOf
+		const nested = val.oneOf || val.anyOf || [];
+		for (const sub of nested) {
+			const desc = this.getDescription(sub);
+			if (desc) return desc;
+		}
+
+		return '';
+	}
+
+	private generateInsertText(key: string, val: any): string {
+		// Handle array of types or single type
+		const type = Array.isArray(val.type) ? val.type[0] : val.type;
+
+		if (type === 'array') {
+			return `${key}:\n  - \${1}`;
+		}
+		// If it has properties, a $ref, or is explicitly an object, treat as nested
+		if (type === 'object' || val.$ref || val.properties || val.oneOf || val.anyOf) {
+			return `${key}:\n  \${1}`;
+		}
+		// Default for strings, numbers, booleans
+		return `${key}: `;
+	}
+
+	getSuggestions(context: string) {
+		const suggestions = this.suggestionsMap.get(context);
+		if (suggestions && suggestions.length > 0) return suggestions;
+
+		// Fallback: search for a property named 'context' in all definitions
+		// and return its sub-properties if it has any.
+		// This handles cases like 'build' which are not top-level definitions.
+		if (this.schema.definitions) {
+			for (const def of Object.values(this.schema.definitions) as any[]) {
+				if (def.properties?.[context]) {
+					const prop = def.properties[context];
+					// Try to find properties directly or inside oneOf/anyOf
+					const subProps =
+						prop.properties ||
+						prop.oneOf?.find((p: any) => p.properties)?.properties ||
+						prop.anyOf?.find((p: any) => p.properties)?.properties;
+
+					if (subProps) {
+						return Object.entries(subProps).map(([key, value]) => ({
+							label: key,
+							kind: 1, // Property
+							documentation: (value as any).description || '',
+							insertText: this.generateInsertText(key, value)
+						}));
+					}
+				}
+			}
+		}
+
+		return [];
+	}
+
+	getDocumentation(word: string): string | null {
+		// 1. Check root properties
+		if (this.schema.properties?.[word]) {
+			return `**${word}**\n\n${this.getDescription(this.schema.properties[word])}`;
+		}
+
+		// 2. Check if the word itself is a definition (e.g. "service", "network")
+		if (this.schema.definitions?.[word]) {
+			return `**${word}**\n\n${this.schema.definitions[word].description || ''}`;
+		}
+
+		// 3. Search through all properties of all definitions
+		if (this.schema.definitions) {
+			for (const [defName, def] of Object.entries(this.schema.definitions) as any[]) {
+				// Check direct properties
+				if (def.properties?.[word]) {
+					return `**${word}** (in ${defName})\n\n${this.getDescription(def.properties[word])}`;
+				}
+
+				// Check properties inside oneOf/anyOf/allOf
+				const nested = [...(def.oneOf || []), ...(def.anyOf || []), ...(def.allOf || [])];
+				for (const sub of nested) {
+					if (sub.properties?.[word]) {
+						return `**${word}** (in ${defName})\n\n${this.getDescription(sub.properties[word])}`;
+					}
+				}
+			}
+		}
+		return null;
+	}
+}
+
+const schemaManager = new ComposeSchemaManager();
+
+/**
+ * Detect the current context in the YAML file
+ */
+function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position): string {
+	const lineContent = model.getLineContent(position.lineNumber);
+	const indent = lineContent.match(/^\s*/)?.[0].length || 0;
+
+	if (indent === 0) return 'root';
+
+	let currentIndent = indent;
+	let parentKey = null;
+	let grandParentKey = null;
+
+	for (let i = position.lineNumber - 1; i >= 1; i--) {
+		const line = model.getLineContent(i);
+		const lineIndent = line.match(/^\s*/)?.[0].length || 0;
+		if (lineIndent < currentIndent) {
+			const match = line.match(/^\s*([\w-]+):/);
+			if (match) {
+				if (parentKey === null) {
+					parentKey = match[1];
+					currentIndent = lineIndent;
+				} else if (grandParentKey === null) {
+					grandParentKey = match[1];
+					break;
+				}
+			}
+		}
+	}
+
+	// Map plural root keys to singular definition names
+	const contextMap: Record<string, string> = {
+		services: 'service',
+		networks: 'network',
+		volumes: 'volume',
+		models: 'model',
+		configs: 'config',
+		secrets: 'secret',
+		// Common nested keys that map to definitions
+		build: 'build',
+		deploy: 'deployment',
+		healthcheck: 'healthcheck',
+		resources: 'resources',
+		limits: 'limits',
+		reservations: 'reservations',
+		restart_policy: 'restart_policy',
+		update_config: 'update_config',
+		rollback_config: 'rollback_config',
+		logging: 'logging'
+	};
+
+	// 1. Check if parent or grandparent is a known root key
+	if (parentKey && contextMap[parentKey]) return contextMap[parentKey];
+	if (grandParentKey && contextMap[grandParentKey]) return contextMap[grandParentKey];
+
+	// 2. Fallback: if parentKey itself is a definition name, use it
+	if (parentKey && schemaManager.getSuggestions(parentKey).length > 0) {
+		return parentKey;
+	}
+
+	return 'unknown';
+}
 
 /**
  * Register YAML completion provider for Docker Compose files
@@ -36,10 +279,7 @@ export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 	return monaco.languages.registerCompletionItemProvider('yaml', {
 		triggerCharacters: [' ', ':'],
 		provideCompletionItems: (model, position) => {
-			const lineContent = model.getLineContent(position.lineNumber);
-			const lineUntilPosition = lineContent.substring(0, position.column - 1);
 			const word = model.getWordUntilPosition(position);
-
 			const range = {
 				startLineNumber: position.lineNumber,
 				endLineNumber: position.lineNumber,
@@ -47,58 +287,14 @@ export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 				endColumn: word.endColumn
 			};
 
-			const suggestions: Monaco.languages.CompletionItem[] = [];
-
-			// Root level suggestions
-			if (!lineUntilPosition.trim() || lineUntilPosition.match(/^\s*$/)) {
-				suggestions.push(
-					{
-						label: 'version',
-						kind: monaco.languages.CompletionItemKind.Property,
-						documentation: 'Docker Compose file version',
-						insertText: 'version: "3.8"',
-						range
-					},
-					{
-						label: 'services',
-						kind: monaco.languages.CompletionItemKind.Property,
-						documentation: 'Service definitions',
-						insertText: 'services:\n  ${1:service_name}:\n    image: ${2:image_name}',
-						insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-						range
-					},
-					{
-						label: 'networks',
-						kind: monaco.languages.CompletionItemKind.Property,
-						documentation: 'Network definitions',
-						insertText: 'networks:\n  ${1:network_name}:\n    driver: ${2:bridge}',
-						insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-						range
-					},
-					{
-						label: 'volumes',
-						kind: monaco.languages.CompletionItemKind.Property,
-						documentation: 'Volume definitions',
-						insertText: 'volumes:\n  ${1:volume_name}:',
-						insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-						range
-					}
-				);
-			}
-
-			// Service property suggestions
-			if (lineUntilPosition.match(/^\s{2,}\w*$/) && model.getValue().includes('services:')) {
-				Object.entries(composeSchema.services).forEach(([key, value]) => {
-					const isArray = Array.isArray(value);
-					suggestions.push({
-						label: key,
-						kind: monaco.languages.CompletionItemKind.Property,
-						documentation: isArray ? `Options: ${value.join(', ')}` : value,
-						insertText: isArray ? `${key}: ${value[0]}` : `${key}: `,
-						range
-					});
-				});
-			}
+			const context = getContext(model, position);
+			const suggestions = schemaManager.getSuggestions(context).map((s) => ({
+				...s,
+				range,
+				insertTextRules: s.insertText.includes('$')
+					? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+					: undefined
+			}));
 
 			return { suggestions };
 		}
@@ -114,26 +310,15 @@ export function registerYamlHoverProvider(monaco: typeof Monaco) {
 			const word = model.getWordAtPosition(position);
 			if (!word) return null;
 
-			const docs: Record<string, string> = {
-				version: '**Docker Compose version**\n\nRecommended: `3.8` or `3.9`',
-				services: '**Services**\n\nDefine containers that make up your application',
-				image: '**Image**\n\nDocker image to use (e.g., `nginx:latest`, `postgres:13`)',
-				container_name: '**Container Name**\n\nCustom name for the container',
-				ports: '**Ports**\n\nPort mappings between host and container\n\nFormat: `"HOST:CONTAINER"`',
-				volumes: '**Volumes**\n\nBind mounts or named volumes\n\nFormat: `"./local:/container"`',
-				environment: '**Environment Variables**\n\nSet environment variables in the container',
-				networks: '**Networks**\n\nNetworks to attach this service to',
-				depends_on: '**Dependencies**\n\nServices that must start before this one',
-				restart: '**Restart Policy**\n\nOptions: `no`, `always`, `on-failure`, `unless-stopped`',
-				build: '**Build**\n\nBuild configuration for custom images',
-				command: '**Command**\n\nOverride the default command',
-				healthcheck: '**Health Check**\n\nConfigure container health monitoring'
-			};
-
-			const documentation = docs[word.word];
+			const documentation = schemaManager.getDocumentation(word.word);
 			if (documentation) {
 				return {
-					range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+					range: new monaco.Range(
+						position.lineNumber,
+						word.startColumn,
+						position.lineNumber,
+						word.endColumn
+					),
 					contents: [{ value: documentation }]
 				};
 			}
@@ -149,3 +334,4 @@ export function registerYamlHoverProvider(monaco: typeof Monaco) {
 export function registerYamlProviders(monaco: typeof Monaco) {
 	return [registerYamlCompletionProvider(monaco), registerYamlHoverProvider(monaco)];
 }
+

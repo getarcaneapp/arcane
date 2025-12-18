@@ -16,13 +16,15 @@
 		language = 'yaml' as CodeLanguage,
 		readOnly = false,
 		fontSize = '12px',
-		fileUri = undefined
+		fileUri = undefined,
+		autoHeight = false
 	}: {
 		value: string;
 		language: CodeLanguage;
 		readOnly?: boolean;
 		fontSize?: string;
 		fileUri?: string;
+		autoHeight?: boolean;
 	} = $props();
 
 	let editorElement: HTMLDivElement;
@@ -30,6 +32,13 @@
 	let resizeObserver: ResizeObserver | null = null;
 	let model: monaco.editor.ITextModel | null = null;
 	let ownsModel = false;
+
+	function updateHeight() {
+		if (!editor || !editorElement || !autoHeight) return;
+		const contentHeight = editor.getContentHeight();
+		editorElement.style.height = `${contentHeight}px`;
+		editor.layout();
+	}
 
 	function validateYaml() {
 		if (!model || language !== 'yaml' || readOnly) {
@@ -47,13 +56,17 @@
 			const mark = err.mark;
 
 			if (mark) {
+				const lineCount = model.getLineCount();
+				const lineNumber = Math.min(Math.max(1, mark.line + 1), lineCount);
+				const maxColumn = model.getLineMaxColumn(lineNumber);
+
 				markers.push({
 					severity: monaco.MarkerSeverity.Error,
 					message: err.reason || err.message || 'YAML error',
-					startLineNumber: mark.line + 1,
-					startColumn: mark.column + 1,
-					endLineNumber: mark.line + 1,
-					endColumn: model.getLineMaxColumn(mark.line + 1)
+					startLineNumber: lineNumber,
+					startColumn: Math.min(mark.column + 1, maxColumn),
+					endLineNumber: lineNumber,
+					endColumn: maxColumn
 				});
 			} else {
 				markers.push({
@@ -85,7 +98,7 @@
 
 		editor = monaco.editor.create(editorElement, {
 			model: model,
-			automaticLayout: true,
+			automaticLayout: false,
 			theme: getCurrentTheme(),
 			readOnly: readOnly,
 			fontSize: parseInt(fontSize.replace('px', '')),
@@ -93,20 +106,33 @@
 			scrollBeyondLastLine: false,
 			fontFamily:
 				'"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-			padding: { top: 10, bottom: 10 }
+			padding: { top: 10, bottom: 10 },
+			scrollbar: autoHeight
+				? {
+						vertical: 'hidden',
+						handleMouseWheel: false
+					}
+				: undefined
 		});
 
 		model.onDidChangeContent(() => {
 			value = model?.getValue() || '';
 			validateYaml();
+			if (autoHeight) updateHeight();
 		});
+
+		if (autoHeight) {
+			editor.onDidContentSizeChange(() => {
+				updateHeight();
+			});
+			updateHeight();
+		}
 
 		resizeObserver = new ResizeObserver(() => {
 			editor?.layout();
 		});
 		resizeObserver.observe(editorElement);
 
-		// Force layout update
 		editor.layout();
 		validateYaml();
 	});
@@ -145,4 +171,4 @@
 	});
 </script>
 
-<div class="relative h-full min-h-0 w-full overflow-visible" bind:this={editorElement}></div>
+<div class="relative {autoHeight ? '' : 'h-full'} min-h-0 w-full overflow-visible" bind:this={editorElement}></div>

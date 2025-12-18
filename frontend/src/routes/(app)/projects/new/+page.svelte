@@ -161,7 +161,7 @@
 		'data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
 </script>
 
-<div class="bg-background flex h-dvh min-h-0 flex-col">
+<div class="bg-background flex h-full min-h-0 flex-col">
 	<div class="sticky top-0 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex items-center gap-4">
@@ -274,8 +274,8 @@
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
-			<div class="flex h-full min-h-0 flex-col gap-4 p-6 pb-10">
-				<div class="block flex-shrink-0 sm:hidden">
+			<div class="flex h-full min-h-0 flex-col gap-4">
+				<div class="block flex-shrink-0 pt-4 sm:hidden">
 					<EditableName
 						bind:value={$inputs.name.value}
 						bind:ref={nameInputRef}
@@ -288,11 +288,10 @@
 				</div>
 
 				<form
-					class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5 lg:items-stretch"
-					style="grid-template-rows: 1fr;"
+					class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch"
 					onsubmit={preventDefault(handleSubmit)}
 				>
-					<div class="flex min-h-0 flex-col lg:col-span-3">
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
 						<CodePanel
 							bind:open={composeOpen}
 							title={m.compose_compose_file_title()}
@@ -302,7 +301,7 @@
 						/>
 					</div>
 
-					<div class="flex min-h-0 flex-col lg:col-span-2">
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
 						<CodePanel
 							bind:open={envOpen}
 							title={m.compose_env_title()}
@@ -376,12 +375,3 @@
 	onSelect={handleTemplateSelect}
 	onDownloadSuccess={invalidateAll}
 />
-
-<style>
-	:global(.arcane-dd-content [data-arrow]) {
-		background: color-mix(in srgb, var(--background), transparent 5%);
-		border: 1px solid color-mix(in srgb, var(--primary), transparent 70%);
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.12);
-		z-index: 10;
-	}
-</style>

@@ -311,7 +311,13 @@
 			<Card.Content class="space-y-4 p-4">
 				<div>
 					<Label for="env-name" class="text-sm font-medium">{m.common_name()}</Label>
-					<Input id="env-name" type="text" bind:value={formName} class="mt-1.5" placeholder={m.environments_name_placeholder()} />
+					<Input
+						id="env-name"
+						type="text"
+						bind:value={formName}
+						class="mt-1.5 w-full"
+						placeholder={m.environments_name_placeholder()}
+					/>
 				</div>
 
 				<div class="flex items-center justify-between rounded-lg border p-4">
@@ -420,7 +426,7 @@
 					<Label for="api-url" class="text-sm font-medium">{m.environments_api_url()}</Label>
 					{#if environment.id === '0'}
 						<ArcaneTooltip.Root>
-							<ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Trigger class="w-full">
 								<Input
 									id="api-url"
 									type="url"
@@ -440,7 +446,7 @@
 							id="api-url"
 							type="url"
 							bind:value={formApiUrl}
-							class="mt-1.5 font-mono"
+							class="mt-1.5 w-full font-mono"
 							placeholder={m.environments_api_url_placeholder()}
 							required
 						/>

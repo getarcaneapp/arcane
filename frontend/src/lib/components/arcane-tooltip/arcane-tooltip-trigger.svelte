@@ -3,6 +3,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
 	import { Tooltip as TooltipPrimitive } from 'bits-ui';
+	import { cn } from '$lib/utils.js';
 
 	type ChildProps = { props: Record<string, unknown> };
 
@@ -71,39 +72,27 @@
 </script>
 
 {#if ctx.isTouch}
-	{#if ctx.interactive}
-		<Popover.Trigger>
-			{#snippet child({ props }: ChildProps)}
-				<span
-					{...props}
-					class={className}
-					ontouchstart={handleTouchStart}
-					ontouchend={handleTouchEnd}
-					ontouchcancel={handleTouchCancel}
-					ontouchmove={handleTouchMove}
-					onclick={handleClick}
-					role="button"
-					tabindex="0"
-				>
-					{#if child}
-						{@render child({ props: {} })}
-					{:else}
-						{@render children?.()}
-					{/if}
-				</span>
-			{/snippet}
-		</Popover.Trigger>
-	{:else}
-		<Popover.Trigger class={className}>
-			{#if child}
-				{#snippet child({ props }: ChildProps)}
-					{@render child({ props })}
-				{/snippet}
-			{:else}
-				{@render children?.()}
-			{/if}
-		</Popover.Trigger>
-	{/if}
+	<Popover.Trigger>
+		{#snippet child({ props }: ChildProps)}
+			<span
+				{...props}
+				class={cn('inline-flex max-w-full min-w-0', className)}
+				ontouchstart={ctx.interactive ? handleTouchStart : undefined}
+				ontouchend={ctx.interactive ? handleTouchEnd : undefined}
+				ontouchcancel={ctx.interactive ? handleTouchCancel : undefined}
+				ontouchmove={ctx.interactive ? handleTouchMove : undefined}
+				onclick={ctx.interactive ? handleClick : undefined}
+				role="button"
+				tabindex="0"
+			>
+				{#if child}
+					{@render child({ props: {} })}
+				{:else}
+					{@render children?.()}
+				{/if}
+			</span>
+		{/snippet}
+	</Popover.Trigger>
 {:else}
 	<Tooltip.Trigger class={className}>
 		{#if child}
