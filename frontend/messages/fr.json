@@ -1498,5 +1498,6 @@
 	"environments_agent_address_description": "L'URL où votre agent sera accessible",
 	"environments_generate_config": "Générer la configuration de l'agent",
 	"environments_connect_existing_agent": "Se connecter à l'Agent existant",
-	"environments_connect_existing_agent_description": "Se connecter à un agent déjà en cours d'utilisation avec un jeton de bootstrap."
+	"environments_connect_existing_agent_description": "Se connecter à un agent déjà en cours d'utilisation avec un jeton de bootstrap.",
+	"project_files": "Fichiers du projet"
 }
