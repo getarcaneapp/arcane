@@ -6,7 +6,6 @@ import { defineConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
 
 export default defineConfig({
-	optimizeDeps: { exclude: ['@lucide/svelte'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit(),
@@ -23,9 +22,7 @@ export default defineConfig({
 		})
 	],
 	build: {
-		target: 'es2022',
-		// Disable gzip reporting to speed up builds
-		reportCompressedSize: false
+		target: 'es2022'
 	},
 	server: {
 		host: process.env.HOST,
