@@ -74,8 +74,8 @@
 
 		await initShiki(monaco);
 
-		// Small delay to ensure container is sized
-		await new Promise((resolve) => setTimeout(resolve, 50));
+		// Wait for container to be properly sized
+		await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 		// Create or get model with proper URI for LSP features
 		const uri = fileUri ? monaco.Uri.parse(fileUri) : monaco.Uri.parse(`inmemory://model-${Date.now()}.${langId}`);

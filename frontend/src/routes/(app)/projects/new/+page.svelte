@@ -302,7 +302,6 @@
 							title={m.compose_compose_file_title()}
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
-							placeholder={m.compose_compose_placeholder()}
 							error={$inputs.composeContent.error ?? undefined}
 						/>
 					</div>
@@ -313,7 +312,6 @@
 							title={m.compose_env_title()}
 							language="env"
 							bind:value={$inputs.envContent.value}
-							placeholder={m.compose_env_placeholder()}
 							error={$inputs.envContent.error ?? undefined}
 						/>
 					</div>

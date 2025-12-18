@@ -173,11 +173,12 @@ test.describe('New Compose Project Page', () => {
     await expect(composeEditor.locator('textarea')).toHaveCount(1);
 
     // Use page.evaluate to set the value directly in Monaco to avoid auto-indentation issues during typing
-    await page.evaluate(({ text }) => {
+    await page.evaluate(({ text, lang }) => {
       const models = (window as any).monaco.editor.getModels();
-      const yamlModel = models.find((m: any) => m.getLanguageId() === 'yaml');
-      if (yamlModel) yamlModel.setValue(text);
-    }, { text: TEST_COMPOSE_YAML });
+      const model = models.find((m: any) => m.getLanguageId() === lang);
+      if (!model) throw new Error(`No ${lang} model found`);
+      model.setValue(text);
+    }, { text: TEST_COMPOSE_YAML, lang: 'yaml' });
 
     // Basic sanity check that the new content rendered.
     await expect(composeEditor.locator('.view-lines')).toContainText(/redis/i);
@@ -191,11 +192,12 @@ test.describe('New Compose Project Page', () => {
     await expect(envEditor.locator('textarea')).toHaveCount(1);
 
     // Use page.evaluate to set the value directly in Monaco
-    await page.evaluate(({ text }) => {
+    await page.evaluate(({ text, lang }) => {
       const models = (window as any).monaco.editor.getModels();
-      const iniModel = models.find((m: any) => m.getLanguageId() === 'ini');
-      if (iniModel) iniModel.setValue(text);
-    }, { text: TEST_ENV_FILE });
+      const model = models.find((m: any) => m.getLanguageId() === lang);
+      if (!model) throw new Error(`No ${lang} model found`);
+      model.setValue(text);
+    }, { text: TEST_ENV_FILE, lang: 'ini' });
 
     await expect(envEditor.locator('.view-lines')).toContainText(/redis/i);
 
@@ -267,12 +269,13 @@ test.describe('New Compose Project Page', () => {
     await composeEditor.click({ position: { x: 20, y: 20 } });
 
     await page.evaluate(
-      ({ text }) => {
+      ({ text, lang }) => {
         const models = (window as any).monaco.editor.getModels();
-        const yamlModel = models.find((m: any) => m.getLanguageId() === 'yaml');
-        if (yamlModel) yamlModel.setValue(text);
+        const model = models.find((m: any) => m.getLanguageId() === lang);
+        if (!model) throw new Error(`No ${lang} model found`);
+        model.setValue(text);
       },
-      { text: TEST_COMPOSE_YAML }
+      { text: TEST_COMPOSE_YAML, lang: 'yaml' }
     );
 
     const createButton = page.locator('button[data-slot="button"]').filter({ hasText: 'Create Project' });

@@ -388,7 +388,6 @@
 											title="compose.yaml"
 											language="yaml"
 											bind:value={$inputs.composeContent.value}
-											placeholder={m.compose_compose_placeholder()}
 											error={$inputs.composeContent.error ?? undefined}
 										/>
 									{:else if selectedFile === 'env'}
@@ -397,7 +396,6 @@
 											title=".env"
 											language="env"
 											bind:value={$inputs.envContent.value}
-											placeholder={m.compose_env_placeholder()}
 											error={$inputs.envContent.error ?? undefined}
 										/>
 									{:else}
@@ -408,7 +406,6 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
-												placeholder="# Include file content"
 											/>
 										{/if}
 									{/if}
@@ -446,7 +443,6 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
-												placeholder="# Include file content"
 											/>
 										</div>
 									{/if}
@@ -458,7 +454,6 @@
 												title="compose.yaml"
 												language="yaml"
 												bind:value={$inputs.composeContent.value}
-												placeholder={m.compose_compose_placeholder()}
 												error={$inputs.composeContent.error ?? undefined}
 											/>
 										</div>
@@ -469,7 +464,6 @@
 												title=".env"
 												language="env"
 												bind:value={$inputs.envContent.value}
-												placeholder={m.compose_env_placeholder()}
 												error={$inputs.envContent.error ?? undefined}
 											/>
 										</div>
