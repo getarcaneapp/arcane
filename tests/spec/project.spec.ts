@@ -275,7 +275,7 @@ test.describe('New Compose Project Page', () => {
       { text: TEST_COMPOSE_YAML }
     );
 
-    const createButton = page.getByRole('button', { name: 'Create Project', exact: true });
+    const createButton = page.locator('button[data-slot="button"]').filter({ hasText: 'Create Project' });
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
