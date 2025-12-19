@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
 import { Project, ProjectStatusCounts } from 'types/project.type';
-import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../data/project.data';
+import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 
 const ROUTES = {
   page: '/projects',
