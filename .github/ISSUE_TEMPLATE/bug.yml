@@ -2,6 +2,7 @@ name: 🐞 Bug Report
 description: Report a bug to help improve Arcane
 title: '🐞 Bug: '
 type: 'Bug'
+labels: 'triage'
 body:
   - type: markdown
     attributes:
@@ -61,8 +62,47 @@ body:
     id: version
     attributes:
       label: Arcane Version
-      description: What version of Arcane are you using?
-      placeholder: v0.1.0
+      description: What version of Arcane are you using? (Check the About dialog or version info)
+      placeholder: v1.2.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation Method
+      description: How did you install Arcane?
+      options:
+        - Docker Compose (Recommended)
+        - Docker Run
+        - Binary/Executable
+        - Development/Build from source
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment Type
+      description: Which environment are you running?
+      options:
+        - Local Docker (Single instance)
+        - Remote Agent Mode
+        - Both Local and Remote Agents
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database Type
+      description: What database backend are you using?
+      options:
+        - SQLite (Default)
+        - PostgreSQL
+        - Not sure
     validations:
       required: true
 
@@ -70,21 +110,12 @@ body:
     id: os
     attributes:
       label: Operating System
-      description: What operating system are you using?
+      description: What operating system is Arcane running on?
       options:
+        - Linux
         - macOS
         - Windows
-        - Linux
         - Other
-    validations:
-      required: true
-
-  - type: input
-    id: browser
-    attributes:
-      label: Browser
-      description: What browser are you using?
-      placeholder: Chrome 119, Firefox 120, etc.
     validations:
       required: true
 
@@ -92,10 +123,68 @@ body:
     id: docker
     attributes:
       label: Docker Version
-      description: What Docker version are you using?
-      placeholder: 24.0.6
+      description: What Docker version are you using? (Run `docker --version`)
+      placeholder: '24.0.6'
     validations:
       required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & Version
+      description: What browser and version are you using to access Arcane?
+      placeholder: 'Chrome 119, Firefox 120, Safari 17, etc.'
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Messages
+      description: Please share any relevant logs, error messages, or console output
+      placeholder: |
+        Paste any error messages, logs from the browser console, or Docker logs here...
+
+        To get Docker logs: docker logs <container-name>
+        Browser console: F12 -> Console tab
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: compose
+    attributes:
+      label: Docker Compose Configuration
+      description: Please share your docker-compose.yml file content (remove sensitive data like passwords first)
+      placeholder: |
+        Paste your docker-compose.yml content here...
+
+        Please remove any sensitive information like:
+        - Passwords
+        - API keys
+        - Private URLs
+        - JWT secrets
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment Configuration (.env file)
+      description: Please share your .env file content (remove sensitive data like passwords, API keys, and secrets)
+      placeholder: |
+        Paste your .env file content here...
+
+        Please remove any sensitive information like:
+        - ENCRYPTION_KEY
+        - JWT_SECRET
+        - OIDC client secrets
+        - Database passwords
+        - API keys
+      render: shell
+    validations:
+      required: false
 
   - type: textarea
     id: additional

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
 import { Project, ProjectStatusCounts } from 'types/project.type';
-import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
+import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../data/project.data';
 
 const ROUTES = {
   page: '/projects',
@@ -113,7 +113,6 @@ test.describe('New Compose Project Page', () => {
     await expect(page.getByRole('button', { name: 'My New Project' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Environment (.env)' })).toBeVisible();
-    
   });
 
   test('should validate required fields', async ({ page }) => {
@@ -168,12 +167,15 @@ test.describe('New Compose Project Page', () => {
     await expect(composeEditor.locator('textarea')).toHaveCount(1);
 
     // Use page.evaluate to set the value directly in Monaco to avoid auto-indentation issues during typing
-    await page.evaluate(({ text, lang }) => {
-      const models = (window as any).monaco.editor.getModels();
-      const model = models.find((m: any) => m.getLanguageId() === lang);
-      if (!model) throw new Error(`No ${lang} model found`);
-      model.setValue(text);
-    }, { text: TEST_COMPOSE_YAML, lang: 'yaml' });
+    await page.evaluate(
+      ({ text, lang }) => {
+        const models = (window as any).monaco.editor.getModels();
+        const model = models.find((m: any) => m.getLanguageId() === lang);
+        if (!model) throw new Error(`No ${lang} model found`);
+        model.setValue(text);
+      },
+      { text: TEST_COMPOSE_YAML, lang: 'yaml' },
+    );
 
     // Basic sanity check that the new content rendered.
     await expect(composeEditor.locator('.view-lines')).toContainText(/redis/i);
@@ -187,12 +189,15 @@ test.describe('New Compose Project Page', () => {
     await expect(envEditor.locator('textarea')).toHaveCount(1);
 
     // Use page.evaluate to set the value directly in Monaco
-    await page.evaluate(({ text, lang }) => {
-      const models = (window as any).monaco.editor.getModels();
-      const model = models.find((m: any) => m.getLanguageId() === lang);
-      if (!model) throw new Error(`No ${lang} model found`);
-      model.setValue(text);
-    }, { text: TEST_ENV_FILE, lang: 'ini' });
+    await page.evaluate(
+      ({ text, lang }) => {
+        const models = (window as any).monaco.editor.getModels();
+        const model = models.find((m: any) => m.getLanguageId() === lang);
+        if (!model) throw new Error(`No ${lang} model found`);
+        model.setValue(text);
+      },
+      { text: TEST_ENV_FILE, lang: 'ini' },
+    );
 
     await expect(envEditor.locator('.view-lines')).toContainText(/redis/i);
 
@@ -270,7 +275,7 @@ test.describe('New Compose Project Page', () => {
         if (!model) throw new Error(`No ${lang} model found`);
         model.setValue(text);
       },
-      { text: TEST_COMPOSE_YAML, lang: 'yaml' }
+      { text: TEST_COMPOSE_YAML, lang: 'yaml' },
     );
 
     const createButton = page.locator('button[data-slot="arcane-button"]').filter({ hasText: 'Create Project' });
@@ -366,7 +371,6 @@ test.describe('Project Detail Page', () => {
     // - classic (default): side-by-side compose.yaml + .env panels
     // - tree view: file list on the left and a single code panel on the right
     await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
-    
 
     const projectFilesHeading = page.getByRole('heading', { name: /Project Files/i });
     const isTreeView = await projectFilesHeading.isVisible();
