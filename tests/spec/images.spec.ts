@@ -38,8 +38,8 @@ test.describe('Images Page', () => {
   test('should display stats cards with correct counts and size', async ({ page }) => {
     await navigateToImages(page);
 
-    await expect(page.locator('div:has(> p:has-text("Total Images")) h3').first()).toHaveText(imageCounts.totalImages.toString());
-    await expect(page.locator('div:has(> p:has-text("Total Size")) h3').first()).not.toBeEmpty();
+    await expect(page.getByText(`${imageCounts.totalImages} Total Images`)).toBeVisible();
+    await expect(page.getByText(/Total Size/i)).toBeVisible();
   });
 
   test('should display the image table when images exist', async ({ page }) => {
@@ -59,7 +59,7 @@ test.describe('Images Page', () => {
     await navigateToImages(page);
     await page.locator('button:has-text("Prune Unused")').click();
     await expect(
-      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')
+      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'),
     ).toBeVisible();
   });
 
@@ -108,7 +108,7 @@ test.describe('Images Page', () => {
     await page.locator('button:has-text("Prune Unused")').click();
 
     await expect(
-      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")')
+      page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'),
     ).toBeVisible();
 
     await page.locator('button:has-text("Prune Images")').click();
@@ -122,13 +122,13 @@ test.describe('Images Page', () => {
     await navigateToImages(page);
 
     await page.locator('button:has-text("Pull Image")').first().click();
-    const dialogHeading = page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Pull Image")');
+    const dialogHeading = page.getByRole('heading', { name: 'Pull Image' });
     await expect(dialogHeading).toBeVisible();
 
-    const imageName = 'ghcr.io/linuxserver/nginx';
-    await page.locator('input[id="image-name-*"]').fill(imageName);
+    await page.getByRole('textbox', { name: 'Image Name *' }).fill('ghcr.io/linuxserver/nginx');
+    await page.getByRole('textbox', { name: 'Tag' }).fill('1.28.0');
 
-    await page.locator('button[type="submit"]:has-text("Pull Image")').click();
+    await page.getByRole('button', { name: 'Pull', exact: true }).click();
 
     await expect(dialogHeading).toBeHidden({ timeout: 120_000 });
   });

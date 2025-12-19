@@ -30,9 +30,9 @@ test.describe('Containers Page', () => {
     const running = containersData.data.filter((c) => c.state === 'running').length;
     const stopped = containersData.data.filter((c) => c.state !== 'running').length;
 
-    await expect(page.locator('div:has(> p:has-text("Total")) h3').first()).toHaveText(String(total));
-    await expect(page.locator('div:has(> p:has-text("Running")) h3').first()).toHaveText(String(running));
-    await expect(page.locator('div:has(> p:has-text("Stopped")) h3').first()).toHaveText(String(stopped));
+    await expect(page.getByText(`${total} Total`)).toBeVisible();
+    await expect(page.getByText(`${running} Running`)).toBeVisible();
+    await expect(page.getByText(`${stopped} Stopped`)).toBeVisible();
   });
 
   test('should display the container table with columns', async ({ page }) => {

@@ -35,11 +35,9 @@ test.describe('Projects Page', () => {
   });
 
   test('should display summary cards with correct counts', async ({ page }) => {
-    await expect(page.locator('div:has(> p:has-text("Total Projects")) h3').first()).toHaveText(
-      String(projectCounts.totalProjects)
-    );
-    await expect(page.locator('div:has(> p:has-text("Running")) h3').first()).toHaveText(String(projectCounts.runningProjects));
-    await expect(page.locator('div:has(> p:has-text("Stopped")) h3').first()).toHaveText(String(projectCounts.stoppedProjects));
+    await expect(page.getByText(`${projectCounts.totalProjects} Total Projects`)).toBeVisible();
+    await expect(page.getByText(`${projectCounts.runningProjects} Running`)).toBeVisible();
+    await expect(page.getByText(`${projectCounts.stoppedProjects} Stopped`)).toBeVisible();
   });
 
   test('should display projects list', async ({ page }) => {
@@ -119,7 +117,7 @@ test.describe('New Compose Project Page', () => {
   });
 
   test('should validate required fields', async ({ page }) => {
-    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]');
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="arcane-button"]');
     await expect(createButton).toBeDisabled();
 
     await page.getByRole('button', { name: 'My New Project' }).click();
@@ -134,7 +132,7 @@ test.describe('New Compose Project Page', () => {
       if (msg.type() === 'error') observedErrors.push(msg.text());
     });
 
-    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]');
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="arcane-button"]');
 
     await expect(createButton).toBeVisible();
 
@@ -220,7 +218,7 @@ test.describe('New Compose Project Page', () => {
       }
     });
 
-    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="button"]')
+    const createButton = page.getByRole('button', { name: 'Create Project' }).locator('[data-slot="arcane-button"]');
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
@@ -275,7 +273,7 @@ test.describe('New Compose Project Page', () => {
       { text: TEST_COMPOSE_YAML, lang: 'yaml' }
     );
 
-    const createButton = page.locator('button[data-slot="button"]').filter({ hasText: 'Create Project' });
+    const createButton = page.locator('button[data-slot="arcane-button"]').filter({ hasText: 'Create Project' });
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
