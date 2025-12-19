@@ -34,30 +34,11 @@ jobs:
           node-version: 25
           cache: pnpm
 
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Install frontend deps
-        run: pnpm -C frontend install --frozen-lockfile
-
-      - name: Build frontend
-        run: pnpm -C frontend build
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-
-      - name: Build manager and agent binaries
-        run: |
-          chmod +x ./scripts/github/build-binaries.sh
-          VERSION=next REVISION=${{ github.sha }} ./scripts/github/build-binaries.sh --next-builds
-
-      - name: List built binaries
-        run: |
-          echo "Listing backend/.bin/:"
-          ls -la backend/.bin/ || echo "Directory not found"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -66,59 +47,19 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve Docker image names
-        id: image-names
+      - name: Set short git commit SHA
+        id: vars
         run: |
-          REPO_OWNER=${{ github.repository_owner }}
-          echo "manager=ghcr.io/${REPO_OWNER,,}/arcane" >> $GITHUB_OUTPUT
-          echo "agent=ghcr.io/${REPO_OWNER,,}/arcane-headless" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      # Alpine variants (base :next tag)
-      - name: Build and push manager image (Alpine)
-        uses: depot/build-push-action@v1
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.image-names.outputs.manager }}:next
-          file: docker/next-builds/Dockerfile-static
-          build-args: |
-            VERSION=next
-            REVISION=${{ github.sha }}
-
-      - name: Build and push agent image (Alpine)
-        uses: depot/build-push-action@v1
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.image-names.outputs.agent }}:next
-          file: docker/next-builds/Dockerfile-agent-static
-          build-args: |
-            VERSION=next
-            REVISION=${{ github.sha }}
-
-      # Distroless variants (:next-distroless tag)
-      - name: Build and push manager image (Distroless)
-        uses: depot/build-push-action@v1
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.image-names.outputs.manager }}:next-distroless
-          file: docker/next-builds/Dockerfile-next-distroless
-          build-args: |
-            VERSION=next
-            REVISION=${{ github.sha }}
-
-      - name: Build and push agent image (Distroless)
-        uses: depot/build-push-action@v1
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.image-names.outputs.agent }}:next-distroless
-          file: docker/next-builds/Dockerfile-agent-distroless
-          build-args: |
-            VERSION=next
-            REVISION=${{ github.sha }}
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=sign,announce,validate,nfpms,homebrew
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_NEXT: "true"
+          SKIP_RELEASE: "true"
+          GORELEASER_CURRENT_TAG: next-${{ steps.vars.outputs.sha_short }}
