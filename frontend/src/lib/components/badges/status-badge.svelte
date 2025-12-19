@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
-	import * as Tooltip from '$lib/components/ui/tooltip';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 
 	type Variant =
 		| 'red'
@@ -102,16 +102,14 @@
 {/snippet}
 
 {#if tooltip}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				{@render BadgeContent()}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<p class="max-w-xs text-xs">{tooltip}</p>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			{@render BadgeContent()}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content>
+			<p class="max-w-xs text-xs">{tooltip}</p>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {:else}
 	{@render BadgeContent()}
 {/if}

@@ -22,9 +22,9 @@
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
 		class={buttonVariants({
-			variant: 'outline',
+			variant: 'ghost',
 			size: 'sm',
-			class: 'h-8'
+			class: 'border-input hover:bg-card/60 h-8 border hover:text-inherit'
 		})}
 	>
 		<ViewOptionsIcon />

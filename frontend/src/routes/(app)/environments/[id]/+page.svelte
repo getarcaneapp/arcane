@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { goto, invalidateAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
@@ -311,7 +311,13 @@
 			<Card.Content class="space-y-4 p-4">
 				<div>
 					<Label for="env-name" class="text-sm font-medium">{m.common_name()}</Label>
-					<Input id="env-name" type="text" bind:value={formName} class="mt-1.5" placeholder={m.environments_name_placeholder()} />
+					<Input
+						id="env-name"
+						type="text"
+						bind:value={formName}
+						class="mt-1.5 w-full"
+						placeholder={m.environments_name_placeholder()}
+					/>
 				</div>
 
 				<div class="flex items-center justify-between rounded-lg border p-4">
@@ -320,16 +326,14 @@
 						<div class="text-muted-foreground text-xs">{m.environments_enable_disable_description()}</div>
 					</div>
 					{#if environment.id === '0'}
-						<Tooltip.Provider>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<Switch id="env-enabled" disabled={true} bind:checked={formEnabled} />
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p>{m.environments_local_setting_disabled()}</p>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger>
+								<Switch id="env-enabled" disabled={true} bind:checked={formEnabled} />
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content>
+								<p>{m.environments_local_setting_disabled()}</p>
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
 					{:else}
 						<Switch id="env-enabled" bind:checked={formEnabled} />
 					{/if}
@@ -421,30 +425,28 @@
 				<div>
 					<Label for="api-url" class="text-sm font-medium">{m.environments_api_url()}</Label>
 					{#if environment.id === '0'}
-						<Tooltip.Provider>
-							<Tooltip.Root>
-								<Tooltip.Trigger class="w-full">
-									<Input
-										id="api-url"
-										type="url"
-										bind:value={formApiUrl}
-										class="mt-1.5 font-mono"
-										placeholder={m.environments_api_url_placeholder()}
-										disabled={true}
-										required
-									/>
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p>{m.environments_local_setting_disabled()}</p>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger class="w-full">
+								<Input
+									id="api-url"
+									type="url"
+									bind:value={formApiUrl}
+									class="mt-1.5 w-full font-mono"
+									placeholder={m.environments_api_url_placeholder()}
+									disabled={true}
+									required
+								/>
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content>
+								<p>{m.environments_local_setting_disabled()}</p>
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
 					{:else}
 						<Input
 							id="api-url"
 							type="url"
 							bind:value={formApiUrl}
-							class="mt-1.5 font-mono"
+							class="mt-1.5 w-full font-mono"
 							placeholder={m.environments_api_url_placeholder()}
 							required
 						/>

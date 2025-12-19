@@ -1,5 +1,6 @@
 export { IsMobile } from './is-mobile.svelte';
 export { IsTablet } from './is-tablet.svelte';
+export { IsTouchDevice } from './is-touch-device.svelte';
 export { UseClipboard } from './use-clipboard.svelte';
 export { useEnvironmentRefresh } from './use-environment-refresh.svelte';
 export { ScrollDirectionDetector, type ScrollDirection } from './use-scroll-direction.svelte';

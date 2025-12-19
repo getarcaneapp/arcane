@@ -35,9 +35,9 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				variant="outline"
+				variant="ghost"
 				size="sm"
-				class="h-8 border-dashed"
+				class="border-input hover:bg-card/60 h-8 min-w-24 border border-dashed hover:text-inherit"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
 				<FilterIcon />
@@ -65,7 +65,7 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
-		<Command.Root>
+		<Command.Root class="rounded-none bg-transparent">
 			<Command.Input placeholder={title} />
 			<Command.List>
 				<Command.Empty>{m.common_no_results_found()}</Command.Empty>

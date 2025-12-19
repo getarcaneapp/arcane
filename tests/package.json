@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "arcane-tests",
-  "packageManager": "pnpm@10.24.0",
+  "packageManager": "pnpm@10.26.0",
   "engines": {
     "node": ">=25"
   },
@@ -11,6 +11,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
-    "@types/node": "^24.10.1"
+    "@types/node": "^25.0.3"
   }
 }
