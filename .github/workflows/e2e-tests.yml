@@ -94,6 +94,14 @@ jobs:
           node-version: 25
           cache: pnpm
 
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Setup depot buildx driver
+        id: setup-buildx-driver
+        run: |
+          depot configure-docker
+
       - name: Cache Playwright Browsers
         uses: actions/cache@v5
         id: playwright-cache
