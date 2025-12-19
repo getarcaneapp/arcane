@@ -66,27 +66,8 @@
 	--bg-surface: oklch(1 0 0);
 	--glass-base: var(--bg-surface);
 	--glass-tint: var(--primary);
-	--glass-bg-alpha: 0.25;
-	--glass-border-alpha: 0.3;
 	--glass-shadow-color: oklch(0 0 0 / 0.12);
-	--glass-blur: 16px;
-	--glass-saturation: 180%;
-	--glass-stroke-outer: color-mix(in oklch, white 8%, transparent);
-	--glass-stroke-inner: color-mix(in oklch, black 8%, transparent);
-	--glass-stroke-outer-strong: color-mix(in oklch, white 12%, transparent);
-	--glass-stroke-inner-strong: color-mix(in oklch, black 12%, transparent);
 	--glass-noise-opacity: 0.03;
-
-	--glass-light-alpha: 0.15;
-	--glass-medium-alpha: 0.25;
-	--glass-heavy-alpha: 0.35;
-
-	--glass-blur-xs: 4px;
-	--glass-blur-sm: 8px;
-	--glass-blur-md: 14px;
-	--glass-blur-lg: 20px;
-	--glass-blur-xl: 28px;
-	--glass-blur-popup: 48px;
 }
 
 .dark {
@@ -125,20 +106,7 @@
 	--bg-surface: oklch(0.21 0.006 285.885);
 	--glass-base: var(--bg-surface);
 	--glass-tint: var(--primary);
-	--glass-bg-alpha: 0.35;
-	--glass-border-alpha: 0.28;
 	--glass-shadow-color: oklch(0 0 0 / 0.32);
-	--glass-saturation: 180%;
-	--glass-stroke-outer: color-mix(in oklch, white 10%, transparent);
-	--glass-stroke-inner: color-mix(in oklch, black 10%, transparent);
-	--glass-stroke-outer-strong: color-mix(in oklch, white 14%, transparent);
-	--glass-stroke-inner-strong: color-mix(in oklch, black 14%, transparent);
-
-	--glass-light-alpha: 0.2;
-	--glass-medium-alpha: 0.35;
-	--glass-heavy-alpha: 0.5;
-
-	--glass-blur-popup: 48px;
 }
 
 @theme inline {
@@ -194,13 +162,6 @@
 		@apply cursor-pointer;
 	}
 
-	.glass,
-	.glass-light,
-	.glass-medium,
-	.glass-heavy {
-		contain: layout style paint;
-		content-visibility: auto;
-	}
 }
 
 body:not(.glass-enabled) {
@@ -217,18 +178,6 @@ body:not(.glass-enabled) {
 		opacity: 0.015;
 	}
 
-	.glass,
-	.glass-light,
-	.glass-medium,
-	.glass-heavy,
-	.glass-strong,
-	.glass-subtle {
-		-webkit-backdrop-filter: none !important;
-		backdrop-filter: none !important;
-		background: var(--bg-surface) !important;
-		border-color: var(--border) !important;
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
-	}
 
 	.bubble {
 		background: var(--bg-surface) !important;
@@ -303,11 +252,6 @@ body:not(.glass-enabled) {
 		background-color: var(--bg-surface) !important;
 	}
 
-	.glass-medium {
-		background: var(--bg-surface) !important;
-		backdrop-filter: none !important;
-		-webkit-backdrop-filter: none !important;
-	}
 }
 
 body.glass-enabled {
@@ -344,16 +288,7 @@ body::after {
 	}
 }
 
-@layer components {
-	/* Convenience wrapper for content blocks */
-	.glass-card {
-		border-radius: var(--radius-lg);
-		padding: 1rem;
-	}
-}
-
 @layer utilities {
-	/* Bubbly UI helpers */
 	.bubble {
 		background:
 			radial-gradient(
@@ -373,24 +308,6 @@ body::after {
 			0 1px 0 0 color-mix(in oklch, var(--glass-base, var(--bg-surface)) 30%, transparent) inset;
 	}
 
-	.glass-glow {
-		box-shadow:
-			0 0 20px -5px color-mix(in oklch, var(--glass-tint, var(--primary)) 40%, transparent),
-			0 10px 30px -10px var(--glass-shadow-color),
-			0 1px 0 0 color-mix(in oklch, var(--glass-base, var(--bg-surface)) 28%, transparent) inset;
-	}
-
-	.glass-shadow-soft {
-		box-shadow:
-			0 2px 8px -2px color-mix(in oklch, var(--glass-shadow-color) 40%, transparent),
-			0 1px 0 0 color-mix(in oklch, var(--glass-base, var(--bg-surface)) 20%, transparent) inset;
-	}
-
-	.glass-shadow-medium {
-		box-shadow:
-			0 4px 16px -4px color-mix(in oklch, var(--glass-shadow-color) 60%, transparent),
-			0 1px 0 0 color-mix(in oklch, var(--glass-base, var(--bg-surface)) 25%, transparent) inset;
-	}
 
 	.bubble-pill {
 		border-radius: 9999px;
@@ -427,14 +344,6 @@ body::after {
 		.hover-lift:hover {
 			transform: none;
 		}
-	}
-
-	/* Prevent stat-card value from scaling out of bounds on hover */
-	.glass-light.group .tabular-nums {
-		transform-origin: left center;
-	}
-	.glass-light.group:hover .tabular-nums {
-		transform: none !important;
 	}
 
 	.bubble-outline {
@@ -477,12 +386,6 @@ body::after {
 		}
 	}
 
-	/* Glass variants for cards/components */
-	.glass-medium {
-		background: color-mix(in oklch, var(--glass-base, var(--bg-surface)) var(--glass-medium-alpha), transparent);
-		backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturation));
-		-webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturation));
-	}
 }
 
 .version-collapsed {

@@ -23,20 +23,24 @@ import {
 export const arcaneButtonVariants = tv({
 	base:
 		'inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap select-none ' +
-		'transition-[transform,box-shadow,background-color,border-color,color] duration-150 will-change-transform ' +
+		'transition-all duration-200 will-change-transform ' +
+		'active:scale-[0.98] ' +
 		'border disabled:pointer-events-none disabled:opacity-50 ' +
-		'focus-visible:outline-none focus-visible:ring-0 ring-0 ring-offset-0 ' +
+		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-0 ' +
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 	variants: {
 		tone: {
 			'outline-primary':
-				'bg-transparent text-muted-foreground border-primary/70 hover:bg-primary/15 hover:border-primary/75 ' +
-				'dark:text-muted-foreground dark:border-primary/60 dark:hover:bg-primary/20 shadow-none hover:shadow-none',
+				'bg-primary/5 text-foreground! border-primary/20 hover:bg-primary/10 hover:border-primary/40 ' +
+				'dark:bg-primary/10 dark:text-primary-foreground dark:border-primary/30 dark:hover:bg-primary/20 ' +
+				'shadow-sm hover:shadow-md',
 			'outline-destructive':
-				'bg-transparent text-destructive/75 border-destructive/60 hover:bg-destructive/10 hover:border-destructive/65 ' +
-				'dark:text-destructive/75 dark:border-destructive/55 dark:hover:bg-destructive/14 shadow-none hover:shadow-none',
+				'bg-destructive/5 text-foreground! border-destructive/20 hover:bg-destructive/10 hover:border-destructive/40 ' +
+				'dark:bg-destructive/10 dark:text-destructive-foreground dark:border-destructive/30 dark:hover:bg-destructive/20 ' +
+				'shadow-sm hover:shadow-md',
 
-			ghost: 'border-transparent bg-transparent text-foreground hover:bg-accent/40 shadow-none hover:shadow-none',
+			ghost:
+				'border-transparent bg-transparent text-foreground! hover:bg-accent/40 hover:text-accent-foreground shadow-none hover:shadow-none',
 			link: 'border-transparent bg-transparent text-primary underline-offset-4 hover:underline shadow-none hover:shadow-none'
 		},
 		size: {
@@ -47,7 +51,7 @@ export const arcaneButtonVariants = tv({
 		},
 		hoverEffect: {
 			none: '',
-			lift: 'hover:-translate-y-0.5 active:translate-y-0'
+			lift: 'hover-lift'
 		}
 	},
 	defaultVariants: {

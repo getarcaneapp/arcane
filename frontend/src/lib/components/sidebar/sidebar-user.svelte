@@ -78,7 +78,8 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content
-				class="border-border/20 min-w-56 rounded-2xl border p-0 shadow-lg backdrop-blur-(--glass-blur-popup) backdrop-saturate-150"
+				class="border-border/20 min-w-56 rounded-2xl border p-0 shadow-lg backdrop-blur-2xl
+ backdrop-saturate-150"
 				side="right"
 				align="end"
 				sideOffset={12}

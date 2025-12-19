@@ -96,10 +96,8 @@
 >
 	{#if shouldUseInternalContent}
 		{#if type !== undefined && loading}
-			<div class="absolute inset-0 flex place-items-center justify-center bg-inherit">
-				<div class="flex place-items-center justify-center">
-					<Spinner class="size-4" />
-				</div>
+			<div class="bg-background/30 absolute inset-0 flex items-center justify-center rounded-[inherit] backdrop-blur-[1px]">
+				<Spinner class="size-4" />
 			</div>
 			<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>
 			{#if !isIconOnlyButton}

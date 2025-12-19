@@ -20,5 +20,8 @@
     "format": "pnpm --filter arcane-frontend format",
     "check": "pnpm --filter arcane-frontend check",
     "knip": "pnpm --filter arcane-frontend knip"
+  },
+  "dependencies": {
+    "svelte-motion": "^0.12.2"
   }
 }
