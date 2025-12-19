@@ -51,8 +51,12 @@ export async function initShiki(monacoInstance: typeof monaco) {
 	return shikiPromise;
 }
 
-// Register YAML language providers
-registerYamlProviders(monaco);
+// Register YAML language providers (only once, survives hot reload)
+const globalWithFlag = globalThis as typeof globalThis & { _yamlProvidersRegistered?: boolean };
+if (!globalWithFlag._yamlProvidersRegistered) {
+	registerYamlProviders(monaco);
+	globalWithFlag._yamlProvidersRegistered = true;
+}
 
 if (typeof window !== 'undefined') {
 	(window as unknown as { monaco: typeof monaco }).monaco = monaco;

@@ -272,8 +272,7 @@ function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position):
 	if (parentKey && contextMap[parentKey]) return contextMap[parentKey];
 	if (grandParentKey && contextMap[grandParentKey]) return contextMap[grandParentKey];
 
-	// 2. Fallback: use parentKey as context (getSuggestions handles unknown contexts gracefully)
-	return parentKey || 'unknown';
+	return 'unknown';
 }
 
 /**
