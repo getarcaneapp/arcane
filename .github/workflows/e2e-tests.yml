@@ -64,6 +64,7 @@ jobs:
     permissions:
       contents: read
       actions: write
+      id-token: write
     runs-on: depot-ubuntu-24.04-16
     needs: build
     strategy:
