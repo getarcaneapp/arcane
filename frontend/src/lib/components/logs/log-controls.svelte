@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Select from '$lib/components/ui/select';
 	import { m } from '$lib/paraglide/messages';
 	import { PersistedState } from 'runed';
@@ -84,27 +84,28 @@
 	</Select.Root>
 
 	<div class="flex items-center gap-2">
-		<Button variant="outline" size="sm" class="text-xs font-medium" onclick={onClear}>
-			{m.common_clear()}
-		</Button>
+		<ArcaneButton
+			action="base"
+			tone="outline"
+			size="sm"
+			class="text-xs font-medium"
+			onclick={onClear}
+			customLabel={m.common_clear()}
+		/>
 		{#if isStreaming}
-			<Button variant="outline" size="sm" class="text-xs font-medium" onclick={onStop}>
-				{m.common_stop()}
-			</Button>
+			<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
 		{:else}
-			<Button variant="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled}>
-				{m.common_start()}
-			</Button>
+			<ArcaneButton action="start" tone="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled} />
 		{/if}
-		<Button
-			variant="outline"
+		<ArcaneButton
+			action="refresh"
+			tone="outline"
 			size="sm"
 			class="px-2"
 			onclick={onRefresh}
 			aria-label={m.log_refresh_aria_label()}
 			title={m.common_refresh()}
-		>
-			<RefreshIcon class="size-4" />
-		</Button>
+			showLabel={false}
+		/>
 	</div>
 </div>

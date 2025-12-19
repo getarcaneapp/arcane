@@ -80,27 +80,24 @@
 			title: m.volumes_stat_total(),
 			value: volumeUsageCounts.total,
 			icon: VolumesIcon,
-			iconColor: 'text-blue-500',
-			class: 'border-l-4 border-l-blue-500'
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.volumes_stat_used(),
 			value: volumeUsageCounts.inuse,
 			icon: VolumeUsedIcon,
-			iconColor: 'text-green-500',
-			class: 'border-l-4 border-l-green-500'
+			iconColor: 'text-green-500'
 		},
 		{
 			title: m.volumes_stat_unused(),
 			value: volumeUsageCounts.unused,
 			icon: VolumeUnusedIcon,
-			iconColor: 'text-red-500',
-			class: 'border-l-4 border-l-red-500'
+			iconColor: 'text-red-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards} statCardsColumns={3}>
+<ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<VolumeTable bind:volumes bind:selectedIds bind:requestOptions />
 	{/snippet}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { RefreshIcon } from '$lib/icons';
@@ -103,12 +103,16 @@
 				}
 			}}
 		/>
-		<Button size="sm" variant="outline" onclick={handleCustomShellSubmit} class="h-8">
-			{m.apply()}
-		</Button>
+		<ArcaneButton action="base" size="sm" tone="outline" onclick={handleCustomShellSubmit} class="h-8" customLabel={m.apply()} />
 	{/if}
 
-	<Button size="icon" variant="ghost" onclick={onReconnect} class="size-8" title="Reconnect shell">
-		<RefreshIcon class="size-4" />
-	</Button>
+	<ArcaneButton
+		action="refresh"
+		size="icon"
+		tone="ghost"
+		onclick={onReconnect}
+		class="size-8"
+		title="Reconnect shell"
+		showLabel={false}
+	/>
 </div>

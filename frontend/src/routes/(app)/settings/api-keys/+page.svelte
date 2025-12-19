@@ -9,7 +9,7 @@
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Snippet } from '$lib/components/ui/snippet/index.js';
 	import * as m from '$lib/paraglide/messages.js';
 	import { untrack } from 'svelte';
@@ -112,7 +112,6 @@
 	icon={ApiKeyIcon}
 	pageType="management"
 	{actionButtons}
-	statCardsColumns={3}
 >
 	{#snippet mainContent()}
 		<ApiKeyTable
@@ -164,7 +163,7 @@
 				</div>
 			{/snippet}
 			{#snippet footer()}
-				<Button onclick={() => (isDialogOpen.showKey = false)}>{m.common_done()}</Button>
+				<ArcaneButton action="confirm" onclick={() => (isDialogOpen.showKey = false)} customLabel={m.common_done()} />
 			{/snippet}
 		</ResponsiveDialog.Root>
 	{/snippet}

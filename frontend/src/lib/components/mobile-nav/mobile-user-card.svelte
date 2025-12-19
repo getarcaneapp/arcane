@@ -7,7 +7,7 @@
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import * as Button from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import {
 		ArrowDownIcon,
 		MoonIcon,
@@ -69,8 +69,9 @@
 				<ArrowDownIcon class="size-8" />
 			</div>
 			<form action="/logout" method="POST">
-				<Button.Root
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="icon"
 					type="submit"
 					title={m.common_logout()}
@@ -78,7 +79,7 @@
 					onclick={(e) => e.stopPropagation()}
 				>
 					<LogoutIcon class="size-5" />
-				</Button.Root>
+				</ArcaneButton>
 			</form>
 		</div>
 	</button>

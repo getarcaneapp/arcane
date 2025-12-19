@@ -113,27 +113,24 @@
 			title: m.compose_total(),
 			value: totalCompose,
 			icon: ProjectsIcon,
-			iconColor: 'text-amber-500',
-			class: 'border-l-4 border-l-amber-500'
+			iconColor: 'text-amber-500'
 		},
 		{
 			title: m.common_running(),
 			value: runningCompose,
 			icon: StartIcon,
-			iconColor: 'text-green-500',
-			class: 'border-l-4 border-l-green-500'
+			iconColor: 'text-green-500'
 		},
 		{
 			title: m.common_stopped(),
 			value: stoppedCompose,
 			icon: StopIcon,
-			iconColor: 'text-red-500',
-			class: 'border-l-4 border-l-red-500'
+			iconColor: 'text-red-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards} statCardsColumns={3}>
+<ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<ProjectsTable bind:projects bind:selectedIds bind:requestOptions={projectRequestOptions} />
 	{/snippet}

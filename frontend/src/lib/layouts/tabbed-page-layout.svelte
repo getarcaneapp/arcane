@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
 	import type { Snippet } from 'svelte';
@@ -60,10 +60,10 @@
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 items-start gap-3">
-						<Button variant="ghost" size="sm" href={backUrl}>
+						<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
 							<ArrowLeftIcon class="size-4" />
 							{backLabel}
-						</Button>
+						</ArcaneButton>
 						<div class="min-w-0">
 							{@render headerInfo()}
 						</div>

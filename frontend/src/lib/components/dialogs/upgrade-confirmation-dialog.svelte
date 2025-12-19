@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { onDestroy } from 'svelte';
@@ -176,9 +176,13 @@
 						</p>
 					</div>
 					<div class="flex justify-center">
-						<Button onclick={reloadPage} variant="default" size="sm" class="w-full sm:w-auto">
-							{m.upgrade_reload_now()}
-						</Button>
+						<ArcaneButton
+							action="base"
+							onclick={reloadPage}
+							size="sm"
+							customLabel={m.upgrade_reload_now()}
+							class="w-full sm:w-auto"
+						/>
 					</div>
 				{:else if upgradeStatus === 'waiting'}
 					<div class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
@@ -215,12 +219,8 @@
 			</div>
 
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (open = false)}>
-					{m.cancel()}
-				</Button>
-				<Button onclick={handleConfirm}>
-					{m.upgrade_now()}
-				</Button>
+				<ArcaneButton action="cancel" onclick={() => (open = false)} />
+				<ArcaneButton action="update" customLabel={m.upgrade_now()} onclick={handleConfirm} />
 			</Dialog.Footer>
 		{/if}
 	</Dialog.Content>

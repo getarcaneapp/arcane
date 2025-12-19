@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import { m } from '$lib/paraglide/messages';
@@ -55,22 +55,31 @@
 
 		<Dialog.Footer class="flex-col gap-2 sm:flex-row">
 			{#if versionInfo.releaseUrl}
-				<Button variant="outline" class="gap-2" onclick={() => window.open(versionInfo.releaseUrl, '_blank')}>
-					<ExternalLinkIcon class="size-4" />
-					{m.version_info_view_release()}
-				</Button>
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					class="gap-2"
+					onclick={() => window.open(versionInfo.releaseUrl, '_blank')}
+					icon={ExternalLinkIcon}
+					customLabel={m.version_info_view_release()}
+				/>
 			{/if}
-			<Button variant="outline" size="icon" onclick={() => window.open('https://getarcane.app', '_blank')} title="Documentation">
-				<BookOpenIcon class="size-4" />
-			</Button>
-			<Button
-				variant="outline"
+			<ArcaneButton
+				action="base"
+				tone="outline"
+				size="icon"
+				onclick={() => window.open('https://getarcane.app', '_blank')}
+				title="Documentation"
+				icon={BookOpenIcon}
+			/>
+			<ArcaneButton
+				action="base"
+				tone="outline"
 				size="icon"
 				onclick={() => window.open('https://github.com/getarcaneapp/arcane', '_blank')}
 				title="GitHub"
-			>
-				<GithubIcon class="size-4" />
-			</Button>
+				icon={GithubIcon}
+			/>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

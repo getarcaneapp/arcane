@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Checkbox from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -125,20 +125,14 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button class="arcane-button-cancel" variant="outline" onclick={handleCancel} disabled={isPruning}>
-			{m.common_cancel()}
-		</Button>
-		<Button
-			class="arcane-button-remove"
-			variant="destructive"
+		<ArcaneButton action="cancel" onclick={handleCancel} disabled={isPruning} />
+		<ArcaneButton
+			action="remove"
 			onclick={handleConfirm}
 			disabled={selectedTypes.length === 0 || isPruning}
-		>
-			{#if isPruning}
-				<Spinner class="size-4" /> {m.common_action_pruning()}
-			{:else}
-				<TrashIcon class="size-4" /> {m.prune_button({ count: selectedTypes.length })}
-			{/if}
-		</Button>
+			loading={isPruning}
+			customLabel={m.prune_button({ count: selectedTypes.length })}
+			loadingLabel={m.common_action_pruning()}
+		/>
 	{/snippet}
 </ResponsiveDialog>

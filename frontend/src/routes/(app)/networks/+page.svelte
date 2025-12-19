@@ -76,20 +76,18 @@
 			title: m.networks_total(),
 			value: networkUsageCounts.total,
 			icon: NetworksIcon,
-			iconColor: 'text-blue-500',
-			class: 'border-l-4 border-l-blue-500'
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.unused_networks(),
 			value: networkUsageCounts.unused,
 			icon: ConnectionIcon,
-			iconColor: 'text-amber-500',
-			class: 'border-l-4 border-l-amber-500'
+			iconColor: 'text-amber-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout title={m.networks_title()} subtitle={m.networks_subtitle()} {actionButtons} {statCards} statCardsColumns={2}>
+<ResourcePageLayout title={m.networks_title()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<NetworkTable bind:networks bind:selectedIds bind:requestOptions />
 	{/snippet}

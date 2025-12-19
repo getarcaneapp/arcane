@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Calendar } from '$lib/components/ui/calendar';
 	import * as Popover from '$lib/components/ui/popover';
 	import { m } from '$lib/paraglide/messages';
@@ -63,15 +63,15 @@
 	<Popover.Root bind:open>
 		<Popover.Trigger {id} class="w-full">
 			{#snippet child({ props })}
-				<Button
+				<ArcaneButton
 					{...props}
-					variant="outline"
+					action="base"
+					tone="outline"
 					class={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
 					aria-label={m.select_a_date()}
-				>
-					<CalendarIcon class="mr-2 size-4" />
-					{calendarDisplayDate ? df.format(calendarDisplayDate.toDate(getLocalTimeZone())) : m.select_a_date()}
-				</Button>
+					icon={CalendarIcon}
+					customLabel={calendarDisplayDate ? df.format(calendarDisplayDate.toDate(getLocalTimeZone())) : m.select_a_date()}
+				/>
 			{/snippet}
 		</Popover.Trigger>
 		<Popover.Content class="w-auto p-0" align="start">

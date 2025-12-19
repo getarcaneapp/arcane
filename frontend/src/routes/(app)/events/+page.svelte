@@ -103,44 +103,35 @@
 			title: m.events_total(),
 			value: totalEvents,
 			subtitle: m.events_total_subtitle(),
-			icon: EventsIcon,
-			class: 'border-l-4 border-l-primary'
+			icon: EventsIcon
 		},
 		{
 			title: m.events_info(),
 			value: infoEvents,
 			subtitle: m.events_info_subtitle(),
 			icon: EventsIcon,
-			iconColor: 'text-blue-500',
-			bgColor: 'bg-blue-500/10',
-			class: 'border-l-4 border-l-blue-500'
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.events_success(),
 			value: successEvents,
 			subtitle: m.events_success_subtitle(),
 			icon: EventsIcon,
-			iconColor: 'text-green-500',
-			bgColor: 'bg-green-500/10',
-			class: 'border-l-4 border-l-green-500'
+			iconColor: 'text-green-500'
 		},
 		{
 			title: m.events_warning(),
 			value: warningEvents,
 			subtitle: m.events_warning_subtitle(),
 			icon: EventsIcon,
-			iconColor: 'text-yellow-500',
-			bgColor: 'bg-yellow-500/10',
-			class: 'border-l-4 border-l-yellow-500'
+			iconColor: 'text-yellow-500'
 		},
 		{
 			title: m.events_error(),
 			value: errorEvents,
 			subtitle: m.events_error_subtitle(),
 			icon: EventsIcon,
-			iconColor: 'text-red-500',
-			bgColor: 'bg-red-500/10',
-			class: 'border-l-4 border-l-red-500'
+			iconColor: 'text-red-500'
 		}
 	]);
 </script>
@@ -150,7 +141,6 @@
 	subtitle={m.events_subtitle()}
 	{actionButtons}
 	{statCards}
-	statCardsColumns={5}
 	containerClass="flex h-full flex-col space-y-6"
 >
 	{#snippet mainContent()}

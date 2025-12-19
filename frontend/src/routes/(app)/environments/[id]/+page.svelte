@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -208,10 +208,14 @@
 
 <div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
 	<div class="space-y-3 sm:space-y-4">
-		<Button variant="ghost" onclick={() => goto('/environments')} class="w-fit gap-2">
-			<ArrowLeftIcon class="size-4" />
-			<span>{m.common_back_to({ resource: m.environments_title() })}</span>
-		</Button>
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			onclick={() => goto('/environments')}
+			class="w-fit gap-2"
+			icon={ArrowLeftIcon}
+			customLabel={m.common_back_to({ resource: m.environments_title() })}
+		/>
 
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex-1">
@@ -227,41 +231,43 @@
 				{/if}
 
 				{#if hasChanges}
-					<Button variant="outline" size="sm" onclick={handleReset} disabled={isSaving}>
-						<ResetIcon class="mr-2 size-4" />
-						{m.common_reset()}
-					</Button>
+					<ArcaneButton
+						action="restart"
+						tone="outline"
+						onclick={handleReset}
+						disabled={isSaving}
+						customLabel={m.common_reset()}
+					/>
 				{/if}
 
-				<Button size="sm" onclick={handleSave} disabled={!hasChanges || isSaving}>
-					{#if isSaving}
-						<div class="border-background mr-2 size-4 animate-spin rounded-full border-2 border-t-transparent"></div>
-						{m.common_saving()}
-					{:else}
-						<SaveIcon class="mr-2 size-4" />
-						{m.common_save()}
-					{/if}
-				</Button>
+				<ArcaneButton
+					action="save"
+					onclick={handleSave}
+					disabled={!hasChanges || isSaving}
+					loading={isSaving}
+					customLabel={m.common_save()}
+					loadingLabel={m.common_saving()}
+				/>
 
 				{#if environment.id !== '0'}
-					<Button variant="outline" onclick={syncRegistries} disabled={isSyncingRegistries}>
-						{#if isSyncingRegistries}
-							<Spinner class="size-4" />
-						{:else}
-							<RegistryIcon class="size-4" />
-						{/if}
-						{m.sync_registries()}
-					</Button>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						onclick={syncRegistries}
+						disabled={isSyncingRegistries}
+						loading={isSyncingRegistries}
+						icon={RegistryIcon}
+						customLabel={m.sync_registries()}
+					/>
 				{/if}
 
-				<Button variant="outline" onclick={refreshEnvironment} disabled={isRefreshing}>
-					{#if isRefreshing}
-						<Spinner class="size-4" />
-					{:else}
-						<RefreshIcon class="size-4" />
-					{/if}
-					{m.common_refresh()}
-				</Button>
+				<ArcaneButton
+					action="refresh"
+					tone="outline"
+					onclick={refreshEnvironment}
+					disabled={isRefreshing}
+					loading={isRefreshing}
+				/>
 			</div>
 		</div>
 
@@ -454,15 +460,16 @@
 					<p class="text-muted-foreground mt-1.5 text-xs">{m.environments_api_url_help()}</p>
 				</div>
 
-				<Button onclick={testConnection} disabled={isTestingConnection} class="w-full">
-					{#if isTestingConnection}
-						<Spinner />
-						{m.environments_testing_connection()}
-					{:else}
-						<TestIcon class="mr-2 size-4" />
-						{m.environments_test_connection()}
-					{/if}
-				</Button>
+				<ArcaneButton
+					action="base"
+					onclick={testConnection}
+					disabled={isTestingConnection}
+					loading={isTestingConnection}
+					icon={TestIcon}
+					customLabel={m.environments_test_connection()}
+					loadingLabel={m.environments_testing_connection()}
+					class="w-full"
+				/>
 			</Card.Content>
 		</Card.Root>
 
@@ -489,28 +496,28 @@
 								</div>
 								<p class="text-muted-foreground text-xs">{m.environments_api_key_save_warning()}</p>
 							</div>
-							<Button variant="outline" onclick={() => (regeneratedApiKey = null)} class="w-full">
-								{m.common_dismiss()}
-							</Button>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								onclick={() => (regeneratedApiKey = null)}
+								customLabel={m.common_dismiss()}
+								class="w-full"
+							/>
 						</div>
 					{:else}
 						<div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
 							<p class="font-medium">{m.environments_regenerate_warning_title()}</p>
 							<p class="mt-1">{m.environments_regenerate_warning_message()}</p>
 						</div>
-						<Button
-							variant="destructive"
+						<ArcaneButton
+							action="remove"
 							onclick={() => (showRegenerateDialog = true)}
 							disabled={isRegeneratingKey}
+							loading={isRegeneratingKey}
+							icon={ResetIcon}
+							customLabel={m.environments_regenerate_api_key()}
 							class="w-full"
-						>
-							{#if isRegeneratingKey}
-								<Spinner class="size-4" />
-							{:else}
-								<ResetIcon class="size-4" />
-							{/if}
-							{m.environments_regenerate_api_key()}
-						</Button>
+						/>
 					{/if}
 				</Card.Content>
 			</Card.Root>

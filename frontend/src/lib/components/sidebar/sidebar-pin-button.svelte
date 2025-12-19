@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { PinOnIcon, PinOffIcon } from '$lib/icons';
@@ -18,11 +18,12 @@
 	const isPinned = $derived(sidebar.isPinned);
 </script>
 
-<Button
+<ArcaneButton
 	bind:ref
 	data-sidebar="pin-button"
 	data-slot="sidebar-pin-button"
-	variant="ghost"
+	action="base"
+	tone="ghost"
 	size="icon"
 	class={cn('text-muted-foreground hover:text-foreground size-7', className)}
 	type="button"
@@ -49,4 +50,4 @@
 		<PinOffIcon />
 		<span class="sr-only">Pin sidebar</span>
 	{/if}
-</Button>
+</ArcaneButton>

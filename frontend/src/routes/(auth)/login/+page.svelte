@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, ArrowRightIcon, GithubIcon, OpenIdIcon, LoginIcon } from '$lib/icons';
+	import { AlertIcon, LockIcon, UserIcon, GithubIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
@@ -12,7 +11,7 @@
 	import { authService } from '$lib/services/auth-service';
 	import { getApplicationLogo } from '$lib/utils/image.util';
 	import { Motion } from 'svelte-motion';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -170,10 +169,7 @@
 					{/if}
 
 					{#if showOidcLoginButton && !showLocalLoginForm}
-						<Button onclick={handleOidcLogin} class="hover-lift w-full" size="lg">
-							<ArrowRightIcon class="mr-2 size-4" />
-							{m.auth_oidc_signin()}
-						</Button>
+						<ArcaneButton hoverEffect="none" action="oidc_login" onclick={() => handleOidcLogin()} {loading} />
 					{/if}
 
 					{#if showLocalLoginForm}
@@ -214,15 +210,7 @@
 									/>
 								</InputGroup.Root>
 							</div>
-							<Button type="submit" class="hover-lift w-full" size="lg" disabled={loading} aria-busy={loading}>
-								{#if loading}
-									<Spinner class="size-4" />
-									{m.auth_signing_in()}
-								{:else}
-									<LoginIcon class="size-4" />
-									{m.auth_signin_button()}
-								{/if}
-							</Button>
+							<ArcaneButton type="submit" action="login" {loading} hoverEffect="none" />
 						</form>
 
 						{#if showDivider}
@@ -239,10 +227,7 @@
 						{/if}
 
 						{#if showOidcLoginButton && showDivider}
-							<Button onclick={handleOidcLogin} variant="outline" class="hover-lift w-full" size="lg">
-								<OpenIdIcon class="size-4" />
-								{m.auth_oidc_signin()}
-							</Button>
+							<ArcaneButton action="oidc_login" hoverEffect="none" onclick={() => handleOidcLogin()} {loading} />
 						{/if}
 					{/if}
 				</div>

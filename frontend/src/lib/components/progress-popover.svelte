@@ -5,7 +5,7 @@
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Item from '$lib/components/ui/item/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import {
@@ -159,9 +159,7 @@
 			</Item.Content>
 			{#if loading && onCancel}
 				<Item.Actions>
-					<Button variant="outline" size="sm" onclick={onCancel}>
-						{m.common_cancel()}
-					</Button>
+					<ArcaneButton action="cancel" size="sm" onclick={onCancel} />
 				</Item.Actions>
 			{/if}
 			{#if !error}

@@ -10,9 +10,10 @@
 		ArrowRightIcon,
 		DockerBrandIcon,
 		ApiKeyIcon,
-		ApperanceIcon
+		ApperanceIcon,
+		CloseIcon
 	} from '$lib/icons';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
@@ -143,10 +144,16 @@
 						/>
 						<InputGroup.Addon>
 							{#if showSearchResults}
-								<Button variant="ghost" size="sm" onclick={clearSearch} class="h-6 w-6 p-0">
-									<span class="sr-only">{m.settings_clear_search()}</span>
-									×
-								</Button>
+								<ArcaneButton
+									action="base"
+									tone="ghost"
+									size="sm"
+									onclick={clearSearch}
+									class="h-6 w-6 p-0"
+									icon={CloseIcon}
+									showLabel={false}
+									customLabel={m.settings_clear_search()}
+								/>
 							{:else}
 								<SearchIcon />
 							{/if}
@@ -216,9 +223,14 @@
 											<p class="text-muted-foreground text-xs sm:text-sm">{result.description}</p>
 										</div>
 									</div>
-									<Button variant="outline" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
-										{m.settings_go_to_page()}
-									</Button>
+									<ArcaneButton
+										action="base"
+										tone="outline"
+										size="sm"
+										onclick={() => navigateToCategory(result.url)}
+										class="shrink-0"
+										customLabel={m.settings_go_to_page()}
+									/>
 								</div>
 							</div>
 

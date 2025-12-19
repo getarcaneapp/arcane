@@ -3,7 +3,7 @@
 -->
 
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { cn } from '$lib/utils';
 	import { scale } from 'svelte/transition';
@@ -28,9 +28,10 @@
 	const resolvedSize = $derived(size === 'icon' && children ? 'default' : size);
 </script>
 
-<Button
+<ArcaneButton
 	bind:ref
-	{variant}
+	action="base"
+	tone={variant === 'ghost' ? 'ghost' : variant === 'outline' ? 'outline' : 'outline'}
 	size={resolvedSize}
 	{tabindex}
 	class={cn('flex items-center gap-2', className)}
@@ -63,4 +64,4 @@
 		</div>
 	{/if}
 	{@render children?.()}
-</Button>
+</ArcaneButton>

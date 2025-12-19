@@ -17,7 +17,9 @@ import {
 	InspectIcon,
 	FileTextIcon,
 	TemplateIcon,
-	type IconType
+	type IconType,
+	LoginIcon,
+	OpenIdIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -34,10 +36,16 @@ export const arcaneButtonVariants = tv({
 				'bg-primary/5 text-foreground! border-primary/20 hover:bg-primary/10 hover:border-primary/40 ' +
 				'dark:bg-primary/10 dark:text-primary-foreground dark:border-primary/30 dark:hover:bg-primary/20 ' +
 				'shadow-sm hover:shadow-md',
+			'outline-primary-login':
+				'bg-primary/5 text-foreground! border-primary/20 hover:bg-primary/10 hover:border-primary/40 ' +
+				'dark:bg-primary/10 dark:text-primary-foreground dark:border-primary/30 dark:hover:bg-primary/20 ' +
+				'shadow-sm hover:shadow-md w-full',
 			'outline-destructive':
 				'bg-destructive/5 text-foreground! border-destructive/20 hover:bg-destructive/10 hover:border-destructive/40 ' +
 				'dark:bg-destructive/10 dark:text-destructive-foreground dark:border-destructive/30 dark:hover:bg-destructive/20 ' +
 				'shadow-sm hover:shadow-md',
+
+			outline: 'bg-background border-input hover:bg-accent hover:text-accent-foreground shadow-sm',
 
 			ghost:
 				'border-transparent bg-transparent text-foreground! hover:bg-accent/40 hover:text-accent-foreground shadow-none hover:shadow-none',
@@ -57,7 +65,7 @@ export const arcaneButtonVariants = tv({
 	defaultVariants: {
 		tone: 'outline-primary',
 		size: 'default',
-		hoverEffect: 'lift'
+		hoverEffect: 'none'
 	}
 });
 
@@ -65,33 +73,17 @@ export type ArcaneButtonTone = VariantProps<typeof arcaneButtonVariants>['tone']
 export type ArcaneButtonSize = VariantProps<typeof arcaneButtonVariants>['size'];
 export type ArcaneButtonHoverEffect = VariantProps<typeof arcaneButtonVariants>['hoverEffect'];
 
-export type Action =
-	| 'start'
-	| 'deploy'
-	| 'stop'
-	| 'restart'
-	| 'remove'
-	| 'pull'
-	| 'redeploy'
-	| 'refresh'
-	| 'inspect'
-	| 'logs'
-	| 'edit'
-	| 'confirm'
-	| 'cancel'
-	| 'save'
-	| 'create'
-	| 'template'
-	| 'update';
-
 export type ActionConfig = {
-	defaultLabel: string;
-	IconComponent: IconType;
+	defaultLabel?: string;
+	IconComponent?: IconType;
 	tone: ArcaneButtonTone;
 	loadingLabel?: string;
 };
 
-export const actionConfigs: Record<Action, ActionConfig> = {
+export const actionConfigs = {
+	base: {
+		tone: 'outline'
+	},
 	start: {
 		defaultLabel: m.common_start(),
 		IconComponent: StartIcon,
@@ -183,5 +175,19 @@ export const actionConfigs: Record<Action, ActionConfig> = {
 		IconComponent: UpdateIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_updating()
+	},
+	login: {
+		defaultLabel: m.auth_signin_button(),
+		IconComponent: LoginIcon,
+		tone: 'outline-primary-login',
+		loadingLabel: m.auth_signing_in()
+	},
+	oidc_login: {
+		defaultLabel: m.auth_oidc_signin(),
+		IconComponent: OpenIdIcon,
+		tone: 'outline-primary-login',
+		loadingLabel: m.auth_signing_in()
 	}
-};
+} satisfies Record<string, ActionConfig>;
+
+export type Action = keyof typeof actionConfigs;

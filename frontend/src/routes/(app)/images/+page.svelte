@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import ImagePullSheet from '$lib/components/sheets/image-pull-sheet.svelte';
@@ -148,20 +148,18 @@
 			title: m.images_total(),
 			value: imageUsageCounts.totalImages,
 			icon: VolumesIcon,
-			iconColor: 'text-blue-500',
-			class: 'border-l-4 border-l-blue-500'
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.images_total_size(),
 			value: String(bytes.format(imageUsageCounts.totalImageSize)),
 			icon: LocalFolderComputerIcon,
-			iconColor: 'text-amber-500',
-			class: 'border-l-4 border-l-amber-500'
+			iconColor: 'text-amber-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout title={m.images_title()} subtitle={m.images_subtitle()} {actionButtons} {statCards} statCardsColumns={2}>
+<ResourcePageLayout title={m.images_title()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<ImageTable
 			bind:images
@@ -205,14 +203,14 @@
 										<span class="text-sm font-medium">{file.name}</span>
 										<span class="text-muted-foreground text-xs">{displaySize(file.size)}</span>
 									</div>
-									<Button
-										variant="ghost"
+									<ArcaneButton
+										action="base"
+										tone="ghost"
 										size="icon"
 										onclick={() => (uploadedFiles = [...uploadedFiles.slice(0, i), ...uploadedFiles.slice(i + 1)])}
 										disabled={isLoading.uploading}
-									>
-										<CloseIcon class="size-4" />
-									</Button>
+										icon={CloseIcon}
+									/>
 								</div>
 							{/each}
 						</div>
@@ -224,18 +222,21 @@
 					{/if}
 				</div>
 				<div class="flex justify-end gap-3">
-					<Button
-						variant="outline"
+					<ArcaneButton
+						action="cancel"
 						onclick={() => {
 							isUploadDialogOpen = false;
 							uploadedFiles = [];
 						}}
-						disabled={isLoading.uploading}>{m.common_cancel()}</Button
-					>
-					<Button onclick={handleUploadImages} disabled={isLoading.uploading || uploadedFiles.length === 0}>
-						{#if isLoading.uploading}<Spinner class="mr-2 size-4" />{/if}
-						{m.images_upload_image()}
-					</Button>
+						disabled={isLoading.uploading}
+					/>
+					<ArcaneButton
+						action="create"
+						onclick={handleUploadImages}
+						disabled={isLoading.uploading || uploadedFiles.length === 0}
+						loading={isLoading.uploading}
+						customLabel={m.images_upload_image()}
+					/>
 				</div>
 			</Dialog.Content>
 		</Dialog.Root>
@@ -249,13 +250,15 @@
 					>
 				</Dialog.Header>
 				<div class="flex justify-end gap-3 pt-6">
-					<Button variant="outline" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isLoading.pruning}
-						>{m.common_cancel()}</Button
-					>
-					<Button variant="destructive" onclick={handlePruneImages} disabled={isLoading.pruning}>
-						{#if isLoading.pruning}<Spinner class="mr-2 size-4" />
-							{m.common_action_pruning()}{:else}{m.images_prune_action()}{/if}
-					</Button>
+					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isLoading.pruning} />
+					<ArcaneButton
+						action="remove"
+						onclick={handlePruneImages}
+						disabled={isLoading.pruning}
+						loading={isLoading.pruning}
+						customLabel={m.images_prune_action()}
+						loadingLabel={m.common_action_pruning()}
+					/>
 				</div>
 			</Dialog.Content>
 		</Dialog.Root>

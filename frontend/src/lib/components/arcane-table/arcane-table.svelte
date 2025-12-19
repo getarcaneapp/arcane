@@ -17,7 +17,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
@@ -541,22 +541,46 @@
 					{m.common_page_of({ page: currentPage, total: totalPages })}
 				</div>
 				<div class="flex items-center space-x-1 sm:space-x-2">
-					<Button variant="outline" class="hidden size-8 p-0 lg:flex" onclick={() => setPage(1)} disabled={!canPrev}>
-						<span class="sr-only">{m.common_go_first_page()}</span>
-						<DoubleArrowLeftIcon />
-					</Button>
-					<Button variant="outline" class="size-8 p-0" onclick={() => setPage(currentPage - 1)} disabled={!canPrev}>
-						<span class="sr-only">{m.common_go_prev_page()}</span>
-						<ArrowLeftIcon />
-					</Button>
-					<Button variant="outline" class="size-8 p-0" onclick={() => setPage(currentPage + 1)} disabled={!canNext}>
-						<span class="sr-only">{m.common_go_next_page()}</span>
-						<ArrowRightIcon />
-					</Button>
-					<Button variant="outline" class="hidden size-8 p-0 lg:flex" onclick={() => setPage(totalPages)} disabled={!canNext}>
-						<span class="sr-only">{m.common_go_last_page()}</span>
-						<DoubleArrowRightIcon />
-					</Button>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						size="icon"
+						icon={DoubleArrowLeftIcon}
+						class="hidden size-8 lg:flex"
+						onclick={() => setPage(1)}
+						disabled={!canPrev}
+						aria-label={m.common_go_first_page()}
+					/>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						size="icon"
+						icon={ArrowLeftIcon}
+						class="size-8"
+						onclick={() => setPage(currentPage - 1)}
+						disabled={!canPrev}
+						aria-label={m.common_go_prev_page()}
+					/>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						size="icon"
+						icon={ArrowRightIcon}
+						class="size-8"
+						onclick={() => setPage(currentPage + 1)}
+						disabled={!canNext}
+						aria-label={m.common_go_next_page()}
+					/>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						size="icon"
+						icon={DoubleArrowRightIcon}
+						class="hidden size-8 lg:flex"
+						onclick={() => setPage(totalPages)}
+						disabled={!canNext}
+						aria-label={m.common_go_last_page()}
+					/>
 				</div>
 			</div>
 		</div>
@@ -581,10 +605,14 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<Button {...props} variant="ghost" size="sm" class="data-[state=open]:bg-accent -ml-3 h-8">
-							<span>
-								{title}
-							</span>
+						<ArcaneButton
+							{...props}
+							action="base"
+							tone="ghost"
+							size="sm"
+							customLabel={title}
+							class="data-[state=open]:bg-accent -ml-3 h-8"
+						>
 							{#if column.getIsSorted() === 'desc'}
 								<ArrowDownIcon />
 							{:else if column.getIsSorted() === 'asc'}
@@ -592,7 +620,7 @@
 							{:else}
 								<ArrowsUpDownIcon />
 							{/if}
-						</Button>
+						</ArcaneButton>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start">
@@ -705,7 +733,7 @@
 	<Card.Root class="overflow-hiddens flex h-full min-h-0 flex-col">
 		{#snippet children()}
 			{#if !withoutSearch}
-				<Card.Header class="border-b">
+				<Card.Header class="border-b px-2 py-2">
 					<DataTableToolbar
 						{table}
 						{selectedIds}

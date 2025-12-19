@@ -21,21 +21,27 @@
 
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
-	import type { ComponentProps } from 'svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
-	let {
-		class: className,
-		children,
-		type = 'button',
-		variant = 'ghost',
-		size = 'xs',
-		...restProps
-	}: Omit<ComponentProps<typeof Button>, 'href' | 'size'> & {
+	interface Props {
+		class?: string;
+		children?: import('svelte').Snippet;
+		type?: 'button' | 'submit' | 'reset';
+		variant?: 'ghost' | 'outline';
 		size?: InputGroupButtonSize;
-	} = $props();
+		[key: string]: any;
+	}
+
+	let { class: className, children, type = 'button', variant = 'ghost', size = 'xs', ...restProps }: Props = $props();
 </script>
 
-<Button {type} data-size={size} {variant} class={cn(inputGroupButtonVariants({ size }), className)} {...restProps}>
+<ArcaneButton
+	action="base"
+	{type}
+	data-size={size}
+	tone={variant === 'ghost' ? 'ghost' : 'outline'}
+	class={cn(inputGroupButtonVariants({ size }), className)}
+	{...restProps}
+>
 	{@render children?.()}
-</Button>
+</ArcaneButton>

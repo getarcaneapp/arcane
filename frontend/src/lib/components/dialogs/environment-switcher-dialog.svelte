@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -327,22 +327,20 @@
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between gap-2">
 			{#if isAdmin}
-				<Button
-					variant="outline"
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					icon={AddIcon}
+					customLabel={m.sidebar_manage_environments()}
 					onclick={() => {
 						closeDialog();
 						goto('/environments');
 					}}
-				>
-					<AddIcon class="size-4" />
-					{m.sidebar_manage_environments()}
-				</Button>
+				/>
 			{:else}
 				<div></div>
 			{/if}
-			<Button variant="outline" onclick={closeDialog}>
-				{m.common_close()}
-			</Button>
+			<ArcaneButton action="base" tone="outline" customLabel={m.common_close()} onclick={closeDialog} />
 		</div>
 	{/snippet}
 </ResponsiveDialog>

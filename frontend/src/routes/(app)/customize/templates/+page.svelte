@@ -152,33 +152,24 @@
 			title: m.templates_local_templates(),
 			value: localTemplatesCount,
 			icon: FolderOpenIcon,
-			iconColor: 'text-blue-500',
-			class: 'border-l-4 border-l-blue-500'
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.templates_remote_templates(),
 			value: remoteTemplatesCount,
 			icon: RegistryIcon,
-			iconColor: 'text-green-500',
-			class: 'border-l-4 border-l-green-500'
+			iconColor: 'text-green-500'
 		},
 		{
 			title: m.templates_registries(),
 			value: registries.length,
 			icon: TemplateIcon,
-			iconColor: 'text-purple-500',
-			class: 'border-l-4 border-l-purple-500'
+			iconColor: 'text-purple-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout
-	title={m.templates_title()}
-	subtitle={m.templates_subtitle()}
-	{actionButtons}
-	{statCards}
-	statCardsColumns={3}
->
+<ResourcePageLayout title={m.templates_title()} subtitle={m.templates_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root bind:value={activeView}>

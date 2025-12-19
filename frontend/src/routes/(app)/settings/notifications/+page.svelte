@@ -3,7 +3,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
@@ -538,18 +538,15 @@
 												</div>
 
 												<div class="pt-2">
-													<Button
-														variant="outline"
+													<ArcaneButton
+														action="base"
+														tone="outline"
 														onclick={() => testNotification('discord')}
 														disabled={isReadOnly || isTesting}
-													>
-														{#if isTesting}
-															<Spinner class="mr-2 h-4 w-4" />
-														{:else}
-															<SendEmailIcon class="mr-2 h-4 w-4" />
-														{/if}
-														{m.notifications_discord_test_button()}
-													</Button>
+														loading={isTesting}
+														icon={SendEmailIcon}
+														customLabel={m.notifications_discord_test_button()}
+													/>
 												</div>
 											</div>
 										{/if}
@@ -703,15 +700,16 @@
 												<div class="pt-2">
 													<DropdownMenu.Root>
 														<DropdownMenu.Trigger>
-															<Button variant="outline" disabled={isReadOnly || isTesting}>
-																{#if isTesting}
-																	<Spinner class="size-4" />
-																{:else}
-																	<SendEmailIcon class="size-4" />
-																{/if}
-																{m.notifications_email_test_button()}
+															<ArcaneButton
+																action="base"
+																tone="outline"
+																disabled={isReadOnly || isTesting}
+																loading={isTesting}
+																icon={SendEmailIcon}
+																customLabel={m.notifications_email_test_button()}
+															>
 																<ArrowDownIcon class="ml-2 size-4" />
-															</Button>
+															</ArcaneButton>
 														</DropdownMenu.Trigger>
 														<DropdownMenu.Content align="start">
 															<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
@@ -794,14 +792,15 @@
 												/>
 
 												<div class="pt-2">
-													<Button variant="outline" onclick={() => testAppriseNotification()} disabled={isReadOnly || isTesting}>
-														{#if isTesting}
-															<Spinner class="mr-2 h-4 w-4" />
-														{:else}
-															<SendEmailIcon class="mr-2 h-4 w-4" />
-														{/if}
-														{m.notifications_apprise_test_button()}
-													</Button>
+													<ArcaneButton
+														action="base"
+														tone="outline"
+														onclick={() => testAppriseNotification()}
+														disabled={isReadOnly || isTesting}
+														loading={isTesting}
+														icon={SendEmailIcon}
+														customLabel={m.notifications_apprise_test_button()}
+													/>
 												</div>
 											</div>
 										{/if}
@@ -825,12 +824,8 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showUnsavedDialog = false)}>
-				{m.common_cancel()}
-			</Button>
-			<Button onclick={handleSaveAndTest}>
-				{m.notifications_unsaved_changes_save_and_test()}
-			</Button>
+			<ArcaneButton action="cancel" onclick={() => (showUnsavedDialog = false)} />
+			<ArcaneButton action="confirm" onclick={handleSaveAndTest} customLabel={m.notifications_unsaved_changes_save_and_test()} />
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { Project } from '$lib/types/project.type';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import * as Card from '$lib/components/ui/card';
@@ -418,18 +417,18 @@
 									<div class="border-border bg-card rounded-lg border">
 										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
 											{#each project.includeFiles as includeFile}
-												<Button
-													variant={selectedIncludeTab === includeFile.relativePath ? 'default' : 'ghost'}
+												<ArcaneButton
+													action="base"
+													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
 													size="sm"
 													class="flex-shrink-0"
 													onclick={() => {
 														selectedIncludeTab =
 															selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
 													}}
-												>
-													<FileTextIcon class="mr-2 size-4 text-amber-500" />
-													{includeFile.relativePath}
-												</Button>
+													icon={FileTextIcon}
+													customLabel={includeFile.relativePath}
+												/>
 											{/each}
 										</div>
 									</div>
@@ -494,10 +493,13 @@
 			<p class="text-muted-foreground mb-8 max-w-md text-center">
 				{m.common_not_found_description({ resource: m.project().toLowerCase() })}
 			</p>
-			<Button variant="outline" href="/projects">
-				<ArrowLeftIcon class="mr-2 size-4" />
-				{m.common_back_to({ resource: m.projects_title() })}
-			</Button>
+			<ArcaneButton
+				action="base"
+				tone="outline"
+				href="/projects"
+				icon={ArrowLeftIcon}
+				customLabel={m.common_back_to({ resource: m.projects_title() })}
+			/>
 		</div>
 	</div>
 {/if}

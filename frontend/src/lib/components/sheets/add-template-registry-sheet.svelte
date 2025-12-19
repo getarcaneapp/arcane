@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -104,21 +104,23 @@
 
 	{#snippet footer()}
 		<div class="flex w-full flex-row gap-2">
-			<Button
+			<ArcaneButton
+				action="cancel"
+				tone="outline"
 				type="button"
-				class="arcane-button-cancel flex-1"
-				variant="outline"
+				class="flex-1"
 				onclick={() => (open = false)}
 				disabled={isLoading}
-			>
-				{m.common_cancel()}
-			</Button>
-			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
-				{#if isLoading}
-					<Spinner class="size-4" />
-				{/if}
-				{m.templates_add_registry_button()}
-			</Button>
+			/>
+			<ArcaneButton
+				action="create"
+				type="submit"
+				class="flex-1"
+				disabled={isLoading}
+				loading={isLoading}
+				onclick={handleSubmit}
+				customLabel={m.templates_add_registry_button()}
+			/>
 		</div>
 	{/snippet}
 </ResponsiveDialog.Root>

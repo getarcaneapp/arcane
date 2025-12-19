@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { Event } from '$lib/types/event.type';
@@ -66,9 +66,7 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button variant="outline" onclick={handleClose}>
-			{m.common_close()}
-		</Button>
+		<ArcaneButton action="base" tone="outline" customLabel={m.common_close()} onclick={handleClose} />
 	{/snippet}
 </ResponsiveDialog>
 

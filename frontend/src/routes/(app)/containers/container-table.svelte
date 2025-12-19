@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -367,39 +367,39 @@
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => performContainerAction('start', item.id)}
 					disabled={isAnyLoading}
+					icon={StartIcon}
 					title={m.common_start()}
-				>
-					<StartIcon class="size-3.5" />
-				</Button>
+				/>
 			{:else if !status && item.state === 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => performContainerAction('stop', item.id)}
 					disabled={isAnyLoading}
 					title={m.common_stop()}
-				>
-					<StopIcon class="size-3.5" />
-				</Button>
+					icon={StopIcon}
+				/>
 			{/if}
 			{#if !status && item.updateInfo?.hasUpdate}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
 					title={m.containers_update_container()}
-				>
-					<UpdateIcon class="size-3.5" />
-				</Button>
+					icon={UpdateIcon}
+				/>
 			{/if}
 		</div>
 	</div>
@@ -519,10 +519,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
 					<span class="sr-only">{m.common_open_menu()}</span>
 					<EllipsisIcon />
-				</Button>
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -623,7 +623,13 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table, renderPagination }: { table: TableType<ContainerSummaryDto>; renderPagination: import('svelte').Snippet })}
+{#snippet GroupedTableView({
+	table,
+	renderPagination
+}: {
+	table: TableType<ContainerSummaryDto>;
+	renderPagination: import('svelte').Snippet;
+})}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar

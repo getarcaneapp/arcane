@@ -1,7 +1,6 @@
 <script lang="ts" generics="TData">
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
-	import Button from '$lib/components/ui/button/button.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters } from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
@@ -45,7 +44,7 @@
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 </script>
 
-<div class={cn('flex flex-col gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-between', className)}>
+<div class={cn('flex flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:justify-between', className)}>
 	<div class="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center sm:justify-between">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
 			<div class="flex items-center gap-2">
@@ -84,17 +83,18 @@
 				{/if}
 
 				{#if isFiltered}
-					<Button
-						variant="ghost"
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="sm"
+						icon={ResetIcon}
+						customLabel={m.common_reset()}
 						onclick={() => {
 							table.resetColumnFilters();
 							table.resetGlobalFilter();
 						}}
 						class="h-8 px-2 lg:px-3"
-					>
-						{m.common_reset()}
-						<ResetIcon />
-					</Button>
+					/>
 				{/if}
 			</div>
 		</div>
