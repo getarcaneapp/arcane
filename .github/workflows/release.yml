@@ -51,37 +51,19 @@ jobs:
             backend/go.sum
             cli/go.sum
 
-      - name: Build manager binaries
-        run: bash scripts/github/build-binaries.sh
+      - name: Extract release notes
+        run: |
+          awk '/^## v[0-9]/ { if (found) exit; found=1; next } found' CHANGELOG.md > release-notes.md
 
-      - name: Build agent binaries
-        run: bash scripts/github/build-binaries.sh --agent
-
-      - name: Build CLI binaries
-        env:
-          VERSION: ${{ github.ref_name }}
-          REVISION: ${{ github.sha }}
-        run: bash scripts/github/build-cli-binaries.sh
-
-      - name: Binary attestation
-        uses: actions/attest-build-provenance@v3
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          subject-path: "backend/.bin/*"
-
-      - name: CLI binary attestation
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: "cli/.bin/*"
-
-      - name: Upload binaries to release
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --release-notes=release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} backend/.bin/*
-
-      - name: Upload CLI binaries to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} cli/.bin/*
+          SKIP_CHANGELOG: "true"
 
       # Docker Images
       - name: Set up Depot CLI

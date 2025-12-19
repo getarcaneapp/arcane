@@ -151,13 +151,10 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane:next'
       - 'ghcr.io/getarcaneapp/arcane:{{.Version}}'
-    build_args:
-      VERSION: next
-      REVISION: '{{.FullCommit}}'
-      BINARY: arcane
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
     labels:
       'org.opencontainers.image.authors': 'OFKM Technologies'
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
@@ -184,13 +181,10 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane-headless:next'
       - 'ghcr.io/getarcaneapp/arcane-headless:{{.Version}}'
-    build_args:
-      VERSION: next
-      REVISION: '{{.FullCommit}}'
-      BINARY: arcane-agent
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
     labels:
       'org.opencontainers.image.authors': 'OFKM Technologies'
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
@@ -217,13 +211,10 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane:next-distroless'
       - 'ghcr.io/getarcaneapp/arcane:{{.Version}}-distroless'
-    build_args:
-      VERSION: next
-      REVISION: '{{.FullCommit}}'
-      BINARY: arcane
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
     labels:
       'org.opencontainers.image.authors': 'OFKM Technologies'
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
@@ -250,13 +241,10 @@ dockers_v2:
     images:
       - 'ghcr.io/getarcaneapp/arcane-headless:next-distroless'
       - 'ghcr.io/getarcaneapp/arcane-headless:{{.Version}}-distroless'
-    build_args:
-      VERSION: next
-      REVISION: '{{.FullCommit}}'
-      BINARY: arcane-agent
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
     labels:
       'org.opencontainers.image.authors': 'OFKM Technologies'
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
@@ -277,6 +265,7 @@ dockers_v2:
       max_delay: 120
 
 changelog:
+  disable: '{{ if .Env.SKIP_CHANGELOG }}true{{ end }}'
   use: github
   filters:
     exclude:
