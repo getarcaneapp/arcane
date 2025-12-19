@@ -35,37 +35,42 @@ const ARCANE_CUSTOM_SCHEMA = {
 class ComposeSchemaManager {
 	private schema: any = ARCANE_CUSTOM_SCHEMA;
 	private suggestionsMap: Map<string, any[]> = new Map();
+	public readonly ready: Promise<void>;
 
 	constructor() {
 		this.parseSchema();
-		this.fetchLatestSchema();
+		this.ready = this.fetchLatestSchema();
 	}
 
-	private async fetchLatestSchema() {
+	private async fetchLatestSchema(retries = 2): Promise<void> {
 		try {
 			const response = await fetch(
 				'https://raw.githubusercontent.com/compose-spec/compose-go/refs/heads/main/schema/compose-spec.json'
 			);
-			if (response.ok) {
-				const latestSchema = await response.json();
-				// Merge latest official schema with our custom fields
-				this.schema = {
-					...latestSchema,
-					properties: {
-						...(latestSchema.properties || {}),
-						...ARCANE_CUSTOM_SCHEMA.properties
-					},
-					definitions: {
-						...(latestSchema.definitions || {}),
-						...ARCANE_CUSTOM_SCHEMA.definitions
-					}
-				};
-				// Clear and re-parse
-				this.suggestionsMap.clear();
-				this.parseSchema();
-			}
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+			const latestSchema = await response.json();
+			// Merge latest official schema with our custom fields
+			this.schema = {
+				...latestSchema,
+				properties: {
+					...(latestSchema.properties || {}),
+					...ARCANE_CUSTOM_SCHEMA.properties
+				},
+				definitions: {
+					...(latestSchema.definitions || {}),
+					...ARCANE_CUSTOM_SCHEMA.definitions
+				}
+			};
+			// Clear and re-parse
+			this.suggestionsMap.clear();
+			this.parseSchema();
 		} catch (e) {
-			console.error('Failed to fetch latest Docker Compose schema', e);
+			if (retries > 0) {
+				await new Promise((r) => setTimeout(r, 1000));
+				return this.fetchLatestSchema(retries - 1);
+			}
+			console.error('Failed to fetch Docker Compose schema after retries', e);
 		}
 	}
 

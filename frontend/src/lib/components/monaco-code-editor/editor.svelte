@@ -168,8 +168,9 @@
 			});
 
 			if (autoHeight) {
-				editor.onDidContentSizeChange(updateHeight);
+				const disposable = editor.onDidContentSizeChange(updateHeight);
 				updateHeight();
+				return () => disposable.dispose();
 			} else {
 				if (editorElement) editorElement.style.height = '';
 				editor.layout();
