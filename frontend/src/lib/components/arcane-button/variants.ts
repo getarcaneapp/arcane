@@ -23,7 +23,7 @@ import {
 export const arcaneButtonVariants = tv({
 	base:
 		'inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap select-none ' +
-		'transition-[transform,box-shadow,background-color,border-color,color] duration-150 will-change-transform hover:-translate-y-0.5 active:translate-y-0 ' +
+		'transition-[transform,box-shadow,background-color,border-color,color] duration-150 will-change-transform ' +
 		'border disabled:pointer-events-none disabled:opacity-50 ' +
 		'focus-visible:outline-none focus-visible:ring-0 ring-0 ring-offset-0 ' +
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -44,16 +44,22 @@ export const arcaneButtonVariants = tv({
 			sm: 'h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5',
 			lg: 'h-10 rounded-md px-5 has-[>svg]:px-4',
 			icon: 'size-9'
+		},
+		hoverEffect: {
+			none: '',
+			lift: 'hover:-translate-y-0.5 active:translate-y-0'
 		}
 	},
 	defaultVariants: {
 		tone: 'outline-primary',
-		size: 'default'
+		size: 'default',
+		hoverEffect: 'lift'
 	}
 });
 
 export type ArcaneButtonTone = VariantProps<typeof arcaneButtonVariants>['tone'];
 export type ArcaneButtonSize = VariantProps<typeof arcaneButtonVariants>['size'];
+export type ArcaneButtonHoverEffect = VariantProps<typeof arcaneButtonVariants>['hoverEffect'];
 
 export type Action =
 	| 'start'

@@ -1,12 +1,13 @@
 <script lang="ts" module>
 	import type { WithChildren, WithoutChildren } from 'bits-ui';
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
-	import type { ArcaneButtonSize, Action } from './variants';
+	import type { ArcaneButtonSize, Action, ArcaneButtonHoverEffect } from './variants';
 
 	export type ArcaneButtonPropsWithoutHTML = WithChildren<{
 		ref?: HTMLElement | null;
 		action: Action;
 		size?: ArcaneButtonSize;
+		hoverEffect?: ArcaneButtonHoverEffect;
 		loading?: boolean;
 		showLabel?: boolean;
 		customLabel?: string;
@@ -45,6 +46,7 @@
 		ref = $bindable(null),
 		action,
 		size = 'default',
+		hoverEffect = undefined,
 		href = undefined,
 		type = 'button',
 		loading = false,
@@ -79,7 +81,7 @@
 	aria-disabled={href ? disabled : undefined}
 	role={href && disabled ? 'link' : undefined}
 	tabindex={href && disabled ? -1 : tabindex}
-	class={cn('relative', arcaneButtonVariants({ tone: config.tone, size }), className)}
+	class={cn('relative', arcaneButtonVariants({ tone: config.tone, size, hoverEffect }), className)}
 	aria-label={hasChildren ? undefined : isIconOnlyButton ? displayLabel : undefined}
 	bind:this={ref}
 	onclick={async (e: any) => {

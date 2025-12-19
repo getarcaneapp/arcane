@@ -95,7 +95,7 @@
 	};
 </script>
 
-<div class="px-2 py-4 sm:px-6 sm:py-6 lg:px-8 {className}">
+<div class="px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8 {className}">
 	<div
 		class="from-background/60 via-background/40 to-background/60 relative overflow-hidden rounded-xl border bg-gradient-to-br p-4 shadow-sm sm:p-6"
 	>

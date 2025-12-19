@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
@@ -147,16 +147,16 @@
 					<EditIcon class="size-3.5" />
 				</Button>
 			{:else}
-				<Tooltip.Provider>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							<span class="text-muted-foreground inline-flex cursor-help items-center leading-none">
-								<InfoIcon class="relative top-0.5 size-4 shrink-0" />
-							</span>
-						</Tooltip.Trigger>
-						<Tooltip.Content>{m.compose_name_change_not_allowed()}</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger>
+						<span class="text-muted-foreground inline-flex cursor-help items-center leading-none">
+							<InfoIcon class="relative top-0.5 size-4 shrink-0" />
+						</span>
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content>
+						{m.compose_name_change_not_allowed()}
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
 			{/if}
 		</div>
 	{/if}

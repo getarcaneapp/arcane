@@ -10,7 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
@@ -412,54 +412,58 @@
 								<p class="text-muted-foreground mt-1 text-sm">{m.security_password_policy_description()}</p>
 							</div>
 							<div>
-								<Tooltip.Provider>
-									<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'basic' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'basic'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
-													type="button"
-													>{m.common_basic()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_basic_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<Button
+												variant={$formInputs.authPasswordPolicy.value === 'basic' ? 'default' : 'outline'}
+												class={$formInputs.authPasswordPolicy.value === 'basic'
+													? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
+													: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
+												type="button"
+												>{m.common_basic()}
+											</Button>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_basic_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'standard' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'standard'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
-													type="button"
-													>{m.security_password_policy_standard()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_standard_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<Button
+												variant={$formInputs.authPasswordPolicy.value === 'standard' ? 'default' : 'outline'}
+												class={$formInputs.authPasswordPolicy.value === 'standard'
+													? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
+													: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
+												type="button"
+												>{m.security_password_policy_standard()}
+											</Button>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_standard_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'strong' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'strong'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
-													type="button"
-													>{m.security_password_policy_strong()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_strong_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
-									</div>
-								</Tooltip.Provider>
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<Button
+												variant={$formInputs.authPasswordPolicy.value === 'strong' ? 'default' : 'outline'}
+												class={$formInputs.authPasswordPolicy.value === 'strong'
+													? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
+													: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
+												type="button"
+												>{m.security_password_policy_strong()}
+											</Button>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_strong_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
+								</div>
 							</div>
 						</div>
 					</div>

@@ -50,7 +50,7 @@
 		mainContent,
 		additionalContent,
 		class: className = '',
-		containerClass = 'space-y-8 md:space-y-10'
+		containerClass = 'space-y-8 pb-5 md:space-y-10 md:pb-5'
 	}: Props = $props();
 
 	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));

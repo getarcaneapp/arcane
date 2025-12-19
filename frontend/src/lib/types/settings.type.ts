@@ -29,15 +29,6 @@ export type Settings = {
 	oidcAdminValue: string;
 	oidcMergeAccounts: boolean;
 
-	onboardingCompleted: boolean;
-	onboardingSteps: {
-		welcome?: boolean;
-		password?: boolean;
-		docker?: boolean;
-		security?: boolean;
-		settings?: boolean;
-	};
-
 	mobileNavigationMode: 'floating' | 'docked';
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
