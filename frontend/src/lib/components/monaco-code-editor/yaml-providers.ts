@@ -111,23 +111,25 @@ class ComposeSchemaManager {
 		}
 	}
 
-	private getDescription(val: any): string {
+	private getDescription(val: any, visited = new Set<string>()): string {
 		if (!val) return '';
 		if (val.description) return val.description;
 
 		// Resolve $ref
 		if (val.$ref) {
+			if (visited.has(val.$ref)) return ''; // Circular reference
+			visited.add(val.$ref);
 			// Handle #/definitions/name format and simple #name format
 			const defName = val.$ref.includes('/') ? val.$ref.split('/').pop() : val.$ref.replace('#', '');
 			const def = this.schema.definitions?.[defName];
 			if (def && def.description) return def.description;
-			if (def) return this.getDescription(def);
+			if (def) return this.getDescription(def, visited);
 		}
 
 		// Resolve oneOf/anyOf
 		const nested = val.oneOf || val.anyOf || [];
 		for (const sub of nested) {
-			const desc = this.getDescription(sub);
+			const desc = this.getDescription(sub, visited);
 			if (desc) return desc;
 		}
 
@@ -147,10 +149,6 @@ class ComposeSchemaManager {
 		}
 		// Default for strings, numbers, booleans
 		return `${key}: `;
-	}
-
-	hasContext(context: string): boolean {
-		return this.suggestionsMap.has(context);
 	}
 
 	getSuggestions(context: string) {
@@ -274,12 +272,8 @@ function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position):
 	if (parentKey && contextMap[parentKey]) return contextMap[parentKey];
 	if (grandParentKey && contextMap[grandParentKey]) return contextMap[grandParentKey];
 
-	// 2. Fallback: if parentKey is in the suggestions map, use it
-	if (parentKey && schemaManager.hasContext(parentKey)) {
-		return parentKey;
-	}
-
-	return 'unknown';
+	// 2. Fallback: use parentKey as context (getSuggestions handles unknown contexts gracefully)
+	return parentKey || 'unknown';
 }
 
 /**

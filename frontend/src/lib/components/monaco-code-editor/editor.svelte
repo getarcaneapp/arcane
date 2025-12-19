@@ -168,15 +168,18 @@
 							handleMouseWheel: true
 						}
 			});
+			editor.layout();
+		}
+	});
 
-			if (autoHeight) {
-				const disposable = editor.onDidContentSizeChange(updateHeight);
-				updateHeight();
-				return () => disposable.dispose();
-			} else {
-				if (editorElement) editorElement.style.height = '';
-				editor.layout();
-			}
+	// Auto-height handling
+	$effect(() => {
+		if (editor && autoHeight) {
+			const disposable = editor.onDidContentSizeChange(updateHeight);
+			updateHeight();
+			return () => disposable.dispose();
+		} else if (editorElement) {
+			editorElement.style.height = '';
 		}
 	});
 
