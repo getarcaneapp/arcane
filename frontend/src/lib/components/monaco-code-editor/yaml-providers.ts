@@ -117,7 +117,8 @@ class ComposeSchemaManager {
 
 		// Resolve $ref
 		if (val.$ref) {
-			const defName = val.$ref.split('/').pop();
+			// Handle #/definitions/name format and simple #name format
+			const defName = val.$ref.includes('/') ? val.$ref.split('/').pop() : val.$ref.replace('#', '');
 			const def = this.schema.definitions?.[defName];
 			if (def && def.description) return def.description;
 			if (def) return this.getDescription(def);
@@ -146,6 +147,10 @@ class ComposeSchemaManager {
 		}
 		// Default for strings, numbers, booleans
 		return `${key}: `;
+	}
+
+	hasContext(context: string): boolean {
+		return this.suggestionsMap.has(context);
 	}
 
 	getSuggestions(context: string) {
@@ -269,8 +274,8 @@ function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position):
 	if (parentKey && contextMap[parentKey]) return contextMap[parentKey];
 	if (grandParentKey && contextMap[grandParentKey]) return contextMap[grandParentKey];
 
-	// 2. Fallback: if parentKey itself is a definition name, use it
-	if (parentKey && schemaManager.getSuggestions(parentKey).length > 0) {
+	// 2. Fallback: if parentKey is in the suggestions map, use it
+	if (parentKey && schemaManager.hasContext(parentKey)) {
 		return parentKey;
 	}
 

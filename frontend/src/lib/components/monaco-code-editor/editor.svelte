@@ -27,6 +27,7 @@
 	let model = $state.raw<monaco.editor.ITextModel | null>(null);
 	let ownsModel = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
+	let changeDisposable: monaco.IDisposable | null = null;
 
 	const langId = $derived(language === 'env' ? 'ini' : language);
 	const theme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
@@ -110,7 +111,7 @@
 				: undefined
 		});
 
-		model.onDidChangeContent(() => {
+		changeDisposable = model.onDidChangeContent(() => {
 			value = model?.getValue() || '';
 		});
 
@@ -123,6 +124,7 @@
 	});
 
 	onDestroy(() => {
+		changeDisposable?.dispose();
 		resizeObserver?.disconnect();
 		editor?.dispose();
 		if (ownsModel) model?.dispose();
