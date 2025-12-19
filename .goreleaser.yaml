@@ -149,8 +149,10 @@ dockers_v2:
       - arcane
     dockerfile: docker/next-builds/Dockerfile-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane:next'
-      - 'ghcr.io/getarcaneapp/arcane:{{.Tag}}'
+      - 'ghcr.io/getarcaneapp/arcane'
+    tags:
+      - 'next'
+      - '{{.Tag}}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -179,8 +181,10 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/next-builds/Dockerfile-agent-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane-headless:next'
-      - 'ghcr.io/getarcaneapp/arcane-headless:{{.Tag}}'
+      - 'ghcr.io/getarcaneapp/arcane-headless'
+    tags:
+      - 'next'
+      - '{{.Tag}}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -209,8 +213,10 @@ dockers_v2:
       - arcane
     dockerfile: docker/next-builds/Dockerfile-next-distroless
     images:
-      - 'ghcr.io/getarcaneapp/arcane:next-distroless'
-      - 'ghcr.io/getarcaneapp/arcane:{{.Tag}}-distroless'
+      - 'ghcr.io/getarcaneapp/arcane'
+    tags:
+      - 'next-distroless'
+      - '{{.Tag}}-distroless'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -239,8 +245,10 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/next-builds/Dockerfile-agent-distroless
     images:
-      - 'ghcr.io/getarcaneapp/arcane-headless:next-distroless'
-      - 'ghcr.io/getarcaneapp/arcane-headless:{{.Tag}}-distroless'
+      - 'ghcr.io/getarcaneapp/arcane-headless'
+    tags:
+      - 'next-distroless'
+      - '{{.Tag}}-distroless'
     platforms:
       - linux/amd64
       - linux/arm64
