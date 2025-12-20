@@ -157,7 +157,7 @@ importers:
         version: 1.0.2(svelte@5.46.0)
       runed:
         specifier: ^0.37.0
-        version: 0.37.0(@sveltejs/kit@2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(zod@4.1.13)
+        version: 0.37.0(@sveltejs/kit@2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(zod@4.2.1)
       svelte-check:
         specifier: ^4.3.4
         version: 4.3.4(picomatch@4.0.3)(svelte@5.46.0)(typescript@5.9.3)
@@ -201,8 +201,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1))
       zod:
-        specifier: ^4.1.13
-        version: 4.1.13
+        specifier: ^4.2.1
+        version: 4.2.1
 
   tests:
     devDependencies:
@@ -3524,8 +3524,8 @@ packages:
     peerDependencies:
       zod: ^3.25 || ^4.0.14
 
-  zod@4.1.13:
-    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
+  zod@4.2.1:
+    resolution: {integrity: sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -5483,7 +5483,7 @@ snapshots:
       smol-toml: 1.5.2
       strip-json-comments: 5.0.3
       typescript: 5.9.3
-      zod: 4.1.13
+      zod: 4.2.1
 
   kysely@0.27.6: {}
 
@@ -5982,7 +5982,7 @@ snapshots:
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1))
 
-  runed@0.37.0(@sveltejs/kit@2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(zod@4.1.13):
+  runed@0.37.0(@sveltejs/kit@2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(zod@4.2.1):
     dependencies:
       dequal: 2.0.3
       esm-env: 1.2.2
@@ -5990,7 +5990,7 @@ snapshots:
       svelte: 5.46.0
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@sveltejs/vite-plugin-svelte@6.2.1(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.0)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1))
-      zod: 4.1.13
+      zod: 4.2.1
 
   sade@1.8.1:
     dependencies:
@@ -6275,8 +6275,8 @@ snapshots:
       typebox: 1.0.64
       valibot: 1.2.0(typescript@5.9.3)
       yup: 1.7.1
-      zod: 4.1.13
-      zod-v3-to-json-schema: 4.0.0(zod@4.1.13)
+      zod: 4.2.1
+      zod-v3-to-json-schema: 4.0.0(zod@4.2.1)
     transitivePeerDependencies:
       - '@types/json-schema'
       - typescript
@@ -6552,11 +6552,11 @@ snapshots:
 
   zimmerframe@1.1.4: {}
 
-  zod-v3-to-json-schema@4.0.0(zod@4.1.13):
+  zod-v3-to-json-schema@4.0.0(zod@4.2.1):
     dependencies:
-      zod: 4.1.13
+      zod: 4.2.1
     optional: true
 
-  zod@4.1.13: {}
+  zod@4.2.1: {}
 
   zwitch@2.0.4: {}
