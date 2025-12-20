@@ -560,7 +560,7 @@
 	"attachable": "Attachable",
 	"ipv6_enabled": "IPv6 Enabled",
 	"ipv4_enabled": "IPv4 activé",
-	"ingress": "Ingressage",
+	"ingress": "Entrant",
 	"config_only": "Config uniquement",
 	"internal": "Internal",
 	"network_name_required": "Network name is required",
