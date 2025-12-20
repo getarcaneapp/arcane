@@ -15,8 +15,6 @@
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
 
 	const formSchema = z.object({
-		projectsDirectory: z.string().min(1, m.general_projects_directory_required()),
-		diskUsagePath: z.string().min(1, m.common_field_required({ field: m.directory_path() })),
 		environmentHealthInterval: z.number().int().min(1).max(60)
 	});
 
@@ -44,35 +42,6 @@
 				<h3 class="text-lg font-medium">System Configuration</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<!-- Project Paths -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.general_projects_heading()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.general_projects_description()}</p>
-							</div>
-							<div class="space-y-4">
-								<TextInputWithLabel
-									bind:value={$formInputs.projectsDirectory.value}
-									error={$formInputs.projectsDirectory.error}
-									label={m.general_projects_directory_label()}
-									placeholder={m.general_projects_directory_placeholder()}
-									helpText={m.general_projects_directory_help()}
-									type="text"
-								/>
-
-								<TextInputWithLabel
-									bind:value={$formInputs.diskUsagePath.value}
-									error={$formInputs.diskUsagePath.error}
-									label={m.disk_usage_settings()}
-									placeholder="/var/lib/docker"
-									helpText={m.disk_usage_settings_description()}
-									type="text"
-								/>
-							</div>
-						</div>
-
-						<Separator />
-
 						<!-- Health Check -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>

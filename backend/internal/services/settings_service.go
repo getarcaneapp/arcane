@@ -191,8 +191,13 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
 			rv.Field(i).FieldByName("Value").SetString(val)
 			continue
+		} else if val, ok := settingsMap[key]; ok {
+			// Fallback to database if environment variable is not set
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
+			rv.Field(i).FieldByName("Value").SetString(val)
+			continue
 		} else {
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set", "key", key, "env", envVarName)
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 		}
 	}
 

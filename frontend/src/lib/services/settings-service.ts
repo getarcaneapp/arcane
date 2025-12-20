@@ -52,6 +52,10 @@ export default class SettingsService extends BaseAPIService {
 		await environmentStore.ready;
 		const envId = await environmentStore.getCurrentEnvironmentId();
 
+		return this.updateSettingsForEnvironment(envId, settings);
+	}
+
+	async updateSettingsForEnvironment(envId: string, settings: Partial<Settings>) {
 		const uiSettings: Record<string, any> = {};
 		const envSettings: Record<string, any> = {};
 
@@ -74,7 +78,7 @@ export default class SettingsService extends BaseAPIService {
 			await this.api.put('/environments/0/settings', payload);
 		}
 
-		// Update environment settings on current environment
+		// Update environment settings on target environment
 		if (Object.keys(envSettings).length > 0) {
 			const payload: Record<string, string> = {};
 			for (const key in envSettings) {

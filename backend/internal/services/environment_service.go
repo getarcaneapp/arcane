@@ -596,3 +596,47 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	return nil
 }
+
+// ProxyRequest sends a request to a remote environment's API.
+func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error) {
+	environment, err := s.GetEnvironmentByID(ctx, envID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	if envID == "0" {
+		return nil, 0, fmt.Errorf("cannot proxy request to local environment")
+	}
+
+	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	// Use appropriate auth header
+	if environment.AccessToken != nil && *environment.AccessToken != "" {
+		if environment.ApiKeyID != nil && *environment.ApiKeyID != "" {
+			req.Header.Set("X-API-KEY", *environment.AccessToken)
+		} else {
+			req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		}
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return respBody, resp.StatusCode, nil
+}

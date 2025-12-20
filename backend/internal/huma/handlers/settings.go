@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 type SettingsHandler struct {
 	settingsService       *services.SettingsService
 	settingsSearchService *services.SettingsSearchService
+	environmentService    *services.EnvironmentService
 	cfg                   *config.Config
 }
 
@@ -64,10 +66,11 @@ type GetCategoriesOutput struct {
 }
 
 // RegisterSettings registers settings management routes using Huma.
-func RegisterSettings(api huma.API, settingsService *services.SettingsService, settingsSearchService *services.SettingsSearchService, cfg *config.Config) {
+func RegisterSettings(api huma.API, settingsService *services.SettingsService, settingsSearchService *services.SettingsSearchService, environmentService *services.EnvironmentService, cfg *config.Config) {
 	h := &SettingsHandler{
 		settingsService:       settingsService,
 		settingsSearchService: settingsSearchService,
+		environmentService:    environmentService,
 		cfg:                   cfg,
 	}
 
@@ -141,6 +144,24 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+		var settingsDto []settings.PublicSetting
+		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+		return &GetPublicSettingsOutput{Body: settingsDto}, nil
+	}
+
 	settingsList := h.settingsService.ListSettings(false)
 
 	var settingsDto []settings.PublicSetting
@@ -166,6 +187,24 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*GetSettingsOutput, error) {
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+		var settingsDto []settings.PublicSetting
+		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+		return &GetSettingsOutput{Body: settingsDto}, nil
 	}
 
 	showAll := input.EnvironmentID == "0"
@@ -196,8 +235,12 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	// Check if trying to update auth settings on non-local environment
 	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+
+		// Check if trying to update auth settings on non-local environment
 		req := input.Body
 		if req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 			req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
@@ -207,6 +250,26 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil {
 			return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 		}
+
+		body, err := json.Marshal(input.Body)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+		}
+
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", body)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+
+		var apiResp base.ApiResponse[[]settings.SettingDto]
+		if err := json.Unmarshal(respBody, &apiResp); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+
+		return &UpdateSettingsOutput{Body: apiResp}, nil
 	}
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input.Body)

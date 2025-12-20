@@ -12,8 +12,10 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
+	import { settingsService } from '$lib/services/settings-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import {
@@ -28,13 +30,12 @@
 		ResetIcon,
 		ApiKeyIcon,
 		DockerBrandIcon,
-		InfoIcon
+		InfoIcon,
+		SettingsIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
 	let { environment, settings, versionInformation } = $derived(data);
-
-	let showSwitchDialog = $state(false);
 
 	let currentEnvironment = $derived(environmentStore.selected);
 
@@ -55,6 +56,18 @@
 	let formEnabled = $state(false);
 	let formApiUrl = $state('');
 
+	// Settings form state
+	let formPollingEnabled = $state(false);
+	let formPollingInterval = $state(60);
+	let formAutoUpdate = $state(false);
+	let formAutoUpdateInterval = $state(1440);
+	let formPruneMode = $state<'all' | 'dangling'>('dangling');
+	let formDefaultShell = $state('/bin/sh');
+	let formProjectsDirectory = $state('data/projects');
+	let formDiskUsagePath = $state('data/projects');
+	let formMaxImageUploadSize = $state(500);
+	let formBaseServerUrl = $state('http://localhost');
+
 	// Track current status separately from environment data
 	let currentStatus = $state<'online' | 'offline' | 'error' | 'pending'>('offline');
 
@@ -64,6 +77,19 @@
 		formEnabled = environment.enabled;
 		formApiUrl = environment.apiUrl;
 		currentStatus = environment.status;
+
+		if (settings) {
+			formPollingEnabled = settings.pollingEnabled;
+			formPollingInterval = settings.pollingInterval;
+			formAutoUpdate = settings.autoUpdate;
+			formAutoUpdateInterval = settings.autoUpdateInterval;
+			formPruneMode = settings.dockerPruneMode || 'dangling';
+			formDefaultShell = settings.defaultShell || '/bin/sh';
+			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
+			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
+			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+		}
 	});
 
 	// Fetch version when environment is online
@@ -88,7 +114,18 @@
 	let hasChanges = $derived(
 		formName !== environment.name ||
 			formEnabled !== environment.enabled ||
-			(environment.id !== '0' && formApiUrl !== environment.apiUrl)
+			(environment.id !== '0' && formApiUrl !== environment.apiUrl) ||
+			(settings &&
+				(formPollingEnabled !== settings.pollingEnabled ||
+					formPollingInterval !== settings.pollingInterval ||
+					formAutoUpdate !== settings.autoUpdate ||
+					formAutoUpdateInterval !== settings.autoUpdateInterval ||
+					formPruneMode !== (settings.dockerPruneMode || 'dangling') ||
+					formDefaultShell !== (settings.defaultShell || '/bin/sh') ||
+					formProjectsDirectory !== (settings.projectsDirectory || 'data/projects') ||
+					formDiskUsagePath !== (settings.diskUsagePath || 'data/projects') ||
+					formMaxImageUploadSize !== (settings.maxImageUploadSize || 500) ||
+					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost')))
 	);
 
 	async function refreshEnvironment() {
@@ -101,6 +138,16 @@
 			formEnabled = environment.enabled;
 			formApiUrl = environment.apiUrl;
 			currentStatus = environment.status;
+
+			if (settings) {
+				formPollingEnabled = settings.pollingEnabled;
+				formPollingInterval = settings.pollingInterval;
+				formAutoUpdate = settings.autoUpdate;
+				formAutoUpdateInterval = settings.autoUpdateInterval;
+				formPruneMode = settings.dockerPruneMode || 'dangling';
+				formDefaultShell = settings.defaultShell || '/bin/sh';
+			}
+
 			// Reset version to trigger re-fetch if online
 			remoteVersion = null;
 		} catch (err) {
@@ -161,11 +208,28 @@
 		try {
 			isSaving = true;
 
+			// Update environment basic info
 			await environmentManagementService.update(environment.id, {
 				name: formName,
 				enabled: formEnabled,
 				apiUrl: formApiUrl
 			});
+
+			// Update environment settings if they exist
+			if (settings) {
+				await settingsService.updateSettingsForEnvironment(environment.id, {
+					pollingEnabled: formPollingEnabled,
+					pollingInterval: formPollingInterval,
+					autoUpdate: formAutoUpdate,
+					autoUpdateInterval: formAutoUpdateInterval,
+					dockerPruneMode: formPruneMode,
+					defaultShell: formDefaultShell,
+					projectsDirectory: formProjectsDirectory,
+					diskUsagePath: formDiskUsagePath,
+					maxImageUploadSize: formMaxImageUploadSize,
+					baseServerUrl: formBaseServerUrl
+				});
+			}
 
 			toast.success(m.common_update_success({ resource: m.resource_environment_cap() }));
 			await refreshEnvironment();
@@ -192,6 +256,20 @@
 		formName = environment.name;
 		formEnabled = environment.enabled;
 		formApiUrl = environment.apiUrl;
+
+		if (settings) {
+			formPollingEnabled = settings.pollingEnabled;
+			formPollingInterval = settings.pollingInterval;
+			formAutoUpdate = settings.autoUpdate;
+			formAutoUpdateInterval = settings.autoUpdateInterval;
+			formPruneMode = settings.dockerPruneMode || 'dangling';
+			formDefaultShell = settings.defaultShell || '/bin/sh';
+			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
+			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
+			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+		}
+
 		toast.info(m.environments_changes_reset());
 	}
 
@@ -217,17 +295,6 @@
 		} finally {
 			isRegeneratingKey = false;
 			showRegenerateDialog = false;
-		}
-	}
-
-	async function confirmSwitchAndEdit() {
-		try {
-			await environmentStore.setEnvironment(environment);
-			showSwitchDialog = false;
-			goto('/settings');
-		} catch (error) {
-			console.error('Failed to switch environment:', error);
-			toast.error(m.common_action_failed());
 		}
 	}
 </script>
@@ -428,6 +495,41 @@
 
 		{#if settings}
 			<Card.Root class="flex flex-col">
+				<Card.Header icon={SettingsIcon}>
+					<div class="flex flex-col space-y-1.5">
+						<Card.Title>
+							<h2>{m.general_title()}</h2>
+						</Card.Title>
+						<Card.Description>{m.general_description()}</Card.Description>
+					</div>
+				</Card.Header>
+				<Card.Content class="space-y-6 p-4">
+					<div class="grid gap-6 sm:grid-cols-2">
+						<div class="space-y-2">
+							<Label for="projects-directory" class="text-sm font-medium">{m.general_projects_directory_label()}</Label>
+							<Input id="projects-directory" type="text" bind:value={formProjectsDirectory} />
+							<p class="text-muted-foreground text-xs">{m.general_projects_directory_help()}</p>
+						</div>
+						<div class="space-y-2">
+							<Label for="disk-usage-path" class="text-sm font-medium">{m.disk_usage_settings()}</Label>
+							<Input id="disk-usage-path" type="text" bind:value={formDiskUsagePath} />
+							<p class="text-muted-foreground text-xs">{m.disk_usage_settings_description()}</p>
+						</div>
+						<div class="space-y-2">
+							<Label for="base-server-url" class="text-sm font-medium">{m.general_base_url_label()}</Label>
+							<Input id="base-server-url" type="text" bind:value={formBaseServerUrl} />
+							<p class="text-muted-foreground text-xs">{m.general_base_url_help()}</p>
+						</div>
+						<div class="space-y-2">
+							<Label for="max-upload-size" class="text-sm font-medium">{m.docker_max_upload_size_label()}</Label>
+							<Input id="max-upload-size" type="number" bind:value={formMaxImageUploadSize} />
+							<p class="text-muted-foreground text-xs">{m.docker_max_upload_size_description()}</p>
+						</div>
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root class="flex flex-col">
 				<Card.Header icon={DockerBrandIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
@@ -436,45 +538,66 @@
 						<Card.Description>{m.environments_config_description()}</Card.Description>
 					</div>
 				</Card.Header>
-				<Card.Content class="space-y-4 p-4">
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="text-muted-foreground text-xs font-medium">{m.docker_enable_polling_label()}</Label>
-							<div class="mt-1">
-								<StatusBadge
-									text={settings.pollingEnabled ? m.common_enabled() : m.common_disabled()}
-									variant={settings.pollingEnabled ? 'green' : 'gray'}
-								/>
+				<Card.Content class="space-y-6 p-4">
+					<div class="grid gap-6 sm:grid-cols-2">
+						<!-- Polling Settings -->
+						<div class="space-y-4 rounded-lg border p-4">
+							<div class="flex items-center justify-between">
+								<div class="space-y-0.5">
+									<Label for="polling-enabled" class="text-sm font-medium">{m.docker_enable_polling_label()}</Label>
+									<div class="text-muted-foreground text-xs">{m.docker_enable_polling_description()}</div>
+								</div>
+								<Switch id="polling-enabled" bind:checked={formPollingEnabled} />
 							</div>
+
+							{#if formPollingEnabled}
+								<div class="space-y-2">
+									<Label for="polling-interval" class="text-xs font-medium">{m.docker_polling_interval_label()} (min)</Label>
+									<Input id="polling-interval" type="number" bind:value={formPollingInterval} min="1" />
+								</div>
+							{/if}
 						</div>
-						{#if settings.pollingEnabled}
-							<div>
-								<Label class="text-muted-foreground text-xs font-medium">{m.docker_polling_interval_label()}</Label>
-								<div class="mt-1 text-sm">{settings.pollingInterval} min</div>
+
+						<!-- Auto Update Settings -->
+						<div class="space-y-4 rounded-lg border p-4">
+							<div class="flex items-center justify-between">
+								<div class="space-y-0.5">
+									<Label for="auto-update" class="text-sm font-medium">{m.docker_auto_update_label()}</Label>
+									<div class="text-muted-foreground text-xs">{m.docker_auto_update_description()}</div>
+								</div>
+								<Switch id="auto-update" bind:checked={formAutoUpdate} />
 							</div>
-						{/if}
-						<div>
-							<Label class="text-muted-foreground text-xs font-medium">{m.docker_auto_update_label()}</Label>
-							<div class="mt-1">
-								<StatusBadge
-									text={settings.autoUpdate ? m.common_enabled() : m.common_disabled()}
-									variant={settings.autoUpdate ? 'green' : 'gray'}
-								/>
-							</div>
+
+							{#if formAutoUpdate}
+								<div class="space-y-2">
+									<Label for="auto-update-interval" class="text-xs font-medium"
+										>{m.docker_auto_update_interval_label()} (min)</Label
+									>
+									<Input id="auto-update-interval" type="number" bind:value={formAutoUpdateInterval} min="1" />
+								</div>
+							{/if}
 						</div>
-						{#if settings.autoUpdate}
-							<div>
-								<Label class="text-muted-foreground text-xs font-medium">{m.docker_auto_update_interval_label()}</Label>
-								<div class="mt-1 text-sm">{settings.autoUpdateInterval} min</div>
-							</div>
-						{/if}
-						<div>
-							<Label class="text-muted-foreground text-xs font-medium">{m.docker_prune_action_label()}</Label>
-							<div class="mt-1 text-sm capitalize">{settings.dockerPruneMode || 'dangling'}</div>
+
+						<!-- Prune Mode -->
+						<div class="space-y-2">
+							<Label for="prune-mode" class="text-sm font-medium">{m.docker_prune_action_label()}</Label>
+							<Select.Root type="single" bind:value={formPruneMode}>
+								<Select.Trigger id="prune-mode" class="w-full">
+									{formPruneMode === 'all' ? m.docker_prune_all() : m.docker_prune_dangling()}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="dangling">{m.docker_prune_dangling()}</Select.Item>
+									<Select.Item value="all">{m.docker_prune_all()}</Select.Item>
+								</Select.Content>
+							</Select.Root>
+							<p class="text-muted-foreground text-xs">{m.docker_prune_mode_description()}</p>
 						</div>
-						<div>
-							<Label class="text-muted-foreground text-xs font-medium">{m.docker_default_shell_label()}</Label>
-							<div class="mt-1 font-mono text-sm">{settings.defaultShell || '/bin/sh'}</div>
+
+						<!-- Default Shell -->
+						<div class="space-y-2">
+							<Label for="default-shell" class="text-sm font-medium">{m.docker_default_shell_label()}</Label>
+							<Input id="default-shell" type="text" bind:value={formDefaultShell} placeholder="/bin/sh" />
+							<p class="text-muted-foreground text-xs">{m.docker_default_shell_description()}</p>
 						</div>
 					</div>
 				</Card.Content>
@@ -599,23 +722,6 @@
 				<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
 				<AlertDialog.Action onclick={handleRegenerateApiKey}>
 					{m.environments_regenerate_api_key()}
-				</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
-
-	<AlertDialog.Root bind:open={showSwitchDialog}>
-		<AlertDialog.Content>
-			<AlertDialog.Header>
-				<AlertDialog.Title>{m.environments_switch_to_edit_title()}</AlertDialog.Title>
-				<AlertDialog.Description>
-					{m.environments_switch_to_edit_message()}
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={confirmSwitchAndEdit}>
-					{m.environments_switch_and_edit()}
 				</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
