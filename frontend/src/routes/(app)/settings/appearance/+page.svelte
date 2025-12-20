@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
-	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import NavigationSettingControl from '$lib/components/navigation-setting-control.svelte';
 	import NavigationModeSettingControl from '$lib/components/navigation-mode-setting-control.svelte';
@@ -41,7 +40,7 @@
 		// Sidebar context not available (mobile view)
 	}
 
-	let { formInputs, registerOnMount } = $derived(
+	let { formInputs } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
@@ -67,8 +66,6 @@
 		if (key === 'mode') resetNavigationVisibility();
 		toast.success(`Local override cleared for ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
 	}
-
-	onMount(() => registerOnMount());
 </script>
 
 <SettingsPageLayout

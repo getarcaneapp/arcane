@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
-	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
@@ -21,7 +20,7 @@
 		environmentHealthInterval: z.number().int().min(1).max(60)
 	});
 
-	let { formInputs, registerOnMount } = $derived(
+	let { formInputs } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
@@ -29,8 +28,6 @@
 			successMessage: m.general_settings_saved()
 		})
 	);
-
-	onMount(() => registerOnMount());
 </script>
 
 <SettingsPageLayout

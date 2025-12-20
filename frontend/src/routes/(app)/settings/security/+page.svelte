@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { z } from 'zod/v4';
-	import { onMount } from 'svelte';
+	import { getContext } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -69,7 +69,7 @@
 	});
 
 	// Security page needs custom submit logic for OIDC client secret handling
-	let { formInputs, form, settingsForm, registerOnMount } = $derived(
+	let { formInputs, form, settingsForm } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings: formDefaults,
@@ -188,9 +188,14 @@
 		showMergeAccountsAlert = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		// Use custom submit/reset for security page
 		settingsForm.registerFormActions(customSubmit, customReset);
+		// Sync the custom hasSecurityChanges to the context
+		const formState = getContext('settingsFormState') as any;
+		if (formState) {
+			formState.hasChanges = hasSecurityChanges;
+		}
 	});
 </script>
 
