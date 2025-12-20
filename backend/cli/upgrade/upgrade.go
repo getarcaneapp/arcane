@@ -336,25 +336,44 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	hostConfig := oldContainer.HostConfig
 
-	// Build network config - preserve all network settings including IP addresses
-	networkConfig := &network.NetworkingConfig{
-		EndpointsConfig: make(map[string]*network.EndpointSettings),
+	// Fix for "conflicting options: hostname and the network mode"
+	// When network mode is "host" or "container:...", Hostname must be empty
+	nm := hostConfig.NetworkMode
+	if nm.IsHost() || nm.IsContainer() {
+		config.Hostname = ""
+		config.Domainname = ""
 	}
-	for networkName, networkSettings := range oldContainer.NetworkSettings.Networks {
-		networkConfig.EndpointsConfig[networkName] = &network.EndpointSettings{
-			IPAMConfig:          networkSettings.IPAMConfig,
-			Links:               networkSettings.Links,
-			Aliases:             networkSettings.Aliases,
-			NetworkID:           networkSettings.NetworkID,
-			EndpointID:          networkSettings.EndpointID,
-			Gateway:             networkSettings.Gateway,
-			IPAddress:           networkSettings.IPAddress,
-			IPPrefixLen:         networkSettings.IPPrefixLen,
-			IPv6Gateway:         networkSettings.IPv6Gateway,
-			GlobalIPv6Address:   networkSettings.GlobalIPv6Address,
-			GlobalIPv6PrefixLen: networkSettings.GlobalIPv6PrefixLen,
-			MacAddress:          networkSettings.MacAddress,
-			DriverOpts:          networkSettings.DriverOpts,
+
+	// Fix for "conflicting options: port exposing and the container type network mode"
+	// When network mode is "container:...", port mappings are not allowed
+	if nm.IsContainer() {
+		config.ExposedPorts = nil
+		hostConfig.PortBindings = nil
+		hostConfig.PublishAllPorts = false
+	}
+
+	// Build network config - preserve all network settings including IP addresses
+	var networkConfig *network.NetworkingConfig
+	if !nm.IsContainer() {
+		networkConfig = &network.NetworkingConfig{
+			EndpointsConfig: make(map[string]*network.EndpointSettings),
+		}
+		for networkName, networkSettings := range oldContainer.NetworkSettings.Networks {
+			networkConfig.EndpointsConfig[networkName] = &network.EndpointSettings{
+				IPAMConfig:          networkSettings.IPAMConfig,
+				Links:               networkSettings.Links,
+				Aliases:             networkSettings.Aliases,
+				NetworkID:           networkSettings.NetworkID,
+				EndpointID:          networkSettings.EndpointID,
+				Gateway:             networkSettings.Gateway,
+				IPAddress:           networkSettings.IPAddress,
+				IPPrefixLen:         networkSettings.IPPrefixLen,
+				IPv6Gateway:         networkSettings.IPv6Gateway,
+				GlobalIPv6Address:   networkSettings.GlobalIPv6Address,
+				GlobalIPv6PrefixLen: networkSettings.GlobalIPv6PrefixLen,
+				MacAddress:          networkSettings.MacAddress,
+				DriverOpts:          networkSettings.DriverOpts,
+			}
 		}
 	}
 

@@ -3,7 +3,7 @@
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon, SaveIcon, ResetIcon } from '$lib/icons';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
