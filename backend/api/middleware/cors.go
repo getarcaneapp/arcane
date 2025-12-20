@@ -10,16 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CORSMiddleware struct {
+type CORS struct {
 	cfg           *config.Config
 	customOrigins []string
 }
 
-func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
-	return &CORSMiddleware{cfg: cfg}
+func NewCORS(cfg *config.Config) *CORS {
+	return &CORS{cfg: cfg}
 }
 
-func (m *CORSMiddleware) Add() gin.HandlerFunc {
+func (m *CORS) Add() gin.HandlerFunc {
 	conf := cors.DefaultConfig()
 	conf.AllowOrigins = deriveAllowedOrigins(m.cfg, m.customOrigins)
 	conf.AllowCredentials = true

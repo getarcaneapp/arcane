@@ -6,8 +6,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
+	"github.com/getarcaneapp/arcane/backend/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
+	humahandlers "github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
@@ -327,26 +328,26 @@ func registerHandlers(api huma.API, svc *Services) {
 		cfg = svc.Config
 	}
 	handlers.RegisterHealth(api)
-	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
-	handlers.RegisterApiKeys(api, apiKeySvc)
-	handlers.RegisterAppImages(api, appImagesSvc)
-	handlers.RegisterFonts(api, fontSvc)
-	handlers.RegisterProjects(api, projectSvc)
-	handlers.RegisterUsers(api, userSvc)
+	humahandlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
+	humahandlers.RegisterApiKeys(api, apiKeySvc)
+	humahandlers.RegisterAppImages(api, appImagesSvc)
+	humahandlers.RegisterFonts(api, fontSvc)
+	humahandlers.RegisterProjects(api, projectSvc)
+	humahandlers.RegisterUsers(api, userSvc)
 	handlers.RegisterVersion(api, versionSvc)
-	handlers.RegisterEvents(api, eventSvc)
-	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
-	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
-	handlers.RegisterContainerRegistries(api, containerRegistrySvc)
-	handlers.RegisterTemplates(api, templateSvc)
-	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
-	handlers.RegisterImageUpdates(api, imageUpdateSvc)
-	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, cfg)
-	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc)
-	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
-	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
-	handlers.RegisterUpdater(api, updaterSvc)
-	handlers.RegisterCustomize(api, customizeSearchSvc)
-	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
+	humahandlers.RegisterEvents(api, eventSvc)
+	humahandlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
+	humahandlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
+	humahandlers.RegisterContainerRegistries(api, containerRegistrySvc)
+	humahandlers.RegisterTemplates(api, templateSvc)
+	humahandlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
+	humahandlers.RegisterImageUpdates(api, imageUpdateSvc)
+	humahandlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, cfg)
+	humahandlers.RegisterVolumes(api, dockerSvc, volumeSvc)
+	humahandlers.RegisterContainers(api, containerSvc, dockerSvc)
+	humahandlers.RegisterNetworks(api, networkSvc, dockerSvc)
+	humahandlers.RegisterNotifications(api, notificationSvc, appriseSvc)
+	humahandlers.RegisterUpdater(api, updaterSvc)
+	humahandlers.RegisterCustomize(api, customizeSearchSvc)
+	humahandlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 }

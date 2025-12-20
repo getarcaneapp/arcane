@@ -26,7 +26,7 @@ func Bootstrap(ctx context.Context) error {
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)
-	slog.InfoContext(ctx, "Arcane is starting")
+	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
@@ -40,7 +40,7 @@ func Bootstrap(ctx context.Context) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:contextcheck
 		defer shutdownCancel()
 		if err := db.Close(); err != nil {
-			slog.ErrorContext(shutdownCtx, "Error closing database", slog.Any("error", err)) //nolint:contextcheck
+			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err) //nolint:contextcheck
 		}
 	}(appCtx)
 
@@ -57,7 +57,7 @@ func Bootstrap(ctx context.Context) error {
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
 
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
-		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
+		slog.ErrorContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
 
 	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
@@ -69,14 +69,12 @@ func Bootstrap(ctx context.Context) error {
 		return err
 	})
 
-	utils.InitializeNonAgentFeatures(appCtx, cfg,
-		appServices.User.CreateDefaultAdmin,
-		appServices.Settings.MigrateOidcConfigToFields)
+	utils.InitializeNonAgentFeatures(appCtx, cfg, appServices.User.CreateDefaultAdmin, appServices.Settings.MigrateOidcConfigToFields)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
 		if err := handleAgentBootstrapPairing(appCtx, cfg, httpClient); err != nil {
-			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
+			slog.ErrorContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
 	}
 
@@ -130,13 +128,11 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }) error {
 	go func() {
-		slog.InfoContext(appCtx, "Starting scheduler")
 		if err := scheduler.Run(appCtx); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				slog.ErrorContext(appCtx, "Job scheduler exited with error", slog.Any("error", err))
+				slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
 			}
 		}
-		slog.InfoContext(appCtx, "Scheduler stopped")
 	}()
 
 	srv := &http.Server{
@@ -146,9 +142,9 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	}
 
 	go func() {
-		slog.InfoContext(appCtx, "Starting HTTP server", slog.String("port", cfg.Port))
+		slog.InfoContext(appCtx, "Starting HTTP server", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.ErrorContext(appCtx, "Failed to start server", slog.Any("error", err))
+			slog.ErrorContext(appCtx, "Failed to start server", "error", err)
 		}
 	}()
 

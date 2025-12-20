@@ -23,20 +23,18 @@ func NewScheduler() (*Scheduler, error) {
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
-	slog.InfoContext(ctx, "Starting job scheduler")
-	s.scheduler.Start() // Start the scheduler, non-blocking
-
-	// Wait for the context to be done (e.g., application shutdown)
+	slog.InfoContext(ctx, "Starting Arcane Job Scheduler")
+	s.scheduler.Start()
 	<-ctx.Done()
 
-	slog.InfoContext(ctx, "Shutting down job scheduler...")
+	slog.InfoContext(ctx, "Shutting down Arcane Job Scheduler...")
 	err := s.scheduler.Shutdown()
 	if err != nil {
 		slog.ErrorContext(ctx, "Error shutting down job scheduler", slog.Any("error", err))
 		return fmt.Errorf("error during scheduler shutdown: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Job scheduler shut down successfully")
+	slog.InfoContext(ctx, "Arcane Job Scheduler shut down successfully")
 	return nil
 }
 

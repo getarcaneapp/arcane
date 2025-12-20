@@ -29,11 +29,11 @@ func (j *EnvironmentHealthJob) Register(ctx context.Context) error {
 
 	// Ensure minimum interval of 1 minute
 	if interval < 1*time.Minute {
-		slog.WarnContext(ctx, "environment health check interval too low; using minimum", "requested_minutes", healthCheckInterval, "effective_interval", "1m")
+		slog.WarnContext(ctx, "Environment health check interval too low; using minimum", "requested_minutes", healthCheckInterval, "effective_interval", "1m")
 		interval = 1 * time.Minute
 	}
 
-	slog.InfoContext(ctx, "registering environment health check job", "interval", interval.String())
+	slog.InfoContext(ctx, "Registering environment health check job", "interval", interval.String())
 
 	j.scheduler.RemoveJobByName("environment-health")
 
@@ -55,13 +55,13 @@ func (j *EnvironmentHealthJob) Reschedule(ctx context.Context) error {
 		interval = 1 * time.Minute
 	}
 
-	slog.InfoContext(ctx, "environment health check settings changed; rescheduling", "interval", interval.String())
+	slog.InfoContext(ctx, "Environment health check settings changed; rescheduling", "interval", interval.String())
 
 	return j.scheduler.RescheduleDurationJobByName(ctx, "environment-health", interval, j.Execute, false)
 }
 
 func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
-	slog.InfoContext(ctx, "environment health check started")
+	slog.InfoContext(ctx, "Environment health check started")
 
 	// Get all environments using the DB directly
 	db := j.environmentService.GetDB()
@@ -95,7 +95,7 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 		status, err := j.environmentService.TestConnection(ctx, env.ID, nil)
 		switch {
 		case err != nil:
-			slog.WarnContext(ctx, "environment health check failed", "environment_id", env.ID, "environment_name", env.Name, "status", status, "error", err)
+			slog.ErrorContext(ctx, "Environment health check failed", "environment_id", env.ID, "environment_name", env.Name, "status", status, "error", err)
 			offlineCount++
 		case status == "online":
 			onlineCount++
@@ -104,14 +104,9 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 				go func(envID, envName string) {
 					syncCtx := context.WithoutCancel(ctx)
 					if err := j.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
-						slog.WarnContext(syncCtx, "failed to sync registries during health check",
-							"environment_id", envID,
-							"environment_name", envName,
-							"error", err)
+						slog.ErrorContext(syncCtx, "Failed to sync registries during health check", "environment_id", envID, "environment_name", envName, "error", err)
 					} else {
-						slog.DebugContext(syncCtx, "successfully synced registries during health check",
-							"environment_id", envID,
-							"environment_name", envName)
+						slog.DebugContext(syncCtx, "Successfully synced registries during health check", "environment_id", envID, "environment_name", envName)
 					}
 				}(env.ID, env.Name)
 			}
@@ -120,7 +115,7 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 		}
 	}
 
-	slog.InfoContext(ctx, "environment health check completed", "checked", checkedCount, "online", onlineCount, "offline", offlineCount)
+	slog.InfoContext(ctx, "Environment health check completed", "checked", checkedCount, "online", onlineCount, "offline", offlineCount)
 
 	return nil
 }

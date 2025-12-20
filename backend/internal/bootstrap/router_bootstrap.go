@@ -2,18 +2,15 @@ package bootstrap
 
 import (
 	"context"
-	"log/slog"
-	"path"
-	"strings"
 
 	"github.com/gin-gonic/gin"
-	sloggin "github.com/samber/slog-gin"
 
+	"github.com/getarcaneapp/arcane/backend/api/handlers"
+	"github.com/getarcaneapp/arcane/backend/api/middleware"
+	apiutils "github.com/getarcaneapp/arcane/backend/api/utils"
 	"github.com/getarcaneapp/arcane/backend/frontend"
-	"github.com/getarcaneapp/arcane/backend/internal/api"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
-	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/types"
 )
 
@@ -29,54 +26,15 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	loggerSkipPatterns := []string{
-		"GET /api/environments/*/ws/containers/*/logs",
-		"GET /api/environments/*/ws/containers/*/stats",
-		"GET /api/environments/*/ws/containers/*/exec",
-		"GET /api/environments/*/ws/projects/*/logs",
-		"GET /api/environments/*/ws/system/stats",
-		"GET /_app/*",
-		"GET /img",
-		"GET /api/fonts/sans",
-		"GET /api/fonts/mono",
-		"GET /api/fonts/serif",
-		"GET /api/health",
-		"HEAD /api/health",
-	}
+	router.Use(apiutils.GetLoggerMiddleware())
 
-	router.Use(sloggin.NewWithConfig(slog.Default(), sloggin.Config{
-		Filters: []sloggin.Filter{
-			func(c *gin.Context) bool {
-				mp := c.Request.Method + " " + c.Request.URL.Path
-				for _, pat := range loggerSkipPatterns {
-					if pat == mp {
-						return false
-					}
-					if strings.HasSuffix(pat, "/*") {
-						prefix := strings.TrimSuffix(pat, "/*")
-						if strings.HasPrefix(mp, prefix) {
-							return false
-						}
-					}
-					if ok, _ := path.Match(pat, mp); ok {
-						return false
-					}
-					if strings.HasSuffix(pat, "/") && strings.HasPrefix(mp, pat) {
-						return false
-					}
-				}
-				return true
-			},
-		},
-	}))
-
-	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
-	corsMiddleware := middleware.NewCORSMiddleware(cfg).Add()
+	authMiddleware := middleware.NewAuth(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
+	corsMiddleware := middleware.NewCORS(cfg).Add()
 	router.Use(corsMiddleware)
 
 	apiGroup := router.Group("/api")
 
-	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
+	envMiddleware := middleware.NewEnvProxy(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
 		func(ctx context.Context, id string) (string, *string, bool, error) {
@@ -121,7 +79,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	})
 
 	// Remaining Gin handlers (WebSocket/streaming)
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
+	handlers.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {

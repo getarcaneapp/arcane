@@ -26,9 +26,14 @@ func (h *timeFilterHandler) Enabled(ctx context.Context, level slog.Level) bool 
 }
 
 func (h *timeFilterHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Filter out time attributes from groups
+	// Filter out time attributes from groups and "file" if it's from slog-gorm
 	var filteredAttrs []slog.Attr
 	r.Attrs(func(a slog.Attr) bool {
+		// Skip "file" attribute if it points to slog-gorm package
+		if a.Key == "file" && strings.Contains(a.Value.String(), "slog-gorm") {
+			return true
+		}
+
 		if a.Value.Kind() == slog.KindGroup {
 			filtered := filterGroupTimeAttrs(a)
 			filteredAttrs = append(filteredAttrs, filtered)

@@ -1,6 +1,6 @@
 //go:build playwright
 
-package api
+package handlers
 
 import (
 	"net/http"

@@ -1,4 +1,4 @@
-package api
+package handlers
 
 import (
 	"bytes"
@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
@@ -110,7 +110,7 @@ func NewWebSocketHandler(
 	projectService *services.ProjectService,
 	containerService *services.ContainerService,
 	systemService *services.SystemService,
-	authMiddleware *middleware.AuthMiddleware,
+	authMiddleware *middleware.Auth,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{

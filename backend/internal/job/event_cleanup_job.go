@@ -25,16 +25,11 @@ func RegisterEventCleanupJob(
 		// Delete events older than 36 hours
 		olderThan := 36 * time.Hour
 		if err := eventService.DeleteOldEvents(jobCtx, olderThan); err != nil {
-			slog.ErrorContext(jobCtx, "Failed to delete old events",
-				"jobName", EventCleanupJobName,
-				"olderThan", olderThan.String(),
-				slog.Any("error", err))
+			slog.ErrorContext(jobCtx, "Failed to delete old events", "jobName", EventCleanupJobName, "olderThan", olderThan.String(), "error", err)
 			return err
 		}
 
-		slog.InfoContext(jobCtx, "Event cleanup job completed successfully",
-			"jobName", EventCleanupJobName,
-			"olderThan", olderThan.String())
+		slog.InfoContext(jobCtx, "Event cleanup job completed successfully", "jobName", EventCleanupJobName, "olderThan", olderThan.String())
 		return nil
 	}
 
@@ -53,9 +48,6 @@ func RegisterEventCleanupJob(
 		return fmt.Errorf("failed to register event cleanup job %q: %w", EventCleanupJobName, err)
 	}
 
-	slog.InfoContext(ctx, "Event cleanup job registered successfully",
-		"jobName", EventCleanupJobName,
-		"interval", "6h",
-		"retention", "36h")
+	slog.InfoContext(ctx, "Event cleanup job registered successfully", "jobName", EventCleanupJobName, "interval", "6h", "retention", "36h")
 	return nil
 }

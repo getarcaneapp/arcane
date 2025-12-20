@@ -30,34 +30,34 @@ type ApiKeyValidator interface {
 	ValidateApiKey(ctx context.Context, rawKey string) (*models.User, error)
 }
 
-type AuthMiddleware struct {
+type Auth struct {
 	authService     *services.AuthService
 	apiKeyValidator ApiKeyValidator
 	cfg             *config.Config
 	options         AuthOptions
 }
 
-func NewAuthMiddleware(authService *services.AuthService, cfg *config.Config) *AuthMiddleware {
-	return &AuthMiddleware{
+func NewAuth(authService *services.AuthService, cfg *config.Config) *Auth {
+	return &Auth{
 		authService: authService,
 		cfg:         cfg,
 		options:     AuthOptions{},
 	}
 }
 
-func (m *AuthMiddleware) WithApiKeyValidator(validator ApiKeyValidator) *AuthMiddleware {
+func (m *Auth) WithApiKeyValidator(validator ApiKeyValidator) *Auth {
 	clone := *m
 	clone.apiKeyValidator = validator
 	return &clone
 }
 
-func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
+func (m *Auth) WithAdminNotRequired() *Auth {
 	clone := *m
 	clone.options.AdminRequired = false
 	return &clone
 }
 
-func (m *AuthMiddleware) Add() gin.HandlerFunc {
+func (m *Auth) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if m.cfg != nil && m.cfg.AgentMode {
 			m.agentAuth(c)
@@ -67,8 +67,8 @@ func (m *AuthMiddleware) Add() gin.HandlerFunc {
 	}
 }
 
-func (m *AuthMiddleware) agentAuth(c *gin.Context) {
-	if isPreflight(c) {
+func (m *Auth) agentAuth(c *gin.Context) {
+	if c.Request.Method == http.MethodOptions {
 		c.Next()
 		return
 	}
@@ -99,7 +99,7 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 	c.Abort()
 }
 
-func (m *AuthMiddleware) managerAuth(c *gin.Context) {
+func (m *Auth) managerAuth(c *gin.Context) {
 	// First, check for API key in X-API-KEY header
 	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
 		user, err := m.apiKeyValidator.ValidateApiKey(c.Request.Context(), apiKey)
@@ -181,10 +181,6 @@ func (m *AuthMiddleware) managerAuth(c *gin.Context) {
 	c.Set("currentUser", user)
 	c.Set("userIsAdmin", isAdmin)
 	c.Next()
-}
-
-func isPreflight(c *gin.Context) bool {
-	return c.Request.Method == http.MethodOptions
 }
 
 func agentSudo(c *gin.Context) {

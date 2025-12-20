@@ -50,20 +50,20 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule image-polling job", slog.Any("error", err))
+			slog.ErrorContext(ctx, "Failed to reschedule image-polling job", slog.Any("error", err))
 		}
 		if err := autoUpdateJob.Reschedule(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-update job", slog.Any("error", err))
+			slog.ErrorContext(ctx, "Failed to reschedule auto-update job", slog.Any("error", err))
 		}
 		if !appConfig.AgentMode {
 			if err := environmentHealthJob.Reschedule(ctx); err != nil {
-				slog.WarnContext(ctx, "Failed to reschedule environment-health job", slog.Any("error", err))
+				slog.ErrorContext(ctx, "Failed to reschedule environment-health job", slog.Any("error", err))
 			}
 		}
 	}
 	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
 		if err := autoUpdateJob.Reschedule(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-update job", slog.Any("error", err))
+			slog.ErrorContext(ctx, "Failed to reschedule auto-update job", slog.Any("error", err))
 		}
 	}
 }

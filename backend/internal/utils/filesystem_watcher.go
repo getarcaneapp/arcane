@@ -27,6 +27,15 @@ type WatcherOptions struct {
 	MaxDepth int
 }
 
+var watchableFiles = []string{
+	"compose.yaml",
+	"compose.yml",
+	"docker-compose.yaml",
+	"docker-compose.yml",
+	".env",
+	".env.global",
+}
+
 func NewFilesystemWatcher(watchPath string, opts WatcherOptions) (*FilesystemWatcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -58,9 +67,7 @@ func (fw *FilesystemWatcher) Start(ctx context.Context) error {
 	}
 
 	if err := fw.addExistingDirectories(fw.watchedPath); err != nil {
-		slog.WarnContext(ctx, "Failed to add some existing directories to watcher",
-			"path", fw.watchedPath,
-			"error", err)
+		slog.WarnContext(ctx, "Failed to add some existing directories to watcher", "path", fw.watchedPath, "error", err)
 	}
 
 	go fw.watchLoop(ctx)
@@ -78,10 +85,8 @@ func (fw *FilesystemWatcher) Stop() error {
 func (fw *FilesystemWatcher) watchLoop(ctx context.Context) {
 	defer close(fw.stoppedCh)
 
-	debounceTimer := time.NewTimer(0)
-	if !debounceTimer.Stop() {
-		<-debounceTimer.C
-	}
+	var timer *time.Timer
+	var timerCh <-chan time.Time
 
 	for {
 		select {
@@ -94,7 +99,30 @@ func (fw *FilesystemWatcher) watchLoop(ctx context.Context) {
 				return
 			}
 			if fw.shouldHandleEvent(event) {
-				fw.handleEvent(ctx, event, debounceTimer)
+				// Handle directory creation
+				if event.Has(fsnotify.Create) {
+					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+						if fw.shouldWatchDir(event.Name) {
+							if err := fw.watcher.Add(event.Name); err != nil {
+								slog.ErrorContext(ctx, "Failed to add new directory to watcher", "path", event.Name, "error", err)
+							}
+						}
+					}
+				}
+
+				slog.DebugContext(ctx, "Filesystem change detected", "path", event.Name, "operation", event.Op.String())
+
+				// Reset/Start debounce timer
+				if timer != nil {
+					timer.Stop()
+				}
+				timer = time.NewTimer(fw.debounce)
+				timerCh = timer.C
+			}
+		case <-timerCh:
+			timerCh = nil
+			if fw.onChange != nil {
+				fw.onChange(ctx)
 			}
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {
@@ -105,64 +133,12 @@ func (fw *FilesystemWatcher) watchLoop(ctx context.Context) {
 	}
 }
 
-func (fw *FilesystemWatcher) handleEvent(ctx context.Context, event fsnotify.Event, debounceTimer *time.Timer) {
-	if event.Has(fsnotify.Create) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			if fw.shouldWatchDir(event.Name) {
-				if err := fw.watcher.Add(event.Name); err != nil {
-					slog.WarnContext(ctx, "Failed to add new directory to watcher",
-						"path", event.Name,
-						"error", err)
-				}
-			}
-		}
-	}
-
-	slog.DebugContext(ctx, "Filesystem change detected",
-		"path", event.Name,
-		"operation", event.Op.String())
-
-	// Reset debounce timer
-	if !debounceTimer.Stop() {
-		select {
-		case <-debounceTimer.C:
-		default:
-		}
-	}
-	debounceTimer.Reset(fw.debounce)
-
-	// Start debounce handler if not already running
-	select {
-	case <-debounceTimer.C:
-		// Timer expired, trigger sync
-		if fw.onChange != nil {
-			go fw.onChange(ctx)
-		}
-	default:
-		// Timer still running, will trigger later
-		go fw.handleDebounce(ctx, debounceTimer)
-	}
-}
-
-func (fw *FilesystemWatcher) handleDebounce(ctx context.Context, timer *time.Timer) {
-	select {
-	case <-ctx.Done():
-		return
-	case <-fw.stopCh:
-		return
-	case <-timer.C:
-		if fw.onChange != nil {
-			fw.onChange(ctx)
-		}
-	}
-}
-
 func (fw *FilesystemWatcher) shouldHandleEvent(event fsnotify.Event) bool {
 	name := filepath.Base(event.Name)
 
 	// Watch for new directories, compose files, .env being manipulated.
 	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || isProjectFile(name) {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || isWatchableFile(name) {
 			return true
 		}
 	}
@@ -171,15 +147,13 @@ func (fw *FilesystemWatcher) shouldHandleEvent(event fsnotify.Event) bool {
 }
 
 func (fw *FilesystemWatcher) addExistingDirectories(root string) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			slog.Warn("Error walking directory",
-				"path", path,
-				"error", err)
+			slog.Warn("Error walking directory", "path", path, "error", err)
 			return err
 		}
 
-		if info.IsDir() && path != root {
+		if d.IsDir() && path != root {
 			depth := fw.dirDepth(path)
 			if depth < 0 {
 				return filepath.SkipDir
@@ -189,9 +163,7 @@ func (fw *FilesystemWatcher) addExistingDirectories(root string) error {
 			}
 
 			if err := fw.watcher.Add(path); err != nil {
-				slog.Warn("Failed to add directory to watcher",
-					"path", path,
-					"error", err)
+				slog.Error("Failed to add directory to watcher", "path", path, "error", err)
 			}
 
 			if fw.maxDepth > 0 && depth == fw.maxDepth {
@@ -202,16 +174,8 @@ func (fw *FilesystemWatcher) addExistingDirectories(root string) error {
 	})
 }
 
-func isProjectFile(filename string) bool {
-	composeFiles := []string{
-		"compose.yaml",
-		"compose.yml",
-		"docker-compose.yaml",
-		"docker-compose.yml",
-		".env",
-	}
-
-	for _, cf := range composeFiles {
+func isWatchableFile(filename string) bool {
+	for _, cf := range watchableFiles {
 		if filename == cf {
 			return true
 		}

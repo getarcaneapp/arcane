@@ -14,27 +14,23 @@ type VersionHandler struct {
 	versionService *services.VersionService
 }
 
-// ============================================================================
-// Input/Output Types
-// ============================================================================
-
+// GetVersionInput represents the input for the version check endpoint.
 type GetVersionInput struct {
 	Current string `query:"current" doc:"Current version to compare against"`
 }
 
+// GetVersionOutput represents the output for the version check endpoint.
 type GetVersionOutput struct {
 	Body version.Check
 }
 
-type GetAppVersionInput struct{}
-
+// GetAppVersionOutput represents the output for the app version endpoint.
 type GetAppVersionOutput struct {
 	Body version.Info
 }
 
-// ============================================================================
-// Registration
-// ============================================================================
+// GetAppVersionInput represents the input for the app version endpoint.
+type GetAppVersionInput struct{}
 
 // RegisterVersion registers version endpoints.
 func RegisterVersion(api huma.API, versionService *services.VersionService) {
@@ -58,10 +54,6 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 		Tags:        []string{"Version"},
 	}, h.GetAppVersion)
 }
-
-// ============================================================================
-// Handler Methods
-// ============================================================================
 
 // GetVersion returns version information with optional update check.
 func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput) (*GetVersionOutput, error) {

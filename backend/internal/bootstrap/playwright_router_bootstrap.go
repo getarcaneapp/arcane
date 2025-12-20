@@ -5,7 +5,7 @@ package bootstrap
 import (
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/backend/internal/api"
+	"github.com/getarcaneapp/arcane/backend/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +19,7 @@ func init() {
 				return
 			}
 
-			api.SetupPlaywrightRoutes(apiGroup, playwrightService)
+			handlers.SetupPlaywrightRoutes(apiGroup, playwrightService)
 			slog.Info("Playwright routes registered for E2E testing")
 		},
 	}

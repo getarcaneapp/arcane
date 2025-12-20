@@ -41,8 +41,8 @@ const (
 // Returns: apiURL, accessToken, enabled, error
 type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
 
-// EnvironmentMiddleware proxies requests for remote environments to their respective agents.
-type EnvironmentMiddleware struct {
+// Environment proxies requests for remote environments to their respective agents.
+type Environment struct {
 	localID    string
 	paramName  string
 	resolver   EnvResolver
@@ -50,13 +50,13 @@ type EnvironmentMiddleware struct {
 	httpClient *http.Client
 }
 
-// NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
+// NewEnvProxy creates middleware that proxies requests to remote environments.
 // - localID: the ID representing the local environment (requests to this ID are not proxied)
 // - paramName: the URL parameter name containing the environment ID (e.g., "id")
 // - resolver: function to resolve environment ID to connection details
 // - envService: environment service for additional lookups
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService) gin.HandlerFunc {
-	m := &EnvironmentMiddleware{
+func NewEnvProxy(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService) gin.HandlerFunc {
+	m := &Environment{
 		localID:    localID,
 		paramName:  paramName,
 		resolver:   resolver,
@@ -67,7 +67,7 @@ func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResol
 }
 
 // Handle is the main middleware handler.
-func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
+func (m *Environment) Handle(c *gin.Context) {
 	envID := m.extractEnvironmentID(c)
 
 	// Local environment or no environment - continue to next handler
@@ -117,7 +117,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 // hasResourcePath checks if the request has additional path segments after the environment ID.
 // Returns true for paths like /api/environments/{id}/containers (should be proxied)
 // Returns false for paths like /api/environments/{id} or management endpoints (should be handled locally)
-func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bool {
+func (m *Environment) hasResourcePath(c *gin.Context, envID string) bool {
 	path := c.Request.URL.Path
 	prefix := apiEnvironmentsPrefix + envID
 
@@ -151,7 +151,7 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 
 // extractEnvironmentID gets the environment ID from the request.
 // Only processes paths containing "/environments/" to avoid conflicts with other routes.
-func (m *EnvironmentMiddleware) extractEnvironmentID(c *gin.Context) string {
+func (m *Environment) extractEnvironmentID(c *gin.Context) string {
 	requestPath := c.Request.URL.Path
 
 	// Skip non-environment routes (e.g., /api-keys/{id})
@@ -176,7 +176,7 @@ func (m *EnvironmentMiddleware) extractEnvironmentID(c *gin.Context) string {
 }
 
 // buildTargetURL constructs the proxy target URL.
-func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL string) string {
+func (m *Environment) buildTargetURL(c *gin.Context, envID, apiURL string) string {
 	// Remove the environment prefix from the path
 	prefix := apiEnvironmentsPrefix + envID
 	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
@@ -196,13 +196,13 @@ func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL str
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
-func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
+func (m *Environment) isWebSocketUpgrade(c *gin.Context) bool {
 	return strings.EqualFold(c.GetHeader(remenv.HeaderUpgrade), "websocket") ||
 		strings.Contains(strings.ToLower(c.GetHeader(remenv.HeaderConnection)), remenv.ConnectionUpgradeToken)
 }
 
 // proxyWebSocket handles WebSocket proxy requests.
-func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, accessToken *string, envID string) {
+func (m *Environment) proxyWebSocket(c *gin.Context, target string, accessToken *string, envID string) {
 	wsTarget := remenv.HTTPToWebSocketURL(target)
 	headers := remenv.BuildWebSocketHeaders(c, accessToken)
 
@@ -213,7 +213,7 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, ac
 }
 
 // proxyHTTP handles standard HTTP proxy requests.
-func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessToken *string) {
+func (m *Environment) proxyHTTP(c *gin.Context, target string, accessToken *string) {
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -240,7 +240,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 }
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
-func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
+func (m *Environment) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
 	// Read the body to log it and then restore it for forwarding
 	var bodyBytes []byte
 	var err error
@@ -275,7 +275,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 }
 
 // writeProxyResponse copies the proxy response back to the client.
-func (m *EnvironmentMiddleware) writeProxyResponse(c *gin.Context, resp *http.Response) {
+func (m *Environment) writeProxyResponse(c *gin.Context, resp *http.Response) {
 	hopByHop := remenv.BuildHopByHopHeaders(resp.Header)
 	remenv.CopyResponseHeaders(resp.Header, c.Writer.Header(), hopByHop)
 
