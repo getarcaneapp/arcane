@@ -10,24 +10,12 @@
 		type Table as TableType,
 		getCoreRowModel
 	} from '@tanstack/table-core';
-	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import { createSvelteTable } from '$lib/components/ui/data-table/data-table.svelte.js';
-	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
-	import * as Table from '$lib/components/ui/table/index.js';
+	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import type { SvelteHTMLElements } from 'svelte/elements';
-	import { cn } from '$lib/utils.js';
 	import { untrack } from 'svelte';
 
-	type DivAttributes = SvelteHTMLElements['div'];
-	type PlainHeaderProps = { title: string } & DivAttributes;
-	type ColumnHeaderProps = { column: Column<TData, unknown>; title: string } & DivAttributes;
-	type PaginationProps = { table: TableType<TData> };
-	type MobileCardProps = { row: Row<TData>; item: TData };
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
@@ -43,18 +31,11 @@
 		encodeMobileHidden
 	} from './arcane-table.types.svelte';
 	import { buildInitialMobileVisibility, extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import {
-		ArrowRightIcon,
-		ArrowLeftIcon,
-		DoubleArrowRightIcon,
-		DoubleArrowLeftIcon,
-		ArrowUpIcon,
-		ArrowDownIcon,
-		ArrowsUpDownIcon,
-		EyeOffIcon,
-		FolderXIcon
-	} from '$lib/icons';
+	import ArcaneTablePagination from './arcane-table-pagination.svelte';
+	import ArcaneTableHeader from './arcane-table-header.svelte';
+	import ArcaneTableCell from './arcane-table-cell.svelte';
+	import ArcaneTableDesktopView from './arcane-table-desktop-view.svelte';
+	import ArcaneTableMobileView from './arcane-table-mobile-view.svelte';
 
 	let {
 		items,
@@ -284,14 +265,17 @@
 				...(accessorFn ? { accessorFn } : {}),
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
-					if (spec.sortable) return renderSnippet(ColumnHeader, { column, title: spec.title, class: spec.class });
-					return renderSnippet(PlainHeader, { title: spec.title, class: spec.class });
+					return renderComponent(ArcaneTableHeader, {
+						column: spec.sortable ? column : undefined,
+						title: spec.title,
+						class: spec.class
+					});
 				},
 				cell: ({ row, getValue }) => {
 					const item = row.original as TData;
 					const value = accessorKey ? row.getValue(accessorKey) : getValue?.();
 					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
-					return renderSnippet(TextCell, { value });
+					return renderComponent(ArcaneTableCell, { value });
 				},
 				enableSorting: !!spec.sortable,
 				enableHiding: true
@@ -502,145 +486,19 @@
 	});
 </script>
 
-{#snippet TextCell({ value }: { value: unknown })}
-	<span class="max-w-[500px] truncate">{value ?? ''}</span>
-{/snippet}
-
-{#snippet PlainHeader({ title, class: className, ...restProps }: PlainHeaderProps)}
-	<div class={className} {...restProps}>{title}</div>
-{/snippet}
-
-{#snippet Pagination({ table }: PaginationProps)}
-	<div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
-		<div class="text-muted-foreground order-2 text-sm sm:order-1">
-			{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
-		</div>
-		<div class="order-1 flex flex-col gap-4 sm:order-2 sm:flex-row sm:items-center sm:space-x-6 lg:space-x-8">
-			<div class="flex items-center justify-between space-x-2 sm:justify-start">
-				<p class="text-sm font-medium">{m.common_rows_per_page()}</p>
-				<Select.Root
-					allowDeselect={false}
-					type="single"
-					value={`${pageSize}`}
-					onValueChange={(value) => setPageSize(Number(value))}
-				>
-					<Select.Trigger class="h-8 w-[70px]">
-						{String(pageSize)}
-					</Select.Trigger>
-					<Select.Content side="top">
-						{#each [10, 20, 30, 40, 50] as size (size)}
-							<Select.Item value={`${size}`}>
-								{size}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="flex items-center justify-between sm:justify-center">
-				<div class="flex items-center justify-center text-sm font-medium sm:w-[100px]">
-					{m.common_page_of({ page: currentPage, total: totalPages })}
-				</div>
-				<div class="flex items-center space-x-1 sm:space-x-2">
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						size="icon"
-						icon={DoubleArrowLeftIcon}
-						class="hidden size-8 lg:flex"
-						onclick={() => setPage(1)}
-						disabled={!canPrev}
-						aria-label={m.common_go_first_page()}
-					/>
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						size="icon"
-						icon={ArrowLeftIcon}
-						class="size-8"
-						onclick={() => setPage(currentPage - 1)}
-						disabled={!canPrev}
-						aria-label={m.common_go_prev_page()}
-					/>
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						size="icon"
-						icon={ArrowRightIcon}
-						class="size-8"
-						onclick={() => setPage(currentPage + 1)}
-						disabled={!canNext}
-						aria-label={m.common_go_next_page()}
-					/>
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						size="icon"
-						icon={DoubleArrowRightIcon}
-						class="hidden size-8 lg:flex"
-						onclick={() => setPage(totalPages)}
-						disabled={!canNext}
-						aria-label={m.common_go_last_page()}
-					/>
-				</div>
-			</div>
-		</div>
-	</div>
-{/snippet}
-
 {#snippet PaginationSnippet()}
-	{@render Pagination({ table })}
-{/snippet}
-
-{#snippet MobileCard({ row, item }: MobileCardProps)}
-	{@render mobileCard({ row, item, mobileFieldVisibility })}
-{/snippet}
-
-{#snippet ColumnHeader({ column, title, class: className, ...restProps }: ColumnHeaderProps)}
-	{#if !column?.getCanSort()}
-		<div class={className} {...restProps}>
-			{title}
-		</div>
-	{:else}
-		<div class={cn('flex items-center', className)} {...restProps}>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<ArcaneButton
-							{...props}
-							action="base"
-							tone="ghost"
-							size="sm"
-							customLabel={title}
-							class="data-[state=open]:bg-accent -ml-3 h-8"
-						>
-							{#if column.getIsSorted() === 'desc'}
-								<ArrowDownIcon />
-							{:else if column.getIsSorted() === 'asc'}
-								<ArrowUpIcon />
-							{:else}
-								<ArrowsUpDownIcon />
-							{/if}
-						</ArcaneButton>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="start">
-					<DropdownMenu.Item onclick={() => column.toggleSorting(false)}>
-						<ArrowUpIcon class="text-muted-foreground/70 mr-2 size-4" />
-						{m.common_sort_asc()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => column.toggleSorting(true)}>
-						<ArrowDownIcon class="text-muted-foreground/70 mr-2 size-4" />
-						{m.common_sort_desc()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item onclick={() => column.toggleVisibility(false)}>
-						<EyeOffIcon class="text-muted-foreground/70 mr-2 size-4" />
-						{m.common_hide()}
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		</div>
-	{/if}
+	<ArcaneTablePagination
+		{table}
+		{items}
+		{currentPage}
+		{totalPages}
+		{totalItems}
+		{pageSize}
+		{canPrev}
+		{canNext}
+		{setPage}
+		{setPageSize}
+	/>
 {/snippet}
 
 {#if customTableView}
@@ -662,75 +520,24 @@
 		{/if}
 
 		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
-			<div class="h-full w-full">
-				<Table.Root class="relative">
-					<Table.Header>
-						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-							<Table.Row>
-								{#each headerGroup.headers as header (header.id)}
-									<Table.Head colspan={header.colSpan}>
-										{#if !header.isPlaceholder}
-											<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-										{/if}
-									</Table.Head>
-								{/each}
-							</Table.Row>
-						{/each}
-					</Table.Header>
-					<Table.Body>
-						{#each table.getRowModel().rows as row (row.id)}
-							<Table.Row data-state={(selectedIds ?? []).includes((row.original as TData).id) && 'selected'}>
-								{#each row.getVisibleCells() as cell (cell.id)}
-									<Table.Cell>
-										<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-									</Table.Cell>
-								{/each}
-							</Table.Row>
-						{:else}
-							<Table.Row>
-								<Table.Cell colspan={columnsDef.length} class="h-48">
-									<Empty.Root class="border border-dashed">
-										<Empty.Header>
-											<Empty.Media variant="icon">
-												<FolderXIcon />
-											</Empty.Media>
-											<Empty.Title>{m.common_no_results_found()}</Empty.Title>
-										</Empty.Header>
-									</Empty.Root>
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
-			</div>
+			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
 		</div>
 
 		<!-- Mobile Card View -->
 		<div class="block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
-				{#each table.getRowModel().rows as row (row.id)}
-					{@render MobileCard({ row, item: row.original as TData })}
-				{:else}
-					<Empty.Root class="min-h-48 border-0">
-						<Empty.Header>
-							<Empty.Media variant="icon">
-								<FolderXIcon />
-							</Empty.Media>
-							<Empty.Title>{m.common_no_results_found()}</Empty.Title>
-						</Empty.Header>
-					</Empty.Root>
-				{/each}
+				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
 			</div>
 		</div>
 
 		{#if !withoutPagination}
 			<div class="shrink-0 border-t px-2 py-4">
-				{@render Pagination({ table })}
+				{@render PaginationSnippet()}
 			</div>
 		{/if}
 	</div>
 {:else}
-	<Card.Root class="overflow-hiddens flex h-full min-h-0 flex-col">
+	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
 		{#snippet children()}
 			{#if !withoutSearch}
 				<Card.Header class="border-b px-2 py-2">
@@ -747,66 +554,17 @@
 			{/if}
 
 			<Card.Content class="hidden h-full min-h-0 flex-1 overflow-auto p-0 md:block">
-				<Table.Root class="relative">
-					<Table.Header>
-						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-							<Table.Row>
-								{#each headerGroup.headers as header (header.id)}
-									<Table.Head colspan={header.colSpan}>
-										{#if !header.isPlaceholder}
-											<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-										{/if}
-									</Table.Head>
-								{/each}
-							</Table.Row>
-						{/each}
-					</Table.Header>
-					<Table.Body>
-						{#each table.getRowModel().rows as row (row.id)}
-							<Table.Row data-state={(selectedIds ?? []).includes((row.original as TData).id) && 'selected'}>
-								{#each row.getVisibleCells() as cell (cell.id)}
-									<Table.Cell>
-										<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-									</Table.Cell>
-								{/each}
-							</Table.Row>
-						{:else}
-							<Table.Row>
-								<Table.Cell colspan={columnsDef.length} class="h-48">
-									<Empty.Root class="border border-dashed">
-										<Empty.Header>
-											<Empty.Media variant="icon">
-												<FolderXIcon />
-											</Empty.Media>
-											<Empty.Title>{m.common_no_results_found()}</Empty.Title>
-										</Empty.Header>
-									</Empty.Root>
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
+				<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
 			</Card.Content>
 
 			<!-- Mobile Card View -->
 			<Card.Content class="block flex-1 overflow-auto p-0 md:hidden">
-				{#each table.getRowModel().rows as row (row.id)}
-					{@render MobileCard({ row, item: row.original as TData })}
-				{:else}
-					<Empty.Root class="min-h-48 border-0">
-						<Empty.Header>
-							<Empty.Media variant="icon">
-								<FolderXIcon />
-							</Empty.Media>
-							<Empty.Title>{m.common_no_results_found()}</Empty.Title>
-						</Empty.Header>
-					</Empty.Root>
-				{/each}
+				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
 			</Card.Content>
 
 			{#if !withoutPagination}
 				<Card.Footer class="shrink-0 border-t px-2 py-4">
-					{@render Pagination({ table })}
+					{@render PaginationSnippet()}
 				</Card.Footer>
 			{/if}
 		{/snippet}
