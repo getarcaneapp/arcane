@@ -19,7 +19,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "@react-email/preview-server": "5.0.8",
+    "@react-email/preview-server": "5.1.0",
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
