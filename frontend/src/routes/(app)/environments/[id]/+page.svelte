@@ -15,9 +15,10 @@
 	import { settingsService } from '$lib/services/settings-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import {
 		ArrowLeftIcon,
 		RefreshIcon,
@@ -68,6 +69,44 @@
 	let formMaxImageUploadSize = $state(500);
 	let formBaseServerUrl = $state('http://localhost');
 
+	type PollingIntervalMode = 'hourly' | 'daily' | 'weekly' | 'custom';
+
+	const imagePollingOptions: Array<{
+		value: PollingIntervalMode;
+		label: string;
+		description: string;
+		minutes?: number;
+	}> = [
+		{ value: 'hourly', minutes: 60, label: m.hourly(), description: m.polling_hourly_description() },
+		{ value: 'daily', minutes: 1440, label: m.daily(), description: m.polling_daily_description() },
+		{ value: 'weekly', minutes: 10080, label: m.weekly(), description: m.polling_weekly_description() },
+		{ value: 'custom', label: m.custom(), description: m.use_custom_polling_value() }
+	];
+
+	const presetToMinutes = Object.fromEntries(
+		imagePollingOptions.filter((o) => o.value !== 'custom').map((o) => [o.value, o.minutes!])
+	) as Record<Exclude<PollingIntervalMode, 'custom'>, number>;
+
+	let pollingIntervalMode = $state<PollingIntervalMode>('custom');
+
+	const pruneModeOptions = [
+		{ value: 'all', label: m.docker_prune_all(), description: m.docker_prune_all_description() },
+		{ value: 'dangling', label: m.docker_prune_dangling(), description: m.docker_prune_dangling_description() }
+	];
+
+	let pruneModeDescription = $derived(
+		pruneModeOptions.find((o) => o.value === formPruneMode)?.description ?? m.docker_prune_mode_description()
+	);
+
+	const shellOptions = [
+		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
+		{ value: '/bin/bash', label: '/bin/bash', description: m.docker_shell_bash_description() },
+		{ value: '/bin/ash', label: '/bin/ash', description: m.docker_shell_ash_description() },
+		{ value: '/bin/zsh', label: '/bin/zsh', description: m.docker_shell_zsh_description() }
+	];
+
+	let shellSelectValue = $state<string>('custom');
+
 	// Track current status separately from environment data
 	let currentStatus = $state<'online' | 'offline' | 'error' | 'pending'>('offline');
 
@@ -89,6 +128,25 @@
 			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+
+			// Initialize derived states
+			pollingIntervalMode =
+				imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+			shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
+		}
+	});
+
+	// Sync polling mode select with form value
+	$effect(() => {
+		if (pollingIntervalMode !== 'custom') {
+			formPollingInterval = presetToMinutes[pollingIntervalMode];
+		}
+	});
+
+	// Sync shell select with form value
+	$effect(() => {
+		if (shellSelectValue !== 'custom') {
+			formDefaultShell = shellSelectValue;
 		}
 	});
 
@@ -146,6 +204,11 @@
 				formAutoUpdateInterval = settings.autoUpdateInterval;
 				formPruneMode = settings.dockerPruneMode || 'dangling';
 				formDefaultShell = settings.defaultShell || '/bin/sh';
+
+				// Initialize derived states
+				pollingIntervalMode =
+					imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+				shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
 			}
 
 			// Reset version to trigger re-fetch if online
@@ -268,6 +331,11 @@
 			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+
+			// Initialize derived states
+			pollingIntervalMode =
+				imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+			shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
 		}
 
 		toast.info(m.environments_changes_reset());
@@ -506,24 +574,37 @@
 				<Card.Content class="space-y-6 p-4">
 					<div class="grid gap-6 sm:grid-cols-2">
 						<div class="space-y-2">
-							<Label for="projects-directory" class="text-sm font-medium">{m.general_projects_directory_label()}</Label>
-							<Input id="projects-directory" type="text" bind:value={formProjectsDirectory} />
-							<p class="text-muted-foreground text-xs">{m.general_projects_directory_help()}</p>
+							<TextInputWithLabel
+								id="projects-directory"
+								label={m.general_projects_directory_label()}
+								bind:value={formProjectsDirectory}
+								helpText={m.general_projects_directory_help()}
+							/>
 						</div>
 						<div class="space-y-2">
-							<Label for="disk-usage-path" class="text-sm font-medium">{m.disk_usage_settings()}</Label>
-							<Input id="disk-usage-path" type="text" bind:value={formDiskUsagePath} />
-							<p class="text-muted-foreground text-xs">{m.disk_usage_settings_description()}</p>
+							<TextInputWithLabel
+								id="disk-usage-path"
+								label={m.disk_usage_settings()}
+								bind:value={formDiskUsagePath}
+								helpText={m.disk_usage_settings_description()}
+							/>
 						</div>
 						<div class="space-y-2">
-							<Label for="base-server-url" class="text-sm font-medium">{m.general_base_url_label()}</Label>
-							<Input id="base-server-url" type="text" bind:value={formBaseServerUrl} />
-							<p class="text-muted-foreground text-xs">{m.general_base_url_help()}</p>
+							<TextInputWithLabel
+								id="base-server-url"
+								label={m.general_base_url_label()}
+								bind:value={formBaseServerUrl}
+								helpText={m.general_base_url_help()}
+							/>
 						</div>
 						<div class="space-y-2">
-							<Label for="max-upload-size" class="text-sm font-medium">{m.docker_max_upload_size_label()}</Label>
-							<Input id="max-upload-size" type="number" bind:value={formMaxImageUploadSize} />
-							<p class="text-muted-foreground text-xs">{m.docker_max_upload_size_description()}</p>
+							<TextInputWithLabel
+								id="max-upload-size"
+								type="number"
+								label={m.docker_max_upload_size_label()}
+								bind:value={formMaxImageUploadSize}
+								helpText={m.docker_max_upload_size_description()}
+							/>
 						</div>
 					</div>
 				</Card.Content>
@@ -551,9 +632,37 @@
 							</div>
 
 							{#if formPollingEnabled}
-								<div class="space-y-2">
-									<Label for="polling-interval" class="text-xs font-medium">{m.docker_polling_interval_label()} (min)</Label>
-									<Input id="polling-interval" type="number" bind:value={formPollingInterval} min="1" />
+								<div class="space-y-3 pt-2">
+									<SelectWithLabel
+										id="pollingIntervalMode"
+										name="pollingIntervalMode"
+										bind:value={pollingIntervalMode}
+										label={m.docker_polling_interval_label()}
+										placeholder={m.docker_polling_interval_placeholder_select()}
+										options={imagePollingOptions.map(({ value, label, description }) => ({ value, label, description }))}
+									/>
+
+									{#if pollingIntervalMode === 'custom'}
+										<TextInputWithLabel
+											bind:value={formPollingInterval}
+											label={m.custom_polling_interval()}
+											placeholder={m.docker_polling_interval_placeholder()}
+											helpText={m.docker_polling_interval_description()}
+											type="number"
+										/>
+									{/if}
+
+									{#if formPollingInterval < 30}
+										<div
+											class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200"
+										>
+											<AlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+											<div class="flex-1 space-y-1">
+												<p class="text-sm font-medium">{m.docker_rate_limit_warning_title()}</p>
+												<p class="text-xs">{m.docker_rate_limit_warning_description()}</p>
+											</div>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -565,39 +674,62 @@
 									<Label for="auto-update" class="text-sm font-medium">{m.docker_auto_update_label()}</Label>
 									<div class="text-muted-foreground text-xs">{m.docker_auto_update_description()}</div>
 								</div>
-								<Switch id="auto-update" bind:checked={formAutoUpdate} />
+								<Switch id="auto-update" bind:checked={formAutoUpdate} disabled={!formPollingEnabled} />
 							</div>
 
-							{#if formAutoUpdate}
-								<div class="space-y-2">
-									<Label for="auto-update-interval" class="text-xs font-medium"
-										>{m.docker_auto_update_interval_label()} (min)</Label
-									>
-									<Input id="auto-update-interval" type="number" bind:value={formAutoUpdateInterval} min="1" />
+							{#if formAutoUpdate && formPollingEnabled}
+								<div class="pt-2">
+									<TextInputWithLabel
+										bind:value={formAutoUpdateInterval}
+										label={m.docker_auto_update_interval_label()}
+										placeholder={m.docker_auto_update_interval_placeholder()}
+										helpText={m.docker_auto_update_interval_description()}
+										type="number"
+									/>
 								</div>
 							{/if}
 						</div>
 
 						<!-- Prune Mode -->
 						<div class="space-y-2">
-							<Label for="prune-mode" class="text-sm font-medium">{m.docker_prune_action_label()}</Label>
-							<Select.Root type="single" bind:value={formPruneMode}>
-								<Select.Trigger id="prune-mode" class="w-full">
-									{formPruneMode === 'all' ? m.docker_prune_all() : m.docker_prune_dangling()}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="dangling">{m.docker_prune_dangling()}</Select.Item>
-									<Select.Item value="all">{m.docker_prune_all()}</Select.Item>
-								</Select.Content>
-							</Select.Root>
-							<p class="text-muted-foreground text-xs">{m.docker_prune_mode_description()}</p>
+							<SelectWithLabel
+								id="dockerPruneMode"
+								name="pruneMode"
+								bind:value={formPruneMode}
+								label={m.docker_prune_action_label()}
+								description={pruneModeDescription}
+								placeholder={m.docker_prune_placeholder()}
+								options={pruneModeOptions}
+								onValueChange={(v) => (formPruneMode = v as 'all' | 'dangling')}
+							/>
 						</div>
 
 						<!-- Default Shell -->
 						<div class="space-y-2">
-							<Label for="default-shell" class="text-sm font-medium">{m.docker_default_shell_label()}</Label>
-							<Input id="default-shell" type="text" bind:value={formDefaultShell} placeholder="/bin/sh" />
-							<p class="text-muted-foreground text-xs">{m.docker_default_shell_description()}</p>
+							<SelectWithLabel
+								id="shellSelectValue"
+								name="shellSelectValue"
+								bind:value={shellSelectValue}
+								label={m.docker_default_shell_label()}
+								description={m.docker_default_shell_description()}
+								placeholder={m.docker_default_shell_placeholder()}
+								options={[
+									...shellOptions,
+									{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
+								]}
+							/>
+
+							{#if shellSelectValue === 'custom'}
+								<div class="pt-2">
+									<TextInputWithLabel
+										bind:value={formDefaultShell}
+										label={m.custom()}
+										placeholder={m.docker_shell_custom_path_placeholder()}
+										helpText={m.docker_shell_custom_path_help()}
+										type="text"
+									/>
+								</div>
+							{/if}
 						</div>
 					</div>
 				</Card.Content>
