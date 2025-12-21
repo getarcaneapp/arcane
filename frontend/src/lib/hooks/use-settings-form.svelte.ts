@@ -18,9 +18,10 @@ type Options<T> = {
 };
 
 export class UseSettingsForm<T extends Record<string, { value: any; error: string | null }>> {
-	#hasChanges = $state(false);
 	#isLoading = $state(false);
 	#formValues = $state<T | null>(null);
+	#saveFunction: (() => Promise<void> | void) | null = null;
+	#resetFunction: (() => void) | null = null;
 	private formState: SettingsFormState | undefined;
 	private getCurrentSettings: () => Record<string, any>;
 
@@ -39,32 +40,31 @@ export class UseSettingsForm<T extends Record<string, { value: any; error: strin
 		});
 
 		$effect(() => {
-			// Access reactive state to trigger re-runs
-			const currentFormValues = this.#formValues;
-			if (!currentFormValues) {
-				this.#hasChanges = false;
-				return;
-			}
-
-			const settingsToCompare = this.getCurrentSettings();
-			const keys = Object.keys(currentFormValues) as (keyof T)[];
-
-			const hasChanges = keys.some((key) => {
-				const input = currentFormValues[key];
-				if (input && 'value' in input) {
-					return input.value !== settingsToCompare[key as string];
-				}
-				return false;
-			});
-
-			this.#hasChanges = hasChanges;
-
+			// Sync to external context (side effect)
 			if (this.formState) {
-				this.formState.hasChanges = hasChanges;
+				this.formState.hasChanges = this.hasChanges;
 				this.formState.isLoading = this.#isLoading;
+				if (this.#saveFunction) this.formState.saveFunction = this.#saveFunction;
+				if (this.#resetFunction) this.formState.resetFunction = this.#resetFunction;
 			}
 		});
 	}
+
+	#hasChanges = $derived.by(() => {
+		const currentFormValues = this.#formValues;
+		if (!currentFormValues) return false;
+
+		const settingsToCompare = this.getCurrentSettings();
+		const keys = Object.keys(currentFormValues) as (keyof T)[];
+
+		return keys.some((key) => {
+			const input = currentFormValues[key];
+			if (input && 'value' in input) {
+				return input.value !== settingsToCompare[key as string];
+			}
+			return false;
+		});
+	});
 
 	async updateSettings(updatedSettings: Partial<Settings>) {
 		const result = await tryCatch(settingsService.updateSettings(updatedSettings as any));
@@ -78,10 +78,8 @@ export class UseSettingsForm<T extends Record<string, { value: any; error: strin
 	}
 
 	registerFormActions(saveFunction: () => Promise<void> | void, resetFunction: () => void) {
-		if (this.formState) {
-			this.formState.saveFunction = saveFunction;
-			this.formState.resetFunction = resetFunction;
-		}
+		this.#saveFunction = saveFunction;
+		this.#resetFunction = resetFunction;
 	}
 
 	setLoading(loading: boolean) {
