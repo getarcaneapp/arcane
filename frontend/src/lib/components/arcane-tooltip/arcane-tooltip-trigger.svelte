@@ -69,6 +69,47 @@
 			event.stopPropagation();
 		}
 	}
+
+	function handleWrapperClick(event: MouseEvent, props: any) {
+		if (ctx.interactive) {
+			handleClick(event);
+			if (!event.defaultPrevented) {
+				props.onclick?.(event);
+			}
+		} else {
+			// Check if the click originated from an interactive element
+			let target = event.target as HTMLElement | null;
+			let isInteractive = false;
+
+			while (target && target !== event.currentTarget) {
+				const tag = target.tagName.toLowerCase();
+				if (
+					['button', 'input', 'select', 'textarea', 'a'].includes(tag) ||
+					target.getAttribute('role') === 'button' ||
+					target.getAttribute('tabindex') === '0'
+				) {
+					// Check if it's disabled
+					if (
+						(target as HTMLButtonElement).disabled ||
+						target.getAttribute('aria-disabled') === 'true' ||
+						target.classList.contains('disabled')
+					) {
+						// If disabled, we treat it as non-interactive for the purpose of tooltip
+						// (i.e., we WANT the tooltip to show)
+						isInteractive = false;
+					} else {
+						isInteractive = true;
+					}
+					break;
+				}
+				target = target.parentElement;
+			}
+
+			if (!isInteractive) {
+				props.onclick?.(event);
+			}
+		}
+	}
 </script>
 
 {#if ctx.isTouch}
@@ -81,21 +122,12 @@
 				ontouchend={ctx.interactive ? handleTouchEnd : undefined}
 				ontouchcancel={ctx.interactive ? handleTouchCancel : undefined}
 				ontouchmove={ctx.interactive ? handleTouchMove : undefined}
-				onclick={(e) => {
-					if (ctx.interactive) {
-						handleClick(e);
-						if (!e.defaultPrevented) {
-							(props as any).onclick?.(e);
-						}
-					} else {
-						(props as any).onclick?.(e);
-					}
-				}}
+				onclick={(e) => handleWrapperClick(e, props)}
 				role="button"
 				tabindex="0"
 			>
 				{#if child}
-					{@render child({ props: {} })}
+					{@render child({ props })}
 				{:else}
 					{@render children?.()}
 				{/if}
@@ -105,9 +137,9 @@
 {:else}
 	<Tooltip.Trigger>
 		{#snippet child({ props }: ChildProps)}
-			<div {...props} class={cn('inline-flex max-w-full min-w-0', className)}>
+			<div {...props} role="button" tabindex="0" class={cn('inline-flex max-w-full min-w-0', className)}>
 				{#if child}
-					{@render child({ props: {} })}
+					{@render child({ props })}
 				{:else}
 					{@render children?.()}
 				{/if}
