@@ -7,6 +7,7 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { simpleRefresh } from '$lib/utils/refresh.util';

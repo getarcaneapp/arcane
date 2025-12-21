@@ -462,7 +462,7 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	if created.AccessToken != nil && *created.AccessToken != "" {
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
+			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID, nil); err != nil {
 				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
@@ -712,7 +712,8 @@ func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegi
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID, user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.RegistrySyncError{Err: err}).Error())
 	}
 
@@ -793,7 +794,7 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, update
 	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
 		go func(envID string, envName string) {
 			ctx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID); err != nil {
+			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID, nil); err != nil {
 				slog.WarnContext(ctx, "Failed to sync registries after environment update",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}

@@ -641,6 +641,18 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
 		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		s.eventService.LogErrorEvent(
+			ctx,
+			models.EventTypeProjectError,
+			"project",
+			projectID,
+			project.Name,
+			user.ID,
+			user.Username,
+			"0",
+			err,
+			models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name},
+		)
 		return fmt.Errorf("failed to deploy project: %w", err)
 	}
 
@@ -846,7 +858,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	}
 
 	for img := range images {
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
+		if err := s.imageService.PullImage(ctx, "0", img, progressWriter, systemUser, credentials); err != nil {
 			return fmt.Errorf("failed to pull image %s: %w", img, err)
 		}
 	}
@@ -893,7 +905,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
+		if err := s.imageService.PullImage(ctx, "0", img, progressWriter, systemUser, credentials); err != nil {
 			return fmt.Errorf("failed to pull missing image %s: %w", img, err)
 		}
 	}

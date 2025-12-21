@@ -341,7 +341,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		DriverOpts: input.Body.DriverOpts,
 	}
 
-	response, err := h.volumeService.CreateVolume(ctx, options, *user)
+	response, err := h.volumeService.CreateVolume(ctx, input.EnvironmentID, options, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeCreationError{Err: err}).Error())
 	}
@@ -365,7 +365,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	if err := h.volumeService.DeleteVolume(ctx, input.VolumeName, input.Force, *user); err != nil {
+	if err := h.volumeService.DeleteVolume(ctx, input.EnvironmentID, input.VolumeName, input.Force, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeDeletionError{Err: err}).Error())
 	}
 
@@ -385,7 +385,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	report, err := h.volumeService.PruneVolumes(ctx)
+	report, err := h.volumeService.PruneVolumes(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumePruneError{Err: err}).Error())
 	}

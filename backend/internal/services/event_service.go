@@ -1,12 +1,16 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
@@ -18,11 +22,17 @@ import (
 )
 
 type EventService struct {
-	db *database.DB
+	db         *database.DB
+	cfg        *config.Config
+	httpClient *http.Client
 }
 
-func NewEventService(db *database.DB) *EventService {
-	return &EventService{db: db}
+func NewEventService(db *database.DB, cfg *config.Config) *EventService {
+	return &EventService{
+		db:         db,
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 type CreateEventRequest struct {
@@ -63,6 +73,32 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		},
 	}
 
+	// If in agent mode, send event to manager instead of storing locally
+	if s.cfg != nil && s.cfg.AgentMode && s.cfg.ManagerApiUrl != "" {
+		environmentID := "0"
+		if req.EnvironmentID != nil {
+			environmentID = *req.EnvironmentID
+		}
+
+		slog.DebugContext(ctx, "Agent mode: sending event to manager",
+			"type", event.Type,
+			"environmentID", environmentID,
+			"managerUrl", s.cfg.ManagerApiUrl)
+
+		// Send to manager in background to avoid blocking
+		go func() {
+			if err := s.sendEventToManager(context.WithoutCancel(ctx), event, environmentID); err != nil {
+				slog.WarnContext(ctx, "Failed to send event to manager", "error", err, "type", event.Type)
+			} else {
+				slog.InfoContext(ctx, "Event sent to manager successfully", "type", event.Type)
+			}
+		}()
+
+		// Return the event without storing locally
+		return event, nil
+	}
+
+	// Not in agent mode - store locally
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(event).Error; err != nil {
 			return fmt.Errorf("failed to create event: %w", err)
@@ -155,6 +191,8 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	var events []models.Event
 	q := s.db.WithContext(ctx).Model(&models.Event{}).Where("environment_id = ?", environmentID)
 
+	slog.DebugContext(ctx, "Querying events by environment", "environmentID", environmentID)
+
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		q = q.Where(
@@ -180,6 +218,11 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
+
+	slog.InfoContext(ctx, "Found events for environment",
+		"environmentID", environmentID,
+		"count", len(events),
+		"totalItems", paginationResp.TotalItems)
 
 	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
 	if mapErr != nil {
@@ -283,15 +326,17 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventT
 	title := s.generateEventTitle(eventType, username)
 	description := s.generateEventDescription(eventType, "user", username)
 	severity := s.getEventSeverity(eventType)
+	environmentID := "0"
 
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:        eventType,
-		Severity:    severity,
-		Title:       title,
-		Description: description,
-		UserID:      &userID,
-		Username:    &username,
-		Metadata:    metadata,
+		Type:          eventType,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		UserID:        &userID,
+		Username:      &username,
+		EnvironmentID: &environmentID,
+		Metadata:      metadata,
 	})
 	return err
 }
@@ -473,4 +518,115 @@ func (s *EventService) getEventSeverity(eventType models.EventType) models.Event
 		return def.Severity
 	}
 	return models.EventSeverityInfo
+}
+
+// SyncEventsFromAgent receives events from an agent and stores them with the proper environment ID.
+func (s *EventService) SyncEventsFromAgent(ctx context.Context, syncEvents []event.SyncEvent) error {
+	if len(syncEvents) == 0 {
+		return nil
+	}
+
+	slog.InfoContext(ctx, "Syncing events from agent", "count", len(syncEvents))
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, syncEvt := range syncEvents {
+			timestamp := time.Now()
+			if syncEvt.Timestamp != nil {
+				timestamp = *syncEvt.Timestamp
+			}
+
+			slog.DebugContext(ctx, "Creating synced event",
+				"type", syncEvt.Type,
+				"title", syncEvt.Title,
+				"environmentID", syncEvt.EnvironmentID)
+
+			evt := &models.Event{
+				Type:          models.EventType(syncEvt.Type),
+				Severity:      models.EventSeverity(syncEvt.Severity),
+				Title:         syncEvt.Title,
+				Description:   syncEvt.Description,
+				ResourceType:  syncEvt.ResourceType,
+				ResourceID:    syncEvt.ResourceID,
+				ResourceName:  syncEvt.ResourceName,
+				UserID:        syncEvt.UserID,
+				Username:      syncEvt.Username,
+				EnvironmentID: &syncEvt.EnvironmentID,
+				Metadata:      models.JSON(syncEvt.Metadata),
+				Timestamp:     timestamp,
+				BaseModel: models.BaseModel{
+					CreatedAt: timestamp,
+					UpdatedAt: &timestamp,
+				},
+			}
+
+			if err := tx.Create(evt).Error; err != nil {
+				slog.ErrorContext(ctx, "FAILED TO CREATE EVENT IN DATABASE",
+					"error", err,
+					"type", syncEvt.Type,
+					"environmentID", syncEvt.EnvironmentID)
+				return fmt.Errorf("failed to create synced event: %w", err)
+			}
+
+			slog.InfoContext(ctx, "Event created successfully in database",
+				"id", evt.ID,
+				"type", evt.Type,
+				"environmentID", *evt.EnvironmentID)
+		}
+		return nil
+	})
+}
+
+// sendEventToManager sends an event to the manager API when running in agent mode.
+func (s *EventService) sendEventToManager(ctx context.Context, evt *models.Event, environmentID string) error {
+	if s.cfg == nil || !s.cfg.AgentMode || s.cfg.ManagerApiUrl == "" {
+		return nil
+	}
+
+	syncEvt := event.SyncEvent{
+		Type:          string(evt.Type),
+		Severity:      string(evt.Severity),
+		Title:         evt.Title,
+		Description:   evt.Description,
+		ResourceType:  evt.ResourceType,
+		ResourceID:    evt.ResourceID,
+		ResourceName:  evt.ResourceName,
+		UserID:        evt.UserID,
+		Username:      evt.Username,
+		EnvironmentID: environmentID,
+		Metadata:      map[string]interface{}(evt.Metadata),
+		Timestamp:     &evt.Timestamp,
+	}
+
+	reqBody := event.SyncEventsRequest{
+		Events: []event.SyncEvent{syncEvt},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+
+	url := strings.TrimRight(s.cfg.ManagerApiUrl, "/") + "/api/events/sync"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if s.cfg.AgentToken != "" {
+		req.Header.Set("X-API-Key", s.cfg.AgentToken)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send event to manager: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("manager returned status %d", resp.StatusCode)
+	}
+
+	slog.DebugContext(ctx, "Event synced to manager", "type", evt.Type, "environmentID", environmentID)
+	return nil
 }

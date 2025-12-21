@@ -50,6 +50,7 @@ const (
 	EventTypeEnvironmentUpdate            EventType = "environment.update"
 	EventTypeEnvironmentDelete            EventType = "environment.delete"
 	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"
+	EventTypeEnvironmentSyncRegistries    EventType = "environment.sync_registries"
 
 	// Event severities
 	EventSeverityInfo    EventSeverity = "info"

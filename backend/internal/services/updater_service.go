@@ -175,7 +175,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			continue
 		}
 
-		if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
+		if err := s.imageService.PullImage(ctx, "0", p.newRef, io.Discard, systemUser, nil); err != nil {
 			item.Status = "failed"
 			item.Error = err.Error()
 			out.Failed++
@@ -349,7 +349,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	slog.InfoContext(ctx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef)
 
 	// Pull the latest image using the image service
-	if err := s.imageService.PullImage(ctx, normalizedRef, io.Discard, systemUser, nil); err != nil {
+	if err := s.imageService.PullImage(ctx, "0", normalizedRef, io.Discard, systemUser, nil); err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",

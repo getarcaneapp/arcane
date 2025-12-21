@@ -173,3 +173,74 @@ type ListReponse struct {
 	// Required: true
 	HasPrevious bool `json:"hasPrevious"`
 }
+
+// SyncEvent represents an event being synced from an agent to the manager.
+type SyncEvent struct {
+	// Type of the event.
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Severity level of the event.
+	//
+	// Required: true
+	Severity string `json:"severity"`
+
+	// Title of the event.
+	//
+	// Required: true
+	Title string `json:"title"`
+
+	// Description of the event.
+	//
+	// Required: false
+	Description string `json:"description,omitempty"`
+
+	// ResourceType is the type of the resource associated with the event.
+	//
+	// Required: false
+	ResourceType *string `json:"resourceType,omitempty"`
+
+	// ResourceID is the ID of the resource associated with the event.
+	//
+	// Required: false
+	ResourceID *string `json:"resourceId,omitempty"`
+
+	// ResourceName is the name of the resource associated with the event.
+	//
+	// Required: false
+	ResourceName *string `json:"resourceName,omitempty"`
+
+	// UserID is the ID of the user who triggered the event.
+	//
+	// Required: false
+	UserID *string `json:"userId,omitempty"`
+
+	// Username is the username of the user who triggered the event.
+	//
+	// Required: false
+	Username *string `json:"username,omitempty"`
+
+	// EnvironmentID is the ID of the environment where the event occurred.
+	//
+	// Required: true
+	EnvironmentID string `json:"environmentId"`
+
+	// Metadata contains additional key-value data associated with the event.
+	//
+	// Required: false
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
+	// Timestamp is when the event occurred.
+	//
+	// Required: false
+	Timestamp *time.Time `json:"timestamp,omitempty"`
+}
+
+// SyncEventsRequest is the request body for syncing events from an agent.
+type SyncEventsRequest struct {
+	// Events is the list of events to sync.
+	//
+	// Required: true
+	Events []SyncEvent `json:"events"`
+}

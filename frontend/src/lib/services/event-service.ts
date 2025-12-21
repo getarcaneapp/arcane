@@ -10,6 +10,16 @@ export default class EventService extends BaseAPIService {
 		return res.data;
 	}
 
+	async getEventsForEnvironment(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<Event>> {
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/environments/${environmentId}/events`, { params });
+		return res.data;
+	}
+
+	async deleteForEnvironment(environmentId: string, id: string): Promise<void> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/events/${id}`));
+	}
+
 	async delete(id: string): Promise<void> {
 		return this.handleResponse(this.api.delete(`/events/${id}`));
 	}

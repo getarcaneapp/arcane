@@ -16,6 +16,7 @@
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { EllipsisIcon, TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
 
 	let {
@@ -249,7 +250,10 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => (events = await eventService.getEvents(options))}
+	onRefresh={async (options) => {
+		events = await eventService.getEvents(options);
+		return events;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}
