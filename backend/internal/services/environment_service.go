@@ -527,7 +527,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	defer cancel()
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/container-registries/sync"
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, strings.NewReader(string(reqBody)))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("failed to create sync request: %w", err)
 	}
@@ -599,7 +599,7 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if len(body) > 0 {
+	if method != http.MethodGet && len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
