@@ -4,7 +4,6 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
 	import { z } from 'zod/v4';
@@ -43,7 +42,6 @@
 	}
 
 	let { data } = $props();
-	let hasChanges = $state(false);
 	let isLoading = $state(false);
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
@@ -175,9 +173,8 @@
 
 	let { inputs: formInputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, currentSettings));
 
-	const formHasChanges = $derived.by(
-		() =>
-			$formInputs.discordEnabled.value !== currentSettings.discordEnabled ||
+	const hasChanges = $derived(
+		$formInputs.discordEnabled.value !== currentSettings.discordEnabled ||
 			$formInputs.discordWebhookUrl.value !== currentSettings.discordWebhookUrl ||
 			$formInputs.discordUsername.value !== currentSettings.discordUsername ||
 			$formInputs.discordAvatarUrl.value !== currentSettings.discordAvatarUrl ||
@@ -200,10 +197,11 @@
 	);
 
 	$effect(() => {
-		hasChanges = formHasChanges;
 		if (formState) {
 			formState.hasChanges = hasChanges;
 			formState.isLoading = isLoading;
+			formState.saveFunction = onSubmit;
+			formState.resetFunction = resetForm;
 		}
 	});
 
@@ -260,11 +258,6 @@
 			savedAppriseSettings = { ...settings };
 		} catch (error) {
 			// Apprise not configured yet, keep defaults
-		}
-
-		if (formState) {
-			formState.saveFunction = onSubmit;
-			formState.resetFunction = resetForm;
 		}
 	});
 
@@ -381,7 +374,7 @@
 	}
 
 	async function testNotification(provider: 'discord' | 'email', testType: string = 'simple') {
-		if (formHasChanges) {
+		if (hasChanges) {
 			pendingTestAction = () => executeTest(provider, testType);
 			showUnsavedDialog = true;
 			return;
@@ -402,7 +395,7 @@
 		}
 	}
 	async function testAppriseNotification() {
-		if (formHasChanges) {
+		if (hasChanges) {
 			pendingTestAction = executeAppriseTest;
 			showUnsavedDialog = true;
 			return;

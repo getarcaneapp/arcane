@@ -15,6 +15,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import {
 		ArrowLeftIcon,
 		RefreshIcon,
@@ -26,11 +27,12 @@
 		RegistryIcon,
 		ResetIcon,
 		ApiKeyIcon,
-		DockerBrandIcon
+		DockerBrandIcon,
+		InfoIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
-	let { environment, settings } = $derived(data);
+	let { environment, settings, versionInformation } = $derived(data);
 
 	let showSwitchDialog = $state(false);
 
@@ -43,6 +45,10 @@
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
+
+	// Version state
+	let remoteVersion = $state<AppVersionInformation | null>(null);
+	let isLoadingVersion = $state(false);
 
 	// Form state
 	let formName = $state('');
@@ -59,6 +65,24 @@
 		formApiUrl = environment.apiUrl;
 		currentStatus = environment.status;
 	});
+
+	// Fetch version when environment is online
+	$effect(() => {
+		if (environment.id !== '0' && currentStatus === 'online' && !remoteVersion && !isLoadingVersion) {
+			fetchVersion();
+		}
+	});
+
+	async function fetchVersion() {
+		try {
+			isLoadingVersion = true;
+			remoteVersion = await environmentManagementService.getVersion(environment.id);
+		} catch (err) {
+			console.error('Failed to fetch environment version:', err);
+		} finally {
+			isLoadingVersion = false;
+		}
+	}
 
 	// Track changes
 	let hasChanges = $derived(
@@ -77,6 +101,8 @@
 			formEnabled = environment.enabled;
 			formApiUrl = environment.apiUrl;
 			currentStatus = environment.status;
+			// Reset version to trigger re-fetch if online
+			remoteVersion = null;
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
@@ -351,12 +377,49 @@
 						<div class="mt-1 font-mono text-sm">{environment.id}</div>
 					</div>
 					<div>
-						<Label class="text-muted-foreground text-xs font-medium">Status</Label>
+						<Label class="text-muted-foreground text-xs font-medium">{m.common_status()}</Label>
 						<div class="mt-1">
 							<StatusBadge
 								text={currentStatus === 'online' ? m.common_online() : m.common_offline()}
 								variant={currentStatus === 'online' ? 'green' : 'red'}
 							/>
+						</div>
+					</div>
+					<div class="col-span-2 border-t pt-4">
+						<Label class="text-muted-foreground text-xs font-medium">{m.version_info_version()}</Label>
+						<div class="mt-1 flex items-center gap-2">
+							{#if environment.id === '0'}
+								<span class="font-mono text-sm">{versionInformation?.currentVersion || 'Unknown'}</span>
+								{#if versionInformation?.updateAvailable}
+									<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+										{m.sidebar_update_available()}: {versionInformation.newestVersion}
+									</Badge>
+								{/if}
+							{:else if isLoadingVersion}
+								<Spinner />
+								<span class="text-muted-foreground text-sm">{m.common_action_checking()}</span>
+							{:else if remoteVersion}
+								<span class="font-mono text-sm">{remoteVersion.currentVersion}</span>
+								{#if remoteVersion.updateAvailable}
+									<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+										{m.sidebar_update_available()}: {remoteVersion.newestVersion}
+									</Badge>
+									{#if remoteVersion.releaseUrl}
+										<a
+											href={remoteVersion.releaseUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-xs text-blue-500 hover:underline"
+										>
+											{m.version_info_view_release()}
+										</a>
+									{/if}
+								{/if}
+							{:else if currentStatus === 'online'}
+								<span class="text-muted-foreground text-sm">Version information unavailable</span>
+							{:else}
+								<span class="text-muted-foreground text-sm">{m.common_offline()}</span>
+							{/if}
 						</div>
 					</div>
 				</div>

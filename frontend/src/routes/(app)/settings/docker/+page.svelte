@@ -3,7 +3,6 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import type { Settings } from '$lib/types/settings.type';
 	import { z } from 'zod/v4';
-	import { onMount } from 'svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
@@ -72,7 +71,7 @@
 
 	let shellSelectValue = $state<string>(shellOptions.find((o) => o.value === currentSettings.defaultShell)?.value ?? 'custom');
 
-	let { formInputs, registerOnMount } = $derived(
+	let { formInputs } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
@@ -94,8 +93,6 @@
 			$formInputs.defaultShell.value = shellSelectValue;
 		}
 	});
-
-	onMount(() => registerOnMount());
 </script>
 
 <SettingsPageLayout

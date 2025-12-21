@@ -2,7 +2,12 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -15,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/environment"
+	"github.com/getarcaneapp/arcane/types/version"
 )
 
 const localDockerEnvironmentID = "0"
@@ -142,6 +148,14 @@ type GetDeploymentSnippetsInput struct {
 
 type GetDeploymentSnippetsOutput struct {
 	Body base.ApiResponse[DeploymentSnippet]
+}
+
+type GetEnvironmentVersionInput struct {
+	ID string `path:"id" doc:"Environment ID"`
+}
+
+type GetEnvironmentVersionOutput struct {
+	Body base.ApiResponse[version.Info]
 }
 
 // ============================================================================
@@ -297,6 +311,19 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetDeploymentSnippets)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getEnvironmentVersion",
+		Method:      "GET",
+		Path:        "/environments/{id}/version",
+		Summary:     "Get environment version",
+		Description: "Get the version of a remote environment",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetEnvironmentVersion)
 }
 
 // ============================================================================
@@ -854,6 +881,51 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 				DockerRun:     snippets.DockerRun,
 				DockerCompose: snippets.DockerCompose,
 			},
+		},
+	}, nil
+}
+
+// GetEnvironmentVersion returns the version of a remote environment.
+func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*GetEnvironmentVersionOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("Environment not found")
+	}
+
+	// Make HTTP request to the environment's /api/app-version endpoint
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to create request")
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))
+	}
+
+	var versionInfo version.Info
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to decode version response")
+	}
+
+	return &GetEnvironmentVersionOutput{
+		Body: base.ApiResponse[version.Info]{
+			Success: true,
+			Data:    versionInfo,
 		},
 	}, nil
 }
