@@ -159,8 +159,8 @@
 	] satisfies ColumnSpec<NetworkSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true },
 		{ id: 'scope', label: m.common_scope(), defaultVisible: true }
 	];
@@ -224,7 +224,7 @@
 		subtitle={(item: NetworkSummaryDto) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item: NetworkSummaryDto) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.inUse ?? true)
 					? (item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)
 						? { variant: 'gray', text: m.networks_predefined() }
 						: item.inUse

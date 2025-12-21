@@ -140,10 +140,10 @@
 	] satisfies ColumnSpec<Project>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
-		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true }
+		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});

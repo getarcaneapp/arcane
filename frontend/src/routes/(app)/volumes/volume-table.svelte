@@ -129,8 +129,8 @@
 	] satisfies ColumnSpec<VolumeSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
@@ -195,7 +195,7 @@
 		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.inUse ?? true)
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }

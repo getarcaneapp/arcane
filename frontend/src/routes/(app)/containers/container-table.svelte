@@ -278,10 +278,11 @@
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
 		{ id: 'image', label: m.common_image(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];

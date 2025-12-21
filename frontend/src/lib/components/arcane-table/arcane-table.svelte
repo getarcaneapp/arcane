@@ -263,6 +263,7 @@
 				id,
 				...(accessorKey ? { accessorKey } : {}),
 				...(accessorFn ? { accessorFn } : {}),
+				meta: { title: spec.title },
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
