@@ -101,8 +101,6 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		OnboardingCompleted:        models.SettingVariable{Value: "false"},
-		OnboardingSteps:            models.SettingVariable{Value: "[]"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
@@ -193,8 +191,13 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
 			rv.Field(i).FieldByName("Value").SetString(val)
 			continue
+		} else if val, ok := settingsMap[key]; ok {
+			// Fallback to database if environment variable is not set
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
+			rv.Field(i).FieldByName("Value").SetString(val)
+			continue
 		} else {
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set", "key", key, "env", envVarName)
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 		}
 	}
 
@@ -264,30 +267,12 @@ func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, er
 		}
 	}
 
+	// Apply environment variable overrides for fields tagged with "envOverride".
+	// This keeps behavior consistent with the cached settings path (LoadDatabaseSettingsInternal)
+	// and allows env vars like OIDC_MERGE_ACCOUNTS to affect runtime behavior.
+	s.applyEnvOverrides(ctx, settings)
+
 	return settings, nil
-}
-
-func (s *SettingsService) SyncOidcEnvToDatabase(ctx context.Context) ([]models.SettingVariable, error) {
-	cfg := config.Load()
-	if cfg.OidcClientID == "" || cfg.OidcIssuerURL == "" {
-		return nil, errors.New("missing OIDC_CLIENT_ID or OIDC_ISSUER_URL")
-	}
-
-	trueStr := "true"
-	scopes := cfg.OidcScopes
-	if scopes == "" {
-		scopes = "openid email profile"
-	}
-
-	return s.UpdateSettings(ctx, settings.Update{
-		OidcEnabled:      &trueStr,
-		OidcClientId:     &cfg.OidcClientID,
-		OidcClientSecret: &cfg.OidcClientSecret,
-		OidcIssuerUrl:    &cfg.OidcIssuerURL,
-		OidcScopes:       &scopes,
-		OidcAdminClaim:   &cfg.OidcAdminClaim,
-		OidcAdminValue:   &cfg.OidcAdminValue,
-	})
 }
 
 // MigrateOidcConfigToFields migrates the legacy JSON authOidcConfig to individual fields,

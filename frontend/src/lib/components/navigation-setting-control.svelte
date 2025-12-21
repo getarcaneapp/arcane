@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { CloseIcon, EnvironmentsIcon, SmartphoneIcon, type IconType } from '$lib/icons';
@@ -36,15 +36,15 @@
 			<div class="min-w-0 flex-1">
 				<div class="mb-1 flex items-start justify-between gap-2">
 					{#if hasOverride}
-						<Button
-							variant="ghost"
+						<ArcaneButton
+							action="base"
+							tone="ghost"
 							size="sm"
+							icon={CloseIcon}
 							onclick={onClearOverride}
 							class="h-6 w-6 flex-shrink-0 p-0 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
 							title={m.clear_local_override()}
-						>
-							<CloseIcon class="size-3" />
-						</Button>
+						/>
 					{/if}
 				</div>
 				<p class="text-muted-foreground text-xs leading-relaxed">{description}</p>
@@ -105,14 +105,13 @@
 							<span class="text-muted-foreground hidden text-xs font-medium sm:inline">
 								{effectiveValue ? m.on() : m.off()}
 							</span>
-							<Button
-								variant="outline"
+							<ArcaneButton
+								action="base"
 								size="sm"
+								customLabel={m.override()}
 								onclick={() => onLocalOverride(!effectiveValue)}
 								class="h-6 px-2 text-xs sm:h-7"
-							>
-								{m.override()}
-							</Button>
+							/>
 						</div>
 					{/if}
 				</div>

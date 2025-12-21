@@ -1,6 +1,11 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "esModuleInterop": true,
+    "skipLibCheck": true
   }
 }

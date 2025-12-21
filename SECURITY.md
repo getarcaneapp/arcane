@@ -1,22 +1,34 @@
 # Security Policy
 
-## Reporting Vulnerabilities
+## Reporting Security Vulnerabilities
 
-Thank you for helping us keep this project secure!
+We take the security of our project seriously and appreciate your efforts to help us maintain a secure environment for all users.
 
-If you discover a security vulnerability (such as a CVE), **please do not file an issue on GitHub**. Publicly disclosing vulnerabilities in GitHub issues can put users at risk before the problem is addressed.
+> [!IMPORTANT]
+> If you discover a security vulnerability, please do not create a public GitHub issue. Public disclosure can expose users to risk before a fix is available.
 
-Instead, please report vulnerabilities directly to our security team by emailing **[info@getarcane.app](mailto:info@getarcane.app)**.
+Instead, please report security vulnerabilities directly to our security team via email at **[info@getarcane.app](mailto:info@getarcane.app)**.
 
-We will review your report promptly and work to resolve the issue as quickly as possible. When submitting a report, please include as much detail as possible, such as:
+### What to Include in Your Report
 
-- A description of the vulnerability.
-- Steps to reproduce the issue.
-- Potential impact of the vulnerability.
-- Any suggested fixes or mitigations.
+To help us address vulnerabilities effectively, please provide:
 
-We appreciate your responsible disclosure and your assistance in keeping this project secure.
+- A clear description of the vulnerability and its potential impact
+- Detailed steps to reproduce the issue
+- Information about the affected versions or environments
+- Any suggested fixes, workarounds, or mitigations (if available)
+
+### Our Commitment
+
+We will:
+
+- Acknowledge receipt of your report within 48 hours
+- Investigate and validate the vulnerability promptly
+- Work to develop and release a fix as quickly as possible
+- Keep you informed of our progress throughout the process
+
+We value responsible disclosure and are grateful for your contribution to the security of our project.
 
 ---
 
-For non-security-related issues, feel free to use the GitHub issue tracker as usual.
+**Note:** For general bug reports, feature requests, or other non-security issues, please use our [GitHub issue tracker](https://github.com/getarcaneapp/arcane/issues).

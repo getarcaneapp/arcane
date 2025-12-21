@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -67,8 +67,13 @@
 			</div>
 
 			<Dialog.Footer class="mt-6">
-				<Button variant="secondary" onclick={() => onOpenChange(false)}>{m.cancel()}</Button>
-				<Button type="submit" disabled={!customColorInput || !isValidColor(customColorInput)}>{m.apply()}</Button>
+				<ArcaneButton action="cancel" tone="ghost" onclick={() => onOpenChange(false)} customLabel={m.cancel()} />
+				<ArcaneButton
+					action="confirm"
+					type="submit"
+					disabled={!customColorInput || !isValidColor(customColorInput)}
+					customLabel={m.apply()}
+				/>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>

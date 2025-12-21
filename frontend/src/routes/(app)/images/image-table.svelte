@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -294,9 +294,9 @@
 		rowActions={RowActions}
 		onclick={(item: ImageSummaryDto) => goto(`/images/${item.id}`)}
 	>
-		{#if (mobileFieldVisibility.updates ?? true) && item.updateInfo !== undefined}
-			<div class="flex flex-wrap gap-x-4 gap-y-3 border-t pt-3">
-				<div class="flex min-w-0 flex-1 basis-[180px] flex-col">
+		{#if mobileFieldVisibility.updates ?? true}
+			<div class="flex items-center gap-x-2 gap-y-2 border-t pt-2">
+				<div class="flex min-w-0 shrink flex-col">
 					<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
 						{m.images_updates()}
 					</div>
@@ -319,10 +319,16 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="relative size-8 p-0"
+					icon={EllipsisIcon}
+					showLabel={false}
+					customLabel={m.common_open_menu()}
+				/>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">

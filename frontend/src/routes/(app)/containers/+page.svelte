@@ -84,34 +84,24 @@
 		{
 			title: m.common_total(),
 			value: containerStatusCounts.totalContainers,
-			icon: BoxIcon,
-			class: 'border-l-primary border-l-4'
+			icon: BoxIcon
 		},
 		{
 			title: m.common_running(),
 			value: containerStatusCounts.runningContainers,
 			icon: BoxIcon,
-			iconColor: 'text-green-500',
-			bgColor: 'bg-green-500/10',
-			class: 'border-l-4 border-l-green-500'
+			iconColor: 'text-green-500'
 		},
 		{
 			title: m.common_stopped(),
 			value: containerStatusCounts.stoppedContainers,
 			icon: BoxIcon,
-			iconColor: 'text-amber-500',
-			class: 'border-l-4 border-l-amber-500'
+			iconColor: 'text-amber-500'
 		}
 	]);
 </script>
 
-<ResourcePageLayout
-	title={m.containers_title()}
-	subtitle={m.containers_subtitle()}
-	{actionButtons}
-	{statCards}
-	statCardsColumns={3}
->
+<ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<ContainerTable bind:containers bind:selectedIds bind:requestOptions />
 	{/snippet}

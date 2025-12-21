@@ -55,13 +55,7 @@ var systemUser = models.User{
 }
 
 func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest) (*system.PruneAllResult, error) {
-	slog.InfoContext(ctx, "Starting selective prune operation",
-		slog.Bool("containers", req.Containers),
-		slog.Bool("images", req.Images),
-		slog.Bool("volumes", req.Volumes),
-		slog.Bool("networks", req.Networks),
-		slog.Bool("build_cache", req.BuildCache),
-		slog.Bool("dangling", req.Dangling))
+	slog.InfoContext(ctx, "Starting selective prune operation", "containers", req.Containers, "images", req.Images, "volumes", req.Volumes, "networks", req.Networks, "build_cache", req.BuildCache, "dangling", req.Dangling)
 
 	result := &system.PruneAllResult{Success: true}
 	var mu sync.Mutex
@@ -82,12 +76,10 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		g.Go(func() error {
 			danglingOnly := req.Dangling
 			if settingsDangling, _ := s.getDanglingModeFromSettings(ctx); settingsDangling != danglingOnly {
-				slog.DebugContext(ctx, "Prune request overriding stored image prune mode",
-					slog.Bool("settings_dangling_only", settingsDangling),
-					slog.Bool("request_dangling_only", danglingOnly))
+				slog.DebugContext(ctx, "Prune request overriding stored image prune mode", "settings_dangling_only", settingsDangling, "request_dangling_only", danglingOnly)
 			}
 
-			slog.InfoContext(ctx, "Pruning images...", slog.Bool("dangling_only", danglingOnly))
+			slog.InfoContext(ctx, "Pruning images...", "dangling_only", danglingOnly)
 			localResult := &system.PruneAllResult{}
 			if err := s.pruneImages(ctx, danglingOnly, localResult); err != nil {
 				mu.Lock()
@@ -109,7 +101,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 			slog.InfoContext(ctx, "Pruning build cache...")
 			localResult := &system.PruneAllResult{}
 			if err := s.pruneBuildCache(ctx, localResult, !req.Dangling); err != nil {
-				slog.WarnContext(ctx, "Build cache pruning encountered an error", slog.String("error", err.Error()))
+				slog.WarnContext(ctx, "Build cache pruning encountered an error", "error", err.Error())
 				// Build cache errors are often non-critical, but we log them
 			} else {
 				mu.Lock()
@@ -161,14 +153,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		slog.ErrorContext(ctx, "Prune operations failed", "error", err)
 	}
 
-	slog.InfoContext(ctx, "Selective prune operation completed",
-		slog.Bool("success", result.Success),
-		slog.Int("containers_pruned", len(result.ContainersPruned)),
-		slog.Int("images_deleted", len(result.ImagesDeleted)),
-		slog.Int("volumes_deleted", len(result.VolumesDeleted)),
-		slog.Int("networks_deleted", len(result.NetworksDeleted)),
-		slog.Uint64("space_reclaimed", result.SpaceReclaimed),
-		slog.Int("error_count", len(result.Errors)))
+	slog.InfoContext(ctx, "Selective prune operation completed", "success", result.Success, "containers_pruned", len(result.ContainersPruned), "images_deleted", len(result.ImagesDeleted), "volumes_deleted", len(result.VolumesDeleted), "networks_deleted", len(result.NetworksDeleted), "space_reclaimed", result.SpaceReclaimed, "error_count", len(result.Errors))
 
 	return result, nil
 }
@@ -295,7 +280,7 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *system.Prun
 }
 
 func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, result *system.PruneAllResult) error {
-	slog.DebugContext(ctx, "Starting image pruning", slog.Bool("dangling_only", danglingOnly))
+	slog.DebugContext(ctx, "Starting image pruning", "dangling_only", danglingOnly)
 
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
@@ -317,9 +302,7 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 		return fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Image pruning completed",
-		slog.Int("images_deleted", len(report.ImagesDeleted)),
-		slog.Uint64("bytes_reclaimed", report.SpaceReclaimed))
+	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.ImagesDeleted), "bytes_reclaimed", report.SpaceReclaimed)
 
 	// Collect IDs to delete from DB
 	var idsToDelete []string
@@ -334,9 +317,7 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 	// Batch delete update records
 	if len(idsToDelete) > 0 && s.db != nil {
 		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error; err != nil {
-			slog.WarnContext(ctx, "Failed to delete image update records",
-				slog.Int("count", len(idsToDelete)),
-				slog.String("error", err.Error()))
+			slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
 		}
 	}
 
@@ -349,7 +330,7 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed (connection): %w", err).Error())
-		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", "error", err.Error())
 		return fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
 	}
 
@@ -357,18 +338,15 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 		All: pruneAllCache,
 	}
 
-	slog.DebugContext(ctx, "starting build cache pruning", slog.Bool("prune_all", pruneAllCache))
+	slog.DebugContext(ctx, "starting build cache pruning", "prune_all", pruneAllCache)
 	report, err := dockerClient.BuildCachePrune(ctx, options)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed: %w", err).Error())
-		slog.ErrorContext(ctx, "Error pruning build cache", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
 		return fmt.Errorf("failed to prune build cache: %w", err)
 	}
 
-	slog.InfoContext(ctx, "build cache pruning completed",
-		slog.Int("cache_entries_deleted", len(report.CachesDeleted)),
-		slog.Uint64("bytes_reclaimed", report.SpaceReclaimed),
-	)
+	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.CachesDeleted), "bytes_reclaimed", report.SpaceReclaimed)
 
 	result.SpaceReclaimed += report.SpaceReclaimed
 	return nil
@@ -385,9 +363,7 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAl
 		return err
 	}
 
-	slog.InfoContext(ctx, "Volume prune completed",
-		slog.Int("volumes_deleted", len(report.VolumesDeleted)),
-		slog.Uint64("space_reclaimed", report.SpaceReclaimed))
+	slog.InfoContext(ctx, "Volume prune completed", "volumes_deleted", len(report.VolumesDeleted), "space_reclaimed", report.SpaceReclaimed)
 
 	result.VolumesDeleted = report.VolumesDeleted
 	result.SpaceReclaimed += report.SpaceReclaimed
@@ -401,8 +377,7 @@ func (s *SystemService) pruneNetworks(ctx context.Context, result *system.PruneA
 		return err
 	}
 
-	slog.InfoContext(ctx, "Network prune completed",
-		slog.Int("networks_deleted", len(report.NetworksDeleted)))
+	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.NetworksDeleted))
 
 	result.NetworksDeleted = report.NetworksDeleted
 	return nil

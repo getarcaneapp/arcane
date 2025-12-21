@@ -555,6 +555,13 @@ func stringToPtr(s string) *string {
 	return &s
 }
 
+func stringPtrToString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *models.ImageUpdateRecord {
 	currentVersion := result.CurrentVersion
 	if currentVersion == "" {
@@ -596,6 +603,26 @@ func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID s
 		repo, tag := extractRepoAndTagFromImage(dockerImage)
 		updateRecord := buildImageUpdateRecord(imageID, repo, tag, result)
 
+		// Check if there's an existing record to compare state changes
+		var existingRecord models.ImageUpdateRecord
+		if err := tx.Where("id = ?", imageID).First(&existingRecord).Error; err == nil {
+			// Existing record found - check if we need to reset notification_sent
+			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
+			digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
+			versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
+
+			// Reset notification_sent if the update state changed in any way
+			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
+				updateRecord.NotificationSent = false
+			} else {
+				// Keep the existing notification_sent value if nothing changed
+				updateRecord.NotificationSent = existingRecord.NotificationSent
+			}
+		} else {
+			// New record - start with notification_sent = false
+			updateRecord.NotificationSent = false
+		}
+
 		return tx.Save(updateRecord).Error
 	})
 }
@@ -611,6 +638,34 @@ func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef strin
 		return "", fmt.Errorf("image not found: %w", err)
 	}
 	return inspectResponse.ID, nil
+}
+
+// GetUnnotifiedUpdates returns a map of image IDs that have updates but haven't been notified yet
+func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[string]*models.ImageUpdateRecord, error) {
+	var records []models.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).
+		Where("has_update = ? AND notification_sent = ?", true, false).
+		Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("failed to get unnotified updates: %w", err)
+	}
+
+	result := make(map[string]*models.ImageUpdateRecord)
+	for i := range records {
+		result[records[i].ID] = &records[i]
+	}
+	return result, nil
+}
+
+// MarkUpdatesAsNotified marks the given image IDs as having been notified
+func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, imageIDs []string) error {
+	if len(imageIDs) == 0 {
+		return nil
+	}
+
+	return s.db.WithContext(ctx).
+		Model(&models.ImageUpdateRecord{}).
+		Where("id IN ?", imageIDs).
+		Update("notification_sent", true).Error
 }
 
 type batchCred struct {
@@ -926,8 +981,53 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		"duration", time.Since(startBatch))
 
 	if s.notificationService != nil {
-		if notifErr := s.notificationService.SendBatchImageUpdateNotification(ctx, results); notifErr != nil {
-			slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
+		// Use a context with timeout for notifications
+		notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		// Get only the updates that haven't been notified yet
+		unnotifiedUpdates, err := s.GetUnnotifiedUpdates(notifCtx)
+		switch {
+		case err != nil:
+			slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
+		case len(unnotifiedUpdates) > 0:
+			// Convert unnotified records to the format expected by notification service
+			updatesToNotify := make(map[string]*imageupdate.Response)
+			imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
+
+			for imageID, record := range unnotifiedUpdates {
+				// Construct image ref from repository and tag
+				imageRef := fmt.Sprintf("%s:%s", record.Repository, record.Tag)
+				updatesToNotify[imageRef] = &imageupdate.Response{
+					HasUpdate:      record.HasUpdate,
+					UpdateType:     record.UpdateType,
+					CurrentVersion: record.CurrentVersion,
+					LatestVersion:  stringPtrToString(record.LatestVersion),
+					CurrentDigest:  stringPtrToString(record.CurrentDigest),
+					LatestDigest:   stringPtrToString(record.LatestDigest),
+					CheckTime:      record.CheckTime,
+					ResponseTimeMs: record.ResponseTimeMs,
+					Error:          stringPtrToString(record.LastError),
+					AuthMethod:     stringPtrToString(record.AuthMethod),
+					AuthUsername:   stringPtrToString(record.AuthUsername),
+					AuthRegistry:   stringPtrToString(record.AuthRegistry),
+					UsedCredential: record.UsedCredential,
+				}
+				imageIDsToMark = append(imageIDsToMark, imageID)
+			}
+
+			slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
+
+			if notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify); notifErr != nil {
+				slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
+			} else {
+				// Mark the images as notified only if notification was successful
+				if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {
+					slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
+				}
+			}
+		default:
+			slog.DebugContext(ctx, "No new updates to notify")
 		}
 	}
 

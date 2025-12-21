@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
@@ -57,19 +57,19 @@
 			const user = effectiveUpdateInfo?.authUsername;
 			return {
 				label: user ? m.image_update_auth_credential_with_user({ username: user }) : m.image_update_auth_credential(),
-				classes: 'border-amber-200/60 text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
+				classes: 'border-amber-200/60 text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
 			};
 		}
 		if (mth === 'anonymous') {
 			return {
 				label: m.image_update_auth_anonymous(),
-				classes: 'border-slate-200/60 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
+				classes: 'border-slate-200/60 text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
 			};
 		}
 		if (mth === 'none') {
 			return {
 				label: m.image_update_auth_none(),
-				classes: 'border-gray-200/60 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
+				classes: 'border-gray-200/60 text-gray-800 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
 			};
 		}
 		return null;
@@ -197,11 +197,11 @@
 
 {#snippet recheckButton()}
 	{#if canCheckUpdate}
-		<div class="border-t border-gray-200/50 bg-gray-50/50 p-3 dark:border-gray-800/50 dark:bg-gray-900/50">
+		<div class="border-border/50 bg-muted/50 border-t p-3">
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
 					onclick={handleUpdateContainer}
-					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-600 hover:shadow-md"
+					class="group bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md"
 				>
 					<CircleArrowUpIcon class="size-3" />
 					{m.containers_update_container()}
@@ -210,7 +210,7 @@
 				<button
 					onclick={checkImageUpdate}
 					disabled={isChecking}
-					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-xs font-medium text-gray-700 shadow-sm transition-all hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800"
+					class="group bg-secondary/80 text-secondary-foreground hover:bg-secondary flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{#if isChecking}
 						<Spinner class="size-3" />
@@ -230,13 +230,13 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(AlertIcon, 'from-rose-500', 'to-red-500', 'shadow-red-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-red-900 dark:text-red-100">{m.image_update_check_failed_title()}</div>
-				<div class="text-xs text-red-700/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
+				<div class="text-sm font-semibold text-red-950 dark:text-red-100">{m.image_update_check_failed_title()}</div>
+				<div class="text-xs text-red-900/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	<div class="bg-white/90 p-4 dark:bg-gray-950/90">
+	<div class="bg-transparent p-4">
 		<div class="space-y-3">
 			<div class="text-xs text-gray-600 dark:text-gray-300">
 				<span class="font-medium">{m.image_update_error_label()}</span>
@@ -257,21 +257,21 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(VerifiedCheckIcon, 'from-emerald-500', 'to-green-500', 'shadow-emerald-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+				<div class="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
 					{m.image_update_up_to_date_title()}
 				</div>
-				<div class="text-xs text-emerald-700/80 dark:text-emerald-300/80">{m.image_update_up_to_date_desc()}</div>
+				<div class="text-xs text-emerald-900/80 dark:text-emerald-300/80">{m.image_update_up_to_date_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	<div class="bg-white/90 p-4 dark:bg-gray-950/90">
+	<div class="bg-transparent p-4">
 		<div class="text-center">
-			<div class="mb-2 text-xs text-gray-600 dark:text-gray-400">
+			<div class="text-muted-foreground mb-2 text-xs">
 				{m.common_running()}
-				<span class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs font-medium dark:bg-gray-800">{currentVersion}</span>
+				<span class="bg-muted rounded px-1.5 py-0.5 font-mono text-xs font-medium">{currentVersion}</span>
 			</div>
-			<div class="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+			<div class="text-muted-foreground text-xs leading-relaxed">
 				{m.image_update_up_to_date_desc()}
 			</div>
 		</div>
@@ -284,28 +284,28 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(CircleArrowUpIcon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">{m.image_update_digest_title()}</div>
-				<div class="text-xs text-blue-700/80 dark:text-blue-300/80">{m.image_update_digest_desc()}</div>
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_digest_title()}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_digest_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	<div class="bg-white/90 p-4 dark:bg-gray-950/90">
+	<div class="bg-transparent p-4">
 		<div class="space-y-3">
 			<div class="space-y-2 text-xs">
-				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-gray-100 dark:bg-gray-800', '')}
+				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
 				{#if latestVersion}
 					{@render versionDisplay(
 						m.image_update_latest_digest_label(),
 						latestVersion,
 						'bg-blue-100 dark:bg-blue-900/30',
-						'text-blue-700 dark:text-blue-300'
+						'text-blue-800 dark:text-blue-300'
 					)}
 				{/if}
 			</div>
 			{#if updatePriority}
 				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-blue-700 dark:text-blue-300">
+					<div class="text-center text-xs leading-relaxed font-medium text-blue-800 dark:text-blue-300">
 						{updatePriority.description}
 					</div>
 				</div>
@@ -320,28 +320,28 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(CircleArrowUpIcon, 'from-amber-500', 'to-yellow-500', 'shadow-amber-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{m.image_update_version_title()}</div>
-				<div class="text-xs text-amber-700/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
+				<div class="text-sm font-semibold text-amber-950 dark:text-amber-100">{m.image_update_version_title()}</div>
+				<div class="text-xs text-amber-900/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	<div class="bg-white/90 p-4 dark:bg-gray-950/90">
+	<div class="bg-transparent p-4">
 		<div class="space-y-3">
 			<div class="space-y-2 text-xs">
-				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-gray-100 dark:bg-gray-800', '')}
+				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
 				{#if latestVersion}
 					{@render versionDisplay(
 						m.image_update_latest_label(),
 						latestVersion,
 						'bg-amber-100 dark:bg-amber-900/30',
-						'text-amber-700 dark:text-amber-300'
+						'text-amber-800 dark:text-amber-300'
 					)}
 				{/if}
 			</div>
 			{#if updatePriority}
 				<div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-amber-700 dark:text-amber-300">
+					<div class="text-center text-xs leading-relaxed font-medium text-amber-800 dark:text-amber-300">
 						{updatePriority.description}
 					</div>
 				</div>
@@ -356,8 +356,8 @@
 		<div class="flex items-center gap-3">
 			{@render iconCircle(Spinner, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
 			<div>
-				<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">{m.image_update_checking_title()}</div>
-				<div class="text-xs text-blue-700/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_checking_title()}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
 			</div>
 		</div>
 	</div>
@@ -368,8 +368,8 @@
 		<div class="flex items-center gap-3">
 			{@render iconCircle(AlertIcon, 'from-gray-400', 'to-slate-500', 'shadow-gray-400/25')}
 			<div>
-				<div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.image_update_status_unknown()}</div>
-				<div class="text-xs text-gray-700/80 dark:text-gray-300/80">
+				<div class="text-sm font-semibold text-gray-950 dark:text-gray-100">{m.image_update_status_unknown()}</div>
+				<div class="text-xs text-gray-800 dark:text-gray-300/80">
 					{#if canCheckUpdate}
 						{m.image_update_click_to_check()}
 					{:else}
@@ -382,95 +382,74 @@
 {/snippet}
 
 {#if effectiveUpdateInfo}
-	<Tooltip.Provider>
-		<Tooltip.Root bind:open={isOpen}>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
-					{#if hasError}
-						<AlertIcon class="size-4 text-red-500" />
-					{:else if !effectiveUpdateInfo.hasUpdate}
-						<VerifiedCheckIcon class="size-4 text-green-500" />
-					{:else if effectiveUpdateInfo.updateType === 'digest'}
-						<CircleArrowUpIcon class="size-4 text-blue-500" />
-					{:else}
-						<CircleArrowUpIcon class="size-4 text-yellow-500" />
-					{/if}
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[280px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{#if hasError}
-						{@render errorState()}
-					{:else if !effectiveUpdateInfo.hasUpdate}
-						{@render successState()}
-					{:else if effectiveUpdateInfo.updateType === 'digest'}
-						{@render digestUpdateState()}
-					{:else}
-						{@render versionUpdateState()}
-					{/if}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<ArcaneTooltip.Root bind:open={isOpen}>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
+				{#if hasError}
+					<AlertIcon class="size-4 text-red-500" />
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					<VerifiedCheckIcon class="size-4 text-green-500" />
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					<CircleArrowUpIcon class="size-4 text-blue-500" />
+				{:else}
+					<CircleArrowUpIcon class="size-4 text-yellow-500" />
+				{/if}
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[280px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{#if hasError}
+					{@render errorState()}
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					{@render successState()}
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					{@render digestUpdateState()}
+				{:else}
+					{@render versionUpdateState()}
+				{/if}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {:else if isLoadingInBackground || isChecking}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center">
-					<Spinner class="size-4 text-blue-400" />
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[220px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{@render loadingState()}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				<Spinner class="size-4 text-blue-400" />
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[220px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{@render loadingState()}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {:else}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<span class="mr-2 inline-flex size-4 items-center justify-center">
-					{#if canCheckUpdate}
-						<button
-							onclick={checkImageUpdate}
-							disabled={isChecking}
-							class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
-						>
-							{#if isChecking}
-								<Spinner class="h-2 w-2 text-blue-400" />
-							{:else}
-								<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
-							{/if}
-						</button>
-					{:else}
-						<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
-							<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
-						</div>
-					{/if}
-				</span>
-			</Tooltip.Trigger>
-			<Tooltip.Content
-				side="right"
-				class="tooltip-with-arrow relative max-w-[240px] rounded-xl border border-gray-200/50 bg-white/95 p-0 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-gray-800/50 dark:bg-gray-950/95 dark:shadow-black/30"
-				arrowClasses="bg-popover"
-				align="center"
-			>
-				<div class="overflow-hidden rounded-xl">
-					{@render unknownState()}
-				</div>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+	<ArcaneTooltip.Root interactive>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				{#if canCheckUpdate}
+					<button
+						onclick={checkImageUpdate}
+						disabled={isChecking}
+						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
+					>
+						{#if isChecking}
+							<Spinner class="h-2 w-2 text-blue-400" />
+						{:else}
+							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+						{/if}
+					</button>
+				{:else}
+					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
+						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+					</div>
+				{/if}
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[240px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{@render unknownState()}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/if}

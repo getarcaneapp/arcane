@@ -10,12 +10,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
-	import {
-		type LayerProgress,
-		isDownloadingLine,
-		calculateOverallProgress,
-		areAllLayersComplete
-	} from '$lib/utils/pull-progress';
+	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
 
 	type TargetType = 'container' | 'project';

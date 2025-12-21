@@ -287,7 +287,7 @@
 	}
 </script>
 
-<div class="flex min-h-[calc(100vh-5rem-2.5rem)] flex-col space-y-8">
+<div class="flex min-h-full flex-col space-y-8">
 	<div class="flex flex-col gap-4">
 		<div class="flex items-start justify-between gap-3">
 			<div class="flex-1 space-y-1">

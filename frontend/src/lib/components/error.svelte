@@ -1,8 +1,9 @@
 <script lang="ts">
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { Button } from '$lib/components/ui/button';
 	import { m } from '$lib/paraglide/messages';
 	import { ErrorNotFoundIcon } from '$lib/icons';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { goto } from '$app/navigation';
 
 	let {
 		message,
@@ -33,7 +34,7 @@
 		<Empty.Content>
 			{#if showButton}
 				<Empty.Content>
-					<Button href={actionHref}>{actionLabel}</Button>
+					<ArcaneButton action="base" customLabel={actionLabel} onclick={() => goto(actionHref)} />
 				</Empty.Content>
 			{/if}
 		</Empty.Content>

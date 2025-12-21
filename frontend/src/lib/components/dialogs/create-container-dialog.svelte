@@ -2,7 +2,7 @@
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -429,22 +429,27 @@
 												<Input type="text" placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
 												<span class="text-muted-foreground hidden font-mono sm:inline">=</span>
 												<Input type="text" placeholder="value" bind:value={env.value} disabled={isLoading} class="flex-1" />
-												<Button
-													type="button"
-													variant="ghost"
+												<ArcaneButton
+													action="base"
+													tone="ghost"
 													size="icon"
 													onclick={() => removeEnvVar(index)}
 													disabled={isLoading || envVars.length <= 1}
 													class="text-destructive hover:text-destructive shrink-0"
-												>
-													<CloseIcon class="size-4" />
-												</Button>
+													icon={CloseIcon}
+												/>
 											</div>
 										{/each}
-										<Button type="button" variant="outline" size="sm" onclick={addEnvVar} disabled={isLoading} class="w-full">
-											<AddIcon class="mr-2 size-4" />
-											{m.add_env_var_button()}
-										</Button>
+										<ArcaneButton
+											action="base"
+											tone="outline"
+											size="sm"
+											onclick={addEnvVar}
+											disabled={isLoading}
+											class="w-full"
+											icon={AddIcon}
+											customLabel={m.add_env_var_button()}
+										/>
 									</div>
 								</div>
 							</div>
@@ -508,31 +513,29 @@
 															<option value="tcp">TCP</option>
 															<option value="udp">UDP</option>
 														</select>
-														<Button
-															type="button"
-															variant="ghost"
+														<ArcaneButton
+															action="base"
+															tone="ghost"
 															size="icon"
 															onclick={() => removePortMapping(index)}
 															disabled={isLoading || portMappings.length <= 1}
 															class="text-destructive hover:text-destructive shrink-0"
-														>
-															<CloseIcon class="size-4" />
-														</Button>
+															icon={CloseIcon}
+														/>
 													</div>
 												</div>
 											</div>
 										{/each}
-										<Button
-											type="button"
-											variant="outline"
+										<ArcaneButton
+											action="base"
+											tone="outline"
 											size="sm"
 											onclick={addPortMapping}
 											disabled={isLoading}
 											class="w-full"
-										>
-											<AddIcon class="mr-2 size-4" />
-											{m.add_port_mapping_button()}
-										</Button>
+											icon={AddIcon}
+											customLabel={m.add_port_mapping_button()}
+										/>
 									</div>
 								</div>
 							</div>
@@ -585,16 +588,15 @@
 														disabled={isLoading}
 														class="flex-1"
 													/>
-													<Button
-														type="button"
-														variant="ghost"
+													<ArcaneButton
+														action="base"
+														tone="ghost"
 														size="icon"
 														onclick={() => removeVolumeMount(index)}
 														disabled={isLoading || volumeMounts.length <= 1}
 														class="text-destructive hover:text-destructive shrink-0 self-end sm:self-auto"
-													>
-														<CloseIcon class="size-4" />
-													</Button>
+														icon={CloseIcon}
+													/>
 												</div>
 												<div class="flex items-center space-x-2 pl-0 sm:pl-3">
 													<Checkbox bind:checked={mount.readonly} disabled={isLoading} />
@@ -602,17 +604,16 @@
 												</div>
 											</div>
 										{/each}
-										<Button
-											type="button"
-											variant="outline"
+										<ArcaneButton
+											action="base"
+											tone="outline"
 											size="sm"
 											onclick={addVolumeMount}
 											disabled={isLoading}
 											class="w-full"
-										>
-											<AddIcon class="mr-2 size-4" />
-											{m.add_volume_mount_button()}
-										</Button>
+											icon={AddIcon}
+											customLabel={m.add_volume_mount_button()}
+										/>
 									</div>
 								</div>
 							</div>
@@ -740,18 +741,16 @@
 
 	{#snippet footer()}
 		<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-			<Button type="button" variant="outline" onclick={() => (open = false)} disabled={isLoading} class="w-full sm:w-auto">
-				{m.common_cancel()}
-			</Button>
-			<Button type="submit" form="create-container-form" disabled={isLoading} class="w-full sm:w-auto">
-				{#if isLoading}
-					<Spinner class="size-4" />
-					{m.common_action_creating()}
-				{:else}
-					<AddIcon class="size-4" />
-					{m.common_create_button({ resource: m.resource_container_cap() })}
-				{/if}
-			</Button>
+			<ArcaneButton action="cancel" tone="outline" onclick={() => (open = false)} disabled={isLoading} class="w-full sm:w-auto" />
+			<ArcaneButton
+				action="create"
+				form="create-container-form"
+				type="submit"
+				disabled={isLoading}
+				loading={isLoading}
+				class="w-full sm:w-auto"
+				customLabel={m.common_create_button({ resource: m.resource_container_cap() })}
+			/>
 		</div>
 	{/snippet}
 </ResponsiveDialog>

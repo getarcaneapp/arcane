@@ -52,38 +52,28 @@ type Settings struct {
 	EnvironmentHealthInterval SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=number;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime;category=general;description=How often to check environment connectivity in minutes (default: 2)"`
 	AccentColor               SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
 
-	// Deprecated: OnboardingCompleted is no longer used as of the onboarding removal.
-	// This field is kept for backward compatibility and is automatically set to true on startup.
-	// This will be removed in a future release.
-	OnboardingCompleted SettingVariable `key:"onboardingCompleted,public" meta:"label=Onboarding Completed;type=boolean;keywords=onboarding,completed,setup,first-run;category=general;description=Whether onboarding has been completed"`
-
-	// Deprecated: OnboardingSteps is no longer used as of the onboarding removal.
-	// This field is kept for backward compatibility only.
-	// This will be removed in a future release.
-	OnboardingSteps SettingVariable `key:"onboardingSteps" meta:"label=Onboarding Steps;type=text;keywords=onboarding,steps,progress,guide;category=general;description=Serialized onboarding steps"`
-
 	// Docker category
-	AutoUpdate         SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=docker;description=Automatically update containers when new images are available" catmeta:"id=docker;title=Docker;icon=database;url=/settings/docker;description=Configure Docker settings, polling, and auto-updates"`
-	AutoUpdateInterval SettingVariable `key:"autoUpdateInterval" meta:"label=Auto Update Interval;type=number;keywords=auto,update,interval,frequency,schedule,automatic,timing;category=docker;description=Interval between automatic updates"`
-	PollingEnabled     SettingVariable `key:"pollingEnabled" meta:"label=Enable Polling;type=boolean;keywords=polling,check,monitor,watch,scan,detection,automatic;category=docker;description=Enable automatic checking for image updates"`
-	PollingInterval    SettingVariable `key:"pollingInterval" meta:"label=Polling Interval;type=number;keywords=interval,frequency,schedule,time,minutes,period,delay;category=docker;description=How often to check for image updates"`
-	PruneMode          SettingVariable `key:"dockerPruneMode" meta:"label=Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk;category=docker;description=Configure how unused Docker images are cleaned up"`
-	MaxImageUploadSize SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=docker;description=Maximum size in MB for image archive uploads (default: 500)"`
-	DockerHost         SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=docker;description=URI for Docker daemon"`
+	AutoUpdate         SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`
+	AutoUpdateInterval SettingVariable `key:"autoUpdateInterval" meta:"label=Auto Update Interval;type=number;keywords=auto,update,interval,frequency,schedule,automatic,timing;category=internal;description=Interval between automatic updates"`
+	PollingEnabled     SettingVariable `key:"pollingEnabled" meta:"label=Enable Polling;type=boolean;keywords=polling,check,monitor,watch,scan,detection,automatic;category=internal;description=Enable automatic checking for image updates"`
+	PollingInterval    SettingVariable `key:"pollingInterval" meta:"label=Polling Interval;type=number;keywords=interval,frequency,schedule,time,minutes,period,delay;category=internal;description=How often to check for image updates"`
+	PruneMode          SettingVariable `key:"dockerPruneMode" meta:"label=Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk;category=internal;description=Configure how unused Docker images are cleaned up"`
+	MaxImageUploadSize SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
+	DockerHost         SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
 
 	// Security category
 	AuthLocalEnabled   SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=security;description=Enable local username/password authentication" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Manage authentication and security settings"`
 	AuthSessionTimeout SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=security;description=How long user sessions remain active"`
 	AuthPasswordPolicy SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=security;description=Set password strength requirements"`
 	AuthOidcConfig     SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=security;description=OIDC provider configuration (deprecated - use individual fields)"`
-	OidcEnabled        SettingVariable `key:"oidcEnabled,public" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=security;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId       SettingVariable `key:"oidcClientId,public" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=security;description=OIDC provider client ID"`
-	OidcClientSecret   SettingVariable `key:"oidcClientSecret,sensitive" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=security;description=OIDC provider client secret"`
-	OidcIssuerUrl      SettingVariable `key:"oidcIssuerUrl,public" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=security;description=OIDC provider issuer URL"`
-	OidcScopes         SettingVariable `key:"oidcScopes,public" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
-	OidcAdminClaim     SettingVariable `key:"oidcAdminClaim,public" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
-	OidcAdminValue     SettingVariable `key:"oidcAdminValue,public" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
-	OidcMergeAccounts  SettingVariable `key:"oidcMergeAccounts,public" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
+	OidcEnabled        SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=security;description=Enable OpenID Connect (OIDC) authentication"`
+	OidcClientId       SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=security;description=OIDC provider client ID"`
+	OidcClientSecret   SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=security;description=OIDC provider client secret"`
+	OidcIssuerUrl      SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=security;description=OIDC provider issuer URL"`
+	OidcScopes         SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
+	OidcAdminClaim     SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
+	OidcAdminValue     SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
+	OidcMergeAccounts  SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
 
 	// Appearance category
 	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,public,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`

@@ -31,11 +31,11 @@ jobs:
         module: [backend, cli, types]
         include:
           - module: backend
-            args: --build-tags=exclude_frontend
+            args: --build-tags=exclude_frontend --config=.golangci.yml
           - module: cli
-            args: ""
+            args: --config=../backend/.golangci.yml
           - module: types
-            args: ""
+            args: --config=../backend/.golangci.yml
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -49,7 +49,7 @@ jobs:
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6.1
+          version: v2.7.2
           args: ${{ matrix.args }}
           working-directory: ${{ matrix.module }}
           only-new-issues: ${{ github.event_name == 'pull_request' }}

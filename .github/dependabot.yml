@@ -4,13 +4,21 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
-    open-pull-requests-limit: 10
 
   - package-ecosystem: 'gomod'
-    directory: '/'
+    directory: '/backend'
     schedule:
       interval: 'weekly'
-    open-pull-requests-limit: 10
+
+  - package-ecosystem: 'gomod'
+    directory: '/cli'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'gomod'
+    directory: '/types'
+    schedule:
+      interval: 'weekly'
 
   - package-ecosystem: 'github-actions'
     directory: '/'

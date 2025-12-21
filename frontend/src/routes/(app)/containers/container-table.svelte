@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -23,7 +23,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
@@ -367,55 +367,55 @@
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => performContainerAction('start', item.id)}
 					disabled={isAnyLoading}
+					icon={StartIcon}
 					title={m.common_start()}
-				>
-					<StartIcon class="size-3.5" />
-				</Button>
+				/>
 			{:else if !status && item.state === 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => performContainerAction('stop', item.id)}
 					disabled={isAnyLoading}
 					title={m.common_stop()}
-				>
-					<StopIcon class="size-3.5" />
-				</Button>
+					icon={StopIcon}
+				/>
 			{/if}
 			{#if !status && item.updateInfo?.hasUpdate}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
 					title={m.containers_update_container()}
-				>
-					<UpdateIcon class="size-3.5" />
-				</Button>
+					icon={UpdateIcon}
+				/>
 			{/if}
 		</div>
 	</div>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			<span class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
 				{item.image}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<p>{item.image}</p>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content>
+			<p>{item.image}</p>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
@@ -519,10 +519,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
 					<span class="sr-only">{m.common_open_menu()}</span>
 					<EllipsisIcon />
-				</Button>
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -623,7 +623,13 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table, renderPagination }: { table: TableType<ContainerSummaryDto>; renderPagination: import('svelte').Snippet })}
+{#snippet GroupedTableView({
+	table,
+	renderPagination
+}: {
+	table: TableType<ContainerSummaryDto>;
+	renderPagination: import('svelte').Snippet;
+})}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar

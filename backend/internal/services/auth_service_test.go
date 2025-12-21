@@ -7,11 +7,24 @@ import (
 	"testing"
 	"time"
 
+	glsqlite "github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+func setupAuthServiceTestDB(t *testing.T) *database.DB {
+	t.Helper()
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}))
+	return &database.DB{DB: db}
+}
 
 func newTestAuthService(secret string) *AuthService {
 	if secret == "" {
@@ -231,4 +244,80 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 	if !status.EnvForced || !status.EnvConfigured {
 		t.Errorf("expected enabled and configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
 	}
+}
+
+func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_CreatesNewUser(t *testing.T) {
+	ctx := context.Background()
+	db := setupAuthServiceTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
+
+	userSvc := NewUserService(db)
+	authSvc := newTestAuthService("")
+	authSvc.userService = userSvc
+	authSvc.settingsService = settingsSvc
+
+	userInfo := auth.OidcUserInfo{
+		Subject:       "sub-123",
+		Email:         "new@example.com",
+		EmailVerified: false, // provider omitted/false
+	}
+
+	created, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
+	require.NoError(t, err)
+	require.True(t, isNew)
+	require.NotNil(t, created)
+	require.NotNil(t, created.OidcSubjectId)
+	require.Equal(t, userInfo.Subject, *created.OidcSubjectId)
+	require.NotNil(t, created.Email)
+	require.Equal(t, userInfo.Email, *created.Email)
+	require.NotEmpty(t, created.Username)
+
+	// Ensure the user actually persisted
+	fetched, err := userSvc.GetUserByOidcSubjectId(ctx, userInfo.Subject)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, fetched.ID)
+}
+
+func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	db := setupAuthServiceTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
+
+	userSvc := NewUserService(db)
+	// Seed an existing local user with matching email
+	email := "existing@example.com"
+	existing := &models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "existing",
+		Email:     &email,
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(ctx, existing)
+	require.NoError(t, err)
+
+	authSvc := newTestAuthService("")
+	authSvc.userService = userSvc
+	authSvc.settingsService = settingsSvc
+
+	userInfo := auth.OidcUserInfo{
+		Subject:       "sub-merge",
+		Email:         email,
+		EmailVerified: false,
+	}
+
+	_, _, err = authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
+	require.Error(t, err)
+
+	// Ensure existing user is not linked
+	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
+	require.NoError(t, err)
+	require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
 }

@@ -407,10 +407,7 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	// Fetch latest digest from registry
 	latestDigest, err := s.containerRegistryService.GetImageDigest(ctx, imageRef)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to fetch latest digest for tag",
-			"tag", currentTag,
-			"error", err,
-		)
+		slog.WarnContext(ctx, "Failed to fetch latest digest for tag", "tag", currentTag, "error", err)
 		return false, ""
 	}
 
@@ -418,11 +415,7 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	updateAvailable = currentDigest != latestDigest && latestDigest != ""
 
 	if updateAvailable {
-		slog.InfoContext(ctx, "Digest-based update available",
-			"tag", currentTag,
-			"currentDigest", currentDigest,
-			"latestDigest", latestDigest,
-		)
+		slog.InfoContext(ctx, "Digest-based update available", "tag", currentTag, "currentDigest", currentDigest, "latestDigest", latestDigest)
 	}
 
 	return updateAvailable, latestDigest

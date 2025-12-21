@@ -274,6 +274,11 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
 
+	// Ensure ID is mapped correctly
+	if out.ID == "" {
+		out.ID = networkInspect.ID
+	}
+
 	// Populate ContainersList
 	out.ContainersList = make([]networktypes.ContainerEndpoint, 0, len(out.Containers))
 	for id, container := range out.Containers {

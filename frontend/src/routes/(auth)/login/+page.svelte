@@ -1,16 +1,17 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, ArrowRightIcon, GithubIcon, OpenIdIcon, LoginIcon } from '$lib/icons';
+	import { AlertIcon, LockIcon, UserIcon, GithubIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
 	import { getApplicationLogo } from '$lib/utils/image.util';
+	import { Motion } from 'svelte-motion';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -19,7 +20,6 @@
 	let username = $state('');
 	let password = $state('');
 
-	// Make logo URL reactive to accent color changes
 	let logoUrl = $derived(getApplicationLogo());
 
 	const oidcEnabledBySettings = $derived(data.settings?.oidcEnabled === true);
@@ -58,51 +58,67 @@
 
 	const showDivider = $derived(showOidcLoginButton && showLocalLoginForm);
 
-	// Generate random starting positions for each orb
-	const orb1X = Math.random() * 80 - 40;
-	const orb1Y = Math.random() * 80 - 40;
-	const orb2X = Math.random() * 80 - 40;
-	const orb2Y = Math.random() * 80 - 40;
-	const orb3X = Math.random() * 80 - 40;
-	const orb3Y = Math.random() * 80 - 40;
-	const orb4X = Math.random() * 80 - 40;
-	const orb4Y = Math.random() * 80 - 40;
+	function getOrbAnimation(startX: number, startY: number, duration: number, delay: number) {
+		const xOffset = startX * 4;
+		const yOffset = startY * 4;
 
-	// Add random delay for each orb to create natural animation
-	const orb1Delay = Math.random() * 2;
-	const orb2Delay = Math.random() * 2;
-	const orb3Delay = Math.random() * 2;
-	const orb4Delay = Math.random() * 2;
+		return {
+			animate: {
+				x: [-20 + xOffset, 60 + xOffset, 20 + xOffset, -80 + xOffset, -20 + xOffset],
+				y: [-20 + yOffset, -80 + yOffset, 20 + yOffset, 60 + yOffset, -20 + yOffset],
+				scale: [1, 1.15, 0.95, 1.1, 1]
+			},
+			transition: {
+				duration: duration,
+				ease: 'easeInOut',
+				repeat: Infinity,
+				delay: delay
+			}
+		};
+	}
+
+	const orb1Anim = getOrbAnimation(-20, 30, 18, 0.5);
+	const orb2Anim = getOrbAnimation(35, -10, 22, 1.2);
+	const orb3Anim = getOrbAnimation(-15, -30, 20, 0.8);
+	const orb4Anim = getOrbAnimation(25, 15, 16, 1.8);
 </script>
 
 <div class="fixed inset-0 overflow-hidden">
-	<div
-		class="bg-primary orb absolute top-[-150px] left-[10%] h-[330px] w-[330px] rounded-full opacity-30 blur-[57px] md:h-[500px] md:w-[500px] md:blur-[85px]"
-		style="--start-x: {orb1X}; --start-y: {orb1Y}; --orb-delay: {orb1Delay}s; --orb-duration: 18s;"
-	></div>
-	<div
-		class="bg-primary orb absolute right-[15%] bottom-[-150px] h-[280px] w-[280px] rounded-full opacity-30 blur-[57px] md:h-[420px] md:w-[420px] md:blur-[85px]"
-		style="--start-x: {orb2X}; --start-y: {orb2Y}; --orb-delay: {orb2Delay}s; --orb-duration: 22s;"
-	></div>
-	<div
-		class="bg-primary orb absolute top-[20%] right-[-120px] h-[250px] w-[250px] rounded-full opacity-30 blur-[57px] md:h-[380px] md:w-[380px] md:blur-[85px]"
-		style="--start-x: {orb3X}; --start-y: {orb3Y}; --orb-delay: {orb3Delay}s; --orb-duration: 20s;"
-	></div>
-	<div
-		class="bg-primary orb absolute bottom-[30%] left-[-100px] h-[210px] w-[210px] rounded-full opacity-30 blur-[57px] md:h-[320px] md:w-[320px] md:blur-[85px]"
-		style="--start-x: {orb4X}; --start-y: {orb4Y}; --orb-delay: {orb4Delay}s; --orb-duration: 16s;"
-	></div>
+	<Motion animate={orb1Anim.animate} transition={orb1Anim.transition} let:motion>
+		<div
+			use:motion
+			class="bg-primary absolute top-[-150px] left-[10%] h-[330px] w-[330px] rounded-full opacity-30 blur-[57px] md:h-[500px] md:w-[500px] md:blur-[85px]"
+		></div>
+	</Motion>
+	<Motion animate={orb2Anim.animate} transition={orb2Anim.transition} let:motion>
+		<div
+			use:motion
+			class="bg-primary absolute right-[15%] bottom-[-150px] h-[280px] w-[280px] rounded-full opacity-30 blur-[57px] md:h-[420px] md:w-[420px] md:blur-[85px]"
+		></div>
+	</Motion>
+	<Motion animate={orb3Anim.animate} transition={orb3Anim.transition} let:motion>
+		<div
+			use:motion
+			class="bg-primary absolute top-[20%] right-[-120px] h-[250px] w-[250px] rounded-full opacity-30 blur-[57px] md:h-[380px] md:w-[380px] md:blur-[85px]"
+		></div>
+	</Motion>
+	<Motion animate={orb4Anim.animate} transition={orb4Anim.transition} let:motion>
+		<div
+			use:motion
+			class="bg-primary absolute bottom-[30%] left-[-100px] h-[210px] w-[210px] rounded-full opacity-30 blur-[57px] md:h-[320px] md:w-[320px] md:blur-[85px]"
+		></div>
+	</Motion>
 </div>
 
 <div class="relative flex min-h-screen flex-col items-center justify-center p-6 md:p-10">
 	<div class="w-full max-w-md">
 		<div class="mb-8 flex justify-center">
-			<div class="glass-light bubble bubble-shadow-lg flex items-center justify-center rounded-2xl p-6">
+			<div class="bg-card/60 flex items-center justify-center rounded-2xl border p-6 shadow-lg backdrop-blur-2xl">
 				<img class="h-24 w-auto" src={logoUrl} alt={m.layout_title()} />
 			</div>
 		</div>
 
-		<Card.Root class="bubble bubble-shadow-lg flex flex-col gap-6 overflow-hidden">
+		<Card.Root class="bg-card/60 flex flex-col gap-6 overflow-hidden border shadow-lg backdrop-blur-2xl">
 			<Card.Content class="p-8">
 				<div class="mb-8 flex flex-col items-center text-center">
 					<h1 class="text-3xl font-bold tracking-tight">{m.auth_welcome_back_title()}</h1>
@@ -111,7 +127,7 @@
 
 				<div class="space-y-4">
 					{#if data.error}
-						<Alert.Root variant="destructive" class="glass-light">
+						<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
 							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
 							<Alert.Description>
@@ -137,7 +153,7 @@
 					{/if}
 
 					{#if error}
-						<Alert.Root variant="destructive" class="glass-light">
+						<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
 							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_failed_title()}</Alert.Title>
 							<Alert.Description>{error}</Alert.Description>
@@ -145,7 +161,7 @@
 					{/if}
 
 					{#if !showLocalLoginForm && !showOidcLoginButton}
-						<Alert.Root variant="destructive" class="glass-light">
+						<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
 							<AlertIcon class="size-4" />
 							<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
 							<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
@@ -153,10 +169,7 @@
 					{/if}
 
 					{#if showOidcLoginButton && !showLocalLoginForm}
-						<Button onclick={handleOidcLogin} class="hover-lift w-full" size="lg">
-							<ArrowRightIcon class="mr-2 size-4" />
-							{m.auth_oidc_signin()}
-						</Button>
+						<ArcaneButton hoverEffect="none" action="oidc_login" onclick={() => handleOidcLogin()} {loading} />
 					{/if}
 
 					{#if showLocalLoginForm}
@@ -197,15 +210,7 @@
 									/>
 								</InputGroup.Root>
 							</div>
-							<Button type="submit" class="hover-lift w-full" size="lg" disabled={loading} aria-busy={loading}>
-								{#if loading}
-									<div class="mr-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
-									{m.auth_signing_in()}
-								{:else}
-									<LoginIcon class="mr-2 size-4" />
-									{m.auth_signin_button()}
-								{/if}
-							</Button>
+							<ArcaneButton type="submit" action="login" {loading} hoverEffect="none" />
 						</form>
 
 						{#if showDivider}
@@ -214,7 +219,7 @@
 									<div class="border-border/60 w-full border-t"></div>
 								</div>
 								<div class="relative flex justify-center text-xs">
-									<span class="glass-light bubble-pill text-muted-foreground px-3 py-1">
+									<span class="bg-card/60 text-muted-foreground rounded-full border px-3 py-1 backdrop-blur-2xl">
 										{m.auth_or_continue()}
 									</span>
 								</div>
@@ -222,10 +227,7 @@
 						{/if}
 
 						{#if showOidcLoginButton && showDivider}
-							<Button onclick={handleOidcLogin} variant="outline" class="hover-lift w-full" size="lg">
-								<OpenIdIcon class="size-4" />
-								{m.auth_oidc_signin()}
-							</Button>
+							<ArcaneButton action="oidc_login" hoverEffect="none" onclick={() => handleOidcLogin()} {loading} />
 						{/if}
 					{/if}
 				</div>
@@ -240,7 +242,7 @@
 			href="https://github.com/ofkm/arcane"
 			target="_blank"
 			rel="noopener noreferrer"
-			class="glass-light bubble-pill hover:text-primary flex items-center gap-1.5 text-xs transition-colors"
+			class="bg-card/60 hover:text-primary inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur-2xl transition-colors"
 		>
 			<GithubIcon class="size-4" />
 			{m.common_view_on_github()}
@@ -250,33 +252,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	.orb {
-		transform: translate(calc(-20px + var(--start-x) * 4px), calc(-20px + var(--start-y) * 4px)) scale(1);
-		animation: orb-float var(--orb-duration, 18s) ease-in-out infinite;
-		animation-delay: var(--orb-delay, 0s);
-	}
-
-	@keyframes orb-float {
-		0%,
-		100% {
-			transform: translate(calc(-20px + var(--start-x) * 4px), calc(-20px + var(--start-y) * 4px)) scale(1);
-		}
-		25% {
-			transform: translate(calc(60px + var(--start-x) * 4px), calc(-80px + var(--start-y) * 4px)) scale(1.15);
-		}
-		50% {
-			transform: translate(calc(20px + var(--start-x) * 4px), calc(20px + var(--start-y) * 4px)) scale(0.95);
-		}
-		75% {
-			transform: translate(calc(-80px + var(--start-x) * 4px), calc(60px + var(--start-y) * 4px)) scale(1.1);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.orb {
-			animation: none;
-		}
-	}
-</style>

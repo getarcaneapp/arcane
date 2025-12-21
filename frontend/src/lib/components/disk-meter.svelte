@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress/index.js';
@@ -85,9 +85,14 @@
 				<Popover.Root bind:open={popoverOpen}>
 					<Popover.Trigger>
 						{#snippet child({ props })}
-							<Button {...props} variant="ghost" size="icon" class="hover:bg-muted h-7 w-7 shrink-0">
-								<SettingsIcon class="size-4" />
-							</Button>
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="ghost"
+								size="icon"
+								icon={SettingsIcon}
+								class="hover:bg-muted size-7 shrink-0"
+							/>
 						{/snippet}
 					</Popover.Trigger>
 					<Popover.Content class="w-80">
@@ -101,20 +106,16 @@
 								<Input id="disk-path" placeholder="data/projects" bind:value={diskUsagePath} disabled={isSaving} />
 							</div>
 							<div class="flex justify-end gap-2">
-								<Button
-									variant="outline"
+								<ArcaneButton
+									action="cancel"
 									size="sm"
 									onclick={() => {
 										diskUsagePath = $settingsStore.diskUsagePath || 'data/projects';
 										popoverOpen = false;
 									}}
 									disabled={isSaving}
-								>
-									Cancel
-								</Button>
-								<Button size="sm" onclick={saveDiskUsagePath} disabled={isSaving}>
-									{isSaving ? m.common_saving() : m.common_save()}
-								</Button>
+								/>
+								<ArcaneButton action="save" size="sm" onclick={saveDiskUsagePath} disabled={isSaving} loading={isSaving} />
 							</div>
 						</div>
 					</Popover.Content>

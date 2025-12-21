@@ -47,26 +47,19 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 		for _, uv := range usageVolumes {
 			if uv.Name == vol.Name && uv.UsageData != nil {
 				vol.UsageData = uv.UsageData
-				slog.DebugContext(ctx, "attached volume usage data",
-					slog.String("volume", vol.Name),
-					slog.Int64("size_bytes", uv.UsageData.Size),
-					slog.Int64("ref_count", uv.UsageData.RefCount))
+				slog.DebugContext(ctx, "attached volume usage data", "volume", vol.Name, "size_bytes", uv.UsageData.Size, "ref_count", uv.UsageData.RefCount)
 				break
 			}
 		}
 	} else {
-		slog.WarnContext(ctx, "failed to load volume usage data",
-			slog.String("volume", vol.Name),
-			slog.String("error", duErr.Error()))
+		slog.WarnContext(ctx, "failed to load volume usage data", "volume", vol.Name, "error", duErr.Error())
 	}
 
 	v := volumetypes.NewSummary(vol)
 
 	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, name)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to get containers using volume",
-			slog.String("volume", name),
-			slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "failed to get containers using volume", "volume", name, "error", err.Error())
 	} else {
 		v.Containers = containerIDs
 		if len(containerIDs) > 0 {
@@ -102,9 +95,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 		"name":   vol.Name,
 	}
 	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume creation action",
-			slog.String("volume", vol.Name),
-			slog.String("error", logErr.Error()))
+		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Name, "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
@@ -130,9 +121,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		"name":   name,
 	}
 	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume deletion action",
-			slog.String("volume", name),
-			slog.String("error", logErr.Error()))
+		slog.WarnContext(ctx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
 	}
 
 	return nil
@@ -174,8 +163,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		"spaceReclaimed": report.SpaceReclaimed,
 	}
 	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume prune action",
-			slog.String("error", logErr.Error()))
+		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
@@ -434,8 +422,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	containerResult := <-containerChan
 	volumeContainerMap := containerResult.containerMap
 	if containerResult.err != nil {
-		slog.WarnContext(ctx, "failed to build volume-container map",
-			slog.String("error", containerResult.err.Error()))
+		slog.WarnContext(ctx, "failed to build volume-container map", "error", containerResult.err.Error())
 		volumeContainerMap = make(map[string][]string)
 	}
 

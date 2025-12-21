@@ -2,7 +2,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { AlertIcon } from '$lib/icons';
 	import { confirmDialogStore } from '.';
-	import Button from '../ui/button/button.svelte';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Label } from '$lib/components/ui/label';
 	import Checkbox from '../ui/checkbox/checkbox.svelte';
 
@@ -82,14 +82,13 @@
 
 		<Dialog.Footer class="mt-6">
 			<div class="flex w-full justify-end gap-3">
-				<Button class="min-w-[80px]" variant="outline" onclick={() => ($confirmDialogStore.open = false)}>Cancel</Button>
-				<Button
+				<ArcaneButton class="min-w-[80px]" action="cancel" onclick={() => ($confirmDialogStore.open = false)} />
+				<ArcaneButton
 					class="min-w-[80px]"
-					variant={$confirmDialogStore.confirm.destructive ? 'destructive' : 'default'}
+					action={$confirmDialogStore.confirm.destructive ? 'remove' : 'confirm'}
+					customLabel={$confirmDialogStore.confirm.label}
 					onclick={handleConfirm}
-				>
-					{$confirmDialogStore.confirm.label}
-				</Button>
+				/>
 			</div>
 		</Dialog.Footer>
 	</Dialog.Content>

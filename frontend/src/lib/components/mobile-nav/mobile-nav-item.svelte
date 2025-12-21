@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { NavigationItem } from '$lib/config/navigation-config';
 	import { cn } from '$lib/utils';
-	import * as Button from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let {
 		item,
@@ -16,8 +16,9 @@
 	} = $props();
 </script>
 
-<Button.Root
-	variant="ghost"
+<ArcaneButton
+	action="base"
+	tone="ghost"
 	size={showLabels ? 'sm' : 'icon'}
 	href={item.url}
 	aria-label={`${item.title}${active ? ' (current page)' : ''}`}
@@ -41,4 +42,4 @@
 	{:else}
 		<span class="sr-only">{item.title}</span>
 	{/if}
-</Button.Root>
+</ArcaneButton>

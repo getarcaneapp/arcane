@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -164,7 +164,7 @@
 						</div>
 					{/if}
 
-					<Button class="w-full" onclick={handleDone}>{m.common_done()}</Button>
+					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
 				</div>
 			{:else}
 				<form onsubmit={preventDefault(handleNewAgentSubmit)} class="space-y-4">
@@ -182,12 +182,14 @@
 						error={$newAgentInputs.apiUrl.error ?? undefined}
 					/>
 
-					<Button type="submit" class="w-full" disabled={isSubmittingNewAgent}>
-						{#if isSubmittingNewAgent}
-							<Spinner class="mr-2 size-4" />
-						{/if}
-						{m.environments_generate_config()}
-					</Button>
+					<ArcaneButton
+						action="confirm"
+						type="submit"
+						class="w-full"
+						disabled={isSubmittingNewAgent}
+						loading={isSubmittingNewAgent}
+						customLabel={m.environments_generate_config()}
+					/>
 				</form>
 			{/if}
 		</div>

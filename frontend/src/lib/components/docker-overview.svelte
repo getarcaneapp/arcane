@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
@@ -67,14 +67,14 @@
 					</div>
 
 					{#if dockerInfo}
-						<Button
-							variant="ghost"
+						<ArcaneButton
+							action="base"
+							tone="ghost"
 							size="icon"
+							icon={InfoIcon}
 							class="text-muted-foreground hover:text-foreground size-8 shrink-0"
 							onclick={() => (dockerInfoDialogOpen = true)}
-						>
-							<InfoIcon class="size-4" />
-						</Button>
+						/>
 					{/if}
 				{/if}
 			{/snippet}

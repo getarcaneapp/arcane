@@ -25,9 +25,9 @@ type PasswordChange struct {
 
 // LoginResponse represents the successful login response data.
 type LoginResponse struct {
-	Token        string        `json:"token" doc:"JWT access token"`
-	RefreshToken string        `json:"refreshToken" doc:"Refresh token for obtaining new access tokens"`
-	ExpiresAt    time.Time     `json:"expiresAt" doc:"Expiration time of the access token"`
+	Token        string    `json:"token" doc:"JWT access token"`
+	RefreshToken string    `json:"refreshToken" doc:"Refresh token for obtaining new access tokens"`
+	ExpiresAt    time.Time `json:"expiresAt" doc:"Expiration time of the access token"`
 	User         user.User `json:"user" doc:"Authenticated user information"`
 }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
@@ -147,10 +147,10 @@
 					</Card.Title>
 					<Card.Description>{m.images_top_largest()}</Card.Description>
 				</div>
-				<Button variant="ghost" size="sm" href="/images" disabled={isLoading}>
+				<ArcaneButton action="base" tone="ghost" size="sm" href="/images" disabled={isLoading}>
 					{m.common_view_all()}
 					<ArrowRightIcon class="size-4" />
-				</Button>
+				</ArcaneButton>
 			</div>
 		</Card.Header>
 		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
