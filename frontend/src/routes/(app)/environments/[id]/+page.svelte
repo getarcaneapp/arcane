@@ -130,8 +130,7 @@
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 
 			// Initialize derived states
-			pollingIntervalMode =
-				imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+			pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
 			shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
 		}
 	});
@@ -206,8 +205,7 @@
 				formDefaultShell = settings.defaultShell || '/bin/sh';
 
 				// Initialize derived states
-				pollingIntervalMode =
-					imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+				pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
 				shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
 			}
 
@@ -333,8 +331,7 @@
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 
 			// Initialize derived states
-			pollingIntervalMode =
-				imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
+			pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
 			shellSelectValue = shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
 		}
 
