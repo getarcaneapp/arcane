@@ -27,7 +27,7 @@ export const arcaneButtonVariants = tv({
 		'inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap select-none ' +
 		'transition-all duration-200 will-change-transform ' +
 		'active:scale-[0.98] ' +
-		'border disabled:pointer-events-none disabled:opacity-50 ' +
+		'border disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 ' +
 		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-0 ' +
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 	variants: {

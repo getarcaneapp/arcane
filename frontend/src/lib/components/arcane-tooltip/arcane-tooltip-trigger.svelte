@@ -74,14 +74,23 @@
 {#if ctx.isTouch}
 	<Popover.Trigger>
 		{#snippet child({ props }: ChildProps)}
-			<span
+			<div
 				{...props}
-				class={cn('inline-flex max-w-full min-w-0', className)}
+				class={cn('pointer-events-auto inline-flex max-w-full min-w-0 cursor-pointer', className)}
 				ontouchstart={ctx.interactive ? handleTouchStart : undefined}
 				ontouchend={ctx.interactive ? handleTouchEnd : undefined}
 				ontouchcancel={ctx.interactive ? handleTouchCancel : undefined}
 				ontouchmove={ctx.interactive ? handleTouchMove : undefined}
-				onclick={ctx.interactive ? handleClick : undefined}
+				onclick={(e) => {
+					if (ctx.interactive) {
+						handleClick(e);
+						if (!e.defaultPrevented) {
+							(props as any).onclick?.(e);
+						}
+					} else {
+						(props as any).onclick?.(e);
+					}
+				}}
 				role="button"
 				tabindex="0"
 			>
@@ -90,17 +99,19 @@
 				{:else}
 					{@render children?.()}
 				{/if}
-			</span>
+			</div>
 		{/snippet}
 	</Popover.Trigger>
 {:else}
-	<Tooltip.Trigger class={className}>
-		{#if child}
-			{#snippet child({ props }: ChildProps)}
-				{@render child({ props })}
-			{/snippet}
-		{:else}
-			{@render children?.()}
-		{/if}
+	<Tooltip.Trigger>
+		{#snippet child({ props }: ChildProps)}
+			<div {...props} class={cn('inline-flex max-w-full min-w-0', className)}>
+				{#if child}
+					{@render child({ props: {} })}
+				{:else}
+					{@render children?.()}
+				{/if}
+			</div>
+		{/snippet}
 	</Tooltip.Trigger>
 {/if}

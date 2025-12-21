@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
@@ -21,9 +23,6 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import {
 		ArrowLeftIcon,
-		RefreshIcon,
-		ConnectionIcon,
-		SaveIcon,
 		EnvironmentsIcon,
 		AlertIcon,
 		TestIcon,
@@ -31,7 +30,6 @@
 		ResetIcon,
 		ApiKeyIcon,
 		DockerBrandIcon,
-		InfoIcon,
 		SettingsIcon
 	} from '$lib/icons';
 
@@ -39,6 +37,21 @@
 	let { environment, settings, versionInformation } = $derived(data);
 
 	let currentEnvironment = $derived(environmentStore.selected);
+
+	let activeTab = $state('general');
+
+	const tabItems: TabItem[] = [
+		{
+			value: 'general',
+			label: m.general_title(),
+			icon: SettingsIcon
+		},
+		{
+			value: 'docker',
+			label: m.environments_docker_settings_title(),
+			icon: DockerBrandIcon
+		}
+	];
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
@@ -484,6 +497,50 @@
 					/>
 				</div>
 
+				<div>
+					<Label for="api-url" class="text-sm font-medium">{m.environments_api_url()}</Label>
+					<div class="mt-1.5 flex items-center gap-2">
+						{#if environment.id === '0'}
+							<ArcaneTooltip.Root>
+								<ArcaneTooltip.Trigger class="w-full">
+									<Input
+										id="api-url"
+										type="url"
+										bind:value={formApiUrl}
+										class="w-full font-mono"
+										placeholder={m.environments_api_url_placeholder()}
+										disabled={true}
+										required
+									/>
+								</ArcaneTooltip.Trigger>
+								<ArcaneTooltip.Content>
+									<p>{m.environments_local_setting_disabled()}</p>
+								</ArcaneTooltip.Content>
+							</ArcaneTooltip.Root>
+						{:else}
+							<Input
+								id="api-url"
+								type="url"
+								bind:value={formApiUrl}
+								class="w-full font-mono"
+								placeholder={m.environments_api_url_placeholder()}
+								required
+							/>
+						{/if}
+						<ArcaneButton
+							action="base"
+							onclick={testConnection}
+							disabled={isTestingConnection}
+							loading={isTestingConnection}
+							icon={TestIcon}
+							customLabel={m.environments_test_connection()}
+							loadingLabel={m.environments_testing_connection()}
+							class="shrink-0"
+						/>
+					</div>
+					<p class="text-muted-foreground mt-1.5 text-xs">{m.environments_api_url_help()}</p>
+				</div>
+
 				<div class="flex items-center justify-between rounded-lg border p-4">
 					<div class="space-y-0.5">
 						<Label for="env-enabled" class="text-sm font-medium">{m.common_enabled()}</Label>
@@ -563,230 +620,177 @@
 				<Card.Header icon={SettingsIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>
-							<h2>{m.general_title()}</h2>
-						</Card.Title>
-						<Card.Description>{m.general_description()}</Card.Description>
-					</div>
-				</Card.Header>
-				<Card.Content class="space-y-6 p-4">
-					<div class="grid gap-6 sm:grid-cols-2">
-						<div class="space-y-2">
-							<TextInputWithLabel
-								id="projects-directory"
-								label={m.general_projects_directory_label()}
-								bind:value={formProjectsDirectory}
-								helpText={m.general_projects_directory_help()}
-							/>
-						</div>
-						<div class="space-y-2">
-							<TextInputWithLabel
-								id="disk-usage-path"
-								label={m.disk_usage_settings()}
-								bind:value={formDiskUsagePath}
-								helpText={m.disk_usage_settings_description()}
-							/>
-						</div>
-						<div class="space-y-2">
-							<TextInputWithLabel
-								id="base-server-url"
-								label={m.general_base_url_label()}
-								bind:value={formBaseServerUrl}
-								helpText={m.general_base_url_help()}
-							/>
-						</div>
-						<div class="space-y-2">
-							<TextInputWithLabel
-								id="max-upload-size"
-								type="number"
-								label={m.docker_max_upload_size_label()}
-								bind:value={formMaxImageUploadSize}
-								helpText={m.docker_max_upload_size_description()}
-							/>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root class="flex flex-col">
-				<Card.Header icon={DockerBrandIcon}>
-					<div class="flex flex-col space-y-1.5">
-						<Card.Title>
-							<h2>{m.environments_docker_settings_title()}</h2>
+							<h2>{m.settings_title()}</h2>
 						</Card.Title>
 						<Card.Description>{m.environments_config_description()}</Card.Description>
 					</div>
 				</Card.Header>
-				<Card.Content class="space-y-6 p-4">
-					<div class="grid gap-6 sm:grid-cols-2">
-						<!-- Polling Settings -->
-						<div class="space-y-4 rounded-lg border p-4">
-							<div class="flex items-center justify-between">
-								<div class="space-y-0.5">
-									<Label for="polling-enabled" class="text-sm font-medium">{m.docker_enable_polling_label()}</Label>
-									<div class="text-muted-foreground text-xs">{m.docker_enable_polling_description()}</div>
-								</div>
-								<Switch id="polling-enabled" bind:checked={formPollingEnabled} />
+				<Card.Content class="p-0">
+					<Tabs.Root bind:value={activeTab} class="w-full">
+						<div class="border-b px-4 py-2">
+							<div class="w-fit">
+								<TabBar items={tabItems} value={activeTab} onValueChange={(value) => (activeTab = value)} />
 							</div>
-
-							{#if formPollingEnabled}
-								<div class="space-y-3 pt-2">
-									<SelectWithLabel
-										id="pollingIntervalMode"
-										name="pollingIntervalMode"
-										bind:value={pollingIntervalMode}
-										label={m.docker_polling_interval_label()}
-										placeholder={m.docker_polling_interval_placeholder_select()}
-										options={imagePollingOptions.map(({ value, label, description }) => ({ value, label, description }))}
+						</div>
+						<Tabs.Content value="general" class="space-y-6 p-4">
+							<div class="grid gap-6 sm:grid-cols-2">
+								<div class="space-y-2">
+									<TextInputWithLabel
+										id="projects-directory"
+										label={m.general_projects_directory_label()}
+										bind:value={formProjectsDirectory}
+										helpText={m.general_projects_directory_help()}
 									/>
+								</div>
+								<div class="space-y-2">
+									<TextInputWithLabel
+										id="disk-usage-path"
+										label={m.disk_usage_settings()}
+										bind:value={formDiskUsagePath}
+										helpText={m.disk_usage_settings_description()}
+									/>
+								</div>
+								<div class="space-y-2">
+									<TextInputWithLabel
+										id="base-server-url"
+										label={m.general_base_url_label()}
+										bind:value={formBaseServerUrl}
+										helpText={m.general_base_url_help()}
+									/>
+								</div>
+								<div class="space-y-2">
+									<TextInputWithLabel
+										id="max-upload-size"
+										type="number"
+										label={m.docker_max_upload_size_label()}
+										bind:value={formMaxImageUploadSize}
+										helpText={m.docker_max_upload_size_description()}
+									/>
+								</div>
+							</div>
+						</Tabs.Content>
+						<Tabs.Content value="docker" class="space-y-6 p-4">
+							<div class="grid gap-6 sm:grid-cols-2">
+								<!-- Polling Settings -->
+								<div class="space-y-4 rounded-lg border p-4">
+									<div class="flex items-center justify-between">
+										<div class="space-y-0.5">
+											<Label for="polling-enabled" class="text-sm font-medium">{m.docker_enable_polling_label()}</Label>
+											<div class="text-muted-foreground text-xs">{m.docker_enable_polling_description()}</div>
+										</div>
+										<Switch id="polling-enabled" bind:checked={formPollingEnabled} />
+									</div>
 
-									{#if pollingIntervalMode === 'custom'}
-										<TextInputWithLabel
-											bind:value={formPollingInterval}
-											label={m.custom_polling_interval()}
-											placeholder={m.docker_polling_interval_placeholder()}
-											helpText={m.docker_polling_interval_description()}
-											type="number"
-										/>
-									{/if}
+									{#if formPollingEnabled}
+										<div class="space-y-3 pt-2">
+											<SelectWithLabel
+												id="pollingIntervalMode"
+												name="pollingIntervalMode"
+												bind:value={pollingIntervalMode}
+												label={m.docker_polling_interval_label()}
+												placeholder={m.docker_polling_interval_placeholder_select()}
+												options={imagePollingOptions.map(({ value, label, description }) => ({
+													value,
+													label,
+													description
+												}))}
+											/>
 
-									{#if formPollingInterval < 30}
-										<div
-											class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200"
-										>
-											<AlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-											<div class="flex-1 space-y-1">
-												<p class="text-sm font-medium">{m.docker_rate_limit_warning_title()}</p>
-												<p class="text-xs">{m.docker_rate_limit_warning_description()}</p>
-											</div>
+											{#if pollingIntervalMode === 'custom'}
+												<TextInputWithLabel
+													bind:value={formPollingInterval}
+													label={m.custom_polling_interval()}
+													placeholder={m.docker_polling_interval_placeholder()}
+													helpText={m.docker_polling_interval_description()}
+													type="number"
+												/>
+											{/if}
+
+											{#if formPollingInterval < 30}
+												<div
+													class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200"
+												>
+													<AlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+													<div class="flex-1 space-y-1">
+														<p class="text-sm font-medium">{m.docker_rate_limit_warning_title()}</p>
+														<p class="text-xs">{m.docker_rate_limit_warning_description()}</p>
+													</div>
+												</div>
+											{/if}
 										</div>
 									{/if}
 								</div>
-							{/if}
-						</div>
 
-						<!-- Auto Update Settings -->
-						<div class="space-y-4 rounded-lg border p-4">
-							<div class="flex items-center justify-between">
-								<div class="space-y-0.5">
-									<Label for="auto-update" class="text-sm font-medium">{m.docker_auto_update_label()}</Label>
-									<div class="text-muted-foreground text-xs">{m.docker_auto_update_description()}</div>
+								<!-- Auto Update Settings -->
+								<div class="space-y-4 rounded-lg border p-4">
+									<div class="flex items-center justify-between">
+										<div class="space-y-0.5">
+											<Label for="auto-update" class="text-sm font-medium">{m.docker_auto_update_label()}</Label>
+											<div class="text-muted-foreground text-xs">{m.docker_auto_update_description()}</div>
+										</div>
+										<Switch id="auto-update" bind:checked={formAutoUpdate} disabled={!formPollingEnabled} />
+									</div>
+
+									{#if formAutoUpdate && formPollingEnabled}
+										<div class="pt-2">
+											<TextInputWithLabel
+												bind:value={formAutoUpdateInterval}
+												label={m.docker_auto_update_interval_label()}
+												placeholder={m.docker_auto_update_interval_placeholder()}
+												helpText={m.docker_auto_update_interval_description()}
+												type="number"
+											/>
+										</div>
+									{/if}
 								</div>
-								<Switch id="auto-update" bind:checked={formAutoUpdate} disabled={!formPollingEnabled} />
+
+								<!-- Prune Mode -->
+								<div class="space-y-2">
+									<SelectWithLabel
+										id="dockerPruneMode"
+										name="pruneMode"
+										bind:value={formPruneMode}
+										label={m.docker_prune_action_label()}
+										description={pruneModeDescription}
+										placeholder={m.docker_prune_placeholder()}
+										options={pruneModeOptions}
+										onValueChange={(v) => (formPruneMode = v as 'all' | 'dangling')}
+									/>
+								</div>
+
+								<!-- Default Shell -->
+								<div class="space-y-2">
+									<SelectWithLabel
+										id="shellSelectValue"
+										name="shellSelectValue"
+										bind:value={shellSelectValue}
+										label={m.docker_default_shell_label()}
+										description={m.docker_default_shell_description()}
+										placeholder={m.docker_default_shell_placeholder()}
+										options={[
+											...shellOptions,
+											{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
+										]}
+									/>
+
+									{#if shellSelectValue === 'custom'}
+										<div class="pt-2">
+											<TextInputWithLabel
+												bind:value={formDefaultShell}
+												label={m.custom()}
+												placeholder={m.docker_shell_custom_path_placeholder()}
+												helpText={m.docker_shell_custom_path_help()}
+												type="text"
+											/>
+										</div>
+									{/if}
+								</div>
 							</div>
-
-							{#if formAutoUpdate && formPollingEnabled}
-								<div class="pt-2">
-									<TextInputWithLabel
-										bind:value={formAutoUpdateInterval}
-										label={m.docker_auto_update_interval_label()}
-										placeholder={m.docker_auto_update_interval_placeholder()}
-										helpText={m.docker_auto_update_interval_description()}
-										type="number"
-									/>
-								</div>
-							{/if}
-						</div>
-
-						<!-- Prune Mode -->
-						<div class="space-y-2">
-							<SelectWithLabel
-								id="dockerPruneMode"
-								name="pruneMode"
-								bind:value={formPruneMode}
-								label={m.docker_prune_action_label()}
-								description={pruneModeDescription}
-								placeholder={m.docker_prune_placeholder()}
-								options={pruneModeOptions}
-								onValueChange={(v) => (formPruneMode = v as 'all' | 'dangling')}
-							/>
-						</div>
-
-						<!-- Default Shell -->
-						<div class="space-y-2">
-							<SelectWithLabel
-								id="shellSelectValue"
-								name="shellSelectValue"
-								bind:value={shellSelectValue}
-								label={m.docker_default_shell_label()}
-								description={m.docker_default_shell_description()}
-								placeholder={m.docker_default_shell_placeholder()}
-								options={[
-									...shellOptions,
-									{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
-								]}
-							/>
-
-							{#if shellSelectValue === 'custom'}
-								<div class="pt-2">
-									<TextInputWithLabel
-										bind:value={formDefaultShell}
-										label={m.custom()}
-										placeholder={m.docker_shell_custom_path_placeholder()}
-										helpText={m.docker_shell_custom_path_help()}
-										type="text"
-									/>
-								</div>
-							{/if}
-						</div>
-					</div>
+						</Tabs.Content>
+					</Tabs.Root>
 				</Card.Content>
 			</Card.Root>
 		{/if}
-
-		<Card.Root class="flex flex-col">
-			<Card.Header icon={ConnectionIcon}>
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.environments_connection_title()}</h2>
-					</Card.Title>
-					<Card.Description>{m.environments_connection_description()}</Card.Description>
-				</div>
-			</Card.Header>
-			<Card.Content class="space-y-4 p-4">
-				<div>
-					<Label for="api-url" class="text-sm font-medium">{m.environments_api_url()}</Label>
-					{#if environment.id === '0'}
-						<ArcaneTooltip.Root>
-							<ArcaneTooltip.Trigger class="w-full">
-								<Input
-									id="api-url"
-									type="url"
-									bind:value={formApiUrl}
-									class="mt-1.5 w-full font-mono"
-									placeholder={m.environments_api_url_placeholder()}
-									disabled={true}
-									required
-								/>
-							</ArcaneTooltip.Trigger>
-							<ArcaneTooltip.Content>
-								<p>{m.environments_local_setting_disabled()}</p>
-							</ArcaneTooltip.Content>
-						</ArcaneTooltip.Root>
-					{:else}
-						<Input
-							id="api-url"
-							type="url"
-							bind:value={formApiUrl}
-							class="mt-1.5 w-full font-mono"
-							placeholder={m.environments_api_url_placeholder()}
-							required
-						/>
-					{/if}
-					<p class="text-muted-foreground mt-1.5 text-xs">{m.environments_api_url_help()}</p>
-				</div>
-
-				<ArcaneButton
-					action="base"
-					onclick={testConnection}
-					disabled={isTestingConnection}
-					loading={isTestingConnection}
-					icon={TestIcon}
-					customLabel={m.environments_test_connection()}
-					loadingLabel={m.environments_testing_connection()}
-					class="w-full"
-				/>
-			</Card.Content>
-		</Card.Root>
 
 		{#if environment.id !== '0'}
 			<Card.Root class="flex flex-col">
