@@ -1423,7 +1423,6 @@
 	"upgrade_status_detected": "Đã phát hiện phiên bản mới!",
 	"upgrade_wait_info": "Quá trình này có thể mất 30-60 giây. Trang sẽ tự động tải lại khi sẵn sàng.",
 	"auto_start": "Tự động bắt đầu",
-
 	"_comment_api_keys": "=== API KEYS ===",
 	"api_key_name": "Tên",
 	"api_key_name_placeholder": "Nhập tên cho API Key này",
