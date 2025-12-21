@@ -110,11 +110,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 		return fmt.Errorf("failed to marshal notification payload: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Sending Apprise notification",
-		slog.String("url", settings.APIURL),
-		slog.String("title", title),
-		slog.Any("tags", tags),
-		slog.String("type", string(notificationType)))
+	slog.InfoContext(ctx, "Sending Apprise notification", "url", settings.APIURL, "title", title, "tags", tags, "type", string(notificationType))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, settings.APIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -134,16 +130,11 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	bodyString := string(bodyBytes)
 
 	if resp.StatusCode != http.StatusOK {
-		slog.ErrorContext(ctx, "Apprise API returned error",
-			slog.Int("status", resp.StatusCode),
-			slog.String("response", bodyString),
-			slog.String("url", settings.APIURL))
+		slog.ErrorContext(ctx, "Apprise API returned error", "status", resp.StatusCode, "response", bodyString, "url", settings.APIURL)
 		return fmt.Errorf("apprise API returned status %d: %s", resp.StatusCode, bodyString)
 	}
 
-	slog.InfoContext(ctx, "Apprise notification sent successfully",
-		slog.Int("status", resp.StatusCode),
-		slog.String("response", bodyString))
+	slog.InfoContext(ctx, "Apprise notification sent successfully", "status", resp.StatusCode, "response", bodyString)
 
 	return nil
 }

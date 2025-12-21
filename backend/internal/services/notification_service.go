@@ -806,9 +806,7 @@ func (s *NotificationService) logNotification(ctx context.Context, provider mode
 	}
 
 	if err := s.db.WithContext(ctx).Create(log).Error; err != nil {
-		slog.WarnContext(ctx, "Failed to log notification",
-			slog.String("provider", string(provider)),
-			slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to log notification", "provider", string(provider), "error", err.Error())
 	}
 }
 

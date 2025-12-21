@@ -26,7 +26,7 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 	if time.Since(volumeUsageCacheTime) < volumeUsageCacheTTL && volumeUsageCache != nil {
 		cached := volumeUsageCache
 		volumeUsageCacheMutex.RUnlock()
-		slog.DebugContext(ctx, "returning cached volume usage data", slog.Int("volume_count", len(cached)))
+		slog.DebugContext(ctx, "returning cached volume usage data", "volume_count", len(cached))
 		return cached, nil
 	}
 	volumeUsageCacheMutex.RUnlock()
@@ -35,7 +35,7 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 	defer volumeUsageCacheMutex.Unlock()
 
 	if time.Since(volumeUsageCacheTime) < volumeUsageCacheTTL && volumeUsageCache != nil {
-		slog.DebugContext(ctx, "returning cached volume usage data after lock", slog.Int("volume_count", len(volumeUsageCache)))
+		slog.DebugContext(ctx, "returning cached volume usage data after lock", "volume_count", len(volumeUsageCache))
 		return volumeUsageCache, nil
 	}
 	diskUsage, err := dockerClient.DiskUsage(ctx, types.DiskUsageOptions{
@@ -45,7 +45,7 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 		return nil, fmt.Errorf("failed to get disk usage: %w", err)
 	}
 
-	slog.DebugContext(ctx, "disk usage returned volumes", slog.Int("volume_count", len(diskUsage.Volumes)))
+	slog.DebugContext(ctx, "disk usage returned volumes", "volume_count", len(diskUsage.Volumes))
 
 	if diskUsage.Volumes == nil {
 		return []volume.Volume{}, nil
@@ -60,7 +60,7 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 
 	volumeUsageCache = volumes
 	volumeUsageCacheTime = time.Now()
-	slog.DebugContext(ctx, "refreshed volume usage cache", slog.Int("volume_count", len(volumes)))
+	slog.DebugContext(ctx, "refreshed volume usage cache", "volume_count", len(volumes))
 
 	return volumes, nil
 }
@@ -88,9 +88,7 @@ func GetContainersUsingVolume(ctx context.Context, dockerClient *client.Client, 
 		}
 	}
 
-	slog.DebugContext(ctx, "found containers using volume",
-		slog.String("volume", volumeName),
-		slog.Int("container_count", len(containerIDs)))
+	slog.DebugContext(ctx, "found containers using volume", "volume", volumeName, "container_count", len(containerIDs))
 
 	return containerIDs, nil
 }

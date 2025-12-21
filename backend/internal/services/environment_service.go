@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -405,9 +406,7 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 
 		decryptedToken, err := utils.Decrypt(reg.Token)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token",
-				slog.String("registryURL", reg.URL),
-				slog.String("error", err.Error()))
+			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryURL", reg.URL, "error", err.Error())
 			continue
 		}
 
@@ -480,10 +479,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("cannot sync registries to local environment")
 	}
 
-	slog.InfoContext(ctx, "Starting registry sync to environment",
-		slog.String("environmentID", environmentID),
-		slog.String("environmentName", environment.Name),
-		slog.String("apiUrl", environment.ApiUrl))
+	slog.InfoContext(ctx, "Starting registry sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
 
 	// Get all registries from this manager
 	var registries []models.ContainerRegistry
@@ -491,18 +487,14 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("failed to get registries: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Found registries to sync",
-		slog.Int("count", len(registries)))
+	slog.InfoContext(ctx, "Found registries to sync", "count", len(registries))
 
 	// Prepare sync items with decrypted tokens
 	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
 		decryptedToken, err := utils.Decrypt(reg.Token)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token for sync",
-				slog.String("registryID", reg.ID),
-				slog.String("registryURL", reg.URL),
-				slog.String("error", err.Error()))
+			slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
 			continue
 		}
 
@@ -554,13 +546,10 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 			slog.DebugContext(ctx, "Set agent token header for sync request")
 		}
 	} else {
-		slog.WarnContext(ctx, "No access token available for environment sync",
-			slog.String("environmentID", environmentID))
+		slog.WarnContext(ctx, "No access token available for environment sync", "environmentID", environmentID)
 	}
 
-	slog.InfoContext(ctx, "Sending sync request to agent",
-		slog.String("url", targetURL),
-		slog.Int("registryCount", len(syncItems)))
+	slog.InfoContext(ctx, "Sending sync request to agent", "url", targetURL, "registryCount", len(syncItems))
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -570,9 +559,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		slog.ErrorContext(ctx, "Sync request failed",
-			slog.Int("statusCode", resp.StatusCode),
-			slog.String("response", string(body)))
+		slog.ErrorContext(ctx, "Sync request failed", "statusCode", resp.StatusCode, "response", string(body))
 		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -590,9 +577,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 
-	slog.InfoContext(ctx, "Successfully synced registries to environment",
-		slog.String("environmentID", environmentID),
-		slog.String("environmentName", environment.Name))
+	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", environment.Name)
 
 	return nil
 }
@@ -609,12 +594,12 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 	}
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
-	req, err := http.NewRequestWithContext(ctx, method, targetURL, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if body != nil {
+	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 

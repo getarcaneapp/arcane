@@ -101,10 +101,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	// Use latest tag for the upgrader CLI container
 	upgraderImage := "ghcr.io/getarcaneapp/arcane:latest"
 
-	slog.Info("Spawning upgrade CLI command",
-		"containerName", containerName,
-		"upgraderImage", upgraderImage,
-	)
+	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
@@ -150,10 +147,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		return fmt.Errorf("start upgrader container: %w", err)
 	}
 
-	slog.Info("Upgrade container started",
-		"upgraderId", resp.ID[:12],
-		"upgraderName", containerName,
-	)
+	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", containerName)
 
 	return nil
 }
