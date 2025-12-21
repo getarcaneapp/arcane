@@ -594,7 +594,11 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 	}
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
-	req, err := http.NewRequestWithContext(ctx, method, targetURL, bytes.NewReader(body))
+	var bodyReader io.Reader
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, bodyReader)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
