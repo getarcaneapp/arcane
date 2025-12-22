@@ -60,7 +60,9 @@
 
 <!-- Floating header on scroll -->
 {#if showFloatingHeader}
-	<div class="animate-in fade-in slide-in-from-top-2 fixed top-4 left-1/2 z-40 -translate-x-1/2 duration-200">
+	<div
+		class="animate-in fade-in slide-in-from-top-2 fixed top-4 left-1/2 z-40 w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 px-2 duration-200 sm:w-auto sm:px-0"
+	>
 		<div
 			class="bg-popover/95 supports-backdrop-filter:bg-popover/85 border-border/60 flex items-center gap-3 rounded-full border px-4 py-2 shadow-lg backdrop-blur-lg"
 		>
