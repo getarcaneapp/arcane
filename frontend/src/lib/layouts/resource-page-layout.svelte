@@ -51,6 +51,63 @@
 
 	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
 	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
+
+	const DROPDOWN_WIDTH = 44;
+	const GAP = 8;
+
+	let containerWidth = $state(0);
+	let buttonWidths = $state<number[]>([]);
+
+	const visibleCount = $derived.by(() => {
+		if (buttonWidths.length === 0 || containerWidth === 0) {
+			return actionButtons.length;
+		}
+
+		const total = buttonWidths.length;
+
+		let totalWidth = buttonWidths.reduce((sum, w, i) => sum + w + (i > 0 ? GAP : 0), 0);
+		if (totalWidth <= containerWidth) {
+			return total;
+		}
+
+		let usedWidth = DROPDOWN_WIDTH;
+		for (let i = 0; i < total; i++) {
+			const needed = buttonWidths[i] + (i > 0 ? GAP : 0);
+			if (usedWidth + needed > containerWidth) {
+				return i;
+			}
+			usedWidth += needed;
+		}
+		return total;
+	});
+
+	function measureButtons(node: HTMLElement, _buttonCount: number) {
+		const measure = () => {
+			const children = node.children;
+			const widths: number[] = [];
+			for (let i = 0; i < children.length; i++) {
+				widths.push((children[i] as HTMLElement).offsetWidth);
+			}
+			buttonWidths = widths;
+		};
+
+		requestAnimationFrame(measure);
+
+		return {
+			update: () => requestAnimationFrame(measure)
+		};
+	}
+
+	function observeWidth(node: HTMLElement) {
+		const ro = new ResizeObserver((entries) => {
+			containerWidth = entries[0].contentRect.width;
+		});
+		ro.observe(node);
+		return { destroy: () => ro.disconnect() };
+	}
+
+	const visibleButtons = $derived(actionButtons.slice(0, visibleCount));
+	const overflowButtons = $derived(actionButtons.slice(visibleCount));
 </script>
 
 <div class="{containerClass} {className}">
@@ -88,10 +145,29 @@
 			</div>
 		{/if}
 
-		<div class="flex flex-1 items-center justify-end gap-2">
+		<div class="flex flex-1 items-center justify-end gap-2" use:observeWidth>
 			{#if actionButtons.length > 0}
+				<!-- Hidden measurement container -->
+				<div
+					use:measureButtons={actionButtons.length}
+					class="pointer-events-none invisible absolute flex items-center gap-2"
+					aria-hidden="true"
+				>
+					{#each actionButtons as button (button.id)}
+						<ArcaneButton
+							action={button.action}
+							customLabel={button.label}
+							loadingLabel={button.loadingLabel}
+							loading={button.loading}
+							disabled={button.disabled}
+							onclick={() => {}}
+						/>
+					{/each}
+				</div>
+
+				<!-- Desktop: Visible buttons with dynamic overflow -->
 				<div class="hidden items-center gap-2 sm:flex">
-					{#each actionButtons as button}
+					{#each visibleButtons as button (button.id)}
 						<ArcaneButton
 							action={button.action}
 							customLabel={button.label}
@@ -101,8 +177,32 @@
 							onclick={button.onclick}
 						/>
 					{/each}
+
+					{#if overflowButtons.length > 0}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<ArcaneButton {...props} action="base" tone="outline" size="icon" class="size-9 shrink-0">
+										<span class="sr-only">More actions</span>
+										<EllipsisIcon class="size-4" />
+									</ArcaneButton>
+								{/snippet}
+							</DropdownMenu.Trigger>
+
+							<DropdownMenu.Content align="end" class="min-w-[160px]">
+								<DropdownMenu.Group>
+									{#each overflowButtons as button (button.id)}
+										<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
+											{button.loading ? button.loadingLabel || button.label : button.label}
+										</DropdownMenu.Item>
+									{/each}
+								</DropdownMenu.Group>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{/if}
 				</div>
 
+				<!-- Mobile: Primary buttons + dropdown for rest -->
 				<div class="absolute top-4 right-4 flex items-center gap-2 sm:hidden">
 					{#each mobileVisibleButtons as button}
 						<ArcaneButton
