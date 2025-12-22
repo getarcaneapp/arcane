@@ -28,12 +28,12 @@
 </script>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h3 class="text-lg font-semibold">{m.templates_registries_section_title()}</h3>
 			<p class="text-muted-foreground text-sm">{m.templates_registries_section_description()}</p>
 		</div>
-		<ArcaneButton action="create" onclick={onAddRegistry}>
+		<ArcaneButton action="create" onclick={onAddRegistry} class="w-full sm:w-auto">
 			{m.common_add_button({ resource: m.resource_registry_cap() })}
 		</ArcaneButton>
 	</div>
@@ -61,9 +61,9 @@
 		<div class="space-y-3">
 			{#each registries as registry}
 				<Card.Root class="p-4">
-					<div class="flex items-center justify-between">
-						<div class="flex-1">
-							<div class="mb-1 flex items-center gap-2">
+					<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+						<div class="min-w-0 flex-1">
+							<div class="mb-1 flex flex-wrap items-center gap-2">
 								<h4 class="font-medium">{registry.name}</h4>
 								<Badge variant={registry.enabled ? 'default' : 'secondary'}>
 									{registry.enabled ? m.common_enabled() : m.common_disabled()}
@@ -74,7 +74,7 @@
 								<p class="text-muted-foreground mt-1 text-sm">{registry.description}</p>
 							{/if}
 						</div>
-						<div class="flex items-center gap-2">
+						<div class="flex items-center gap-2 self-end sm:self-center">
 							<Switch
 								checked={registry.enabled}
 								onCheckedChange={(checked) => onUpdateRegistry(registry.id, { enabled: checked })}
