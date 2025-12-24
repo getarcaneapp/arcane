@@ -122,7 +122,15 @@ export default class SettingsService extends BaseAPIService {
 		}
 		if (value === 'true') return true;
 		if (value === 'false') return false;
-		if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+		// Only parse numbers for known numeric fields
+		const numericFields = [
+			'authSessionTimeout',
+			'environmentHealthInterval',
+			'autoUpdateInterval',
+			'pollingInterval',
+			'maxImageUploadSize'
+		];
+		if (numericFields.includes(key) && /^-?\d+(\.\d+)?$/.test(value)) return Number(value);
 		return value;
 	}
 }
