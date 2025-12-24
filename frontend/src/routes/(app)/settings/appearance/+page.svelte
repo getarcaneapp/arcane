@@ -12,7 +12,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
-	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon, EnvironmentsIcon, SmartphoneIcon } from '$lib/icons';
+	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon } from '$lib/icons';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let { data } = $props();
 	const currentSettings = $derived($settingsStore || data.settings!);
@@ -65,79 +67,45 @@
 	}
 
 	// Navigation Mode state
-	const modeHasOverride = $derived(persistedState.mode !== undefined);
-	let modeScopeInternal = $state<'server' | 'local' | null>(null);
-	const modeScope = $derived(modeHasOverride ? (modeScopeInternal ?? 'local') : 'server');
-	const modeDisplayValue = $derived(modeScope === 'local' ? persistedState.mode : $formInputs.mobileNavigationMode.value);
+	const modeIsLocal = $derived(persistedState.mode !== undefined);
+	const modeDisplayValue = $derived(modeIsLocal ? persistedState.mode : $formInputs.mobileNavigationMode.value);
 
 	function handleModeSelect(mode: 'floating' | 'docked') {
-		if (modeScope === 'local') {
+		if (modeIsLocal) {
 			setLocalOverride('mode', mode);
 		} else {
 			$formInputs.mobileNavigationMode.value = mode;
 		}
 	}
 
-	function handleModeScopeChange(newScope: 'server' | 'local') {
-		if (newScope === 'local' && !modeHasOverride) {
+	function handleModeScopeChange(isLocal: boolean) {
+		if (isLocal) {
 			setLocalOverride('mode', $formInputs.mobileNavigationMode.value);
-		} else if (newScope === 'server' && modeHasOverride) {
+		} else {
 			clearLocalOverride('mode');
 		}
-		modeScopeInternal = newScope;
 	}
 
 	// Show Labels state
-	const labelsHasOverride = $derived(persistedState.showLabels !== undefined);
-	let labelsScopeInternal = $state<'server' | 'local' | null>(null);
-	const labelsScope = $derived(labelsHasOverride ? (labelsScopeInternal ?? 'local') : 'server');
-	const labelsDisplayValue = $derived(
-		labelsScope === 'local' ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value
-	);
+	const labelsIsLocal = $derived(persistedState.showLabels !== undefined);
+	const labelsDisplayValue = $derived(labelsIsLocal ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value);
 
 	function handleLabelsChange(checked: boolean) {
-		if (labelsScope === 'local') {
+		if (labelsIsLocal) {
 			setLocalOverride('showLabels', checked);
 		} else {
 			$formInputs.mobileNavigationShowLabels.value = checked;
 		}
 	}
 
-	function handleLabelsScopeChange(newScope: 'server' | 'local') {
-		if (newScope === 'local' && !labelsHasOverride) {
+	function handleLabelsScopeChange(isLocal: boolean) {
+		if (isLocal) {
 			setLocalOverride('showLabels', $formInputs.mobileNavigationShowLabels.value);
-		} else if (newScope === 'server' && labelsHasOverride) {
+		} else {
 			clearLocalOverride('showLabels');
 		}
-		labelsScopeInternal = newScope;
 	}
 </script>
-
-{#snippet scopeToggle(scope: 'server' | 'local', onScopeChange: (s: 'server' | 'local') => void, serverDisabled: boolean)}
-	<div class="bg-muted/50 inline-flex rounded-md p-0.5 text-xs">
-		<button
-			type="button"
-			onclick={() => onScopeChange('server')}
-			disabled={serverDisabled}
-			class="flex items-center gap-1.5 rounded px-2 py-1 transition-all duration-150 {scope === 'server'
-				? 'bg-background text-foreground shadow-sm'
-				: 'text-muted-foreground hover:text-foreground'} {serverDisabled ? 'cursor-not-allowed opacity-50' : ''}"
-		>
-			<EnvironmentsIcon class="size-3" />
-			<span>{m.server_default()}</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => onScopeChange('local')}
-			class="flex items-center gap-1.5 rounded px-2 py-1 transition-all duration-150 {scope === 'local'
-				? 'bg-background text-foreground shadow-sm'
-				: 'text-muted-foreground hover:text-foreground'}"
-		>
-			<SmartphoneIcon class="size-3" />
-			<span>{m.this_device()}</span>
-		</button>
-	</div>
-{/snippet}
 
 <SettingsPageLayout
 	title={m.appearance_title()}
@@ -262,38 +230,31 @@
 								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_mode_description()}</p>
 							</div>
 							<div class="space-y-3">
-								{@render scopeToggle(modeScope, handleModeScopeChange, isReadOnly)}
+								<SwitchWithLabel
+									id="mode-scope-toggle"
+									checked={modeIsLocal}
+									label={modeIsLocal ? m.this_device() : m.server_default()}
+									onCheckedChange={handleModeScopeChange}
+									disabled={isReadOnly && !modeIsLocal}
+								/>
 
-								<!-- Segmented Control -->
-								<div class="bg-muted/50 relative flex rounded-lg p-1">
-									<div
-										class="bg-background absolute top-1 bottom-1 rounded-md shadow-sm transition-all duration-200 ease-out"
-										style="width: calc(50% - 4px); left: {modeDisplayValue === 'floating' ? '4px' : 'calc(50% + 0px)'};"
-									></div>
-
-									<button
-										type="button"
+								<div class="grid grid-cols-2 gap-2">
+									<ArcaneButton
+										action="base"
+										tone={modeDisplayValue === 'floating' ? 'outline-primary' : 'outline'}
+										class="h-12 w-full"
 										onclick={() => handleModeSelect('floating')}
-										class="relative z-10 flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-colors duration-150 {modeDisplayValue ===
-										'floating'
-											? 'text-foreground'
-											: 'text-muted-foreground hover:text-foreground/80'}"
-									>
-										<MonitorSpeakerIcon class="size-4" />
-										<span>{m.navigation_mode_floating()}</span>
-									</button>
-
-									<button
-										type="button"
+										icon={MonitorSpeakerIcon}
+										customLabel={m.navigation_mode_floating()}
+									/>
+									<ArcaneButton
+										action="base"
+										tone={modeDisplayValue === 'docked' ? 'outline-primary' : 'outline'}
+										class="h-12 w-full"
 										onclick={() => handleModeSelect('docked')}
-										class="relative z-10 flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-colors duration-150 {modeDisplayValue ===
-										'docked'
-											? 'text-foreground'
-											: 'text-muted-foreground hover:text-foreground/80'}"
-									>
-										<DockIcon class="size-4" />
-										<span>{m.navigation_mode_docked()}</span>
-									</button>
+										icon={DockIcon}
+										customLabel={m.navigation_mode_docked()}
+									/>
 								</div>
 							</div>
 						</div>
@@ -307,7 +268,13 @@
 								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_show_labels_description()}</p>
 							</div>
 							<div class="space-y-3">
-								{@render scopeToggle(labelsScope, handleLabelsScopeChange, isReadOnly)}
+								<SwitchWithLabel
+									id="labels-scope-toggle"
+									checked={labelsIsLocal}
+									label={labelsIsLocal ? m.this_device() : m.server_default()}
+									onCheckedChange={handleLabelsScopeChange}
+									disabled={isReadOnly && !labelsIsLocal}
+								/>
 
 								<div class="flex items-center gap-3">
 									<Switch id="mobileNavigationShowLabels" checked={labelsDisplayValue} onCheckedChange={handleLabelsChange} />
