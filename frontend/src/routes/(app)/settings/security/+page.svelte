@@ -26,8 +26,8 @@
 	const formSchema = z
 		.object({
 			authLocalEnabled: z.boolean(),
-			authSessionTimeout: z
-				.number(m.security_session_timeout_required())
+			authSessionTimeout: z.coerce
+				.number()
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
 				.max(1440, m.security_session_timeout_max()),
@@ -56,7 +56,7 @@
 
 	const formDefaults = $derived({
 		authLocalEnabled: currentSettings.authLocalEnabled,
-		authSessionTimeout: Number(currentSettings.authSessionTimeout),
+		authSessionTimeout: currentSettings.authSessionTimeout,
 		authPasswordPolicy: currentSettings.authPasswordPolicy,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
