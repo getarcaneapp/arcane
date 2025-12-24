@@ -35,7 +35,7 @@
     "prettier": "^3.7.4",
     "prettier-plugin-svelte": "^3.4.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "svelte": "^5.46.0",
+    "svelte": "^5.46.1",
     "@sveltejs/kit": "^2.49.2"
   },
   "devDependencies": {
