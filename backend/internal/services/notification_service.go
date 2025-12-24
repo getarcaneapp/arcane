@@ -895,7 +895,13 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to unmarshal discord config: %w", err)
 	}
 
-	if err := validateWebhookURL(discordConfig.WebhookURL); err != nil {
+	// Decrypt webhook URL if encrypted
+	webhookURL := discordConfig.WebhookURL
+	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+		webhookURL = decrypted
+	}
+
+	if err := validateWebhookURL(webhookURL); err != nil {
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
@@ -943,7 +949,7 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to marshal Discord payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, discordConfig.WebhookURL, bytes.NewReader(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(jsonPayload))
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}

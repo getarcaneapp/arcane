@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v4
@@ -60,7 +60,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --release-notes=release-notes.md
+          args: release --clean --release-notes=release-notes.md --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_CHANGELOG: "true"

@@ -101,7 +101,17 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
-  - formats:
+  - id: arcane-cli
+    ids:
+      - arcane-cli
+    formats:
+      - tar.gz
+    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+  - id: default
+    ids:
+      - arcane
+      - arcane-agent
+    formats:
       - binary
     name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
 
@@ -140,7 +150,7 @@ homebrew_casks:
     homepage: 'https://getarcane.app'
     repository:
       owner: getarcaneapp
-      name: tap
+      name: homebrew-tap
     commit_msg_template: 'chore(brew): update {{ .ProjectName }} to {{ .Tag }}'
 
 dockers_v2:

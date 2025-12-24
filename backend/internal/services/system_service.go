@@ -70,18 +70,18 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 	}
 
 	// 2. Prune other resources in parallel
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	if req.Images {
 		g.Go(func() error {
 			danglingOnly := req.Dangling
-			if settingsDangling, _ := s.getDanglingModeFromSettings(ctx); settingsDangling != danglingOnly {
-				slog.DebugContext(ctx, "Prune request overriding stored image prune mode", "settings_dangling_only", settingsDangling, "request_dangling_only", danglingOnly)
+			if settingsDangling, _ := s.getDanglingModeFromSettings(groupCtx); settingsDangling != danglingOnly {
+				slog.DebugContext(groupCtx, "Prune request overriding stored image prune mode", "settings_dangling_only", settingsDangling, "request_dangling_only", danglingOnly)
 			}
 
-			slog.InfoContext(ctx, "Pruning images...", "dangling_only", danglingOnly)
+			slog.InfoContext(groupCtx, "Pruning images...", "dangling_only", danglingOnly)
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneImages(ctx, danglingOnly, localResult); err != nil {
+			if err := s.pruneImages(groupCtx, danglingOnly, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
 				result.Success = false
@@ -98,10 +98,10 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 
 	if req.BuildCache {
 		g.Go(func() error {
-			slog.InfoContext(ctx, "Pruning build cache...")
+			slog.InfoContext(groupCtx, "Pruning build cache...")
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneBuildCache(ctx, localResult, !req.Dangling); err != nil {
-				slog.WarnContext(ctx, "Build cache pruning encountered an error", "error", err.Error())
+			if err := s.pruneBuildCache(groupCtx, localResult, !req.Dangling); err != nil {
+				slog.WarnContext(groupCtx, "Build cache pruning encountered an error", "error", err.Error())
 				// Build cache errors are often non-critical, but we log them
 			} else {
 				mu.Lock()
@@ -114,9 +114,9 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 
 	if req.Volumes {
 		g.Go(func() error {
-			slog.InfoContext(ctx, "Pruning unused volumes...")
+			slog.InfoContext(groupCtx, "Pruning unused volumes...")
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneVolumes(ctx, localResult); err != nil {
+			if err := s.pruneVolumes(groupCtx, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
 				result.Success = false
@@ -133,9 +133,9 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 
 	if req.Networks {
 		g.Go(func() error {
-			slog.InfoContext(ctx, "Pruning unused networks...")
+			slog.InfoContext(groupCtx, "Pruning unused networks...")
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneNetworks(ctx, localResult); err != nil {
+			if err := s.pruneNetworks(groupCtx, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
 				result.Success = false
@@ -175,7 +175,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 	result := &containertypes.ActionResult{Success: true}
 	var mu sync.Mutex
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 	// Limit concurrency to avoid overwhelming Docker daemon
 	g.SetLimit(5)
 
@@ -186,7 +186,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 		}
 
 		g.Go(func() error {
-			err := action(ctx, c.ID)
+			err := action(groupCtx, c.ID)
 
 			mu.Lock()
 			defer mu.Unlock()
