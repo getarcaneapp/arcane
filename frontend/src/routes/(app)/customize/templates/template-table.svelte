@@ -145,21 +145,6 @@
 		};
 	}
 
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? field.defaultVisible ?? true
-		}))
-	);
-
 	function getRegistryName(template: Template): string {
 		if (template.registry?.name) {
 			return template.registry.name;
@@ -364,7 +349,17 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table, renderPagination }: { table: TemplateTable; renderPagination: import('svelte').Snippet })}
+{#snippet GroupedTableView({
+	table,
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
+}: {
+	table: TemplateTable;
+	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
+})}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar

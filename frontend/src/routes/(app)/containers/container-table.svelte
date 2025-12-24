@@ -287,21 +287,6 @@
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
 
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? true
-		}))
-	);
-
 	function getProjectName(container: ContainerSummaryDto): string {
 		const projectLabel = container.labels?.['com.docker.compose.project'];
 		return projectLabel || 'No Project';
@@ -634,10 +619,14 @@
 
 {#snippet GroupedTableView({
 	table,
-	renderPagination
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
 }: {
 	table: TableType<ContainerSummaryDto>;
 	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
 })}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
