@@ -32,7 +32,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "Shutting down job scheduler...")
 	err := s.scheduler.Shutdown()
 	if err != nil {
-		slog.ErrorContext(ctx, "Error shutting down job scheduler", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Error shutting down job scheduler", "error", err)
 		return fmt.Errorf("error during scheduler shutdown: %w", err)
 	}
 
@@ -52,20 +52,20 @@ func (s *Scheduler) RegisterJob(
 		gocron.WithName(name),
 		gocron.WithEventListeners(
 			gocron.BeforeJobRuns(func(jobID uuid.UUID, jobName string) {
-				slog.InfoContext(ctx, "Job starting", slog.String("name", name), slog.String("id", jobID.String()))
+				slog.InfoContext(ctx, "Job starting", "name", name, "id", jobID.String())
 			}),
 			gocron.AfterJobRuns(func(jobID uuid.UUID, jobName string) {
-				slog.InfoContext(ctx, "Job finished successfully", slog.String("name", name), slog.String("id", jobID.String()))
+				slog.InfoContext(ctx, "Job finished successfully", "name", name, "id", jobID.String())
 			}),
 			gocron.AfterJobRunsWithError(func(jobID uuid.UUID, jobName string, err error) {
-				slog.ErrorContext(ctx, "Job failed", slog.String("name", name), slog.String("id", jobID.String()), slog.Any("error", err))
+				slog.ErrorContext(ctx, "Job failed", "name", name, "id", jobID.String(), "error", err)
 			}),
 		),
 	}
 
 	task := gocron.NewTask(func() {
 		if err := taskFunc(ctx); err != nil {
-			slog.ErrorContext(ctx, "Error executing task function", slog.String("name", name), slog.Any("error", err))
+			slog.ErrorContext(ctx, "Error executing task function", "name", name, "error", err)
 		}
 	})
 
@@ -79,7 +79,7 @@ func (s *Scheduler) RegisterJob(
 		return fmt.Errorf("failed to register job %q: %w", name, err)
 	}
 
-	slog.InfoContext(ctx, "Job registered successfully", slog.String("name", name))
+	slog.InfoContext(ctx, "Job registered successfully", "name", name)
 	return nil
 }
 

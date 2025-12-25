@@ -17,6 +17,7 @@
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	let {
 		data,
@@ -82,7 +83,9 @@
 	{#if !settings && data.user}
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}
-		{@render children()}
+		<Tooltip.Provider>
+			{@render children()}
+		</Tooltip.Provider>
 	{/if}
 </div>
 

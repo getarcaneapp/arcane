@@ -161,16 +161,6 @@ type Update struct {
 	// Required: false
 	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
 
-	// OnboardingCompleted indicates if the onboarding process is complete.
-	//
-	// Required: false
-	OnboardingCompleted *string `json:"onboardingCompleted,omitempty"`
-
-	// OnboardingSteps tracks the completed onboarding steps.
-	//
-	// Required: false
-	OnboardingSteps *string `json:"onboardingSteps,omitempty"`
-
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false

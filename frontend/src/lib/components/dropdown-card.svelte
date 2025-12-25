@@ -2,9 +2,9 @@
 	import { cn } from '$lib/utils';
 	import { onMount, type Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { Button } from './ui/button';
 	import * as Card from './ui/card';
 	import { ArrowDownIcon } from '$lib/icons';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let {
 		id,
@@ -91,15 +91,15 @@
 			{/if}
 		</div>
 		<Card.Action class="ml-auto">
-			<Button
-				variant="ghost"
+			<ArcaneButton
+				action="base"
+				tone="ghost"
 				size="icon"
-				class="h-8 w-8"
-				aria-label={expanded ? 'Collapse section' : 'Expand section'}
+				icon={ArrowDownIcon}
+				class={cn('[&_svg]:size-5 [&_svg]:transition-transform [&_svg]:duration-200', expanded && '[&_svg]:rotate-180')}
 				onclick={() => toggleExpanded()}
-			>
-				<ArrowDownIcon class={cn('size-5 transition-transform duration-200', expanded && 'rotate-180')} />
-			</Button>
+				aria-label={expanded ? 'Collapse section' : 'Expand section'}
+			/>
 		</Card.Action>
 	</Card.Header>
 	{#if expanded}

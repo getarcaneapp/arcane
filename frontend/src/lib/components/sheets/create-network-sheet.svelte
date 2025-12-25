@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -214,22 +214,26 @@
 									<div class="flex items-center gap-2">
 										<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
 										<Input type="text" placeholder="Value" bind:value={label.value} disabled={isLoading} class="flex-1" />
-										<Button
-											type="button"
-											variant="ghost"
+										<ArcaneButton
+											action="base"
+											tone="ghost"
 											size="icon"
 											onclick={() => removeLabel(index)}
 											disabled={isLoading || labels.length <= 1}
 											class="text-destructive hover:text-destructive"
 											title={m.common_remove()}
-										>
-											<CloseIcon class="size-4" />
-										</Button>
+											icon={CloseIcon}
+										/>
 									</div>
 								{/each}
-								<Button type="button" variant="outline" size="sm" onclick={addLabel} disabled={isLoading}
-									>{m.add_label_button()}</Button
-								>
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									onclick={addLabel}
+									disabled={isLoading}
+									customLabel={m.add_label_button()}
+								/>
 							</div>
 
 							<div class="space-y-2">
@@ -325,21 +329,23 @@
 
 	{#snippet footer()}
 		<div class="flex w-full flex-row gap-2">
-			<Button
+			<ArcaneButton
+				action="cancel"
+				tone="outline"
 				type="button"
-				class="arcane-button-cancel flex-1"
-				variant="outline"
+				class="flex-1"
 				onclick={() => (open = false)}
-				disabled={isLoading}>{m.common_cancel()}</Button
-			>
-			<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading} onclick={handleSubmit}>
-				{#if isLoading}
-					<Spinner class="mr-2 size-4" />
-				{:else}
-					<AddIcon class="mr-2 size-4" />
-				{/if}
-				{isLoading ? m.common_action_creating() : m.common_create_button({ resource: m.resource_network_cap() })}
-			</Button>
+				disabled={isLoading}
+			/>
+			<ArcaneButton
+				action="create"
+				type="submit"
+				class="flex-1"
+				disabled={isLoading}
+				loading={isLoading}
+				onclick={handleSubmit}
+				customLabel={m.common_create_button({ resource: m.resource_network_cap() })}
+			/>
 		</div>
 	{/snippet}
 </ResponsiveDialog.Root>

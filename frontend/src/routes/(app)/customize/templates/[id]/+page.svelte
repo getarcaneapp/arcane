@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
@@ -96,10 +96,10 @@
 
 <div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
 	<div class="space-y-3 sm:space-y-4">
-		<Button variant="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
+		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
-		</Button>
+		</ArcaneButton>
 
 		<div>
 			<h1 class="text-xl font-bold break-words sm:text-2xl">{template.name}</h1>
@@ -127,42 +127,48 @@
 			{/if}
 		</div>
 		<div class="flex flex-col gap-2 sm:flex-row">
-			<Button onclick={() => goto(`/projects/new?templateId=${template.id}`)} class="w-full gap-2 sm:w-auto">
-				<MoveToFolderIcon class="size-4" />
+			<ArcaneButton
+				action="create"
+				onclick={() => goto(`/projects/new?templateId=${template.id}`)}
+				class="w-full gap-2 sm:w-auto"
+			>
 				{m.compose_create_project()}
-			</Button>
+			</ArcaneButton>
 
 			{#if canDownload}
-				<Button variant="secondary" onclick={handleDownload} disabled={isDownloading} class="w-full gap-2 sm:w-auto">
-					{#if isDownloading}
-						<Spinner class="size-4" />
-						{m.common_action_downloading()}
-					{:else}
-						<DownloadIcon class="size-4" />
-						{m.templates_download()}
-					{/if}
-				</Button>
+				<ArcaneButton
+					action="base"
+					onclick={handleDownload}
+					disabled={isDownloading}
+					loading={isDownloading}
+					loadingLabel={m.common_action_downloading()}
+					class="w-full gap-2 sm:w-auto"
+				>
+					<DownloadIcon class="size-4" />
+					{m.templates_download()}
+				</ArcaneButton>
 			{:else if template.isRemote && localVersionOfRemote()}
-				<Button
-					variant="outline"
+				<ArcaneButton
+					action="base"
 					onclick={() => goto(`/customize/templates/${localVersionOfRemote()?.id}`)}
 					class="w-full gap-2 sm:w-auto"
 				>
 					<ProjectsIcon class="size-4" />
 					{m.templates_view_local_version()}
-				</Button>
+				</ArcaneButton>
 			{/if}
 
 			{#if canDelete}
-				<Button variant="destructive" onclick={handleDelete} disabled={isDeleting} class="w-full gap-2 sm:w-auto">
-					{#if isDeleting}
-						<Spinner class="size-4" />
-						{m.common_action_deleting()}
-					{:else}
-						<TrashIcon class="size-4" />
-						{m.templates_delete_template()}
-					{/if}
-				</Button>
+				<ArcaneButton
+					action="remove"
+					onclick={handleDelete}
+					disabled={isDeleting}
+					loading={isDeleting}
+					loadingLabel={m.common_action_deleting()}
+					class="w-full gap-2 sm:w-auto"
+				>
+					{m.templates_delete_template()}
+				</ArcaneButton>
 			{/if}
 		</div>
 	</div>
@@ -212,9 +218,9 @@
 					<Card.Description>{m.templates_service_definitions()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="min-h-[500px] flex-grow p-0 lg:h-full">
-				<div class="h-full rounded-t-none rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-					<CodeEditor bind:value={compose} language="yaml" readOnly={true} />
+			<Card.Content class="flex min-h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
+				<div class="min-h-0 min-w-0 flex-1 rounded-t-none rounded-b-xl">
+					<CodeEditor bind:value={compose} language="yaml" readOnly={true} fontSize="13px" />
 				</div>
 			</Card.Content>
 		</Card.Root>
@@ -282,9 +288,9 @@
 							<Card.Description>{m.templates_raw_env_config()}</Card.Description>
 						</div>
 					</Card.Header>
-					<Card.Content class="h-[500px] flex-grow p-0 lg:h-full">
-						<div class="h-full rounded-b-xl [&_.cm-content]:text-xs sm:[&_.cm-content]:text-sm">
-							<CodeEditor bind:value={env} language="env" readOnly={true} />
+					<Card.Content class="flex h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
+						<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+							<CodeEditor bind:value={env} language="env" readOnly={true} fontSize="13px" />
 						</div>
 					</Card.Content>
 				</Card.Root>

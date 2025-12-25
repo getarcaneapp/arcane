@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ArrowLeftIcon, TerminalIcon, CopyIcon, InfoIcon, TemplateIcon, AddIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -10,7 +10,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import type { Template } from '$lib/types/template.type';
 	import { z } from 'zod/v4';
@@ -146,7 +146,8 @@
 
 	const templateBtnClass = arcaneButtonVariants({
 		tone: actionConfigs.template?.tone ?? 'outline-primary',
-		size: 'default'
+		size: 'default',
+		hoverEffect: 'none'
 	});
 
 	const dropdownContentClass =
@@ -160,14 +161,19 @@
 		'data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
 </script>
 
-<div class="bg-background flex min-h-0 flex-col">
-	<div class="sticky top-0 border-b">
+<div class="bg-background flex h-full min-h-0 flex-col">
+	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex items-center gap-4">
-				<Button variant="ghost" size="sm" href="/projects" class="gap-2 bg-transparent">
-					<ArrowLeftIcon class="size-4" />
-					{m.common_back()}
-				</Button>
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="sm"
+					href="/projects"
+					class="gap-2 bg-transparent"
+					icon={ArrowLeftIcon}
+					customLabel={m.common_back()}
+				/>
 				<div class="bg-border hidden h-4 w-px sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
@@ -185,55 +191,50 @@
 
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
-					<Tooltip.Provider>
-						<Tooltip.Root open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<span {...props}>
-										<Button
-											disabled={!$inputs.name.value ||
-												!$inputs.composeContent.value ||
-												saving ||
-												converting ||
-												isLoadingTemplateContent}
-											onclick={() => handleSubmit()}
-											class={`${templateBtnClass} gap-2 rounded-r-none hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
-										>
-											{#if saving}
-												<Spinner class="size-4" />
-												{m.common_action_creating()}
-											{:else}
-												<AddIcon class="size-4" />
-												{m.compose_create_project()}
-											{/if}
-										</Button>
-									</span>
-								{/snippet}
-							</Tooltip.Trigger>
+					<ArcaneTooltip.Root
+						open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}
+					>
+						<ArcaneTooltip.Trigger>
+							<span>
+								<ArcaneButton
+									action="create"
+									tone="ghost"
+									disabled={!$inputs.name.value ||
+										!$inputs.composeContent.value ||
+										saving ||
+										converting ||
+										isLoadingTemplateContent}
+									onclick={() => handleSubmit()}
+									class={`${templateBtnClass} gap-2 rounded-r-none`}
+									loading={saving}
+									customLabel={m.compose_create_project()}
+									loadingLabel={m.common_action_creating()}
+								/>
+							</span>
+						</ArcaneTooltip.Trigger>
+						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
 							{#if $inputs.name.value === ''}
-								<Tooltip.Content class="arcane-tooltip-content max-w-[280px]">
-									<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
-									<p class="text-muted-foreground text-xs">
-										{m.compose_project_name_tooltip_description()}
-									</p>
-									<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
-										{m.compose_project_name_tooltip_example()}
-									</p>
-								</Tooltip.Content>
+								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
+								<p class="text-muted-foreground text-xs">
+									{m.compose_project_name_tooltip_description()}
+								</p>
+								<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
+									{m.compose_project_name_tooltip_example()}
+								</p>
 							{/if}
-						</Tooltip.Root>
-					</Tooltip.Provider>
+						</ArcaneTooltip.Content>
+					</ArcaneTooltip.Root>
 
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger>
 							{#snippet child({ props })}
-								<Button
+								<ArcaneButton
 									{...props}
-									class={`${templateBtnClass} -ml-px rounded-l-none px-2 hover:translate-y-0 focus:translate-y-0 active:translate-y-0`}
-									variant="outline"
-								>
-									<ChevronDown class="size-4" />
-								</Button>
+									action="base"
+									tone="ghost"
+									class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
+									icon={ChevronDown}
+								/>
 							{/snippet}
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="end" class={dropdownContentClass}>
@@ -276,10 +277,10 @@
 		</div>
 	</div>
 
-	<div class="flex-1 overflow-hidden">
-		<div class="mx-auto h-full max-w-full">
-			<div class="flex h-full flex-col gap-4 p-6">
-				<div class="block sm:hidden">
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		<div class="mx-auto h-full w-full max-w-full min-w-0">
+			<div class="flex h-full min-h-0 flex-col gap-4">
+				<div class="block flex-shrink-0 py-4 sm:hidden">
 					<EditableName
 						bind:value={$inputs.name.value}
 						bind:ref={nameInputRef}
@@ -292,28 +293,25 @@
 				</div>
 
 				<form
-					class="grid h-full grid-cols-1 gap-4 lg:grid-cols-5 lg:items-stretch"
-					style="grid-template-rows: 1fr;"
+					class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch"
 					onsubmit={preventDefault(handleSubmit)}
 				>
-					<div class="flex h-full flex-col lg:col-span-3">
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
 						<CodePanel
 							bind:open={composeOpen}
 							title={m.compose_compose_file_title()}
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
-							placeholder={m.compose_compose_placeholder()}
 							error={$inputs.composeContent.error ?? undefined}
 						/>
 					</div>
 
-					<div class="flex h-full flex-col lg:col-span-2">
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
 						<CodePanel
 							bind:open={envOpen}
 							title={m.compose_env_title()}
 							language="env"
 							bind:value={$inputs.envContent.value}
-							placeholder={m.compose_env_placeholder()}
 							error={$inputs.envContent.error ?? undefined}
 						/>
 					</div>
@@ -347,31 +345,29 @@
 				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
 					{#each exampleCommands as command}
-						<Button
-							type="button"
-							variant="ghost"
+						<ArcaneButton
+							action="base"
+							tone="ghost"
 							size="sm"
 							class="h-auto w-full justify-start p-2 text-left font-mono text-xs break-all whitespace-normal"
 							onclick={() => useExample(command)}
-						>
-							<CopyIcon class="mr-2 size-3 shrink-0" />
-							<span>{command}</span>
-						</Button>
+							icon={CopyIcon}
+							customLabel={command}
+						/>
 					{/each}
 				</div>
 			</div>
 		</div>
 
 		<div class="flex w-full justify-end pt-4">
-			<Button type="button" disabled={!dockerRunCommand.trim() || converting} onclick={handleConvertDockerRun}>
-				{#if converting}
-					<Spinner class="mr-2 size-4" />
-					{m.compose_converting()}
-				{:else}
-					<AddIcon class="mr-2 size-4" />
-					{m.compose_convert_action()}
-				{/if}
-			</Button>
+			<ArcaneButton
+				action="create"
+				disabled={!dockerRunCommand.trim() || converting}
+				onclick={handleConvertDockerRun}
+				loading={converting}
+				customLabel={m.compose_convert_action()}
+				loadingLabel={m.compose_converting()}
+			/>
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
@@ -382,12 +378,3 @@
 	onSelect={handleTemplateSelect}
 	onDownloadSuccess={invalidateAll}
 />
-
-<style>
-	:global(.arcane-dd-content [data-arrow]) {
-		background: color-mix(in srgb, var(--background), transparent 5%);
-		border: 1px solid color-mix(in srgb, var(--primary), transparent 70%);
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.12);
-		z-index: 10;
-	}
-</style>

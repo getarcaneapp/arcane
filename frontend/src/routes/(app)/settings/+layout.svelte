@@ -2,8 +2,8 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon, SaveIcon, ResetIcon } from '$lib/icons';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
@@ -12,6 +12,7 @@
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
+	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -214,26 +215,25 @@
 				<div class="px-4 py-3">
 					<div class="flex items-center justify-between gap-4">
 						<div class="flex min-w-0 items-center gap-2">
-							<Button
-								variant="ghost"
-								size="sm"
+							<ArcaneButton
+								action="base"
+								tone="ghost"
 								onclick={goBackToSettings}
 								class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
-							>
-								<ArrowLeftIcon class="size-4" />
-								<span class="hidden sm:inline">{m.common_back()}</span>
-							</Button>
+								icon={ArrowLeftIcon}
+								customLabel={m.common_back()}
+								showLabel={!isMobile.current}
+							/>
 
 							<nav class="flex min-w-0 items-center gap-2 text-sm">
-								<Button
-									variant="ghost"
-									size="sm"
+								<ArcaneButton
+									action="base"
+									tone="ghost"
 									onclick={goBackToSettings}
 									class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
-								>
-									<SettingsIcon class="size-4" />
-									<span>{m.settings_title()}</span>
-								</Button>
+									icon={SettingsIcon}
+									customLabel={m.settings_title()}
+								/>
 								<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
 								<span class="text-foreground truncate font-medium">{pageTitle()}</span>
 							</nav>
@@ -253,44 +253,10 @@
 
 <!-- Mobile Floating Action Buttons -->
 {#if isSubPage && !isReadOnly && formState.saveFunction}
-	<div
-		class="fixed right-4 z-50 flex flex-col gap-3 transition-all duration-300 ease-out sm:hidden"
-		style="bottom: {scrollToHideEnabled && !mobileNavVisible
-			? '1rem'
-			: 'calc(var(--mobile-' +
-				navigationMode +
-				'-nav-offset, ' +
-				(navigationMode === 'docked' ? 'calc(3.5rem + env(safe-area-inset-bottom))' : '6rem') +
-				') + 1rem)'};"
-	>
-		{#if formState.hasChanges && formState.resetFunction}
-			<Button
-				variant="outline"
-				size="lg"
-				onclick={() => formState.resetFunction && formState.resetFunction()}
-				disabled={formState.isLoading}
-				class={cn('size-14 rounded-full border-2 shadow-lg', isGlassEnabled ? 'bg-background/80 backdrop-blur-md' : 'bg-card')}
-			>
-				<ResetIcon class="size-5" />
-			</Button>
-		{/if}
-
-		<Button
-			onclick={handleSave}
-			disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
-			size="lg"
-			class="bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground size-14 rounded-full shadow-lg"
-		>
-			{#if formState.isLoading}
-				<div class="border-background size-5 animate-spin rounded-full border-2 border-t-transparent"></div>
-			{:else}
-				<SaveIcon class="size-5" />
-			{/if}
-		</Button>
-
-		<!-- Status indicator for mobile -->
-		{#if formState.hasChanges}
-			<div class="absolute -top-2 -left-2 size-3 animate-pulse rounded-full bg-orange-500"></div>
-		{/if}
-	</div>
+	<MobileFloatingFormActions
+		hasChanges={formState.hasChanges}
+		isLoading={formState.isLoading}
+		onSave={handleSave}
+		onReset={() => formState.resetFunction && formState.resetFunction()}
+	/>
 {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { RefreshIcon, StartIcon, StopIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
@@ -118,50 +119,57 @@
 				</button>
 			</div>
 
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class="bg-card/60 inline-flex size-9 items-center justify-center rounded-lg border backdrop-blur-sm sm:hidden"
-				>
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</DropdownMenu.Trigger>
+			<div class="sm:hidden">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="bg-background/70 size-9 border">
+								<span class="sr-only">{m.common_open_menu()}</span>
+								<EllipsisIcon class="size-4" />
+							</ArcaneButton>
+						{/snippet}
+					</DropdownMenu.Trigger>
 
-				<DropdownMenu.Content align="end" class="bg-popover/90 z-50 min-w-[160px] rounded-md p-1 shadow-lg backdrop-blur-md">
-					<DropdownMenu.Group>
-						<DropdownMenu.Item
-							onclick={onStartAll}
-							disabled={!dockerInfo || stoppedContainers === 0 || isLoading.starting || isLoading.stopping || isLoading.pruning}
-						>
-							{m.quick_actions_start_all()}
-						</DropdownMenu.Item>
+					<DropdownMenu.Content
+						align="end"
+						class="bg-popover/90 z-50 min-w-[160px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+					>
+						<DropdownMenu.Group>
+							<DropdownMenu.Item
+								onclick={onStartAll}
+								disabled={!dockerInfo || stoppedContainers === 0 || isLoading.starting || isLoading.stopping || isLoading.pruning}
+							>
+								{m.quick_actions_start_all()}
+							</DropdownMenu.Item>
 
-						<DropdownMenu.Item
-							onclick={onStopAll}
-							disabled={!dockerInfo ||
-								(dockerInfo?.ContainersRunning ?? 0) === 0 ||
-								isLoading.starting ||
-								isLoading.stopping ||
-								isLoading.pruning}
-						>
-							{m.quick_actions_stop_all()}
-						</DropdownMenu.Item>
+							<DropdownMenu.Item
+								onclick={onStopAll}
+								disabled={!dockerInfo ||
+									(dockerInfo?.ContainersRunning ?? 0) === 0 ||
+									isLoading.starting ||
+									isLoading.stopping ||
+									isLoading.pruning}
+							>
+								{m.quick_actions_stop_all()}
+							</DropdownMenu.Item>
 
-						<DropdownMenu.Item
-							onclick={onOpenPruneDialog}
-							disabled={!dockerInfo || isLoading.starting || isLoading.stopping || isLoading.pruning}
-						>
-							{m.quick_actions_prune_system()}
-						</DropdownMenu.Item>
+							<DropdownMenu.Item
+								onclick={onOpenPruneDialog}
+								disabled={!dockerInfo || isLoading.starting || isLoading.stopping || isLoading.pruning}
+							>
+								{m.quick_actions_prune_system()}
+							</DropdownMenu.Item>
 
-						<DropdownMenu.Item
-							onclick={onRefresh}
-							disabled={isLoading.starting || isLoading.stopping || isLoading.pruning || refreshing}
-						>
-							{m.common_refresh()}
-						</DropdownMenu.Item>
-					</DropdownMenu.Group>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+							<DropdownMenu.Item
+								onclick={onRefresh}
+								disabled={isLoading.starting || isLoading.stopping || isLoading.pruning || refreshing}
+							>
+								{m.common_refresh()}
+							</DropdownMenu.Item>
+						</DropdownMenu.Group>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
 		{/if}
 	{:else}
 		<h2 class="mb-3 text-lg font-semibold tracking-tight">{m.quick_actions_title()}</h2>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -376,14 +376,13 @@
 				{m.common_not_found_description({ resource: m.container().toLowerCase() })}
 			</p>
 			<div class="flex justify-center gap-4">
-				<Button variant="outline" href="/containers">
+				<ArcaneButton action="base" href="/containers">
 					<ArrowLeftIcon class="size-4" />
 					{m.common_back_to({ resource: m.containers_title() })}
-				</Button>
-				<Button variant="default" onclick={refreshData}>
-					<RefreshIcon class="size-4" />
+				</ArcaneButton>
+				<ArcaneButton action="refresh" onclick={refreshData}>
 					{m.common_retry()}
-				</Button>
+				</ArcaneButton>
 			</div>
 		</div>
 	</div>

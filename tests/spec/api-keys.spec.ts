@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { createTestApiKeys, deleteTestApiKeys } from '../utils/onboarding.util';
+import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
 
 const API_KEYS_ROUTE = '/settings/api-keys';
 

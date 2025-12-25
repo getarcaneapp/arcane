@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
@@ -336,22 +336,20 @@
 	{#snippet footer()}
 		{#if pullError}
 			<div class="flex w-full flex-row gap-2">
-				<Button type="button" class="flex-1" variant="outline" onclick={() => resetState()}>
-					{m.common_retry()}
-				</Button>
-				<Button type="button" class="flex-1" onclick={() => (open = false)}>
-					{m.common_close()}
-				</Button>
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					type="button"
+					class="flex-1"
+					onclick={() => resetState()}
+					customLabel={m.common_retry()}
+				/>
+				<ArcaneButton action="base" type="button" class="flex-1" onclick={() => (open = false)} customLabel={m.common_close()} />
 			</div>
 		{:else if !showPullUI}
 			<div class="flex w-full flex-row gap-2">
-				<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={() => (open = false)}>
-					{m.common_cancel()}
-				</Button>
-				<Button type="submit" class="arcane-button-create flex-1" onclick={handleSubmit}>
-					<DownloadIcon class="mr-2 size-4" />
-					{m.images_pull_image()}
-				</Button>
+				<ArcaneButton action="cancel" tone="outline" type="button" class="flex-1" onclick={() => (open = false)} />
+				<ArcaneButton action="pull" type="submit" class="flex-1" onclick={handleSubmit} />
 			</div>
 		{/if}
 	{/snippet}

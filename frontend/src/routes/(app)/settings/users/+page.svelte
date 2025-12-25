@@ -121,7 +121,6 @@
 	icon={UsersIcon}
 	pageType="management"
 	{actionButtons}
-	statCardsColumns={3}
 >
 	{#snippet mainContent()}
 		<UserTable

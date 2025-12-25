@@ -1,0 +1,16 @@
+-- Remove all indexes added in migration 027
+DROP INDEX IF EXISTS idx_environments_enabled;
+DROP INDEX IF EXISTS idx_environments_status;
+DROP INDEX IF EXISTS idx_environments_last_seen;
+DROP INDEX IF EXISTS idx_container_registries_enabled;
+DROP INDEX IF EXISTS idx_projects_status;
+DROP INDEX IF EXISTS idx_projects_name;
+DROP INDEX IF EXISTS idx_users_username;
+DROP INDEX IF EXISTS idx_users_email;
+DROP INDEX IF EXISTS idx_users_oidc_subject_id;
+DROP INDEX IF EXISTS idx_image_updates_has_update;
+DROP INDEX IF EXISTS idx_image_updates_has_update_notification;
+DROP INDEX IF EXISTS idx_image_updates_check_time;
+DROP INDEX IF EXISTS idx_image_updates_notification_sent;
+DROP INDEX IF EXISTS idx_notification_settings_enabled;
+DROP INDEX IF EXISTS idx_apprise_settings_enabled;

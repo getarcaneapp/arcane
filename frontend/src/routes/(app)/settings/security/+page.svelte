@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { z } from 'zod/v4';
-	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { getContext } from 'svelte';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -10,7 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
@@ -26,8 +26,8 @@
 	const formSchema = z
 		.object({
 			authLocalEnabled: z.boolean(),
-			authSessionTimeout: z
-				.number(m.security_session_timeout_required())
+			authSessionTimeout: z.coerce
+				.number()
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
 				.max(1440, m.security_session_timeout_max()),
@@ -69,7 +69,7 @@
 	});
 
 	// Security page needs custom submit logic for OIDC client secret handling
-	let { formInputs, form, settingsForm, registerOnMount } = $derived(
+	let { formInputs, form, settingsForm } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings: formDefaults,
@@ -188,9 +188,14 @@
 		showMergeAccountsAlert = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		// Use custom submit/reset for security page
 		settingsForm.registerFormActions(customSubmit, customReset);
+		// Sync the custom hasSecurityChanges to the context
+		const formState = getContext('settingsFormState') as any;
+		if (formState) {
+			formState.hasChanges = hasSecurityChanges;
+		}
 	});
 </script>
 
@@ -268,6 +273,9 @@
 												bind:value={$formInputs.oidcClientId.value}
 												class="font-mono text-sm"
 											/>
+											{#if $formInputs.oidcClientId.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientId.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -281,6 +289,9 @@
 												class="font-mono text-sm"
 											/>
 											<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
+											{#if $formInputs.oidcClientSecret.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -294,6 +305,9 @@
 												class="font-mono text-sm"
 											/>
 											<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
+											{#if $formInputs.oidcIssuerUrl.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -306,6 +320,9 @@
 												bind:value={$formInputs.oidcScopes.value}
 												class="font-mono text-sm"
 											/>
+											{#if $formInputs.oidcScopes.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
+											{/if}
 										</div>
 
 										<div class="border-t pt-4">
@@ -322,6 +339,9 @@
 														bind:value={$formInputs.oidcAdminClaim.value}
 														class="font-mono text-sm"
 													/>
+													{#if $formInputs.oidcAdminClaim.error}
+														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminClaim.error}</p>
+													{/if}
 												</div>
 												<div class="space-y-2">
 													<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
@@ -334,6 +354,9 @@
 														class="font-mono text-sm"
 													/>
 													<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
+													{#if $formInputs.oidcAdminValue.error}
+														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminValue.error}</p>
+													{/if}
 												</div>
 											</div>
 										</div>
@@ -412,54 +435,52 @@
 								<p class="text-muted-foreground mt-1 text-sm">{m.security_password_policy_description()}</p>
 							</div>
 							<div>
-								<Tooltip.Provider>
-									<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'basic' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'basic'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
-													type="button"
-													>{m.common_basic()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_basic_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<ArcaneButton
+												action="base"
+												tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
+												class="h-12 w-full text-xs sm:text-sm"
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
+												customLabel={m.common_basic()}
+											/>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_basic_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'standard' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'standard'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
-													type="button"
-													>{m.security_password_policy_standard()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_standard_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<ArcaneButton
+												action="base"
+												tone={$formInputs.authPasswordPolicy.value === 'standard' ? 'outline-primary' : 'outline'}
+												class="h-12 w-full text-xs sm:text-sm"
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
+												customLabel={m.security_password_policy_standard()}
+											/>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_standard_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
 
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<Button
-													variant={$formInputs.authPasswordPolicy.value === 'strong' ? 'default' : 'outline'}
-													class={$formInputs.authPasswordPolicy.value === 'strong'
-														? 'arcane-button-create h-12 w-full text-xs sm:text-sm'
-														: 'arcane-button-restart h-12 w-full text-xs sm:text-sm'}
-													onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
-													type="button"
-													>{m.security_password_policy_strong()}
-												</Button>
-											</Tooltip.Trigger>
-											<Tooltip.Content side="top" align="center">{m.security_password_policy_strong_tooltip()}</Tooltip.Content>
-										</Tooltip.Root>
-									</div>
-								</Tooltip.Provider>
+									<ArcaneTooltip.Root>
+										<ArcaneTooltip.Trigger>
+											<ArcaneButton
+												action="base"
+												tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
+												class="h-12 w-full text-xs sm:text-sm"
+												onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
+												customLabel={m.security_password_policy_strong()}
+											/>
+										</ArcaneTooltip.Trigger>
+										<ArcaneTooltip.Content side="top">
+											{m.security_password_policy_strong_tooltip()}
+										</ArcaneTooltip.Content>
+									</ArcaneTooltip.Root>
+								</div>
 							</div>
 						</div>
 					</div>

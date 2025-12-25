@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
@@ -12,6 +12,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 
 	let {
@@ -22,8 +24,10 @@
 		isLoading: boolean;
 	} = $props();
 
+	const isMobile = new IsMobile();
 	let selectedIds = $state<string[]>([]);
 	let contentHeight = $state(0);
+	let lastFetchedLimit = $state(5);
 
 	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
 	const ROW_HEIGHT = 57;
@@ -45,6 +49,7 @@
 	});
 
 	const calculatedLimit = $derived.by(() => {
+		if (isMobile.current) return 10;
 		if (contentHeight <= 0) return 5;
 		let availableHeight = contentHeight - HEADER_HEIGHT;
 		if (shouldReserveFooter) {
@@ -54,18 +59,29 @@
 		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
 	});
 
-	let lastFetchedLimit = $state(5);
-
 	$effect(() => {
-		const currentLimit = containers.pagination?.itemsPerPage;
-		if (
-			requestOptions.pagination &&
-			(calculatedLimit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== calculatedLimit))
-		) {
-			lastFetchedLimit = calculatedLimit;
-			requestOptions.pagination.limit = calculatedLimit;
-			containerService.getContainers(requestOptions).then((result) => (containers = result));
-		}
+		const limit = calculatedLimit;
+
+		const tid = untrack(() => {
+			const currentLimit = containers.pagination?.itemsPerPage;
+			if (requestOptions.pagination && (limit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== limit))) {
+				return setTimeout(() => {
+					untrack(() => {
+						lastFetchedLimit = limit;
+						if (requestOptions.pagination) {
+							requestOptions.pagination.limit = limit;
+							containerService.getContainers(requestOptions).then((result) => {
+								untrack(() => {
+									containers = result;
+								});
+							});
+						}
+					});
+				}, 300);
+			}
+		});
+
+		if (tid) return () => clearTimeout(tid);
 	});
 
 	const columns = [
@@ -134,10 +150,10 @@
 					</Card.Title>
 					<Card.Description>{m.containers_recent()}</Card.Description>
 				</div>
-				<Button variant="ghost" size="sm" href="/containers" disabled={isLoading}>
+				<ArcaneButton action="base" tone="ghost" size="sm" href="/containers" disabled={isLoading}>
 					{m.common_view_all()}
 					<ArrowRightIcon class="size-4" />
-				</Button>
+				</ArcaneButton>
 			</div>
 		</Card.Header>
 		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">

@@ -571,10 +571,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
-		slog.InfoContext(ctx, "Token version mismatch detected",
-			"tokenVersion", claims.AppVersion,
-			"currentVersion", config.Version,
-			"user", claims.Username)
+		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, ErrTokenVersionMismatch
 	}
 

@@ -37,13 +37,11 @@ func (j *ImagePollingJob) Register(ctx context.Context) error {
 
 	interval := time.Duration(pollingInterval) * time.Minute
 	if interval < 5*time.Minute {
-		slog.WarnContext(ctx, "polling interval too low; using default",
-			slog.Int("requested_minutes", pollingInterval),
-			slog.String("effective_interval", "60m"))
+		slog.WarnContext(ctx, "polling interval too low; using default", "requested_minutes", pollingInterval, "effective_interval", "60m")
 		interval = 60 * time.Minute
 	}
 
-	slog.InfoContext(ctx, "registering image polling job", slog.String("interval", interval.String()))
+	slog.InfoContext(ctx, "registering image polling job", "interval", interval.String())
 
 	j.scheduler.RemoveJobByName("image-polling")
 
@@ -62,14 +60,13 @@ func (j *ImagePollingJob) Execute(ctx context.Context) error {
 
 	creds, err := j.loadRegistryCredentials(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to load registry credentials for polling",
-			slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "failed to load registry credentials for polling", "error", err.Error())
 		creds = nil
 	}
 
 	results, err := j.imageUpdateService.CheckAllImages(ctx, 0, creds)
 	if err != nil {
-		slog.ErrorContext(ctx, "image scan failed", slog.Any("err", err))
+		slog.ErrorContext(ctx, "image scan failed", "err", err)
 		return err
 	}
 
@@ -89,10 +86,7 @@ func (j *ImagePollingJob) Execute(ctx context.Context) error {
 		}
 	}
 
-	slog.InfoContext(ctx, "image scan run completed",
-		slog.Int("checked", total),
-		slog.Int("updates", updates),
-		slog.Int("errors", errors))
+	slog.InfoContext(ctx, "image scan run completed", "checked", total, "updates", updates, "errors", errors)
 
 	return nil
 }
@@ -115,7 +109,7 @@ func (j *ImagePollingJob) Reschedule(ctx context.Context) error {
 	if interval < 5*time.Minute {
 		interval = 60 * time.Minute
 	}
-	slog.InfoContext(ctx, "polling settings changed; rescheduling", slog.String("interval", interval.String()))
+	slog.InfoContext(ctx, "polling settings changed; rescheduling", "interval", interval.String())
 
 	return j.scheduler.RescheduleDurationJobByName(ctx, "image-polling", interval, j.Execute, false)
 }

@@ -42,13 +42,6 @@ func InitializeDefaultSettings(ctx context.Context, cfg *config.Config, settings
 		slog.InfoContext(ctx, "Default settings initialized successfully")
 	}
 
-	// Mark onboarding as completed for all installs (onboarding is replaced with first-login password change)
-	if err := settingsMgr.SetBoolSetting(ctx, "onboardingCompleted", true); err != nil {
-		slog.WarnContext(ctx, "Failed to mark onboarding as completed", "error", err.Error())
-	} else {
-		slog.InfoContext(ctx, "Onboarding marked as completed")
-	}
-
 	if cfg.AgentMode || cfg.UIConfigurationDisabled {
 		if err := settingsMgr.PersistEnvSettingsIfMissing(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to persist env-driven settings", "error", err.Error())
