@@ -2,13 +2,15 @@
   "labels": [],
   "comment": "**Disclaimer** Greptiles Reviews use AI, make sure to check over its work",
   "fixWithAI": true,
-  "strictness": 1,
+  "hideFooter": false,
+  "strictness": 2,
   "statusCheck": true,
   "commentTypes": ["syntax", "logic", "style"],
   "instructions": "",
   "disabledLabels": [],
   "excludeAuthors": ["dependabot[bot]", "github-actions[bot]"],
   "ignoreKeywords": "chore(translations)",
+  "ignorePatterns": "greptile.json\n",
   "includeAuthors": [],
   "summarySection": {
     "included": true,
@@ -16,23 +18,47 @@
     "defaultOpen": true
   },
   "excludeBranches": [],
+  "fileChangeLimit": 1002,
   "includeBranches": [],
   "includeKeywords": "",
+  "triggerOnUpdates": false,
+  "updateSummaryOnly": false,
   "issuesTableSection": {
     "included": true,
     "collapsible": true,
     "defaultOpen": false
   },
+  "statusCommentsEnabled": false,
   "confidenceScoreSection": {
     "included": true,
     "collapsible": true,
-    "defaultOpen": false
+    "defaultOpen": true
   },
   "sequenceDiagramSection": {
-    "included": true,
+    "included": false,
     "collapsible": true,
     "defaultOpen": false
   },
   "shouldUpdateDescription": true,
-  "updateExistingSummaryComment": true
+  "customContext": {
+    "other": [
+      {
+        "scope": [],
+        "content": ""
+      }
+    ],
+    "rules": [
+      {
+        "scope": [],
+        "rule": ""
+      }
+    ],
+    "files": [
+      {
+        "scope": [],
+        "path": "",
+        "description": ""
+      }
+    ]
+  }
 }

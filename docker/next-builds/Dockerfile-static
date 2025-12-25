@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata curl
 RUN mkdir -p /app/data
 
-COPY arcane ./arcane
+COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane ./arcane
 
 ENV ENVIRONMENT=production
 ENV GIN_MODE=release

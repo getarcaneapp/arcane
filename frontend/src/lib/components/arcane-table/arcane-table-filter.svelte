@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -33,15 +33,16 @@
 <Popover.Root>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button
+			<ArcaneButton
 				{...props}
-				variant="ghost"
+				action="base"
+				tone="ghost"
 				size="sm"
+				icon={FilterIcon}
+				customLabel={title}
 				class="border-input hover:bg-card/60 h-8 min-w-24 border border-dashed hover:text-inherit"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
-				<FilterIcon />
-				{title}
 				{#if selectedValues.size > 0}
 					<Separator orientation="vertical" class="mx-2 h-4" />
 					<Badge variant="secondary" class="rounded-sm px-1 font-normal lg:hidden">
@@ -61,7 +62,7 @@
 						{/if}
 					</div>
 				{/if}
-			</Button>
+			</ArcaneButton>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>

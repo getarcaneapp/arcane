@@ -787,7 +787,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "nvidia"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
 				return nil
 			}
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
@@ -801,7 +801,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "amd"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
 			return fmt.Errorf("rocm-smi not found but GPU_TYPE set to amd")
@@ -815,13 +815,13 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "intel"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
 				return nil
 			}
 			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
 
 		default:
-			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", slog.String("gpu_type", h.gpuType))
+			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", h.gpuType)
 		}
 	}
 

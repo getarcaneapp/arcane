@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -136,16 +136,16 @@
 				</button>
 			</h1>
 			{#if canEdit}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="icon"
 					class="size-6 opacity-0 transition-opacity group-hover:opacity-100"
-					aria-label="Edit name"
-					title="Edit name"
+					customLabel="Edit name"
+					showLabel={false}
+					icon={EditIcon}
 					onclick={beginEdit}
-				>
-					<EditIcon class="size-3.5" />
-				</Button>
+				/>
 			{:else}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger>

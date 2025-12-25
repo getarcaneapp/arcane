@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata curl
 RUN mkdir -p /app/data
 
-COPY arcane-agent ./arcane-agent
+COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-agent ./arcane-agent
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \

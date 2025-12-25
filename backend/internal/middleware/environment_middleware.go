@@ -26,6 +26,8 @@ const (
 	managementEndpointSyncRegistries = "/sync-registries"
 	managementEndpointDeployment     = "/deployment"
 	managementEndpointAgentPair      = "/agent/pair"
+	managementEndpointVersion        = "/version"
+	managementEndpointSettings       = "/settings"
 
 	errEnvironmentNotFound      = "Environment not found"
 	errEnvironmentDisabled      = "Environment is disabled"
@@ -137,6 +139,8 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 		managementEndpointSyncRegistries,
 		managementEndpointDeployment,
 		managementEndpointAgentPair,
+		managementEndpointVersion,
+		managementEndpointSettings,
 	}
 
 	for _, endpoint := range managementEndpoints {

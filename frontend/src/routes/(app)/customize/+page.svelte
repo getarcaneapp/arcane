@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
@@ -130,7 +130,7 @@
 						/>
 						<InputGroup.Addon>
 							{#if showSearchResults}
-								<Button variant="ghost" size="icon" onclick={clearSearch} class="size-6 p-0">×</Button>
+								<ArcaneButton action="base" tone="ghost" size="icon" onclick={clearSearch} class="size-6 p-0">×</ArcaneButton>
 							{:else}
 								<SearchIcon class="size-4" />
 							{/if}
@@ -201,9 +201,9 @@
 											<p class="text-muted-foreground text-xs sm:text-sm">{result.description}</p>
 										</div>
 									</div>
-									<Button variant="outline" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
+									<ArcaneButton action="base" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
 										{m.customize_button()}
-									</Button>
+									</ArcaneButton>
 								</div>
 							</div>
 

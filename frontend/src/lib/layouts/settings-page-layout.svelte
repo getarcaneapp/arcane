@@ -6,7 +6,6 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { Action } from '$lib/components/arcane-button/index.js';
 	import { getContext } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
 	import { m } from '$lib/paraglide/messages';
 	import { EllipsisIcon, ResetIcon, SaveIcon, type IconType } from '$lib/icons';
 
@@ -32,7 +31,6 @@
 	}
 
 	export type SettingsPageType = 'form' | 'management';
-	export type StatCardsColumns = 'auto' | 1 | 2 | 3 | 4 | 5;
 
 	interface Props {
 		title: string;
@@ -42,7 +40,6 @@
 		showReadOnlyTag?: boolean;
 		actionButtons?: SettingsActionButton[];
 		statCards?: SettingsStatCard[];
-		statCardsColumns?: StatCardsColumns;
 		mainContent: Snippet;
 		additionalContent?: Snippet;
 		class?: string;
@@ -56,7 +53,6 @@
 		showReadOnlyTag = false,
 		actionButtons = [],
 		statCards = [],
-		statCardsColumns = 'auto',
 		mainContent,
 		additionalContent,
 		class: className = ''
@@ -72,27 +68,6 @@
 		saveFunction: (() => Promise<void>) | null;
 		resetFunction: (() => void) | null;
 	}>('settingsFormState');
-
-	const getStatCardsGridClass = (columns: typeof statCardsColumns) => {
-		switch (columns) {
-			case 1:
-				return 'grid-cols-1';
-			case 2:
-				return 'grid-cols-1 sm:grid-cols-2';
-			case 3:
-				return 'grid-cols-1 sm:grid-cols-3';
-			case 4:
-				return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
-			case 5:
-				return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5';
-			case 'auto':
-			default:
-				if (statCards.length <= 2) return 'grid-cols-1 sm:grid-cols-2';
-				if (statCards.length === 3) return 'grid-cols-1 sm:grid-cols-3';
-				if (statCards.length === 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
-				return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5';
-		}
-	};
 </script>
 
 <div class="px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8 {className}">
@@ -110,8 +85,37 @@
 
 			<div class="min-w-0 flex-1">
 				<div class="flex items-start justify-between gap-3">
-					<h1 class="settings-title min-w-0 text-xl sm:text-3xl">{title}</h1>
-					<div class="flex shrink-0 items-center gap-2">
+					<div class="flex-1">
+						<h1 class="settings-title min-w-0 text-xl sm:text-3xl">{title}</h1>
+					</div>
+
+					{#if pageType === 'management' && statCards && statCards.length > 0}
+						<div class="hidden flex-1 items-center justify-center md:flex">
+							<div class="border-border/50 relative overflow-hidden rounded-full border">
+								<!-- Subtle muted background overlay -->
+								<div class="bg-muted/50 absolute inset-0"></div>
+
+								<!-- Glass effect container -->
+								<div class="relative flex items-center gap-4 px-4 py-1.5 backdrop-blur-md">
+									{#each statCards as card, i}
+										{#if i > 0}
+											<div class="bg-border/50 h-4 w-px"></div>
+										{/if}
+										<StatCard
+											variant="mini"
+											title={card.title}
+											value={card.value}
+											icon={card.icon}
+											iconColor={card.iconColor}
+											class={card.class}
+										/>
+									{/each}
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<div class="flex flex-1 shrink-0 items-center justify-end gap-2">
 						{#if showReadOnlyTag}
 							<UiConfigDisabledTag />
 						{/if}
@@ -125,36 +129,30 @@
 								{/if}
 
 								{#if formState.hasChanges && formState.resetFunction}
-									<Button
-										variant="outline"
+									<ArcaneButton
+										action="base"
+										tone="outline"
 										size="sm"
 										onclick={() => formState.resetFunction && formState.resetFunction()}
 										disabled={formState.isLoading}
 										class="gap-2"
-									>
-										<ResetIcon class="size-4" />
-										<span class="hidden sm:inline">{m.common_reset()}</span>
-									</Button>
+										icon={ResetIcon}
+										customLabel={m.common_reset()}
+									/>
 								{/if}
 
-								<Button
+								<ArcaneButton
+									action="save"
 									onclick={async () => {
 										if (formState.saveFunction) {
 											await formState.saveFunction();
 										}
 									}}
-									disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
+									disabled={!formState.hasChanges || !formState.saveFunction}
+									loading={formState.isLoading}
 									size="sm"
 									class="min-w-[80px] gap-2"
-								>
-									{#if formState.isLoading}
-										<div class="border-background size-4 animate-spin rounded-full border-2 border-t-transparent"></div>
-										<span class="hidden sm:inline">{m.common_saving()}</span>
-									{:else}
-										<SaveIcon class="size-4" />
-										<span class="hidden sm:inline">{m.common_save()}</span>
-									{/if}
-								</Button>
+								/>
 							</div>
 						{/if}
 
@@ -188,11 +186,13 @@
 
 								{#if mobileDropdownButtons.length > 0}
 									<DropdownMenu.Root>
-										<DropdownMenu.Trigger
-											class="bg-background/70 inline-flex size-8 items-center justify-center rounded-lg border"
-										>
-											<span class="sr-only">Open menu</span>
-											<EllipsisIcon class="size-4" />
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="bg-background/70 size-8 border">
+													<span class="sr-only">Open menu</span>
+													<EllipsisIcon class="size-4" />
+												</ArcaneButton>
+											{/snippet}
 										</DropdownMenu.Trigger>
 
 										<DropdownMenu.Content
@@ -219,22 +219,6 @@
 			</div>
 		</div>
 	</div>
-
-	{#if pageType === 'management' && statCards && statCards.length > 0}
-		<div class="mt-6 grid gap-4 sm:mt-8 {getStatCardsGridClass(statCardsColumns)}">
-			{#each statCards as card}
-				<StatCard
-					title={card.title}
-					value={card.value}
-					subtitle={card.subtitle}
-					icon={card.icon}
-					iconColor={card.iconColor}
-					bgColor={card.bgColor}
-					class={card.class}
-				/>
-			{/each}
-		</div>
-	{/if}
 
 	<div class="mt-6 sm:mt-8">
 		{@render mainContent()}

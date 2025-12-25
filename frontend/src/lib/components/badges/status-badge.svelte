@@ -51,44 +51,44 @@
 	};
 
 	const sizeStyles: Record<Size, string> = {
-		sm: 'h-5 px-2 text-[12px] leading-[18px]',
-		md: 'h-6 px-2.5 text-[13px] leading-[20px]',
-		lg: 'h-7 px-3 text-[14px] leading-[22px]'
+		sm: 'h-5 px-2 text-[11px]',
+		md: 'h-6 px-2.5 text-[12px]',
+		lg: 'h-7 px-3 text-[13px]'
 	};
 
 	const variantStyles: Record<Variant, string> = {
-		red: 'text-red-900 bg-red-200 ring-red-500 dark:text-red-300 dark:bg-red-400/15 dark:ring-red-300/25',
-		purple: 'text-purple-900 bg-purple-200 ring-purple-500 dark:text-purple-300 dark:bg-purple-400/15 dark:ring-purple-300/25',
+		red: 'text-red-600 bg-red-500/10 border-red-500/20 dark:text-red-400 dark:bg-red-500/10 dark:border-red-500/30',
+		purple:
+			'text-purple-600 bg-purple-500/10 border-purple-500/20 dark:text-purple-400 dark:bg-purple-500/10 dark:border-purple-500/30',
 		green:
-			'text-emerald-900 bg-emerald-200 ring-emerald-500 dark:text-emerald-300 dark:bg-emerald-400/15 dark:ring-emerald-300/25',
-		blue: 'text-blue-900 bg-blue-200 ring-blue-500 dark:text-blue-300 dark:bg-blue-400/15 dark:ring-blue-300/25',
-		gray: 'text-gray-900 bg-gray-200 ring-gray-500 dark:text-gray-300 dark:bg-gray-400/15 dark:ring-gray-300/25',
-		amber: 'text-amber-900 bg-amber-200 ring-amber-500 dark:text-amber-300 dark:bg-amber-400/15 dark:ring-amber-300/25',
-		pink: 'text-pink-900 bg-pink-200 ring-pink-500 dark:text-pink-300 dark:bg-pink-400/15 dark:ring-pink-300/25',
-		indigo: 'text-indigo-900 bg-indigo-200 ring-indigo-500 dark:text-indigo-300 dark:bg-indigo-400/15 dark:ring-indigo-300/25',
-		cyan: 'text-cyan-900 bg-cyan-200 ring-cyan-500 dark:text-cyan-300 dark:bg-cyan-400/15 dark:ring-cyan-300/25',
-		lime: 'text-lime-900 bg-lime-200 ring-lime-500 dark:text-lime-300 dark:bg-lime-400/15 dark:ring-lime-300/25',
+			'text-emerald-600 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30',
+		blue: 'text-blue-600 bg-blue-500/10 border-blue-500/20 dark:text-blue-400 dark:bg-blue-500/10 dark:border-blue-500/30',
+		gray: 'text-muted-foreground bg-muted/50 border-border/50 dark:bg-muted/20 dark:border-border/20',
+		amber: 'text-amber-600 bg-amber-500/10 border-amber-500/20 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/30',
+		pink: 'text-pink-600 bg-pink-500/10 border-pink-500/20 dark:text-pink-400 dark:bg-pink-500/10 dark:border-pink-500/30',
+		indigo:
+			'text-indigo-600 bg-indigo-500/10 border-indigo-500/20 dark:text-indigo-400 dark:bg-indigo-500/10 dark:border-indigo-500/30',
+		cyan: 'text-cyan-600 bg-cyan-500/10 border-cyan-500/20 dark:text-cyan-400 dark:bg-cyan-500/10 dark:border-cyan-500/30',
+		lime: 'text-lime-600 bg-lime-500/10 border-lime-500/20 dark:text-lime-400 dark:bg-lime-500/10 dark:border-lime-500/30',
 		emerald:
-			'text-emerald-900 bg-emerald-200 ring-emerald-500 dark:text-emerald-300 dark:bg-emerald-400/15 dark:ring-emerald-300/25',
-		teal: 'text-teal-900 bg-teal-200 ring-teal-500 dark:text-teal-300 dark:bg-teal-400/15 dark:ring-teal-300/25',
-		sky: 'text-sky-900 bg-sky-200 ring-sky-500 dark:text-sky-300 dark:bg-sky-400/15 dark:ring-sky-300/25',
-		violet: 'text-violet-900 bg-violet-200 ring-violet-500 dark:text-violet-300 dark:bg-violet-400/15 dark:ring-violet-300/25',
+			'text-emerald-600 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30',
+		teal: 'text-teal-600 bg-teal-500/10 border-teal-500/20 dark:text-teal-400 dark:bg-teal-500/10 dark:border-teal-500/30',
+		sky: 'text-sky-600 bg-sky-500/10 border-sky-500/20 dark:text-sky-400 dark:bg-sky-500/10 dark:border-sky-500/30',
+		violet:
+			'text-violet-600 bg-violet-500/10 border-violet-500/20 dark:text-violet-400 dark:bg-violet-500/10 dark:border-violet-500/30',
 		fuchsia:
-			'text-fuchsia-900 bg-fuchsia-200 ring-fuchsia-500 dark:text-fuchsia-300 dark:bg-fuchsia-400/15 dark:ring-fuchsia-300/25',
-		rose: 'text-rose-900 bg-rose-200 ring-rose-500 dark:text-rose-300 dark:bg-rose-400/15 dark:ring-rose-300/25',
-		orange: 'text-orange-900 bg-orange-200 ring-orange-500 dark:text-orange-300 dark:bg-orange-400/15 dark:ring-orange-300/25'
+			'text-fuchsia-600 bg-fuchsia-500/10 border-fuchsia-500/20 dark:text-fuchsia-400 dark:bg-fuchsia-500/10 dark:border-fuchsia-500/30',
+		rose: 'text-rose-600 bg-rose-500/10 border-rose-500/20 dark:text-rose-400 dark:bg-rose-500/10 dark:border-rose-500/30',
+		orange:
+			'text-orange-600 bg-orange-500/10 border-orange-500/20 dark:text-orange-400 dark:bg-orange-500/10 dark:border-orange-500/30'
 	};
 
 	const badgeClasses = $derived(
 		cn(
-			// base
-			'inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full font-medium',
+			'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-[var(--radius)] font-semibold tracking-tight',
+			'border transition-all duration-300',
 			sizeStyles[size as Size],
-			// subtle border and translucency
-			'ring-1 ring-inset transition-colors',
-			// variant styles
 			variantStyles[variant as Variant],
-			// optional fixed width
 			minWidthClasses[minWidth as MinWidth],
 			className
 		)

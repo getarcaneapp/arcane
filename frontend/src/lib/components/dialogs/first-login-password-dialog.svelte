@@ -2,7 +2,7 @@
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Alert from '$lib/components/ui/alert';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Label } from '$lib/components/ui/label';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { authService } from '$lib/services/auth-service';
@@ -172,13 +172,14 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button type="submit" onclick={handleSubmit} disabled={!isValid || isLoading}>
-			{#if isLoading}
-				<Spinner class="size-4" />
-				{m.first_login_submitting()}
-			{:else}
-				{m.first_login_submit()}
-			{/if}
-		</Button>
+		<ArcaneButton
+			type="submit"
+			onclick={handleSubmit}
+			disabled={!isValid || isLoading}
+			loading={isLoading}
+			action="confirm"
+			customLabel={m.first_login_submit()}
+			loadingLabel={m.first_login_submitting()}
+		/>
 	{/snippet}
 </ResponsiveDialog>

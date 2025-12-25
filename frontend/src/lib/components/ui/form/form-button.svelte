@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	interface Props {
 		ref?: HTMLButtonElement | null;
@@ -14,6 +14,15 @@
 	let { ref = $bindable(null), variant, size, disabled, class: className, onclick, children }: Props = $props();
 </script>
 
-<Button bind:ref type="submit" {variant} {size} {disabled} class={className} {onclick}>
+<ArcaneButton
+	bind:ref
+	action="base"
+	type="submit"
+	tone={variant === 'destructive' ? 'outline-destructive' : variant === 'ghost' ? 'ghost' : 'outline'}
+	{size}
+	{disabled}
+	class={className}
+	{onclick}
+>
 	{@render children?.()}
-</Button>
+</ArcaneButton>

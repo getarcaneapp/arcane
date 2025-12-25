@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -195,29 +195,27 @@
 				</div>
 				<div class="flex gap-2">
 					{#if template.isRemote}
-						<Button
-							variant="outline"
+						<ArcaneButton
+							action="base"
+							tone="outline"
 							size="sm"
 							onclick={() => handleDownload(template)}
 							disabled={loadingStates.has(`download-${template.id}`)}
-						>
-							{#if loadingStates.has(`download-${template.id}`)}
-								<Spinner class="size-3" />
-								{m.common_action_downloading()}
-							{:else}
-								<DownloadIcon class="size-3" />
-								{m.templates_download()}
-							{/if}
-						</Button>
+							loading={loadingStates.has(`download-${template.id}`)}
+							icon={DownloadIcon}
+							customLabel={m.templates_download()}
+							loadingLabel={m.common_action_downloading()}
+						/>
 					{/if}
-					<Button size="sm" onclick={() => handleSelect(template)} disabled={loadingStates.has(template.id)}>
-						{#if loadingStates.has(template.id)}
-							<Spinner class="size-3" />
-							{m.common_loading()}
-						{:else}
-							{m.templates_use_now()}
-						{/if}
-					</Button>
+					<ArcaneButton
+						action="base"
+						size="sm"
+						onclick={() => handleSelect(template)}
+						disabled={loadingStates.has(template.id)}
+						loading={loadingStates.has(template.id)}
+						customLabel={m.templates_use_now()}
+						loadingLabel={m.common_loading()}
+					/>
 				</div>
 			</div>
 		</div>
@@ -305,7 +303,7 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
+		<ArcaneButton action="cancel" onclick={() => (open = false)} />
 	{/snippet}
 </ResponsiveDialog>
 

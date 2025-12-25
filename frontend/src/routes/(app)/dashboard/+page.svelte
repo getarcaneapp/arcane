@@ -37,12 +37,14 @@
 	});
 
 	$effect(() => {
-		containers = data.containers;
-		images = data.images;
-		dockerInfo = data.dockerInfo;
-		containerStatusCounts = data.containerStatusCounts;
-		dashboardStates.dockerInfo = data.dockerInfo;
-		dashboardStates.settings = data.settings;
+		untrack(() => {
+			containers = data.containers;
+			images = data.images;
+			dockerInfo = data.dockerInfo;
+			containerStatusCounts = data.containerStatusCounts;
+			dashboardStates.dockerInfo = data.dockerInfo;
+			dashboardStates.settings = data.settings;
+		});
 	});
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
@@ -287,29 +289,27 @@
 	}
 </script>
 
-<div class="flex min-h-full flex-col space-y-8">
-	<div class="flex flex-col gap-4">
-		<div class="flex items-start justify-between gap-3">
-			<div class="flex-1 space-y-1">
-				<h1 class="text-3xl font-bold tracking-tight">{m.dashboard_title()}</h1>
-				<p class="text-muted-foreground max-w-2xl text-sm">{m.dashboard_subtitle()}</p>
-			</div>
-
-			<QuickActions
-				class="shrink-0"
-				compact
-				dockerInfo={dashboardStates.dockerInfo}
-				{stoppedContainers}
-				{runningContainers}
-				loadingDockerInfo={isLoading.loadingDockerInfo}
-				isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
-				onStartAll={handleStartAll}
-				onStopAll={handleStopAll}
-				onOpenPruneDialog={() => (dashboardStates.isPruneDialogOpen = true)}
-				onRefresh={refreshData}
-				refreshing={isLoading.refreshing}
-			/>
+<div class="flex min-h-full flex-col space-y-8 pb-5 md:space-y-10 md:pb-5">
+	<div class="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+		<div class="flex-1">
+			<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{m.dashboard_title()}</h1>
+			<p class="text-muted-foreground mt-1 text-sm">{m.dashboard_subtitle()}</p>
 		</div>
+
+		<QuickActions
+			class="absolute top-4 right-4 shrink-0 sm:static"
+			compact
+			dockerInfo={dashboardStates.dockerInfo}
+			{stoppedContainers}
+			{runningContainers}
+			loadingDockerInfo={isLoading.loadingDockerInfo}
+			isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
+			onStartAll={handleStartAll}
+			onStopAll={handleStopAll}
+			onOpenPruneDialog={() => (dashboardStates.isPruneDialogOpen = true)}
+			onRefresh={refreshData}
+			refreshing={isLoading.refreshing}
+		/>
 	</div>
 
 	<section>

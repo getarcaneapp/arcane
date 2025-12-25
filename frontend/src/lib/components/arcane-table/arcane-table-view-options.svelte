@@ -1,6 +1,6 @@
 <script lang="ts" generics="TData">
 	import type { Table } from '@tanstack/table-core';
-	import { buttonVariants } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
@@ -20,17 +20,20 @@
 </script>
 
 <DropdownMenu.Root>
-	<DropdownMenu.Trigger
-		class={buttonVariants({
-			variant: 'ghost',
-			size: 'sm',
-			class: 'border-input hover:bg-card/60 h-8 border hover:text-inherit'
-		})}
-	>
-		<ViewOptionsIcon />
-		{m.common_view()}
+	<DropdownMenu.Trigger>
+		{#snippet child({ props })}
+			<ArcaneButton
+				{...props}
+				action="base"
+				tone="ghost"
+				size="sm"
+				icon={ViewOptionsIcon}
+				customLabel={m.common_view()}
+				class="border-input hover:bg-card/60 h-8 border hover:text-inherit"
+			/>
+		{/snippet}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content align="end">
+	<DropdownMenu.Content align="center">
 		{#if customViewOptions}
 			<DropdownMenu.Group>
 				<DropdownMenu.Label>{m.common_view()}</DropdownMenu.Label>

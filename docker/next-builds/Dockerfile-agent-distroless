@@ -5,7 +5,7 @@ ARG TARGETVARIANT
 
 WORKDIR /app
 
-COPY arcane-agent ./arcane-agent
+COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-agent ./arcane-agent
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \

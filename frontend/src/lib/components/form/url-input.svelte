@@ -3,7 +3,7 @@
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ArrowDownIcon } from '$lib/icons';
 
 	type Props = {
@@ -44,10 +44,15 @@
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="secondary" class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm" {disabled}>
-						{protocol}://
-						<ArrowDownIcon class="size-3 opacity-50" />
-					</Button>
+					<ArcaneButton
+						{...props}
+						action="base"
+						tone="outline"
+						class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm"
+						{disabled}
+						customLabel="{protocol}://"
+						icon={ArrowDownIcon}
+					/>
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="center" class="min-w-0">

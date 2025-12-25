@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { CloseIcon, EnvironmentsIcon, SmartphoneIcon, MonitorSpeakerIcon, DockIcon, type IconType } from '$lib/icons';
 
@@ -35,15 +35,16 @@
 			<div class="min-w-0 flex-1">
 				<div class="mb-1 flex items-start justify-between gap-2">
 					{#if hasOverride}
-						<Button
-							variant="ghost"
+						<ArcaneButton
+							action="base"
+							tone="ghost"
 							size="sm"
 							onclick={onClearOverride}
 							class="h-6 w-6 flex-shrink-0 p-0 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
 							title={m.clear_local_override()}
 						>
 							<CloseIcon class="size-3" />
-						</Button>
+						</ArcaneButton>
 					{/if}
 				</div>
 				<p class="text-muted-foreground text-xs leading-relaxed">{description}</p>
@@ -62,8 +63,9 @@
 					</div>
 
 					<div class="flex flex-shrink-0 gap-1">
-						<Button
-							variant={serverValue === 'floating' ? 'default' : 'outline'}
+						<ArcaneButton
+							action="base"
+							tone={serverValue === 'floating' ? 'outline-primary' : 'outline'}
 							size="sm"
 							onclick={() => !serverDisabled && onServerChange('floating')}
 							disabled={serverDisabled}
@@ -71,9 +73,10 @@
 						>
 							<MonitorSpeakerIcon class="size-3" />
 							<span class="hidden sm:inline">{m.navigation_mode_floating()}</span>
-						</Button>
-						<Button
-							variant={serverValue === 'docked' ? 'default' : 'outline'}
+						</ArcaneButton>
+						<ArcaneButton
+							action="base"
+							tone={serverValue === 'docked' ? 'outline-primary' : 'outline'}
 							size="sm"
 							onclick={() => !serverDisabled && onServerChange('docked')}
 							disabled={serverDisabled}
@@ -81,7 +84,7 @@
 						>
 							<DockIcon class="size-3" />
 							<span class="hidden sm:inline">{m.navigation_mode_docked()}</span>
-						</Button>
+						</ArcaneButton>
 					</div>
 				</div>
 			</div>
@@ -107,24 +110,26 @@
 
 					{#if hasOverride}
 						<div class="flex flex-shrink-0 gap-1">
-							<Button
-								variant={localOverride === 'floating' ? 'default' : 'outline'}
+							<ArcaneButton
+								action="base"
+								tone={localOverride === 'floating' ? 'outline-primary' : 'outline'}
 								size="sm"
 								onclick={() => onLocalOverride('floating')}
 								class="flex h-7 min-w-[2.5rem] items-center gap-1 px-2 text-xs sm:h-8 sm:px-3"
 							>
 								<MonitorSpeakerIcon class="size-3" />
 								<span class="hidden sm:inline">{m.navigation_mode_floating()}</span>
-							</Button>
-							<Button
-								variant={localOverride === 'docked' ? 'default' : 'outline'}
+							</ArcaneButton>
+							<ArcaneButton
+								action="base"
+								tone={localOverride === 'docked' ? 'outline-primary' : 'outline'}
 								size="sm"
 								onclick={() => onLocalOverride('docked')}
 								class="flex h-7 min-w-[2.5rem] items-center gap-1 px-2 text-xs sm:h-8 sm:px-3"
 							>
 								<DockIcon class="size-3" />
 								<span class="hidden sm:inline">{m.navigation_mode_docked()}</span>
-							</Button>
+							</ArcaneButton>
 						</div>
 					{:else}
 						<div class="flex flex-shrink-0 items-center gap-2">
@@ -137,14 +142,15 @@
 									{m.navigation_mode_docked()}
 								{/if}
 							</span>
-							<Button
-								variant="outline"
+							<ArcaneButton
+								action="base"
+								tone="outline"
 								size="sm"
 								onclick={() => onLocalOverride(effectiveValue === 'floating' ? 'docked' : 'floating')}
 								class="h-6 px-2 text-xs sm:h-7"
 							>
 								{m.override()}
-							</Button>
+							</ArcaneButton>
 						</div>
 					{/if}
 				</div>

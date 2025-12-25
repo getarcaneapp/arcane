@@ -76,6 +76,9 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 		onReset?.();
 	};
 
+	// Register actions immediately so they're available even if onMount doesn't run (e.g. during $derived recreation)
+	settingsForm.registerFormActions(onSubmit, resetForm);
+
 	const registerOnMount = () => {
 		settingsForm.registerFormActions(onSubmit, resetForm);
 	};

@@ -43,8 +43,7 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    const totalValue = page.locator('div:has(> p:has-text("Total Volumes")) h3').first();
-    await expect(totalValue).toHaveText(volumeCount.total.toString());
+    await expect(page.getByText(`${volumeCount.total} Total Volumes`)).toBeVisible();
   });
 
   test('Create Volume Sheet Opens', async ({ page }) => {

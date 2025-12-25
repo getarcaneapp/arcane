@@ -29,12 +29,8 @@ test.describe('Networks Page', () => {
     // Fetch counts directly in the test to ensure we have fresh data
     const counts = await fetchNetworksCountsWithRetry(page);
 
-    // Use the new stat card structure with h3 for values
-    const totalValue = page.locator('div:has(> p:has-text("Total Networks")) h3').first();
-    const unusedValue = page.locator('div:has(> p:has-text("Unused Networks")) h3').first();
-
-    await expect(totalValue).toHaveText(String(counts.total));
-    await expect(unusedValue).toHaveText(String(counts.unused));
+    await expect(page.getByText(`${counts.total} Total Networks`)).toBeVisible();
+    await expect(page.getByText(`${counts.unused} Unused Networks`)).toBeVisible();
   });
 
   test('Table displays when networks exist, else empty state', async ({ page }) => {

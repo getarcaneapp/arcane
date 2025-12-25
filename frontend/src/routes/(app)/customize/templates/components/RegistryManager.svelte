@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Alert from '$lib/components/ui/alert';
@@ -33,10 +33,9 @@
 			<h3 class="text-lg font-semibold">{m.templates_registries_section_title()}</h3>
 			<p class="text-muted-foreground text-sm">{m.templates_registries_section_description()}</p>
 		</div>
-		<Button onclick={onAddRegistry}>
-			<AddIcon class="size-4" />
+		<ArcaneButton action="create" onclick={onAddRegistry}>
 			{m.common_add_button({ resource: m.resource_registry_cap() })}
-		</Button>
+		</ArcaneButton>
 	</div>
 
 	{#if registries.length === 0}
@@ -47,7 +46,7 @@
 				<Alert.Description>{m.templates_alert_remote_registries_description()}</Alert.Description>
 			</Alert.Root>
 
-			<Alert.Root class="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+			<Alert.Root class="border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10">
 				<CommunityIcon class="size-4" />
 				<Alert.Title>{m.templates_community_registry_title()}</Alert.Title>
 				<Alert.Description class="space-y-2">
@@ -82,22 +81,21 @@
 								disabled={isLoading.updating[registry.id]}
 							/>
 
-							<Button variant="outline" size="sm" onclick={() => window.open(registry.url, '_blank', 'noopener,noreferrer')}>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								size="sm"
+								onclick={() => window.open(registry.url, '_blank', 'noopener,noreferrer')}
+							>
 								<ExternalLinkIcon class="size-4" />
-							</Button>
+							</ArcaneButton>
 
-							<Button
-								variant="destructive"
+							<ArcaneButton
+								action="remove"
 								size="sm"
 								onclick={() => onRemoveRegistry(registry.id)}
-								disabled={isLoading.removing[registry.id]}
-							>
-								{#if isLoading.removing[registry.id]}
-									<RefreshIcon class="size-4 animate-spin" />
-								{:else}
-									<TrashIcon class="size-4" />
-								{/if}
-							</Button>
+								loading={isLoading.removing[registry.id]}
+							/>
 						</div>
 					</div>
 				</Card.Root>

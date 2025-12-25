@@ -517,13 +517,26 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	// Fix for "conflicting options: hostname and the network mode"
 	// When network mode is "host" or "container:...", Hostname must be empty
-	nm := string(inspect.HostConfig.NetworkMode)
-	if nm == "host" || strings.HasPrefix(nm, "container:") {
+	nm := inspect.HostConfig.NetworkMode
+	if nm.IsHost() || nm.IsContainer() {
 		cfg.Hostname = ""
 		cfg.Domainname = ""
 	}
 
-	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}, nil, inspect.Name)
+	// Fix for "conflicting options: port exposing and the container type network mode"
+	// When network mode is "container:...", port mappings are not allowed
+	if nm.IsContainer() {
+		cfg.ExposedPorts = nil
+		inspect.HostConfig.PortBindings = nil
+		inspect.HostConfig.PublishAllPorts = false
+	}
+
+	var networkingConfig *network.NetworkingConfig
+	if !nm.IsContainer() {
+		networkingConfig = &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}
+	}
+
+	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, networkingConfig, nil, inspect.Name)
 	if err != nil {
 		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", inspect.Name, "err", err)
 		return fmt.Errorf("create: %w", err)
@@ -886,11 +899,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			// Send notification after successful container update
 			if s.notificationService != nil {
 				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, newRef, match, s.normalizeRef(newRef)); notifErr != nil {
-					slog.WarnContext(ctx, "Failed to send container update notification",
-						slog.String("containerId", c.ID),
-						slog.String("containerName", name),
-						slog.String("imageRef", newRef),
-						slog.String("error", notifErr.Error()))
+					slog.WarnContext(ctx, "Failed to send container update notification", "containerId", c.ID, "containerName", name, "imageRef", newRef, "error", notifErr.Error())
 				}
 			}
 		}

@@ -22,50 +22,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: E2E Tests - Build Image
-    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'l10n_crowdin' }}
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      actions: write
-      id-token: write
-    runs-on: depot-ubuntu-24.04-16
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build Arcane image for Playwright
-        uses: depot/build-push-action@v1
-        with:
-          context: .
-          file: docker/Dockerfile
-          load: true
-          tags: arcane:playwright-tests
-          build-args: |
-            BUILD_TAGS=playwright
-          provenance: true
-          sbom: true
-
-      - name: Export image to tarball
-        run: docker save arcane:playwright-tests -o /tmp/arcane-image.tar
-
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: arcane-image
-          path: /tmp/arcane-image.tar
-          retention-days: 1
-
   test:
     if: ${{ github.event_name != 'pull_request' || github.head_ref != 'l10n_crowdin' }}
     permissions:
       contents: read
       actions: write
+      id-token: write
     runs-on: depot-ubuntu-24.04-16
-    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +57,14 @@ jobs:
           node-version: 25
           cache: pnpm
 
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Setup depot buildx driver
+        id: setup-buildx-driver
+        run: |
+          depot configure-docker
+
       - name: Cache Playwright Browsers
         uses: actions/cache@v5
         id: playwright-cache
@@ -102,15 +73,6 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/pnpm-lock.yaml', 'tests/package.json') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
-
-      - name: Download Arcane Docker image artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: arcane-image
-          path: /tmp
-
-      - name: Load Arcane Docker image
-        run: docker load -i /tmp/arcane-image.tar
 
       - name: Pull and save test images
         run: |

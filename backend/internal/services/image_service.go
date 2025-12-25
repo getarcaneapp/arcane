@@ -433,12 +433,12 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		updateRecords []models.ImageUpdateRecord
 	)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	// Fetch Docker images
 	g.Go(func() error {
 		var err error
-		dockerImages, err = dockerClient.ImageList(ctx, image.ListOptions{})
+		dockerImages, err = dockerClient.ImageList(groupCtx, image.ListOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
@@ -448,7 +448,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	// Fetch containers to determine usage
 	g.Go(func() error {
 		var err error
-		containers, err = dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+		containers, err = dockerClient.ContainerList(groupCtx, container.ListOptions{All: true})
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
@@ -458,7 +458,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	// Fetch update records from DB
 	g.Go(func() error {
 		if s.db != nil {
-			return s.db.WithContext(ctx).Find(&updateRecords).Error
+			return s.db.WithContext(groupCtx).Find(&updateRecords).Error
 		}
 		return nil
 	})

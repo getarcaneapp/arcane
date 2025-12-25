@@ -57,19 +57,19 @@
 			const user = effectiveUpdateInfo?.authUsername;
 			return {
 				label: user ? m.image_update_auth_credential_with_user({ username: user }) : m.image_update_auth_credential(),
-				classes: 'border-amber-200/60 text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
+				classes: 'border-amber-200/60 text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
 			};
 		}
 		if (mth === 'anonymous') {
 			return {
 				label: m.image_update_auth_anonymous(),
-				classes: 'border-slate-200/60 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
+				classes: 'border-slate-200/60 text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
 			};
 		}
 		if (mth === 'none') {
 			return {
 				label: m.image_update_auth_none(),
-				classes: 'border-gray-200/60 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
+				classes: 'border-gray-200/60 text-gray-800 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
 			};
 		}
 		return null;
@@ -230,8 +230,8 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(AlertIcon, 'from-rose-500', 'to-red-500', 'shadow-red-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-red-900 dark:text-red-100">{m.image_update_check_failed_title()}</div>
-				<div class="text-xs text-red-700/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
+				<div class="text-sm font-semibold text-red-950 dark:text-red-100">{m.image_update_check_failed_title()}</div>
+				<div class="text-xs text-red-900/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -257,10 +257,10 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(VerifiedCheckIcon, 'from-emerald-500', 'to-green-500', 'shadow-emerald-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+				<div class="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
 					{m.image_update_up_to_date_title()}
 				</div>
-				<div class="text-xs text-emerald-700/80 dark:text-emerald-300/80">{m.image_update_up_to_date_desc()}</div>
+				<div class="text-xs text-emerald-900/80 dark:text-emerald-300/80">{m.image_update_up_to_date_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -284,8 +284,8 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(CircleArrowUpIcon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">{m.image_update_digest_title()}</div>
-				<div class="text-xs text-blue-700/80 dark:text-blue-300/80">{m.image_update_digest_desc()}</div>
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_digest_title()}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_digest_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -299,13 +299,13 @@
 						m.image_update_latest_digest_label(),
 						latestVersion,
 						'bg-blue-100 dark:bg-blue-900/30',
-						'text-blue-700 dark:text-blue-300'
+						'text-blue-800 dark:text-blue-300'
 					)}
 				{/if}
 			</div>
 			{#if updatePriority}
 				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-blue-700 dark:text-blue-300">
+					<div class="text-center text-xs leading-relaxed font-medium text-blue-800 dark:text-blue-300">
 						{updatePriority.description}
 					</div>
 				</div>
@@ -320,8 +320,8 @@
 		<div class="flex items-start gap-3">
 			{@render iconCircle(CircleArrowUpIcon, 'from-amber-500', 'to-yellow-500', 'shadow-amber-500/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{m.image_update_version_title()}</div>
-				<div class="text-xs text-amber-700/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
+				<div class="text-sm font-semibold text-amber-950 dark:text-amber-100">{m.image_update_version_title()}</div>
+				<div class="text-xs text-amber-900/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -335,13 +335,13 @@
 						m.image_update_latest_label(),
 						latestVersion,
 						'bg-amber-100 dark:bg-amber-900/30',
-						'text-amber-700 dark:text-amber-300'
+						'text-amber-800 dark:text-amber-300'
 					)}
 				{/if}
 			</div>
 			{#if updatePriority}
 				<div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-amber-700 dark:text-amber-300">
+					<div class="text-center text-xs leading-relaxed font-medium text-amber-800 dark:text-amber-300">
 						{updatePriority.description}
 					</div>
 				</div>
@@ -356,8 +356,8 @@
 		<div class="flex items-center gap-3">
 			{@render iconCircle(Spinner, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
 			<div>
-				<div class="text-sm font-semibold text-blue-900 dark:text-blue-100">{m.image_update_checking_title()}</div>
-				<div class="text-xs text-blue-700/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
+				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_checking_title()}</div>
+				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
 			</div>
 		</div>
 	</div>
@@ -368,8 +368,8 @@
 		<div class="flex items-center gap-3">
 			{@render iconCircle(AlertIcon, 'from-gray-400', 'to-slate-500', 'shadow-gray-400/25')}
 			<div>
-				<div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.image_update_status_unknown()}</div>
-				<div class="text-xs text-gray-700/80 dark:text-gray-300/80">
+				<div class="text-sm font-semibold text-gray-950 dark:text-gray-100">{m.image_update_status_unknown()}</div>
+				<div class="text-xs text-gray-800 dark:text-gray-300/80">
 					{#if canCheckUpdate}
 						{m.image_update_click_to_check()}
 					{:else}

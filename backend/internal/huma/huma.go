@@ -186,7 +186,7 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 	api := humagin.NewWithGroup(router, apiGroup, humaConfig)
 
 	// Add authentication middleware
-	api.UseMiddleware(middleware.NewAuthBridge(svc.Auth, cfg))
+	api.UseMiddleware(middleware.NewAuthBridge(svc.Auth, svc.ApiKey, cfg))
 
 	// Register all Huma handlers
 	registerHandlers(api, svc)
@@ -341,7 +341,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterTemplates(api, templateSvc)
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
-	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, cfg)
+	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)

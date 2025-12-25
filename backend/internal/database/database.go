@@ -121,7 +121,7 @@ func connectDatabase(databaseURL string) (*DB, error) {
 			return &DB{db}, nil
 		}
 
-		slog.Info("Failed to initialize database", slog.Int("attempt", i))
+		slog.Info("Failed to initialize database", "attempt", i)
 		if i < 3 {
 			time.Sleep(3 * time.Second)
 		}
