@@ -508,7 +508,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 		templates []models.ComposeTemplate
 	)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	for i := range registries {
 		reg := registries[i]
@@ -517,9 +517,9 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 		}
 
 		g.Go(func() error {
-			remoteTemplates, err := s.fetchRegistryTemplates(ctx, &reg)
+			remoteTemplates, err := s.fetchRegistryTemplates(groupCtx, &reg)
 			if err != nil {
-				slog.WarnContext(ctx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
+				slog.WarnContext(groupCtx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
 				return nil // Don't fail the whole group if one registry fails
 			}
 

@@ -122,7 +122,6 @@ export default class SettingsService extends BaseAPIService {
 		}
 		if (value === 'true') return true;
 		if (value === 'false') return false;
-		if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
 		return value;
 	}
 }

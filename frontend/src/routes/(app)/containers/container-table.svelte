@@ -369,9 +369,9 @@
 			{#if !status && item.state !== 'running'}
 				<ArcaneButton
 					action="base"
-					tone="ghost"
+					tone="outline"
 					size="sm"
-					class="size-7 p-0"
+					class="size-7 border-transparent bg-transparent p-0 text-green-600 shadow-none hover:bg-green-600/10 hover:text-green-500"
 					onclick={() => performContainerAction('start', item.id)}
 					disabled={isAnyLoading}
 					icon={StartIcon}
@@ -380,9 +380,9 @@
 			{:else if !status && item.state === 'running'}
 				<ArcaneButton
 					action="base"
-					tone="ghost"
+					tone="outline"
 					size="sm"
-					class="size-7 p-0"
+					class="size-7 border-transparent bg-transparent p-0 text-red-600 shadow-none hover:bg-red-600/10 hover:text-red-500"
 					onclick={() => performContainerAction('stop', item.id)}
 					disabled={isAnyLoading}
 					title={m.common_stop()}
