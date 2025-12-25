@@ -171,7 +171,7 @@ func SanitizeForEmail(s string) string {
 }
 
 // BuildMultipartMessage constructs a MIME multipart email message with both HTML and text parts
-func BuildMultipartMessage(fromAddress string, toAddresses []string, subject string, htmlBody string, textBody string) string {
+func BuildMultipartMessage(fromAddress string, toAddresses []string, subject string, htmlBody string, textBody string) (string, error) {
 	var buf bytes.Buffer
 	boundary := fmt.Sprintf("boundary_%d", time.Now().UnixNano())
 
@@ -192,8 +192,7 @@ func BuildMultipartMessage(fromAddress string, toAddresses []string, subject str
 
 	qp := quotedprintable.NewWriter(&buf)
 	if _, err := qp.Write([]byte(textBody)); err != nil {
-		// Fallback to raw text if encoding fails (unlikely)
-		buf.WriteString(textBody)
+		return "", fmt.Errorf("failed to encode text body: %w", err)
 	}
 	qp.Close()
 	buf.WriteString("\r\n")
@@ -206,8 +205,7 @@ func BuildMultipartMessage(fromAddress string, toAddresses []string, subject str
 
 	qp = quotedprintable.NewWriter(&buf)
 	if _, err := qp.Write([]byte(htmlBody)); err != nil {
-		// Fallback to raw text if encoding fails (unlikely)
-		buf.WriteString(htmlBody)
+		return "", fmt.Errorf("failed to encode html body: %w", err)
 	}
 	qp.Close()
 	buf.WriteString("\r\n")
@@ -215,5 +213,5 @@ func BuildMultipartMessage(fromAddress string, toAddresses []string, subject str
 	// End boundary
 	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 
-	return buf.String()
+	return buf.String(), nil
 }
