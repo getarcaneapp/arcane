@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"mime/quotedprintable"
 	"os"
 	"strings"
 	"time"
@@ -186,17 +187,29 @@ func BuildMultipartMessage(fromAddress string, toAddresses []string, subject str
 	// Add text part
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-	buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
+	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	buf.WriteString("\r\n")
-	buf.WriteString(textBody)
+
+	qp := quotedprintable.NewWriter(&buf)
+	if _, err := qp.Write([]byte(textBody)); err != nil {
+		// Fallback to raw text if encoding fails (unlikely)
+		buf.WriteString(textBody)
+	}
+	qp.Close()
 	buf.WriteString("\r\n")
 
 	// Add HTML part
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
+	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	buf.WriteString("\r\n")
-	buf.WriteString(htmlBody)
+
+	qp = quotedprintable.NewWriter(&buf)
+	if _, err := qp.Write([]byte(htmlBody)); err != nil {
+		// Fallback to raw text if encoding fails (unlikely)
+		buf.WriteString(htmlBody)
+	}
+	qp.Close()
 	buf.WriteString("\r\n")
 
 	// End boundary
