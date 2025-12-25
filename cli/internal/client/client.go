@@ -38,7 +38,7 @@ import (
 
 const (
 	headerAPIKey   = "X-API-KEY" //nolint:gosec
-	defaultTimeout = 30 * time.Second
+	defaultTimeout = 10 * time.Minute
 	defaultEnvID   = "0"
 )
 
@@ -125,6 +125,11 @@ func NewFromConfigUnauthenticated() (*Client, error) {
 // creating a new client instance.
 func (c *Client) SetEnvironment(envID string) {
 	c.envID = envID
+}
+
+// SetTimeout changes the timeout for subsequent requests.
+func (c *Client) SetTimeout(timeout time.Duration) {
+	c.httpClient.Timeout = timeout
 }
 
 // EnvID returns the current environment ID configured for this client.
