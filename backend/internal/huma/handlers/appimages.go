@@ -42,6 +42,15 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 	}, h.GetLogo)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-logo-email",
+		Method:      http.MethodGet,
+		Path:        "/app-images/logo-email",
+		Summary:     "Get application logo for email",
+		Description: "Get the application logo image in PNG format for emails",
+		Tags:        []string{"Application Images"},
+	}, h.GetLogoEmail)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-favicon",
 		Method:      http.MethodGet,
 		Path:        "/app-images/favicon",
@@ -72,6 +81,15 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 	}
 
 	return h.getImage(name)
+}
+
+// GetLogoEmail returns the application logo image for emails (PNG).
+func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+	if h.appImagesService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	return h.getImage("logo-email")
 }
 
 // GetFavicon returns the application favicon image.
