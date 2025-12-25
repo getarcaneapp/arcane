@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@variant dark (&:where(.dark, .dark *));
+
 @font-face {
 	font-family: 'Geist';
 	src: url('/api/fonts/sans') format('woff2');
@@ -161,7 +163,6 @@
 	button {
 		@apply cursor-pointer;
 	}
-
 }
 
 body:not(.glass-enabled) {
@@ -177,7 +178,6 @@ body:not(.glass-enabled) {
 	&::after {
 		opacity: 0.015;
 	}
-
 
 	.bubble {
 		background: var(--bg-surface) !important;
@@ -251,7 +251,6 @@ body:not(.glass-enabled) {
 	[class*='bg-input/'] {
 		background-color: var(--bg-surface) !important;
 	}
-
 }
 
 body.glass-enabled {
@@ -307,7 +306,6 @@ body::after {
 			0 8px 24px -8px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent),
 			0 1px 0 0 color-mix(in oklch, var(--glass-base, var(--bg-surface)) 30%, transparent) inset;
 	}
-
 
 	.bubble-pill {
 		border-radius: 9999px;
@@ -385,7 +383,6 @@ body::after {
 			transform: translate3d(2%, 1%, 0) scale(1.05);
 		}
 	}
-
 }
 
 .version-collapsed {

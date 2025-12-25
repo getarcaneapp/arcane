@@ -26,8 +26,8 @@
 	const formSchema = z
 		.object({
 			authLocalEnabled: z.boolean(),
-			authSessionTimeout: z
-				.number(m.security_session_timeout_required())
+			authSessionTimeout: z.coerce
+				.number()
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
 				.max(1440, m.security_session_timeout_max()),
@@ -273,6 +273,9 @@
 												bind:value={$formInputs.oidcClientId.value}
 												class="font-mono text-sm"
 											/>
+											{#if $formInputs.oidcClientId.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientId.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -286,6 +289,9 @@
 												class="font-mono text-sm"
 											/>
 											<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
+											{#if $formInputs.oidcClientSecret.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -299,6 +305,9 @@
 												class="font-mono text-sm"
 											/>
 											<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
+											{#if $formInputs.oidcIssuerUrl.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -311,6 +320,9 @@
 												bind:value={$formInputs.oidcScopes.value}
 												class="font-mono text-sm"
 											/>
+											{#if $formInputs.oidcScopes.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
+											{/if}
 										</div>
 
 										<div class="border-t pt-4">
@@ -327,6 +339,9 @@
 														bind:value={$formInputs.oidcAdminClaim.value}
 														class="font-mono text-sm"
 													/>
+													{#if $formInputs.oidcAdminClaim.error}
+														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminClaim.error}</p>
+													{/if}
 												</div>
 												<div class="space-y-2">
 													<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
@@ -339,6 +354,9 @@
 														class="font-mono text-sm"
 													/>
 													<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
+													{#if $formInputs.oidcAdminValue.error}
+														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminValue.error}</p>
+													{/if}
 												</div>
 											</div>
 										</div>

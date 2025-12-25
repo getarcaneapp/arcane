@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
-const logoURLPath = "/api/app-images/logo?full=true"
+const logoURLPath = "/api/app-images/logo-email"
 
 type NotificationService struct {
 	db             *database.DB

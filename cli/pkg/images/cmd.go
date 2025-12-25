@@ -334,6 +334,9 @@ var imagesPullCmd = &cobra.Command{
 			return err
 		}
 
+		// Pulling large images can take a long time
+		c.SetTimeout(30 * time.Minute)
+
 		imageName := args[0]
 		path := types.Endpoints.ImagesPull(c.EnvID())
 
@@ -609,6 +612,9 @@ var imagesUploadCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Uploading large images can take a long time
+		c.SetTimeout(30 * time.Minute)
 
 		filePath := args[0]
 		path := types.Endpoints.ImagesUpload(c.EnvID())

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
@@ -235,6 +236,9 @@ var redeployCmd = &cobra.Command{
 			return err
 		}
 
+		// Redeploying can take a long time as it pulls images and restarts containers
+		c.SetTimeout(30 * time.Minute)
+
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectRedeploy(c.EnvID(), args[0]), nil)
 		if err != nil {
 			return fmt.Errorf("failed to redeploy project: %w", err)
@@ -256,6 +260,9 @@ var pullCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Pulling images can take a long time
+		c.SetTimeout(30 * time.Minute)
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectPull(c.EnvID(), args[0]), nil)
 		if err != nil {
