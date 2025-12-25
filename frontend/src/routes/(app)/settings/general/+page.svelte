@@ -15,7 +15,7 @@
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
 
 	const formSchema = z.object({
-		environmentHealthInterval: z.number().int().min(1).max(60)
+		environmentHealthInterval: z.coerce.number().int().min(1).max(60)
 	});
 
 	let { formInputs } = $derived(
