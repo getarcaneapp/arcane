@@ -635,7 +635,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
-	if err := projects.ComposeUp(ctx, project, project.Services.GetProfiles()); err != nil {
+	if err := projects.ComposeUp(ctx, project, nil); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
