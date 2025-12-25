@@ -12,6 +12,7 @@
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
+	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -252,41 +253,10 @@
 
 <!-- Mobile Floating Action Buttons -->
 {#if isSubPage && !isReadOnly && formState.saveFunction}
-	<div
-		class="fixed right-4 z-50 flex flex-col gap-3 transition-all duration-300 ease-out sm:hidden"
-		style="bottom: {scrollToHideEnabled && !mobileNavVisible
-			? '1rem'
-			: 'calc(var(--mobile-' +
-				navigationMode +
-				'-nav-offset, ' +
-				(navigationMode === 'docked' ? 'calc(3.5rem + env(safe-area-inset-bottom))' : '6rem') +
-				') + 1rem)'};"
-	>
-		{#if formState.hasChanges && formState.resetFunction}
-			<ArcaneButton
-				action="restart"
-				tone="outline"
-				size="lg"
-				onclick={() => formState.resetFunction && formState.resetFunction()}
-				disabled={formState.isLoading}
-				class={cn('size-14 rounded-full border-2 shadow-lg', isGlassEnabled ? 'bg-background/80 backdrop-blur-md' : 'bg-card')}
-				showLabel={false}
-			/>
-		{/if}
-
-		<ArcaneButton
-			action="save"
-			onclick={handleSave}
-			disabled={formState.isLoading || !formState.hasChanges || !formState.saveFunction}
-			loading={formState.isLoading}
-			size="lg"
-			class="size-14 rounded-full shadow-lg"
-			showLabel={false}
-		/>
-
-		<!-- Status indicator for mobile -->
-		{#if formState.hasChanges}
-			<div class="absolute -top-2 -left-2 size-3 animate-pulse rounded-full bg-orange-500"></div>
-		{/if}
-	</div>
+	<MobileFloatingFormActions
+		hasChanges={formState.hasChanges}
+		isLoading={formState.isLoading}
+		onSave={handleSave}
+		onReset={() => formState.resetFunction && formState.resetFunction()}
+	/>
 {/if}

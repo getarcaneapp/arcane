@@ -953,19 +953,19 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	regAuthMap := s.buildRegistryAuthMap(ctx, rc, regRepos, credMap)
 
 	var mu sync.Mutex
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
 		g.Go(func() error {
-			res := s.checkSingleImageInBatch(ctx, rc, regAuthMap, enabledRegs, img.parts)
+			res := s.checkSingleImageInBatch(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
 
 			mu.Lock()
 			results[img.ref] = res
 			mu.Unlock()
 
-			if err := s.saveUpdateResult(ctx, img.ref, res); err != nil {
-				slog.WarnContext(ctx, "Failed to save update result", "imageRef", img.ref, "error", err.Error())
+			if err := s.saveUpdateResult(groupCtx, img.ref, res); err != nil {
+				slog.WarnContext(groupCtx, "Failed to save update result", "imageRef", img.ref, "error", err.Error())
 			}
 			return nil
 		})
@@ -1098,22 +1098,22 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 		errorsCount       int64
 	)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Count(&totalImages).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Count(&totalImages).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ?", true).Count(&imagesWithUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ?", true).Count(&imagesWithUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "digest").Count(&digestUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "digest").Count(&digestUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "tag").Count(&tagUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "tag").Count(&tagUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("last_error IS NOT NULL").Count(&errorsCount).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("last_error IS NOT NULL").Count(&errorsCount).Error
 	})
 
 	if err := g.Wait(); err != nil {

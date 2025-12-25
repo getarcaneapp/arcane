@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"gorm.io/gorm"
 )
 
 type AppriseService struct {
@@ -102,6 +104,9 @@ func parseNtfyURL(apiURL string) ntfyURLInfo {
 func (s *AppriseService) GetSettings(ctx context.Context) (*models.AppriseSettings, error) {
 	var settings models.AppriseSettings
 	if err := s.db.WithContext(ctx).First(&settings).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &settings, nil
@@ -112,6 +117,9 @@ func (s *AppriseService) CreateOrUpdateSettings(ctx context.Context, apiURL stri
 
 	err := s.db.WithContext(ctx).First(&settings).Error
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to check apprise settings: %w", err)
+		}
 		settings = models.AppriseSettings{
 			APIURL:             apiURL,
 			Enabled:            enabled,
@@ -140,7 +148,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 		return fmt.Errorf("failed to get apprise settings: %w", err)
 	}
 
-	if !settings.Enabled {
+	if settings == nil || !settings.Enabled {
 		return nil
 	}
 

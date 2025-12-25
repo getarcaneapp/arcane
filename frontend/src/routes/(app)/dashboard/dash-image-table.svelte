@@ -11,6 +11,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { IsMobile } from '$lib/hooks';
 	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
 
 	let {
@@ -21,6 +23,7 @@
 		isLoading: boolean;
 	} = $props();
 
+	const isMobile = new IsMobile();
 	let contentHeight = $state(0);
 
 	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
@@ -43,6 +46,7 @@
 	});
 
 	const calculatedLimit = $derived.by(() => {
+		if (isMobile.current) return 10;
 		if (contentHeight <= 0) return 5;
 		let availableHeight = contentHeight - HEADER_HEIGHT;
 		if (shouldReserveFooter) {
@@ -56,15 +60,28 @@
 	let lastFetchedLimit = $state(5);
 
 	$effect(() => {
-		const currentLimit = images.pagination?.itemsPerPage;
-		if (
-			requestOptions.pagination &&
-			(calculatedLimit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== calculatedLimit))
-		) {
-			lastFetchedLimit = calculatedLimit;
-			requestOptions.pagination.limit = calculatedLimit;
-			imageService.getImages(requestOptions).then((result) => (images = result));
-		}
+		const limit = calculatedLimit;
+
+		const tid = untrack(() => {
+			const currentLimit = images.pagination?.itemsPerPage;
+			if (requestOptions.pagination && (limit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== limit))) {
+				return setTimeout(() => {
+					untrack(() => {
+						lastFetchedLimit = limit;
+						if (requestOptions.pagination) {
+							requestOptions.pagination.limit = limit;
+							imageService.getImages(requestOptions).then((result) => {
+								untrack(() => {
+									images = result;
+								});
+							});
+						}
+					});
+				}, 300);
+			}
+		});
+
+		if (tid) return () => clearTimeout(tid);
 	});
 
 	const columns = [

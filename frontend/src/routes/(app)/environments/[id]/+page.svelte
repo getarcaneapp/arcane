@@ -21,6 +21,7 @@
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
+	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import {
 		ArrowLeftIcon,
 		EnvironmentsIcon,
@@ -395,30 +396,32 @@
 			</div>
 
 			<div class="flex flex-wrap items-center gap-2">
-				{#if hasChanges}
-					<span class="text-xs text-orange-600 dark:text-orange-400">{m.environments_unsaved_changes()}</span>
-				{:else}
-					<span class="text-xs text-green-600 dark:text-green-400">{m.environments_all_changes_saved()}</span>
-				{/if}
+				<div class="hidden items-center gap-2 sm:flex">
+					{#if hasChanges}
+						<span class="text-xs text-orange-600 dark:text-orange-400">{m.environments_unsaved_changes()}</span>
+					{:else}
+						<span class="text-xs text-green-600 dark:text-green-400">{m.environments_all_changes_saved()}</span>
+					{/if}
 
-				{#if hasChanges}
+					{#if hasChanges}
+						<ArcaneButton
+							action="restart"
+							tone="outline"
+							onclick={handleReset}
+							disabled={isSaving}
+							customLabel={m.common_reset()}
+						/>
+					{/if}
+
 					<ArcaneButton
-						action="restart"
-						tone="outline"
-						onclick={handleReset}
-						disabled={isSaving}
-						customLabel={m.common_reset()}
+						action="save"
+						onclick={handleSave}
+						disabled={!hasChanges || isSaving}
+						loading={isSaving}
+						customLabel={m.common_save()}
+						loadingLabel={m.common_saving()}
 					/>
-				{/if}
-
-				<ArcaneButton
-					action="save"
-					onclick={handleSave}
-					disabled={!hasChanges || isSaving}
-					loading={isSaving}
-					customLabel={m.common_save()}
-					loadingLabel={m.common_saving()}
-				/>
+				</div>
 
 				{#if environment.id !== '0'}
 					<ArcaneButton
@@ -860,3 +863,5 @@
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 </div>
+
+<MobileFloatingFormActions {hasChanges} isLoading={isSaving} onSave={handleSave} onReset={handleReset} />
