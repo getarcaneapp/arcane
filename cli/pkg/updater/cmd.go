@@ -3,6 +3,7 @@ package updater
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
@@ -67,6 +68,9 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Updater run can take a long time as it pulls images and restarts containers
+		c.SetTimeout(30 * time.Minute)
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.UpdaterRun(c.EnvID()), nil)
 		if err != nil {

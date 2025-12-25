@@ -56,7 +56,7 @@
 
 		try {
 			if (isEditMode && userId) {
-				const safeUsername = user.username?.trim() || m.common_unknown();
+				const safeUsername = userToEdit?.username || m.common_unknown();
 				const result = await tryCatch(userService.update(userId, user));
 				handleApiResultWithCallbacks({
 					result,
