@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -853,8 +854,7 @@ func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *Upda
 	// Sync to all agents in background
 	if h.environmentService != nil {
 		if err := h.environmentService.SyncGlobalVariablesToAllAgents(ctx, input.Body.Variables); err != nil {
-			// Log error but don't fail the request as local update succeeded
-			// slog is already used in SyncGlobalVariablesToAllAgents
+			slog.ErrorContext(ctx, "failed to trigger global variables sync to agents", "error", err)
 		}
 	}
 

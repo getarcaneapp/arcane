@@ -44,14 +44,14 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 
 type Settings struct {
 	// General category
-	ProjectsDirectory         SettingVariable `key:"projectsDirectory" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=general;description=Configure where project files are stored" catmeta:"id=general;title=General;icon=settings;url=/settings/general;description=Core application settings and configuration"`
-	DiskUsagePath             SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
-	BaseServerURL             SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
-	EnableGravatar            SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
-	DefaultShell              SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
-	EnvironmentHealthInterval SettingVariable `key:"environmentHealthInterval,public" meta:"label=Environment Health Check Interval;type=number;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime;category=general;description=How often to check environment connectivity in minutes (default: 2)"`
+	ProjectsDirectory           SettingVariable `key:"projectsDirectory" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=general;description=Configure where project files are stored" catmeta:"id=general;title=General;icon=settings;url=/settings/general;description=Core application settings and configuration"`
+	DiskUsagePath               SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
+	BaseServerURL               SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
+	EnableGravatar              SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
+	DefaultShell                SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
+	EnvironmentHealthInterval   SettingVariable `key:"environmentHealthInterval,public" meta:"label=Environment Health Check Interval;type=number;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime;category=general;description=How often to check environment connectivity in minutes (default: 2)"`
 	GlobalVariablesSyncInterval SettingVariable `key:"globalVariablesSyncInterval,public" meta:"label=Global Variables Sync Interval;type=number;keywords=variables,sync,interval,frequency,global,env;category=general;description=How often to sync global variables to all agents in minutes (default: 5)"`
-	AccentColor               SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
+	AccentColor                 SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
 
 	// Docker category
 	AutoUpdate         SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`

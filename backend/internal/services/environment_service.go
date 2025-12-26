@@ -602,15 +602,17 @@ func (s *EnvironmentService) SyncGlobalVariablesToAllAgents(ctx context.Context,
 
 		go func(e models.Environment) {
 			// Use a background context for the proxy request to avoid blocking the main request
-			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// context.WithoutCancel preserves values (like trace IDs) but ignores cancellation
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 
 			_, status, err := s.ProxyRequest(bgCtx, e.ID, http.MethodPut, "/templates/variables", body)
-			if err != nil {
+			switch {
+			case err != nil:
 				slog.WarnContext(bgCtx, "failed to sync global variables to agent", "environmentID", e.ID, "error", err)
-			} else if status != http.StatusOK {
+			case status != http.StatusOK:
 				slog.WarnContext(bgCtx, "failed to sync global variables to agent", "environmentID", e.ID, "status", status)
-			} else {
+			default:
 				slog.DebugContext(bgCtx, "successfully synced global variables to agent", "environmentID", e.ID)
 			}
 		}(env)

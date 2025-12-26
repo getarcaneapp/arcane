@@ -29,9 +29,9 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged     func(ctx context.Context)
-	OnAutoUpdateSettingsChanged       func(ctx context.Context)
-	OnEnvironmentSettingsChanged      func(ctx context.Context)
+	OnImagePollingSettingsChanged    func(ctx context.Context)
+	OnAutoUpdateSettingsChanged      func(ctx context.Context)
+	OnEnvironmentSettingsChanged     func(ctx context.Context)
 	OnGlobalVariablesSettingsChanged func(ctx context.Context)
 }
 
@@ -95,22 +95,22 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AuthSessionTimeout: models.SettingVariable{Value: "1440"},
 		AuthPasswordPolicy: models.SettingVariable{Value: "strong"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
-		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
-		OidcEnabled:                models.SettingVariable{Value: "false"},
-		OidcClientId:               models.SettingVariable{Value: ""},
-		OidcClientSecret:           models.SettingVariable{Value: ""},
-		OidcIssuerUrl:              models.SettingVariable{Value: ""},
-		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
-		OidcAdminClaim:             models.SettingVariable{Value: ""},
-		OidcAdminValue:             models.SettingVariable{Value: ""},
-		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
-		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
-		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "false"},
-		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
-		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
-		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
+		AuthOidcConfig:              models.SettingVariable{Value: "{}"},
+		OidcEnabled:                 models.SettingVariable{Value: "false"},
+		OidcClientId:                models.SettingVariable{Value: ""},
+		OidcClientSecret:            models.SettingVariable{Value: ""},
+		OidcIssuerUrl:               models.SettingVariable{Value: ""},
+		OidcScopes:                  models.SettingVariable{Value: "openid email profile"},
+		OidcAdminClaim:              models.SettingVariable{Value: ""},
+		OidcAdminValue:              models.SettingVariable{Value: ""},
+		OidcMergeAccounts:           models.SettingVariable{Value: "false"},
+		MobileNavigationMode:        models.SettingVariable{Value: "floating"},
+		MobileNavigationShowLabels:  models.SettingVariable{Value: "true"},
+		SidebarHoverExpansion:       models.SettingVariable{Value: "true"},
+		GlassEffectEnabled:          models.SettingVariable{Value: "false"},
+		AccentColor:                 models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
+		MaxImageUploadSize:          models.SettingVariable{Value: "500"},
+		EnvironmentHealthInterval:   models.SettingVariable{Value: "2"},
 		GlobalVariablesSyncInterval: models.SettingVariable{Value: "5"},
 
 		InstanceID: models.SettingVariable{Value: ""},
