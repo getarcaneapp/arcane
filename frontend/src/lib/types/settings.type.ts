@@ -16,6 +16,7 @@ export type Settings = {
 	defaultShell: string;
 	dockerHost: string;
 	accentColor: string;
+	autoInjectEnv: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;

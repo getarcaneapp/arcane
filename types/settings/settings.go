@@ -61,6 +61,11 @@ type Update struct {
 	// Required: false
 	PollingInterval *string `json:"pollingInterval,omitempty"`
 
+	// AutoInjectEnv indicates if project .env variables should be automatically injected into all containers.
+	//
+	// Required: false
+	AutoInjectEnv *string `json:"autoInjectEnv,omitempty"`
+
 	// EnvironmentHealthInterval is the interval for checking environment health.
 	//
 	// Required: false

@@ -29,21 +29,41 @@ func TestLoadEnvironment(t *testing.T) {
 	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), 0600)
 	require.NoError(t, err)
 
-	loader := NewEnvLoader(projectsDir, workdir)
-	ctx := context.Background()
+	t.Run("AutoInjectEnv=false", func(t *testing.T) {
+		loader := NewEnvLoader(projectsDir, workdir, false)
+		ctx := context.Background()
 
-	envMap, injectionVars, err := loader.LoadEnvironment(ctx)
-	require.NoError(t, err)
+		envMap, injectionVars, err := loader.LoadEnvironment(ctx)
+		require.NoError(t, err)
 
-	// Verify envMap (should contain all vars, project overrides global)
-	assert.Equal(t, "global_value", envMap["GLOBAL_VAR"])
-	assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
-	assert.Equal(t, "project_shared", envMap["SHARED_VAR"])
+		// Verify envMap (should contain all vars, project overrides global)
+		assert.Equal(t, "global_value", envMap["GLOBAL_VAR"])
+		assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
+		assert.Equal(t, "project_shared", envMap["SHARED_VAR"])
 
-	// Verify injectionVars (should ONLY contain global vars)
-	assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
-	assert.Equal(t, "global_shared", injectionVars["SHARED_VAR"])
+		// Verify injectionVars (should ONLY contain global vars)
+		assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
+		assert.Equal(t, "global_shared", injectionVars["SHARED_VAR"])
 
-	_, projectVarInInjection := injectionVars["PROJECT_VAR"]
-	assert.False(t, projectVarInInjection, "Project variable should not be in injectionVars")
+		_, projectVarInInjection := injectionVars["PROJECT_VAR"]
+		assert.False(t, projectVarInInjection, "Project variable should not be in injectionVars")
+	})
+
+	t.Run("AutoInjectEnv=true", func(t *testing.T) {
+		loader := NewEnvLoader(projectsDir, workdir, true)
+		ctx := context.Background()
+
+		envMap, injectionVars, err := loader.LoadEnvironment(ctx)
+		require.NoError(t, err)
+
+		// Verify envMap
+		assert.Equal(t, "global_value", envMap["GLOBAL_VAR"])
+		assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
+		assert.Equal(t, "project_shared", envMap["SHARED_VAR"])
+
+		// Verify injectionVars (should contain both global and project vars)
+		assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
+		assert.Equal(t, "project_value", injectionVars["PROJECT_VAR"])
+		assert.Equal(t, "project_shared", injectionVars["SHARED_VAR"])
+	})
 }
