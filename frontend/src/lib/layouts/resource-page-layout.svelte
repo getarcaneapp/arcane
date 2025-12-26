@@ -180,7 +180,7 @@
 			{/if}
 
 			{#if actionButtons.length > 0}
-				<div use:initMeasurement class="invisible" aria-hidden="true">
+				<div use:initMeasurement class="pointer-events-none invisible fixed flex items-center gap-2" aria-hidden="true">
 					{#each actionButtons as button (button.id)}
 						<ArcaneButton
 							action={button.action}
