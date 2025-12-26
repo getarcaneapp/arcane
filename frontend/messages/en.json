@@ -14,6 +14,7 @@
 	"error_go_to_dashboard": "Go to Dashboard",
 	"_comment_common_generic": "=== COMMON - GENERIC ===",
 	"common_refresh": "Refresh",
+	"common_sync": "Sync",
 	"common_unknown": "Unknown",
 	"common_remove": "Remove",
 	"common_update": "Update",
