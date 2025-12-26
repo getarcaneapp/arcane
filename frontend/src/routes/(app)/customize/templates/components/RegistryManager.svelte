@@ -46,7 +46,7 @@
 				<Alert.Description>{m.templates_alert_remote_registries_description()}</Alert.Description>
 			</Alert.Root>
 
-			<Alert.Root class="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+			<Alert.Root class="border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10">
 				<CommunityIcon class="size-4" />
 				<Alert.Title>{m.templates_community_registry_title()}</Alert.Title>
 				<Alert.Description class="space-y-2">

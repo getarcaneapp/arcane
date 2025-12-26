@@ -70,37 +70,67 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 }
 
 func TestVerifyToken_ValidClaims(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
 	s := newTestAuthService("")
+	s.userService = userSvc
+
+	// Create user in DB
+	email := "a@example.com"
+	displayName := "Alice"
+	user := &models.User{
+		BaseModel:   models.BaseModel{ID: "u123"},
+		Username:    "alice",
+		Email:       &email,
+		DisplayName: &displayName,
+		Roles:       models.StringSlice{"user", "admin"},
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
 	exp := time.Now().Add(5 * time.Minute)
 	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", []string{"user", "admin"}, "a@example.com", "Alice", exp)
 
-	user, err := s.VerifyToken(context.Background(), token)
+	verifiedUser, err := s.VerifyToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("VerifyToken error: %v", err)
 	}
-	if user.ID != "u123" {
-		t.Errorf("id %q", user.ID)
+	if verifiedUser.ID != "u123" {
+		t.Errorf("id %q", verifiedUser.ID)
 	}
-	if user.Username != "alice" {
-		t.Errorf("username %q", user.Username)
+	if verifiedUser.Username != "alice" {
+		t.Errorf("username %q", verifiedUser.Username)
 	}
-	if len(user.Roles) != 2 || user.Roles[0] != "user" || user.Roles[1] != "admin" {
-		t.Errorf("roles %v", user.Roles)
+	if len(verifiedUser.Roles) != 2 || verifiedUser.Roles[0] != "user" || verifiedUser.Roles[1] != "admin" {
+		t.Errorf("roles %v", verifiedUser.Roles)
 	}
-	if user.Email == nil || *user.Email != "a@example.com" {
-		t.Errorf("email %v", user.Email)
+	if verifiedUser.Email == nil || *verifiedUser.Email != "a@example.com" {
+		t.Errorf("email %v", verifiedUser.Email)
 	}
-	if user.DisplayName == nil || *user.DisplayName != "Alice" {
-		t.Errorf("displayName %v", user.DisplayName)
+	if verifiedUser.DisplayName == nil || *verifiedUser.DisplayName != "Alice" {
+		t.Errorf("displayName %v", verifiedUser.DisplayName)
 	}
 }
 
 func TestVerifyToken_Expired(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
 	s := newTestAuthService("")
+	s.userService = userSvc
+
+	// Create user in DB
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "bob",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
 	exp := time.Now().Add(-1 * time.Minute)
 	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
-	_, err := s.VerifyToken(context.Background(), token)
+	_, err = s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrExpiredToken) {
 		t.Errorf("want ErrExpiredToken, got %v", err)
 	}
