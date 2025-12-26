@@ -15,6 +15,7 @@
 		loading?: boolean;
 		disabled?: boolean;
 		onclick: () => void;
+		showOnMobile?: boolean;
 	}
 
 	export interface StatCardConfig {
@@ -54,97 +55,89 @@
 	const DROPDOWN_WIDTH = 44;
 	const GAP = 8;
 
-	let visibleCount = $state(0);
+	let containerWidth = $state(0);
+	let buttonWidths = $state<number[]>([]);
+	let measurementNode: HTMLElement | null = null;
 
-	$effect(() => {
-		visibleCount = actionButtons.length;
+	const visibleCount = $derived.by(() => {
+		const total = actionButtons.length;
+		if (total === 0 || buttonWidths.length === 0 || containerWidth === 0) {
+			return total;
+		}
+
+		const totalWidth = buttonWidths.reduce((sum, w, i) => sum + w + (i > 0 ? GAP : 0), 0);
+		if (totalWidth <= containerWidth) {
+			return total;
+		}
+
+		let usedWidth = DROPDOWN_WIDTH;
+		for (let i = 0; i < total; i++) {
+			const needed = buttonWidths[i] + (i > 0 ? GAP : 0);
+			if (usedWidth + needed > containerWidth) {
+				return i;
+			}
+			usedWidth += needed;
+		}
+		return total;
 	});
-	let buttonWidths: number[] = [];
-	let containerNode: HTMLElement | null = null;
-	let buttonsNode: HTMLElement | null = null;
 
 	const visibleButtons = $derived(actionButtons.slice(0, visibleCount));
 	const overflowButtons = $derived(actionButtons.slice(visibleCount));
 
-	function calculateVisibleCount(containerWidth: number) {
-		if (buttonWidths.length === 0 || containerWidth === 0) {
-			return actionButtons.length;
-		}
-
-		const totalButtonsWidth = buttonWidths.reduce((sum, w, i) => sum + w + (i > 0 ? GAP : 0), 0);
-
-		if (totalButtonsWidth <= containerWidth) {
-			return actionButtons.length;
-		}
-
-		let usedWidth = DROPDOWN_WIDTH + GAP;
-		let count = 0;
-		for (let i = 0; i < buttonWidths.length; i++) {
-			const needed = buttonWidths[i] + (i > 0 ? GAP : 0);
-			if (usedWidth + needed > containerWidth) break;
-			usedWidth += needed;
-			count++;
-		}
-		return count;
-	}
-
-	function measureButtons() {
-		if (!buttonsNode) return;
-		const widths: number[] = [];
-		for (const child of buttonsNode.children) {
-			widths.push((child as HTMLElement).offsetWidth);
-		}
-		if (widths.length === actionButtons.length) {
-			buttonWidths = widths;
-		}
-	}
-
-	function updateVisibility() {
-		if (!containerNode) return;
-		const width = containerNode.offsetWidth;
-		visibleCount = calculateVisibleCount(width);
-	}
-
-	function initMeasurement(node: HTMLElement) {
-		buttonsNode = node;
-		requestAnimationFrame(() => {
-			measureButtons();
-			updateVisibility();
-		});
-		return { destroy: () => (buttonsNode = null) };
-	}
-
-	function initContainer(node: HTMLElement) {
-		containerNode = node;
-
-		const ro = new ResizeObserver(() => {
-			updateVisibility();
-		});
-		ro.observe(node);
-
+	function measureButtons(node: HTMLElement) {
+		measurementNode = node;
 		return {
 			destroy: () => {
-				ro.disconnect();
-				containerNode = null;
+				measurementNode = null;
 			}
 		};
 	}
 
 	$effect(() => {
-		actionButtons;
-		if (buttonsNode) {
+		const buttons = actionButtons;
+		if (!measurementNode || buttons.length === 0) return;
+
+		const timeoutId = setTimeout(() => {
 			requestAnimationFrame(() => {
-				measureButtons();
-				updateVisibility();
+				if (!measurementNode) return;
+				const widths: number[] = [];
+				for (const child of measurementNode.children) {
+					widths.push((child as HTMLElement).offsetWidth);
+				}
+				if (widths.length > 0 && widths.length === buttons.length) {
+					buttonWidths = widths;
+				}
 			});
-		}
+		}, 0);
+
+		return () => clearTimeout(timeoutId);
 	});
+
+	function observeWidth(node: HTMLElement) {
+		let rafId: number | null = null;
+		const ro = new ResizeObserver((entries) => {
+			if (rafId) cancelAnimationFrame(rafId);
+			rafId = requestAnimationFrame(() => {
+				const width = entries[0]?.contentRect.width ?? 0;
+				if (width > 0 && width !== containerWidth) {
+					containerWidth = width;
+				}
+			});
+		});
+		ro.observe(node);
+		return {
+			destroy: () => {
+				if (rafId) cancelAnimationFrame(rafId);
+				ro.disconnect();
+			}
+		};
+	}
 </script>
 
 <div class="{containerClass} {className}">
 	<HeaderCard>
-		<div class="flex items-center gap-4">
-			<div class="flex shrink-0 items-center gap-3 sm:gap-4">
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
 				{#if Icon}
 					<div
 						class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
@@ -161,7 +154,7 @@
 			</div>
 
 			{#if statCards && statCards.length > 0}
-				<div class="hidden min-w-0 shrink items-center justify-center md:flex">
+				<div class="hidden shrink items-center justify-center md:flex">
 					<div class="border-border/50 bg-muted/30 relative overflow-hidden rounded-xl border backdrop-blur-sm">
 						<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
 							{#each statCards as card, i}
@@ -179,35 +172,67 @@
 				</div>
 			{/if}
 
-			{#if actionButtons.length > 0}
-				<div use:initMeasurement class="invisible" aria-hidden="true">
-					{#each actionButtons as button (button.id)}
-						<ArcaneButton
-							action={button.action}
-							customLabel={button.label}
-							loadingLabel={button.loadingLabel}
-							loading={button.loading}
-							disabled={button.disabled}
-							onclick={() => {}}
-							size="sm"
-						/>
-					{/each}
-				</div>
+			<div class="flex min-w-0 flex-1 items-center justify-end gap-2" use:observeWidth>
+				{#if actionButtons.length > 0}
+					<!-- Hidden measurement container -->
+					<div
+						use:measureButtons
+						class="pointer-events-none invisible fixed -left-[9999px] flex items-center gap-2"
+						aria-hidden="true"
+					>
+						{#each actionButtons as button (button.id)}
+							<ArcaneButton
+								action={button.action}
+								customLabel={button.label}
+								loadingLabel={button.loadingLabel}
+								loading={button.loading}
+								disabled={button.disabled}
+								onclick={() => {}}
+								size="sm"
+							/>
+						{/each}
+					</div>
 
-				<div use:initContainer class="flex min-w-10 flex-1 items-center justify-end gap-2">
-					{#each visibleButtons as button (button.id)}
-						<ArcaneButton
-							action={button.action}
-							customLabel={button.label}
-							loadingLabel={button.loadingLabel}
-							loading={button.loading}
-							disabled={button.disabled}
-							onclick={button.onclick}
-							size="sm"
-						/>
-					{/each}
+					<!-- LG: Dynamic overflow -->
+					<div class="hidden items-center gap-2 lg:flex">
+						{#each visibleButtons as button (button.id)}
+							<ArcaneButton
+								action={button.action}
+								customLabel={button.label}
+								loadingLabel={button.loadingLabel}
+								loading={button.loading}
+								disabled={button.disabled}
+								onclick={button.onclick}
+								size="sm"
+							/>
+						{/each}
 
-					{#if overflowButtons.length > 0}
+						{#if overflowButtons.length > 0}
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger>
+									{#snippet child({ props })}
+										<ArcaneButton {...props} action="base" tone="outline" size="icon" class="size-8 shrink-0">
+											<span class="sr-only">More actions</span>
+											<EllipsisIcon class="size-4" />
+										</ArcaneButton>
+									{/snippet}
+								</DropdownMenu.Trigger>
+
+								<DropdownMenu.Content align="end" class="min-w-[160px]">
+									<DropdownMenu.Group>
+										{#each overflowButtons as button (button.id)}
+											<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
+												{button.loading ? button.loadingLabel || button.label : button.label}
+											</DropdownMenu.Item>
+										{/each}
+									</DropdownMenu.Group>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
+						{/if}
+					</div>
+
+					<!-- MD & SM: Collapse all into dropdown -->
+					<div class="flex items-center gap-2 lg:hidden">
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger>
 								{#snippet child({ props })}
@@ -220,7 +245,7 @@
 
 							<DropdownMenu.Content align="end" class="min-w-[160px]">
 								<DropdownMenu.Group>
-									{#each overflowButtons as button (button.id)}
+									{#each actionButtons as button (button.id)}
 										<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
 											{button.loading ? button.loadingLabel || button.label : button.label}
 										</DropdownMenu.Item>
@@ -228,9 +253,9 @@
 								</DropdownMenu.Group>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
-					{/if}
-				</div>
-			{/if}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</HeaderCard>
 
