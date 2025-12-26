@@ -452,10 +452,10 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
       - AGENT_TOKEN=%s
       - MANAGER_API_URL=%s
     ports:
-      - "3000:3000"
+      - "3553:3553"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - arcane-data:/data
+      - arcane-data:/app/data
 
 volumes:
   arcane-data:`, apiKey, managerURL)

@@ -267,43 +267,7 @@ dockers_v2:
     sbom: true
 
 changelog:
-  disable: '{{ if index .Env "SKIP_CHANGELOG" }}true{{ end }}'
-  use: github
-  filters:
-    exclude:
-      - '^chore:'
-      - '^release:'
-      - 'update translations via Crowdin'
-  groups:
-    - title: 'CLI - New features'
-      regexp: "^.*?feat\\(cli\\):"
-      order: 1
-    - title: 'Backend - New features'
-      regexp: '^.*?feat:'
-      order: 3
-    - title: 'CLI - Bug fixes'
-      regexp: "^.*?fix\\(cli\\):"
-      order: 11
-    - title: 'Backend - Bug fixes'
-      regexp: '^.*?fix:'
-      order: 13
-    - title: 'CLI - Performance improvements'
-      regexp: "^.*?perf\\(cli\\):"
-      order: 21
-    - title: 'Backend - Performance improvements'
-      regexp: '^.*?perf:'
-      order: 23
-    - title: 'CLI - Documentation'
-      regexp: "^.*?docs\\(cli\\):"
-      order: 31
-    - title: 'Backend - Documentation'
-      regexp: '^.*?docs:'
-      order: 33
-    - title: 'Dependencies'
-      regexp: "^.*?chore\\(deps\\):"
-      order: 40
-    - title: 'Other'
-      order: 999
+  disable: true
 
 release:
   github:
@@ -311,12 +275,12 @@ release:
     name: arcane
   disable: '{{ if index .Env "SKIP_RELEASE" }}true{{ end }}'
   draft: true
-  replace_existing_draft: true
+  replace_existing_draft: false
   use_existing_draft: true
   replace_existing_artifacts: true
   prerelease: auto
   make_latest: true
-  mode: replace
+  mode: keep-existing
   name_template: '{{.Tag}}'
   footer: |
     ---

@@ -575,21 +575,18 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		return nil, ErrTokenVersionMismatch
 	}
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: claims.ID},
-		Username:  claims.Username,
-		Roles:     models.StringSlice(claims.Roles),
+	// Verify user exists in DB
+	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
+	// even if the JWT signature is still valid (e.g. same JWT_SECRET).
+	dbUser, err := s.userService.GetUserByID(ctx, claims.ID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrInvalidToken
+		}
+		return nil, err
 	}
 
-	if claims.Email != "" {
-		user.Email = &claims.Email
-	}
-
-	if claims.DisplayName != "" {
-		user.DisplayName = &claims.DisplayName
-	}
-
-	return user, nil
+	return dbUser, nil
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
