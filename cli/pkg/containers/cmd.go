@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
@@ -255,6 +256,9 @@ var containersUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Updating a container can take a long time as it pulls the image
+		c.SetTimeout(30 * time.Minute)
 
 		path := types.Endpoints.ContainerUpdate(c.EnvID(), args[0])
 		resp, err := c.Post(cmd.Context(), path, nil)

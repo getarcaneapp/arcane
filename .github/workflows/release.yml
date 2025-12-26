@@ -51,19 +51,14 @@ jobs:
             backend/go.sum
             cli/go.sum
 
-      - name: Extract release notes
-        run: |
-          awk '/^## v[0-9]/ { if (found) exit; found=1; next } found' CHANGELOG.md > release-notes.md
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --release-notes=release-notes.md --skip=validate
+          args: release --clean --skip=validate
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SKIP_CHANGELOG: "true"
+          GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
 
       # Docker Images
       - name: Set up Depot CLI

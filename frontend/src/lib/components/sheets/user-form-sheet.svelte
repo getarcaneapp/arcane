@@ -67,11 +67,15 @@
 		}
 
 		const userData: Partial<User> & { password?: string } = {
-			username: data.username,
 			displayName: data.displayName,
 			email: data.email,
 			roles: [data.isAdmin ? 'admin' : 'user']
 		};
+
+		// Only include username if we're creating a new user
+		if (!isEditMode) {
+			userData.username = data.username;
+		}
 
 		// Only include password if it's provided (for create) or if editing and password is not empty
 		if (!isEditMode || (isEditMode && data.password)) {

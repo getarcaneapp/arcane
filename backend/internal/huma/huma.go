@@ -186,7 +186,7 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 	api := humagin.NewWithGroup(router, apiGroup, humaConfig)
 
 	// Add authentication middleware
-	api.UseMiddleware(middleware.NewAuthBridge(svc.Auth, svc.ApiKey, cfg))
+	api.UseMiddleware(middleware.NewAuthBridge(api, svc.Auth, svc.ApiKey, cfg))
 
 	// Register all Huma handlers
 	registerHandlers(api, svc)
