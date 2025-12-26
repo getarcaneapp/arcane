@@ -866,6 +866,8 @@
 	"docker_auto_update_interval_label": "Intervalle de mise à jour automatique (en minutes)",
 	"docker_auto_update_interval_placeholder": "60",
 	"docker_auto_update_interval_description": "Fréquence des mises à jour automatiques (5-1440 minutes)",
+	"docker_auto_inject_env_label": "Variables d'Env d'injection Automatique",
+	"docker_auto_inject_env_description": "Injecter automatiquement les variables .env du projet dans tous les conteneurs",
 	"docker_rate_limit_warning_title": "Rate Limiting Warning",
 	"docker_rate_limit_warning_description": "Des intervalles de vérification (“polling”) inférieurs à 30 minutes peuvent déclencher les limites de taux du registre. Il est recommandé d’utiliser des intervalles plus longs en production.",
 	"_comment_settings_navigation": "=== PARAMÈTRES - NAVIGATION ===",
