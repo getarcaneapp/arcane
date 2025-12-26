@@ -12,7 +12,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/dotenv"
 )
 
-const filePerm = 0644
+const filePerm = 0600
 
 const (
 	globalEnvFileName  = ".env.global"

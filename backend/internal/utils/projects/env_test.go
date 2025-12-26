@@ -21,12 +21,12 @@ func TestLoadEnvironment(t *testing.T) {
 
 	// Create .env.global
 	globalEnvContent := "GLOBAL_VAR=global_value\nSHARED_VAR=global_shared"
-	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), 0644)
+	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), 0600)
 	require.NoError(t, err)
 
 	// Create .env
 	projectEnvContent := "PROJECT_VAR=project_value\nSHARED_VAR=project_shared"
-	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), 0644)
+	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), 0600)
 	require.NoError(t, err)
 
 	loader := NewEnvLoader(projectsDir, workdir)
