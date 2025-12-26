@@ -154,7 +154,7 @@
 			</div>
 
 			{#if statCards && statCards.length > 0}
-				<div class="hidden shrink items-center justify-center md:flex">
+				<div class="hidden shrink items-center justify-center pr-8 md:flex">
 					<div class="border-border/50 bg-muted/30 relative overflow-hidden rounded-xl border backdrop-blur-sm">
 						<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
 							{#each statCards as card, i}
