@@ -12,14 +12,14 @@ import (
 )
 
 type PlaywrightService struct {
-	apiKeyService   *ApiKeyService
-	userService     *UserService
+	apiKeyService *ApiKeyService
+	userService   *UserService
 }
 
 func NewPlaywrightService(apiKeyService *ApiKeyService, userService *UserService) *PlaywrightService {
 	return &PlaywrightService{
-		apiKeyService:   apiKeyService,
-		userService:     userService,
+		apiKeyService: apiKeyService,
+		userService:   userService,
 	}
 }
 

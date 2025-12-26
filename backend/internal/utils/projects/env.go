@@ -12,7 +12,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/dotenv"
 )
 
-const filePerm = 0644
+const filePerm = 0600
 
 const (
 	globalEnvFileName  = ".env.global"
@@ -27,14 +27,16 @@ const (
 type EnvMap map[string]string
 
 type EnvLoader struct {
-	projectsDir string
-	workdir     string
+	projectsDir   string
+	workdir       string
+	autoInjectEnv bool
 }
 
-func NewEnvLoader(projectsDir, workdir string) *EnvLoader {
+func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 	return &EnvLoader{
-		projectsDir: projectsDir,
-		workdir:     workdir,
+		projectsDir:   projectsDir,
+		workdir:       workdir,
+		autoInjectEnv: autoInjectEnv,
 	}
 }
 
@@ -155,7 +157,9 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 
 	for k, v := range projectEnv {
 		envMap[k] = v
-		injectionVars[k] = v
+		if l.autoInjectEnv {
+			injectionVars[k] = v
+		}
 		slog.DebugContext(ctx, "Loaded env var from project .env", "key", k, "value", v)
 	}
 
