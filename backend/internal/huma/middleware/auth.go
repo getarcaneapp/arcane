@@ -175,7 +175,7 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 				return
 			}
 			// API key was present but invalid. Fail immediately.
-			huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
 			return
 		}
 
@@ -189,7 +189,7 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		}
 
 		// Write unauthorized response directly
-		huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
 }
 
