@@ -437,7 +437,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
   -e AGENT_MODE=true \
   -e AGENT_TOKEN=%s \
   -e MANAGER_API_URL=%s \
-  -p 3000:3000 \
+  -p 3553:3553 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v arcane-data:/data \
   ghcr.io/getarcaneapp/arcane-headless:latest`, apiKey, managerURL)

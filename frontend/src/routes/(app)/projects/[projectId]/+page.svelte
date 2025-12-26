@@ -483,15 +483,17 @@
 			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>
-{:else if !data.error}
+{:else}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
 			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
 				<ProjectsIcon class="text-muted-foreground size-10" />
 			</div>
-			<h2 class="mb-3 text-2xl font-medium">{m.common_not_found_title({ resource: m.project() })}</h2>
+			<h2 class="mb-3 text-2xl font-medium">
+				{data.error ? 'Error Loading Project' : m.common_not_found_title({ resource: m.project() })}
+			</h2>
 			<p class="text-muted-foreground mb-8 max-w-md text-center">
-				{m.common_not_found_description({ resource: m.project().toLowerCase() })}
+				{data.error || m.common_not_found_description({ resource: m.project().toLowerCase() })}
 			</p>
 			<ArcaneButton
 				action="base"
