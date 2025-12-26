@@ -172,7 +172,7 @@
 				</div>
 			{/if}
 
-			<div class="flex flex-1 items-center justify-end gap-2" use:observeWidth>
+			<div class="flex min-w-0 flex-1 items-center justify-end gap-2" use:observeWidth>
 				{#if actionButtons.length > 0}
 					<!-- Hidden measurement container -->
 					<div
