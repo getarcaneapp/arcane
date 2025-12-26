@@ -296,6 +296,8 @@
 	"dashboard_meter_gpu": "GPU Usage",
 	"dashboard_meter_gpu_device": "device",
 	"dashboard_meter_gpu_devices": "devices",
+	"dashboard_meter_usage": "Usage",
+	"dashboard_meter_capacity": "Capacity",
 	"_comment_containers": "=== CONTAINERS ===",
 	"containers_title": "Containers",
 	"containers_subtitle": "View and Manage your Containers",
