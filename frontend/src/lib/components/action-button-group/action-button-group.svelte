@@ -3,6 +3,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { Action } from '$lib/components/arcane-button/index.js';
 	import { EllipsisIcon } from '$lib/icons';
+	import { cn } from '$lib/utils';
 
 	export interface ActionButton {
 		id: string;
@@ -105,7 +106,7 @@
 </script>
 
 {#if buttons.length > 0}
-	<div class="flex min-w-0 flex-1 items-center justify-end gap-2 {className}" use:observeWidth>
+	<div class={cn('flex min-w-0 flex-1 items-center justify-end gap-2', className)} use:observeWidth>
 		<div use:measureButtons class="pointer-events-none invisible fixed -left-[9999px] flex items-center gap-2" aria-hidden="true">
 			{#each buttons as button (button.id)}
 				<ArcaneButton

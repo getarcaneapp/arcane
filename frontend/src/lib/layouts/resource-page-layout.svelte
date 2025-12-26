@@ -1,21 +1,24 @@
-<script lang="ts">
-	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
-	import StatCard from '$lib/components/stat-card.svelte';
-	import type { Snippet } from 'svelte';
-	import type { IconType } from '$lib/icons';
-	import { cn } from '$lib/utils';
-
-	export type { ActionButton };
+<script lang="ts" module>
+	import type { ActionButton as ActionButtonType } from '$lib/components/action-button-group/index.js';
+	export type ActionButton = ActionButtonType;
 
 	export interface StatCardConfig {
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: IconType;
+		icon: import('$lib/icons').IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
 	}
+</script>
+
+<script lang="ts">
+	import { ActionButtonGroup } from '$lib/components/action-button-group/index.js';
+	import StatCard from '$lib/components/stat-card.svelte';
+	import type { Snippet } from 'svelte';
+	import type { IconType } from '$lib/icons';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		title: string;
@@ -26,7 +29,6 @@
 		mainContent: Snippet;
 		additionalContent?: Snippet;
 		class?: string;
-		containerClass?: string;
 	}
 
 	let {
