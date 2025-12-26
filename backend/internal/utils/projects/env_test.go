@@ -43,7 +43,7 @@ func TestLoadEnvironment(t *testing.T) {
 	// Verify injectionVars (should ONLY contain global vars)
 	assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
 	assert.Equal(t, "global_shared", injectionVars["SHARED_VAR"])
-	
+
 	_, projectVarInInjection := injectionVars["PROJECT_VAR"]
 	assert.False(t, projectVarInInjection, "Project variable should not be in injectionVars")
 }
