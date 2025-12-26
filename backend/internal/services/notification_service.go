@@ -379,7 +379,10 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	}
 
 	subject := fmt.Sprintf("Container Update Available: %s", notifications.SanitizeForEmail(imageRef))
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -583,7 +586,10 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	subject := fmt.Sprintf("Container Updated: %s", notifications.SanitizeForEmail(containerName))
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -740,7 +746,10 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 	}
 
 	subject := "Test Email from Arcane"
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -1014,7 +1023,10 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 		}
 		return ""
 	}())
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
