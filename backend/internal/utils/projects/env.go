@@ -155,7 +155,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 
 	for k, v := range projectEnv {
 		envMap[k] = v
-		injectionVars[k] = v
+		// injectionVars[k] = v // Don't inject project .env vars into containers automatically
 		slog.DebugContext(ctx, "Loaded env var from project .env", "key", k, "value", v)
 	}
 
