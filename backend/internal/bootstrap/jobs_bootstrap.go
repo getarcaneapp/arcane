@@ -35,6 +35,13 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		}
 	}
 
+	globalVariablesSyncJob := job.NewGlobalVariablesSyncJob(scheduler, appServices.Template, appServices.Environment, appServices.Settings)
+	if !appConfig.AgentMode {
+		if err := globalVariablesSyncJob.Register(appCtx); err != nil {
+			slog.ErrorContext(appCtx, "Failed to register global variables sync job", "error", err)
+		}
+	}
+
 	analyticsJob := job.NewAnalyticsJob(scheduler, appServices.Settings, nil, appConfig)
 	if err := analyticsJob.Register(appCtx); err != nil {
 		slog.ErrorContext(appCtx, "Failed to register analytics heartbeat job", "error", err)
@@ -52,18 +59,24 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
 		}
+	}
+	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
 		if err := autoUpdateJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
 		}
+	}
+	appServices.Settings.OnEnvironmentSettingsChanged = func(ctx context.Context) {
 		if !appConfig.AgentMode {
 			if err := environmentHealthJob.Reschedule(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
 			}
 		}
 	}
-	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
-		if err := autoUpdateJob.Reschedule(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
+	appServices.Settings.OnGlobalVariablesSettingsChanged = func(ctx context.Context) {
+		if !appConfig.AgentMode {
+			if err := globalVariablesSyncJob.Reschedule(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to reschedule global-variables-sync job", "error", err)
+			}
 		}
 	}
 }

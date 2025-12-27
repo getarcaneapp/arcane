@@ -71,6 +71,11 @@ type Update struct {
 	// Required: false
 	EnvironmentHealthInterval *string `json:"environmentHealthInterval,omitempty"`
 
+	// GlobalVariablesSyncInterval is the interval for syncing global variables to agents.
+	//
+	// Required: false
+	GlobalVariablesSyncInterval *string `json:"globalVariablesSyncInterval,omitempty"`
+
 	// PruneMode is the Docker prune mode ("all" or "dangling").
 	//
 	// Required: false

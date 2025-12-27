@@ -458,12 +458,12 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
 	}
 
-	// Sync registries in background (intentionally detached from request context)
+	// Sync everything in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
-			bgCtx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
-				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
+			bgCtx := context.WithoutCancel(ctx)
+			if err := h.environmentService.SyncEverythingToEnvironment(bgCtx, envID); err != nil {
+				slog.WarnContext(bgCtx, "Failed to sync environment after creation",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(created.ID, created.Name)
@@ -706,13 +706,13 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 	}, nil
 }
 
-// SyncRegistries syncs container registries to an environment.
+// SyncRegistries syncs container registries and global variables to an environment.
 func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegistriesInput) (*SyncRegistriesOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
+	if err := h.environmentService.SyncEverythingToEnvironment(ctx, input.ID); err != nil {
 		return nil, huma.Error500InternalServerError((&common.RegistrySyncError{Err: err}).Error())
 	}
 
@@ -720,7 +720,7 @@ func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegi
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: "Registries synced successfully",
+				Message: "Environment synced successfully",
 			},
 		},
 	}, nil
@@ -793,8 +793,8 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, update
 	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
 		go func(envID string, envName string) {
 			ctx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID); err != nil {
-				slog.WarnContext(ctx, "Failed to sync registries after environment update",
+			if err := h.environmentService.SyncEverythingToEnvironment(ctx, envID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync environment after update",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(environmentID, updated.Name)

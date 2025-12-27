@@ -99,17 +99,17 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 			offlineCount++
 		case status == "online":
 			onlineCount++
-			// Sync registries to online remote environments (skip local environment ID "0")
+			// Sync everything to online remote environments (skip local environment ID "0")
 			if env.ID != "0" {
 				go func(envID, envName string) {
 					syncCtx := context.WithoutCancel(ctx)
-					if err := j.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
-						slog.WarnContext(syncCtx, "failed to sync registries during health check",
+					if err := j.environmentService.SyncEverythingToEnvironment(syncCtx, envID); err != nil {
+						slog.WarnContext(syncCtx, "failed to sync environment during health check",
 							"environment_id", envID,
 							"environment_name", envName,
 							"error", err)
 					} else {
-						slog.DebugContext(syncCtx, "successfully synced registries during health check",
+						slog.DebugContext(syncCtx, "successfully synced environment during health check",
 							"environment_id", envID,
 							"environment_name", envName)
 					}

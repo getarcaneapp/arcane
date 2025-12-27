@@ -18,23 +18,31 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/env"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type EnvironmentService struct {
-	db            *database.DB
-	httpClient    *http.Client
-	dockerService *DockerClientService
-	eventService  *EventService
+	db              *database.DB
+	httpClient      *http.Client
+	dockerService   *DockerClientService
+	eventService    *EventService
+	templateService *TemplateService
 }
 
-func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService) *EnvironmentService {
+func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, templateService *TemplateService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &EnvironmentService{db: db, httpClient: httpClient, dockerService: dockerService, eventService: eventService}
+	return &EnvironmentService{
+		db:              db,
+		httpClient:      httpClient,
+		dockerService:   dockerService,
+		eventService:    eventService,
+		templateService: templateService,
+	}
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
@@ -578,6 +586,81 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	}
 
 	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", environment.Name)
+
+	return nil
+}
+
+// SyncGlobalVariablesToEnvironment syncs global variables to a specific remote environment
+func (s *EnvironmentService) SyncGlobalVariablesToEnvironment(ctx context.Context, environmentID string, vars []env.Variable) error {
+	// Don't sync to local environment (ID "0")
+	if environmentID == "0" {
+		return fmt.Errorf("cannot sync global variables to local environment")
+	}
+
+	body, err := json.Marshal(env.Summary{Variables: vars})
+	if err != nil {
+		return fmt.Errorf("failed to marshal variables: %w", err)
+	}
+
+	_, status, err := s.ProxyRequest(ctx, environmentID, http.MethodPut, "/templates/variables", body)
+	switch {
+	case err != nil:
+		return fmt.Errorf("failed to sync global variables to agent: %w", err)
+	case status != http.StatusOK:
+		return fmt.Errorf("failed to sync global variables to agent: status %d", status)
+	default:
+		slog.DebugContext(ctx, "successfully synced global variables to agent", "environmentID", environmentID)
+		return nil
+	}
+}
+
+// SyncEverythingToEnvironment syncs registries and global variables to a remote environment
+func (s *EnvironmentService) SyncEverythingToEnvironment(ctx context.Context, environmentID string) error {
+	if environmentID == "0" {
+		return nil // Nothing to sync to local
+	}
+
+	// Sync registries
+	if err := s.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
+		return fmt.Errorf("failed to sync registries: %w", err)
+	}
+
+	// Sync global variables
+	vars, err := s.templateService.GetGlobalVariables(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get global variables: %w", err)
+	}
+
+	if err := s.SyncGlobalVariablesToEnvironment(ctx, environmentID, vars); err != nil {
+		return fmt.Errorf("failed to sync global variables: %w", err)
+	}
+
+	return nil
+}
+
+// SyncGlobalVariablesToAllAgents syncs global variables to all remote environments
+func (s *EnvironmentService) SyncGlobalVariablesToAllAgents(ctx context.Context, vars []env.Variable) error {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).Where("id != ?", "0").Find(&envs).Error; err != nil {
+		return fmt.Errorf("failed to get environments: %w", err)
+	}
+
+	for _, env := range envs {
+		if env.Status != string(models.EnvironmentStatusOnline) {
+			continue
+		}
+
+		go func(e models.Environment) {
+			// Use a background context for the proxy request to avoid blocking the main request
+			// context.WithoutCancel preserves values (like trace IDs) but ignores cancellation
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+
+			if err := s.SyncGlobalVariablesToEnvironment(bgCtx, e.ID, vars); err != nil {
+				slog.WarnContext(bgCtx, "failed to sync global variables to agent", "environmentID", e.ID, "error", err)
+			}
+		}(env)
+	}
 
 	return nil
 }

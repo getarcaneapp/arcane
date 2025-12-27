@@ -15,7 +15,8 @@
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
 
 	const formSchema = z.object({
-		environmentHealthInterval: z.coerce.number().int().min(1).max(60)
+		environmentHealthInterval: z.coerce.number().int().min(1).max(60),
+		globalVariablesSyncInterval: z.coerce.number().int().min(1).max(1440)
 	});
 
 	let { formInputs } = $derived(
@@ -55,6 +56,25 @@
 									label={m.environments_health_check_interval_label()}
 									placeholder="2"
 									helpText={m.environments_health_check_interval_description()}
+									type="number"
+								/>
+							</div>
+						</div>
+
+						<Separator />
+
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.global_variables_sync_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.global_variables_sync_description()}</p>
+							</div>
+							<div class="max-w-xs">
+								<TextInputWithLabel
+									bind:value={$formInputs.globalVariablesSyncInterval.value}
+									error={$formInputs.globalVariablesSyncInterval.error}
+									label={m.global_variables_sync_interval_label()}
+									placeholder="5"
+									helpText={m.global_variables_sync_interval_description()}
 									type="number"
 								/>
 							</div>

@@ -338,7 +338,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc)
-	handlers.RegisterTemplates(api, templateSvc)
+	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)

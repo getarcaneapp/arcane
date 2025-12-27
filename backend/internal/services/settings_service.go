@@ -29,8 +29,10 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged func(ctx context.Context)
-	OnAutoUpdateSettingsChanged   func(ctx context.Context)
+	OnImagePollingSettingsChanged    func(ctx context.Context)
+	OnAutoUpdateSettingsChanged      func(ctx context.Context)
+	OnEnvironmentSettingsChanged     func(ctx context.Context)
+	OnGlobalVariablesSettingsChanged func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -93,22 +95,23 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AuthSessionTimeout: models.SettingVariable{Value: "1440"},
 		AuthPasswordPolicy: models.SettingVariable{Value: "strong"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
-		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
-		OidcEnabled:                models.SettingVariable{Value: "false"},
-		OidcClientId:               models.SettingVariable{Value: ""},
-		OidcClientSecret:           models.SettingVariable{Value: ""},
-		OidcIssuerUrl:              models.SettingVariable{Value: ""},
-		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
-		OidcAdminClaim:             models.SettingVariable{Value: ""},
-		OidcAdminValue:             models.SettingVariable{Value: ""},
-		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
-		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
-		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "false"},
-		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
-		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
-		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
+		AuthOidcConfig:              models.SettingVariable{Value: "{}"},
+		OidcEnabled:                 models.SettingVariable{Value: "false"},
+		OidcClientId:                models.SettingVariable{Value: ""},
+		OidcClientSecret:            models.SettingVariable{Value: ""},
+		OidcIssuerUrl:               models.SettingVariable{Value: ""},
+		OidcScopes:                  models.SettingVariable{Value: "openid email profile"},
+		OidcAdminClaim:              models.SettingVariable{Value: ""},
+		OidcAdminValue:              models.SettingVariable{Value: ""},
+		OidcMergeAccounts:           models.SettingVariable{Value: "false"},
+		MobileNavigationMode:        models.SettingVariable{Value: "floating"},
+		MobileNavigationShowLabels:  models.SettingVariable{Value: "true"},
+		SidebarHoverExpansion:       models.SettingVariable{Value: "true"},
+		GlassEffectEnabled:          models.SettingVariable{Value: "false"},
+		AccentColor:                 models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
+		MaxImageUploadSize:          models.SettingVariable{Value: "500"},
+		EnvironmentHealthInterval:   models.SettingVariable{Value: "2"},
+		GlobalVariablesSyncInterval: models.SettingVariable{Value: "5"},
 
 		InstanceID: models.SettingVariable{Value: ""},
 	}
@@ -400,7 +403,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedEnvironment, changedGlobalVariables, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -428,17 +431,25 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if changedEnvironment && s.OnEnvironmentSettingsChanged != nil {
+		s.OnEnvironmentSettingsChanged(ctx)
+	}
+	if changedGlobalVariables && s.OnGlobalVariablesSettingsChanged != nil {
+		s.OnGlobalVariablesSettingsChanged(ctx)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
 
 	changedPolling := false
 	changedAutoUpdate := false
+	changedEnvironment := false
+	changedGlobalVariables := false
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -469,7 +480,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -482,10 +493,14 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
+		case "environmentHealthInterval":
+			changedEnvironment = true
+		case "globalVariablesSyncInterval":
+			changedGlobalVariables = true
 		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedEnvironment, changedGlobalVariables, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {

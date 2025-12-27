@@ -8,6 +8,7 @@ export type Settings = {
 	pollingEnabled: boolean;
 	pollingInterval: number;
 	environmentHealthInterval: number;
+	globalVariablesSyncInterval: number;
 	dockerPruneMode: 'all' | 'dangling';
 	maxImageUploadSize: number;
 	baseServerUrl: string;

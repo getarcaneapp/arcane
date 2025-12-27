@@ -237,15 +237,15 @@
 		}
 	}
 
-	async function syncRegistries() {
+	async function syncEnvironment() {
 		if (isSyncingRegistries) return;
 		try {
 			isSyncingRegistries = true;
 			await environmentManagementService.syncRegistries(environment.id);
-			toast.success('Registries synced successfully');
+			toast.success('Environment synced successfully');
 		} catch (error) {
-			console.error('Failed to sync registries:', error);
-			toast.error('Failed to sync registries');
+			console.error('Failed to sync environment:', error);
+			toast.error('Failed to sync environment');
 		} finally {
 			isSyncingRegistries = false;
 		}
@@ -433,11 +433,11 @@
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						onclick={syncRegistries}
+						onclick={syncEnvironment}
 						disabled={isSyncingRegistries}
 						loading={isSyncingRegistries}
 						icon={RegistryIcon}
-						customLabel={m.sync_registries()}
+						customLabel={m.common_sync()}
 					/>
 				{/if}
 

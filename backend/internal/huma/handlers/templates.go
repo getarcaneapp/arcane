@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -16,7 +17,8 @@ import (
 
 // TemplateHandler handles template management endpoints.
 type TemplateHandler struct {
-	templateService *services.TemplateService
+	templateService    *services.TemplateService
+	environmentService *services.EnvironmentService
 }
 
 // ============================================================================
@@ -168,8 +170,11 @@ type UpdateGlobalVariablesOutput struct {
 // ============================================================================
 
 // RegisterTemplates registers all template management endpoints.
-func RegisterTemplates(api huma.API, templateService *services.TemplateService) {
-	h := &TemplateHandler{templateService: templateService}
+func RegisterTemplates(api huma.API, templateService *services.TemplateService, environmentService *services.EnvironmentService) {
+	h := &TemplateHandler{
+		templateService:    templateService,
+		environmentService: environmentService,
+	}
 
 	// Public endpoints (no auth required in original)
 	huma.Register(api, huma.Operation{
@@ -366,7 +371,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService) 
 		Method:      "PUT",
 		Path:        "/templates/variables",
 		Summary:     "Update global variables",
-		Description: "Update global template variables",
+		Description: "Update global template variables and sync to all agents",
 		Tags:        []string{"Templates"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -835,21 +840,29 @@ func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, _ *GetGlobalVa
 	}, nil
 }
 
-// UpdateGlobalVariables updates global template variables.
+// UpdateGlobalVariables updates global template variables and syncs to all agents.
 func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	// Update local variables
 	if err := h.templateService.UpdateGlobalVariables(ctx, input.Body.Variables); err != nil {
 		return nil, huma.Error500InternalServerError((&common.GlobalVariablesUpdateError{Err: err}).Error())
+	}
+
+	// Sync to all agents in background
+	if h.environmentService != nil {
+		if err := h.environmentService.SyncGlobalVariablesToAllAgents(ctx, input.Body.Variables); err != nil {
+			slog.ErrorContext(ctx, "failed to trigger global variables sync to agents", "error", err)
+		}
 	}
 
 	return &UpdateGlobalVariablesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: "Global variables updated successfully",
+				Message: "Global variables updated successfully and sync triggered",
 			},
 		},
 	}, nil
