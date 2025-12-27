@@ -155,9 +155,11 @@
 	] satisfies ColumnSpec<ContainerRegistry>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'username', label: m.common_username(), defaultVisible: true },
-		{ id: 'description', label: m.common_description(), defaultVisible: true }
+		{ id: 'description', label: m.common_description(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});

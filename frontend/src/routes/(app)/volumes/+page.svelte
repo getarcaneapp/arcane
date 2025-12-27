@@ -83,12 +83,6 @@
 			iconColor: 'text-blue-500'
 		},
 		{
-			title: m.volumes_stat_used(),
-			value: volumeUsageCounts.inuse,
-			icon: VolumeUsedIcon,
-			iconColor: 'text-green-500'
-		},
-		{
 			title: m.volumes_stat_unused(),
 			value: volumeUsageCounts.unused,
 			icon: VolumeUnusedIcon,

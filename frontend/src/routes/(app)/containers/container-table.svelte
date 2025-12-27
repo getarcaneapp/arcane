@@ -266,40 +266,26 @@
 	}
 
 	const columns = $derived([
+		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
-		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
-		{ id: 'image', label: m.common_image(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
-
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? true
-		}))
-	);
 
 	function getProjectName(container: ContainerSummaryDto): string {
 		const projectLabel = container.labels?.['com.docker.compose.project'];
@@ -349,7 +335,7 @@
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
-	<span class="font-mono text-sm">{String(item.id).substring(0, 12)}</span>
+	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
@@ -482,6 +468,14 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+			},
+			{
+				label: m.containers_ip_address(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				icon: NetworksIcon,
+				iconVariant: 'sky' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility.ipAddress ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
@@ -625,10 +619,14 @@
 
 {#snippet GroupedTableView({
 	table,
-	renderPagination
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
 }: {
 	table: TableType<ContainerSummaryDto>;
 	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
 })}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
@@ -703,7 +701,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-4 px-6 py-2 md:hidden">
+		<div class="space-y-4 py-2 md:hidden">
 			{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
 				{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
 				{@const projectRows = table
@@ -716,15 +714,13 @@
 					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
 					icon={ProjectsIcon}
 				>
-					<div class="space-y-3">
-						{#each projectRows as row (row.id)}
-							{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
-						{:else}
-							<div class="h-24 flex items-center justify-center text-center text-muted-foreground">
-								{m.common_no_results_found()}
-							</div>
-						{/each}
-					</div>
+					{#each projectRows as row (row.id)}
+						{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
+					{:else}
+						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
+							{m.common_no_results_found()}
+						</div>
+					{/each}
 				</DropdownCard>
 			{/each}
 		</div>

@@ -83,7 +83,7 @@
 		}
 	});
 
-	const actionButtons: ActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived([
 		{
 			id: 'create',
 			action: 'create',

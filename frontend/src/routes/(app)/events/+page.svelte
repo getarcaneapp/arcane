@@ -136,16 +136,8 @@
 	]);
 </script>
 
-<ResourcePageLayout
-	title={m.events_title()}
-	subtitle={m.events_subtitle()}
-	{actionButtons}
-	{statCards}
-	containerClass="flex h-full flex-col space-y-6"
->
+<ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<div class="flex-1 overflow-hidden">
-			<EventTable bind:events bind:selectedIds bind:requestOptions />
-		</div>
+		<EventTable bind:events bind:selectedIds bind:requestOptions />
 	{/snippet}
 </ResourcePageLayout>

@@ -129,7 +129,7 @@
 				{/if}
 				<div class="min-w-0 flex-1">
 					<h3
-						class={cn('leading-snug font-semibold', compact ? 'text-sm' : 'text-sm', hasSubtitle ? 'truncate' : 'line-clamp-2')}
+						class={cn('line-clamp-2 leading-snug font-semibold break-all', compact ? 'text-sm' : 'text-sm')}
 						title={title(item)}
 					>
 						{title(item)}

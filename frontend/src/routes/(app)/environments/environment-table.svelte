@@ -223,7 +223,9 @@
 	] satisfies ColumnSpec<Environment>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_enabled(), defaultVisible: true },
 		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true }
 	];
 

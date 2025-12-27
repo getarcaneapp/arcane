@@ -104,7 +104,7 @@
 	</Card.Header>
 	{#if expanded}
 		<div transition:slide={{ duration: 200 }}>
-			<Card.Content class="pt-4 pb-6">
+			<Card.Content class="p-0">
 				{@render children()}
 			</Card.Content>
 		</div>

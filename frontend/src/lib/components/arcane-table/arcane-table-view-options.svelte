@@ -50,16 +50,15 @@
 				{#each table
 					.getAllColumns()
 					.filter((col) => typeof col.accessorFn !== 'undefined' && col.getCanHide()) as column (column)}
-					<DropdownMenu.CheckboxItem
-						bind:checked={() => column.getIsVisible(), (v) => column.toggleVisibility(!!v)}
-						class="capitalize"
-					>
-						{column.id}
+					{@const meta = column.columnDef.meta as { title?: string }}
+					{@const headerText = meta?.title ?? column.id}
+					<DropdownMenu.CheckboxItem bind:checked={() => column.getIsVisible(), (v) => column.toggleVisibility(!!v)}>
+						{headerText}
 					</DropdownMenu.CheckboxItem>
 				{/each}
 			{:else if fields && onToggleField}
 				{#each fields as field (field.id)}
-					<DropdownMenu.CheckboxItem bind:checked={() => field.visible, (v) => onToggleField(field.id)} class="capitalize">
+					<DropdownMenu.CheckboxItem bind:checked={() => field.visible, (v) => onToggleField(field.id)}>
 						{field.label}
 					</DropdownMenu.CheckboxItem>
 				{/each}

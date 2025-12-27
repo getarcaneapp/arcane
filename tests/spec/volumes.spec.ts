@@ -50,7 +50,7 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    await page.locator('button:has-text("Create Volume")').first().click();
+    await page.getByRole('button', { name: 'Create Volume' }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText('Create New Volume')).toBeVisible();
   });
@@ -83,9 +83,9 @@ test.describe('Volumes Page', () => {
     await page.waitForLoadState('networkidle');
 
     // 1. Create the volume first
-    await page.locator('button:has-text("Create Volume")').first().click();
+    await page.getByRole('button', { name: 'Create Volume' }).first().click();
     await page.locator('input[id="volume-name-*"]').fill(volumeName);
-    await page.getByRole('dialog').locator('button:has-text("Create Volume")').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Create Volume' }).click();
     await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
 
     // 2. Find and remove it
@@ -108,16 +108,16 @@ test.describe('Volumes Page', () => {
     await page.goto('/volumes');
     await page.waitForLoadState('networkidle');
 
-    await page.locator('button:has-text("Create Volume")').first().click();
+    await page.getByRole('button', { name: 'Create Volume' }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
     const volumeName = `test-volume-${Date.now()}`;
     await page.locator('input[id="volume-name-*"]').fill(volumeName);
 
-    await page.getByRole('dialog').locator('button:has-text("Create Volume")').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Create Volume' }).click();
 
     await expect(
-      page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]:has-text("created successfully")`)
+      page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]:has-text("created successfully")`),
     ).toBeVisible();
   });
 
