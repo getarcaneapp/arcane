@@ -534,17 +534,11 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Use appropriate auth header based on environment type
+	// Always use X-Arcane-Agent-Token for agent authentication.
+	// The agent validates this header against its stored agentToken.
 	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		// For API key-based environments, AccessToken contains the API key
-		if environment.ApiKeyID != nil && *environment.ApiKeyID != "" {
-			req.Header.Set("X-API-KEY", *environment.AccessToken)
-			slog.DebugContext(ctx, "Set API key header for sync request")
-		} else {
-			// Legacy bootstrap token-based environments
-			req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
-			slog.DebugContext(ctx, "Set agent token header for sync request")
-		}
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		slog.DebugContext(ctx, "Set agent token header for sync request")
 	} else {
 		slog.WarnContext(ctx, "No access token available for environment sync", "environmentID", environmentID)
 	}
@@ -607,13 +601,10 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Use appropriate auth header
+	// Always use X-Arcane-Agent-Token for agent authentication.
+	// The agent validates this header against its stored agentToken.
 	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		if environment.ApiKeyID != nil && *environment.ApiKeyID != "" {
-			req.Header.Set("X-API-KEY", *environment.AccessToken)
-		} else {
-			req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
-		}
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
 	}
 
 	resp, err := s.httpClient.Do(req)
