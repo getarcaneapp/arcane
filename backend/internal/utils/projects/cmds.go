@@ -16,7 +16,10 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 		return err
 	}
 	defer c.Close()
-	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
+	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{
+		Project:  proj,
+		Services: services,
+	})
 }
 
 func ComposeUp(ctx context.Context, proj *types.Project, services []string) error {
