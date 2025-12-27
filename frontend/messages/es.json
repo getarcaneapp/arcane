@@ -866,6 +866,8 @@
 	"docker_auto_update_interval_label": "Intervalo de actualización automática (minutos)",
 	"docker_auto_update_interval_placeholder": "60",
 	"docker_auto_update_interval_description": "Con qué frecuencia realizar actualizaciones automáticas (5-1440 minutos)",
+	"docker_auto_inject_env_label": "Auto inyectar variables de Env",
+	"docker_auto_inject_env_description": "Inyectar automáticamente variables .env del proyecto en todos los contenedores",
 	"docker_rate_limit_warning_title": "Advertencia de limitación de tasa",
 	"docker_rate_limit_warning_description": "Intervalos de encuestas por debajo de 30 minutos pueden activar límites de tasa de registro. Recomendar intervalos más largos en producción.",
 	"_comment_settings_navigation": "=== CONFIGURACIÓN - NOMBRE ===",

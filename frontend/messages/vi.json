@@ -866,6 +866,8 @@
 	"docker_auto_update_interval_label": "Khoảng thời gian tự động cập nhật (phút)",
 	"docker_auto_update_interval_placeholder": "60",
 	"docker_auto_update_interval_description": "Tần suất thực hiện cập nhật tự động (5-1440 phút)",
+	"docker_auto_inject_env_label": "Auto Inject Env Variables",
+	"docker_auto_inject_env_description": "Automatically inject project .env variables into all containers",
 	"docker_rate_limit_warning_title": "Cảnh báo Rate Limiting",
 	"docker_rate_limit_warning_description": "Khoảng thời gian polling dưới 30 phút có thể kích hoạt giới hạn tần suất (rate limits) của Registry. Nên để khoảng thời gian dài hơn trong môi trường production.",
 	"_comment_settings_navigation": "=== SETTINGS - NAVIGATION ===",
