@@ -108,8 +108,8 @@ importers:
         specifier: ^2.2.421
         version: 2.2.421
       '@inlang/paraglide-js':
-        specifier: 2.7.0
-        version: 2.7.0
+        specifier: 2.7.1
+        version: 2.7.1
       '@internationalized/date':
         specifier: ^3.10.1
         version: 3.10.1
@@ -952,15 +952,15 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inlang/paraglide-js@2.7.0':
-    resolution: {integrity: sha512-R03uEk8C3p3rP1uRXvaVcbA7DClGWdQDmBhWF5B3tLgAwZGPRpCuo8iSie55cErVvZpydC+DLAuZIbrNcojd3w==}
+  '@inlang/paraglide-js@2.7.1':
+    resolution: {integrity: sha512-wCpnS9iRTRYMilvWBjB0ndf8+moon+AXz23Uh4wbpQjWhRJyvCytkGFzm7jeqAGggK4v3oeuyjva91TDMS+qhw==}
     hasBin: true
 
   '@inlang/recommend-sherlock@0.2.1':
     resolution: {integrity: sha512-ckv8HvHy/iTqaVAEKrr+gnl+p3XFNwe5D2+6w6wJk2ORV2XkcRkKOJ/XsTUJbPSiyi4PI+p+T3bqbmNx/rDUlg==}
 
-  '@inlang/sdk@2.4.9':
-    resolution: {integrity: sha512-cvz/C1rF5WBxzHbEoiBoI6Sz6q6M+TdxfWkEGBYTD77opY8i8WN01prUWXEM87GPF4SZcyIySez9U0Ccm12oFQ==}
+  '@inlang/sdk@2.4.10':
+    resolution: {integrity: sha512-MLcYSb9ERwvyfxMsMXGjmAYfh6Bn/rkT58ffkibWxbFLiL3ejSdmLGP8Wl7118dMo6nj2PXTcEPzUw+2YPQ62Q==}
     engines: {node: '>=18.0.0'}
 
   '@internationalized/date@3.10.1':
@@ -1913,8 +1913,8 @@ packages:
   commander@2.20.3:
     resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
 
-  comment-json@4.5.0:
-    resolution: {integrity: sha512-aKl8CwoMKxVTfAK4dFN4v54AEvuUh9pzmgVIBeK6gBomLwMgceQUKKWHzJdW1u1VQXQuwnJ7nJGWYYMTl5U4yg==}
+  comment-json@4.5.1:
+    resolution: {integrity: sha512-taEtr3ozUmOB7it68Jll7s0Pwm+aoiHyXKrEC8SEodL4rNpdfDLqa7PfBlrgFoCNNdR8ImL+muti5IGvktJAAg==}
     engines: {node: '>= 6'}
 
   conf@15.0.2:
@@ -4019,10 +4019,10 @@ snapshots:
   '@img/sharp-win32-x64@0.34.5':
     optional: true
 
-  '@inlang/paraglide-js@2.7.0':
+  '@inlang/paraglide-js@2.7.1':
     dependencies:
       '@inlang/recommend-sherlock': 0.2.1
-      '@inlang/sdk': 2.4.9
+      '@inlang/sdk': 2.4.10
       commander: 11.1.0
       consola: 3.4.0
       json5: 2.2.3
@@ -4033,9 +4033,9 @@ snapshots:
 
   '@inlang/recommend-sherlock@0.2.1':
     dependencies:
-      comment-json: 4.5.0
+      comment-json: 4.5.1
 
-  '@inlang/sdk@2.4.9':
+  '@inlang/sdk@2.4.10':
     dependencies:
       '@lix-js/sdk': 0.4.7
       '@sinclair/typebox': 0.31.28
@@ -4872,7 +4872,7 @@ snapshots:
   commander@2.20.3:
     optional: true
 
-  comment-json@4.5.0:
+  comment-json@4.5.1:
     dependencies:
       array-timsort: 1.0.3
       core-util-is: 1.0.3

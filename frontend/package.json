@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@iconify/json": "^2.2.421",
-    "@inlang/paraglide-js": "2.7.0",
+    "@inlang/paraglide-js": "2.7.1",
     "@internationalized/date": "^3.10.1",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tailwindcss/vite": "^4.1.18",
