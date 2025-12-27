@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
@@ -27,12 +28,15 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 	defer c.Close()
 
 	upOptions := api.CreateOptions{
-		Services: proj.ServiceNames(),
+		Services:             services,
+		Recreate:             api.RecreateDiverged,
+		RecreateDependencies: api.RecreateDiverged,
 	}
 	startOptions := api.StartOptions{
-		Project:  proj,
-		Services: proj.ServiceNames(),
-		Wait:     true,
+		Project:     proj,
+		Services:    services,
+		Wait:        true,
+		WaitTimeout: 10 * time.Minute,
 	}
 
 	return c.svc.Up(ctx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
