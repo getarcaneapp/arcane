@@ -123,10 +123,12 @@ func TestSetAgentToken(t *testing.T) {
 
 	SetAgentToken(req, nil)
 	require.Empty(t, req.Header.Get(HeaderAgentToken))
+	require.Empty(t, req.Header.Get(HeaderAPIKey))
 
 	tok := "agent-token"
 	SetAgentToken(req, &tok)
 	require.Equal(t, tok, req.Header.Get(HeaderAgentToken))
+	require.Equal(t, tok, req.Header.Get(HeaderAPIKey))
 }
 
 func TestSetForwardedHeaders(t *testing.T) {
@@ -200,7 +202,7 @@ func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testi
 	agent := "agent-token"
 	headers := BuildWebSocketHeaders(c, &agent)
 
-	require.Equal(t, "api-key", headers.Get(HeaderAPIKey))
+	require.Equal(t, agent, headers.Get(HeaderAPIKey))
 	require.Equal(t, "Bearer auth", headers.Get(HeaderAuthorization))
 	require.Empty(t, headers.Get(HeaderCookie))
 	require.Equal(t, agent, headers.Get(HeaderAgentToken))
