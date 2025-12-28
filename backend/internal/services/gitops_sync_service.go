@@ -141,11 +141,11 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, req models.CreateGit
 	})
 
 	// Trigger initial sync to create the project
-	go func() {
-		if _, err := s.PerformSync(context.Background(), sync.ID); err != nil {
+	go func(bgCtx context.Context) {
+		if _, err := s.PerformSync(bgCtx, sync.ID); err != nil {
 			slog.Error("Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
 		}
-	}()
+	}(context.WithoutCancel(ctx))
 
 	return s.GetSyncByID(ctx, sync.ID)
 }
