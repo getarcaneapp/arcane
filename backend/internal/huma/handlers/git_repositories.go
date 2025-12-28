@@ -8,8 +8,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"go.getarcane.app/types/base"
-	"go.getarcane.app/types/gitops"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/gitops"
 )
 
 // GitRepositoryHandler handles git repository management endpoints.

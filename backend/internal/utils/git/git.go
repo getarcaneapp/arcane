@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"go.getarcane.app/types/gitops"
 )
 
 // Client handles git operations

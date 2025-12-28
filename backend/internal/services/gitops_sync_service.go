@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"go.getarcane.app/types/gitops"
+	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
 
