@@ -4,7 +4,6 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository } from '$lib/types/gitops.type';
@@ -15,6 +14,7 @@
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
+	import { RefreshIcon } from '$lib/icons';
 
 	type GitOpsSyncFormProps = {
 		open: boolean;
@@ -105,7 +105,7 @@
 		<Sheet.Header class="space-y-3 border-b pb-6">
 			<div class="flex items-center gap-3">
 				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<RefreshCwIcon class="text-primary size-5" />
+					<RefreshIcon class="text-primary size-5" />
 				</div>
 				<div>
 					<Sheet.Title class="text-xl font-semibold">

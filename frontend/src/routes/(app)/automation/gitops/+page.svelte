@@ -13,12 +13,9 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import SyncTable from './sync-table.svelte';
 	import RepositoryTable from './repository-table.svelte';
+	import { RefreshIcon as RefreshCwIcon, ClockIcon, SuccessIcon as CheckCircleIcon, GitBranchIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -230,7 +227,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.gitops_title()} subtitle={m.gitops_subtitle()} {actionButtons} {statCards} statCardsColumns={4}>
+<ResourcePageLayout title={m.gitops_title()} subtitle={m.gitops_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root bind:value={activeView}>

@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import BotIcon from '@lucide/svelte/icons/bot';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
+	import { RefreshIcon, ArrowRightIcon, AutomationIcon } from '$lib/icons';
 
 	const automationCategories = [
 		{
@@ -12,7 +10,7 @@
 			title: m.gitops_title(),
 			description: m.gitops_subtitle(),
 			url: '/automation/gitops',
-			icon: RefreshCwIcon
+			icon: RefreshIcon
 		}
 	];
 </script>
@@ -30,7 +28,7 @@
 						<div
 							class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
 						>
-							<BotIcon class="size-4 sm:size-5" />
+							<AutomationIcon class="size-4 sm:size-5" />
 						</div>
 						<div class="min-w-0 flex-1">
 							<h1 class="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{m.automation_title()}</h1>
@@ -59,7 +57,7 @@
 								<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 							</div>
 						</div>
-						<ChevronRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
+						<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
 					</div>
 				</button>
 			</Card>

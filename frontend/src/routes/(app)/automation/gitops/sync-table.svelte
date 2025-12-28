@@ -3,10 +3,6 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import PlayIcon from '@lucide/svelte/icons/play';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -15,12 +11,18 @@
 	import type { GitOpsSync } from '$lib/types/gitops.type';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
-	import FolderIcon from '@lucide/svelte/icons/folder';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import {
+		EllipsisIcon,
+		EditIcon as PencilIcon,
+		StartIcon as PlayIcon,
+		TrashIcon as Trash2Icon,
+		RefreshIcon as RefreshCwIcon,
+		GitBranchIcon,
+		ProjectsIcon as FolderIcon
+	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 

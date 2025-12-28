@@ -3,10 +3,6 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import TestTubeIcon from '@lucide/svelte/icons/test-tube';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -15,12 +11,18 @@
 	import type { GitRepository } from '$lib/types/gitops.type';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
-	import KeyIcon from '@lucide/svelte/icons/key';
-	import LinkIcon from '@lucide/svelte/icons/link';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
+	import {
+		EllipsisIcon,
+		EditIcon as PencilIcon,
+		TestIcon as TestTubeIcon,
+		TrashIcon as Trash2Icon,
+		GitBranchIcon,
+		ApiKeyIcon as KeyIcon,
+		ExternalLinkIcon as LinkIcon
+	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 
