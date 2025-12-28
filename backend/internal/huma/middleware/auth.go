@@ -127,6 +127,11 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 		return createAgentSudoUser(), true
 	}
 
+	// Check for API key as agent token
+	if tok := ctx.Header(headerApiKey); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
+		return createAgentSudoUser(), true
+	}
+
 	return nil, false
 }
 

@@ -9,8 +9,7 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key"   // #nosec G101: header name, not a credential
-	HeaderAPIToken      = "X-Api-Token" // #nosec G101: header name, not a credential
+	HeaderAPIKey        = "X-API-Key" // #nosec G101: header name, not a credential
 	HeaderAuthorization = "Authorization"
 	HeaderCookie        = "Cookie"
 	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
@@ -23,7 +22,7 @@ const (
 func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct{}) {
 	for k, vs := range from {
 		ck := http.CanonicalHeaderKey(k)
-		if _, ok := skip[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIToken) {
+		if _, ok := skip[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIKey) {
 			continue
 		}
 		for _, v := range vs {
@@ -34,8 +33,8 @@ func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct
 
 func SetAuthHeader(req *http.Request, c *gin.Context) {
 	// Forward API key header if present
-	if apiKey := c.GetHeader(HeaderAPIToken); apiKey != "" {
-		req.Header.Set(HeaderAPIToken, apiKey)
+	if apiKey := c.GetHeader(HeaderAPIKey); apiKey != "" {
+		req.Header.Set(HeaderAPIKey, apiKey)
 	}
 
 	// Forward Authorization header or cookie token
@@ -49,6 +48,7 @@ func SetAuthHeader(req *http.Request, c *gin.Context) {
 func SetAgentToken(req *http.Request, accessToken *string) {
 	if accessToken != nil && *accessToken != "" {
 		req.Header.Set(HeaderAgentToken, *accessToken)
+		req.Header.Set(HeaderAPIKey, *accessToken)
 	}
 }
 
@@ -70,7 +70,7 @@ func BuildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
 	}
 
 	// Forward cookies if no other auth is present
-	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIToken) == "" {
+	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIKey) == "" {
 		if cookies := c.Request.Header.Get(HeaderCookie); cookies != "" {
 			headers.Set(HeaderCookie, cookies)
 		}
@@ -79,6 +79,7 @@ func BuildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
 	// Set agent token for remote environment authentication
 	if accessToken != nil && *accessToken != "" {
 		headers.Set(HeaderAgentToken, *accessToken)
+		headers.Set(HeaderAPIKey, *accessToken)
 	}
 
 	return headers
