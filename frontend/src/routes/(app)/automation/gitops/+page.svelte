@@ -197,32 +197,28 @@
 			value: syncs?.pagination?.totalItems ?? 0,
 			icon: RefreshCwIcon,
 			iconColor: 'text-blue-500',
-			bgColor: 'bg-blue-500/10',
-			class: 'border-l-4 border-l-blue-500'
+			bgColor: 'bg-blue-500/10'
 		},
 		{
 			title: m.common_active(),
 			value: activeSyncs,
 			icon: ClockIcon,
 			iconColor: 'text-purple-500',
-			bgColor: 'bg-purple-500/10',
-			class: 'border-l-4 border-l-purple-500'
+			bgColor: 'bg-purple-500/10'
 		},
 		{
 			title: m.common_successful(),
 			value: successfulSyncs,
 			icon: CheckCircleIcon,
 			iconColor: 'text-green-500',
-			bgColor: 'bg-green-500/10',
-			class: 'border-l-4 border-l-green-500'
+			bgColor: 'bg-green-500/10'
 		},
 		{
 			title: m.git_repositories_title(),
 			value: repositories?.pagination?.totalItems ?? 0,
 			icon: GitBranchIcon,
 			iconColor: 'text-orange-500',
-			bgColor: 'bg-orange-500/10',
-			class: 'border-l-4 border-l-orange-500'
+			bgColor: 'bg-orange-500/10'
 		}
 	]);
 </script>

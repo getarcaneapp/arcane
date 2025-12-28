@@ -38,8 +38,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{
 			title: m.automation_title(),
 			url: '/automation',
-			icon: AutomationIcon,
-			items: [{ title: m.gitops_title(), url: '/automation/gitops', icon: GitBranchIcon }]
+			icon: AutomationIcon
 		}
 	],
 	resourceItems: [

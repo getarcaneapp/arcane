@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
-	import { RefreshIcon, ArrowRightIcon, AutomationIcon } from '$lib/icons';
+	import { ArrowRightIcon, AutomationIcon, GitBranchIcon } from '$lib/icons';
 
 	const automationCategories = [
 		{
@@ -10,7 +10,7 @@
 			title: m.gitops_title(),
 			description: m.gitops_subtitle(),
 			url: '/automation/gitops',
-			icon: RefreshIcon
+			icon: GitBranchIcon
 		}
 	];
 </script>
