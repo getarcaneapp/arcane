@@ -37,7 +37,7 @@ func DetectComposeFile(dir string) (string, error) {
 	return compose, nil
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string) (*composetypes.Project, error) {
+func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -45,7 +45,7 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 		projectsDir = filepath.Dir(workdir)
 	}
 
-	envLoader := NewEnvLoader(projectsDir, workdir)
+	envLoader := NewEnvLoader(projectsDir, workdir, autoInjectEnv)
 
 	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
@@ -122,7 +122,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string) (*composetypes.Project, string, error) {
+func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool) (*composetypes.Project, string, error) {
 	composeFile, err := DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err
@@ -132,7 +132,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		projectsDirectory = filepath.Dir(dir)
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv)
 	if err != nil {
 		return nil, "", err
 	}

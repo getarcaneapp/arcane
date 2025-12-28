@@ -76,6 +76,7 @@
 	let formPollingInterval = $state(60);
 	let formAutoUpdate = $state(false);
 	let formAutoUpdateInterval = $state(1440);
+	let formAutoInjectEnv = $state(false);
 	let formPruneMode = $state<'all' | 'dangling'>('dangling');
 	let formDefaultShell = $state('/bin/sh');
 	let formProjectsDirectory = $state('data/projects');
@@ -136,6 +137,7 @@
 			formPollingInterval = settings.pollingInterval;
 			formAutoUpdate = settings.autoUpdate;
 			formAutoUpdateInterval = settings.autoUpdateInterval;
+			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
 			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
@@ -191,6 +193,7 @@
 					formPollingInterval !== settings.pollingInterval ||
 					formAutoUpdate !== settings.autoUpdate ||
 					formAutoUpdateInterval !== settings.autoUpdateInterval ||
+					formAutoInjectEnv !== settings.autoInjectEnv ||
 					formPruneMode !== (settings.dockerPruneMode || 'dangling') ||
 					formDefaultShell !== (settings.defaultShell || '/bin/sh') ||
 					formProjectsDirectory !== (settings.projectsDirectory || 'data/projects') ||
@@ -215,6 +218,7 @@
 				formPollingInterval = settings.pollingInterval;
 				formAutoUpdate = settings.autoUpdate;
 				formAutoUpdateInterval = settings.autoUpdateInterval;
+				formAutoInjectEnv = settings.autoInjectEnv;
 				formPruneMode = settings.dockerPruneMode || 'dangling';
 				formDefaultShell = settings.defaultShell || '/bin/sh';
 
@@ -297,6 +301,7 @@
 					pollingInterval: formPollingInterval,
 					autoUpdate: formAutoUpdate,
 					autoUpdateInterval: formAutoUpdateInterval,
+					autoInjectEnv: formAutoInjectEnv,
 					dockerPruneMode: formPruneMode,
 					defaultShell: formDefaultShell,
 					projectsDirectory: formProjectsDirectory,
@@ -337,6 +342,7 @@
 			formPollingInterval = settings.pollingInterval;
 			formAutoUpdate = settings.autoUpdate;
 			formAutoUpdateInterval = settings.autoUpdateInterval;
+			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
 			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
@@ -787,6 +793,16 @@
 											/>
 										</div>
 									{/if}
+								</div>
+
+								<div class="space-y-4 rounded-lg border p-4">
+									<div class="flex items-center justify-between">
+										<div class="space-y-0.5">
+											<Label for="auto-inject-env" class="text-sm font-medium">{m.docker_auto_inject_env_label()}</Label>
+											<div class="text-muted-foreground text-xs">{m.docker_auto_inject_env_description()}</div>
+										</div>
+										<Switch id="auto-inject-env" bind:checked={formAutoInjectEnv} />
+									</div>
 								</div>
 							</div>
 						</Tabs.Content>

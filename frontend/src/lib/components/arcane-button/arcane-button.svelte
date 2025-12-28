@@ -105,10 +105,9 @@
 			<Spinner class="size-4" />
 		</div>
 		<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>
-		{#if !isIconOnlyButton && displayLabel}
-			<span class="opacity-0">{displayLabel}</span>
-		{/if}
-	{:else}
+	{/if}
+
+	<span class={cn('flex items-center gap-2', loading && 'opacity-0')}>
 		{#if IconComponent}
 			<IconComponent class="size-4" />
 		{/if}
@@ -116,5 +115,5 @@
 			{displayLabel}
 		{/if}
 		{@render children?.()}
-	{/if}
+	</span>
 </svelte:element>
