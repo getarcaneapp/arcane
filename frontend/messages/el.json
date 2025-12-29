@@ -529,6 +529,8 @@
 	"volumes_no_labels_or_options": "This volume has no additional labels or driver options.",
 	"volume_name_required": "Volume name is required",
 	"volumes_remove_confirm_message": "Are you sure you want to remove volume {name}?",
+	"volumes_remove_selected_title": "Remove {count} Volume(s)",
+	"volumes_remove_selected_message": "Είστε βέβαιοι ότι θέλετε να αφαιρέσετε τον επιλεγμένο τόμο? Αυτή η ενέργεια δεν μπορεί να αναιρεθεί.",
 	"volumes_remove_failed": "Failed to remove volume {name}",
 	"volumes_remove_success": "Volume {name} removed successfully",
 	"_comment_networks": "=== NETWORKS ===",
