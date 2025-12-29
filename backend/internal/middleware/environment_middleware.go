@@ -259,7 +259,11 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 
 	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, bytes.NewBuffer(bodyBytes))
+	// Use a context with the proxy timeout to avoid being constrained by the request context timeout
+	reqCtx, cancel := context.WithTimeout(context.Background(), proxyTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, c.Request.Method, target, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}

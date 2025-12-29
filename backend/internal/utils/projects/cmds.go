@@ -32,7 +32,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 	startOptions := api.StartOptions{
 		Project:  proj,
 		Services: proj.ServiceNames(),
-		Wait:     true,
+		Wait:     false, // Don't wait for services to be running to avoid timeouts
 	}
 
 	return c.svc.Up(ctx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
