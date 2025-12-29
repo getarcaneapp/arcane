@@ -10,6 +10,14 @@ import (
 	"github.com/docker/docker/api/types/filters"
 )
 
+type UpOptions struct {
+	Services      []string
+	Detach        bool
+	Build         bool
+	Wait          bool
+	RemoveOrphans bool
+}
+
 func ComposeRestart(ctx context.Context, proj *types.Project, services []string) error {
 	c, err := NewClient(ctx)
 	if err != nil {
@@ -19,20 +27,37 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string) error {
+func ComposeUp(ctx context.Context, proj *types.Project, options UpOptions) error {
 	c, err := NewClient(ctx)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	upOptions := api.CreateOptions{
-		Services: proj.ServiceNames(),
+	// Use specified services or all services if none specified
+	targetServices := options.Services
+	if len(targetServices) == 0 {
+		targetServices = proj.ServiceNames()
 	}
+
+	upOptions := api.CreateOptions{
+		Services:      targetServices,
+		RemoveOrphans: options.RemoveOrphans,
+	}
+
+	// Only include build options if building is requested
+	var build *api.BuildOptions
+	if options.Build {
+		build = &api.BuildOptions{
+			Services: targetServices,
+		}
+		upOptions.Build = build
+	}
+
 	startOptions := api.StartOptions{
 		Project:  proj,
-		Services: proj.ServiceNames(),
-		Wait:     true,
+		Services: targetServices,
+		Wait:     options.Wait && !options.Detach, // Only wait if not detached
 	}
 
 	return c.svc.Up(ctx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
