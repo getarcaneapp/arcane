@@ -218,7 +218,11 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, ac
 
 // proxyHTTP handles standard HTTP proxy requests.
 func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessToken *string) {
-	req, err := m.createProxyRequest(c, target, accessToken)
+	// Create context with timeout, using request context as parent to respect cancellation
+	reqCtx, cancel := context.WithTimeout(c.Request.Context(), proxyTimeout)
+	defer cancel()
+
+	req, err := m.createProxyRequest(c, reqCtx, target, accessToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -244,7 +248,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 }
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
-func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
+func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, reqCtx context.Context, target string, accessToken *string) (*http.Request, error) {
 	// Read the body to log it and then restore it for forwarding
 	var bodyBytes []byte
 	var err error
@@ -257,11 +261,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
-	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
-
-	// Use a context with the proxy timeout to avoid being constrained by the request context timeout
-	reqCtx, cancel := context.WithTimeout(context.Background(), proxyTimeout)
-	defer cancel()
+	slog.DebugContext(reqCtx, "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
 	req, err := http.NewRequestWithContext(reqCtx, c.Request.Method, target, bytes.NewBuffer(bodyBytes))
 	if err != nil {
