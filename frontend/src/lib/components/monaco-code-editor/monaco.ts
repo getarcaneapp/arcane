@@ -19,7 +19,6 @@ import { registerYamlProviders } from './yaml-providers';
 import { shikiToMonaco } from '@shikijs/monaco';
 import { createHighlighter } from 'shiki';
 
-
 /**
  * Initialize Shiki highlighter for Monaco
  */

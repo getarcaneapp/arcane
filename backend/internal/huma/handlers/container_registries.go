@@ -32,10 +32,11 @@ type ContainerRegistryPaginatedResponse struct {
 }
 
 type ListContainerRegistriesInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Start  int    `query:"start" default:"0" doc:"Start index"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListContainerRegistriesOutput struct {
@@ -201,7 +202,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {

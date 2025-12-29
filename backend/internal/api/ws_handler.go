@@ -133,7 +133,7 @@ func NewWebSocketHandler(
 		wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
 		wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
 		wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
-		wsGroup.GET("/containers/:containerId/exec", handler.ContainerExec)
+		wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
 		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
 }
@@ -403,8 +403,8 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string) *ws.Hub {
 //	@Tags			WebSocket
 //	@Param			id			path	string	true	"Environment ID"
 //	@Param			containerId	path	string	true	"Container ID"
-//	@Param			cmd			query	string	false	"Command to execute"	default(/bin/sh)
-//	@Router			/api/environments/{id}/ws/containers/{containerId}/exec [get]
+//	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
+//	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
 func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
@@ -412,7 +412,7 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 		return
 	}
 
-	cmd := c.DefaultQuery("cmd", "/bin/sh")
+	shell := c.DefaultQuery("shell", "/bin/sh")
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -424,7 +424,7 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	defer cancel()
 
 	// Create exec instance
-	execID, err := h.containerService.CreateExec(ctx, containerID, []string{cmd})
+	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
 		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecCreationError{Err: err}).Error()+"\r\n"))
 		return

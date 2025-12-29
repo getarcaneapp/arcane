@@ -6,7 +6,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import type { Component } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { CheckIcon, FilterIcon } from '$lib/icons';
@@ -40,24 +39,20 @@
 				size="sm"
 				icon={FilterIcon}
 				customLabel={title}
-				class="border-input hover:bg-card/60 h-8 min-w-24 border border-dashed hover:text-inherit"
+				class="border-input hover:bg-card/60 h-8 border border-dashed hover:text-inherit"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
 				{#if selectedValues.size > 0}
-					<Separator orientation="vertical" class="mx-2 h-4" />
-					<Badge variant="secondary" class="rounded-sm px-1 font-normal lg:hidden">
-						{selectedValues.size}
-					</Badge>
-					<div class="hidden space-x-1 lg:flex">
+					<Separator orientation="vertical" class="mx-1 h-4" />
+					<div class="text-muted-foreground flex items-center gap-1 text-xs font-medium">
 						{#if selectedValues.size > 2}
-							<Badge variant="secondary" class="rounded-sm px-1 font-normal">
-								{m.common_selected_count({ count: selectedValues.size })}
-							</Badge>
+							<span>{selectedValues.size}</span>
 						{:else}
-							{#each options.filter((opt) => selectedValues.has(opt.value)) as option (option)}
-								<Badge variant="secondary" class="rounded-sm px-1 font-normal">
-									{option.label}
-								</Badge>
+							{#each options.filter((opt) => selectedValues.has(opt.value)) as option, i (option)}
+								{#if i > 0}
+									<span class="opacity-50">,</span>
+								{/if}
+								<span>{option.label}</span>
 							{/each}
 						{/if}
 					</div>

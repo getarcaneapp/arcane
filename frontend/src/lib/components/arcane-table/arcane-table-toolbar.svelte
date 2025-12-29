@@ -69,7 +69,7 @@
 			</div>
 
 			<div class="flex flex-wrap items-center gap-2 sm:gap-0 sm:space-x-2">
-				{#if typeColumn}
+				{#if typeColumn && !severityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 				{/if}
 				{#if usageColumn}

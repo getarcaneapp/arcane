@@ -866,6 +866,8 @@
 	"docker_auto_update_interval_label": "自动更新间隔 (分钟)",
 	"docker_auto_update_interval_placeholder": "60",
 	"docker_auto_update_interval_description": "执行自动更新的频率(5 - 1440 分钟)",
+	"docker_auto_inject_env_label": "自动输入Env 变量",
+	"docker_auto_inject_env_description": "自动将工程.env变量注入到所有容器中",
 	"docker_rate_limit_warning_title": "速率限制警告",
 	"docker_rate_limit_warning_description": "低于 30 分钟的轮询间隔可能会触发registry仓库速率限制。请设置更长的轮询间隔。",
 	"_comment_settings_navigation": "=== 设置 - 导航 ===",

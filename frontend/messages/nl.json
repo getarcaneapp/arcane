@@ -866,6 +866,8 @@
 	"docker_auto_update_interval_label": "Interval automatisch bijwerken (minuten)",
 	"docker_auto_update_interval_placeholder": "60",
 	"docker_auto_update_interval_description": "Hoe vaak automatische updates uitvoeren (5-1440 minuten)",
+	"docker_auto_inject_env_label": "Env variabelen automatisch invoeren",
+	"docker_auto_inject_env_description": "Project automatisch injecteren .env variabelen in alle containers",
 	"docker_rate_limit_warning_title": "Ratio Limiteer Waarschuwing",
 	"docker_rate_limit_warning_description": "Polling intervallen onder de 30 minuten kunnen registratielimieten veroorzaken. Liever langere intervallen in de productie.",
 	"_comment_settings_navigation": "=== INSTELLINGEN - NAVIGATIE ===",
