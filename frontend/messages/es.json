@@ -529,6 +529,8 @@
 	"volumes_no_labels_or_options": "Este volumen no tiene etiquetas adicionales ni opciones de controlador.",
 	"volume_name_required": "El nombre del volumen es obligatorio",
 	"volumes_remove_confirm_message": "¿Estás seguro de que deseas eliminar el volumen {name}?",
+	"volumes_remove_selected_title": "Eliminar volume(s) {count}",
+	"volumes_remove_selected_message": "¿Está seguro que desea eliminar el volumen(es) seleccionado(s)? Esta acción no se puede deshacer.",
 	"volumes_remove_failed": "Error al eliminar el volumen {name}",
 	"volumes_remove_success": "Volumen {name} eliminado correctamente",
 	"_comment_networks": "=== REDES ===",
