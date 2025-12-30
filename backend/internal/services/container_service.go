@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -39,21 +41,25 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Run start using an independent background context so it continues even
+	// if the client disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
 	metadata := models.JSON{
 		"action":      "start",
 		"containerId": containerID,
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
+	err = s.eventService.LogContainerEvent(bgCtx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
 
 	if err != nil {
 		fmt.Printf("Could not log container start action: %s\n", err)
 	}
 
-	err = dockerClient.ContainerStart(ctx, containerID, container.StartOptions{})
+	err = dockerClient.ContainerStart(bgCtx, containerID, container.StartOptions{})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
 	}
 	return err
 }
@@ -64,21 +70,25 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use independent background context so stop proceeds even if caller
+	// disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
 	metadata := models.JSON{
 		"action":      "stop",
 		"containerId": containerID,
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStop, containerID, "name", user.ID, user.Username, "0", metadata)
+	err = s.eventService.LogContainerEvent(bgCtx, models.EventTypeContainerStop, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
 	timeout := 30
-	err = dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
+	err = dockerClient.ContainerStop(bgCtx, containerID, container.StopOptions{Timeout: &timeout})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 	}
 	return err
 }
@@ -89,20 +99,24 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use independent background context for restart so it continues if the
+	// request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
 	metadata := models.JSON{
 		"action":      "restart",
 		"containerId": containerID,
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerRestart, containerID, "name", user.ID, user.Username, "0", metadata)
+	err = s.eventService.LogContainerEvent(bgCtx, models.EventTypeContainerRestart, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	err = dockerClient.ContainerRestart(ctx, containerID, container.StopOptions{})
+	err = dockerClient.ContainerRestart(bgCtx, containerID, container.StopOptions{})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 	}
 	return err
 }
@@ -127,11 +141,15 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use an independent background context for deletion so it continues
+	// even if the caller disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		containerJSON, inspectErr := dockerClient.ContainerInspect(ctx, containerID)
+		containerJSON, inspectErr := dockerClient.ContainerInspect(bgCtx, containerID)
 		if inspectErr == nil {
 			for _, mount := range containerJSON.Mounts {
 				// Only collect named volumes (not bind mounts or tmpfs)
@@ -142,22 +160,22 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 	}
 
-	err = dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{
+	err = dockerClient.ContainerRemove(bgCtx, containerID, container.RemoveOptions{
 		Force:         force,
 		RemoveVolumes: removeVolumes,
 		RemoveLinks:   false,
 	})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
 
 	// Remove named volumes if requested
 	if removeVolumes && len(volumesToRemove) > 0 {
 		for _, volumeName := range volumesToRemove {
-			if removeErr := dockerClient.VolumeRemove(ctx, volumeName, false); removeErr != nil {
+			if removeErr := dockerClient.VolumeRemove(bgCtx, volumeName, false); removeErr != nil {
 				// Log but don't fail if volume removal fails (might be in use by another container)
-				s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", volumeName, "", user.ID, user.Username, "0", removeErr, models.JSON{"action": "delete", "container": containerID})
+				s.eventService.LogErrorEvent(bgCtx, models.EventTypeVolumeError, "volume", volumeName, "", user.ID, user.Username, "0", removeErr, models.JSON{"action": "delete", "container": containerID})
 			}
 		}
 	}
@@ -167,7 +185,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		"containerId": containerID,
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", metadata)
+	err = s.eventService.LogContainerEvent(bgCtx, models.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
 		return fmt.Errorf("failed to log action: %w", err)
 	}
@@ -181,35 +199,40 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use an independent background context for create so the process can
+	// complete even if the client disconnects while pulling images or
+	// starting the container.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	_, err = dockerClient.ImageInspect(ctx, config.Image)
+	_, err = dockerClient.ImageInspect(bgCtx, config.Image)
 	if err != nil {
 		// Image not found locally, need to pull it
-		pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, config.Image, credentials)
+		pullOptions, authErr := s.imageService.getPullOptionsWithAuth(bgCtx, config.Image, credentials)
 		if authErr != nil {
-			slog.WarnContext(ctx, "Failed to get registry authentication for container image; proceeding without auth",
+			slog.WarnContext(bgCtx, "Failed to get registry authentication for container image; proceeding without auth",
 				"image", config.Image,
 				"error", authErr.Error())
 			pullOptions = image.PullOptions{}
 		}
 
-		reader, pullErr := dockerClient.ImagePull(ctx, config.Image, pullOptions)
+		reader, pullErr := dockerClient.ImagePull(bgCtx, config.Image, pullOptions)
 		if pullErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
+			s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
 			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)
 		}
 		defer reader.Close()
 
 		_, copyErr := io.Copy(io.Discard, reader)
 		if copyErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", copyErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
+			s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", copyErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
 			return nil, fmt.Errorf("failed to complete image pull: %w", copyErr)
 		}
 	}
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, networkingConfig, nil, containerName)
+	resp, err := dockerClient.ContainerCreate(bgCtx, config, hostConfig, networkingConfig, nil, containerName)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "create"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "create"})
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
 
@@ -218,19 +241,19 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		"containerId": resp.ID,
 	}
 
-	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerCreate, resp.ID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogContainerEvent(bgCtx, models.EventTypeContainerCreate, resp.ID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
 		fmt.Printf("Could not log container stop action: %s\n", logErr)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "start"})
+	if err := dockerClient.ContainerStart(bgCtx, resp.ID, container.StartOptions{}); err != nil {
+		_ = dockerClient.ContainerRemove(bgCtx, resp.ID, container.RemoveOptions{Force: true})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "start"})
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
 
-	containerJSON, err := dockerClient.ContainerInspect(ctx, resp.ID)
+	containerJSON, err := dockerClient.ContainerInspect(bgCtx, resp.ID)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "inspect"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)
 	}
 

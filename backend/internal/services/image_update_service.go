@@ -49,6 +49,11 @@ func NewImageUpdateService(db *database.DB, settingsService *SettingsService, re
 func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*imageupdate.Response, error) {
 	startTime := time.Now()
 
+	// Run checks with an independent background context so the operation can
+	// complete even if the request context is canceled by the client.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
 		return &imageupdate.Response{
@@ -58,9 +63,9 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		}, nil
 	}
 
-	registries := s.getRegistriesForImage(ctx, parts.Registry)
+	registries := s.getRegistriesForImage(bgCtx, parts.Registry)
 
-	digestResult, err := s.checkDigestUpdate(ctx, parts, registries)
+	digestResult, err := s.checkDigestUpdate(bgCtx, parts, registries)
 	if err != nil {
 		result := &imageupdate.Response{
 			Error:          err.Error(),
@@ -73,11 +78,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			"error":     err.Error(),
 			"checkType": "digest",
 		}
-		if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageScan, "", imageRef, systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-			slog.WarnContext(ctx, "Failed to log image update check error event", "imageRef", imageRef, "error", logErr.Error())
+		if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageScan, "", imageRef, systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+			slog.WarnContext(bgCtx, "Failed to log image update check error event", "imageRef", imageRef, "error", logErr.Error())
 		}
-		if saveErr := s.saveUpdateResult(ctx, imageRef, result); saveErr != nil {
-			slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
+		if saveErr := s.saveUpdateResult(bgCtx, imageRef, result); saveErr != nil {
+			slog.WarnContext(bgCtx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 		}
 		return result, err
 	}
@@ -92,17 +97,17 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		"latestDigest":   digestResult.LatestDigest,
 		"responseTimeMs": digestResult.ResponseTimeMs,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageScan, "", imageRef, systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "Failed to log image update check event", "imageRef", imageRef, "error", logErr.Error())
+	if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageScan, "", imageRef, systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(bgCtx, "Failed to log image update check event", "imageRef", imageRef, "error", logErr.Error())
 	}
-	if saveErr := s.saveUpdateResult(ctx, imageRef, digestResult); saveErr != nil {
-		slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
+	if saveErr := s.saveUpdateResult(bgCtx, imageRef, digestResult); saveErr != nil {
+		slog.WarnContext(bgCtx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 	}
 
 	// Send notification if update is available
 	if digestResult.HasUpdate && s.notificationService != nil {
-		if notifErr := s.notificationService.SendImageUpdateNotification(ctx, imageRef, digestResult, models.NotificationEventImageUpdate); notifErr != nil {
-			slog.WarnContext(ctx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
+		if notifErr := s.notificationService.SendImageUpdateNotification(bgCtx, imageRef, digestResult, models.NotificationEventImageUpdate); notifErr != nil {
+			slog.WarnContext(bgCtx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
 		}
 	}
 
@@ -475,24 +480,28 @@ func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 }
 
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
-	imageRef, err := s.getImageRefByID(ctx, imageID)
+	// Use background context so the check can continue if caller disconnects
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	imageRef, err := s.getImageRefByID(bgCtx, imageID)
 	if err != nil {
 		metadata := models.JSON{
 			"action":  "check_update_by_id",
 			"imageID": imageID,
 			"error":   err.Error(),
 		}
-		if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageScan, imageID, "", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-			slog.WarnContext(ctx, "Failed to log image update check by ID error event", "imageID", imageID, "error", logErr.Error())
+		if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageScan, imageID, "", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+			slog.WarnContext(bgCtx, "Failed to log image update check by ID error event", "imageID", imageID, "error", logErr.Error())
 		}
 		return nil, fmt.Errorf("failed to get image reference: %w", err)
 	}
-	result, err := s.CheckImageUpdate(ctx, imageRef)
+	result, err := s.CheckImageUpdate(bgCtx, imageRef)
 	if err != nil {
 		return nil, err
 	}
-	if saveErr := s.saveUpdateResultByID(ctx, imageID, result); saveErr != nil {
-		slog.WarnContext(ctx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
+	if saveErr := s.saveUpdateResultByID(bgCtx, imageID, result); saveErr != nil {
+		slog.WarnContext(bgCtx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
 	}
 	return result, nil
 }
@@ -936,8 +945,12 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	if len(imageRefs) == 0 {
 		return results, nil
 	}
+	// Run the entire batch using a background context so it continues even if
+	// the caller disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
+	slog.DebugContext(bgCtx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
 	rc := registry.NewClient()
 
@@ -946,17 +959,18 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		results[k] = v
 	}
 
-	credMap, enabledRegs := s.buildCredentialMap(ctx, externalCreds)
+	credMap, enabledRegs := s.buildCredentialMap(bgCtx, externalCreds)
 
-	slog.DebugContext(ctx, "Built credential map", "credMapSize", len(credMap), "enabledRegsCount", len(enabledRegs))
+	slog.DebugContext(bgCtx, "Built credential map", "credMapSize", len(credMap), "enabledRegsCount", len(enabledRegs))
 
-	regAuthMap := s.buildRegistryAuthMap(ctx, rc, regRepos, credMap)
+	regAuthMap := s.buildRegistryAuthMap(bgCtx, rc, regRepos, credMap)
 
 	var mu sync.Mutex
-	g, groupCtx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(bgCtx)
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
+		img := img // capture loop var
 		g.Go(func() error {
 			res := s.checkSingleImageInBatch(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
 
@@ -972,17 +986,17 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	}
 
 	if err := g.Wait(); err != nil {
-		slog.ErrorContext(ctx, "Batch check error", "error", err)
+		slog.ErrorContext(bgCtx, "Batch check error", "error", err)
 	}
 
-	slog.InfoContext(ctx, "Batch image update check completed",
+	slog.InfoContext(bgCtx, "Batch image update check completed",
 		"totalImages", len(imageRefs),
 		"successCount", len(results),
 		"duration", time.Since(startBatch))
 
 	if s.notificationService != nil {
 		// Use a context with timeout for notifications
-		notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		notifCtx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
 		defer cancel()
 
 		// Get only the updates that haven't been notified yet
@@ -1035,7 +1049,12 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 }
 
 func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
-	imageRefs, err := s.getAllImageRefs(ctx, limit)
+	// Use background context so a full scan can continue if the request
+	// context is canceled by the client.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	imageRefs, err := s.getAllImageRefs(bgCtx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image references: %w", err)
 	}
@@ -1044,17 +1063,22 @@ func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, exte
 		return make(map[string]*imageupdate.Response), nil
 	}
 
-	return s.CheckMultipleImages(ctx, imageRefs, externalCreds)
+	return s.CheckMultipleImages(bgCtx, imageRefs, externalCreds)
 }
 
 func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
+	// Use background context so cleanup can complete even if the request
+	// context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Get all image IDs from Docker
-	dockerImages, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	dockerImages, err := dockerClient.ImageList(bgCtx, image.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list Docker images: %w", err)
 	}
@@ -1064,7 +1088,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		dockerImageIDs[img.ID] = true
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(bgCtx).Transaction(func(tx *gorm.DB) error {
 		var updateRecords []models.ImageUpdateRecord
 		if err := tx.Find(&updateRecords).Error; err != nil {
 			return fmt.Errorf("failed to query update records: %w", err)
@@ -1081,9 +1105,9 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 			if err := tx.Delete(&models.ImageUpdateRecord{}, "id IN ?", idsToDelete).Error; err != nil {
 				return fmt.Errorf("failed to delete orphaned records: %w", err)
 			}
-			slog.InfoContext(ctx, "Cleaned up orphaned image update records", "deletedCount", len(idsToDelete))
+			slog.InfoContext(bgCtx, "Cleaned up orphaned image update records", "deletedCount", len(idsToDelete))
 		} else {
-			slog.InfoContext(ctx, "No orphaned image update records found")
+			slog.InfoContext(bgCtx, "No orphaned image update records found")
 		}
 		return nil
 	})

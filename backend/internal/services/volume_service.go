@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
@@ -76,16 +78,20 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use an independent background context so creation isn't canceled if the
+	// request context is closed by the client.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	created, err := dockerClient.VolumeCreate(ctx, options)
+	created, err := dockerClient.VolumeCreate(bgCtx, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
-	vol, err := dockerClient.VolumeInspect(ctx, created.Name)
+	vol, err := dockerClient.VolumeInspect(bgCtx, created.Name)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Name, created.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeVolumeError, "volume", created.Name, created.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
@@ -94,8 +100,8 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 		"driver": vol.Driver,
 		"name":   vol.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Name, "error", logErr.Error())
+	if logErr := s.eventService.LogVolumeEvent(bgCtx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(bgCtx, "could not log volume creation action", "volume", vol.Name, "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
@@ -110,9 +116,11 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	if err := dockerClient.VolumeRemove(ctx, name, force); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+	if err := dockerClient.VolumeRemove(bgCtx, name, force); err != nil {
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove volume: %w", err)
 	}
 
@@ -120,8 +128,8 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		"action": "delete",
 		"name":   name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
+	if logErr := s.eventService.LogVolumeEvent(bgCtx, models.EventTypeVolumeDelete, name, name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(bgCtx, "could not log volume deletion action", "volume", name, "error", logErr.Error())
 	}
 
 	return nil
@@ -151,7 +159,12 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	// - label=<key> or label=<key>=<value>
 	// - label!=<key> or label!=<key>=<value>
 
-	report, err := dockerClient.VolumesPrune(ctx, filterArgs)
+	// Run prune using an independent background context so it continues even
+	// if the caller disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	report, err := dockerClient.VolumesPrune(bgCtx, filterArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune volumes: %w", err)
 	}
@@ -162,8 +175,8 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		"volumesDeleted": len(report.VolumesDeleted),
 		"spaceReclaimed": report.SpaceReclaimed,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
+	if logErr := s.eventService.LogVolumeEvent(bgCtx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(bgCtx, "could not log volume prune action", "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
@@ -208,7 +221,12 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	usageVolumes, err := docker.GetVolumeUsageData(ctx, dockerClient)
+	// Use an independent background context because gathering volume sizes
+	// can be slow and should continue even if the request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	usageVolumes, err := docker.GetVolumeUsageData(bgCtx, dockerClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}

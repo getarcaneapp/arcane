@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/types/updater"
@@ -65,12 +66,17 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
+	// Use an independent background context for the updater run so it can
+	// continue even if the calling request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	var records []models.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
+	if err := s.db.WithContext(bgCtx).Where("has_update = ?", true).Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("query pending image updates: %w", err)
 	}
 	// debug: how many pending records and dryRun flag
-	slog.DebugContext(ctx, "ApplyPending: found pending image update records", "records", len(records), "dryRun", dryRun)
+	slog.DebugContext(bgCtx, "ApplyPending: found pending image update records", "records", len(records), "dryRun", dryRun)
 
 	if len(records) == 0 {
 		out.Duration = time.Since(start).String()
@@ -78,7 +84,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	// Only update images that are actually used by running resources
-	usedImages, err := s.collectUsedImages(ctx)
+	usedImages, err := s.collectUsedImages(bgCtx)
 	if err != nil {
 		// Non-fatal: continue without the filter
 		usedImages = map[string]struct{}{}
@@ -113,7 +119,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			newRef = fmt.Sprintf("%s:%s", r.Repository, *r.LatestVersion)
 		}
 
-		oldIDs, _ := s.resolveLocalImageIDsForRef(ctx, oldRef)
+		oldIDs, _ := s.resolveLocalImageIDsForRef(bgCtx, oldRef)
 		for _, id := range oldIDs {
 			if id != "" {
 				oldIDSet[id] = struct{}{}
@@ -128,7 +134,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	// Log run start
-	s.logAutoUpdate(ctx, models.EventSeverityInfo, models.JSON{
+	s.logAutoUpdate(bgCtx, models.EventSeverityInfo, models.JSON{
 		"phase":   "start",
 		"dryRun":  dryRun,
 		"planned": len(plans),
@@ -163,9 +169,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			item.Status = "skipped"
 			out.Skipped++
 			out.Items = append(out.Items, item)
-			_ = s.recordRun(ctx, item)
+			_ = s.recordRun(bgCtx, item)
 
-			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+			s.logAutoUpdate(bgCtx, s.severityFromStatus(item.Status), models.JSON{
 				"phase":    "image_pull",
 				"imageOld": p.oldRef,
 				"imageNew": p.newRef,
@@ -175,7 +181,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			continue
 		}
 
-		if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
+		if err := s.imageService.PullImage(bgCtx, p.newRef, io.Discard, systemUser, nil); err != nil {
 			item.Status = "failed"
 			item.Error = err.Error()
 			out.Failed++
@@ -183,7 +189,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			item.Status = "updated"
 			item.UpdateApplied = true
 			out.Updated++
-			newIDs, _ := s.resolveLocalImageIDsForRef(ctx, p.newRef)
+			newIDs, _ := s.resolveLocalImageIDsForRef(bgCtx, p.newRef)
 			if len(newIDs) > 0 {
 				newImageIDs[p.newRef] = newIDs
 				for _, newID := range newIDs {
@@ -194,9 +200,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			}
 		}
 		out.Items = append(out.Items, item)
-		_ = s.recordRun(ctx, item)
+		_ = s.recordRun(bgCtx, item)
 
-		s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+		s.logAutoUpdate(bgCtx, s.severityFromStatus(item.Status), models.JSON{
 			"phase":    "image_pull",
 			"imageOld": p.oldRef,
 			"imageNew": p.newRef,
@@ -206,7 +212,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	if !dryRun && len(oldIDToNewRef) > 0 {
-		results, err := s.restartContainersUsingOldIDs(ctx, oldIDToNewRef, oldRefToNewRef)
+		results, err := s.restartContainersUsingOldIDs(bgCtx, oldIDToNewRef, oldRefToNewRef)
 		if err != nil {
 			slog.Warn("container restarts had errors", "err", err)
 		}
@@ -231,9 +237,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			default:
 				out.Skipped++
 			}
-			_ = s.recordRun(ctx, item)
+			_ = s.recordRun(bgCtx, item)
 
-			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+			s.logAutoUpdate(bgCtx, s.severityFromStatus(item.Status), models.JSON{
 				"phase":        "container",
 				"containerId":  r.ResourceID,
 				"container":    r.ResourceName,
@@ -251,7 +257,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		for id := range oldIDSet {
 			ids = append(ids, id)
 		}
-		if err := s.pruneImageIDs(ctx, ids); err != nil {
+		if err := s.pruneImageIDs(bgCtx, ids); err != nil {
 			slog.Warn("image prune failed", "err", err)
 		}
 	}
@@ -262,7 +268,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			if len(p.oldIDs) == 0 {
 				continue
 			}
-			stillUsed, _ := s.anyImageIDsStillInUse(ctx, p.oldIDs)
+			stillUsed, _ := s.anyImageIDsStillInUse(bgCtx, p.oldIDs)
 			if stillUsed {
 				continue
 			}
@@ -270,8 +276,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			if repo == "" || tag == "" {
 				continue
 			}
-			if err := s.clearImageUpdateRecord(ctx, repo, tag); err == nil {
-				s.logAutoUpdate(ctx, models.EventSeverityInfo, models.JSON{
+			if err := s.clearImageUpdateRecord(bgCtx, repo, tag); err == nil {
+				s.logAutoUpdate(bgCtx, models.EventSeverityInfo, models.JSON{
 					"phase":    "record_clear",
 					"imageOld": p.oldRef,
 					"status":   "cleared",
@@ -279,7 +285,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			}
 		}
 
-		if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
+		if err := s.imageUpdateService.CleanupOrphanedRecords(bgCtx); err != nil {
 			slog.Warn("cleanup orphaned update records failed", "err", err)
 		}
 	}
@@ -287,7 +293,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	// Log run complete
 	duration := time.Since(start).String()
 	out.Duration = duration
-	s.logAutoUpdate(ctx, models.EventSeverityInfo, models.JSON{
+	s.logAutoUpdate(bgCtx, models.EventSeverityInfo, models.JSON{
 		"phase":    "complete",
 		"checked":  out.Checked,
 		"updated":  out.Updated,
@@ -306,13 +312,18 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
+	// Use an independent background context so a manual update can complete
+	// even if the initiating request is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
 
 	// Get container info
-	containers, err := dcli.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("id", containerID))})
+	containers, err := dcli.ContainerList(bgCtx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("id", containerID))})
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
@@ -346,10 +357,10 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	slog.InfoContext(ctx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef)
+	slog.InfoContext(bgCtx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef)
 
 	// Pull the latest image using the image service
-	if err := s.imageService.PullImage(ctx, normalizedRef, io.Discard, systemUser, nil); err != nil {
+	if err := s.imageService.PullImage(bgCtx, normalizedRef, io.Discard, systemUser, nil); err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -363,7 +374,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Inspect container to get full config
-	inspect, err := dcli.ContainerInspect(ctx, targetContainer.ID)
+	inspect, err := dcli.ContainerInspect(bgCtx, targetContainer.ID)
 	if err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
@@ -378,7 +389,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Update the container
-	if err := s.updateContainer(ctx, *targetContainer, inspect, normalizedRef); err != nil {
+	if err := s.updateContainer(bgCtx, *targetContainer, inspect, normalizedRef); err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -397,15 +408,15 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		out.Updated++
 
 		// Clear the update record for this image
-		if err := s.clearImageUpdateRecord(ctx, repo, tag); err != nil {
-			slog.WarnContext(ctx, "failed to clear update record", "repo", repo, "tag", tag, "err", err)
+		if err := s.clearImageUpdateRecord(bgCtx, repo, tag); err != nil {
+			slog.WarnContext(bgCtx, "failed to clear update record", "repo", repo, "tag", tag, "err", err)
 		}
 	}
 
 	out.Checked = 1
 	out.Duration = time.Since(start).String()
 
-	slog.InfoContext(ctx, "UpdateSingleContainer: complete", "containerID", containerID, "updated", out.Updated, "failed", out.Failed)
+	slog.InfoContext(bgCtx, "UpdateSingleContainer: complete", "containerID", containerID, "updated", out.Updated, "failed", out.Failed)
 
 	return out, nil
 }
