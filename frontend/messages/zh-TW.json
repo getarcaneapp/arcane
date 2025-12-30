@@ -1427,7 +1427,6 @@
 	"upgrade_status_detected": "New version detected!",
 	"upgrade_wait_info": "This may take 30-60 seconds. The page will reload automatically when ready.",
 	"auto_start": "Auto-start",
-
 	"_comment_api_keys": "=== API KEYS ===",
 	"api_key_name": "Name",
 	"api_key_name_placeholder": "Enter a name for this API key",
