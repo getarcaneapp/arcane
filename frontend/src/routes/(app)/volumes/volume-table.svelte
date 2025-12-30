@@ -75,38 +75,49 @@
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
-		isLoading.removing = true;
-		let successCount = 0;
-		let failureCount = 0;
 
-		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+		openConfirmDialog({
+			title: m.volumes_remove_selected_title({ count: ids.length }),
+			message: m.volumes_remove_selected_message({ count: ids.length }),
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					isLoading.removing = true;
+					let successCount = 0;
+					let failureCount = 0;
 
-		for (const id of ids) {
-			const name = idToName.get(id);
-			const safeName = name?.trim() || m.common_unknown();
-			const result = await tryCatch(volumeService.deleteVolume(safeName));
-			handleApiResultWithCallbacks({
-				result,
-				message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
-				setLoadingState: () => {},
-				onSuccess: (_data) => {
-					successCount += 1;
+					const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+
+					for (const id of ids) {
+						const name = idToName.get(id);
+						const safeName = name?.trim() || m.common_unknown();
+						const result = await tryCatch(volumeService.deleteVolume(safeName));
+						handleApiResultWithCallbacks({
+							result,
+							message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
+							setLoadingState: () => {},
+							onSuccess: (_data) => {
+								successCount += 1;
+							}
+						});
+						if (result.error) failureCount += 1;
+					}
+
+					isLoading.removing = false;
+					if (successCount > 0) {
+						const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
+						toast.success(successMsg);
+						volumes = await volumeService.getVolumes(requestOptions);
+					}
+					if (failureCount > 0) {
+						const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
+						toast.error(failureMsg);
+					}
+					selectedIds = [];
 				}
-			});
-			if (result.error) failureCount += 1;
-		}
-
-		isLoading.removing = false;
-		if (successCount > 0) {
-			const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
-			toast.success(successMsg);
-			volumes = await volumeService.getVolumes(requestOptions);
-		}
-		if (failureCount > 0) {
-			const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
-			toast.error(failureMsg);
-		}
-		selectedIds = [];
+			}
+		});
 	}
 
 	const columns = [

@@ -7,7 +7,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/getarcaneapp/arcane/types v0.0.0-20251219045603-8a9960a2bf04
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/schollz/progressbar/v3 v3.18.0
+	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
 	go.withmatt.com/size v0.0.0-20250220224316-11aee5773e67
