@@ -970,7 +970,6 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
-		img := img // capture loop var
 		g.Go(func() error {
 			res := s.checkSingleImageInBatch(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
 
