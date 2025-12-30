@@ -529,6 +529,8 @@
 	"volumes_no_labels_or_options": "Dit volume heeft geen extra labels of stuurprogramma.",
 	"volume_name_required": "Volumenaam is vereist",
 	"volumes_remove_confirm_message": "Weet u zeker dat u volume {name} wilt verwijderen?",
+	"volumes_remove_selected_title": "Verwijder {count} Volume(s)",
+	"volumes_remove_selected_message": "Weet u zeker dat u het geselecteerde volume wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.",
 	"volumes_remove_failed": "Volume {name} verwijderen mislukt",
 	"volumes_remove_success": "Volume {name} succesvol verwijderd",
 	"_comment_networks": "=== NETWERKEN ===",
