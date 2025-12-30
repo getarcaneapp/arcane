@@ -950,15 +950,14 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		return fmt.Errorf("failed to update project status to restarting: %w", err)
 	}
 
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	projectsDirSetting := s.settingsService.GetStringSetting(bgCtx, "projectsDirectory", "data/projects")
+	projectsDirectory, pdErr := fs.GetProjectsDirectory(bgCtx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(bgCtx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "data/projects"
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	autoInjectEnv := s.settingsService.GetBoolSetting(bgCtx, "autoInjectEnv", false)
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(bgCtx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusRunning)
