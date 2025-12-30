@@ -13,6 +13,8 @@ import (
 
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -65,8 +67,12 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use an independent background context for the removal so it can proceed
+	// even if the caller's request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	imageDetails, inspectErr := dockerClient.ImageInspect(ctx, id)
+	imageDetails, inspectErr := dockerClient.ImageInspect(bgCtx, id)
 	var imageName string
 	if inspectErr == nil && len(imageDetails.RepoTags) > 0 {
 		imageName = imageDetails.RepoTags[0]
@@ -79,17 +85,17 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		PruneChildren: true,
 	}
 
-	_, err = dockerClient.ImageRemove(ctx, id, options)
+	_, err = dockerClient.ImageRemove(bgCtx, id, options)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
 	if s.db != nil {
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.db.WithContext(bgCtx).Transaction(func(tx *gorm.DB) error {
 			return tx.Delete(&models.ImageUpdateRecord{}, "id = ?", id).Error
 		}); err != nil {
-			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
+			slog.WarnContext(bgCtx, "failed to delete image update record", "id", id, "error", err)
 		}
 	}
 
@@ -98,7 +104,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		"imageId": id,
 		"force":   force,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image deletion action", "err", logErr, "image", imageName, "image_id", id)
 	}
 
@@ -111,19 +117,22 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+	// Use independent background context for image pulls so they continue
+	// even if the request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
-	slog.DebugContext(ctx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
+	slog.DebugContext(bgCtx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
 
-	pullOptions, err := s.getPullOptionsWithAuth(ctx, imageName, externalCreds)
+	pullOptions, err := s.getPullOptionsWithAuth(bgCtx, imageName, externalCreds)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
+		slog.WarnContext(bgCtx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
 		pullOptions = image.PullOptions{}
 	}
-
-	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
+	reader, err := dockerClient.ImagePull(bgCtx, imageName, pullOptions)
 	if err != nil {
-		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "error", err.Error())
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
+		slog.ErrorContext(bgCtx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "error", err.Error())
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
 	defer reader.Close()
@@ -134,11 +143,11 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if _, writeErr := progressWriter.Write(line); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_progress"})
+			s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_progress"})
 			return fmt.Errorf("error writing pull progress for %s: %w", imageName, writeErr)
 		}
 		if _, writeErr := progressWriter.Write([]byte("\n")); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_newline"})
+			s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_newline"})
 			return fmt.Errorf("error writing newline for %s: %w", imageName, writeErr)
 		}
 
@@ -149,10 +158,10 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if scanErr := scanner.Err(); scanErr != nil {
 		if errors.Is(scanErr, context.Canceled) || strings.Contains(scanErr.Error(), "context canceled") {
 			slog.Debug("image pull stream canceled", "image", imageName, "err", scanErr)
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "canceled"})
+			s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "canceled"})
 			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, scanErr)
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "read_stream"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "read_stream"})
 		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, scanErr)
 	}
 
@@ -162,7 +171,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		"action":    "pull",
 		"imageName": imageName,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image pull action", "err", logErr, "image", imageName)
 	}
 
@@ -180,13 +189,18 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	}
 
 	// ImageLoad accepts a tar archive reader and optional load options
-	loadResp, err := dockerClient.ImageLoad(ctx, limitedReader)
+	// Use independent background context for loading images so the upload
+	// can complete even if the client disconnects.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	loadResp, err := dockerClient.ImageLoad(bgCtx, limitedReader)
 	if err != nil {
 		// Check if error is due to size limit being exceeded
 		if err.Error() == "unexpected EOF" || strings.Contains(err.Error(), "unexpected EOF") {
 			return nil, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
 	defer loadResp.Body.Close()
@@ -194,7 +208,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	var result imagetypes.LoadResult
 	responseBytes, err := io.ReadAll(loadResp.Body)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
+		s.eventService.LogErrorEvent(bgCtx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
 		return nil, fmt.Errorf("failed to read load response: %w", err)
 	}
 
@@ -205,7 +219,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		"action":   "load",
 		"fileName": fileName,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image load action", "err", logErr, "file", fileName)
 	}
 
@@ -356,6 +370,11 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	// Use independent background context for pruning so it can continue
+	// even if the caller's context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	filterArgs := filters.NewArgs()
 	if dangling {
 		filterArgs.Add("dangling", "true")
@@ -363,7 +382,7 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		filterArgs.Add("dangling", "false")
 	}
 
-	report, err := dockerClient.ImagesPrune(ctx, filterArgs)
+	report, err := dockerClient.ImagesPrune(bgCtx, filterArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
@@ -380,10 +399,10 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		}
 
 		if len(idsToDelete) > 0 {
-			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.db.WithContext(bgCtx).Transaction(func(tx *gorm.DB) error {
 				return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
 			}); err != nil {
-				slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
+				slog.WarnContext(bgCtx, "failed to clean up image update records after prune", "error", err)
 			}
 		}
 	}
@@ -394,7 +413,7 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		"imagesDeleted":  len(report.ImagesDeleted),
 		"spaceReclaimed": report.SpaceReclaimed,
 	}
-	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+	if logErr := s.eventService.LogImageEvent(bgCtx, models.EventTypeImageDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image prune action", "err", logErr)
 	}
 

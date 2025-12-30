@@ -630,29 +630,34 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+	// Use an independent background context for the deployment so the operation
+	// continues even if the original request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	if err := s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusDeploying); err != nil {
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	if perr := s.EnsureProjectImagesPresent(ctx, projectID, io.Discard, nil); perr != nil {
+	if perr := s.EnsureProjectImagesPresent(bgCtx, projectID, io.Discard, nil); perr != nil {
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
-	if err := projects.ComposeUp(ctx, project, project.Services.GetProfiles()); err != nil {
+	if err := projects.ComposeUp(bgCtx, project, project.Services.GetProfiles()); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
-		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
+		if containers, psErr := s.GetProjectServices(bgCtx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
-		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		_ = s.updateProjectStatusandCountsInternal(bgCtx, projectID, models.ProjectStatusStopped)
 		return fmt.Errorf("failed to deploy project: %w", err)
 	}
 
 	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project deployment action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(bgCtx, models.EventTypeProjectDeploy, projectID, project.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(bgCtx, "could not log project deployment action", "error", logErr)
 	}
 
-	err = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	err = s.updateProjectStatusandCountsInternal(bgCtx, projectID, models.ProjectStatusRunning)
 	if err != nil {
 		slog.Error("failed to update project status and counts after deploy", "projectID", projectID, "error", err)
 	}
@@ -680,12 +685,17 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
+	// Use independent background context so the down operation continues even if
+	// the request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	if err := s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusStopped); err != nil {
 		return fmt.Errorf("failed to update project status to stopping: %w", err)
 	}
 
-	if err := projects.ComposeDown(ctx, proj, false); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+	if err := projects.ComposeDown(bgCtx, proj, false); err != nil {
+		_ = s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to bring down project: %w", err)
 	}
 
@@ -694,11 +704,11 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		"projectID":   projectID,
 		"projectName": projectFromDb.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project down action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(bgCtx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(bgCtx, "could not log project down action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+	return s.updateProjectStatusandCountsInternal(bgCtx, projectID, models.ProjectStatusStopped)
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
@@ -773,8 +783,12 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 		if compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv); lerr == nil {
-			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
-				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
+			// Use an independent background context for volume removal so it can
+			// proceed even if the caller's context ends.
+			bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+			defer cancel()
+			if derr := projects.ComposeDown(bgCtx, compProj, true); derr != nil {
+				slog.WarnContext(bgCtx, "failed to remove volumes", "error", derr)
 			}
 		} else {
 			slog.WarnContext(ctx, "failed to load compose project for volume removal", "error", lerr)
@@ -810,16 +824,21 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
-	if err := s.PullProjectImages(ctx, projectID, io.Discard, nil); err != nil {
-		slog.WarnContext(ctx, "failed to pull project images", "error", err)
+	// Run redeploy using an independent background context so the operation is
+	// not canceled if the request context ends.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	if err := s.PullProjectImages(bgCtx, projectID, io.Discard, nil); err != nil {
+		slog.WarnContext(bgCtx, "failed to pull project images", "error", err)
 	}
 
 	metadata := models.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(bgCtx, models.EventTypeProjectDeploy, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(bgCtx, "could not log project redeploy action", "error", logErr)
 	}
 
-	return s.DeployProject(ctx, projectID, systemUser)
+	return s.DeployProject(bgCtx, projectID, systemUser)
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
@@ -850,9 +869,13 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		}
 		images[img] = struct{}{}
 	}
+	// Use an independent background context for pulling images so the pulls
+	// continue even if the request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
 
 	for img := range images {
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
+		if err := s.imageService.PullImage(bgCtx, img, progressWriter, systemUser, credentials); err != nil {
 			return fmt.Errorf("failed to pull image %s: %w", img, err)
 		}
 	}
@@ -890,17 +913,22 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		images[img] = struct{}{}
 	}
 
+	// Use an independent background context so image checks/pulls aren't
+	// canceled when the request context is done.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
 	for img := range images {
-		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
+		exists, ierr := s.imageService.ImageExistsLocally(bgCtx, img)
 		if ierr != nil {
-			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
+			slog.WarnContext(bgCtx, "failed to check local image existence", "image", img, "error", ierr)
 			// Non-fatal: attempt to pull to be safe
 		}
 		if exists {
-			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
+			slog.DebugContext(bgCtx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
+		if err := s.imageService.PullImage(bgCtx, img, progressWriter, systemUser, credentials); err != nil {
 			return fmt.Errorf("failed to pull missing image %s: %w", img, err)
 		}
 	}
@@ -913,7 +941,12 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		return err
 	}
 
-	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRestarting); err != nil {
+	// Use an independent background context for restarting so the operation
+	// continues even if the caller's context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	if err := s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusRestarting); err != nil {
 		return fmt.Errorf("failed to update project status to restarting: %w", err)
 	}
 
@@ -921,19 +954,19 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
+		slog.WarnContext(bgCtx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "data/projects"
 	}
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv)
+	compProj, _, lerr := projects.LoadComposeProjectFromDir(bgCtx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv)
 	if lerr != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
-	if err := projects.ComposeRestart(ctx, compProj, nil); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+	if err := projects.ComposeRestart(bgCtx, compProj, nil); err != nil {
+		_ = s.updateProjectStatusInternal(bgCtx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to restart project: %w", err)
 	}
 
@@ -942,11 +975,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		"projectID":   projectID,
 		"projectName": proj.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project restart action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(bgCtx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(bgCtx, "could not log project restart action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	return s.updateProjectStatusandCountsInternal(bgCtx, projectID, models.ProjectStatusRunning)
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string) (*models.Project, error) {
@@ -1202,10 +1235,13 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	if resp.ServiceCount == 0 {
 		if count, err := s.countServicesFromCompose(ctx, p); err == nil && count > 0 {
 			resp.ServiceCount = count
-			// Update DB asynchronously
-			go func(ctx context.Context, pid string, c int) {
-				s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", c)
-			}(context.WithoutCancel(ctx), p.ID, count)
+			// Update DB asynchronously using a short independent context so the
+			// update can outlive the request but won't hang indefinitely.
+			go func(pid string, c int) {
+				bgCtx, cancel := utils.DeriveContext(ctx, 5*time.Second, true)
+				defer cancel()
+				_ = s.db.WithContext(bgCtx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", c)
+			}(p.ID, count)
 		}
 	}
 
