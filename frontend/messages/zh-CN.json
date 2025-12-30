@@ -529,6 +529,8 @@
 	"volumes_no_labels_or_options": "该数据卷没有附加标签或驱动选项。",
 	"volume_name_required": "必须提供数据卷名",
 	"volumes_remove_confirm_message": "您确定要删除数据卷“{name}”吗？",
+	"volumes_remove_selected_title": "Remove {count} Volume(s)",
+	"volumes_remove_selected_message": "您确定要删除选定的卷(s)？此操作不能撤消。",
 	"volumes_remove_failed": "移除数据卷{name}失败",
 	"volumes_remove_success": "移除数据卷{name}成功",
 	"_comment_networks": "=== 网络===",
