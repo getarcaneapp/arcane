@@ -529,6 +529,8 @@
 	"volumes_no_labels_or_options": "Dieses Volume hat keine zusätzlichen Label oder Treiberoptionen.",
 	"volume_name_required": "Volume Name wird benötigt",
 	"volumes_remove_confirm_message": "Sind Sie sicher, dass Sie Volume {name} entfernen möchten?",
+	"volumes_remove_selected_title": "{count} Lautstärke(n) entfernen",
+	"volumes_remove_selected_message": "Sind Sie sicher, dass Sie die ausgewählten Lautstärke(n) entfernen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
 	"volumes_remove_failed": "Fehler beim Entfernen der Volume {name}",
 	"volumes_remove_success": "Volume {name} erfolgreich entfernt",
 	"_comment_networks": "=== NETZWERKE ===",
