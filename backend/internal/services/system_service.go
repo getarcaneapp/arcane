@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -55,22 +57,27 @@ var systemUser = models.User{
 }
 
 func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest) (*system.PruneAllResult, error) {
-	slog.InfoContext(ctx, "Starting selective prune operation", "containers", req.Containers, "images", req.Images, "volumes", req.Volumes, "networks", req.Networks, "build_cache", req.BuildCache, "dangling", req.Dangling)
+	// Use an independent background context so prune operations continue even
+	// if the calling request context is canceled.
+	bgCtx, cancel := utils.DeriveContextOptional(ctx, nil, true)
+	defer cancel()
+
+	slog.InfoContext(bgCtx, "Starting selective prune operation", "containers", req.Containers, "images", req.Images, "volumes", req.Volumes, "networks", req.Networks, "build_cache", req.BuildCache, "dangling", req.Dangling)
 
 	result := &system.PruneAllResult{Success: true}
 	var mu sync.Mutex
 
 	// 1. Prune Containers first (sequential) as it may free up other resources
 	if req.Containers {
-		slog.InfoContext(ctx, "Pruning stopped containers...")
-		if err := s.pruneContainers(ctx, result); err != nil {
+		slog.InfoContext(bgCtx, "Pruning stopped containers...")
+		if err := s.pruneContainers(bgCtx, result); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Container pruning failed: %v", err))
 			result.Success = false
 		}
 	}
 
 	// 2. Prune other resources in parallel
-	g, groupCtx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(bgCtx)
 
 	if req.Images {
 		g.Go(func() error {
@@ -150,10 +157,10 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 	}
 
 	if err := g.Wait(); err != nil {
-		slog.ErrorContext(ctx, "Prune operations failed", "error", err)
+		slog.ErrorContext(bgCtx, "Prune operations failed", "error", err)
 	}
 
-	slog.InfoContext(ctx, "Selective prune operation completed", "success", result.Success, "containers_pruned", len(result.ContainersPruned), "images_deleted", len(result.ImagesDeleted), "volumes_deleted", len(result.VolumesDeleted), "networks_deleted", len(result.NetworksDeleted), "space_reclaimed", result.SpaceReclaimed, "error_count", len(result.Errors))
+	slog.InfoContext(bgCtx, "Selective prune operation completed", "success", result.Success, "containers_pruned", len(result.ContainersPruned), "images_deleted", len(result.ImagesDeleted), "volumes_deleted", len(result.VolumesDeleted), "networks_deleted", len(result.NetworksDeleted), "space_reclaimed", result.SpaceReclaimed, "error_count", len(result.Errors))
 
 	return result, nil
 }
