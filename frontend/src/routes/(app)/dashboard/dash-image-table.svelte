@@ -61,9 +61,9 @@
 
 	$effect(() => {
 		const limit = calculatedLimit;
+		const currentLimit = images.pagination?.itemsPerPage;
 
 		const tid = untrack(() => {
-			const currentLimit = images.pagination?.itemsPerPage;
 			if (requestOptions.pagination && (limit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== limit))) {
 				return setTimeout(() => {
 					untrack(() => {

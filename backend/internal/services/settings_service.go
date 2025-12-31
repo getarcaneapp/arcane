@@ -190,7 +190,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(val)
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 			continue
 		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
@@ -245,7 +245,7 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(val)
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 		}
 	}
 }
@@ -598,6 +598,7 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 			if !ok {
 				continue
 			}
+			envVal = utils.TrimQuotes(envVal)
 
 			var existing models.SettingVariable
 			err := tx.Where("key = ?", key).First(&existing).Error

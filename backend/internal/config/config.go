@@ -54,9 +54,9 @@ func Load() *Config {
 		EncryptionKey: getEnvOrDefault("ENCRYPTION_KEY", "arcane-dev-key-32-characters!!!"),
 
 		OidcEnabled:      getBoolEnvOrDefault("OIDC_ENABLED", false),
-		OidcClientID:     os.Getenv("OIDC_CLIENT_ID"),
-		OidcClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
-		OidcIssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
+		OidcClientID:     getEnvOrDefault("OIDC_CLIENT_ID", ""),
+		OidcClientSecret: getEnvOrDefault("OIDC_CLIENT_SECRET", ""),
+		OidcIssuerURL:    getEnvOrDefault("OIDC_ISSUER_URL", ""),
 		OidcScopes:       getEnvOrDefault("OIDC_SCOPES", "openid email profile"),
 		OidcAdminClaim:   getEnvOrDefault("OIDC_ADMIN_CLAIM", ""),
 		OidcAdminValue:   getEnvOrDefault("OIDC_ADMIN_VALUE", ""),
@@ -77,9 +77,18 @@ func Load() *Config {
 
 func getEnvOrDefault[T interface{ ~string }](key string, defaultValue T) T {
 	if value := os.Getenv(key); value != "" {
-		return T(value)
+		return T(trimQuotes(value))
 	}
 	return defaultValue
+}
+
+func trimQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }
 
 func (a AppEnvironment) IsProdEnvironment() bool {
@@ -92,6 +101,7 @@ func (a AppEnvironment) IsTestEnvironment() bool {
 
 func getBoolEnvOrDefault(key string, defaultValue bool) bool {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
+		v = trimQuotes(v)
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
 		}

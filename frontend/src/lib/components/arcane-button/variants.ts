@@ -52,9 +52,9 @@ export const arcaneButtonVariants = tv({
 			link: 'border-transparent bg-transparent text-primary underline-offset-4 hover:underline shadow-none hover:shadow-none'
 		},
 		size: {
-			default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-			sm: 'h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5',
-			lg: 'h-10 rounded-md px-5 has-[>svg]:px-4',
+			default: 'h-9 px-4 py-2 has-[svg]:px-3',
+			sm: 'h-8 gap-1.5 rounded-md px-3 has-[svg]:px-2.5',
+			lg: 'h-10 rounded-md px-5 has-[svg]:px-4',
 			icon: 'size-9'
 		},
 		hoverEffect: {

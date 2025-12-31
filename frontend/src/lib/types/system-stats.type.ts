@@ -15,6 +15,6 @@ export interface SystemStats {
 export interface GPUStats {
 	name: string;
 	index: number;
-	memoryUsed: number;  // in MB
+	memoryUsed: number; // in MB
 	memoryTotal: number; // in MB
 }

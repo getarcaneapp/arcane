@@ -166,10 +166,14 @@
 }
 
 body:not(.glass-enabled) {
-	--card: var(--bg-card);
+	--card: var(--bg-surface);
 	--card-foreground: var(--foreground);
 	--sidebar: var(--bg-surface);
 	--popover: var(--bg-surface);
+
+	&:where(.dark, .dark *) {
+		--input: oklch(0.25 0.006 285.885);
+	}
 
 	&::before {
 		display: none;
@@ -247,9 +251,12 @@ body:not(.glass-enabled) {
 	[class*='bg-popover/'],
 	[class*='bg-muted/'],
 	[class*='bg-secondary/'],
-	[class*='bg-accent/'],
-	[class*='bg-input/'] {
+	[class*='bg-accent/'] {
 		background-color: var(--bg-surface) !important;
+	}
+
+	[class*='bg-input/'] {
+		background-color: var(--input) !important;
 	}
 }
 
