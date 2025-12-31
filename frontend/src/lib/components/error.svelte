@@ -7,7 +7,6 @@
 	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import { EnvironmentsIcon } from '$lib/icons';
 
 	let {
 		message,
