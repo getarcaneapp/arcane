@@ -98,7 +98,10 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 	if transport, ok := insecureClient.Transport.(*http.Transport); ok {
 		insecureTransport := transport.Clone()
 		if insecureTransport.TLSClientConfig == nil {
-			insecureTransport.TLSClientConfig = &tls.Config{}
+			// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
+			insecureTransport.TLSClientConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
 		insecureClient.Transport = insecureTransport
