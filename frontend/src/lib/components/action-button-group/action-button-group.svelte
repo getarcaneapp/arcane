@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { Action } from '$lib/components/arcane-button/index.js';
+	import type { Action, ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
 	import { EllipsisIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
 
@@ -14,16 +14,18 @@
 		disabled?: boolean;
 		onclick: () => void;
 		showOnMobile?: boolean;
+		badge?: string | number;
 	}
 
 	interface Props {
 		buttons?: ActionButton[];
+		size?: ArcaneButtonSize;
 		class?: string;
 	}
 
-	let { buttons = [], class: className = '' }: Props = $props();
+	let { buttons = [], size = 'sm', class: className = '' }: Props = $props();
 
-	const DROPDOWN_WIDTH = 44;
+	const DROPDOWN_WIDTH = $derived(size === 'sm' ? 44 : 48);
 	const GAP = 8;
 
 	let containerWidth = $state(0);
@@ -116,8 +118,14 @@
 					loading={button.loading}
 					disabled={button.disabled}
 					onclick={() => {}}
-					size="sm"
-				/>
+					{size}
+				>
+					{#if button.badge !== undefined}
+						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
+							{button.badge}
+						</span>
+					{/if}
+				</ArcaneButton>
 			{/each}
 		</div>
 
@@ -130,15 +138,27 @@
 					loading={button.loading}
 					disabled={button.disabled}
 					onclick={button.onclick}
-					size="sm"
-				/>
+					{size}
+				>
+					{#if button.badge !== undefined}
+						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
+							{button.badge}
+						</span>
+					{/if}
+				</ArcaneButton>
 			{/each}
 
 			{#if overflowButtons.length > 0}
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
-							<ArcaneButton {...props} action="base" tone="outline" size="icon" class="size-8 shrink-0">
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="outline"
+								size="icon"
+								class={cn('shrink-0', size === 'sm' ? 'size-8' : 'size-9')}
+							>
 								<span class="sr-only">More actions</span>
 								<EllipsisIcon class="size-4" />
 							</ArcaneButton>
@@ -149,7 +169,12 @@
 						<DropdownMenu.Group>
 							{#each overflowButtons as button (button.id)}
 								<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-									{button.loading ? button.loadingLabel || button.label : button.label}
+									<div class="flex w-full items-center justify-between gap-2">
+										<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+										{#if button.badge !== undefined}
+											<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+										{/if}
+									</div>
 								</DropdownMenu.Item>
 							{/each}
 						</DropdownMenu.Group>
@@ -162,7 +187,13 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<ArcaneButton {...props} action="base" tone="outline" size="icon" class="size-8 shrink-0">
+						<ArcaneButton
+							{...props}
+							action="base"
+							tone="outline"
+							size="icon"
+							class={cn('shrink-0', size === 'sm' ? 'size-8' : 'size-9')}
+						>
 							<span class="sr-only">More actions</span>
 							<EllipsisIcon class="size-4" />
 						</ArcaneButton>
@@ -173,7 +204,12 @@
 					<DropdownMenu.Group>
 						{#each buttons as button (button.id)}
 							<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-								{button.loading ? button.loadingLabel || button.label : button.label}
+								<div class="flex w-full items-center justify-between gap-2">
+									<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+									{#if button.badge !== undefined}
+										<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+									{/if}
+								</div>
 							</DropdownMenu.Item>
 						{/each}
 					</DropdownMenu.Group>

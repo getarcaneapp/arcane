@@ -19,7 +19,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
-	import { untrack } from 'svelte';
 	import bytes from 'bytes';
 	import { CpuIcon, MemoryStickIcon } from '$lib/icons';
 
@@ -283,7 +282,7 @@
 		</div>
 
 		<QuickActions
-			class="shrink-0"
+			class="min-w-0 flex-1"
 			compact
 			{dockerInfo}
 			{stoppedContainers}

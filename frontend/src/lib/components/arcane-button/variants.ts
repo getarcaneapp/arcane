@@ -44,6 +44,14 @@ export const arcaneButtonVariants = tv({
 				'bg-destructive/5 text-foreground! border-destructive/20 hover:bg-destructive/10 hover:border-destructive/40 ' +
 				'dark:bg-destructive/10 dark:text-destructive-foreground dark:border-destructive/30 dark:hover:bg-destructive/20 ' +
 				'shadow-sm hover:shadow-md',
+			'outline-success':
+				'bg-emerald-500/5 text-foreground! border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 ' +
+				'dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30 dark:hover:bg-emerald-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-info':
+				'bg-sky-500/5 text-foreground! border-sky-500/20 hover:bg-sky-500/10 hover:border-sky-500/40 ' +
+				'dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500/20 ' +
+				'shadow-sm hover:shadow-md',
 
 			outline: 'bg-background border-input hover:bg-accent hover:text-accent-foreground shadow-sm',
 
@@ -55,7 +63,8 @@ export const arcaneButtonVariants = tv({
 			default: 'h-9 px-4 py-2 has-[svg]:px-3',
 			sm: 'h-8 gap-1.5 rounded-md px-3 has-[svg]:px-2.5',
 			lg: 'h-10 rounded-md px-5 has-[svg]:px-4',
-			icon: 'size-9'
+			icon: 'size-9',
+			card: 'min-h-14 w-full p-3 rounded-2xl justify-start gap-3'
 		},
 		hoverEffect: {
 			none: '',
@@ -90,6 +99,12 @@ export const actionConfigs = {
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_starting()
 	},
+	start_all: {
+		defaultLabel: m.quick_actions_start_all(),
+		IconComponent: StartIcon,
+		tone: 'outline-success',
+		loadingLabel: m.common_action_starting()
+	},
 	deploy: {
 		defaultLabel: m.common_up(),
 		IconComponent: StartIcon,
@@ -102,8 +117,20 @@ export const actionConfigs = {
 		tone: 'outline-destructive',
 		loadingLabel: m.common_action_stopping()
 	},
+	stop_all: {
+		defaultLabel: m.quick_actions_stop_all(),
+		IconComponent: StopIcon,
+		tone: 'outline-info',
+		loadingLabel: m.common_action_stopping()
+	},
 	remove: {
 		defaultLabel: m.common_remove(),
+		IconComponent: TrashIcon,
+		tone: 'outline-destructive',
+		loadingLabel: m.common_action_removing()
+	},
+	prune: {
+		defaultLabel: m.quick_actions_prune_system(),
 		IconComponent: TrashIcon,
 		tone: 'outline-destructive',
 		loadingLabel: m.common_action_removing()
