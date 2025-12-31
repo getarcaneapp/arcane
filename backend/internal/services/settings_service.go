@@ -101,6 +101,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
+		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
