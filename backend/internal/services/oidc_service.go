@@ -32,6 +32,7 @@ type OidcService struct {
 	providerCache      *oidc.Provider
 	providerMutex      sync.RWMutex
 	cachedIssuer       string
+	cachedSkipTls      bool
 	sfGroup            singleflight.Group
 }
 
@@ -105,6 +106,8 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 		}
 		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
 		insecureClient.Transport = insecureTransport
+	} else {
+		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
 	}
 	s.insecureHttpClient = &insecureClient
 	return s.insecureHttpClient
@@ -193,19 +196,22 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.OidcConfig) (*oidc.Provider, error) {
 	issuer := cfg.IssuerURL
+	skipTls := cfg.SkipTlsVerify
+
 	s.providerMutex.RLock()
-	if s.providerCache != nil && s.cachedIssuer == issuer {
+	if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
 		provider := s.providerCache
 		s.providerMutex.RUnlock()
 		return provider, nil
 	}
 	s.providerMutex.RUnlock()
 
-	// Use singleflight to prevent thundering herd
-	v, err, _ := s.sfGroup.Do(issuer, func() (interface{}, error) {
+	// Use singleflight to prevent thundering herd. Include skipTls in key to handle toggling.
+	sfKey := fmt.Sprintf("%s|%v", issuer, skipTls)
+	v, err, _ := s.sfGroup.Do(sfKey, func() (interface{}, error) {
 		// Double check inside the lock/singleflight
 		s.providerMutex.RLock()
-		if s.providerCache != nil && s.cachedIssuer == issuer {
+		if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
 			provider := s.providerCache
 			s.providerMutex.RUnlock()
 			return provider, nil
@@ -220,19 +226,20 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 		defer cancel()
 
 		// Use the custom HTTP client with the new context
-		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClient(cfg.SkipTlsVerify))
+		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClient(skipTls))
 		provider, err := oidc.NewProvider(providerCtx, issuer)
 		if err != nil {
-			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "error", err)
+			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "skipTls", skipTls, "error", err)
 			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
 		}
 
 		s.providerMutex.Lock()
 		s.providerCache = provider
 		s.cachedIssuer = issuer
+		s.cachedSkipTls = skipTls
 		s.providerMutex.Unlock()
 
-		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer)
+		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "skipTls", skipTls)
 		return provider, nil
 	})
 
