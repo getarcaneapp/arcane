@@ -120,7 +120,7 @@ func NewWebSocketHandler(
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
 		wsUpgrader: websocket.Upgrader{
-			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.AppUrl),
+			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
 			WriteBufferSize:   32 * 1024,
 			EnableCompression: true,
