@@ -109,7 +109,7 @@
 			$formInputs.oidcClientSecret.value !== ''
 	);
 
-	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/oidc/callback`);
+	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
 	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
 
 	async function customSubmit() {
