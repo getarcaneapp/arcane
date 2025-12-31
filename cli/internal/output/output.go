@@ -14,10 +14,11 @@ package output
 
 import (
 	"fmt"
-	"os"
+	"regexp"
+	"strings"
 
 	"github.com/fatih/color"
-	"github.com/olekukonko/tablewriter"
+	"github.com/mattn/go-runewidth"
 )
 
 var (
@@ -27,6 +28,8 @@ var (
 	infoColor    = color.New(color.FgCyan).SprintFunc()
 	headerColor  = color.New(color.FgHiWhite, color.Bold).SprintFunc()
 )
+
+var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 
 // Success prints a success message in green.
 // The message is prefixed with a newline for visual separation.
@@ -76,32 +79,119 @@ func KeyValue(key string, value interface{}) {
 	fmt.Printf("%s: %v\n", color.New(color.Bold).Sprint(key), color.New(color.FgBlue).Sprint(value))
 }
 
+func stripAnsi(s string) string {
+	if s == "" {
+		return s
+	}
+	return ansiRegexp.ReplaceAllString(s, "")
+}
+
 // Table prints a formatted table with headers and rows.
-// Headers are displayed in bold cyan. The table is rendered without borders
+// Headers are displayed in bold cyan. The table is rendered with borders
 // for a clean terminal appearance. Columns are automatically aligned.
 func Table(headers []string, rows [][]string) {
 	fmt.Println()
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader(headers)
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(true)
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetCenterSeparator("")
-	table.SetColumnSeparator("")
-	table.SetRowSeparator("")
-	table.SetHeaderLine(false)
-	table.SetBorder(false)
-	table.SetTablePadding("  ") // pad with spaces
-	table.SetNoWhiteSpace(false)
 
-	// Set header colors
-	headerColors := make([]tablewriter.Colors, len(headers))
-	for i := range headerColors {
-		headerColors[i] = tablewriter.Colors{tablewriter.Bold, tablewriter.FgHiCyanColor}
+	n := len(headers)
+	if n == 0 {
+		return
 	}
-	table.SetHeaderColor(headerColors...)
 
-	table.AppendBulk(rows)
-	table.Render()
+	widths := computeWidths(headers, rows)
+	printHeader(headers, widths)
+	for _, row := range rows {
+		printRow(row, widths, n)
+	}
+}
+
+func computeWidths(headers []string, rows [][]string) []int {
+	n := len(headers)
+	widths := make([]int, n)
+	for i, h := range headers {
+		widths[i] = runewidth.StringWidth(stripAnsi(h))
+	}
+	for _, row := range rows {
+		for i := 0; i < n; i++ {
+			var cell string
+			if i < len(row) {
+				cell = row[i]
+			}
+			lines := strings.Split(cell, "\n")
+			for _, ln := range lines {
+				w := runewidth.StringWidth(stripAnsi(ln))
+				if w > widths[i] {
+					widths[i] = w
+				}
+			}
+		}
+	}
+	return widths
+}
+
+func printHeader(headers []string, widths []int) {
+	headerFmt := color.New(color.Bold, color.FgHiCyan).SprintFunc()
+	sep := "  "
+	n := len(headers)
+	for i, h := range headers {
+		visible := stripAnsi(h)
+		colored := headerFmt(h)
+		padLen := widths[i] - runewidth.StringWidth(visible)
+		if padLen < 0 {
+			padLen = 0
+		}
+		if i < n-1 {
+			fmt.Print(colored + strings.Repeat(" ", padLen) + sep)
+		} else {
+			fmt.Print(colored + strings.Repeat(" ", padLen))
+		}
+	}
+	fmt.Println()
+}
+
+func printRow(row []string, widths []int, n int) {
+	sep := "  "
+	columnFmt := color.New(color.FgYellow).SprintFunc()
+
+	// Prepare lines per column
+	cellLines := make([][]string, n)
+	maxLines := 1
+	for i := 0; i < n; i++ {
+		var cell string
+		if i < len(row) {
+			cell = row[i]
+		}
+		lines := strings.Split(cell, "\n")
+		cellLines[i] = lines
+		if len(lines) > maxLines {
+			maxLines = len(lines)
+		}
+	}
+
+	for li := 0; li < maxLines; li++ {
+		for i := 0; i < n; i++ {
+			var val string
+			if li < len(cellLines[i]) {
+				val = cellLines[i][li]
+			}
+
+			var rendered string
+			if i == 0 {
+				rendered = columnFmt(val)
+			} else {
+				rendered = fmt.Sprint(val)
+			}
+
+			padLen := widths[i] - runewidth.StringWidth(stripAnsi(val))
+			if padLen < 0 {
+				padLen = 0
+			}
+
+			if i < n-1 {
+				fmt.Print(rendered + strings.Repeat(" ", padLen) + sep)
+			} else {
+				fmt.Print(rendered + strings.Repeat(" ", padLen))
+			}
+		}
+		fmt.Println()
+	}
 }
