@@ -60,7 +60,7 @@
 		<div
 			class="bg-popover/95 supports-backdrop-filter:bg-popover/85 border-border/60 flex items-center gap-3 rounded-full border px-4 py-2 shadow-lg backdrop-blur-lg"
 		>
-			<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl} class="size-8 rounded-full p-0">
+			<ArcaneButton action="base" tone="ghost" href={backUrl} class="size-8 rounded-full p-0">
 				<ArrowLeftIcon class="size-4" />
 			</ArcaneButton>
 
@@ -78,7 +78,6 @@
 							loading={primaryAction.loading}
 							disabled={primaryAction.disabled}
 							onclick={primaryAction.onclick}
-							size="sm"
 						/>
 					{/if}
 					{#if secondaryActions.length > 0}
@@ -108,7 +107,7 @@
 <div class={cn('space-y-6 pb-8', className)}>
 	<div class="space-y-4">
 		<div class="flex items-center justify-between">
-			<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl} class="-ml-2">
+			<ArcaneButton action="base" tone="ghost" href={backUrl} class="-ml-2">
 				<ArrowLeftIcon class="size-4" />
 				{backLabel}
 			</ArcaneButton>
@@ -121,7 +120,6 @@
 						loading={primaryAction.loading}
 						disabled={primaryAction.disabled}
 						onclick={primaryAction.onclick}
-						size="sm"
 					/>
 				{:else if actions.length > 1}
 					<DropdownMenu.Root>

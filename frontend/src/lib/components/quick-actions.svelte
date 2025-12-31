@@ -90,7 +90,7 @@
 			</div>
 			<div class="bg-card/60 size-9 animate-pulse rounded-lg backdrop-blur-sm sm:hidden"></div>
 		{:else}
-			<ActionButtonGroup buttons={actionButtons} size="default" />
+			<ActionButtonGroup buttons={actionButtons} />
 		{/if}
 	{:else}
 		<h2 class="mb-3 text-lg font-semibold tracking-tight">{m.quick_actions_title()}</h2>

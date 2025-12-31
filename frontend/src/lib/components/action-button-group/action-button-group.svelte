@@ -23,7 +23,7 @@
 		class?: string;
 	}
 
-	let { buttons = [], size = 'sm', class: className = '' }: Props = $props();
+	let { buttons = [], size = 'default', class: className = '' }: Props = $props();
 
 	const DROPDOWN_WIDTH = $derived(size === 'sm' ? 44 : 48);
 	const GAP = 8;
