@@ -213,6 +213,7 @@
 	"common_field_required": "{field} 為必填欄位",
 	"common_copied": "已複製到剪貼簿",
 	"common_copy_failed": "複製到剪貼簿失敗",
+	"common_copy_https_required": "Copying requires a secure connection (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "資料卷",
 	"resource_volume_cap": "資料卷",
