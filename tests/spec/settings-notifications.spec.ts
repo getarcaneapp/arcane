@@ -69,7 +69,7 @@ test.describe('Notification settings', () => {
     await page.getByRole('option', { name: /Email/i }).click();
 
     // Fill in the fields
-    await page.getByLabel(/Name/i).fill('My Email');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('My Email');
     await page.getByPlaceholder('smtp.gmail.com').fill('smtp.example.com');
     await page.getByPlaceholder('arcane@example.com').fill('notifications@example.com');
     await page.locator('input[id="toAddresses"]').fill('user1@example.com');
