@@ -1211,6 +1211,8 @@
 	"oidc_admin_claim_placeholder": "e.g., roles, groups, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "e.g., admin (comma-separated)",
 	"oidc_admin_value_help": "Leave empty for boolean claims (admin=true).",
+	"oidc_skip_tls_verify_label": "Skip TLS Verification",
+	"oidc_skip_tls_verify_description": "Disable TLS certificate verification for OIDC endpoints. Proceed with CAUTION.",
 	"oidc_redirect_uri_title": "Redirect URI Configuration",
 	"oidc_redirect_uri_description": "Configure this redirect URI in your OIDC provider:",
 	"_comment_prune": "=== PRUNE ===",
