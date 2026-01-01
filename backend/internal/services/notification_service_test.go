@@ -27,7 +27,7 @@ type smtpTestServer struct {
 func startSMTPTestServer(t *testing.T) (*smtpTestServer, string) {
 	t.Helper()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	s := &smtpTestServer{
@@ -402,6 +402,7 @@ func TestSendShoutrrrNotification_Providers(t *testing.T) {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
+				defer resp.Body.Close()
 				for k, v := range resp.Header {
 					w.Header()[k] = v
 				}
