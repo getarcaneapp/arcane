@@ -1211,6 +1211,8 @@
 	"oidc_admin_claim_placeholder": "por ejemplo, roles, grupos, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "por ejemplo, admin (separado por comas)",
 	"oidc_admin_value_help": "Dejar en blanco para reclamos booleanos (admin=true).",
+	"oidc_skip_tls_verify_label": "Omitir la verificación TLS",
+	"oidc_skip_tls_verify_description": "Desactivar la verificación de certificados TLS para puntos finales OIDC. Proceda con CAUTION.",
 	"oidc_redirect_uri_title": "Redirigir configuración de URI",
 	"oidc_redirect_uri_description": "Configure este redireccionamiento URI en su proveedor OIDC:",
 	"_comment_prune": "=== LIMPIAR ===",
