@@ -213,6 +213,7 @@
 	"common_field_required": "{field} ist erforderlich",
 	"common_copied": "In Zwischenablage kopiert",
 	"common_copy_failed": "Fehler beim Kopieren in die Zwischenablage",
+	"common_copy_https_required": "Kopieren erfordert eine sichere Verbindung (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "Volume",
 	"resource_volume_cap": "Lautstärke",
