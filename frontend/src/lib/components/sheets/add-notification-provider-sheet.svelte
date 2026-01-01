@@ -20,12 +20,7 @@
 		isLoading: boolean;
 	};
 
-	let {
-		open = $bindable(false),
-		providerToEdit = $bindable(),
-		onSubmit,
-		isLoading
-	}: ProviderFormProps = $props();
+	let { open = $bindable(false), providerToEdit = $bindable(), onSubmit, isLoading }: ProviderFormProps = $props();
 
 	let isEditMode = $derived(!!providerToEdit);
 	let SubmitIcon = $derived(isEditMode ? SaveIcon : AddIcon);
@@ -54,87 +49,15 @@
 
 	let currentSchema = $derived(providerSchemas[provider] || providerSchemas['generic']);
 
-	function constructUrl(p: string, c: Record<string, any>): string {
-		switch (p) {
-			case 'discord':
-				if (c.webhookUrl) {
-					const match = c.webhookUrl.match(/webhooks\/(\d+)\/(.+)/);
-					if (match) {
-						return `discord://${match[2]}@${match[1]}`;
-					}
-					return c.webhookUrl;
-				}
-				return '';
-			case 'telegram': {
-				const query = new URLSearchParams();
-				if (c.chatId) query.set('chats', c.chatId);
-				if (c.sendSilently) query.set('notification', 'no');
-				return `telegram://${c.botToken}@telegram?${query.toString()}`;
-			}
-			case 'slack': {
-				if (c.webhookUrl) {
-					const match = c.webhookUrl.match(/services\/(.+)\/(.+)\/(.+)/);
-					if (match) {
-						return `slack://${match[1]}/${match[2]}/${match[3]}`;
-					}
-					return c.webhookUrl;
-				}
-				return '';
-			}
-			case 'gotify': {
-				const host = c.url?.replace(/^https?:\/\//, '') || '';
-				const query = new URLSearchParams();
-				if (c.priority) query.set('priority', c.priority);
-				return `gotify://${host}/${c.token}?${query.toString()}`;
-			}
-			case 'ntfy': {
-				const host = c.url?.replace(/^https?:\/\//, '') || '';
-				const query = new URLSearchParams();
-				if (c.priority) query.set('priority', c.priority);
-				const userPass = c.username && c.password ? `${c.username}:${c.password}@` : '';
-				return `ntfy://${userPass}${host}/${c.topic}?${query.toString()}`;
-			}
-			case 'pushbullet':
-				return `pushbullet://${c.accessToken}/${c.channelTag || ''}`;
-			case 'pushover': {
-				const query = new URLSearchParams();
-				if (c.priority) query.set('priority', c.priority);
-				if (c.sound) query.set('sound', c.sound);
-				return `pushover://shoutrrr:${c.token}@${c.userKey}?${query.toString()}`;
-			}
-			case 'email': {
-				const userPass = c.smtpUsername && c.smtpPassword ? `${c.smtpUsername}:${c.smtpPassword}@` : '';
-				const hostPort = `${c.smtpHost}:${c.smtpPort}`;
-				const query = new URLSearchParams();
-				if (c.fromAddress) query.set('from', c.fromAddress);
-				if (c.toAddresses) query.set('to', c.toAddresses);
-				// Shoutrrr email format: smtp://user:pass@host:port/?from=...&to=...
-				return `smtp://${userPass}${hostPort}/?${query.toString()}`;
-			}
-			case 'webhook':
-				return c.webhookUrl || '';
-			default:
-				return c.url || '';
-		}
-	}
-
 	function handleSubmit() {
 		if (!name) return; // Basic validation
-
-		const url = constructUrl(provider, config);
-		
-		// We store the granular config AND the constructed URL
-		const finalConfig = {
-			...config,
-			url
-		};
 
 		const providerData: NotificationSettings = {
 			id: providerToEdit?.id || '',
 			name,
 			provider,
 			enabled,
-			config: finalConfig
+			config
 		};
 
 		onSubmit(providerData);
@@ -172,25 +95,14 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<div class="grid gap-2">
 				<Label for="name">{m.common_name()}</Label>
-				<Input
-					id="name"
-					type="text"
-					placeholder={m.common_name()}
-					bind:value={name}
-					required
-				/>
+				<Input id="name" type="text" placeholder={m.common_name()} bind:value={name} required />
 			</div>
 
-			<SelectWithLabel
-				id="provider-select"
-				label={m.common_type()}
-				bind:value={provider}
-				options={providerOptions}
-			/>
+			<SelectWithLabel id="provider-select" label={m.common_type()} bind:value={provider} options={providerOptions} />
 
 			<div class="space-y-4 rounded-lg border p-4">
-				<h4 class="text-sm font-medium text-muted-foreground">Configuration</h4>
-				
+				<h4 class="text-muted-foreground text-sm font-medium">Configuration</h4>
+
 				{#each currentSchema as field}
 					{#if field.type === 'select'}
 						<SelectWithLabel
@@ -200,11 +112,7 @@
 							options={field.options || []}
 						/>
 					{:else if field.type === 'switch'}
-						<SwitchWithLabel
-							id={field.name}
-							label={field.label()}
-							bind:checked={config[field.name]}
-						/>
+						<SwitchWithLabel id={field.name} label={field.label()} bind:checked={config[field.name]} />
 					{:else}
 						<div class="grid gap-2">
 							<Label for={field.name}>{field.label()}</Label>
@@ -223,11 +131,7 @@
 				{/each}
 			</div>
 
-			<SwitchWithLabel
-				id="enabledSwitch"
-				label={m.common_enabled()}
-				bind:checked={enabled}
-			/>
+			<SwitchWithLabel id="enabledSwitch" label={m.common_enabled()} bind:checked={enabled} />
 		</form>
 	{/snippet}
 

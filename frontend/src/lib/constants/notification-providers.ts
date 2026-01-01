@@ -15,7 +15,7 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	discord: [
 		{
 			name: 'webhookUrl',
-			label: m.notification_field_webhook_url,
+			label: () => m.notification_field_webhook_url(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'https://discord.com/api/webhooks/...'
@@ -24,47 +24,47 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	email: [
 		{
 			name: 'fromAddress',
-			label: m.notification_field_from_address,
+			label: () => m.notification_field_from_address(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'arcane@example.com'
 		},
 		{
 			name: 'toAddresses',
-			label: m.notification_field_to_addresses,
+			label: () => m.notification_field_to_addresses(),
 			type: 'text',
 			required: true,
 			description: () => 'Comma separated list of email addresses'
 		},
 		{
 			name: 'smtpHost',
-			label: m.notification_field_smtp_host,
+			label: () => m.notification_field_smtp_host(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'smtp.gmail.com'
 		},
 		{
 			name: 'smtpPort',
-			label: m.notification_field_smtp_port,
+			label: () => m.notification_field_smtp_port(),
 			type: 'number',
 			required: true,
 			defaultValue: 587
 		},
 		{
 			name: 'smtpUsername',
-			label: m.notification_field_smtp_username,
+			label: () => m.notification_field_smtp_username(),
 			type: 'text',
 			required: false
 		},
 		{
 			name: 'smtpPassword',
-			label: m.notification_field_smtp_password,
+			label: () => m.notification_field_smtp_password(),
 			type: 'password',
 			required: false
 		},
 		{
 			name: 'tlsMode',
-			label: m.notification_field_tls_mode,
+			label: () => m.notification_field_tls_mode(),
 			type: 'select',
 			options: [
 				{ value: 'none', label: 'None' },
@@ -77,20 +77,20 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	gotify: [
 		{
 			name: 'url',
-			label: m.notification_field_server_url,
+			label: () => m.notification_field_server_url(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'https://gotify.example.com'
 		},
 		{
 			name: 'token',
-			label: m.notification_field_token,
+			label: () => m.notification_field_token(),
 			type: 'password',
 			required: true
 		},
 		{
 			name: 'priority',
-			label: m.notification_field_priority,
+			label: () => m.notification_field_priority(),
 			type: 'number',
 			required: false,
 			defaultValue: 0
@@ -99,33 +99,33 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	ntfy: [
 		{
 			name: 'url',
-			label: m.notification_field_server_url,
+			label: () => m.notification_field_server_url(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'https://ntfy.sh'
 		},
 		{
 			name: 'topic',
-			label: m.notification_field_topic,
+			label: () => m.notification_field_topic(),
 			type: 'text',
 			required: true
 		},
 		{
 			name: 'priority',
-			label: m.notification_field_priority,
+			label: () => m.notification_field_priority(),
 			type: 'number',
 			required: false,
 			defaultValue: 3
 		},
 		{
 			name: 'username',
-			label: m.common_username,
+			label: () => m.common_username(),
 			type: 'text',
 			required: false
 		},
 		{
 			name: 'password',
-			label: m.common_password,
+			label: () => m.common_password(),
 			type: 'password',
 			required: false
 		}
@@ -133,13 +133,13 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	pushbullet: [
 		{
 			name: 'accessToken',
-			label: m.notification_field_access_token,
+			label: () => m.notification_field_access_token(),
 			type: 'password',
 			required: true
 		},
 		{
 			name: 'channelTag',
-			label: m.notification_field_channel_tag,
+			label: () => m.notification_field_channel_tag(),
 			type: 'text',
 			required: false
 		}
@@ -147,26 +147,26 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	pushover: [
 		{
 			name: 'token',
-			label: m.notification_field_token,
+			label: () => m.notification_field_token(),
 			type: 'password',
 			required: true
 		},
 		{
 			name: 'userKey',
-			label: m.notification_field_user_key,
+			label: () => m.notification_field_user_key(),
 			type: 'text',
 			required: true
 		},
 		{
 			name: 'priority',
-			label: m.notification_field_priority,
+			label: () => m.notification_field_priority(),
 			type: 'number',
 			required: false,
 			defaultValue: 0
 		},
 		{
 			name: 'sound',
-			label: m.notification_field_sound,
+			label: () => m.notification_field_sound(),
 			type: 'text',
 			required: false
 		}
@@ -174,7 +174,7 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	slack: [
 		{
 			name: 'webhookUrl',
-			label: m.notification_field_webhook_url,
+			label: () => m.notification_field_webhook_url(),
 			type: 'text',
 			required: true,
 			placeholder: () => 'https://hooks.slack.com/services/...'
@@ -183,19 +183,19 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	telegram: [
 		{
 			name: 'botToken',
-			label: m.notification_field_bot_token,
+			label: () => m.notification_field_bot_token(),
 			type: 'password',
 			required: true
 		},
 		{
 			name: 'chatId',
-			label: m.notification_field_chat_id,
+			label: () => m.notification_field_chat_id(),
 			type: 'text',
 			required: true
 		},
 		{
 			name: 'sendSilently',
-			label: m.notification_field_send_silently,
+			label: () => m.notification_field_send_silently(),
 			type: 'switch',
 			required: false,
 			defaultValue: false
@@ -204,7 +204,7 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	webhook: [
 		{
 			name: 'webhookUrl',
-			label: m.notification_field_webhook_url,
+			label: () => m.notification_field_webhook_url(),
 			type: 'text',
 			required: true
 		}
@@ -212,7 +212,7 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 	generic: [
 		{
 			name: 'url',
-			label: m.notification_field_server_url,
+			label: () => m.notification_field_server_url(),
 			type: 'text',
 			required: true,
 			description: () => 'Full Shoutrrr URL'

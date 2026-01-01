@@ -1,28 +1,27 @@
-import * as m from '$lib/paraglide/messages';
+import { m } from '$lib/paraglide/messages';
 
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 
-// Simple record of provider value => label function
 export const notificationProviders = {
-	bark: m.notification_provider_bark,
-	discord: m.notification_provider_discord,
-	email: m.notification_provider_email,
-	gotify: m.notification_provider_gotify,
-	googlechat: m.notification_provider_googlechat,
-	ifttt: m.notification_provider_ifttt,
-	join: m.notification_provider_join,
-	mattermost: m.notification_provider_mattermost,
-	matrix: m.notification_provider_matrix,
-	ntfy: m.notification_provider_ntfy,
-	opsgenie: m.notification_provider_opsgenie,
-	pushbullet: m.notification_provider_pushbullet,
-	pushover: m.notification_provider_pushover,
-	rocketchat: m.notification_provider_rocketchat,
-	slack: m.notification_provider_slack,
-	teams: m.notification_provider_teams,
-	telegram: m.notification_provider_telegram,
-	zulip: m.notification_provider_zulip,
-	webhook: m.notification_provider_webhook
+	bark: () => m.notification_provider_bark(),
+	discord: () => m.notification_provider_discord(),
+	email: () => m.notification_provider_email(),
+	gotify: () => m.notification_provider_gotify(),
+	googlechat: () => m.notification_provider_googlechat(),
+	ifttt: () => m.notification_provider_ifttt(),
+	join: () => m.notification_provider_join(),
+	mattermost: () => m.notification_provider_mattermost(),
+	matrix: () => m.notification_provider_matrix(),
+	ntfy: () => m.notification_provider_ntfy(),
+	opsgenie: () => m.notification_provider_opsgenie(),
+	pushbullet: () => m.notification_provider_pushbullet(),
+	pushover: () => m.notification_provider_pushover(),
+	rocketchat: () => m.notification_provider_rocketchat(),
+	slack: () => m.notification_provider_slack(),
+	teams: () => m.notification_provider_teams(),
+	telegram: () => m.notification_provider_telegram(),
+	zulip: () => m.notification_provider_zulip(),
+	webhook: () => m.notification_provider_webhook()
 };
 
 export type NotificationProvider = keyof typeof notificationProviders;

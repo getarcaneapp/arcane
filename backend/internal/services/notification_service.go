@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
@@ -58,6 +59,13 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, id uin
 	// Clear config if provider is disabled
 	if !enabled {
 		config = models.JSON{}
+	} else {
+		// Build Shoutrrr URL from config fields
+		urlStr, err := notifications.BuildShoutrrrURL(string(provider), config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build notification URL: %w", err)
+		}
+		config["url"] = urlStr
 	}
 
 	if id > 0 {

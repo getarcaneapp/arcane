@@ -86,10 +86,7 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: NotificationSettings })}
-	<StatusBadge
-		variant={item.enabled ? 'emerald' : 'gray'}
-		text={item.enabled ? m.common_enabled() : m.common_disabled()}
-	/>
+	<StatusBadge variant={item.enabled ? 'emerald' : 'gray'} text={item.enabled ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
 {#snippet ProviderMobileCardSnippet({
@@ -107,8 +104,7 @@
 		})}
 		title={(item: NotificationSettings) => item.name}
 		subtitle={(item: NotificationSettings) =>
-			notificationProviders[item.provider as keyof typeof notificationProviders]?.() ||
-			item.provider}
+			notificationProviders[item.provider as keyof typeof notificationProviders]?.() || item.provider}
 		badges={[
 			(item: NotificationSettings) =>
 				(mobileFieldVisibility.enabled ?? true)
@@ -150,11 +146,7 @@
 					{m.notifications_email_test_button()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => removeProvider(item.provider)}
-					disabled={isLoading.remove}
-				>
+				<DropdownMenu.Item variant="destructive" onclick={() => removeProvider(item.provider)} disabled={isLoading.remove}>
 					{#if isLoading.remove}
 						<Spinner class="size-4" />
 					{:else}
@@ -173,7 +165,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async () => (providers = await notificationService.getSettings() as any)}
+	onRefresh={async () => (providers = (await notificationService.getSettings()) as any)}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}
