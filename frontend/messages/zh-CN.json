@@ -1211,6 +1211,8 @@
 	"oidc_admin_claim_placeholder": "e.g., roles, groups, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "e.g., admin (comma-separated)",
 	"oidc_admin_value_help": "留空则使用布尔值声明 (admin=true)。",
+	"oidc_skip_tls_verify_label": "跳过 TLS 验证",
+	"oidc_skip_tls_verify_description": "对 OIDC 端点禁用TLS 证书验证。请使用 CAUTION 操作。",
 	"oidc_redirect_uri_title": "重定向URI配置",
 	"oidc_redirect_uri_description": "在您的OIDC提供商中配置此重定向URI：",
 	"_comment_prune": "=== 清理 ===",
