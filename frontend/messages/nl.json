@@ -213,6 +213,7 @@
 	"common_field_required": "{field} is vereist",
 	"common_copied": "Gekopieerd naar klembord",
 	"common_copy_failed": "Kon niet naar klembord kopiëren",
+	"common_copy_https_required": "Kopiëren vereist een beveiligde verbinding (HTTPS)",
 	"_comment_resources": "=== GRONDSTOFFEN ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
