@@ -213,6 +213,7 @@
 	"common_field_required": "{field} 为必填",
 	"common_copied": "复制到剪贴板",
 	"common_copy_failed": "复制到剪贴板失败",
+	"common_copy_https_required": "复制需要安全连接 (HTTPS)",
 	"_comment_resources": "=== 资源 NAMES===",
 	"resource_volume": "数据卷",
 	"resource_volume_cap": "数据卷",
