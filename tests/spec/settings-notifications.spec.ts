@@ -75,7 +75,7 @@ test.describe('Notification settings', () => {
     await page.locator('input[id="toAddresses"]').fill('user1@example.com');
 
     // Click "Add"
-    await page.getByRole('button', { name: /Add/i }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /Add/i }).click();
 
     // Wait for the table to update
     await expect(page.getByText('My Email')).toBeVisible();
