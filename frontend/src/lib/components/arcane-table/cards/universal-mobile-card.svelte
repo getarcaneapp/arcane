@@ -232,7 +232,7 @@
 			{@const footerValue = footer.getValue(item)}
 			{#if footerValue}
 				{@const FooterIcon = footer.icon}
-				<Card.Footer class="bg-muted/30 border-border/40 flex items-center gap-2 border-t px-3 py-2">
+				<Card.Footer class="bg-muted/30 border-border/40 flex items-center gap-2 border-t px-3 !py-2">
 					<FooterIcon class="text-muted-foreground size-3.5" />
 					<span class="text-muted-foreground/70 text-[9px] font-medium tracking-wide uppercase">
 						{footer.label}
