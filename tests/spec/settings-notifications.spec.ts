@@ -25,8 +25,24 @@ test.describe('Notification settings', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ success: true }),
+          body: JSON.stringify({ id: '1', name: 'My Email', provider: 'email', enabled: true, config: {} }),
         });
+        return;
+      }
+      if (req.method() === 'GET') {
+        if (saveEndpointCalled) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify([{ id: '1', name: 'My Email', provider: 'email', enabled: true, config: {} }]),
+          });
+        } else {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify([]),
+          });
+        }
         return;
       }
       await route.continue();
@@ -45,32 +61,32 @@ test.describe('Notification settings', () => {
     await page.goto('/settings/notifications');
     await page.waitForLoadState('networkidle');
 
-    // Enable email notifications (the test button only appears when enabled).
-    await page.locator('#email-enabled').click();
+    // Click "Add Provider"
+    await page.getByRole('button', { name: /Add Provider/i }).click();
 
-    // Fill the minimum required fields so "Save and Test" is valid.
-    await page.getByPlaceholder('smtp.example.com').fill('smtp.example.com');
-    await page.getByPlaceholder('notifications@example.com').fill('notifications@example.com');
-    await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
+    // Select "Email" from the provider dropdown
+    await page.getByLabel(/Type/i).click();
+    await page.getByRole('option', { name: /Email/i }).click();
 
-    // The dropdown trigger uses an internal button wrapper; target the trigger attribute to avoid strict-mode ambiguity.
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Email' }).click();
-    await page.getByRole('menuitem', { name: 'Simple Test Email', exact: true }).click();
+    // Fill in the fields
+    await page.getByLabel(/Name/i).fill('My Email');
+    await page.getByPlaceholder('smtp.gmail.com').fill('smtp.example.com');
+    await page.getByPlaceholder('arcane@example.com').fill('notifications@example.com');
+    await page.locator('input[id="toAddresses"]').fill('user1@example.com');
 
-    // If we have unsaved changes, the page will prompt to save before testing.
-    const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-    const didClickSaveAndTest = await saveAndTestButton.isVisible().catch(() => false);
-    if (didClickSaveAndTest) {
-      await saveAndTestButton.click();
-    }
+    // Click "Add"
+    await page.getByRole('button', { name: /Add/i }).click();
+
+    // Wait for the table to update
+    await expect(page.getByText('My Email')).toBeVisible();
+
+    // Open the menu for the new provider
+    await page.getByLabel(/Open menu/i).click();
+
+    // Click "Test"
+    await page.getByRole('menuitem', { name: /Test/i }).click();
 
     await expect.poll(() => testEndpointCalled, { timeout: 10_000 }).toBe(true);
-
-    // If the modal path was taken, we should have attempted to save.
-    // (Not strictly required for this bug, but it's a helpful sanity check.)
-    if (didClickSaveAndTest) {
-      await expect.poll(() => saveEndpointCalled, { timeout: 10_000 }).toBe(true);
-    }
 
     const stateUnsafe = observedErrors.filter((e) => e.includes('state_unsafe_mutation'));
     expect(stateUnsafe, `Unexpected state_unsafe_mutation errors: ${stateUnsafe.join('\n')}`).toHaveLength(0);
