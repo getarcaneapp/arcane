@@ -213,6 +213,7 @@
 	"common_field_required": "{field} è obbligatorio",
 	"common_copied": "Copiato negli appunti",
 	"common_copy_failed": "Impossibile copiare negli appunti",
+	"common_copy_https_required": "La copia richiede una connessione sicura (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
