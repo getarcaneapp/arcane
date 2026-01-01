@@ -247,7 +247,8 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			req.AuthOidcConfig != nil || req.OidcClientId != nil ||
 			req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
 			req.OidcScopes != nil || req.OidcAdminClaim != nil ||
-			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil {
+			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
+			req.OidcSkipTlsVerify != nil {
 			return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 		}
 

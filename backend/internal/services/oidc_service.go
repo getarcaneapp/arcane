@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 
@@ -24,13 +26,15 @@ import (
 )
 
 type OidcService struct {
-	authService   *AuthService
-	config        *config.Config
-	httpClient    *http.Client
-	providerCache *oidc.Provider
-	providerMutex sync.RWMutex
-	cachedIssuer  string
-	sfGroup       singleflight.Group
+	authService        *AuthService
+	config             *config.Config
+	httpClient         *http.Client
+	insecureHttpClient *http.Client
+	providerCache      *oidc.Provider
+	providerMutex      sync.RWMutex
+	cachedIssuer       string
+	cachedSkipTls      bool
+	sfGroup            singleflight.Group
 }
 
 type OidcState struct {
@@ -67,6 +71,52 @@ func (s *OidcService) getEffectiveConfig(ctx context.Context) (*models.OidcConfi
 		return nil, errors.New("issuer URL must be configured")
 	}
 	return config, nil
+}
+
+func (s *OidcService) getHttpClient(skipTlsVerify bool) *http.Client {
+	if skipTlsVerify {
+		return s.getInsecureHttpClient()
+	}
+	return s.httpClient
+}
+
+func (s *OidcService) getInsecureHttpClient() *http.Client {
+	s.providerMutex.RLock()
+	if s.insecureHttpClient != nil {
+		s.providerMutex.RUnlock()
+		return s.insecureHttpClient
+	}
+	s.providerMutex.RUnlock()
+
+	s.providerMutex.Lock()
+	defer s.providerMutex.Unlock()
+
+	if s.insecureHttpClient != nil {
+		return s.insecureHttpClient
+	}
+
+	// Create insecure client
+	insecureClient := *s.httpClient
+	if transport, ok := insecureClient.Transport.(*http.Transport); ok {
+		insecureTransport := transport.Clone()
+		if insecureTransport.TLSClientConfig == nil {
+			// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
+			insecureTransport.TLSClientConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
+		}
+		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
+		// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
+		// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
+		if err := http2.ConfigureTransport(insecureTransport); err != nil {
+			slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
+		}
+		insecureClient.Transport = insecureTransport
+	} else {
+		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
+	}
+	s.insecureHttpClient = &insecureClient
+	return s.insecureHttpClient
 }
 
 func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
@@ -106,7 +156,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		return "", "", err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, config.IssuerURL)
+	provider, err := s.getOrDiscoverProvider(ctx, config)
 	if err != nil {
 		slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
 		return "", "", fmt.Errorf("failed to discover provider: %w", err)
@@ -150,20 +200,24 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 	return baseUrl + "/auth/oidc/callback"
 }
 
-func (s *OidcService) getOrDiscoverProvider(ctx context.Context, issuer string) (*oidc.Provider, error) {
+func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.OidcConfig) (*oidc.Provider, error) {
+	issuer := cfg.IssuerURL
+	skipTls := cfg.SkipTlsVerify
+
 	s.providerMutex.RLock()
-	if s.providerCache != nil && s.cachedIssuer == issuer {
+	if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
 		provider := s.providerCache
 		s.providerMutex.RUnlock()
 		return provider, nil
 	}
 	s.providerMutex.RUnlock()
 
-	// Use singleflight to prevent thundering herd
-	v, err, _ := s.sfGroup.Do(issuer, func() (interface{}, error) {
+	// Use singleflight to prevent thundering herd. Include skipTls in key to handle toggling.
+	sfKey := fmt.Sprintf("%s|%v", issuer, skipTls)
+	v, err, _ := s.sfGroup.Do(sfKey, func() (interface{}, error) {
 		// Double check inside the lock/singleflight
 		s.providerMutex.RLock()
-		if s.providerCache != nil && s.cachedIssuer == issuer {
+		if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
 			provider := s.providerCache
 			s.providerMutex.RUnlock()
 			return provider, nil
@@ -178,19 +232,20 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, issuer string) 
 		defer cancel()
 
 		// Use the custom HTTP client with the new context
-		providerCtx := oidc.ClientContext(discoveryCtx, s.httpClient)
+		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClient(skipTls))
 		provider, err := oidc.NewProvider(providerCtx, issuer)
 		if err != nil {
-			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "error", err)
+			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "skipTls", skipTls, "error", err)
 			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
 		}
 
 		s.providerMutex.Lock()
 		s.providerCache = provider
 		s.cachedIssuer = issuer
+		s.cachedSkipTls = skipTls
 		s.providerMutex.Unlock()
 
-		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer)
+		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "skipTls", skipTls)
 		return provider, nil
 	})
 
@@ -204,7 +259,7 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, issuer string) 
 func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string) (*oauth2.Token, error) {
 	oauth2Config := s.getOauth2Config(cfg, provider, origin)
 
-	providerCtx := oidc.ClientContext(ctx, s.httpClient)
+	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
 	token, err := oauth2Config.Exchange(providerCtx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		slog.Error("exchangeToken: token exchange failed", "token_endpoint", oauth2Config.Endpoint.TokenURL, "error", err)
@@ -215,8 +270,8 @@ func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig,
 	return token, nil
 }
 
-func (s *OidcService) fetchClaims(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken) (map[string]any, error) {
-	providerCtx := oidc.ClientContext(ctx, s.httpClient)
+func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken) (map[string]any, error) {
+	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
 	var claims map[string]any
 
 	if idToken != nil {
@@ -273,7 +328,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, cfg.IssuerURL)
+	provider, err := s.getOrDiscoverProvider(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -288,7 +343,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
-	return s.buildUserInfo(ctx, provider, token, idToken, rawIDToken)
+	return s.buildUserInfo(ctx, provider, cfg, token, idToken, rawIDToken)
 }
 
 func (s *OidcService) validateState(state, storedState string) (*OidcState, error) {
@@ -332,7 +387,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 	}
 
 	verifier := provider.Verifier(verifierConfig)
-	providerCtx := oidc.ClientContext(ctx, s.httpClient)
+	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
 
 	idToken, err := verifier.Verify(providerCtx, rawIDToken)
 	if err != nil {
@@ -358,8 +413,8 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 	return idToken, rawIDToken, nil
 }
 
-func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
-	claims, err := s.fetchClaims(ctx, provider, token, idToken)
+func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider, cfg *models.OidcConfig, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
+	claims, err := s.fetchClaims(ctx, cfg, provider, token, idToken)
 	if err != nil {
 		slog.Error("HandleCallback: failed to fetch claims", "error", err)
 		return nil, nil, fmt.Errorf("failed to fetch user claims: %w", err)

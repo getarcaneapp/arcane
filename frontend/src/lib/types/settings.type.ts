@@ -28,6 +28,7 @@ export type Settings = {
 	oidcScopes: string;
 	oidcAdminClaim: string;
 	oidcAdminValue: string;
+	oidcSkipTlsVerify: boolean;
 	oidcMergeAccounts: boolean;
 
 	mobileNavigationMode: 'floating' | 'docked';
