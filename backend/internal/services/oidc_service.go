@@ -15,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 
@@ -105,6 +106,11 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 			}
 		}
 		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
+		// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
+		// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
+		if err := http2.ConfigureTransport(insecureTransport); err != nil {
+			slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
+		}
 		insecureClient.Transport = insecureTransport
 	} else {
 		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
