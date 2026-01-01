@@ -213,6 +213,7 @@
 	"common_field_required": "{field} is required",
 	"common_copied": "Copied to clipboard",
 	"common_copy_failed": "Failed to copy to clipboard",
+	"common_copy_https_required": "Copying requires a secure connection (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
