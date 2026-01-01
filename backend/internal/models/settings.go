@@ -74,6 +74,7 @@ type Settings struct {
 	OidcScopes         SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
 	OidcAdminClaim     SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
 	OidcAdminValue     SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify  SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=security;description=Skip TLS verification for OIDC provider"`
 	OidcMergeAccounts  SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
 
 	// Appearance category
@@ -258,4 +259,6 @@ type OidcConfig struct {
 	// - adminClaim: "realm_access.roles", adminValue: "admin" (Keycloak)
 	AdminClaim string `json:"adminClaim,omitempty"`
 	AdminValue string `json:"adminValue,omitempty"`
+
+	SkipTlsVerify bool `json:"skipTlsVerify"`
 }

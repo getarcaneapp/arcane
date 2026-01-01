@@ -23,13 +23,14 @@ type Config struct {
 	JWTSecret     string
 	EncryptionKey string
 
-	OidcEnabled      bool
-	OidcClientID     string
-	OidcClientSecret string
-	OidcIssuerURL    string
-	OidcScopes       string
-	OidcAdminClaim   string
-	OidcAdminValue   string
+	OidcEnabled       bool
+	OidcClientID      string
+	OidcClientSecret  string
+	OidcIssuerURL     string
+	OidcScopes        string
+	OidcAdminClaim    string
+	OidcAdminValue    string
+	OidcSkipTlsVerify bool
 
 	DockerHost              string
 	LogJson                 bool
@@ -53,13 +54,14 @@ func Load() *Config {
 		JWTSecret:     getEnvOrDefault("JWT_SECRET", "default-jwt-secret-change-me"),
 		EncryptionKey: getEnvOrDefault("ENCRYPTION_KEY", "arcane-dev-key-32-characters!!!"),
 
-		OidcEnabled:      getBoolEnvOrDefault("OIDC_ENABLED", false),
-		OidcClientID:     getEnvOrDefault("OIDC_CLIENT_ID", ""),
-		OidcClientSecret: getEnvOrDefault("OIDC_CLIENT_SECRET", ""),
-		OidcIssuerURL:    getEnvOrDefault("OIDC_ISSUER_URL", ""),
-		OidcScopes:       getEnvOrDefault("OIDC_SCOPES", "openid email profile"),
-		OidcAdminClaim:   getEnvOrDefault("OIDC_ADMIN_CLAIM", ""),
-		OidcAdminValue:   getEnvOrDefault("OIDC_ADMIN_VALUE", ""),
+		OidcEnabled:       getBoolEnvOrDefault("OIDC_ENABLED", false),
+		OidcClientID:      getEnvOrDefault("OIDC_CLIENT_ID", ""),
+		OidcClientSecret:  getEnvOrDefault("OIDC_CLIENT_SECRET", ""),
+		OidcIssuerURL:     getEnvOrDefault("OIDC_ISSUER_URL", ""),
+		OidcScopes:        getEnvOrDefault("OIDC_SCOPES", "openid email profile"),
+		OidcAdminClaim:    getEnvOrDefault("OIDC_ADMIN_CLAIM", ""),
+		OidcAdminValue:    getEnvOrDefault("OIDC_ADMIN_VALUE", ""),
+		OidcSkipTlsVerify: getBoolEnvOrDefault("OIDC_SKIP_TLS_VERIFY", false),
 
 		DockerHost:              getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"),
 		LogJson:                 getBoolEnvOrDefault("LOG_JSON", false),
@@ -97,6 +99,35 @@ func (a AppEnvironment) IsProdEnvironment() bool {
 
 func (a AppEnvironment) IsTestEnvironment() bool {
 	return a == AppEnvironmentTest
+}
+
+// GetManagerBaseURL returns the base URL of the manager application.
+// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
+func (c *Config) GetManagerBaseURL() string {
+	if c.ManagerApiUrl == "" {
+		return ""
+	}
+	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
+	managerURL = strings.TrimSuffix(managerURL, "/api")
+	return managerURL
+}
+
+// GetAppURL returns the effective application URL.
+// If in agent mode and APP_URL is not explicitly set, it returns the manager's URL.
+func (c *Config) GetAppURL() string {
+	// If APP_URL is explicitly set to something other than the default, use it
+	if os.Getenv("APP_URL") != "" {
+		return c.AppUrl
+	}
+
+	// If in agent mode and we have a manager URL, use the manager URL
+	if c.AgentMode {
+		if managerBase := c.GetManagerBaseURL(); managerBase != "" {
+			return managerBase
+		}
+	}
+
+	return c.AppUrl
 }
 
 func getBoolEnvOrDefault(key string, defaultValue bool) bool {

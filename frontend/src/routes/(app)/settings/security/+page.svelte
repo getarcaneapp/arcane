@@ -34,6 +34,7 @@
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
+			oidcSkipTlsVerify: z.boolean(),
 			oidcClientId: z.string(),
 			oidcClientSecret: z.string(),
 			oidcIssuerUrl: z.string(),
@@ -60,6 +61,7 @@
 		authPasswordPolicy: currentSettings.authPasswordPolicy,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
+		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
 		oidcClientId: currentSettings.oidcClientId,
 		oidcClientSecret: '',
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
@@ -79,6 +81,7 @@
 				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
+				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
 				oidcClientId: ($settingsStore || data.settings!).oidcClientId,
 				oidcClientSecret: '',
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
@@ -97,6 +100,7 @@
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
+			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
 			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
 			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
 			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
@@ -131,6 +135,7 @@
 				authPasswordPolicy: formData.authPasswordPolicy,
 				oidcEnabled: formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
+				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
 				oidcClientId: formData.oidcClientId,
 				oidcIssuerUrl: formData.oidcIssuerUrl,
 				oidcScopes: formData.oidcScopes,
@@ -375,6 +380,24 @@
 													</Label>
 													<p class="text-muted-foreground text-xs">
 														{m.security_oidc_merge_accounts_description()}
+													</p>
+												</div>
+											</div>
+										</div>
+
+										<div class="border-t pt-4">
+											<div class="flex items-center gap-2">
+												<Switch
+													id="oidcSkipTlsVerifySwitch"
+													disabled={isOidcEnvForced}
+													bind:checked={$formInputs.oidcSkipTlsVerify.value}
+												/>
+												<div class="grid gap-1.5 leading-none">
+													<Label for="oidcSkipTlsVerifySwitch" class="font-normal">
+														{m.oidc_skip_tls_verify_label()}
+													</Label>
+													<p class="text-muted-foreground text-xs">
+														{m.oidc_skip_tls_verify_description()}
 													</p>
 												</div>
 											</div>
