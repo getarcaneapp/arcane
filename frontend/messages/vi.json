@@ -213,6 +213,7 @@
 	"common_field_required": "Yêu cầu {field}",
 	"common_copied": "Đã sao chép vào bộ nhớ tạm",
 	"common_copy_failed": "Sao chép thất bại",
+	"common_copy_https_required": "Copying requires a secure connection (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
