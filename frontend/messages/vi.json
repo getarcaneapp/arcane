@@ -1211,6 +1211,8 @@
 	"oidc_admin_claim_placeholder": "ví dụ: roles, groups, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "ví dụ: admin (phân cách bằng dấu phẩy)",
 	"oidc_admin_value_help": "Để trống đối với các boolean claims (admin=true).",
+	"oidc_skip_tls_verify_label": "Skip TLS Verification",
+	"oidc_skip_tls_verify_description": "Disable TLS certificate verification for OIDC endpoints. Proceed with CAUTION.",
 	"oidc_redirect_uri_title": "Cấu hình Redirect URI",
 	"oidc_redirect_uri_description": "Cấu hình Redirect URI này trong OIDC Provider của bạn:",
 	"_comment_prune": "=== PRUNE ===",
