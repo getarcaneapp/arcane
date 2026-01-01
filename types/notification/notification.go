@@ -14,6 +14,16 @@ const (
 )
 
 type Update struct {
+	// ID is the unique identifier of the notification settings.
+	//
+	// Required: false
+	ID uint `json:"id"`
+
+	// Name is the display name for the notification provider.
+	//
+	// Required: true
+	Name string `json:"name" binding:"required"`
+
 	// Provider is the notification provider type.
 	//
 	// Required: true
@@ -35,6 +45,11 @@ type Response struct {
 	//
 	// Required: true
 	ID uint `json:"id"`
+
+	// Name is the display name for the notification provider.
+	//
+	// Required: true
+	Name string `json:"name"`
 
 	// Provider is the notification provider type.
 	//

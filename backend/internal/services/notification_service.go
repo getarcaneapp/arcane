@@ -5,20 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"net/mail"
 	"net/url"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/containrrr/shoutrrr"
+	"github.com/containrrr/shoutrrr/pkg/types"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
@@ -55,7 +52,7 @@ func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provide
 	return &setting, nil
 }
 
-func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider models.NotificationProvider, enabled bool, config models.JSON) (*models.NotificationSettings, error) {
+func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, id uint, name string, provider models.NotificationProvider, enabled bool, config models.JSON) (*models.NotificationSettings, error) {
 	var setting models.NotificationSettings
 
 	// Clear config if provider is disabled
@@ -63,21 +60,26 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		config = models.JSON{}
 	}
 
-	err := s.db.WithContext(ctx).Where("provider = ?", provider).First(&setting).Error
-	if err != nil {
+	if id > 0 {
+		if err := s.db.WithContext(ctx).First(&setting, id).Error; err != nil {
+			return nil, fmt.Errorf("failed to find notification settings: %w", err)
+		}
+		setting.Name = name
+		setting.Provider = provider
+		setting.Enabled = enabled
+		setting.Config = config
+		if err := s.db.WithContext(ctx).Save(&setting).Error; err != nil {
+			return nil, fmt.Errorf("failed to update notification settings: %w", err)
+		}
+	} else {
 		setting = models.NotificationSettings{
+			Name:     name,
 			Provider: provider,
 			Enabled:  enabled,
 			Config:   config,
 		}
 		if err := s.db.WithContext(ctx).Create(&setting).Error; err != nil {
 			return nil, fmt.Errorf("failed to create notification settings: %w", err)
-		}
-	} else {
-		setting.Enabled = enabled
-		setting.Config = config
-		if err := s.db.WithContext(ctx).Save(&setting).Error; err != nil {
-			return nil, fmt.Errorf("failed to update notification settings: %w", err)
 		}
 	}
 
@@ -114,14 +116,31 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 		}
 
 		var sendErr error
-		switch setting.Provider {
-		case models.NotificationProviderDiscord:
-			sendErr = s.sendDiscordNotification(ctx, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderEmail:
-			sendErr = s.sendEmailNotification(ctx, imageRef, updateInfo, setting.Config)
-		default:
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
+		var message string
+		var title string
+		var isHTML bool
+
+		if setting.Provider == "email" {
+			htmlBody, _, err := s.renderEmailTemplate(imageRef, updateInfo)
+			if err != nil {
+				sendErr = err
+			} else {
+				message = htmlBody
+				title = fmt.Sprintf("Container Update Available: %s", imageRef)
+				isHTML = true
+			}
+		} else {
+			message = fmt.Sprintf("Image Update Available for %s. New digest: %s. Type: %s.", imageRef, truncateDigest(updateInfo.LatestDigest), updateInfo.UpdateType)
+			title = "Image Update Available"
+		}
+
+		if sendErr == nil {
+			urlStr, err := s.getURLFromConfig(setting.Config)
+			if err != nil {
+				sendErr = err
+			} else {
+				sendErr = s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
+			}
 		}
 
 		status := "success"
@@ -147,6 +166,83 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 	}
 
 	return nil
+}
+
+func (s *NotificationService) getURLFromConfig(config models.JSON) (string, error) {
+	var cfg map[string]interface{}
+	b, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return "", err
+	}
+	urlStr, ok := cfg["url"].(string)
+	if !ok {
+		return "", fmt.Errorf("url not found in config")
+	}
+	return urlStr, nil
+}
+
+func (s *NotificationService) sendShoutrrrNotification(ctx context.Context, urlStr string, message string, title string, isHTML bool) error {
+	// NOTE: Shoutrrr SMTP v0.8.0 uses the *service* config (parsed from the URL) when building headers,
+	// but uses the per-send config (URL + params) when deciding whether to write a multipart body.
+	// If UseHTML is only supplied via params, the body becomes multipart while the top-level
+	// Content-Type header stays text/plain, causing clients to show raw HTML.
+	//
+	// Workaround: force `usehtml=Yes` into the SMTP URL whenever we're sending HTML.
+	urlStr, err := ensureSMTPUseHTML(urlStr, isHTML)
+	if err != nil {
+		return err
+	}
+
+	sender, err := shoutrrr.CreateSender(urlStr)
+	if err != nil {
+		return fmt.Errorf("failed to create shoutrrr sender: %w", err)
+	}
+
+	params := &types.Params{}
+	if title != "" {
+		params.SetTitle(title)
+	}
+	// Intentionally do NOT set `usehtml` via params here.
+	// See comment above; we want UseHTML to come from the URL so headers are correct.
+
+	errs := sender.Send(message, params)
+	if len(errs) > 0 {
+		var errMsgs []string
+		for _, e := range errs {
+			if e != nil {
+				errMsgs = append(errMsgs, e.Error())
+			}
+		}
+		if len(errMsgs) > 0 {
+			return fmt.Errorf("shoutrrr send failed: %s", strings.Join(errMsgs, "; "))
+		}
+	}
+	return nil
+}
+
+func ensureSMTPUseHTML(urlStr string, useHTML bool) (string, error) {
+	if !useHTML {
+		return urlStr, nil
+	}
+
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid notification url: %w", err)
+	}
+
+	if strings.ToLower(u.Scheme) != "smtp" {
+		return urlStr, nil
+	}
+
+	q := u.Query()
+	// Shoutrrr expects Yes/No for bools in URL query strings.
+	q.Set("usehtml", "Yes")
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
 }
 
 // isEventEnabled checks if a specific event type is enabled in the config
@@ -197,14 +293,31 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		}
 
 		var sendErr error
-		switch setting.Provider {
-		case models.NotificationProviderDiscord:
-			sendErr = s.sendDiscordContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderEmail:
-			sendErr = s.sendEmailContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		default:
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
+		var message string
+		var title string
+		var isHTML bool
+
+		if setting.Provider == "email" {
+			htmlBody, _, err := s.renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest)
+			if err != nil {
+				sendErr = err
+			} else {
+				message = htmlBody
+				title = fmt.Sprintf("Container Updated: %s", containerName)
+				isHTML = true
+			}
+		} else {
+			message = fmt.Sprintf("Container %s (%s) updated to %s.", containerName, imageRef, truncateDigest(newDigest))
+			title = "Container Updated"
+		}
+
+		if sendErr == nil {
+			urlStr, err := s.getURLFromConfig(setting.Config)
+			if err != nil {
+				sendErr = err
+			} else {
+				sendErr = s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
+			}
 		}
 
 		status := "success"
@@ -226,172 +339,6 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 
 	if len(errors) > 0 {
 		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendDiscordNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
-	}
-
-	if discordConfig.WebhookURL == "" {
-		return fmt.Errorf("discord webhook URL not configured")
-	}
-
-	// Decrypt webhook URL if encrypted
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
-	}
-
-	// Validate webhook URL to prevent SSRF
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	username := discordConfig.Username
-	if username == "" {
-		username = "Arcane"
-	}
-
-	color := 3447003 // Blue
-	if updateInfo.HasUpdate {
-		color = 15844367 // Gold for updates
-	}
-
-	fields := []map[string]interface{}{
-		{
-			"name":   "Image",
-			"value":  imageRef,
-			"inline": false,
-		},
-		{
-			"name":   "Update Available",
-			"value":  fmt.Sprintf("%t", updateInfo.HasUpdate),
-			"inline": true,
-		},
-		{
-			"name":   "Update Type",
-			"value":  updateInfo.UpdateType,
-			"inline": true,
-		},
-	}
-
-	if updateInfo.CurrentDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Current Digest",
-			"value":  truncateDigest(updateInfo.CurrentDigest),
-			"inline": true,
-		})
-	}
-	if updateInfo.LatestDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Latest Digest",
-			"value":  truncateDigest(updateInfo.LatestDigest),
-			"inline": true,
-		})
-	}
-
-	payload := map[string]interface{}{
-		"username": username,
-		"embeds": []map[string]interface{}{
-			{
-				"title":       "🔔 Container Image Update Available",
-				"description": fmt.Sprintf("A new update has been detected for **%s**", imageRef),
-				"color":       color,
-				"fields":      fields,
-				"timestamp":   time.Now().Format(time.RFC3339),
-			},
-		},
-	}
-
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create Discord request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send Discord notification: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord webhook returned status %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		}
-	}
-
-	htmlBody, textBody, err := s.renderEmailTemplate(imageRef, updateInfo)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	subject := fmt.Sprintf("Container Update Available: %s", notifications.SanitizeForEmail(imageRef))
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
 	}
 
 	return nil
@@ -442,166 +389,6 @@ func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *i
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
-	}
-
-	if discordConfig.WebhookURL == "" {
-		return fmt.Errorf("discord webhook URL not configured")
-	}
-
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
-	}
-
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	username := discordConfig.Username
-	if username == "" {
-		username = "Arcane"
-	}
-
-	fields := []map[string]interface{}{
-		{
-			"name":   "Container",
-			"value":  containerName,
-			"inline": false,
-		},
-		{
-			"name":   "Image",
-			"value":  imageRef,
-			"inline": false,
-		},
-		{
-			"name":   "Status",
-			"value":  "✅ Updated Successfully",
-			"inline": false,
-		},
-	}
-
-	if oldDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Previous Version",
-			"value":  truncateDigest(oldDigest),
-			"inline": true,
-		})
-	}
-	if newDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Current Version",
-			"value":  truncateDigest(newDigest),
-			"inline": true,
-		})
-	}
-
-	embed := map[string]interface{}{
-		"title":       "Container Successfully Updated",
-		"description": "Your container has been updated with the latest image version.",
-		"color":       5025616, // Green color for success
-		"fields":      fields,
-		"timestamp":   time.Now().Format(time.RFC3339),
-	}
-
-	payload := map[string]interface{}{
-		"username": username,
-		"embeds":   []map[string]interface{}{embed},
-	}
-
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		}
-	}
-
-	htmlBody, textBody, err := s.renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	subject := fmt.Sprintf("Container Updated: %s", notifications.SanitizeForEmail(containerName))
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
 }
 
 func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
@@ -665,14 +452,20 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		ResponseTimeMs: 100,
 	}
 
-	switch provider {
-	case models.NotificationProviderDiscord:
-		return s.sendDiscordNotification(ctx, "test/image:latest", testUpdate, setting.Config)
-	case models.NotificationProviderEmail:
+	var message string
+	var title string
+	var isHTML bool
+
+	if provider == "email" {
 		if testType == "image-update" {
-			return s.sendEmailNotification(ctx, "nginx:latest", testUpdate, setting.Config)
-		}
-		if testType == "batch-image-update" {
+			htmlBody, _, err := s.renderEmailTemplate("nginx:latest", testUpdate)
+			if err != nil {
+				return err
+			}
+			message = htmlBody
+			title = "Container Update Available: nginx:latest"
+			isHTML = true
+		} else if testType == "batch-image-update" {
 			// Create test batch updates with multiple images
 			testUpdates := map[string]*imageupdate.Response{
 				"nginx:latest": {
@@ -700,68 +493,33 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 					ResponseTimeMs: 95,
 				},
 			}
-			return s.sendBatchEmailNotification(ctx, testUpdates, setting.Config)
+			htmlBody, _, err := s.renderBatchEmailTemplate(testUpdates)
+			if err != nil {
+				return err
+			}
+			message = htmlBody
+			title = "3 Image Updates Available"
+			isHTML = true
+		} else {
+			htmlBody, _, err := s.renderTestEmailTemplate()
+			if err != nil {
+				return err
+			}
+			message = htmlBody
+			title = "Test Email from Arcane"
+			isHTML = true
 		}
-		return s.sendTestEmail(ctx, setting.Config)
-	default:
-		return fmt.Errorf("unknown provider: %s", provider)
+	} else {
+		message = "Test notification from Arcane"
+		title = "Test Notification"
 	}
-}
 
-func (s *NotificationService) sendTestEmail(ctx context.Context, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
+	// Use Shoutrrr for everything
+	urlStr, err := s.getURLFromConfig(setting.Config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
+		return err
 	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		}
-	}
-
-	htmlBody, textBody, err := s.renderTestEmailTemplate()
-	if err != nil {
-		return fmt.Errorf("failed to render test email template: %w", err)
-	}
-
-	subject := "Test Email from Arcane"
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
+	return s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
 }
 
 func (s *NotificationService) renderTestEmailTemplate() (string, string, error) {
@@ -856,14 +614,40 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 		}
 
 		var sendErr error
-		switch setting.Provider {
-		case models.NotificationProviderDiscord:
-			sendErr = s.sendBatchDiscordNotification(ctx, updatesWithChanges, setting.Config)
-		case models.NotificationProviderEmail:
-			sendErr = s.sendBatchEmailNotification(ctx, updatesWithChanges, setting.Config)
-		default:
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
+		var message string
+		var title string
+		var isHTML bool
+
+		if setting.Provider == "email" {
+			htmlBody, _, err := s.renderBatchEmailTemplate(updatesWithChanges)
+			if err != nil {
+				sendErr = err
+			} else {
+				message = htmlBody
+				updateCount := len(updatesWithChanges)
+				title = fmt.Sprintf("%d Image Update%s Available", updateCount, func() string {
+					if updateCount > 1 {
+						return "s"
+					}
+					return ""
+				}())
+				isHTML = true
+			}
+		} else {
+			message = fmt.Sprintf("%d Image Updates Available:\n", len(updatesWithChanges))
+			for ref, update := range updatesWithChanges {
+				message += fmt.Sprintf("- %s: %s -> %s\n", ref, truncateDigest(update.CurrentDigest), truncateDigest(update.LatestDigest))
+			}
+			title = "Batch Image Updates"
+		}
+
+		if sendErr == nil {
+			urlStr, err := s.getURLFromConfig(setting.Config)
+			if err != nil {
+				sendErr = err
+			} else {
+				sendErr = s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
+			}
 		}
 
 		status := "success"
@@ -889,153 +673,6 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 
 	if len(errors) > 0 {
 		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal discord config: %w", err)
-	}
-
-	// Decrypt webhook URL if encrypted
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
-	}
-
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	fields := make([]map[string]interface{}, 0, len(updates))
-	for imageRef, update := range updates {
-		fields = append(fields, map[string]interface{}{
-			"name": imageRef,
-			"value": fmt.Sprintf(
-				"**Type:** %s\n**Current:** `%s`\n**Latest:** `%s`",
-				update.UpdateType,
-				truncateDigest(update.CurrentDigest),
-				truncateDigest(update.LatestDigest),
-			),
-			"inline": false,
-		})
-	}
-
-	title := "Container Image Updates Available"
-	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
-	if len(updates) == 1 {
-		description = "1 container image has an update available."
-	}
-
-	embed := map[string]interface{}{
-		"title":       title,
-		"description": description,
-		"color":       3447003,
-		"fields":      fields,
-		"timestamp":   time.Now().Format(time.RFC3339),
-	}
-
-	payload := map[string]interface{}{
-		"embeds": []interface{}{embed},
-	}
-
-	if discordConfig.Username != "" {
-		payload["username"] = discordConfig.Username
-	}
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
-
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(jsonPayload))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send Discord webhook: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("discord webhook failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		}
-	}
-
-	htmlBody, textBody, err := s.renderBatchEmailTemplate(updates)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	updateCount := len(updates)
-	subject := fmt.Sprintf("%d Image Update%s Available", updateCount, func() string {
-		if updateCount > 1 {
-			return "s"
-		}
-		return ""
-	}())
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
 	}
 
 	return nil
@@ -1095,43 +732,4 @@ func truncateDigest(digest string) string {
 		return digest[:19] + "..."
 	}
 	return digest
-}
-
-// validateWebhookURL validates that the webhook URL is a valid Discord webhook URL
-// This prevents SSRF attacks by ensuring the URL points to Discord's API
-func validateWebhookURL(webhookURL string) error {
-	parsedURL, err := url.Parse(webhookURL)
-	if err != nil {
-		return fmt.Errorf("failed to parse webhook URL: %w", err)
-	}
-
-	// Ensure it's HTTPS
-	if parsedURL.Scheme != "https" {
-		return fmt.Errorf("webhook URL must use HTTPS")
-	}
-
-	// Validate it's a Discord webhook URL
-	validHosts := []string{
-		"discord.com",
-		"discordapp.com",
-	}
-
-	isValid := false
-	for _, validHost := range validHosts {
-		if parsedURL.Host == validHost || strings.HasSuffix(parsedURL.Host, "."+validHost) {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		return fmt.Errorf("webhook URL must be a Discord webhook URL")
-	}
-
-	// Validate it's a webhook path
-	if !strings.HasPrefix(parsedURL.Path, "/api/webhooks/") {
-		return fmt.Errorf("invalid Discord webhook path")
-	}
-
-	return nil
 }

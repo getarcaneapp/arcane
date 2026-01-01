@@ -6,7 +6,7 @@ require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/fatih/color v1.18.0
 	github.com/getarcaneapp/arcane/types v0.0.0-20251219045603-8a9960a2bf04
-	github.com/rodaine/table v1.3.0
+	github.com/mattn/go-runewidth v0.0.19
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
@@ -38,7 +38,6 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
