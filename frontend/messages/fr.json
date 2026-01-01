@@ -213,6 +213,7 @@
 	"common_field_required": "{field} est requis",
 	"common_copied": "Copié dans le presse-papiers",
 	"common_copy_failed": "Échec de la copie dans le presse-papiers",
+	"common_copy_https_required": "La copie nécessite une connexion sécurisée (HTTPS)",
 	"_comment_resources": "=== Noms de RESSOURCE ===",
 	"resource_volume": "volume",
 	"resource_volume_cap": "Volume",
