@@ -1211,6 +1211,8 @@
 	"oidc_admin_claim_placeholder": "bijv. rollen, groepen, realm_access.roles, admin",
 	"oidc_admin_value_placeholder": "bijv. admin (komma gescheiden)",
 	"oidc_admin_value_help": "Laat leeg voor boolean claims (admin=true).",
+	"oidc_skip_tls_verify_label": "TLS-verificatie overslaan",
+	"oidc_skip_tls_verify_description": "TLS certificaat verificatie voor OIDC eindpunten uitschakelen. Ga verder met LET OP.",
 	"oidc_redirect_uri_title": "URI configuratie omleiden",
 	"oidc_redirect_uri_description": "Configureer deze omleidings-URI in uw OIDC provider:",
 	"_comment_prune": "=== PRIJS ===",
