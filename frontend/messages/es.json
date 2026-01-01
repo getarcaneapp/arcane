@@ -213,6 +213,7 @@
 	"common_field_required": "Se requiere {field}",
 	"common_copied": "Copiado al portapapeles",
 	"common_copy_failed": "Error al copiar al portapapeles",
+	"common_copy_https_required": "Copiar requiere una conexión segura (HTTPS)",
 	"_comment_resources": "=== NOMBRE DE RECURSOS ===",
 	"resource_volume": "volumen",
 	"resource_volume_cap": "Volumen",
