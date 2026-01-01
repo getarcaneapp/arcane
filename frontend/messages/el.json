@@ -213,6 +213,7 @@
 	"common_field_required": "{field} is required",
 	"common_copied": "Αντιγράφηκε στο πρόχειρο",
 	"common_copy_failed": "Αποτυχία αντιγραφής στο πρόχειρο",
+	"common_copy_https_required": "Η αντιγραφή απαιτεί ασφαλή σύνδεση (HTTPS)",
 	"_comment_resources": "=== RESOURCE NAMES ===",
 	"resource_volume": "τόμος",
 	"resource_volume_cap": "Τόμος",
