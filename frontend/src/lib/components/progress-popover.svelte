@@ -21,11 +21,13 @@
 	interface Props {
 		open?: boolean;
 		title?: string;
+		completeTitle?: string;
 		subtitle?: string;
 		progress?: number;
 		statusText?: string;
 		error?: string;
 		loading?: boolean;
+		mode?: 'pull' | 'generic';
 		align?: 'start' | 'center' | 'end';
 		sideOffset?: number;
 		class?: string;
@@ -40,11 +42,13 @@
 	let {
 		open = $bindable(false),
 		title = m.progress_title(),
+		completeTitle = '',
 		subtitle = m.progress_subtitle(),
 		progress = $bindable(0),
 		statusText = '',
 		error = '',
 		loading = false,
+		mode = 'pull',
 		align = 'center',
 		sideOffset = 4,
 		class: className = '',
@@ -78,17 +82,24 @@
 
 	// Check if we're in an indeterminate phase (extracting with no byte progress)
 	const isIndeterminate = $derived(isIndeterminatePhase(layers, progress));
+	const isIndeterminateGeneric = $derived(mode !== 'pull' && loading && !isComplete && !error);
 
-	// Derive the current phase from status text using utility
+	// Derive the current phase from status text using utility (pull-mode only)
 	const currentPhase = $derived.by((): PullPhase => {
 		return getPullPhase(statusText, hasReachedComplete || isComplete, !!error);
 	});
 
 	// Get localized title based on phase
 	const displayTitle = $derived.by(() => {
+		if (mode !== 'pull') {
+			if (error) return m.error_occurred();
+			if (isComplete && !loading) return completeTitle || title;
+			return title;
+		}
+
 		switch (currentPhase) {
 			case 'error':
-				return 'Error';
+				return m.error_occurred();
 			case 'complete':
 				return m.progress_pull_completed();
 			case 'downloading':
@@ -150,8 +161,13 @@
 				<Item.Description>
 					{#if error}
 						{error}
+					{:else if mode !== 'pull'}
+						{statusText || subtitle}
 					{:else if layerStats.total > 0}
-						{m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
+						{statusText || subtitle}
+						<span class="text-muted-foreground">
+							· {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}</span
+						>
 					{:else}
 						{hasReachedComplete ? 100 : percent}% · {statusText || subtitle}
 					{/if}
@@ -168,7 +184,7 @@
 						value={hasReachedComplete || isIndeterminate ? 100 : progress}
 						max={100}
 						class="h-1.5 w-full"
-						indeterminate={isIndeterminate && !hasReachedComplete}
+						indeterminate={(isIndeterminate && !hasReachedComplete) || isIndeterminateGeneric}
 					/>
 				</Item.Footer>
 			{/if}

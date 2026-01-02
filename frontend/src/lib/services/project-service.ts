@@ -3,6 +3,7 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
+import { m } from '$lib/paraglide/messages';
 
 export class ProjectService extends BaseAPIService {
 	async getProjects(options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
@@ -12,9 +13,48 @@ export class ProjectService extends BaseAPIService {
 		return res.data;
 	}
 
-	async deployProject(projectId: string): Promise<Project> {
+	deployProject(projectId: string): Promise<Project>;
+	deployProject(projectId: string, onLine: (data: any) => void): Promise<Project>;
+	async deployProject(projectId: string, onLine?: (data: any) => void): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/up`));
+		const url = `/api/environments/${envId}/projects/${projectId}/up`;
+
+		const res = await fetch(url, { method: 'POST' });
+		if (!res.ok || !res.body) {
+			throw new Error(m.progress_deploy_failed_to_start({ status: String(res.status) }));
+		}
+
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (!trimmed) continue;
+				let obj: any;
+				try {
+					obj = JSON.parse(trimmed);
+				} catch {
+					continue;
+				}
+
+				onLine?.(obj);
+				if (obj?.error) {
+					throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.progress_deploy_failed());
+				}
+			}
+		}
+
+		// The deploy stream doesn't return the project object; fetch fresh details.
+		return this.getProject(projectId);
 	}
 
 	async downProject(projectName: string): Promise<Project> {
@@ -143,10 +183,11 @@ export class ProjectService extends BaseAPIService {
 
 	async deployProjectMaybePull(
 		projectId: string,
-		onPullLine?: (data: any) => void
+		onPullLine?: (data: any) => void,
+		onDeployLine?: (data: any) => void
 	): Promise<{ pulled: boolean; project: Project }> {
 		const pulled = await this.streamProjectPull(projectId, onPullLine);
-		const project = await this.deployProject(projectId);
+		const project = onDeployLine ? await this.deployProject(projectId, onDeployLine) : await this.deployProject(projectId);
 		return { pulled, project };
 	}
 
