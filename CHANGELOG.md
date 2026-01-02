@@ -1,3 +1,30 @@
+## v1.11.3
+
+### Backend - Bug fixes
+
+* checkbox mismatch between glass and non glass ui mode([a5a1d98](https://github.com/getarcaneapp/arcane/commit/a5a1d982acd49bb9c5f2cdac79dc2d458b436b69) by @kmendell)
+* inconsistent sorting on db resources, casuing sorting issue in the frontend([3aa60e8](https://github.com/getarcaneapp/arcane/commit/3aa60e82fb6fc8e1aac7034d59205e48771b4291) by @kmendell)
+* security agents false postive for malicious execution([baca054](https://github.com/getarcaneapp/arcane/commit/baca0540b342a3fdfee3a5fdc4a93f791d747b39) by @kmendell)
+* show confirmation dialog when removing volumes([037bcf6](https://github.com/getarcaneapp/arcane/commit/037bcf69ec10414be9a45d914e6f9e8861907926) by @kmendell)
+* add environment selector on error page to avoid a 'stuck state' ([#1298](https://github.com/getarcaneapp/arcane/pull/1298) by @kmendell)
+* allow skipping tls verification for oidc endpoints ([#1300](https://github.com/getarcaneapp/arcane/pull/1300) by @kmendell)
+* disable copy button on non-ssl instances ([#1309](https://github.com/getarcaneapp/arcane/pull/1309) by @kmendell)
+* notifications on remote environments used incorrect urls ([#1302](https://github.com/getarcaneapp/arcane/pull/1302) by @kmendell)
+
+### CLI - Bug fixes
+
+* update table library and fix column header alignment([a83d610](https://github.com/getarcaneapp/arcane/commit/a83d6108e0ddfe9ceb449b30901dc51ec8bb031b) by @kmendell)
+
+### Dependencies
+
+* bump @xterm/xterm from 5.5.0 to 6.0.0 ([#1255](https://github.com/getarcaneapp/arcane/pull/1255) by @dependabot[bot])
+* bump github.com/schollz/progressbar/v3 from 3.18.0 to 3.19.0 in /cli ([#1258](https://github.com/getarcaneapp/arcane/pull/1258) by @dependabot[bot])
+* upgrade pnpm to 10.27.0([e2efb3a](https://github.com/getarcaneapp/arcane/commit/e2efb3ad88b001563be31feb62798e7a19aea938) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.11.2...v1.11.3
+
 ## v1.11.2
 
 ### Backend - Bug fixes

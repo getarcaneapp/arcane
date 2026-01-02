@@ -101,6 +101,35 @@ func (a AppEnvironment) IsTestEnvironment() bool {
 	return a == AppEnvironmentTest
 }
 
+// GetManagerBaseURL returns the base URL of the manager application.
+// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
+func (c *Config) GetManagerBaseURL() string {
+	if c.ManagerApiUrl == "" {
+		return ""
+	}
+	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
+	managerURL = strings.TrimSuffix(managerURL, "/api")
+	return managerURL
+}
+
+// GetAppURL returns the effective application URL.
+// If in agent mode and APP_URL is not explicitly set, it returns the manager's URL.
+func (c *Config) GetAppURL() string {
+	// If APP_URL is explicitly set to something other than the default, use it
+	if os.Getenv("APP_URL") != "" {
+		return c.AppUrl
+	}
+
+	// If in agent mode and we have a manager URL, use the manager URL
+	if c.AgentMode {
+		if managerBase := c.GetManagerBaseURL(); managerBase != "" {
+			return managerBase
+		}
+	}
+
+	return c.AppUrl
+}
+
 func getBoolEnvOrDefault(key string, defaultValue bool) bool {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		v = trimQuotes(v)

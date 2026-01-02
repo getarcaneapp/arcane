@@ -195,7 +195,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 func (s *OidcService) GetOidcRedirectURL(origin string) string {
 	baseUrl := origin
 	if baseUrl == "" {
-		baseUrl = strings.TrimSuffix(s.config.AppUrl, "/")
+		baseUrl = strings.TrimSuffix(s.config.GetAppURL(), "/")
 	}
 	return baseUrl + "/auth/oidc/callback"
 }
