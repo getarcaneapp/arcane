@@ -103,7 +103,7 @@
 			{versionInformation}
 			updateAvailable={versionInformation.updateAvailable}
 			user={effectiveUser}
-			debug={false}
+			debug={true}
 		/>
 		{#if effectiveUser}
 			{#if isCollapsed}

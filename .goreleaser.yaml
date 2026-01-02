@@ -178,7 +178,7 @@ dockers_v2:
       'org.opencontainers.image.title': 'Arcane'
       'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
       'com.getarcaneapp.arcane.updater': 'false'
-      'com.getarcaneapp.arcane.server': 'true'
+      'com.getarcaneapp.arcane': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -206,7 +206,7 @@ dockers_v2:
       'org.opencontainers.image.title': 'Arcane Agent'
       'org.opencontainers.image.description': 'Arcane Agent'
       'com.getarcaneapp.arcane.updater': 'false'
-      'com.getarcaneapp.arcane.server': 'true'
+      'com.getarcaneapp.arcane.agent': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -234,7 +234,7 @@ dockers_v2:
       'org.opencontainers.image.title': 'Arcane'
       'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
       'com.getarcaneapp.arcane.updater': 'false'
-      'com.getarcaneapp.arcane.server': 'true'
+      'com.getarcaneapp.arcane': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -262,7 +262,7 @@ dockers_v2:
       'org.opencontainers.image.title': 'Arcane Agent'
       'org.opencontainers.image.description': 'Arcane Agent'
       'com.getarcaneapp.arcane.updater': 'false'
-      'com.getarcaneapp.arcane.server': 'true'
+      'com.getarcaneapp.arcane.agent': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
