@@ -61,6 +61,11 @@ type Update struct {
 	// Required: false
 	PollingInterval *string `json:"pollingInterval,omitempty"`
 
+	// AutoInjectEnv indicates if project .env variables should be automatically injected into all containers.
+	//
+	// Required: false
+	AutoInjectEnv *string `json:"autoInjectEnv,omitempty"`
+
 	// EnvironmentHealthInterval is the interval for checking environment health.
 	//
 	// Required: false
@@ -160,6 +165,11 @@ type Update struct {
 	//
 	// Required: false
 	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
+
+	// OidcSkipTlsVerify indicates if TLS verification should be skipped for OIDC.
+	//
+	// Required: false
+	OidcSkipTlsVerify *string `json:"oidcSkipTlsVerify,omitempty"`
 
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//

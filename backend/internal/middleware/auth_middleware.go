@@ -17,7 +17,7 @@ import (
 const (
 	headerAgentBootstrap = "X-Arcane-Agent-Bootstrap"
 	headerAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	headerApiKey         = "X-API-KEY"            // #nosec G101: header name, not a credential
+	headerApiKey         = "X-API-Key"            // #nosec G101: header name, not a credential
 	agentPairingPrefix   = "/api/environments/0/agent/pair"
 )
 
@@ -86,6 +86,12 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 		return
 	}
 
+	// Check for API key as agent token
+	if tok := c.GetHeader(headerApiKey); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+		agentSudo(c)
+		return
+	}
+
 	slog.Warn("Agent auth forbidden",
 		"path", c.Request.URL.Path,
 		"method", c.Request.Method,
@@ -100,7 +106,7 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 }
 
 func (m *AuthMiddleware) managerAuth(c *gin.Context) {
-	// First, check for API key in X-API-KEY header
+	// First, check for API key in X-API-Key header
 	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
 		user, err := m.apiKeyValidator.ValidateApiKey(c.Request.Context(), apiKey)
 		if err == nil && user != nil {

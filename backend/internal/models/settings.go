@@ -57,6 +57,7 @@ type Settings struct {
 	AutoUpdateInterval SettingVariable `key:"autoUpdateInterval" meta:"label=Auto Update Interval;type=number;keywords=auto,update,interval,frequency,schedule,automatic,timing;category=internal;description=Interval between automatic updates"`
 	PollingEnabled     SettingVariable `key:"pollingEnabled" meta:"label=Enable Polling;type=boolean;keywords=polling,check,monitor,watch,scan,detection,automatic;category=internal;description=Enable automatic checking for image updates"`
 	PollingInterval    SettingVariable `key:"pollingInterval" meta:"label=Polling Interval;type=number;keywords=interval,frequency,schedule,time,minutes,period,delay;category=internal;description=How often to check for image updates"`
+	AutoInjectEnv      SettingVariable `key:"autoInjectEnv" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers (default: false)"`
 	PruneMode          SettingVariable `key:"dockerPruneMode" meta:"label=Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk;category=internal;description=Configure how unused Docker images are cleaned up"`
 	MaxImageUploadSize SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
 	DockerHost         SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
@@ -73,6 +74,7 @@ type Settings struct {
 	OidcScopes         SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
 	OidcAdminClaim     SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
 	OidcAdminValue     SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify  SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=security;description=Skip TLS verification for OIDC provider"`
 	OidcMergeAccounts  SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
 
 	// Appearance category
@@ -257,4 +259,6 @@ type OidcConfig struct {
 	// - adminClaim: "realm_access.roles", adminValue: "admin" (Keycloak)
 	AdminClaim string `json:"adminClaim,omitempty"`
 	AdminValue string `json:"adminValue,omitempty"`
+
+	SkipTlsVerify bool `json:"skipTlsVerify"`
 }

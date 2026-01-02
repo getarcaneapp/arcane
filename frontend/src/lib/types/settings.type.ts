@@ -16,6 +16,7 @@ export type Settings = {
 	defaultShell: string;
 	dockerHost: string;
 	accentColor: string;
+	autoInjectEnv: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
@@ -27,6 +28,7 @@ export type Settings = {
 	oidcScopes: string;
 	oidcAdminClaim: string;
 	oidcAdminValue: string;
+	oidcSkipTlsVerify: boolean;
 	oidcMergeAccounts: boolean;
 
 	mobileNavigationMode: 'floating' | 'docked';

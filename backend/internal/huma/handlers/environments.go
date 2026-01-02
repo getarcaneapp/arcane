@@ -868,7 +868,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 	}
 
 	// Generate snippets with placeholder for API key
-	snippets, err := h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.AppUrl, "<YOUR_API_KEY>")
+	snippets, err := h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentID", input.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")

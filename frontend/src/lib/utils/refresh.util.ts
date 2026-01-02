@@ -10,7 +10,7 @@ export interface RefreshTask<T> {
 
 /**
  * Executes multiple refresh tasks in parallel with unified loading state management.
- * 
+ *
  * @param tasks - Array of refresh tasks to execute
  * @param setLoading - Callback to update loading state
  */
@@ -19,13 +19,13 @@ export async function parallelRefresh<T extends Record<string, RefreshTask<any>>
 	setLoading: (loading: boolean) => void
 ): Promise<void> {
 	setLoading(true);
-	
+
 	const taskKeys = Object.keys(tasks);
-	const completionStatus = Object.fromEntries(taskKeys.map(k => [k, true]));
-	
+	const completionStatus = Object.fromEntries(taskKeys.map((k) => [k, true]));
+
 	const updateLoading = (key: string, value: boolean) => {
 		completionStatus[key] = value;
-		const stillLoading = Object.values(completionStatus).some(v => v);
+		const stillLoading = Object.values(completionStatus).some((v) => v);
 		setLoading(stillLoading);
 	};
 

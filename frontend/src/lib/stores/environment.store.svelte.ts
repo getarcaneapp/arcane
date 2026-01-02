@@ -14,8 +14,10 @@ function getResourceListPage(): string | null {
 	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes'];
 
 	for (const prefix of resourcePrefixes) {
-		// Match routes like /containers/[containerId] but not /containers or /containers/components/...
-		if (routeId.startsWith(prefix + '/[') && !routeId.includes('/components/')) {
+		// Match routes like /containers/[containerId] or /(app)/containers/[containerId]
+		// but not /containers or /containers/components/...
+		const pattern = prefix + '/[';
+		if (routeId.includes(pattern) && !routeId.includes('/components/')) {
 			return prefix;
 		}
 	}

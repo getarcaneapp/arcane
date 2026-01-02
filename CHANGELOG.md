@@ -1,3 +1,75 @@
+## v1.11.3
+
+### Backend - Bug fixes
+
+* checkbox mismatch between glass and non glass ui mode([a5a1d98](https://github.com/getarcaneapp/arcane/commit/a5a1d982acd49bb9c5f2cdac79dc2d458b436b69) by @kmendell)
+* inconsistent sorting on db resources, casuing sorting issue in the frontend([3aa60e8](https://github.com/getarcaneapp/arcane/commit/3aa60e82fb6fc8e1aac7034d59205e48771b4291) by @kmendell)
+* security agents false postive for malicious execution([baca054](https://github.com/getarcaneapp/arcane/commit/baca0540b342a3fdfee3a5fdc4a93f791d747b39) by @kmendell)
+* show confirmation dialog when removing volumes([037bcf6](https://github.com/getarcaneapp/arcane/commit/037bcf69ec10414be9a45d914e6f9e8861907926) by @kmendell)
+* add environment selector on error page to avoid a 'stuck state' ([#1298](https://github.com/getarcaneapp/arcane/pull/1298) by @kmendell)
+* allow skipping tls verification for oidc endpoints ([#1300](https://github.com/getarcaneapp/arcane/pull/1300) by @kmendell)
+* disable copy button on non-ssl instances ([#1309](https://github.com/getarcaneapp/arcane/pull/1309) by @kmendell)
+* notifications on remote environments used incorrect urls ([#1302](https://github.com/getarcaneapp/arcane/pull/1302) by @kmendell)
+
+### CLI - Bug fixes
+
+* update table library and fix column header alignment([a83d610](https://github.com/getarcaneapp/arcane/commit/a83d6108e0ddfe9ceb449b30901dc51ec8bb031b) by @kmendell)
+
+### Dependencies
+
+* bump @xterm/xterm from 5.5.0 to 6.0.0 ([#1255](https://github.com/getarcaneapp/arcane/pull/1255) by @dependabot[bot])
+* bump github.com/schollz/progressbar/v3 from 3.18.0 to 3.19.0 in /cli ([#1258](https://github.com/getarcaneapp/arcane/pull/1258) by @dependabot[bot])
+* upgrade pnpm to 10.27.0([e2efb3a](https://github.com/getarcaneapp/arcane/commit/e2efb3ad88b001563be31feb62798e7a19aea938) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.11.2...v1.11.3
+
+## v1.11.2
+
+### Backend - Bug fixes
+
+* use both legacy and new api key headers for agent authentication ([#1271](https://github.com/getarcaneapp/arcane/pull/1271) by @kmendell)
+* button flex 'bouncy' layout issue([51977fc](https://github.com/getarcaneapp/arcane/commit/51977fc0a8cbb58f30afa2ce5e62d00895424bd1) by @kmendell)
+* add generate command back to built in cli([875a96a](https://github.com/getarcaneapp/arcane/commit/875a96a5ec7519cc4e9e9060ec53bc1399c4c257) by @kmendell)
+* correctly fetch dynamic image/container items on dashboard([7965948](https://github.com/getarcaneapp/arcane/commit/7965948fc3d726fcd40144d7a9feb568ceb26913) by @kmendell)
+* allow litteral quotes in oidc env values ([#1272](https://github.com/getarcaneapp/arcane/pull/1272) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.11.1...v1.11.2
+
+## v1.11.1
+
+### Backend - Bug fixes
+
+* api key validator not checking for user correctly for admin endpoints([dad577a](https://github.com/getarcaneapp/arcane/commit/dad577a4c07ec0d4e1b2a84ebd3de63ac37f02a4) by @kmendell)
+* oidc form incorrectly parsing numbers preventing saving ([#1234](https://github.com/getarcaneapp/arcane/pull/1234) by @kmendell)
+* use png logo for emails instead of svg([c2948d5](https://github.com/getarcaneapp/arcane/commit/c2948d5524b04a120b593c6fd3377aa27d47b1f2) by @kmendell)
+* make inline start/stop icons colored for better readability([18de25c](https://github.com/getarcaneapp/arcane/commit/18de25cb3b24c2ef7f822735d79a9b737500c8d6) by @kmendell)
+* dark/light mode not being respected on certain elements([b877daa](https://github.com/getarcaneapp/arcane/commit/b877daaad65ae7541e7e12ee56c80d26050ab1d3) by @kmendell)
+* editing a user fails to save due to validation error([4203424](https://github.com/getarcaneapp/arcane/commit/4203424d0ec9b7afda37a1e282b03dc737d3f564) by @kmendell)
+* change email encoding to quoted-printable ([#1238](https://github.com/getarcaneapp/arcane/pull/1238) by @kmendell)
+* use correct data path and port in deployment snippets([cb4163d](https://github.com/getarcaneapp/arcane/commit/cb4163d9638543dbeed96867b978101e7536f01e) by @kmendell)
+* incorrect api-key validation([cfaf05f](https://github.com/getarcaneapp/arcane/commit/cfaf05f6b62020f2a444877b33208c69618b0d36) by @kmendell)
+* dashboard not pulling correct data on env switch([db53bb5](https://github.com/getarcaneapp/arcane/commit/db53bb59d1bfaadf08b91b14ebe727839343a6cf) by @kmendell)
+* route matching for resource detail pages when switching environments([db552f5](https://github.com/getarcaneapp/arcane/commit/db552f546a680541e4167d571936e79d58ea32b2) by @kmendell)
+* env values being injected into all containers by default ([#1250](https://github.com/getarcaneapp/arcane/pull/1250) by @kmendell)
+
+### CLI - Bug fixes
+
+* use proper timeouts for specific commands([267dd09](https://github.com/getarcaneapp/arcane/commit/267dd091a6311cab3a26ea35e07f116c01afd195) by @kmendell)
+* incorrect return type for settings reponse([e3c323b](https://github.com/getarcaneapp/arcane/commit/e3c323b2c59b28e34096231300dd9dba32b29a6c) by @kmendell)
+
+### Dependencies
+
+* bump svelte from 5.46.0 to 5.46.1 ([#1229](https://github.com/getarcaneapp/arcane/pull/1229) by @dependabot[bot])
+* bump @xterm/addon-fit from 0.10.0 to 0.11.0 ([#1232](https://github.com/getarcaneapp/arcane/pull/1232) by @dependabot[bot])
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.11.0...v1.11.1
+
 ## v1.11.0
 
 ### Backend - New features

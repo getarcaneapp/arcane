@@ -398,10 +398,11 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 }
 
 func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":       logoURL,
-		"AppURL":        s.config.AppUrl,
+		"AppURL":        appURL,
 		"Environment":   "Local Docker",
 		"ImageRef":      imageRef,
 		"HasUpdate":     updateInfo.HasUpdate,
@@ -605,10 +606,11 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 }
 
 func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":       logoURL,
-		"AppURL":        s.config.AppUrl,
+		"AppURL":        appURL,
 		"Environment":   "Local Docker",
 		"ContainerName": containerName,
 		"ImageRef":      imageRef,
@@ -765,10 +767,11 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 }
 
 func (s *NotificationService) renderTestEmailTemplate() (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL": logoURL,
-		"AppURL":  s.config.AppUrl,
+		"AppURL":  appURL,
 	}
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/test_html.tmpl")
@@ -1048,10 +1051,11 @@ func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*image
 		imageList = append(imageList, imageRef)
 	}
 
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":     logoURL,
-		"AppURL":      s.config.AppUrl,
+		"AppURL":      appURL,
 		"UpdateCount": len(updates),
 		"CheckTime":   time.Now().Format(time.RFC1123),
 		"ImageList":   imageList,

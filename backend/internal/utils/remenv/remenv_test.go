@@ -71,7 +71,7 @@ func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
 	from.Add("X-Test", "a")
 	from.Add("X-Test", "b")
 	from.Set(HeaderAuthorization, "Bearer should-not-copy")
-	from.Set(HeaderAPIToken, "token-should-not-copy")
+	from.Set(HeaderAPIKey, "token-should-not-copy")
 	from.Set("Host", "example.com")
 	from.Set(HeaderCookie, "session=abc")
 	from.Set("Transfer-Encoding", "chunked")
@@ -81,25 +81,25 @@ func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
 
 	require.Equal(t, []string{"a", "b"}, to.Values("X-Test"))
 	require.Empty(t, to.Get(HeaderAuthorization))
-	require.Empty(t, to.Get(HeaderAPIToken))
+	require.Empty(t, to.Get(HeaderAPIKey))
 	require.Empty(t, to.Get("Host"))
 	require.Empty(t, to.Get(HeaderCookie))
 	require.Empty(t, to.Get("Transfer-Encoding"))
 }
 
-func TestSetAuthHeader_ForwardsAPITokenAndAuthorization(t *testing.T) {
+func TestSetAuthHeader_ForwardsAPIKeyAndAuthorization(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.Header.Set(HeaderAPIToken, "api-token")
+	c.Request.Header.Set(HeaderAPIKey, "api-token")
 	c.Request.Header.Set(HeaderAuthorization, "Bearer auth")
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
 
 	SetAuthHeader(req, c)
-	require.Equal(t, "api-token", req.Header.Get(HeaderAPIToken))
+	require.Equal(t, "api-token", req.Header.Get(HeaderAPIKey))
 	require.Equal(t, "Bearer auth", req.Header.Get(HeaderAuthorization))
 }
 
@@ -123,10 +123,12 @@ func TestSetAgentToken(t *testing.T) {
 
 	SetAgentToken(req, nil)
 	require.Empty(t, req.Header.Get(HeaderAgentToken))
+	require.Empty(t, req.Header.Get(HeaderAPIKey))
 
 	tok := "agent-token"
 	SetAgentToken(req, &tok)
 	require.Equal(t, tok, req.Header.Get(HeaderAgentToken))
+	require.Equal(t, tok, req.Header.Get(HeaderAPIKey))
 }
 
 func TestSetForwardedHeaders(t *testing.T) {
@@ -200,7 +202,7 @@ func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testi
 	agent := "agent-token"
 	headers := BuildWebSocketHeaders(c, &agent)
 
-	require.Equal(t, "api-key", headers.Get(HeaderAPIKey))
+	require.Equal(t, agent, headers.Get(HeaderAPIKey))
 	require.Equal(t, "Bearer auth", headers.Get(HeaderAuthorization))
 	require.Empty(t, headers.Get(HeaderCookie))
 	require.Equal(t, agent, headers.Get(HeaderAgentToken))
