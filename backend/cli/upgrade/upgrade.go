@@ -57,7 +57,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
 	} else if logFile != nil {
-		defer logFile.Close()
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				slog.Warn("Failed to close upgrade log file", "error", err, "path", logFile.Name())
+			}
+		}()
 		slog.Info("Upgrade log file created", "path", logFile.Name())
 	}
 
