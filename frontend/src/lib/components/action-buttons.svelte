@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -102,6 +103,30 @@
 	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
 
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
+
+	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
+	// (which would duplicate portaled popovers when the same `open` state is bound twice).
+	let isXlUp = $state(true);
+	const adaptiveIconOnly = $derived(!isXlUp);
+
+	onMount(() => {
+		const mql = window.matchMedia('(min-width: 1280px)');
+		const update = () => {
+			isXlUp = mql.matches;
+		};
+
+		update();
+
+		if ('addEventListener' in mql) {
+			mql.addEventListener('change', update);
+			return () => mql.removeEventListener('change', update);
+		}
+
+		// @ts-expect-error legacy MediaQueryList API
+		mql.addListener(update);
+		// @ts-expect-error legacy MediaQueryList API
+		return () => mql.removeListener(update);
+	});
 
 	function resetPullState() {
 		pullProgress = 0;
@@ -384,74 +409,17 @@
 
 {#if desktopVariant === 'adaptive'}
 	<div>
-		<!-- On xl+ show labels; on lg use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
-		<div class="hidden items-center gap-2 xl:flex">
+		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
+		<div class="hidden items-center gap-2 lg:flex">
 			{#if !isRunning}
 				{#if type === 'container'}
-					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
-				{:else}
-					<ProgressPopover
-						bind:open={deployPullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={deployPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-					>
-						<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
-					</ProgressPopover>
-				{/if}
-			{/if}
-
-			{#if isRunning}
-				<ArcaneButton
-					action="stop"
-					customLabel={type === 'project' ? m.common_down() : undefined}
-					onclick={() => handleStop()}
-					loading={uiLoading.stop}
-				/>
-				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
-			{/if}
-
-			{#if type === 'container'}
-				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
-			{:else}
-				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
-
-				{#if type === 'project'}
-					<ProgressPopover
-						bind:open={pullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={projectPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-					>
-						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
-					</ProgressPopover>
-				{/if}
-
-				{#if onRefresh}
-					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
-				{/if}
-
-				<ArcaneButton
-					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-					action="remove"
-					onclick={() => confirmAction('remove')}
-					loading={uiLoading.remove}
-				/>
-			{/if}
-		</div>
-
-		<div class="hidden items-center gap-2 lg:flex xl:hidden">
-			{#if !isRunning}
-				{#if type === 'container'}
-					<ArcaneButton action="start" size="icon" showLabel={false} onclick={() => handleStart()} loading={uiLoading.start} />
+					<ArcaneButton
+						action="start"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						onclick={() => handleStart()}
+						loading={uiLoading.start}
+					/>
 				{:else}
 					<ProgressPopover
 						bind:open={deployPullPopoverOpen}
@@ -465,8 +433,8 @@
 					>
 						<ArcaneButton
 							action="deploy"
-							size="icon"
-							showLabel={false}
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
 							onclick={() => handleDeploy()}
 							loading={uiLoading.start}
 						/>
@@ -477,16 +445,16 @@
 			{#if isRunning}
 				<ArcaneButton
 					action="stop"
-					size="icon"
-					showLabel={false}
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
 					customLabel={type === 'project' ? m.common_down() : undefined}
 					onclick={() => handleStop()}
 					loading={uiLoading.stop}
 				/>
 				<ArcaneButton
 					action="restart"
-					size="icon"
-					showLabel={false}
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
 					onclick={() => handleRestart()}
 					loading={uiLoading.restart}
 				/>
@@ -495,16 +463,16 @@
 			{#if type === 'container'}
 				<ArcaneButton
 					action="remove"
-					size="icon"
-					showLabel={false}
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
 					onclick={() => confirmAction('remove')}
 					loading={uiLoading.remove}
 				/>
 			{:else}
 				<ArcaneButton
 					action="redeploy"
-					size="icon"
-					showLabel={false}
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
 					onclick={() => confirmAction('redeploy')}
 					loading={uiLoading.redeploy}
 				/>
@@ -522,8 +490,8 @@
 					>
 						<ArcaneButton
 							action="pull"
-							size="icon"
-							showLabel={false}
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
 							onclick={() => handleProjectPull()}
 							loading={projectPulling}
 						/>
@@ -533,8 +501,8 @@
 				{#if onRefresh}
 					<ArcaneButton
 						action="refresh"
-						size="icon"
-						showLabel={false}
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
 						onclick={() => handleRefresh()}
 						loading={uiLoading.refresh}
 					/>
@@ -543,8 +511,8 @@
 				<ArcaneButton
 					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
 					action="remove"
-					size="icon"
-					showLabel={false}
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
 					onclick={() => confirmAction('remove')}
 					loading={uiLoading.remove}
 				/>

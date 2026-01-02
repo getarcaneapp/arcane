@@ -51,13 +51,14 @@
 						class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm"
 						{disabled}
 						customLabel="{protocol}://"
-						icon={ArrowDownIcon}
-					/>
+					>
+						<ArrowDownIcon />
+					</ArcaneButton>
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="center" class="min-w-0">
-				<DropdownMenu.Item class="px-2 py-1.5" onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
-				<DropdownMenu.Item class="px-2 py-1.5" onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
+				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
+				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 		<InputGroup.Root class={['flex-1', error ? 'border-destructive' : ''].filter(Boolean).join(' ')}>
