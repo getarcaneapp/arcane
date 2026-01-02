@@ -17,6 +17,12 @@ type Info struct {
 	// Required: false
 	CurrentDigest string `json:"currentDigest,omitempty"`
 
+	// CurrentImageID is the local Docker image ID currently used by the running container.
+	// This may be present even when registry digests are not available (e.g., locally built images).
+	//
+	// Required: false
+	CurrentImageID string `json:"currentImageId,omitempty"`
+
 	// Revision is the full revision identifier (e.g., commit hash).
 	//
 	// Required: true

@@ -8,10 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
+	containertypes "github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -214,7 +218,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	isSemver := s.isSemverVersion()
 
 	// Detect current container image tag, digest, and registry
-	currentTag, currentDigest, currentImageRef := s.detectCurrentImageInfo(ctx)
+	currentTag, currentDigest, currentImageRef, currentImageID := s.detectCurrentImageInfo(ctx)
 
 	// Common fields for all responses
 	shortRev := config.ShortRevision()
@@ -226,6 +230,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
+			CurrentImageID:  currentImageID,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
 			ShortRevision:   shortRev,
@@ -246,6 +251,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 					CurrentVersion:  ver,
 					CurrentTag:      currentTag,
 					CurrentDigest:   currentDigest,
+					CurrentImageID:  currentImageID,
 					DisplayVersion:  displayVersion,
 					Revision:        s.revision,
 					ShortRevision:   shortRev,
@@ -261,6 +267,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
+			CurrentImageID:  currentImageID,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
 			ShortRevision:   shortRev,
@@ -280,6 +287,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			CurrentVersion:  ver,
 			CurrentTag:      currentTag,
 			CurrentDigest:   currentDigest,
+			CurrentImageID:  currentImageID,
 			DisplayVersion:  displayVersion,
 			Revision:        s.revision,
 			ShortRevision:   shortRev,
@@ -295,6 +303,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		CurrentVersion:  ver,
 		CurrentTag:      currentTag,
 		CurrentDigest:   currentDigest,
+		CurrentImageID:  currentImageID,
 		DisplayVersion:  displayVersion,
 		Revision:        s.revision,
 		ShortRevision:   shortRev,
@@ -306,34 +315,59 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 }
 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest
-func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string, digest string, imageRef string) {
+func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string, digest string, imageRef string, imageID string) {
 	if s.dockerService == nil {
-		return "", "", ""
+		return "", "", "", ""
+	}
+
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return "", "", "", ""
 	}
 
 	// Try to get current container ID
 	containerId, err := s.getCurrentContainerID()
 	if err != nil {
-		return "", "", ""
-	}
-
-	// Connect to Docker and inspect the container
-	dockerClient, err := s.dockerService.GetClient()
-	if err != nil {
-		return "", "", ""
+		// Fallback: locate the Arcane container by label (works even when cgroup/hostname detection fails)
+		f := filters.NewArgs()
+		f.Add("label", arcaneupdater.LabelArcane+"=true")
+		list, listErr := dockerClient.ContainerList(ctx, containertypes.ListOptions{All: true, Filters: f})
+		if listErr != nil {
+			return "", "", "", ""
+		}
+		for _, c := range list {
+			// Prefer the actual server container, not the upgrader helper.
+			if v, ok := c.Labels["com.getarcaneapp.arcane.upgrader"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(c.State), "running") {
+				containerId = c.ID
+				break
+			}
+			if containerId == "" {
+				containerId = c.ID
+			}
+		}
+		if containerId == "" {
+			return "", "", "", ""
+		}
 	}
 
 	container, err := dockerClient.ContainerInspect(ctx, containerId)
 	if err != nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
 
 	// Parse tag from container config image (user-specified reference)
 	tag = s.extractTagFromImageRef(container.Config.Image)
+	imageID = container.Image
 
 	// Get digest and normalized imageRef from container image
 	if container.Image != "" {
 		imageInspect, err := dockerClient.ImageInspect(ctx, container.Image)
+		if err == nil && imageInspect.ID != "" {
+			imageID = imageInspect.ID
+		}
 		if err == nil && len(imageInspect.RepoDigests) > 0 {
 			// Extract digest and repository from first RepoDigest
 			// Format: "ghcr.io/getarcaneapp/arcane@sha256:abc123..."
@@ -350,14 +384,30 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 
 	// Fallback to container config image if RepoDigests didn't provide imageRef
 	if imageRef == "" {
-		imageRef = container.Config.Image
+		// Ensure we store just the repository name (no tag/digest) so callers can safely append tags.
+		if named, err := ref.ParseNormalizedNamed(container.Config.Image); err == nil {
+			imageRef = named.Name()
+		} else {
+			imageRef = container.Config.Image
+		}
 	}
 
-	return tag, digest, imageRef
+	return tag, digest, imageRef, imageID
 }
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
 func (s *VersionService) getCurrentContainerID() (string, error) {
+	// Common in Docker: HOSTNAME is the container ID (or a prefix of it)
+	if id := strings.TrimSpace(os.Getenv("HOSTNAME")); isLikelyContainerID(id) {
+		return strings.ToLower(id), nil
+	}
+	// Also commonly available inside containers
+	if data, err := os.ReadFile("/etc/hostname"); err == nil {
+		if id := strings.TrimSpace(string(data)); isLikelyContainerID(id) {
+			return strings.ToLower(id), nil
+		}
+	}
+
 	// Try reading from /proc/self/cgroup (Linux)
 	data, err := os.ReadFile("/proc/self/cgroup")
 	if err != nil {
@@ -366,18 +416,72 @@ func (s *VersionService) getCurrentContainerID() (string, error) {
 
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
-		if strings.Contains(line, "docker") || strings.Contains(line, "containerd") {
-			parts := strings.Split(line, "/")
-			if len(parts) > 0 {
-				id := strings.TrimSpace(parts[len(parts)-1])
-				if len(id) >= 12 {
-					return id, nil
-				}
-			}
+		if id := extractContainerIDFromCgroupLine(line); id != "" {
+			return id, nil
 		}
 	}
 
 	return "", errors.New("container ID not found")
+}
+
+var (
+	containerIDRegexp     = regexp.MustCompile(`(?i)[0-9a-f]{12,64}`)
+	containerIDFullRegexp = regexp.MustCompile(`(?i)^[0-9a-f]{12,64}$`)
+)
+
+func isLikelyContainerID(s string) bool {
+	if s == "" {
+		return false
+	}
+	return containerIDFullRegexp.MatchString(strings.TrimSpace(s))
+}
+
+func extractContainerIDFromCgroupLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+
+	// cgroup line formats we support:
+	// - v1: "12:memory:/docker/<id>"
+	// - v2+systemd: "0::/system.slice/docker-<id>.scope"
+	// - containerd: "0::/system.slice/cri-containerd-<id>.scope"
+
+	// Prefer scanning the cgroup path (the last ':'-separated field)
+	path := line
+	if parts := strings.Split(line, ":"); len(parts) > 0 {
+		path = parts[len(parts)-1]
+	}
+
+	prefixes := []string{"docker-", "cri-containerd-", "containerd-", "crio-", "libpod-"}
+
+	for _, seg := range strings.Split(path, "/") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		cleaned := strings.TrimSuffix(seg, ".scope")
+		for _, p := range prefixes {
+			if strings.HasPrefix(cleaned, p) {
+				cleaned = strings.TrimPrefix(cleaned, p)
+				break
+			}
+		}
+
+		if m := containerIDRegexp.FindString(cleaned); m != "" {
+			return strings.ToLower(m)
+		}
+		if m := containerIDRegexp.FindString(seg); m != "" {
+			return strings.ToLower(m)
+		}
+	}
+
+	// Fallback: scan the whole line
+	if m := containerIDRegexp.FindString(line); m != "" {
+		return strings.ToLower(m)
+	}
+
+	return ""
 }
 
 // extractTagFromImageRef extracts the tag from an image reference using distribution/reference

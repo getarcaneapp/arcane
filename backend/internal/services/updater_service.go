@@ -807,22 +807,6 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 	return nil
 }
 
-func (s *UpdaterService) isProjectOptedOut(ctx context.Context, dcli *client.Client, projectName string) bool {
-	if dcli == nil {
-		return false
-	}
-	containers, err := s.getProjectContainers(ctx, dcli, projectName)
-	if err != nil {
-		return false
-	}
-	for _, c := range containers {
-		if arcaneupdater.IsUpdateDisabled(c.Labels) {
-			return true
-		}
-	}
-	return false
-}
-
 // Aggregate images in use across containers and compose projects
 func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
@@ -836,13 +820,13 @@ func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]stru
 	}
 
 	_ = s.collectUsedImagesFromContainers(ctx, dcli, out)
-	_ = s.collectUsedImagesFromProjects(ctx, dcli, out)
+	_ = s.collectUsedImagesFromProjects(ctx, out)
 
 	slog.DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))
 	return out, nil
 }
 
-func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
+func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out map[string]struct{}) error {
 	if s.projectService == nil {
 		return nil
 	}
@@ -857,16 +841,15 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, dcli
 		if p.Status != models.ProjectStatusRunning && p.Status != models.ProjectStatusPartiallyRunning {
 			continue
 		}
-		// optional opt-out via labels on compose project
-		if dcli != nil && s.isProjectOptedOut(ctx, dcli, p.Name) {
-			continue
-		}
 
 		services, serr := s.projectService.GetProjectServices(ctx, p.ID)
 		if serr != nil {
 			continue
 		}
 		for _, svc := range services {
+			if svc.ServiceConfig != nil && arcaneupdater.IsUpdateDisabled(svc.ServiceConfig.Labels) {
+				continue
+			}
 			img := strings.TrimSpace(svc.Image)
 			if img == "" {
 				continue
@@ -1191,30 +1174,6 @@ func (s *UpdaterService) parseNormalizedRef(ref string) (host, repository, tag s
 		repository = rest
 	}
 	return host, repository, tag
-}
-
-func (s *UpdaterService) getProjectContainers(ctx context.Context, dcli *client.Client, projectName string) ([]container.Summary, error) {
-	byID := map[string]container.Summary{}
-
-	// Compose label
-	f1 := filters.NewArgs()
-	f1.Add("label", "com.docker.compose.project="+projectName)
-	cs1, err := dcli.ContainerList(ctx, container.ListOptions{All: true, Filters: f1})
-	if err == nil {
-		for _, c := range cs1 {
-			byID[c.ID] = c
-		}
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]container.Summary, 0, len(byID))
-	for _, c := range byID {
-		out = append(out, c)
-	}
-	return out, nil
 }
 
 func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeverity, metadata models.JSON) {

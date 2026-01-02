@@ -152,6 +152,8 @@
 	bind:open={showConfirmDialog}
 	bind:upgrading
 	version={versionInformation?.newestVersion ?? ''}
+	expectedVersion={versionInformation?.newestVersion}
+	expectedDigest={versionInformation?.newestDigest}
 	onConfirm={handleConfirmUpgrade}
 />
 

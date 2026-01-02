@@ -2,6 +2,7 @@ export interface AppVersionInformation {
 	currentVersion: string;
 	currentTag?: string;
 	currentDigest?: string;
+	currentImageId?: string;
 	displayVersion: string;
 	revision: string;
 	shortRevision: string;
