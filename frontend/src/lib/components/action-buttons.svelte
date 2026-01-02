@@ -31,6 +31,7 @@
 		name,
 		type = 'container',
 		itemState = 'stopped',
+		desktopVariant = 'labels',
 		loading = $bindable<LoadingStates>({}),
 		onActionComplete = $bindable<(status?: string) => void>(() => {}),
 		startLoading = $bindable(false),
@@ -45,6 +46,7 @@
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
+		desktopVariant?: 'labels' | 'adaptive';
 		loading?: LoadingStates;
 		onActionComplete?: (status?: string) => void;
 		startLoading?: boolean;
@@ -380,125 +382,360 @@
 	}
 </script>
 
-<div>
-	<div class="hidden items-center gap-2 lg:flex">
-		{#if !isRunning}
+{#if desktopVariant === 'adaptive'}
+	<div>
+		<!-- On xl+ show labels; on lg use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
+		<div class="hidden items-center gap-2 xl:flex">
+			{#if !isRunning}
+				{#if type === 'container'}
+					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
+				{:else}
+					<ProgressPopover
+						bind:open={deployPullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={deployPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
+					</ProgressPopover>
+				{/if}
+			{/if}
+
+			{#if isRunning}
+				<ArcaneButton
+					action="stop"
+					customLabel={type === 'project' ? m.common_down() : undefined}
+					onclick={() => handleStop()}
+					loading={uiLoading.stop}
+				/>
+				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+			{/if}
+
 			{#if type === 'container'}
-				<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
+				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
 			{:else}
-				<ProgressPopover
-					bind:open={deployPullPopoverOpen}
-					bind:progress={pullProgress}
-					title={m.progress_pulling_images()}
-					statusText={pullStatusText}
-					error={pullError}
-					loading={deployPulling}
-					icon={DownloadIcon}
-					layers={layerProgress}
+				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+
+				{#if type === 'project'}
+					<ProgressPopover
+						bind:open={pullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
+					</ProgressPopover>
+				{/if}
+
+				{#if onRefresh}
+					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
+				{/if}
+
+				<ArcaneButton
+					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+					action="remove"
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
+			{/if}
+		</div>
+
+		<div class="hidden items-center gap-2 lg:flex xl:hidden">
+			{#if !isRunning}
+				{#if type === 'container'}
+					<ArcaneButton action="start" size="icon" showLabel={false} onclick={() => handleStart()} loading={uiLoading.start} />
+				{:else}
+					<ProgressPopover
+						bind:open={deployPullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={deployPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton
+							action="deploy"
+							size="icon"
+							showLabel={false}
+							onclick={() => handleDeploy()}
+							loading={uiLoading.start}
+						/>
+					</ProgressPopover>
+				{/if}
+			{/if}
+
+			{#if isRunning}
+				<ArcaneButton
+					action="stop"
+					size="icon"
+					showLabel={false}
+					customLabel={type === 'project' ? m.common_down() : undefined}
+					onclick={() => handleStop()}
+					loading={uiLoading.stop}
+				/>
+				<ArcaneButton
+					action="restart"
+					size="icon"
+					showLabel={false}
+					onclick={() => handleRestart()}
+					loading={uiLoading.restart}
+				/>
+			{/if}
+
+			{#if type === 'container'}
+				<ArcaneButton
+					action="remove"
+					size="icon"
+					showLabel={false}
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
+			{:else}
+				<ArcaneButton
+					action="redeploy"
+					size="icon"
+					showLabel={false}
+					onclick={() => confirmAction('redeploy')}
+					loading={uiLoading.redeploy}
+				/>
+
+				{#if type === 'project'}
+					<ProgressPopover
+						bind:open={pullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton
+							action="pull"
+							size="icon"
+							showLabel={false}
+							onclick={() => handleProjectPull()}
+							loading={projectPulling}
+						/>
+					</ProgressPopover>
+				{/if}
+
+				{#if onRefresh}
+					<ArcaneButton
+						action="refresh"
+						size="icon"
+						showLabel={false}
+						onclick={() => handleRefresh()}
+						loading={uiLoading.refresh}
+					/>
+				{/if}
+
+				<ArcaneButton
+					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+					action="remove"
+					size="icon"
+					showLabel={false}
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
+			{/if}
+		</div>
+
+		<div class="flex items-center lg:hidden">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon />
+				</DropdownMenu.Trigger>
+
+				<DropdownMenu.Content
+					align="end"
+					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 				>
-					<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
-				</ProgressPopover>
-			{/if}
-		{/if}
+					<DropdownMenu.Group>
+						{#if !isRunning}
+							{#if type === 'container'}
+								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+									{m.common_start()}
+								</DropdownMenu.Item>
+							{:else}
+								<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
+									{m.common_up()}
+								</DropdownMenu.Item>
+							{/if}
+						{:else}
+							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+								{type === 'project' ? m.common_down() : m.common_stop()}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+								{m.common_restart()}
+							</DropdownMenu.Item>
+						{/if}
 
-		{#if isRunning}
-			<ArcaneButton
-				action="stop"
-				customLabel={type === 'project' ? m.common_down() : undefined}
-				onclick={() => handleStop()}
-				loading={uiLoading.stop}
-			/>
-			<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
-		{/if}
-
-		{#if type === 'container'}
-			<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
-		{:else}
-			<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
-
-			{#if type === 'project'}
-				<ProgressPopover
-					bind:open={pullPopoverOpen}
-					bind:progress={pullProgress}
-					title={m.progress_pulling_images()}
-					statusText={pullStatusText}
-					error={pullError}
-					loading={projectPulling}
-					icon={DownloadIcon}
-					layers={layerProgress}
-				>
-					<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
-				</ProgressPopover>
-			{/if}
-
-			{#if onRefresh}
-				<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
-			{/if}
-
-			<ArcaneButton
-				customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-				action="remove"
-				onclick={() => confirmAction('remove')}
-				loading={uiLoading.remove}
-			/>
-		{/if}
-	</div>
-
-	<div class="flex items-center lg:hidden">
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
-				<span class="sr-only">{m.common_open_menu()}</span>
-				<EllipsisIcon />
-			</DropdownMenu.Trigger>
-
-			<DropdownMenu.Content align="end" class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md">
-				<DropdownMenu.Group>
-					{#if !isRunning}
 						{#if type === 'container'}
-							<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-								{m.common_start()}
+							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+								{m.common_remove()}
 							</DropdownMenu.Item>
 						{:else}
-							<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
-								{m.common_up()}
+							<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+								{m.common_redeploy()}
+							</DropdownMenu.Item>
+
+							{#if type === 'project'}
+								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
+									{m.images_pull()}
+								</DropdownMenu.Item>
+							{/if}
+
+							{#if onRefresh}
+								<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
+									{m.common_refresh()}
+								</DropdownMenu.Item>
+							{/if}
+
+							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+								{type === 'project' ? m.compose_destroy() : m.common_remove()}
 							</DropdownMenu.Item>
 						{/if}
-					{:else}
-						<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-							{type === 'project' ? m.common_down() : m.common_stop()}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-							{m.common_restart()}
-						</DropdownMenu.Item>
-					{/if}
-
-					{#if type === 'container'}
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-							{m.common_remove()}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-							{m.common_redeploy()}
-						</DropdownMenu.Item>
-
-						{#if type === 'project'}
-							<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
-								{m.images_pull()}
-							</DropdownMenu.Item>
-						{/if}
-
-						{#if onRefresh}
-							<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
-								{m.common_refresh()}
-							</DropdownMenu.Item>
-						{/if}
-
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-							{type === 'project' ? m.compose_destroy() : m.common_remove()}
-						</DropdownMenu.Item>
-					{/if}
-				</DropdownMenu.Group>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		</div>
 	</div>
-</div>
+{:else}
+	<div>
+		<div class="hidden items-center gap-2 lg:flex">
+			{#if !isRunning}
+				{#if type === 'container'}
+					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
+				{:else}
+					<ProgressPopover
+						bind:open={deployPullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={deployPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
+					</ProgressPopover>
+				{/if}
+			{/if}
+
+			{#if isRunning}
+				<ArcaneButton
+					action="stop"
+					customLabel={type === 'project' ? m.common_down() : undefined}
+					onclick={() => handleStop()}
+					loading={uiLoading.stop}
+				/>
+				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+			{/if}
+
+			{#if type === 'container'}
+				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+			{:else}
+				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+
+				{#if type === 'project'}
+					<ProgressPopover
+						bind:open={pullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
+					</ProgressPopover>
+				{/if}
+
+				{#if onRefresh}
+					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
+				{/if}
+
+				<ArcaneButton
+					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+					action="remove"
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
+			{/if}
+		</div>
+
+		<div class="flex items-center lg:hidden">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon />
+				</DropdownMenu.Trigger>
+
+				<DropdownMenu.Content
+					align="end"
+					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+				>
+					<DropdownMenu.Group>
+						{#if !isRunning}
+							{#if type === 'container'}
+								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+									{m.common_start()}
+								</DropdownMenu.Item>
+							{:else}
+								<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
+									{m.common_up()}
+								</DropdownMenu.Item>
+							{/if}
+						{:else}
+							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+								{type === 'project' ? m.common_down() : m.common_stop()}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+								{m.common_restart()}
+							</DropdownMenu.Item>
+						{/if}
+
+						{#if type === 'container'}
+							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+								{m.common_remove()}
+							</DropdownMenu.Item>
+						{:else}
+							<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+								{m.common_redeploy()}
+							</DropdownMenu.Item>
+
+							{#if type === 'project'}
+								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
+									{m.images_pull()}
+								</DropdownMenu.Item>
+							{/if}
+
+							{#if onRefresh}
+								<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
+									{m.common_refresh()}
+								</DropdownMenu.Item>
+							{/if}
+
+							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+								{type === 'project' ? m.compose_destroy() : m.common_remove()}
+							</DropdownMenu.Item>
+						{/if}
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		</div>
+	</div>
+{/if}
