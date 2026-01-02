@@ -83,6 +83,8 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AutoUpdateInterval: models.SettingVariable{Value: "1440"},
 		PollingEnabled:     models.SettingVariable{Value: "true"},
 		PollingInterval:    models.SettingVariable{Value: "60"},
+		EventCleanupInterval:       models.SettingVariable{Value: "360"},
+		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
 		AutoInjectEnv:      models.SettingVariable{Value: "false"},
 		PruneMode:          models.SettingVariable{Value: "dangling"},
 		BaseServerURL:      models.SettingVariable{Value: "http://localhost"},
