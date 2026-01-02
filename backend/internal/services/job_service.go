@@ -21,9 +21,9 @@ import (
 // NOTE: This is intentionally separate from SettingsService to keep the API
 // surface job-focused and to centralize schedule validation/rescheduling.
 type JobService struct {
-	db             *database.DB
-	settings       *SettingsService
-	cfg            *config.Config
+	db       *database.DB
+	settings *SettingsService
+	cfg      *config.Config
 
 	OnJobSchedulesChanged func(ctx context.Context)
 }
