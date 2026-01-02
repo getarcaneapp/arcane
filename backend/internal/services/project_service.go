@@ -646,7 +646,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
 		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
-		
+
 		// Provide more helpful error messages
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {

@@ -406,7 +406,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 	}
 
 	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) {
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
 			humaCtx.SetHeader("Cache-Control", "no-cache")
 			humaCtx.SetHeader("Connection", "keep-alive")
