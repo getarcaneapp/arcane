@@ -35,9 +35,9 @@ test.describe('Projects Page', () => {
   });
 
   test('should display summary cards with correct counts', async ({ page }) => {
-    await expect(page.getByText(`${projectCounts.totalProjects} Total Projects`)).toBeVisible();
-    await expect(page.getByText(`${projectCounts.runningProjects} Running`)).toBeVisible();
-    await expect(page.getByText(`${projectCounts.stoppedProjects} Stopped`)).toBeVisible();
+    await expect(page.getByText(`${projectCounts.totalProjects} Total Projects`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${projectCounts.runningProjects} Running`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${projectCounts.stoppedProjects} Stopped`, { exact: true })).toBeVisible();
   });
 
   test('should display projects list', async ({ page }) => {
