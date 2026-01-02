@@ -2,8 +2,10 @@ package arcaneupdater
 
 import (
 	"context"
+	"crypto/rand"
 	"log/slog"
-	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -41,10 +43,7 @@ func (s *SelfUpdate) PrepareForSelfUpdate(ctx context.Context, containerID strin
 	// Generate a random temporary name
 	tempName := generateTempName()
 
-	slog.InfoContext(ctx, "PrepareForSelfUpdate: renaming Arcane container for self-update",
-		"containerID", containerID,
-		"originalName", originalName,
-		"tempName", tempName)
+	slog.InfoContext(ctx, "PrepareForSelfUpdate: renaming Arcane container for self-update", "containerID", containerID, "originalName", originalName, "tempName", tempName)
 
 	if err := s.dcli.ContainerRename(ctx, containerID, tempName); err != nil {
 		return "", err
@@ -68,12 +67,22 @@ func (s *SelfUpdate) CleanupOldArcaneInstances(ctx context.Context, keepNewest b
 		return nil, err
 	}
 
-	if len(containers) <= 1 {
+	// Only remove containers that were renamed by Arcane self-update.
+	// This avoids deleting legitimate multi-instance Arcane containers.
+	old := make([]container.Summary, 0, len(containers))
+	for _, c := range containers {
+		name := ExtractContainerName(c)
+		if strings.HasPrefix(name, "arcane-old-") {
+			old = append(old, c)
+		}
+	}
+
+	if len(old) == 0 {
 		return nil, nil // Nothing to clean up
 	}
 
 	// Sort by creation time (newest first)
-	sortByCreated(containers)
+	sortByCreated(old)
 
 	var removed []string
 	startIdx := 0
@@ -81,30 +90,23 @@ func (s *SelfUpdate) CleanupOldArcaneInstances(ctx context.Context, keepNewest b
 		startIdx = 1 // Skip the newest container
 	}
 
-	for _, c := range containers[startIdx:] {
+	for _, c := range old[startIdx:] {
 		name := ExtractContainerName(c)
 
-		slog.InfoContext(ctx, "CleanupOldArcaneInstances: removing old Arcane instance",
-			"containerID", c.ID,
-			"name", name,
-			"created", c.Created)
+		slog.InfoContext(ctx, "CleanupOldArcaneInstances: removing old Arcane instance", "containerID", c.ID, "name", name, "created", c.Created)
 
 		// Stop if running
 		if c.State == "running" {
 			timeout := 30 // seconds
 			if err := s.dcli.ContainerStop(ctx, c.ID, container.StopOptions{Timeout: &timeout}); err != nil {
-				slog.WarnContext(ctx, "CleanupOldArcaneInstances: failed to stop container",
-					"containerID", c.ID,
-					"error", err)
+				slog.WarnContext(ctx, "CleanupOldArcaneInstances: failed to stop container", "containerID", c.ID, "error", err)
 				continue
 			}
 		}
 
 		// Remove container
 		if err := s.dcli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil {
-			slog.WarnContext(ctx, "CleanupOldArcaneInstances: failed to remove container",
-				"containerID", c.ID,
-				"error", err)
+			slog.WarnContext(ctx, "CleanupOldArcaneInstances: failed to remove container", "containerID", c.ID, "error", err)
 			continue
 		}
 
@@ -150,11 +152,13 @@ func sortByCreated(containers []container.Summary) {
 // generateTempName generates a random temporary name for the old container
 func generateTempName() string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Extremely unlikely, but avoid failing the update due to entropy issues.
+		return "arcane-old-fallback-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
 	for i := range b {
-		b[i] = charset[r.Intn(len(charset))]
+		b[i] = charset[int(b[i])%len(charset)]
 	}
 	return "arcane-old-" + string(b)
 }

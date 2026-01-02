@@ -14,7 +14,9 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	imagetypes "github.com/docker/docker/api/types/image"
+	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 )
 
 var (
@@ -22,6 +24,7 @@ var (
 	ErrContainerNotFound  = errors.New("could not find Arcane container")
 	ErrUpgradeInProgress  = errors.New("an upgrade is already in progress")
 	ErrDockerSocketAccess = errors.New("docker socket is not accessible")
+	ArcaneUpgraderImage   = "ghcr.io/getarcaneapp/arcane:latest"
 )
 
 type SystemUpgradeService struct {
@@ -98,10 +101,16 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
 
-	// Use latest tag for the upgrader CLI container
-	upgraderImage := "ghcr.io/getarcaneapp/arcane:latest"
+	// Use the same image reference as the currently running Arcane container for the upgrader.
+	// This avoids mismatches where a newer/older upgrader CLI expects different behavior.
+	if currentContainer.Config != nil {
+		if img := strings.TrimSpace(currentContainer.Config.Image); img != "" {
+			ArcaneUpgraderImage = img
+		}
+	}
+	slog.Debug("Using upgrader image", "image", ArcaneUpgraderImage)
 
-	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
+	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", ArcaneUpgraderImage)
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
@@ -111,27 +120,49 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	// Pull the upgrader image first to ensure it exists
-	slog.Info("Pulling upgrader image", "image", upgraderImage)
-	pullReader, err := dockerClient.ImagePull(ctx, upgraderImage, imagetypes.PullOptions{})
+	slog.Info("Pulling upgrader image", "image", ArcaneUpgraderImage)
+	pullReader, err := dockerClient.ImagePull(ctx, ArcaneUpgraderImage, imagetypes.PullOptions{})
 	if err != nil {
 		return fmt.Errorf("pull upgrader image: %w", err)
 	}
 	// Drain the reader to complete the pull
 	_, _ = io.Copy(io.Discard, pullReader)
 	pullReader.Close()
-	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
+	slog.Info("Upgrader image pulled successfully", "image", ArcaneUpgraderImage)
+
+	// Try to get the /app/data mount from current container so upgrade logs persist.
+	appDataMount := dockerutils.MountForDestination(currentContainer.Mounts, "/app/data", "/app/data")
+	if appDataMount == nil {
+		slog.Warn("Could not detect /app/data mount; upgrader logs may not persist")
+	} else {
+		slog.Debug("Mounting /app/data into upgrader container", "type", appDataMount.Type, "source", appDataMount.Source)
+	}
 
 	// Create the upgrader container config
 	config := &containertypes.Config{
-		Image: upgraderImage,
+		Image: ArcaneUpgraderImage,
 		Cmd:   []string{"/app/arcane", "upgrade", "--container", containerName},
+		Labels: map[string]string{
+			"com.getarcaneapp.arcane.upgrader": "true",
+			"com.getarcaneapp.arcane":          "true",
+		},
+	}
+
+	mounts := []mounttypes.Mount{
+		{Type: mounttypes.TypeBind, Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"},
+	}
+	if appDataMount != nil {
+		mounts = append(mounts, *appDataMount)
+	}
+
+	keepUpgraderContainer := strings.EqualFold(strings.TrimSpace(os.Getenv("ARCANE_UPGRADE_KEEP_CONTAINER")), "true")
+	if keepUpgraderContainer {
+		slog.Info("Keeping upgrader container after exit (ARCANE_UPGRADE_KEEP_CONTAINER=true)")
 	}
 
 	hostConfig := &containertypes.HostConfig{
-		AutoRemove: true, // Clean up after completion
-		Binds: []string{
-			"/var/run/docker.sock:/var/run/docker.sock",
-		},
+		AutoRemove: !keepUpgraderContainer, // default: clean up after completion
+		Mounts:     mounts,
 	}
 
 	containerName = fmt.Sprintf("%s-upgrader-%d", containerName, time.Now().Unix())

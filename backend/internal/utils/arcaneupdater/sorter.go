@@ -196,6 +196,9 @@ func UpdateImplicitRestart(containers []ContainerWithDeps, markedForRestart map[
 			if markedForRestart[dep] {
 				// This container's dependency is restarting, so it needs to restart too
 				markedForRestart[c.Name] = true
+				if containers[i].Container.Labels == nil {
+					containers[i].Container.Labels = map[string]string{}
+				}
 				containers[i].Container.Labels["_arcane_implicit_restart"] = "true"
 				implicitRestarts = append(implicitRestarts, c.Name)
 				break

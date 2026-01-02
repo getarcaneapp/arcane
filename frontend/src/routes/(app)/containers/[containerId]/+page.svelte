@@ -28,7 +28,6 @@
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
-		RefreshIcon,
 		VolumesIcon,
 		FileTextIcon,
 		SettingsIcon,
@@ -258,11 +257,6 @@
 
 		const d = new Date(normalized);
 		return isNaN(d.getTime()) ? null : d;
-	}
-
-	function formatDockerDate(input: string | Date | undefined | null, fmt = 'PP p'): string {
-		const d = parseDockerDate(input);
-		return d ? format(d, fmt) : 'N/A';
 	}
 
 	const backUrl = $derived.by(() => {

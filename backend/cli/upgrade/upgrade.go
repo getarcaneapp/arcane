@@ -53,6 +53,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
+	logFile, err := arcaneupdater.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	if err != nil {
+		slog.Warn("Failed to setup file logging", "error", err)
+	} else if logFile != nil {
+		defer logFile.Close()
+		slog.Info("Upgrade log file created", "path", logFile.Name())
+	}
+
 	// Connect to Docker
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
