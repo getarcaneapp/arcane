@@ -32,7 +32,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	loggerSkipPatterns := []string{
 		"GET /api/environments/*/ws/containers/*/logs",
 		"GET /api/environments/*/ws/containers/*/stats",
-		"GET /api/environments/*/ws/containers/*/exec",
+		"GET /api/environments/*/ws/containers/*/terminal",
 		"GET /api/environments/*/ws/projects/*/logs",
 		"GET /api/environments/*/ws/system/stats",
 		"GET /_app/*",

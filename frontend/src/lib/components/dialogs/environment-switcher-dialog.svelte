@@ -220,7 +220,8 @@
 
 	function getConnectionString(env: Environment): string {
 		if (env.id === '0') {
-			return $settingsStore.dockerHost || 'unix:///var/run/docker.sock';
+			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
+			return host || 'unix:///var/run/docker.sock';
 		} else {
 			return env.apiUrl;
 		}

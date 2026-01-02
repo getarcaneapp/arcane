@@ -1,6 +1,6 @@
 /**
  * Detects if the device has touch capability.
- * 
+ *
  * Note: Some hybrid devices (laptops with touchscreens) will be detected as touch devices,
  * which is correct as they support both touch and pointer interactions.
  */
@@ -30,4 +30,3 @@ export class IsTouchDevice {
 		return hasTouchPoints || hasTouchStart || hasTouchEvent || hasPointerCoarse;
 	}
 }
-

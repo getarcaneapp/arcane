@@ -294,9 +294,7 @@ export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 			const suggestions = schemaManager.getSuggestions(context).map((s) => ({
 				...s,
 				range,
-				insertTextRules: s.insertText.includes('$')
-					? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-					: undefined
+				insertTextRules: s.insertText.includes('$') ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined
 			}));
 
 			return { suggestions };
@@ -316,12 +314,7 @@ export function registerYamlHoverProvider(monaco: typeof Monaco) {
 			const documentation = schemaManager.getDocumentation(word.word);
 			if (documentation) {
 				return {
-					range: new monaco.Range(
-						position.lineNumber,
-						word.startColumn,
-						position.lineNumber,
-						word.endColumn
-					),
+					range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
 					contents: [{ value: documentation }]
 				};
 			}
@@ -337,4 +330,3 @@ export function registerYamlHoverProvider(monaco: typeof Monaco) {
 export function registerYamlProviders(monaco: typeof Monaco) {
 	return [registerYamlCompletionProvider(monaco), registerYamlHoverProvider(monaco)];
 }
-

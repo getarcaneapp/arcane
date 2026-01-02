@@ -31,10 +31,11 @@ type TemplatePaginatedResponse struct {
 }
 
 type ListTemplatesInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Start  int    `query:"start" default:"0" doc:"Start index"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListTemplatesOutput struct {
@@ -385,7 +386,7 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
 	}

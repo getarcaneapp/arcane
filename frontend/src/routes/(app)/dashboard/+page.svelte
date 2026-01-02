@@ -24,28 +24,14 @@
 	import { CpuIcon, MemoryStickIcon } from '$lib/icons';
 
 	let { data } = $props();
-	let containers = $state(untrack(() => data.containers));
-	let images = $state(untrack(() => data.images));
-	let dockerInfo = $state(untrack(() => data.dockerInfo));
-	let containerStatusCounts = $state(untrack(() => data.containerStatusCounts));
+	let containers = $derived(data.containers);
+	let images = $derived(data.images);
+	let dockerInfo = $derived(data.dockerInfo);
+	let containerStatusCounts = $derived(data.containerStatusCounts);
+	let settings = $derived(data.settings);
 
-	let dashboardStates = $state({
-		dockerInfo: untrack(() => data.dockerInfo) as typeof data.dockerInfo | null,
-		settings: untrack(() => data.settings) as typeof data.settings | null,
-		systemStats: null as SystemStats | null,
-		isPruneDialogOpen: false
-	});
-
-	$effect(() => {
-		untrack(() => {
-			containers = data.containers;
-			images = data.images;
-			dockerInfo = data.dockerInfo;
-			containerStatusCounts = data.containerStatusCounts;
-			dashboardStates.dockerInfo = data.dockerInfo;
-			dashboardStates.settings = data.settings;
-		});
-	});
+	let systemStats = $state<SystemStats | null>(null);
+	let isPruneDialogOpen = $state(false);
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
 
@@ -60,7 +46,6 @@
 		loadingImages: false
 	});
 
-	let liveSystemStats = $state(null as SystemStats | null);
 	let statsWSClient: ReconnectingWebSocket<SystemStats> | null = null;
 	let hasInitialStatsLoaded = $state(false);
 
@@ -75,7 +60,7 @@
 	const stoppedContainers = $derived(containerStatusCounts.stoppedContainers);
 	const runningContainers = $derived(containerStatusCounts.runningContainers);
 	const totalContainers = $derived(containerStatusCounts.totalContainers);
-	const currentStats = $derived(dashboardStates.systemStats || liveSystemStats);
+	const currentStats = $derived(systemStats);
 
 	function addToHistoricalData(stats: SystemStats) {
 		const now = new Date();
@@ -152,7 +137,7 @@
 	});
 
 	function resetStats() {
-		liveSystemStats = null;
+		systemStats = null;
 		hasInitialStatsLoaded = false;
 		historicalData = {
 			cpu: [],
@@ -182,8 +167,7 @@
 				}
 			},
 			onMessage: (data) => {
-				liveSystemStats = data;
-				dashboardStates.systemStats = data;
+				systemStats = data;
 				addToHistoricalData(data);
 				hasInitialStatsLoaded = true;
 				isLoading.loadingStats = false;
@@ -214,7 +198,7 @@
 	});
 
 	async function handleStartAll() {
-		if (isLoading.starting || !dashboardStates.dockerInfo || stoppedContainers === 0) return;
+		if (isLoading.starting || !dockerInfo || stoppedContainers === 0) return;
 		isLoading.starting = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(systemService.startAllStoppedContainers()),
@@ -228,7 +212,7 @@
 	}
 
 	async function handleStopAll() {
-		if (isLoading.stopping || !dashboardStates.dockerInfo || dockerInfo?.ContainersRunning === 0) return;
+		if (isLoading.stopping || !dockerInfo || dockerInfo?.ContainersRunning === 0) return;
 		openConfirmDialog({
 			title: m.dashboard_stop_all_title(),
 			message: m.dashboard_stop_all_confirm(),
@@ -260,7 +244,7 @@
 			volumes: selectedTypes.includes('volumes'),
 			networks: selectedTypes.includes('networks'),
 			buildCache: selectedTypes.includes('buildCache'),
-			dangling: dashboardStates.settings?.dockerPruneMode === 'dangling'
+			dangling: settings?.dockerPruneMode === 'dangling'
 		};
 
 		const typeLabels: Record<PruneType, string> = {
@@ -277,7 +261,7 @@
 			message: m.dashboard_prune_failed({ types: typesString }),
 			setLoadingState: (value) => (isLoading.pruning = value),
 			onSuccess: async () => {
-				dashboardStates.isPruneDialogOpen = false;
+				isPruneDialogOpen = false;
 				if (selectedTypes.length === 1) {
 					toast.success(m.dashboard_prune_success_one({ types: typesString }));
 				} else {
@@ -299,14 +283,14 @@
 		<QuickActions
 			class="absolute top-4 right-4 shrink-0 sm:static"
 			compact
-			dockerInfo={dashboardStates.dockerInfo}
+			{dockerInfo}
 			{stoppedContainers}
 			{runningContainers}
 			loadingDockerInfo={isLoading.loadingDockerInfo}
 			isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
 			onStartAll={handleStartAll}
 			onStopAll={handleStopAll}
-			onOpenPruneDialog={() => (dashboardStates.isPruneDialogOpen = true)}
+			onOpenPruneDialog={() => (isPruneDialogOpen = true)}
 			onRefresh={refreshData}
 			refreshing={isLoading.refreshing}
 		/>
@@ -372,7 +356,7 @@
 			</div>
 
 			<DockerOverview
-				dockerInfo={dashboardStates.dockerInfo}
+				{dockerInfo}
 				containersRunning={runningContainers}
 				containersStopped={stoppedContainers}
 				{totalContainers}
@@ -391,10 +375,10 @@
 	</section>
 
 	<PruneConfirmationDialog
-		bind:open={dashboardStates.isPruneDialogOpen}
+		bind:open={isPruneDialogOpen}
 		isPruning={isLoading.pruning}
-		imagePruneMode={(dashboardStates.settings?.dockerPruneMode as 'dangling' | 'all') || 'dangling'}
+		imagePruneMode={(settings?.dockerPruneMode as 'dangling' | 'all') || 'dangling'}
 		onConfirm={confirmPrune}
-		onCancel={() => (dashboardStates.isPruneDialogOpen = false)}
+		onCancel={() => (isPruneDialogOpen = false)}
 	/>
 </div>
