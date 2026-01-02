@@ -11,14 +11,14 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/containrrr/shoutrrr"
-	"github.com/containrrr/shoutrrr/pkg/types"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 const logoURLPath = "/api/app-images/logo-email"

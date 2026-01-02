@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, untrack } from 'svelte';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import { SettingsPageLayout } from '$lib/layouts';
+	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 	import settingsStore from '$lib/stores/config-store';
 	import { Label } from '$lib/components/ui/label';
 	import { m } from '$lib/paraglide/messages';
@@ -25,6 +25,8 @@
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const formState = getContext('settingsFormState') as any;
+
+	let activeTab = $state('providers');
 
 	let providers = $state<Paginated<NotificationSettings>>({
 		data: untrack(() => data.notificationSettings),
@@ -73,10 +75,10 @@
 
 	$effect(() => {
 		if (formState) {
-			formState.hasChanges = hasChanges;
+			formState.hasChanges = activeTab === 'legacy' ? hasChanges : false;
 			formState.isLoading = isLoading;
-			formState.saveFunction = onSaveApprise;
-			formState.resetFunction = resetForm;
+			formState.saveFunction = activeTab === 'legacy' ? onSaveApprise : null;
+			formState.resetFunction = activeTab === 'legacy' ? resetForm : null;
 		}
 	});
 
@@ -173,14 +175,30 @@
 			pendingTestAction = null;
 		}
 	}
+
+	const actionButtons: SettingsActionButton[] = $derived.by(() => {
+		if (activeTab === 'providers') {
+			return [
+				{
+					id: 'add-provider',
+					action: 'create',
+					label: m.common_add_button({ resource: 'Provider' }),
+					onclick: openAddSheet,
+					disabled: isReadOnly
+				}
+			];
+		}
+		return [];
+	});
 </script>
 
 <SettingsPageLayout
 	title={m.notifications_title()}
 	description={m.notifications_description()}
 	icon={NotificationsIcon}
-	pageType="form"
+	pageType={activeTab === 'legacy' ? 'form' : 'management'}
 	showReadOnlyTag={isReadOnly}
+	{actionButtons}
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative h-full">
@@ -191,21 +209,12 @@
 				</Alert.Root>
 			{/if}
 
-			<Tabs.Root value="providers" class="flex h-full flex-col">
+			<Tabs.Root bind:value={activeTab} class="flex h-full flex-col">
 				<div class="flex items-center justify-between gap-4">
 					<Tabs.List class="inline-flex w-auto shrink-0">
 						<Tabs.Trigger value="providers">Providers</Tabs.Trigger>
 						<Tabs.Trigger value="legacy">Legacy</Tabs.Trigger>
 					</Tabs.List>
-
-					<ArcaneButton
-						action="base"
-						tone="outline-primary"
-						onclick={openAddSheet}
-						disabled={isReadOnly}
-						icon={AddIcon}
-						customLabel={m.common_add_button({ resource: 'Provider' })}
-					/>
 				</div>
 
 				<Tabs.Content value="providers" class="mt-4 flex-1 overflow-hidden sm:mt-6">
