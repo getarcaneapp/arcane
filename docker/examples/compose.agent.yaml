@@ -6,7 +6,8 @@ services:
       - "3553:3553"
     environment:
       - AGENT_MODE=true
-      - AGENT_BOOTSTRAP_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxx
+      - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      - MANAGER_API_URL=http://10.1.1.4:3552
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-data:/app/data

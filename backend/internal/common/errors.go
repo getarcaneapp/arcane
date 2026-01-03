@@ -660,22 +660,6 @@ func (e *OidcConfigError) Error() string {
 	return "Failed to get OIDC configuration"
 }
 
-type SkipOnboardingError struct {
-	Err error
-}
-
-func (e *SkipOnboardingError) Error() string {
-	return fmt.Sprintf("Failed to skip onboarding: %v", e.Err)
-}
-
-type ResetOnboardingError struct {
-	Err error
-}
-
-func (e *ResetOnboardingError) Error() string {
-	return fmt.Sprintf("Failed to reset onboarding: %v", e.Err)
-}
-
 type ProjectListError struct {
 	Err error
 }

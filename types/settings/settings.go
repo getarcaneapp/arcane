@@ -166,6 +166,11 @@ type Update struct {
 	// Required: false
 	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
 
+	// OidcSkipTlsVerify indicates if TLS verification should be skipped for OIDC.
+	//
+	// Required: false
+	OidcSkipTlsVerify *string `json:"oidcSkipTlsVerify,omitempty"`
+
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false

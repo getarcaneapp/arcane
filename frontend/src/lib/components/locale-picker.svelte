@@ -34,8 +34,8 @@
 		nl: 'Nederlands',
 		'pt-BR': 'Português brasileiro',
 		ru: 'Русский',
-		zh: '中文',
 		vi: 'Tiếng Việt',
+		'zh-CN': '中文',
 		'zh-TW': '繁體中文'
 	};
 

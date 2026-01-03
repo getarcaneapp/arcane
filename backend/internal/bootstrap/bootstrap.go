@@ -100,7 +100,7 @@ func Bootstrap(ctx context.Context) error {
 func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
-	pairURL := strings.TrimRight(cfg.ManagerApiUrl, "/") + "/api/environments/pair"
+	pairURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/") + "/api/environments/pair"
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
