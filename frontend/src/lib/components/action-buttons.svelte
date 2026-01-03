@@ -98,6 +98,8 @@
 	let pullStatusText = $state('');
 	let pullError = $state('');
 	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
+	let deployServiceProgress = $state<Record<string, { phase: string; health?: string; state?: string; status?: string }>>({});
+	let deployLastNonWaitingStatus = $state('');
 
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
 
@@ -106,6 +108,32 @@
 		pullStatusText = '';
 		pullError = '';
 		layerProgress = {};
+		deployServiceProgress = {};
+		deployLastNonWaitingStatus = '';
+	}
+
+	function deriveDeployStatusText(): string {
+		const entries = Object.entries(deployServiceProgress);
+		if (entries.length === 0) return m.progress_deploy_starting();
+
+		const waiting = entries.filter(([_, v]) => v.phase === 'service_waiting_healthy').sort(([a], [b]) => a.localeCompare(b));
+		if (waiting.length > 0) {
+			const [service, v] = waiting[0];
+			const health = (v.health ?? '').trim();
+			return health
+				? m.progress_deploy_waiting_for_service_with_health({ service, health })
+				: m.progress_deploy_waiting_for_service({ service });
+		}
+
+		const stateIssues = entries
+			.filter(([_, v]) => v.phase === 'service_state' && (v.state ?? '').toLowerCase() !== 'running')
+			.sort(([a], [b]) => a.localeCompare(b));
+		if (stateIssues.length > 0) {
+			const [service, v] = stateIssues[0];
+			return m.progress_deploy_service_state({ service, state: String(v.state ?? '') });
+		}
+
+		return deployLastNonWaitingStatus || m.progress_deploy_starting();
 	}
 
 	function updatePullProgress() {
@@ -212,60 +240,174 @@
 		setLoading('start', true);
 		let openedPopover = false;
 		let hadError = false;
+		let deployPhaseStarted = false;
+
+		// Always open the popover for deploy so we can show health-wait status even
+		// when there is nothing to pull.
+		deployPullPopoverOpen = true;
+		deployPulling = true;
+		pullStatusText = m.progress_deploy_starting();
+		openedPopover = true;
 
 		try {
-			const { pulled } = await projectService.deployProjectMaybePull(id, (data) => {
-				if (!data) return;
+			const { pulled } = await projectService.deployProjectMaybePull(
+				id,
+				(data) => {
+					if (!data) return;
 
-				if (!openedPopover && isDownloadingLine(data)) {
-					deployPullPopoverOpen = true;
-					deployPulling = true;
-					pullStatusText = m.images_pull_initiating();
-					openedPopover = true;
-				}
-
-				if (data.error) {
-					const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
-					pullError = errMsg;
-					pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
-					hadError = true;
-					return;
-				}
-
-				if (data.status) pullStatusText = data.status;
-
-				if (data.id) {
-					const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
-					currentLayer.status = data.status || currentLayer.status;
-					if (data.progressDetail) {
-						const { current, total } = data.progressDetail;
-						if (typeof current === 'number') currentLayer.current = current;
-						if (typeof total === 'number') currentLayer.total = total;
+					// Pull progress can still update the same popover.
+					if (isDownloadingLine(data)) {
+						pullStatusText = m.images_pull_initiating();
 					}
-					layerProgress[data.id] = currentLayer;
+
+					if (data.error) {
+						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
+						pullError = errMsg;
+						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
+						hadError = true;
+						return;
+					}
+
+					if (data.status) pullStatusText = data.status;
+
+					if (data.id) {
+						const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
+						currentLayer.status = data.status || currentLayer.status;
+						if (data.progressDetail) {
+							const { current, total } = data.progressDetail;
+							if (typeof current === 'number') currentLayer.current = current;
+							if (typeof total === 'number') currentLayer.total = total;
+						}
+						layerProgress[data.id] = currentLayer;
+					}
+
+					updatePullProgress();
+				},
+				(deployData) => {
+					// Handle deploy streaming - health check progress
+					if (!deployData) return;
+
+					// First deploy status line: switch UI from pull -> deploy.
+					if (!deployPhaseStarted) {
+						deployPhaseStarted = true;
+						pullProgress = 0;
+						layerProgress = {};
+						pullError = '';
+						deployServiceProgress = {};
+						deployLastNonWaitingStatus = '';
+					}
+
+					// Keep the popover in "loading" state during deployment.
+					deployPulling = true;
+					if (deployData.type === 'deploy') {
+						switch (deployData.phase) {
+							case 'begin':
+								pullStatusText = m.progress_deploy_starting();
+								break;
+							case 'service_waiting_healthy': {
+								const service = String(deployData.service ?? '').trim();
+								if (service) {
+									deployServiceProgress[service] = {
+										phase: 'service_waiting_healthy',
+										health: String(deployData.health ?? '')
+									};
+									pullStatusText = deriveDeployStatusText();
+								}
+								break;
+							}
+							case 'service_healthy':
+								{
+									const service = String(deployData.service ?? '').trim();
+									if (service) {
+										deployServiceProgress[service] = {
+											phase: 'service_healthy',
+											health: String(deployData.health ?? ''),
+											state: String(deployData.state ?? ''),
+											status: String(deployData.status ?? '')
+										};
+										deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
+										pullStatusText = deriveDeployStatusText();
+									}
+								}
+								break;
+							case 'service_state':
+								{
+									const service = String(deployData.service ?? '').trim();
+									if (service) {
+										deployServiceProgress[service] = {
+											phase: 'service_state',
+											state: String(deployData.state ?? ''),
+											health: String(deployData.health ?? ''),
+											status: String(deployData.status ?? '')
+										};
+										deployLastNonWaitingStatus = m.progress_deploy_service_state({
+											service,
+											state: String(deployData.state ?? '')
+										});
+										pullStatusText = deriveDeployStatusText();
+									}
+								}
+								break;
+							case 'service_status':
+								{
+									const service = String(deployData.service ?? '').trim();
+									if (service) {
+										deployServiceProgress[service] = {
+											phase: 'service_status',
+											status: String(deployData.status ?? ''),
+											state: String(deployData.state ?? ''),
+											health: String(deployData.health ?? '')
+										};
+										deployLastNonWaitingStatus = m.progress_deploy_service_status({
+											service,
+											status: String(deployData.status ?? '')
+										});
+										pullStatusText = deriveDeployStatusText();
+									}
+								}
+								break;
+							case 'complete':
+								pullStatusText = m.progress_deploy_completed();
+								break;
+							default:
+								break;
+						}
+					} else if (deployData.status) {
+						// fallback for unexpected payloads
+						pullStatusText = String(deployData.status);
+					}
+
+					if (deployData.error) {
+						const errMsg =
+							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
+						pullError = errMsg;
+						pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
+						hadError = true;
+						deployPulling = false;
+						return;
+					}
+
+					// If we got "complete", stop the loading state
+					if (deployData.type === 'deploy' && deployData.phase === 'complete') {
+						deployPulling = false;
+						pullProgress = 100;
+					}
 				}
+			);
 
-				updatePullProgress();
-			});
+			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
 
-			// If popover was shown, finish/close it nicely
-			if (openedPopover) {
-				updatePullProgress();
-				if (hadError) throw new Error(pullError || m.images_pull_failed());
+			// Deployment finished successfully.
+			pullProgress = 100;
+			deployPulling = false;
+			pullStatusText = m.progress_deploy_completed();
+			await invalidateAll();
 
-				if (pullProgress < 100 && areAllLayersComplete(layerProgress)) {
-					pullProgress = 100;
-				}
-				pullStatusText = m.images_pulled_success();
-				toast.success(m.images_pulled_success());
-				await invalidateAll();
-
-				setTimeout(() => {
-					deployPullPopoverOpen = false;
-					deployPulling = false;
-					resetPullState();
-				}, 1500);
-			}
+			setTimeout(() => {
+				deployPullPopoverOpen = false;
+				deployPulling = false;
+				resetPullState();
+			}, 1500);
 
 			// Deploy already completed successfully
 			itemState = 'running';
@@ -389,7 +531,9 @@
 				<ProgressPopover
 					bind:open={deployPullPopoverOpen}
 					bind:progress={pullProgress}
-					title={m.progress_pulling_images()}
+					mode="generic"
+					title={m.progress_deploying_project()}
+					completeTitle={m.progress_deploy_completed()}
 					statusText={pullStatusText}
 					error={pullError}
 					loading={deployPulling}
