@@ -563,26 +563,26 @@
 						loading={uiLoading.start}
 					/>
 				{:else}
-          <ProgressPopover
-	          bind:open={deployPullPopoverOpen}
-	          bind:progress={pullProgress}
-	          mode="generic"
-	          title={m.progress_deploying_project()}
-	          completeTitle={m.progress_deploy_completed()}
-	          statusText={pullStatusText}
-	          error={pullError}
-	          loading={deployPulling}
-	          icon={DownloadIcon}
-	          layers={layerProgress}
-          >
-	          <ArcaneButton
-		          action="deploy"
-		          size={adaptiveIconOnly ? 'icon' : 'default'}
-		          showLabel={!adaptiveIconOnly}
-		          onclick={() => handleDeploy()}
-		          loading={uiLoading.start}
-	          />
-          </ProgressPopover>
+					<ProgressPopover
+						bind:open={deployPullPopoverOpen}
+						bind:progress={pullProgress}
+						mode="generic"
+						title={m.progress_deploying_project()}
+						completeTitle={m.progress_deploy_completed()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={deployPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton
+							action="deploy"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => handleDeploy()}
+							loading={uiLoading.start}
+						/>
+					</ProgressPopover>
 				{/if}
 			{/if}
 
@@ -612,55 +612,55 @@
 					onclick={() => confirmAction('remove')}
 					loading={uiLoading.remove}
 				/>
-{:else}
-	<ArcaneButton
-		action="redeploy"
-		size={adaptiveIconOnly ? 'icon' : 'default'}
-		showLabel={!adaptiveIconOnly}
-		onclick={() => confirmAction('redeploy')}
-		loading={uiLoading.redeploy}
-	/>
+			{:else}
+				<ArcaneButton
+					action="redeploy"
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
+					onclick={() => confirmAction('redeploy')}
+					loading={uiLoading.redeploy}
+				/>
 
-	{#if type === 'project'}
-		<ProgressPopover
-			bind:open={pullPopoverOpen}
-			bind:progress={pullProgress}
-			title={m.progress_pulling_images()}
-			statusText={pullStatusText}
-			error={pullError}
-			loading={projectPulling}
-			icon={DownloadIcon}
-			layers={layerProgress}
-		>
-			<ArcaneButton
-				action="pull"
-				size={adaptiveIconOnly ? 'icon' : 'default'}
-				showLabel={!adaptiveIconOnly}
-				onclick={() => handleProjectPull()}
-				loading={projectPulling}
-			/>
-		</ProgressPopover>
-	{/if}
+				{#if type === 'project'}
+					<ProgressPopover
+						bind:open={pullPopoverOpen}
+						bind:progress={pullProgress}
+						title={m.progress_pulling_images()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton
+							action="pull"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => handleProjectPull()}
+							loading={projectPulling}
+						/>
+					</ProgressPopover>
+				{/if}
 
-	{#if onRefresh}
-		<ArcaneButton
-			action="refresh"
-			size={adaptiveIconOnly ? 'icon' : 'default'}
-			showLabel={!adaptiveIconOnly}
-			onclick={() => handleRefresh()}
-			loading={uiLoading.refresh}
-		/>
-	{/if}
+				{#if onRefresh}
+					<ArcaneButton
+						action="refresh"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						onclick={() => handleRefresh()}
+						loading={uiLoading.refresh}
+					/>
+				{/if}
 
-	<ArcaneButton
-		customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-		action="remove"
-		size={adaptiveIconOnly ? 'icon' : 'default'}
-		showLabel={!adaptiveIconOnly}
-		onclick={() => confirmAction('remove')}
-		loading={uiLoading.remove}
-	/>
-{/if}
+				<ArcaneButton
+					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+					action="remove"
+					size={adaptiveIconOnly ? 'icon' : 'default'}
+					showLabel={!adaptiveIconOnly}
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
+			{/if}
 		</div>
 
 		<div class="flex items-center lg:hidden">

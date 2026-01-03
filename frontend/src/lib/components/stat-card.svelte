@@ -33,7 +33,7 @@
 			<span class="text-sm leading-none font-bold tabular-nums">
 				{value}
 			</span>
-			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider uppercase whitespace-nowrap">
+			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
 				{title}
 			</span>
 		</div>
