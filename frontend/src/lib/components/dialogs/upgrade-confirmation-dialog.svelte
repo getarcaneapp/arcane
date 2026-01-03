@@ -7,10 +7,13 @@
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import { cn } from '$lib/utils';
 	import { AlertIcon, InfoIcon, SuccessIcon } from '$lib/icons';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 	let {
 		open = $bindable(false),
 		version,
+		expectedVersion,
+		expectedDigest,
 		onConfirm,
 		environmentName,
 		environmentId,
@@ -18,7 +21,9 @@
 	}: {
 		open?: boolean;
 		version: string;
-		onConfirm: () => void;
+		expectedVersion?: string;
+		expectedDigest?: string;
+		onConfirm: () => void | Promise<void>;
 		environmentName?: string;
 		environmentId?: string;
 		upgrading?: boolean;
@@ -29,64 +34,137 @@
 
 	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'countdown'>('upgrading');
 	let countdown = $state(10);
-	let pollInterval: ReturnType<typeof setInterval> | null = null;
+	let pollAbort = $state<{ aborted: boolean } | null>(null);
 	let countdownInterval: ReturnType<typeof setInterval> | null = null;
 	let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
-	let consecutiveSuccessfulChecks = $state(0);
+	let baselineVersionInfo = $state<AppVersionInformation | null>(null);
+	let lastSeenVersionInfo = $state<AppVersionInformation | null>(null);
+	let consecutiveHealthyChecks = $state(0);
 
-	async function startHealthPolling() {
-		console.log('[Upgrade] Starting upgrade monitoring...');
+	function short(v?: string | null, n = 12): string {
+		if (!v) return '';
+		const s = String(v);
+		return s.length > n ? s.slice(0, n) : s;
+	}
 
-		// Wait 15 seconds for the upgrade to start, then begin polling
-		setTimeout(() => {
-			upgradeStatus = 'waiting';
-			consecutiveSuccessfulChecks = 0;
-			console.log('[Upgrade] Starting health polling...');
+	function log(step: string, data?: unknown) {
+		if (data === undefined) {
+			console.log(`[Upgrade] ${step}`);
+			return;
+		}
+		console.log(`[Upgrade] ${step}`, data);
+	}
 
-			pollInterval = setInterval(async () => {
-				const { healthy } = await systemUpgradeService.checkHealth(environmentId);
+	function versionInfoChanged(a: AppVersionInformation | null, b: AppVersionInformation | null) {
+		if (!a || !b) return false;
+		return (
+			(a.currentDigest && b.currentDigest && a.currentDigest !== b.currentDigest) ||
+			a.currentVersion !== b.currentVersion ||
+			a.revision !== b.revision ||
+			a.displayVersion !== b.displayVersion
+		);
+	}
 
-				console.log('[Upgrade] Health check:', { healthy, consecutiveSuccessfulChecks, environmentId });
+	function matchesExpected(info: AppVersionInformation) {
+		const expVer = expectedVersion?.trim();
+		const expDig = expectedDigest?.trim();
+		if (expVer) return info.currentVersion === expVer;
+		if (expDig) return info.currentDigest === expDig;
+		return true;
+	}
 
-				if (healthy) {
-					consecutiveSuccessfulChecks++;
-					console.log('[Upgrade] Container is up! Consecutive checks:', consecutiveSuccessfulChecks);
+	async function monitorUpgrade() {
+		const envId = environmentId ?? '0';
+		log('monitor-start', {
+			envId,
+			expectedVersion,
+			expectedDigest: short(expectedDigest)
+		});
 
-					if (consecutiveSuccessfulChecks >= 3) {
-						console.log('[Upgrade] 3 consecutive checks passed! Starting countdown...');
-						if (pollInterval) clearInterval(pollInterval);
-						if (fallbackTimeout) clearTimeout(fallbackTimeout);
-						upgradeStatus = 'ready';
-						setTimeout(() => {
-							startCountdown();
-						}, 2000);
-					}
-				} else {
-					consecutiveSuccessfulChecks = 0;
-					console.log('[Upgrade] Container not ready yet, waiting...');
+		pollAbort = { aborted: false };
+		const abortRef = pollAbort;
+
+		upgradeStatus = 'waiting';
+		consecutiveHealthyChecks = 0;
+
+		const startedAt = Date.now();
+		const timeoutMs = 3 * 60 * 1000;
+		let delayMs = 1000;
+
+		while (!abortRef.aborted && Date.now() - startedAt < timeoutMs) {
+			const { healthy } = await systemUpgradeService.checkHealth(envId);
+			if (!healthy) {
+				log('health', { healthy, consecutiveHealthyChecks, backoffMs: delayMs });
+				consecutiveHealthyChecks = 0;
+				await new Promise((r) => setTimeout(r, delayMs));
+				delayMs = Math.min(Math.round(delayMs * 1.4), 5000);
+				continue;
+			}
+
+			consecutiveHealthyChecks++;
+			log('health', { healthy, consecutiveHealthyChecks });
+			if (consecutiveHealthyChecks < 2) {
+				await new Promise((r) => setTimeout(r, 1000));
+				continue;
+			}
+
+			try {
+				const info = await systemUpgradeService.getVersionInfo(envId);
+				lastSeenVersionInfo = info;
+
+				const expVer = expectedVersion?.trim();
+				const expDig = expectedDigest?.trim();
+				const ok = matchesExpected(info);
+				const changed = versionInfoChanged(baselineVersionInfo, info);
+
+				log('version-check', {
+					currentVersion: info.currentVersion,
+					currentDigest: short(info.currentDigest),
+					revision: short(info.revision, 8),
+					baselineVersion: baselineVersionInfo?.currentVersion,
+					baselineDigest: short(baselineVersionInfo?.currentDigest),
+					ok
+				});
+
+				const verified = expVer || expDig ? ok : !!baselineVersionInfo && changed;
+				if (verified) {
+					log('verified', {
+						mode: expVer || expDig ? 'expected' : 'baseline-change',
+						currentVersion: info.currentVersion,
+						currentDigest: short(info.currentDigest)
+					});
+					upgradeStatus = 'ready';
+					setTimeout(() => startCountdown(), 1500);
+					return;
 				}
-			}, 2000);
+			} catch (err) {
+				log('version-endpoint-error', err);
+			}
 
-			// Stop polling after 3 minutes and show error
-			setTimeout(() => {
-				if (pollInterval && upgradeStatus !== 'ready') {
-					console.log('[Upgrade] 3-minute timeout reached, stopping polling');
-					clearInterval(pollInterval);
-					pollInterval = null;
-					upgradeStatus = 'upgrading';
-					upgrading = false;
-				}
-			}, 180000);
+			await new Promise((r) => setTimeout(r, 2000));
+		}
 
-			// Force reload after 2.5 minutes as fallback
-			fallbackTimeout = setTimeout(() => {
-				if (upgradeStatus !== 'countdown') {
-					console.log('[Upgrade] Fallback timeout reached, forcing reload');
-					if (pollInterval) clearInterval(pollInterval);
-					reloadPage();
-				}
-			}, 150000);
-		}, 15000);
+		if (!abortRef.aborted) {
+			log('monitor-timeout', { timeoutMs });
+			upgradeStatus = 'upgrading';
+			upgrading = false;
+		}
+	}
+
+	async function captureBaseline() {
+		try {
+			baselineVersionInfo = await systemUpgradeService.getVersionInfo(environmentId ?? '0');
+			lastSeenVersionInfo = baselineVersionInfo;
+			log('baseline', {
+				currentVersion: baselineVersionInfo.currentVersion,
+				currentDigest: short(baselineVersionInfo.currentDigest),
+
+				revision: short(baselineVersionInfo.revision, 8)
+			});
+		} catch (err) {
+			log('baseline-error', err);
+			baselineVersionInfo = null;
+		}
 	}
 
 	function startCountdown() {
@@ -105,19 +183,49 @@
 		window.location.reload();
 	}
 
-	function handleConfirm() {
+	async function handleConfirm() {
 		upgrading = true;
 		upgradeStatus = 'upgrading';
-		onConfirm();
+		log('confirm', {
+			isRemoteEnvironment,
+			environmentId: environmentId ?? '0',
+			expectedVersion,
+			expectedDigest: short(expectedDigest)
+		});
+
 		if (!isRemoteEnvironment) {
-			startHealthPolling();
+			await captureBaseline();
+		}
+		try {
+			await onConfirm();
+		} catch (err) {
+			log('trigger-error', err);
+			upgrading = false;
+			return;
+		}
+		if (!upgrading) return;
+
+		if (!isRemoteEnvironment) {
+			if (fallbackTimeout) clearTimeout(fallbackTimeout);
+			fallbackTimeout = setTimeout(
+				() => {
+					log('fallback-reload', { reason: 'timeout' });
+					if (upgradeStatus !== 'countdown') {
+						reloadPage();
+					}
+				},
+				4 * 60 * 1000
+			);
+
+			monitorUpgrade();
 		}
 	}
 
 	onDestroy(() => {
-		if (pollInterval) clearInterval(pollInterval);
+		log('destroy');
 		if (countdownInterval) clearInterval(countdownInterval);
 		if (fallbackTimeout) clearTimeout(fallbackTimeout);
+		if (pollAbort) pollAbort.aborted = true;
 	});
 </script>
 

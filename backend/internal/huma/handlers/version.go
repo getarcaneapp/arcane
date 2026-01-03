@@ -70,15 +70,10 @@ func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput)
 	}
 
 	current := strings.TrimSpace(input.Current)
-	info, _ := h.versionService.GetVersionInformation(ctx, current)
+	check, _ := h.versionService.GetVersionInformation(ctx, current)
 
 	return &GetVersionOutput{
-		Body: version.Check{
-			CurrentVersion:  info.CurrentVersion,
-			NewestVersion:   info.NewestVersion,
-			UpdateAvailable: info.UpdateAvailable,
-			ReleaseURL:      info.ReleaseURL,
-		},
+		Body: *check,
 	}, nil
 }
 

@@ -27,6 +27,14 @@
 	}
 </script>
 
+{#snippet renderTitle()}
+	{#if typeof title === 'string'}
+		{title}
+	{:else if title}
+		{@render title()}
+	{/if}
+{/snippet}
+
 {#if isDesktop.current}
 	{#if variant === 'sheet'}
 		<Sheet.Root bind:open onOpenChange={handleOpenChange}>
@@ -39,7 +47,7 @@
 				{#if title || description}
 					<Sheet.Header class="shrink-0 px-6 pt-6">
 						{#if title}
-							<Sheet.Title>{title}</Sheet.Title>
+							<Sheet.Title>{@render renderTitle()}</Sheet.Title>
 						{/if}
 						{#if description}
 							<Sheet.Description>{description}</Sheet.Description>
@@ -72,7 +80,7 @@
 				{#if title || description}
 					<Dialog.Header class="shrink-0 px-6 pt-6">
 						{#if title}
-							<Dialog.Title>{title}</Dialog.Title>
+							<Dialog.Title>{@render renderTitle()}</Dialog.Title>
 						{/if}
 						{#if description}
 							<Dialog.Description>{description}</Dialog.Description>
@@ -101,7 +109,7 @@
 			{#if title || description}
 				<Drawer.Header class="shrink-0 text-left">
 					{#if title}
-						<Drawer.Title>{title}</Drawer.Title>
+						<Drawer.Title>{@render renderTitle()}</Drawer.Title>
 					{/if}
 					{#if description}
 						<Drawer.Description>{description}</Drawer.Description>

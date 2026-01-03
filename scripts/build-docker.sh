@@ -7,7 +7,7 @@ if [ -f .arcane.json ]; then
   REVISION=$(jq -r '.revision // empty' .arcane.json)
 fi
 VERSION=${VERSION:-"dev"}
-REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || "unknown")}
+REVISION=${REVISION:-$(git rev-parse HEAD 2>/dev/null || "unknown")}
 
 # Parse optional arguments
 TAG="${1:-arcane:latest}"

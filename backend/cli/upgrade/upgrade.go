@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -14,6 +13,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +52,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Use background context instead of command context to ignore signals
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
+
+	logFile, err := arcaneupdater.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	if err != nil {
+		slog.Warn("Failed to setup file logging", "error", err)
+	} else if logFile != nil {
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				slog.Warn("Failed to close upgrade log file", "error", err, "path", logFile.Name())
+			}
+		}()
+		slog.Info("Upgrade log file created", "path", logFile.Name())
+	}
 
 	// Connect to Docker
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -100,7 +113,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 }
 
 func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (container.InspectResponse, error) {
-	// Look for containers with "arcane" in the image name
+	// Prefer explicit Arcane labels; fall back to image name heuristics.
 	filter := filters.NewArgs()
 	filter.Add("status", "running")
 
@@ -109,7 +122,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		return container.InspectResponse{}, err
 	}
 
-	selfID := getSelfContainerID()
+	selfID, _ := utils.GetCurrentContainerID()
 	slog.Info("Searching for Arcane container", "selfID", selfID, "totalContainers", len(containers))
 
 	now := time.Now()
@@ -119,83 +132,75 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
+		inspect, err := dockerClient.ContainerInspect(ctx, c.ID)
+		if err != nil {
+			continue
+		}
+
+		if isAgentContainer(inspect) {
+			slog.Debug("Skipping agent container", "id", c.ID[:12], "names", c.Names)
+			continue
+		}
+
+		labels := map[string]string{}
+		if inspect.Config != nil && inspect.Config.Labels != nil {
+			labels = inspect.Config.Labels
+		}
+
+		// New label: com.getarcaneapp.arcane=true
+		if arcaneupdater.IsArcaneContainer(labels) {
+			slog.Info("Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
+			return inspect, nil
+		}
+
+		// Legacy label (pre-migration): com.getarcaneapp.arcane.server=true
+		// NOTE: older agent images also used this label, so we must additionally exclude AGENT_MODE=true.
+		if isLegacyServerLabel(labels) {
+			slog.Info("Found Arcane container by legacy label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
+			return inspect, nil
+		}
+
+		// Fallback: image name heuristic
 		if strings.Contains(strings.ToLower(c.Image), "arcane") {
-			slog.Info("Found matching container", "id", c.ID[:12], "image", c.Image, "names", c.Names)
-			return dockerClient.ContainerInspect(ctx, c.ID)
+			slog.Info("Found matching container by image name", "id", c.ID[:12], "image", c.Image, "names", c.Names)
+			return inspect, nil
 		}
 	}
 
 	return container.InspectResponse{}, fmt.Errorf("no running Arcane container found")
 }
 
-// getSelfContainerID attempts to detect the container ID if running in Docker
-func getSelfContainerID() string {
-	data, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return ""
+func isLegacyServerLabel(labels map[string]string) bool {
+	if labels == nil {
+		return false
 	}
-
-	content := string(data)
-	for _, line := range strings.Split(content, "\n") {
-		// cgroup v1: 12:pids:/docker/abc123...
-		if id := extractCgroupV1ID(line); id != "" {
-			return id
-		}
-		// cgroup v2: 0::/system.slice/docker-abc123....scope
-		if id := extractCgroupV2ID(line); id != "" {
-			return id
+	for k, v := range labels {
+		if strings.EqualFold(k, "com.getarcaneapp.arcane.server") {
+			return strings.EqualFold(strings.TrimSpace(v), "true")
 		}
 	}
-
-	return ""
+	return false
 }
 
-// extractCgroupV1ID extracts container ID from cgroup v1 format
-func extractCgroupV1ID(line string) string {
-	if !strings.Contains(line, "/docker/") {
-		return ""
+func isAgentContainer(inspect container.InspectResponse) bool {
+	if inspect.Config == nil {
+		return false
 	}
-
-	parts := strings.Split(line, "/docker/")
-	if len(parts) <= 1 {
-		return ""
+	// New label for agent containers
+	if inspect.Config.Labels != nil {
+		for k, v := range inspect.Config.Labels {
+			if strings.EqualFold(k, "com.getarcaneapp.arcane.agent") {
+				return strings.EqualFold(strings.TrimSpace(v), "true")
+			}
+		}
 	}
-
-	id := strings.TrimSpace(parts[1])
-	if idx := strings.Index(id, "/"); idx != -1 {
-		id = id[:idx]
+	// Legacy agent detection: AGENT_MODE=true in env
+	for _, env := range inspect.Config.Env {
+		if strings.EqualFold(env, "AGENT_MODE=true") {
+			return true
+		}
 	}
-
-	if len(id) >= 12 {
-		return id[:12]
-	}
-
-	return ""
-}
-
-// extractCgroupV2ID extracts container ID from cgroup v2 format
-func extractCgroupV2ID(line string) string {
-	if !strings.Contains(line, "docker-") || !strings.Contains(line, ".scope") {
-		return ""
-	}
-
-	start := strings.Index(line, "docker-")
-	if start == -1 {
-		return ""
-	}
-
-	start += 7 // len("docker-")
-	end := strings.Index(line[start:], ".scope")
-	if end == -1 {
-		return ""
-	}
-
-	id := line[start : start+end]
-	if len(id) >= 12 {
-		return id[:12]
-	}
-
-	return ""
+	return false
 }
 
 // shouldSkipContainer determines if a container should be skipped during search
@@ -328,7 +333,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 
 func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string) error {
 	originalName := strings.TrimPrefix(oldContainer.Name, "/")
-	tempName := fmt.Sprintf("%s-upgrading", originalName)
+	oldName := fmt.Sprintf("%s-old-%d", originalName, time.Now().UnixNano())
 
 	// Create new container config
 	config := *oldContainer.Config
@@ -342,6 +347,13 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	if nm.IsHost() || nm.IsContainer() {
 		config.Hostname = ""
 		config.Domainname = ""
+	}
+
+	// Clear hostname if it looks like a container ID (auto-generated by Docker)
+	// This allows Docker to assign the new container's ID as the hostname
+	if looksLikeContainerID(config.Hostname) {
+		slog.Debug("Clearing auto-generated hostname", "oldHostname", config.Hostname)
+		config.Hostname = ""
 	}
 
 	// Fix for "conflicting options: port exposing and the container type network mode"
@@ -377,19 +389,27 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		}
 	}
 
+	fmt.Println("PROGRESS:65:Renaming old container")
+	slog.Info("Renaming old container", "from", originalName, "to", oldName)
+	if err := dockerClient.ContainerRename(ctx, oldContainer.ID, oldName); err != nil {
+		return fmt.Errorf("rename old container: %w", err)
+	}
+
 	fmt.Println("PROGRESS:70:Stopping old container")
-	slog.Info("Stopping old container", "name", originalName)
+	slog.Info("Stopping old container", "name", oldName)
 	timeout := 10
 	if err := dockerClient.ContainerStop(ctx, oldContainer.ID, container.StopOptions{Timeout: &timeout}); err != nil {
+		_ = dockerClient.ContainerRename(ctx, oldContainer.ID, originalName)
 		return fmt.Errorf("stop old container: %w", err)
 	}
 
 	fmt.Println("PROGRESS:75:Creating new container")
-	slog.Info("Creating new container", "tempName", tempName)
-	resp, err := dockerClient.ContainerCreate(ctx, &config, hostConfig, networkConfig, nil, tempName)
+	slog.Info("Creating new container", "name", originalName)
+	resp, err := dockerClient.ContainerCreate(ctx, &config, hostConfig, networkConfig, nil, originalName)
 	if err != nil {
-		// Try to restart old container on failure
+		// Try to restart and restore old container on failure
 		_ = dockerClient.ContainerStart(ctx, oldContainer.ID, container.StartOptions{})
+		_ = dockerClient.ContainerRename(ctx, oldContainer.ID, originalName)
 		return fmt.Errorf("create new container: %w", err)
 	}
 
@@ -399,6 +419,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		// Cleanup new container and restart old one
 		_ = dockerClient.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		_ = dockerClient.ContainerStart(ctx, oldContainer.ID, container.StartOptions{})
+		_ = dockerClient.ContainerRename(ctx, oldContainer.ID, originalName)
 		return fmt.Errorf("start new container: %w", err)
 	}
 
@@ -413,11 +434,21 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		slog.Warn("Failed to remove old container", "error", err)
 	}
 
-	fmt.Println("PROGRESS:95:Renaming new container")
-	slog.Info("Renaming new container", "from", tempName, "to", originalName)
-	if err := dockerClient.ContainerRename(ctx, resp.ID, originalName); err != nil {
-		slog.Warn("Failed to rename container", "error", err)
-	}
+	fmt.Println("PROGRESS:95:Upgrade complete")
 
 	return nil
+}
+
+// looksLikeContainerID checks if a string looks like a Docker container ID
+// (12 or 64 lowercase hex characters, which Docker auto-generates as hostnames)
+func looksLikeContainerID(s string) bool {
+	if len(s) != 12 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

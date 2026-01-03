@@ -39,3 +39,4 @@ tests/package-lock.json
 /.idea/**
 .pnpm-store/**
 .pnpm-store
+.claude/settings.local.json

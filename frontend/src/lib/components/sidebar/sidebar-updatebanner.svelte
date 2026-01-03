@@ -12,6 +12,7 @@
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 	import { DownloadIcon, ExternalLinkIcon } from '$lib/icons';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 
 	let {
 		isCollapsed,
@@ -104,8 +105,9 @@
 			await systemUpgradeService.triggerUpgrade();
 			// Dialog will handle countdown and reload
 		} catch (error: any) {
-			const errorMessage = error?.response?.data?.error || error?.message || 'Unknown error';
-			toast.error(m.upgrade_failed({ error: errorMessage }));
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 			upgrading = false;
 		}
 	}
@@ -150,6 +152,8 @@
 	bind:open={showConfirmDialog}
 	bind:upgrading
 	version={versionInformation?.newestVersion ?? ''}
+	expectedVersion={versionInformation?.newestVersion}
+	expectedDigest={versionInformation?.newestDigest}
 	onConfirm={handleConfirmUpgrade}
 />
 
