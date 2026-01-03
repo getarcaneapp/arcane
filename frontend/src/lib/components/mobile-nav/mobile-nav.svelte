@@ -144,7 +144,11 @@
 			'shadow-sm select-none transition-all duration-300 ease-out',
 			'flex items-center',
 			mode === 'floating'
-				? cn('rounded-3xl border', showLabels ? 'gap-2 px-3 py-2' : 'gap-3 px-4 py-2.5')
+				? cn(
+						'rounded-3xl border',
+						// On very small screens, tighten spacing so labeled items + center action fit.
+						showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5'
+					)
 				: cn('border-t border-border/50 justify-around', showLabels ? 'px-4 pt-2 pb-4' : 'px-4 pt-2.5 pb-4'),
 			visible
 				? mode === 'floating'

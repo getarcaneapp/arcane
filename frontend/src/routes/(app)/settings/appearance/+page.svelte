@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
 	import { toast } from 'svelte-sonner';
-	import NavigationSettingControl from '$lib/components/navigation-setting-control.svelte';
-	import NavigationModeSettingControl from '$lib/components/navigation-mode-setting-control.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import { navigationSettingsOverridesStore, resetNavigationVisibility } from '$lib/utils/navigation.utils';
@@ -14,7 +12,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
-	import { ApperanceIcon } from '$lib/icons';
+	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon } from '$lib/icons';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
 	let { data } = $props();
 	const currentSettings = $derived($settingsStore || data.settings!);
@@ -64,7 +64,46 @@
 		navigationSettingsOverridesStore.current = newOverrides;
 		persistedState = navigationSettingsOverridesStore.current;
 		if (key === 'mode') resetNavigationVisibility();
-		toast.success(`Local override cleared for ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
+	}
+
+	// Navigation Mode state
+	const modeIsLocal = $derived(persistedState.mode !== undefined);
+	const modeDisplayValue = $derived(modeIsLocal ? persistedState.mode : $formInputs.mobileNavigationMode.value);
+
+	function handleModeSelect(mode: 'floating' | 'docked') {
+		if (modeIsLocal) {
+			setLocalOverride('mode', mode);
+		} else {
+			$formInputs.mobileNavigationMode.value = mode;
+		}
+	}
+
+	function handleModeScopeChange(isLocal: boolean) {
+		if (isLocal) {
+			setLocalOverride('mode', $formInputs.mobileNavigationMode.value);
+		} else {
+			clearLocalOverride('mode');
+		}
+	}
+
+	// Show Labels state
+	const labelsIsLocal = $derived(persistedState.showLabels !== undefined);
+	const labelsDisplayValue = $derived(labelsIsLocal ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value);
+
+	function handleLabelsChange(checked: boolean) {
+		if (labelsIsLocal) {
+			setLocalOverride('showLabels', checked);
+		} else {
+			$formInputs.mobileNavigationShowLabels.value = checked;
+		}
+	}
+
+	function handleLabelsScopeChange(isLocal: boolean) {
+		if (isLocal) {
+			setLocalOverride('showLabels', $formInputs.mobileNavigationShowLabels.value);
+		} else {
+			clearLocalOverride('showLabels');
+		}
 	}
 </script>
 
@@ -163,7 +202,6 @@
 									disabled={isReadOnly}
 									onCheckedChange={(checked) => {
 										$formInputs.sidebarHoverExpansion.value = checked;
-										// Update the sidebar immediately if context is available
 										if (sidebar) {
 											sidebar.setHoverExpansion(checked);
 										}
@@ -185,47 +223,65 @@
 				<h3 class="text-lg font-medium">{m.navigation_mobile_appearance_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
+						<!-- Navigation Mode -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
 								<Label class="text-base">{m.navigation_mode_label()}</Label>
 								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_mode_description()}</p>
 							</div>
-							<div>
-								<NavigationModeSettingControl
-									id="mobileNavigationMode"
-									description=""
-									serverValue={$formInputs.mobileNavigationMode.value}
-									localOverride={persistedState.mode}
-									onServerChange={(value) => {
-										$formInputs.mobileNavigationMode.value = value;
-									}}
-									onLocalOverride={(value) => setLocalOverride('mode', value)}
-									onClearOverride={() => clearLocalOverride('mode')}
-									serverDisabled={isReadOnly}
+							<div class="space-y-3">
+								<SwitchWithLabel
+									id="mode-scope-toggle"
+									checked={modeIsLocal}
+									label={modeIsLocal ? m.this_device() : m.server_default()}
+									onCheckedChange={handleModeScopeChange}
+									disabled={isReadOnly && !modeIsLocal}
 								/>
+
+								<div class="grid grid-cols-2 gap-2">
+									<ArcaneButton
+										action="base"
+										tone={modeDisplayValue === 'floating' ? 'outline-primary' : 'outline'}
+										class="h-12 w-full"
+										onclick={() => handleModeSelect('floating')}
+										icon={MonitorSpeakerIcon}
+										customLabel={m.navigation_mode_floating()}
+									/>
+									<ArcaneButton
+										action="base"
+										tone={modeDisplayValue === 'docked' ? 'outline-primary' : 'outline'}
+										class="h-12 w-full"
+										onclick={() => handleModeSelect('docked')}
+										icon={DockIcon}
+										customLabel={m.navigation_mode_docked()}
+									/>
+								</div>
 							</div>
 						</div>
 
 						<Separator />
 
+						<!-- Show Labels -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
 								<Label class="text-base">{m.navigation_show_labels_label()}</Label>
 								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_show_labels_description()}</p>
 							</div>
-							<div>
-								<NavigationSettingControl
-									id="mobileNavigationShowLabels"
-									description=""
-									serverValue={$formInputs.mobileNavigationShowLabels.value}
-									localOverride={persistedState.showLabels}
-									onServerChange={(value) => {
-										$formInputs.mobileNavigationShowLabels.value = value;
-									}}
-									onLocalOverride={(value) => setLocalOverride('showLabels', value)}
-									onClearOverride={() => clearLocalOverride('showLabels')}
-									serverDisabled={isReadOnly}
+							<div class="space-y-3">
+								<SwitchWithLabel
+									id="labels-scope-toggle"
+									checked={labelsIsLocal}
+									label={labelsIsLocal ? m.this_device() : m.server_default()}
+									onCheckedChange={handleLabelsScopeChange}
+									disabled={isReadOnly && !labelsIsLocal}
 								/>
+
+								<div class="flex items-center gap-3">
+									<Switch id="mobileNavigationShowLabels" checked={labelsDisplayValue} onCheckedChange={handleLabelsChange} />
+									<span class="text-sm font-medium">
+										{labelsDisplayValue ? m.on() : m.off()}
+									</span>
+								</div>
 							</div>
 						</div>
 					</div>

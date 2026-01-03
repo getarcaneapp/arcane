@@ -16,7 +16,6 @@
 		ArrowUpIcon,
 		ArrowDownIcon
 	} from '$lib/icons';
-	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
@@ -28,6 +27,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
+	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 
 	let { data }: { data: PageData } = $props();
 	let errorMessage = $state('');
@@ -101,60 +101,37 @@
 			}
 		});
 	}
+
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isRemoving,
+			disabled: isRemoving || isPredefined,
+			onclick: triggerRemove
+		}
+	]);
 </script>
 
-<div class="space-y-6 pb-8">
-	<div class="flex flex-col space-y-4">
-		<Breadcrumb.Root>
-			<Breadcrumb.List>
-				<Breadcrumb.Item>
-					<Breadcrumb.Link href="/networks">{m.networks_title()}</Breadcrumb.Link>
-				</Breadcrumb.Item>
-				<Breadcrumb.Separator />
-				<Breadcrumb.Item>
-					<Breadcrumb.Page>{network?.name ?? shortId}</Breadcrumb.Page>
-				</Breadcrumb.Item>
-			</Breadcrumb.List>
-		</Breadcrumb.Root>
-
-		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-			<div class="flex flex-col">
-				<div class="flex items-center gap-3">
-					<h1 class="text-2xl font-bold tracking-tight">
-						{network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
-					</h1>
-
-					<div class="hidden sm:block">
-						<StatusBadge variant="gray" text={`${m.common_id()}: ${shortId}`} />
-					</div>
-				</div>
-
-				<div class="mt-2 flex gap-2">
-					{#if inUse}
-						<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
-					{:else}
-						<StatusBadge variant="amber" text={m.common_unused()} />
-					{/if}
-
-					{#if isPredefined}
-						<StatusBadge variant="blue" text={m.networks_predefined()} />
-					{/if}
-
-					<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
-				</div>
-			</div>
-
-			<div class="self-start">
-				<ArcaneButton
-					action="remove"
-					customLabel={m.common_remove_title({ resource: m.resource_network_cap() })}
-					onclick={triggerRemove}
-					loading={isRemoving}
-					disabled={isRemoving || isPredefined}
-				/>
-			</div>
-		</div>
-	</div>
+<ResourceDetailLayout
+	backUrl="/networks"
+	backLabel={m.networks_title()}
+	title={network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
+	subtitle={`${m.common_id()}: ${shortId}`}
+	{actions}
+>
+	{#snippet badges()}
+		{#if inUse}
+			<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
+		{:else}
+			<StatusBadge variant="amber" text={m.common_unused()} />
+		{/if}
+		{#if isPredefined}
+			<StatusBadge variant="blue" text={m.networks_predefined()} />
+		{/if}
+		<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
+	{/snippet}
 
 	{#if errorMessage}
 		<Alert.Root variant="destructive">
@@ -667,4 +644,4 @@
 			/>
 		</div>
 	{/if}
-</div>
+</ResourceDetailLayout>

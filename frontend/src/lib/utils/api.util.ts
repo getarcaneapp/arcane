@@ -37,7 +37,7 @@ export async function handleApiResultWithCallbacks<T>({
 		if (result.error) {
 			const dockerMsg = extractDockerErrorMessage(result.error);
 			console.error(`API Error: ${message}:`, result.error);
-			toast.error(`${message}: ${dockerMsg}`);
+			toast.error(message, { description: dockerMsg });
 			await Promise.resolve(onError(result.error));
 		} else {
 			await Promise.resolve(onSuccess(result.data as T));
