@@ -59,7 +59,6 @@
 		if (!a || !b) return false;
 		return (
 			(a.currentDigest && b.currentDigest && a.currentDigest !== b.currentDigest) ||
-			(a.currentImageId && b.currentImageId && a.currentImageId !== b.currentImageId) ||
 			a.currentVersion !== b.currentVersion ||
 			a.revision !== b.revision ||
 			a.displayVersion !== b.displayVersion
@@ -121,14 +120,9 @@
 				log('version-check', {
 					currentVersion: info.currentVersion,
 					currentDigest: short(info.currentDigest),
-					currentImageId: short(info.currentImageId),
 					revision: short(info.revision, 8),
 					baselineVersion: baselineVersionInfo?.currentVersion,
 					baselineDigest: short(baselineVersionInfo?.currentDigest),
-					baselineImageId: short(baselineVersionInfo?.currentImageId),
-					expectedVersion: expVer || undefined,
-					expectedDigest: expDig ? short(expDig) : undefined,
-					changed,
 					ok
 				});
 
@@ -137,8 +131,7 @@
 					log('verified', {
 						mode: expVer || expDig ? 'expected' : 'baseline-change',
 						currentVersion: info.currentVersion,
-						currentDigest: short(info.currentDigest),
-						currentImageId: short(info.currentImageId)
+						currentDigest: short(info.currentDigest)
 					});
 					upgradeStatus = 'ready';
 					setTimeout(() => startCountdown(), 1500);
@@ -165,7 +158,7 @@
 			log('baseline', {
 				currentVersion: baselineVersionInfo.currentVersion,
 				currentDigest: short(baselineVersionInfo.currentDigest),
-				currentImageId: short(baselineVersionInfo.currentImageId),
+
 				revision: short(baselineVersionInfo.revision, 8)
 			});
 		} catch (err) {

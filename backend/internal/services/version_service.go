@@ -7,18 +7,19 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -95,17 +96,37 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
-	lp := parseSemver(latest)
-	cp := parseSemver(current)
-	for i := 0; i < 3; i++ {
-		if lp[i] > cp[i] {
-			return true
-		}
-		if lp[i] < cp[i] {
-			return false
-		}
+	// Ensure both versions have 'v' prefix for semver package
+	latest = s.normalizeVersion(latest)
+	current = s.normalizeVersion(current)
+
+	// Use semver.Compare: returns 1 if latest > current
+	return semver.Compare(latest, current) > 0
+}
+
+// normalizeVersion ensures version has 'v' prefix and is valid semver format
+func (s *VersionService) normalizeVersion(ver string) string {
+	ver = strings.TrimSpace(ver)
+	if ver == "" {
+		return "v0.0.0"
 	}
-	return false
+	if !strings.HasPrefix(ver, "v") {
+		ver = "v" + ver
+	}
+	// If not valid semver, try to make it valid
+	if !semver.IsValid(ver) {
+		// Extract just the numeric part before any suffix
+		if idx := strings.IndexAny(ver, "-+"); idx > 0 {
+			ver = ver[:idx]
+		}
+		// Ensure at least v0.0.0 format
+		parts := strings.Split(strings.TrimPrefix(ver, "v"), ".")
+		for len(parts) < 3 {
+			parts = append(parts, "0")
+		}
+		ver = "v" + strings.Join(parts[:3], ".")
+	}
+	return ver
 }
 
 func (s *VersionService) ReleaseURL(version string) string {
@@ -120,29 +141,20 @@ func (s *VersionService) ReleaseURL(version string) string {
 	return "https://github.com/getarcaneapp/arcane/releases/tag/" + v
 }
 
-type VersionInformation struct {
-	CurrentVersion  string `json:"currentVersion"`
-	NewestVersion   string `json:"newestVersion,omitempty"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	ReleaseURL      string `json:"releaseUrl,omitempty"`
-}
-
-func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*VersionInformation, error) {
+func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*version.Check, error) {
 	if currentVersion == "" {
 		currentVersion = s.version
 	}
-	cur := strings.TrimSpace(currentVersion)
-	if !strings.HasPrefix(cur, "v") && len(cur) > 0 && cur[0] >= '0' && cur[0] <= '9' {
-		cur = "v" + cur
+	cur := s.normalizeVersion(currentVersion)
+
+	check := &version.Check{
+		CurrentVersion:  cur,
+		ReleaseURL:      s.ReleaseURL(""),
+		UpdateAvailable: false,
 	}
 
 	if s.disabled {
-		return &VersionInformation{
-			CurrentVersion:  cur,
-			NewestVersion:   "",
-			UpdateAvailable: false,
-			ReleaseURL:      s.ReleaseURL(""),
-		}, nil
+		return check, nil
 	}
 
 	latest, err := s.GetLatestVersion(ctx)
@@ -151,47 +163,26 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 		if errors.As(err, &staleErr) {
 			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
 		} else {
-			return &VersionInformation{
-				CurrentVersion: cur,
-				ReleaseURL:     s.ReleaseURL(""),
-			}, err
+			return check, err
 		}
 	}
 
-	return &VersionInformation{
-		CurrentVersion:  cur,
-		NewestVersion:   latest,
-		UpdateAvailable: s.IsNewer(latest, cur),
-		ReleaseURL:      s.ReleaseURL(latest),
-	}, nil
+	if latest != "" {
+		check.NewestVersion = latest
+		check.UpdateAvailable = s.IsNewer(latest, cur)
+		check.ReleaseURL = s.ReleaseURL(latest)
+	}
+
+	return check, nil
 }
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
 func (s *VersionService) isSemverVersion() bool {
-	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
-	parts := strings.Split(version, ".")
-	if len(parts) < 3 {
-		return false
+	version := strings.TrimSpace(s.version)
+	if !strings.HasPrefix(version, "v") {
+		version = "v" + version
 	}
-	for i := 0; i < 3; i++ {
-		// Extract just the numeric part (ignoring suffixes like -alpha, +build)
-		numPart := parts[i]
-		if i == len(parts)-1 {
-			// Last part might have additional info like "0-alpha" or "0+build"
-			numPart = strings.FieldsFunc(numPart, func(r rune) bool {
-				return r == '-' || r == '+'
-			})[0]
-		}
-		if numPart == "" {
-			return false
-		}
-		for _, c := range numPart {
-			if c < '0' || c > '9' {
-				return false
-			}
-		}
-	}
-	return true
+	return semver.IsValid(version)
 }
 
 // getDisplayVersion formats the version for display purposes
@@ -210,278 +201,180 @@ func (s *VersionService) getDisplayVersion() string {
 
 // GetAppVersionInfo returns application version information including display version
 func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
-	ver := strings.TrimSpace(s.version)
-	if s.isSemverVersion() && !strings.HasPrefix(ver, "v") {
-		ver = "v" + ver
-	}
-	displayVersion := s.getDisplayVersion()
 	isSemver := s.isSemverVersion()
+	ver := s.normalizeVersion(s.version)
 
-	// Detect current container image tag, digest, and registry
-	currentTag, currentDigest, currentImageRef, currentImageID := s.detectCurrentImageInfo(ctx)
+	// Always detect current image info
+	currentTag, currentDigest, currentImageRef := s.detectCurrentImageInfo(ctx)
 
-	// Common fields for all responses
-	shortRev := config.ShortRevision()
-	goVer := config.GoVersion()
-	buildTime := config.BuildTime
+	// Build base info struct (always populated)
+	info := &version.Info{
+		CurrentVersion:  ver,
+		CurrentTag:      currentTag,
+		CurrentDigest:   currentDigest,
+		DisplayVersion:  s.getDisplayVersion(),
+		Revision:        s.revision,
+		ShortRevision:   config.ShortRevision(),
+		GoVersion:       config.GoVersion(),
+		BuildTime:       config.BuildTime,
+		IsSemverVersion: isSemver,
+		UpdateAvailable: false,
+	}
 
+	// If update checks disabled, return base info
 	if s.disabled {
-		return &version.Info{
-			CurrentVersion:  ver,
-			CurrentTag:      currentTag,
-			CurrentDigest:   currentDigest,
-			CurrentImageID:  currentImageID,
-			DisplayVersion:  displayVersion,
-			Revision:        s.revision,
-			ShortRevision:   shortRev,
-			GoVersion:       goVer,
-			BuildTime:       buildTime,
-			IsSemverVersion: isSemver,
-			UpdateAvailable: false,
-		}
+		return info
 	}
 
 	// For semver versions, check GitHub releases
 	if isSemver {
 		latest, err := s.GetLatestVersion(ctx)
-		if err != nil {
-			var staleErr *cache.ErrStale
-			if !errors.As(err, &staleErr) {
-				return &version.Info{
-					CurrentVersion:  ver,
-					CurrentTag:      currentTag,
-					CurrentDigest:   currentDigest,
-					CurrentImageID:  currentImageID,
-					DisplayVersion:  displayVersion,
-					Revision:        s.revision,
-					ShortRevision:   shortRev,
-					GoVersion:       goVer,
-					BuildTime:       buildTime,
-					IsSemverVersion: isSemver,
-				}
+		var staleErr *cache.ErrStale
+		if err == nil || errors.As(err, &staleErr) {
+			if latest != "" {
+				info.NewestVersion = latest
+				info.UpdateAvailable = s.IsNewer(latest, ver)
+				info.ReleaseURL = s.ReleaseURL(latest)
 			}
-			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
 		}
-
-		return &version.Info{
-			CurrentVersion:  ver,
-			CurrentTag:      currentTag,
-			CurrentDigest:   currentDigest,
-			CurrentImageID:  currentImageID,
-			DisplayVersion:  displayVersion,
-			Revision:        s.revision,
-			ShortRevision:   shortRev,
-			GoVersion:       goVer,
-			BuildTime:       buildTime,
-			IsSemverVersion: isSemver,
-			NewestVersion:   latest,
-			UpdateAvailable: s.IsNewer(latest, ver),
-			ReleaseURL:      s.ReleaseURL(latest),
-		}
+		return info
 	}
 
 	// For non-semver versions (like "next"), check digest-based updates
-	if currentTag != "" && s.containerRegistryService != nil {
+	if currentTag != "" && currentDigest != "" && currentImageRef != "" && s.containerRegistryService != nil {
 		updateAvailable, latestDigest := s.checkDigestBasedUpdate(ctx, currentTag, currentDigest, currentImageRef)
-		return &version.Info{
-			CurrentVersion:  ver,
-			CurrentTag:      currentTag,
-			CurrentDigest:   currentDigest,
-			CurrentImageID:  currentImageID,
-			DisplayVersion:  displayVersion,
-			Revision:        s.revision,
-			ShortRevision:   shortRev,
-			GoVersion:       goVer,
-			BuildTime:       buildTime,
-			IsSemverVersion: isSemver,
-			NewestDigest:    latestDigest,
-			UpdateAvailable: updateAvailable,
-		}
+		info.UpdateAvailable = updateAvailable
+		info.NewestDigest = latestDigest
 	}
 
-	return &version.Info{
-		CurrentVersion:  ver,
-		CurrentTag:      currentTag,
-		CurrentDigest:   currentDigest,
-		CurrentImageID:  currentImageID,
-		DisplayVersion:  displayVersion,
-		Revision:        s.revision,
-		ShortRevision:   shortRev,
-		GoVersion:       goVer,
-		BuildTime:       buildTime,
-		IsSemverVersion: isSemver,
-		UpdateAvailable: false,
-	}
+	return info
 }
 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest
-func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string, digest string, imageRef string, imageID string) {
+func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string, digest string, imageRef string) {
 	if s.dockerService == nil {
-		return "", "", "", ""
+		slog.Debug("detectCurrentImageInfo: dockerService is nil")
+		return "", "", ""
 	}
 
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return "", "", "", ""
+		slog.Debug("detectCurrentImageInfo: failed to get docker client", "error", err)
+		return "", "", ""
 	}
 
-	// Try to get current container ID
-	containerId, err := s.getCurrentContainerID()
-	if err != nil {
-		// Fallback: locate the Arcane container by label (works even when cgroup/hostname detection fails)
-		f := filters.NewArgs()
-		f.Add("label", arcaneupdater.LabelArcane+"=true")
-		list, listErr := dockerClient.ContainerList(ctx, containertypes.ListOptions{All: true, Filters: f})
-		if listErr != nil {
-			return "", "", "", ""
-		}
-		for _, c := range list {
-			// Prefer the actual server container, not the upgrader helper.
-			if v, ok := c.Labels["com.getarcaneapp.arcane.upgrader"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(c.State), "running") {
-				containerId = c.ID
-				break
-			}
-			if containerId == "" {
-				containerId = c.ID
-			}
-		}
-		if containerId == "" {
-			return "", "", "", ""
-		}
+	containerId := s.detectContainerID(ctx, dockerClient)
+	if containerId == "" {
+		slog.Debug("detectCurrentImageInfo: could not detect container ID")
+		return "", "", ""
 	}
+	slog.Debug("detectCurrentImageInfo: detected container", "containerId", containerId)
 
 	container, err := dockerClient.ContainerInspect(ctx, containerId)
 	if err != nil {
-		return "", "", "", ""
+		slog.Debug("detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
+		return "", "", ""
 	}
 
 	// Parse tag from container config image (user-specified reference)
 	tag = s.extractTagFromImageRef(container.Config.Image)
-	imageID = container.Image
 
 	// Get digest and normalized imageRef from container image
-	if container.Image != "" {
-		imageInspect, err := dockerClient.ImageInspect(ctx, container.Image)
-		if err == nil && imageInspect.ID != "" {
-			imageID = imageInspect.ID
-		}
-		if err == nil && len(imageInspect.RepoDigests) > 0 {
-			// Extract digest and repository from first RepoDigest
-			// Format: "ghcr.io/getarcaneapp/arcane@sha256:abc123..."
-			// Use RepoDigests for imageRef as it contains the fully qualified registry path
-			for _, repoDigest := range imageInspect.RepoDigests {
-				if repo, dig, ok := strings.Cut(repoDigest, "@"); ok {
-					imageRef = repo
-					digest = dig
-					break
-				}
-			}
-		}
-	}
+	imageRef, digest = s.extractImageDetails(dockerClient, container)
 
 	// Fallback to container config image if RepoDigests didn't provide imageRef
 	if imageRef == "" {
-		// Ensure we store just the repository name (no tag/digest) so callers can safely append tags.
-		if named, err := ref.ParseNormalizedNamed(container.Config.Image); err == nil {
-			imageRef = named.Name()
-		} else {
-			imageRef = container.Config.Image
-		}
+		imageRef = s.normalizeImageRef(container.Config.Image)
 	}
 
-	return tag, digest, imageRef, imageID
+	return tag, digest, imageRef
 }
 
-// getCurrentContainerID detects if we're running in Docker and returns container ID
-func (s *VersionService) getCurrentContainerID() (string, error) {
-	// Common in Docker: HOSTNAME is the container ID (or a prefix of it)
-	if id := strings.TrimSpace(os.Getenv("HOSTNAME")); isLikelyContainerID(id) {
-		return strings.ToLower(id), nil
+// detectContainerID tries to get the current container ID, falling back to label-based detection
+func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *client.Client) string {
+	containerId, err := s.getCurrentContainerID()
+	if err == nil {
+		slog.Debug("detectContainerID: found via getCurrentContainerID", "containerId", containerId)
+		return containerId
 	}
-	// Also commonly available inside containers
-	if data, err := os.ReadFile("/etc/hostname"); err == nil {
-		if id := strings.TrimSpace(string(data)); isLikelyContainerID(id) {
-			return strings.ToLower(id), nil
-		}
-	}
+	slog.Debug("detectContainerID: getCurrentContainerID failed, trying label fallback", "error", err)
 
-	// Try reading from /proc/self/cgroup (Linux)
-	data, err := os.ReadFile("/proc/self/cgroup")
+	// Fallback: locate the Arcane container by label (works even when cgroup/hostname detection fails)
+	return s.findArcaneContainerByLabel(ctx, dockerClient)
+}
+
+// findArcaneContainerByLabel searches for the Arcane container using labels
+func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
+	f := filters.NewArgs()
+	f.Add("label", arcaneupdater.LabelArcane+"=true")
+	list, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{All: true, Filters: f})
 	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if id := extractContainerIDFromCgroupLine(line); id != "" {
-			return id, nil
-		}
-	}
-
-	return "", errors.New("container ID not found")
-}
-
-var (
-	containerIDRegexp     = regexp.MustCompile(`(?i)[0-9a-f]{12,64}`)
-	containerIDFullRegexp = regexp.MustCompile(`(?i)^[0-9a-f]{12,64}$`)
-)
-
-func isLikelyContainerID(s string) bool {
-	if s == "" {
-		return false
-	}
-	return containerIDFullRegexp.MatchString(strings.TrimSpace(s))
-}
-
-func extractContainerIDFromCgroupLine(line string) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
+		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)
 		return ""
 	}
+	slog.Debug("findArcaneContainerByLabel: found containers with arcane label", "count", len(list))
 
-	// cgroup line formats we support:
-	// - v1: "12:memory:/docker/<id>"
-	// - v2+systemd: "0::/system.slice/docker-<id>.scope"
-	// - containerd: "0::/system.slice/cri-containerd-<id>.scope"
-
-	// Prefer scanning the cgroup path (the last ':'-separated field)
-	path := line
-	if parts := strings.Split(line, ":"); len(parts) > 0 {
-		path = parts[len(parts)-1]
-	}
-
-	prefixes := []string{"docker-", "cri-containerd-", "containerd-", "crio-", "libpod-"}
-
-	for _, seg := range strings.Split(path, "/") {
-		seg = strings.TrimSpace(seg)
-		if seg == "" {
+	var fallbackID string
+	for _, c := range list {
+		slog.Debug("findArcaneContainerByLabel: checking container", "id", c.ID[:12], "state", c.State, "labels", c.Labels)
+		// Skip the upgrader helper container
+		if v, ok := c.Labels["com.getarcaneapp.arcane.upgrader"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
+			slog.Debug("findArcaneContainerByLabel: skipping upgrader container", "id", c.ID[:12])
 			continue
 		}
-		cleaned := strings.TrimSuffix(seg, ".scope")
-		for _, p := range prefixes {
-			if strings.HasPrefix(cleaned, p) {
-				cleaned = strings.TrimPrefix(cleaned, p)
-				break
-			}
+		// Prefer running containers
+		if strings.EqualFold(strings.TrimSpace(c.State), "running") {
+			slog.Debug("findArcaneContainerByLabel: found running container", "id", c.ID[:12])
+			return c.ID
 		}
+		if fallbackID == "" {
+			fallbackID = c.ID
+		}
+	}
+	if fallbackID != "" {
+		slog.Debug("findArcaneContainerByLabel: using fallback container", "id", fallbackID[:12])
+	} else {
+		slog.Debug("findArcaneContainerByLabel: no container found")
+	}
+	return fallbackID
+}
 
-		if m := containerIDRegexp.FindString(cleaned); m != "" {
-			return strings.ToLower(m)
+// extractImageDetails extracts digest and imageRef from a container's image
+func (s *VersionService) extractImageDetails(dockerClient *client.Client, container containertypes.InspectResponse) (imageRef, digest string) {
+	if container.Image == "" {
+		return "", ""
+	}
+
+	imageInspect, err := dockerClient.ImageInspect(context.Background(), container.Image)
+	if err != nil {
+		return "", ""
+	}
+
+	// Extract digest and repository from first RepoDigest using reference library
+	for _, repoDigest := range imageInspect.RepoDigests {
+		named, err := ref.ParseNormalizedNamed(repoDigest)
+		if err != nil {
+			continue
 		}
-		if m := containerIDRegexp.FindString(seg); m != "" {
-			return strings.ToLower(m)
+		if digested, ok := named.(ref.Digested); ok {
+			return named.Name(), string(digested.Digest())
 		}
 	}
 
-	// Fallback: scan the whole line
-	if m := containerIDRegexp.FindString(line); m != "" {
-		return strings.ToLower(m)
-	}
+	return "", ""
+}
 
-	return ""
+// normalizeImageRef extracts just the repository name from an image reference
+func (s *VersionService) normalizeImageRef(configImage string) string {
+	if named, err := ref.ParseNormalizedNamed(configImage); err == nil {
+		return named.Name()
+	}
+	return configImage
+}
+
+// getCurrentContainerID detects if we're running in Docker via cgroup, mountinfo, or hostname
+func (s *VersionService) getCurrentContainerID() (string, error) {
+	return utils.GetCurrentContainerID()
 }
 
 // extractTagFromImageRef extracts the tag from an image reference using distribution/reference
@@ -523,36 +416,4 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	}
 
 	return updateAvailable, latestDigest
-}
-
-func parseSemver(s string) [3]int {
-	var out [3]int
-	part := 0
-	num := 0
-	sign := 1
-
-	flush := func() {
-		if part < 3 {
-			out[part] = sign * num
-			part++
-		}
-		num = 0
-		sign = 1
-	}
-
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; {
-		case c == '-':
-			i = len(s)
-		case c == '.':
-			flush()
-		case c >= '0' && c <= '9':
-			num = num*10 + int(c-'0')
-		case c == '+' || c == 'v' || c == 'V':
-		default:
-			i = len(s)
-		}
-	}
-	flush()
-	return out
 }

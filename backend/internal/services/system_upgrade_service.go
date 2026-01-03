@@ -16,6 +16,7 @@ import (
 	imagetypes "github.com/docker/docker/api/types/image"
 	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 )
 
@@ -185,82 +186,11 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
 func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
-	// Try reading from /proc/self/cgroup (Linux)
-	if id, err := s.getContainerIDFromCgroup(); err == nil {
-		return id, nil
-	}
-
-	// Try reading from /proc/self/mountinfo (alternative method)
-	if id, err := s.getContainerIDFromMountinfo(); err == nil {
-		return id, nil
-	}
-
-	// Try hostname (works in many Docker setups)
-	if id, err := s.getContainerIDFromHostname(); err == nil {
-		return id, nil
-	}
-
-	return "", ErrNotRunningInDocker
-}
-
-// getContainerIDFromCgroup reads container ID from /proc/self/cgroup
-func (s *SystemUpgradeService) getContainerIDFromCgroup() (string, error) {
-	data, err := os.ReadFile("/proc/self/cgroup")
+	id, err := utils.GetCurrentContainerID()
 	if err != nil {
-		return "", err
+		return "", ErrNotRunningInDocker
 	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "docker") || strings.Contains(line, "containerd") {
-			parts := strings.Split(line, "/")
-			if len(parts) > 0 {
-				id := strings.TrimSpace(parts[len(parts)-1])
-				if len(id) >= 12 {
-					return id, nil
-				}
-			}
-		}
-	}
-
-	return "", errors.New("container ID not found in cgroup")
-}
-
-// getContainerIDFromMountinfo reads container ID from /proc/self/mountinfo
-func (s *SystemUpgradeService) getContainerIDFromMountinfo() (string, error) {
-	data, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "/docker/containers/") {
-			parts := strings.Split(line, "/docker/containers/")
-			if len(parts) > 1 {
-				idParts := strings.Split(parts[1], "/")
-				if len(idParts) > 0 && len(idParts[0]) >= 12 {
-					return idParts[0], nil
-				}
-			}
-		}
-	}
-
-	return "", errors.New("container ID not found in mountinfo")
-}
-
-// getContainerIDFromHostname tries to get container ID from hostname
-func (s *SystemUpgradeService) getContainerIDFromHostname() (string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", err
-	}
-
-	if len(hostname) == 12 || len(hostname) == 64 {
-		return hostname, nil
-	}
-
-	return "", errors.New("hostname is not a valid container ID")
+	return id, nil
 }
 
 // findArcaneContainer finds the container using the ID

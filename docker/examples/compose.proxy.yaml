@@ -62,6 +62,9 @@ services:
       timeout: 3s
       retries: 5
       start_period: 15s
+    # Use host cgroup namespace for better container self-detection
+    # This allows Arcane to detect its own container ID more reliably
+    cgroup: host
     restart: unless-stopped
 
 networks:
