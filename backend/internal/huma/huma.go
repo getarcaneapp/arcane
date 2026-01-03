@@ -125,6 +125,7 @@ type Services struct {
 	Version           *services.VersionService
 	Environment       *services.EnvironmentService
 	Settings          *services.SettingsService
+	JobSchedule       *services.JobService
 	SettingsSearch    *services.SettingsSearchService
 	ContainerRegistry *services.ContainerRegistryService
 	Template          *services.TemplateService
@@ -280,6 +281,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var versionSvc *services.VersionService
 	var environmentSvc *services.EnvironmentService
 	var settingsSvc *services.SettingsService
+	var jobScheduleSvc *services.JobService
 	var settingsSearchSvc *services.SettingsSearchService
 	var containerRegistrySvc *services.ContainerRegistryService
 	var templateSvc *services.TemplateService
@@ -309,6 +311,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		versionSvc = svc.Version
 		environmentSvc = svc.Environment
 		settingsSvc = svc.Settings
+		jobScheduleSvc = svc.JobSchedule
 		settingsSearchSvc = svc.SettingsSearch
 		containerRegistrySvc = svc.ContainerRegistry
 		templateSvc = svc.Template
@@ -342,6 +345,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
+	handlers.RegisterJobSchedules(api, jobScheduleSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)

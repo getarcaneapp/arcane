@@ -50,7 +50,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			url: '/settings',
 			icon: SettingsIcon,
 			items: [
-				{ title: m.general_title(), url: '/settings/general', icon: SettingsIcon },
+				{ title: 'Job Schedule', url: '/settings/general', icon: SettingsIcon },
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon },
 				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon },
 				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon },

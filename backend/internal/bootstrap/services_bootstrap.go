@@ -17,6 +17,7 @@ type Services struct {
 	Project           *services.ProjectService
 	Environment       *services.EnvironmentService
 	Settings          *services.SettingsService
+	JobSchedule       *services.JobService
 	SettingsSearch    *services.SettingsSearchService
 	CustomizeSearch   *services.CustomizeSearchService
 	Container         *services.ContainerService
@@ -48,6 +49,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to settings service: %w", err)
 	}
+	svcs.JobSchedule = services.NewJobService(db, svcs.Settings, cfg)
 	svcs.SettingsSearch = services.NewSettingsSearchService()
 	svcs.CustomizeSearch = services.NewCustomizeSearchService()
 	svcs.AppImages = services.NewApplicationImagesService(resources.FS, svcs.Settings)
