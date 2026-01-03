@@ -12,7 +12,7 @@ if [ -f ../.arcane.json ]; then
   REVISION=${REVISION:-$(jq -r '.revision // empty' ../.arcane.json)}
 fi
 VERSION=${VERSION:-"dev"}
-REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
+REVISION=${REVISION:-$(git rev-parse HEAD 2>/dev/null || echo "unknown")}
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 LDFLAGS="-w -s -buildid=${VERSION} \
