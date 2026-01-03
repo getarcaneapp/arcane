@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -65,12 +66,8 @@ func (s *ContainerSorter) SortReverse() ([]ContainerWithDeps, error) {
 		return nil, err
 	}
 
-	// Reverse the slice
-	reversed := make([]ContainerWithDeps, len(sorted))
-	for i, c := range sorted {
-		reversed[len(sorted)-1-i] = c
-	}
-	return reversed, nil
+	slices.Reverse(sorted)
+	return sorted, nil
 }
 
 func (s *ContainerSorter) visit(c ContainerWithDeps) error {

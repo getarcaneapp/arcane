@@ -401,19 +401,6 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		out.Duration = time.Since(start).String()
 		return out, nil
 	}
-	if arcaneupdater.IsMonitorOnly(labels) {
-		out.Items = append(out.Items, updater.ResourceResult{
-			ResourceID:   targetContainer.ID,
-			ResourceType: "container",
-			ResourceName: containerName,
-			Status:       "skipped",
-			Error:        "monitor-only container",
-		})
-		out.Skipped++
-		out.Checked = 1
-		out.Duration = time.Since(start).String()
-		return out, nil
-	}
 
 	// Get the image reference
 	imageRef := targetContainer.Image
@@ -1096,13 +1083,6 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			Status:       "checked",
 			OldImages:    map[string]string{"main": p.match},
 			NewImages:    map[string]string{"main": s.normalizeRef(p.newRef)},
-		}
-
-		if arcaneupdater.IsMonitorOnly(labels) {
-			res.Status = "skipped"
-			res.Error = "monitor-only container"
-			results = append(results, res)
-			continue
 		}
 
 		// Lifecycle hooks for "check" phase (best-effort)

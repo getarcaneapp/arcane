@@ -5,9 +5,8 @@ import "strings"
 // Container labels for Arcane updater features
 const (
 	// Core labels
-	LabelArcane      = "com.getarcaneapp.arcane"              // Identifies the Arcane container itself
-	LabelUpdater     = "com.getarcaneapp.arcane.updater"      // Enable/disable updates (true/false)
-	LabelMonitorOnly = "com.getarcaneapp.arcane.monitor-only" // Check for updates but don't apply
+	LabelArcane  = "com.getarcaneapp.arcane"         // Identifies the Arcane container itself
+	LabelUpdater = "com.getarcaneapp.arcane.updater" // Enable/disable updates (true/false)
 
 	// Lifecycle hook labels
 	LabelPreCheck   = "com.getarcaneapp.arcane.lifecycle.pre-check"   // Command to run before checking for updates
@@ -22,9 +21,6 @@ const (
 	// Dependency labels
 	LabelDependsOn  = "com.getarcaneapp.arcane.depends-on"  // Comma-separated list of container names this depends on
 	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal" // Custom stop signal (e.g., SIGINT)
-
-	// Scope label for multi-instance support
-	LabelScope = "com.getarcaneapp.arcane.scope" // Scope UID for multi-instance setups
 
 	// Exit code that signals "skip this update" (matches Watchtower's EX_TEMPFAIL)
 	ExitCodeSkipUpdate = 75
@@ -59,22 +55,6 @@ func IsUpdateDisabled(labels map[string]string) bool {
 				return true
 			default:
 				return false
-			}
-		}
-	}
-	return false
-}
-
-// IsMonitorOnly checks if the container should only be monitored (not updated)
-func IsMonitorOnly(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
-	for k, v := range labels {
-		if strings.EqualFold(k, LabelMonitorOnly) {
-			switch strings.TrimSpace(strings.ToLower(v)) {
-			case "true", "1", "yes", "on":
-				return true
 			}
 		}
 	}
