@@ -366,7 +366,7 @@ func getContainerIDFromHostname() (string, error) {
 	if len(hostname) == 12 || len(hostname) == 64 {
 		// Verify it looks like a hex string
 		for _, c := range hostname {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				return "", errors.New("hostname doesn't match container ID pattern")
 			}
 		}

@@ -280,7 +280,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 	tag = s.extractTagFromImageRef(container.Config.Image)
 
 	// Get digest and normalized imageRef from container image
-	imageRef, digest = s.extractImageDetails(dockerClient, container)
+	imageRef, digest = s.extractImageDetails(ctx, dockerClient, container)
 
 	// Fallback to container config image if RepoDigests didn't provide imageRef
 	if imageRef == "" {
@@ -340,12 +340,12 @@ func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerC
 }
 
 // extractImageDetails extracts digest and imageRef from a container's image
-func (s *VersionService) extractImageDetails(dockerClient *client.Client, container containertypes.InspectResponse) (imageRef, digest string) {
+func (s *VersionService) extractImageDetails(ctx context.Context, dockerClient *client.Client, container containertypes.InspectResponse) (imageRef, digest string) {
 	if container.Image == "" {
 		return "", ""
 	}
 
-	imageInspect, err := dockerClient.ImageInspect(context.Background(), container.Image)
+	imageInspect, err := dockerClient.ImageInspect(ctx, container.Image)
 	if err != nil {
 		return "", ""
 	}
