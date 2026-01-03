@@ -58,9 +58,7 @@
 			<div class="flex flex-col gap-1.5">
 				<div class="flex items-center gap-2">
 					<Card.Title>
-						<h2>
-							{m.compose_logs_title()}
-						</h2>
+						<h2>{m.compose_logs_title()}</h2>
 					</Card.Title>
 					{#if isStreaming}
 						<div class="flex items-center gap-2">

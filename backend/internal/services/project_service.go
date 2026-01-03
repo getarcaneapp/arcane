@@ -638,14 +638,23 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
-	if err := projects.ComposeUp(ctx, project, project.Services.GetProfiles()); err != nil {
+	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services))
+	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
+	if err := projects.ComposeUp(ctx, project, nil); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
 		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+
+		// Provide more helpful error messages
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {
+			return fmt.Errorf("deployment timed out - check if services with 'condition: service_healthy' have healthchecks defined: %w", err)
+		}
 		return fmt.Errorf("failed to deploy project: %w", err)
 	}
+	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", project.Name)
 
 	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user.ID, user.Username, "0", metadata); logErr != nil {

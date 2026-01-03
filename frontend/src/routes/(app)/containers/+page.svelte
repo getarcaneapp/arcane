@@ -8,7 +8,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
 	import { BoxIcon } from '$lib/icons';

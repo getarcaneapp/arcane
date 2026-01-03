@@ -51,13 +51,22 @@ test.describe('Images Page', () => {
 
   test('should open the Pull Image dialog', async ({ page }) => {
     await navigateToImages(page);
-    await page.locator('button:has-text("Pull Image")').first().click();
+    await page.getByRole('button', { name: 'Pull Image' }).click();
     await expect(page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Pull Image")')).toBeVisible();
   });
 
   test('should open the Prune Unused Images dialog', async ({ page }) => {
     await navigateToImages(page);
-    await page.locator('button:has-text("Prune Unused")').click();
+
+    let pruneButton = page.getByRole('button', { name: 'Prune Unused' });
+    const isDirectlyVisible = await pruneButton.isVisible().catch(() => false);
+
+    if (!isDirectlyVisible) {
+      await page.getByRole('button', { name: 'More actions' }).click();
+      pruneButton = page.getByRole('menuitem', { name: 'Prune Unused' });
+    }
+
+    await pruneButton.click();
     await expect(
       page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'),
     ).toBeVisible();
@@ -76,7 +85,7 @@ test.describe('Images Page', () => {
     await navigateToImages(page);
 
     const firstRow = await page.getByRole('row', { name: 'ghcr.io/linuxserver/nginx' });
-    await firstRow.getByRole('button', { name: 'Open menu' }).click();
+    await firstRow.getByLabel('Open menu').click();
     await page.getByRole('menuitem', { name: 'Pull' }).click();
 
     await page.waitForLoadState('networkidle');
@@ -105,7 +114,15 @@ test.describe('Images Page', () => {
   test('should call prune API on prune click and confirmation', async ({ page }) => {
     await navigateToImages(page);
 
-    await page.locator('button:has-text("Prune Unused")').click();
+    let pruneButton = page.getByRole('button', { name: 'Prune Unused' });
+    const isDirectlyVisible = await pruneButton.isVisible().catch(() => false);
+
+    if (!isDirectlyVisible) {
+      await page.getByRole('button', { name: 'More actions' }).click();
+      pruneButton = page.getByRole('menuitem', { name: 'Prune Unused' });
+    }
+
+    await pruneButton.click();
 
     await expect(
       page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'),
@@ -121,7 +138,7 @@ test.describe('Images Page', () => {
   test('should pull image via form', async ({ page }) => {
     await navigateToImages(page);
 
-    await page.locator('button:has-text("Pull Image")').first().click();
+    await page.getByRole('button', { name: 'Pull Image' }).click();
     const dialogHeading = page.getByRole('heading', { name: 'Pull Image' });
     await expect(dialogHeading).toBeVisible();
 

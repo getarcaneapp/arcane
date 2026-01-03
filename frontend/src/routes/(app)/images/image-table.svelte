@@ -145,32 +145,31 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{
-			id: 'updates',
-			accessorFn: (row) => row.updateInfo?.hasUpdate ?? false,
-			title: m.images_updates(),
-			cell: UpdatesCell
-		},
+		{ accessorKey: 'repo', title: m.images_repository(), sortable: true, cell: RepoCell },
+		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
 		{
 			accessorKey: 'inUse',
 			title: m.common_status(),
 			sortable: true,
 			cell: StatusCell
 		},
-		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell },
+		{
+			id: 'updates',
+			accessorFn: (row) => row.updateInfo?.hasUpdate ?? false,
+			title: m.images_updates(),
+			cell: UpdatesCell
+		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'repo', title: m.images_repository(), sortable: true, cell: RepoCell },
-		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell }
+		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
 	] satisfies ColumnSpec<ImageSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'updates', label: m.images_updates(), defaultVisible: true },
-		{ id: 'inUse', label: m.common_in_use(), defaultVisible: true },
-		{ id: 'created', label: m.common_created(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
-		{ id: 'repo', label: m.images_repository(), defaultVisible: true },
-		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true }
+		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -263,13 +262,6 @@
 				icon: VolumesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility.size ?? true
-			},
-			{
-				label: m.images_repository(),
-				getValue: (item: ImageSummaryDto) => (item.repo && item.repo !== '<none>' ? item.repo : m.images_untagged()),
-				icon: ImagesIcon,
-				iconVariant: 'purple' as const,
-				show: mobileFieldVisibility.repo ?? true
 			},
 			{
 				label: m.common_tags(),

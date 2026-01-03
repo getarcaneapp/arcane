@@ -145,21 +145,6 @@
 		};
 	}
 
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? field.defaultVisible ?? true
-		}))
-	);
-
 	function getRegistryName(template: Template): string {
 		if (template.registry?.name) {
 			return template.registry.name;
@@ -364,7 +349,17 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table, renderPagination }: { table: TemplateTable; renderPagination: import('svelte').Snippet })}
+{#snippet GroupedTableView({
+	table,
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
+}: {
+	table: TemplateTable;
+	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
+})}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar
@@ -442,7 +437,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-4 px-6 py-2 md:hidden">
+		<div class="space-y-4 py-2 md:hidden">
 			{#each groupedTemplates ?? [] as [registryName, registryTemplates] (registryName)}
 				{@const registryTemplateIds = new Set(registryTemplates.map((t) => t.id))}
 				{@const registryRows = table.getRowModel().rows.filter((row) => registryTemplateIds.has((row.original as Template).id))}
@@ -453,15 +448,13 @@
 					description={`${registryTemplates.length} ${registryTemplates.length === 1 ? m.resource_template() : m.resource_templates()}`}
 					icon={registryName === m.templates_local_templates() ? FolderOpenIcon : RegistryIcon}
 				>
-					<div class="space-y-3">
-						{#each registryRows as row (row.id)}
-							{@render TemplateMobileCardSnippet({ item: row.original as Template, mobileFieldVisibility })}
-						{:else}
-							<div class="h-24 flex items-center justify-center text-center text-muted-foreground">
-								{m.common_no_results_found()}
-							</div>
-						{/each}
-					</div>
+					{#each registryRows as row (row.id)}
+						{@render TemplateMobileCardSnippet({ item: row.original as Template, mobileFieldVisibility })}
+					{:else}
+						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
+							{m.common_no_results_found()}
+						</div>
+					{/each}
 				</DropdownCard>
 			{/each}
 		</div>
