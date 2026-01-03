@@ -173,8 +173,9 @@ func ExtractContainerDeps(ctx context.Context, dcli *client.Client, cnt containe
 	return c
 }
 
-// UpdateImplicitRestart marks containers that need to restart because their dependencies are restarting
-// Returns the names of containers that were marked for implicit restart
+// UpdateImplicitRestart marks containers that need to restart because their dependencies are restarting.
+// Returns the names of containers that were marked for implicit restart.
+// Note: This function mutates the containers slice by adding "_arcane_implicit_restart" labels.
 func UpdateImplicitRestart(containers []ContainerWithDeps, markedForRestart map[string]bool) []string {
 	var implicitRestarts []string
 
