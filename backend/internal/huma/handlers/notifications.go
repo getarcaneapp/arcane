@@ -146,6 +146,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get Apprise settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Deprecated:  true,
 	}, h.GetAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -155,6 +156,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Create or update Apprise settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Deprecated:  true,
 	}, h.CreateOrUpdateAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -164,6 +166,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Test Apprise notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Deprecated:  true,
 	}, h.TestAppriseNotification)
 }
 
@@ -177,6 +180,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 	for i, setting := range settings {
 		responses[i] = notification.Response{
 			ID:       setting.ID,
+			Name:     setting.Name,
 			Provider: notification.Provider(setting.Provider),
 			Enabled:  setting.Enabled,
 			Config:   base.JsonObject(setting.Config),
@@ -196,6 +200,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 
 	response := notification.Response{
 		ID:       settings.ID,
+		Name:     settings.Name,
 		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
 		Config:   base.JsonObject(settings.Config),
@@ -206,12 +211,11 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
 	provider := models.NotificationProvider(input.Body.Provider)
-	if provider != models.NotificationProviderDiscord && provider != models.NotificationProviderEmail {
-		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
-	}
 
 	settings, err := h.notificationService.CreateOrUpdateSettings(
 		ctx,
+		input.Body.ID,
+		input.Body.Name,
 		provider,
 		input.Body.Enabled,
 		models.JSON(input.Body.Config),
@@ -222,6 +226,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 
 	response := notification.Response{
 		ID:       settings.ID,
+		Name:     settings.Name,
 		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
 		Config:   base.JsonObject(settings.Config),
@@ -263,7 +268,16 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *GetAppriseSettingsInput) (*GetAppriseSettingsOutput, error) {
 	settings, err := h.appriseService.GetSettings(ctx)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.AppriseSettingsNotFoundError{}).Error())
+		return nil, huma.Error500InternalServerError((&common.AppriseSettingsNotFoundError{}).Error())
+	}
+
+	if settings == nil {
+		// Return default empty settings if not found
+		return &GetAppriseSettingsOutput{
+			Body: notification.AppriseResponse{
+				Enabled: false,
+			},
+		}, nil
 	}
 
 	response := notification.AppriseResponse{

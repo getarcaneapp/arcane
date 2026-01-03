@@ -28,6 +28,7 @@ const (
 
 type NotificationSettings struct {
 	ID        uint                 `json:"id" gorm:"primaryKey"`
+	Name      string               `json:"name" gorm:"type:varchar(255)"`
 	Provider  NotificationProvider `json:"provider" gorm:"not null;index;type:varchar(50)"`
 	Enabled   bool                 `json:"enabled" gorm:"default:false"`
 	Config    JSON                 `json:"config" gorm:"type:jsonb"`
@@ -53,13 +54,6 @@ type NotificationLog struct {
 
 func (NotificationLog) TableName() string {
 	return "notification_logs"
-}
-
-type DiscordConfig struct {
-	WebhookURL string                         `json:"webhookUrl"`
-	Username   string                         `json:"username,omitempty"`
-	AvatarURL  string                         `json:"avatarUrl,omitempty"`
-	Events     map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type EmailConfig struct {
