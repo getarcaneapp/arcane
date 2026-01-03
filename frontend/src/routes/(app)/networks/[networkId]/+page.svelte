@@ -55,7 +55,9 @@
 
 		if (data.network?.id) {
 			try {
-				network = await networkService.getNetwork(data.network.id, sortCol, sortDir);
+				network = await networkService.getNetwork(data.network.id, {
+					sort: { column: sortCol, direction: sortDir }
+				});
 			} catch (err) {
 				console.error('Failed to sort network containers:', err);
 				toast.error(m.common_action_failed());

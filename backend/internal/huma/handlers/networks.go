@@ -33,10 +33,11 @@ type NetworkPaginatedResponse struct {
 
 type ListNetworksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Page          int    `query:"pagination[page]" default:"1"`
-	Limit         int    `query:"pagination[limit]" default:"20"`
-	SortCol       string `query:"sort[column]"`
-	SortDir       string `query:"sort[direction]" default:"asc"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 }
 
@@ -80,8 +81,8 @@ type NetworkInspectApiResponse struct {
 type GetNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NetworkID     string `path:"networkId" doc:"Network ID"`
-	SortCol       string `query:"sort[column]" default:"name"`
-	SortDir       string `query:"sort[direction]" default:"asc"`
+	Sort          string `query:"sort" default:"name"`
+	Order         string `query:"order" default:"asc"`
 }
 
 type GetNetworkOutput struct {
@@ -186,12 +187,15 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}
 
 	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: strings.TrimSpace(input.Search),
+		},
 		SortParams: pagination.SortParams{
-			Sort:  input.SortCol,
-			Order: pagination.SortOrder(input.SortDir),
+			Sort:  strings.TrimSpace(input.Sort),
+			Order: pagination.SortOrder(input.Order),
 		},
 		PaginationParams: pagination.PaginationParams{
-			Start: (input.Page - 1) * input.Limit,
+			Start: input.Start,
 			Limit: input.Limit,
 		},
 		Filters: filters,
@@ -296,7 +300,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	sort.Slice(out.ContainersList, func(i, j int) bool {
 		a, b := out.ContainersList[i], out.ContainersList[j]
 
-		if input.SortCol == "ip" {
+		if input.Sort == "ip" {
 			valA := a.IPv4Address
 			if valA == "" {
 				valA = a.IPv6Address
@@ -315,21 +319,21 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 
 			if parsedA == nil || parsedB == nil {
 				// Fallback to string comparison if parsing fails
-				if input.SortDir == "desc" {
+				if input.Order == "desc" {
 					return valA > valB
 				}
 				return valA < valB
 			}
 
 			cmp := bytes.Compare(parsedA, parsedB)
-			if input.SortDir == "desc" {
+			if input.Order == "desc" {
 				return cmp > 0
 			}
 			return cmp < 0
 		}
 
 		// Default to Name
-		if input.SortDir == "desc" {
+		if input.Order == "desc" {
 			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
 		}
 		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
