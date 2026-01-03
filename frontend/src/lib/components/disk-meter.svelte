@@ -71,7 +71,7 @@
 	}
 </script>
 
-<Card.Root class={className}>
+<Card.Root class="flex h-full flex-col {className}">
 	{#snippet children()}
 		<Card.Header icon={VolumesIcon} iconVariant="primary" compact {loading}>
 			{#snippet children()}
@@ -123,60 +123,37 @@
 			{/snippet}
 		</Card.Header>
 
-		<Card.Content class="flex flex-1 items-center p-3 sm:p-4">
-			<div class="flex w-full items-center gap-4">
-				<div class="flex-1 space-y-2">
-					{#if loading}
-						<div class="bg-muted h-2 w-full animate-pulse rounded"></div>
-					{:else}
-						<Progress value={percentage} max={100} class="h-2" />
-					{/if}
-
-					<div class="flex items-center justify-between text-xs">
-						{#if loading}
-							<div class="bg-muted h-3 w-16 animate-pulse rounded"></div>
-							<div class="bg-muted h-3 w-24 animate-pulse rounded"></div>
-						{:else}
-							<span class="text-muted-foreground font-medium">
-								{percentage.toFixed(1)}%
-							</span>
-							<span class="text-muted-foreground/70 font-mono">
-								{formatBytes(diskUsage ?? 0)} / {formatBytes(diskTotal ?? 0)}
-							</span>
-						{/if}
-					</div>
+		<Card.Content class="flex flex-1 flex-col justify-end gap-3 p-3 sm:p-4">
+			{#if loading}
+				<div class="flex items-center gap-3">
+					<div class="bg-muted h-2.5 flex-1 animate-pulse rounded-full"></div>
+					<div class="bg-muted h-4 w-12 animate-pulse rounded"></div>
+				</div>
+				<div class="flex justify-between gap-4">
+					<div class="bg-muted h-4 w-20 animate-pulse rounded"></div>
+					<div class="bg-muted h-4 w-20 animate-pulse rounded"></div>
+				</div>
+			{:else}
+				<div class="flex items-center gap-3">
+					<Progress value={percentage} max={100} class="h-2.5 flex-1" />
+					<span class="text-foreground min-w-12 text-right text-sm font-bold tabular-nums">
+						{percentage.toFixed(1)}%
+					</span>
 				</div>
 
-				<div class="bg-muted/50 hidden shrink-0 gap-4 rounded-lg p-3 sm:flex">
-					<div class="space-y-0.5">
-						{#if loading}
-							<div class="bg-muted h-3 w-12 animate-pulse rounded"></div>
-							<div class="bg-muted h-4 w-16 animate-pulse rounded"></div>
-						{:else}
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-								{m.dashboard_meter_disk_used()}
-							</div>
-							<div class="text-foreground text-sm font-semibold">
-								{formatBytes(diskUsage ?? 0)}
-							</div>
-						{/if}
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+					<div class="flex items-center gap-2 whitespace-nowrap">
+						<div class="bg-primary size-2 shrink-0 rounded-full"></div>
+						<span class="text-muted-foreground text-xs">{m.dashboard_meter_disk_used()}</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{formatBytes(diskUsage ?? 0)}</span>
 					</div>
-
-					<div class="space-y-0.5">
-						{#if loading}
-							<div class="bg-muted h-3 w-12 animate-pulse rounded"></div>
-							<div class="bg-muted h-4 w-16 animate-pulse rounded"></div>
-						{:else}
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-								{m.dashboard_meter_disk_free()}
-							</div>
-							<div class="text-foreground text-sm font-semibold">
-								{formatBytes(diskFree)}
-							</div>
-						{/if}
+					<div class="flex items-center gap-2 whitespace-nowrap">
+						<div class="bg-primary/20 size-2 shrink-0 rounded-full"></div>
+						<span class="text-muted-foreground text-xs">{m.dashboard_meter_disk_free()}</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{formatBytes(diskFree)}</span>
 					</div>
 				</div>
-			</div>
+			{/if}
 		</Card.Content>
 	{/snippet}
 </Card.Root>

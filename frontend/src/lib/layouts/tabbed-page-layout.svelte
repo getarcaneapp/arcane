@@ -3,7 +3,6 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
 	import type { Snippet } from 'svelte';
-	import { browser } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import { ArrowLeftIcon } from '$lib/icons';
 
@@ -38,7 +37,6 @@
 	let scrollContainer = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
-		if (!browser) return;
 		const getScrollTop = () => (scrollContainer ? scrollContainer.scrollTop : window.scrollY);
 		const onScroll = () => {
 			showFloatingHeader = getScrollTop() > 100;
@@ -86,7 +84,7 @@
 		{#if showFloatingHeader}
 			<div class="fixed top-4 left-1/2 z-30 -translate-x-1/2 transition-all duration-300 ease-in-out">
 				<div
-					class="bg-popover/90 supports-[backdrop-filter]:bg-popover/80 bubble-shadow-lg border-border/50 rounded-xl border px-4 py-3 backdrop-blur-md"
+					class="bg-popover/90 supports-backdrop-filter:bg-popover/80 bubble-shadow-lg border-border/50 rounded-xl border px-4 py-3 backdrop-blur-md"
 				>
 					<div class="flex items-center gap-4">
 						<div class="min-w-0">

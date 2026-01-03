@@ -133,6 +133,7 @@
 	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
 
 	const columns = [
+		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
@@ -140,10 +141,10 @@
 	] satisfies ColumnSpec<Project>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
-		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true }
+		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
