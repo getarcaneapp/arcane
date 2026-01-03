@@ -610,10 +610,9 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		tempName, renameErr := selfUpdate.PrepareForSelfUpdate(ctx, cnt.ID, originalName)
 		if renameErr != nil {
 			slog.WarnContext(ctx, "updateContainer: failed to rename Arcane container for self-update", "err", renameErr)
-			// Continue anyway, will use a different approach
-		} else {
-			slog.InfoContext(ctx, "updateContainer: renamed Arcane container for self-update", "oldName", originalName, "tempName", tempName)
+			return fmt.Errorf("cannot proceed with self-update without renaming old container: %w", renameErr)
 		}
+		slog.InfoContext(ctx, "updateContainer: renamed Arcane container for self-update", "oldName", originalName, "tempName", tempName)
 	}
 
 	// Get custom stop signal if configured
