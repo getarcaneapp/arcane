@@ -25,7 +25,7 @@ func TestGenerateTempName(t *testing.T) {
 		// Check for valid alphanumeric chars
 		suffix := strings.TrimPrefix(name, "arcane-old-")
 		for _, c := range suffix {
-			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') {
 				t.Errorf("generateTempName() suffix contains invalid char: %c in %q", c, suffix)
 			}
 		}
@@ -102,10 +102,7 @@ func TestSortByCreated(t *testing.T) {
 func TestNewSelfUpdate(t *testing.T) {
 	su := NewSelfUpdate(nil)
 
-	if su == nil {
-		t.Error("NewSelfUpdate() returned nil")
-	}
-
+	// NewSelfUpdate always returns a valid instance
 	if su.dcli != nil {
 		t.Error("NewSelfUpdate(nil) should set dcli to nil")
 	}

@@ -353,10 +353,6 @@ func TestNewMessageOnlyHandler(t *testing.T) {
 	var buf bytes.Buffer
 	handler := newMessageOnlyHandler(&buf, slog.LevelInfo)
 
-	if handler == nil {
-		t.Error("newMessageOnlyHandler() returned nil")
-	}
-
 	if handler.minLevel != slog.LevelInfo {
 		t.Errorf("newMessageOnlyHandler() minLevel = %v, want %v", handler.minLevel, slog.LevelInfo)
 	}
