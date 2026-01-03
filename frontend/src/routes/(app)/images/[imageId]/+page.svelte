@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { format } from 'date-fns';
@@ -12,6 +11,8 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
+	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
+	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -36,7 +37,7 @@
 		}
 	});
 
-	const imageSize = $derived(() => bytes.format(image?.size || 0));
+	const imageSize = $derived(() => bytes.format(image?.size || 0) || '0 B');
 	const architecture = $derived(() => image?.architecture || m.common_na());
 	const osName = $derived(() => image?.os || m.common_na());
 
@@ -61,39 +62,35 @@
 			}
 		});
 	}
+
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			onclick: () => handleImageRemove(image.id)
+		}
+	]);
 </script>
 
-<div class="space-y-6 pb-8">
-	<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-		<div>
-			<Breadcrumb.Root>
-				<Breadcrumb.List>
-					<Breadcrumb.Item>
-						<Breadcrumb.Link href="/images">{m.images_title()}</Breadcrumb.Link>
-					</Breadcrumb.Item>
-					<Breadcrumb.Separator />
-					<Breadcrumb.Item>
-						<Breadcrumb.Page>{shortId()}</Breadcrumb.Page>
-					</Breadcrumb.Item>
-				</Breadcrumb.List>
-			</Breadcrumb.Root>
-			<div class="mt-2 flex items-center gap-2">
-				<h1 class="text-2xl font-bold tracking-tight break-all">
-					{image?.repoTags?.[0] || shortId()}
-				</h1>
-			</div>
-		</div>
-
-		<div class="flex flex-wrap gap-2">
-			<ArcaneButton
-				action="remove"
-				onclick={() => handleImageRemove(image.id)}
-				loading={isLoading.removing}
-				disabled={isLoading.removing}
-				size="sm"
-			/>
-		</div>
-	</div>
+<ResourceDetailLayout
+	backUrl="/images"
+	backLabel={m.images_title()}
+	title={image?.repoTags?.[0] || shortId()}
+	subtitle={shortId()}
+	{actions}
+>
+	{#snippet badges()}
+		{#if image?.architecture}
+			<StatusBadge variant="blue" text={image.architecture} />
+		{/if}
+		{#if image?.os}
+			<StatusBadge variant="purple" text={image.os} />
+		{/if}
+		<StatusBadge variant="gray" text={imageSize()} />
+	{/snippet}
 
 	{#if image}
 		<div class="space-y-6">
@@ -291,4 +288,4 @@
 			/>
 		</div>
 	{/if}
-</div>
+</ResourceDetailLayout>

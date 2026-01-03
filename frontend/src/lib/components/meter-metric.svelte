@@ -30,10 +30,9 @@
 	}: Props = $props();
 
 	const percentage = $derived(currentValue !== undefined && !loading && maxValue > 0 ? (currentValue / maxValue) * 100 : 0);
-	const Icon = $derived(icon);
 </script>
 
-<Card.Root>
+<Card.Root class="flex h-full flex-col">
 	{#snippet children()}
 		<Card.Header {icon} iconVariant="primary" compact {loading}>
 			{#snippet children()}
@@ -46,50 +45,41 @@
 			{/snippet}
 		</Card.Header>
 
-		<Card.Content class="flex flex-col justify-center p-3">
-			<div class="w-full space-y-2">
-				<div class="text-center">
-					{#if loading}
-						<div class="bg-muted mx-auto h-7 w-14 animate-pulse rounded"></div>
-					{:else}
-						<div class="text-foreground text-lg font-bold">
-							{currentValue !== undefined ? formatValue(currentValue) : m.common_na()}
+		<Card.Content class="flex flex-1 flex-col justify-end gap-3 p-3 sm:p-4">
+			{#if loading}
+				<div class="flex items-center gap-3">
+					<div class="bg-muted h-2.5 flex-1 animate-pulse rounded-full"></div>
+					<div class="bg-muted h-4 w-12 animate-pulse rounded"></div>
+				</div>
+				<div class="flex justify-between gap-4">
+					<div class="bg-muted h-4 w-16 animate-pulse rounded"></div>
+					<div class="bg-muted h-4 w-20 animate-pulse rounded"></div>
+				</div>
+			{:else}
+				<div class="flex items-center gap-3">
+					<Progress value={percentage} max={100} class="h-2.5 flex-1" />
+					<span class="text-foreground min-w-12 text-right text-sm font-bold tabular-nums">
+						{currentValue !== undefined ? `${formatValue(currentValue)}${unit}` : m.common_na()}
+					</span>
+				</div>
+
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+					<div class="flex items-center gap-2 whitespace-nowrap">
+						<div class="bg-primary size-2 shrink-0 rounded-full"></div>
+						<span class="text-muted-foreground text-xs">{m.dashboard_meter_usage()}</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{percentage.toFixed(1)}%</span>
+					</div>
+					{#if showAbsoluteValues && currentValue !== undefined && maxValue !== undefined && formatAbsoluteValue}
+						<div class="flex items-center gap-2 whitespace-nowrap">
+							<div class="bg-primary/20 size-2 shrink-0 rounded-full"></div>
+							<span class="text-muted-foreground text-xs">{m.dashboard_meter_capacity()}</span>
+							<span class="text-foreground text-sm font-semibold tabular-nums">
+								{maxValue === 100 ? formatAbsoluteValue(0) : formatAbsoluteValue(maxValue)}
+							</span>
 						</div>
 					{/if}
 				</div>
-
-				<div class="space-y-1.5">
-					{#if loading}
-						<div class="bg-muted h-1.5 w-full animate-pulse rounded"></div>
-					{:else}
-						<Progress value={percentage} max={100} class="h-1.5" />
-					{/if}
-
-					<div class="flex items-center justify-between text-xs">
-						{#if loading}
-							<div class="bg-muted h-3 w-12 animate-pulse rounded"></div>
-							{#if showAbsoluteValues}
-								<div class="bg-muted h-3 w-20 animate-pulse rounded"></div>
-							{/if}
-						{:else}
-							<span class="text-muted-foreground font-medium">
-								{percentage.toFixed(1)}%
-							</span>
-							{#if showAbsoluteValues}
-								<span class="text-muted-foreground/70 font-mono text-[10px]">
-									{#if currentValue !== undefined && maxValue !== undefined && formatAbsoluteValue}
-										{#if maxValue === 100}
-											{formatAbsoluteValue(0)}
-										{:else}
-											{formatAbsoluteValue(currentValue)} / {formatAbsoluteValue(maxValue)}
-										{/if}
-									{/if}
-								</span>
-							{/if}
-						{/if}
-					</div>
-				</div>
-			</div>
+			{/if}
 		</Card.Content>
 	{/snippet}
 </Card.Root>

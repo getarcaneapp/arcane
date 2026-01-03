@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	projects "github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/project"
 )
@@ -390,7 +391,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 }
 
 // DeployProject deploys a Docker Compose project.
-func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*DeployProjectOutput, error) {
+func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -404,16 +405,33 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	if err := h.projectService.DeployProject(ctx, input.ProjectID, *user); err != nil {
-		return nil, huma.Error400BadRequest((&common.ProjectDeploymentError{Err: err}).Error())
-	}
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
 
-	return &DeployProjectOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Project deployed successfully",
-			},
+			writer := humaCtx.BodyWriter()
+
+			_, _ = writer.Write([]byte(`{"type":"deploy","phase":"begin"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			deployCtx := context.WithValue(humaCtx.Context(), projects.ProgressWriterKey{}, writer)
+			if err := h.projectService.DeployProject(deployCtx, input.ProjectID, *user); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"type":"deploy","phase":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
 		},
 	}, nil
 }

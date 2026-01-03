@@ -293,6 +293,7 @@
 				name={containerDisplayName}
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
+				desktopVariant="adaptive"
 				loading={{ start: starting, stop: stopping, restart: restarting, remove: removing }}
 			/>
 		{/snippet}
