@@ -3,7 +3,6 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar/index.js';
 	import type { Snippet } from 'svelte';
-	import { browser } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import { ArrowLeftIcon } from '$lib/icons';
 
@@ -38,7 +37,6 @@
 	let scrollContainer = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
-		if (!browser) return;
 		const getScrollTop = () => (scrollContainer ? scrollContainer.scrollTop : window.scrollY);
 		const onScroll = () => {
 			showFloatingHeader = getScrollTop() > 100;

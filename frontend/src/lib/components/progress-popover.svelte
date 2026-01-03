@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Popover as PopoverPrimitive } from 'bits-ui';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Item from '$lib/components/ui/item/index.js';
@@ -17,6 +18,7 @@
 		isIndeterminatePhase
 	} from '$lib/utils/pull-progress';
 	import { DownloadIcon, BoxIcon, ArrowDownIcon, VerifiedCheckIcon, CloseIcon } from '$lib/icons';
+	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 
 	interface Props {
 		open?: boolean;
@@ -36,6 +38,7 @@
 		preventCloseWhileLoading?: boolean;
 		onCancel?: () => void;
 		layers?: Record<string, LayerProgress>;
+		triggerClass?: string;
 		children: Snippet;
 	}
 
@@ -57,8 +60,11 @@
 		preventCloseWhileLoading = true,
 		onCancel,
 		layers = {},
+		triggerClass,
 		children
 	}: Props = $props();
+
+	const isMobile = new IsMobile();
 
 	const percent = $derived(Math.round(progress));
 	const isComplete = $derived(progress >= 100);
@@ -134,104 +140,118 @@
 	}
 </script>
 
-<Popover.Root bind:open onOpenChange={handleOpenChange}>
-	<Popover.Trigger>
-		{@render children()}
-	</Popover.Trigger>
-
-	<Popover.Content class={cn('w-80 p-2', className)} {align} {sideOffset}>
-		<Item.Root variant={error ? 'outline' : 'default'} class={cn(error && 'border-destructive/50')}>
-			<Item.Media
-				variant="icon"
-				class={cn(
-					error && 'bg-destructive/10 text-destructive',
-					isComplete && !loading && !error && 'bg-green-500/10 text-green-500'
-				)}
-			>
+{#snippet content()}
+	<Item.Root variant={error ? 'outline' : 'default'} class={cn(error && 'border-destructive/50')}>
+		<Item.Media
+			variant="icon"
+			class={cn(
+				error && 'bg-destructive/10 text-destructive',
+				isComplete && !loading && !error && 'bg-green-500/10 text-green-500'
+			)}
+		>
+			{#if error}
+				<CloseIcon class={iconClass} />
+			{:else if isComplete && !loading}
+				<VerifiedCheckIcon class={iconClass} />
+			{:else}
+				<PhaseIcon class={cn(iconClass, loading && 'animate-pulse')} />
+			{/if}
+		</Item.Media>
+		<Item.Content>
+			<Item.Title class={cn(error && 'text-destructive')}>{displayTitle}</Item.Title>
+			<Item.Description class={cn(error && 'line-clamp-none break-words whitespace-pre-wrap')}>
 				{#if error}
-					<CloseIcon class={iconClass} />
-				{:else if isComplete && !loading}
-					<VerifiedCheckIcon class={iconClass} />
+					{error}
+				{:else if mode !== 'pull'}
+					{statusText || subtitle}
+				{:else if layerStats.total > 0}
+					{statusText || subtitle}
+					<span class="text-muted-foreground">
+						· {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}</span
+					>
 				{:else}
-					<PhaseIcon class={cn(iconClass, loading && 'animate-pulse')} />
+					{hasReachedComplete ? 100 : percent}% · {statusText || subtitle}
 				{/if}
-			</Item.Media>
-			<Item.Content>
-				<Item.Title class={cn(error && 'text-destructive')}>{displayTitle}</Item.Title>
-				<Item.Description>
-					{#if error}
-						{error}
-					{:else if mode !== 'pull'}
-						{statusText || subtitle}
-					{:else if layerStats.total > 0}
-						{statusText || subtitle}
-						<span class="text-muted-foreground">
-							· {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}</span
-						>
-					{:else}
-						{hasReachedComplete ? 100 : percent}% · {statusText || subtitle}
-					{/if}
-				</Item.Description>
-			</Item.Content>
-			{#if loading && onCancel}
-				<Item.Actions>
-					<ArcaneButton action="cancel" size="sm" onclick={onCancel} />
-				</Item.Actions>
-			{/if}
-			{#if !error}
-				<Item.Footer>
-					<Progress
-						value={hasReachedComplete || isIndeterminate ? 100 : progress}
-						max={100}
-						class="h-1.5 w-full"
-						indeterminate={(isIndeterminate && !hasReachedComplete) || isIndeterminateGeneric}
-					/>
-				</Item.Footer>
-			{/if}
-		</Item.Root>
-
-		{#if Object.keys(layers).length > 0 && !error}
-			<Collapsible.Root bind:open={showImageLayersState.current} class="mt-2">
-				<Collapsible.Trigger
-					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
-				>
-					{m.progress_show_layers()}
-					<ArrowDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
-				</Collapsible.Trigger>
-				<Collapsible.Content>
-					<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">
-						{#each Object.entries(layers) as [id, layer] (id)}
-							{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layer.status)}
-							{@const layerPercent =
-								phase === 'complete' ? 100 : layer.total > 0 ? Math.round((layer.current / layer.total) * 100) : 0}
-							<div class="bg-muted/30 rounded-md px-2 py-1.5">
-								<div class="flex items-center justify-between gap-2">
-									<span class="text-muted-foreground truncate font-mono text-[10px]">{id.slice(0, 12)}</span>
-									<span
-										class={cn(
-											'text-[10px] font-medium',
-											phase === 'complete' && 'text-green-500',
-											phase === 'downloading' && 'text-blue-500',
-											phase === 'extracting' && 'text-amber-500'
-										)}
-									>
-										{#if phase === 'complete'}
-											✓
-										{:else if layer.total > 0}
-											{layerPercent}%
-										{:else}
-											{layer.status}
-										{/if}
-									</span>
-								</div>
-								<Progress value={layerPercent} max={100} class="mt-1 h-1" />
-							</div>
-						{/each}
-					</div>
-				</Collapsible.Content>
-			</Collapsible.Root>
+			</Item.Description>
+		</Item.Content>
+		{#if loading && onCancel}
+			<Item.Actions>
+				<ArcaneButton action="cancel" size="sm" onclick={onCancel} />
+			</Item.Actions>
 		{/if}
+		{#if !error}
+			<Item.Footer>
+				<Progress
+					value={hasReachedComplete || isIndeterminate ? 100 : progress}
+					max={100}
+					class="h-1.5 w-full"
+					indeterminate={(isIndeterminate && !hasReachedComplete) || isIndeterminateGeneric}
+				/>
+			</Item.Footer>
+		{/if}
+	</Item.Root>
 
-		<PopoverPrimitive.Arrow class="fill-background stroke-border" />
-	</Popover.Content>
-</Popover.Root>
+	{#if Object.keys(layers).length > 0 && !error}
+		<Collapsible.Root bind:open={showImageLayersState.current} class="mt-2">
+			<Collapsible.Trigger
+				class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
+			>
+				{m.progress_show_layers()}
+				<ArrowDownIcon class={cn('size-3 transition-transform', showImageLayersState.current && 'rotate-180')} />
+			</Collapsible.Trigger>
+			<Collapsible.Content>
+				<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">
+					{#each Object.entries(layers) as [id, layer] (id)}
+						{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layer.status)}
+						{@const layerPercent =
+							phase === 'complete' ? 100 : layer.total > 0 ? Math.round((layer.current / layer.total) * 100) : 0}
+						<div class="bg-muted/30 rounded-md px-2 py-1.5">
+							<div class="flex items-center justify-between gap-2">
+								<span class="text-muted-foreground truncate font-mono text-[10px]">{id.slice(0, 12)}</span>
+								<span
+									class={cn(
+										'text-[10px] font-medium',
+										phase === 'complete' && 'text-green-500',
+										phase === 'downloading' && 'text-blue-500',
+										phase === 'extracting' && 'text-amber-500'
+									)}
+								>
+									{#if phase === 'complete'}
+										✓
+									{:else if layer.total > 0}
+										{layerPercent}%
+									{:else}
+										{layer.status}
+									{/if}
+								</span>
+							</div>
+							<Progress value={layerPercent} max={100} class="mt-1 h-1" />
+						</div>
+					{/each}
+				</div>
+			</Collapsible.Content>
+		</Collapsible.Root>
+	{/if}
+{/snippet}
+
+{#if isMobile.current}
+	<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+		<Dialog.Trigger class={triggerClass}>
+			{@render children()}
+		</Dialog.Trigger>
+		<Dialog.Content class={cn('p-2', error && 'max-w-[600px]', className)} showCloseButton={!loading}>
+			{@render content()}
+		</Dialog.Content>
+	</Dialog.Root>
+{:else}
+	<Popover.Root bind:open onOpenChange={handleOpenChange}>
+		<Popover.Trigger class={triggerClass}>
+			{@render children()}
+		</Popover.Trigger>
+
+		<Popover.Content class={cn('w-80 p-2', error && 'w-auto max-w-[600px]', className)} {align} {sideOffset}>
+			{@render content()}
+			<PopoverPrimitive.Arrow class="fill-background stroke-border" />
+		</Popover.Content>
+	</Popover.Root>
+{/if}
