@@ -16,7 +16,6 @@ import {
 	EventsIcon,
 	SettingsIcon
 } from '$lib/icons';
-
 import { m } from '$lib/paraglide/messages';
 
 export type NavigationItem = {

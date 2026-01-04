@@ -12,7 +12,8 @@
 		language,
 		value = $bindable(),
 		error,
-		autoHeight = false
+		autoHeight = false,
+		readOnly = false
 	}: {
 		title: string;
 		open: boolean;
@@ -20,6 +21,7 @@
 		value: string;
 		error?: string;
 		autoHeight?: boolean;
+		readOnly?: boolean;
 	} = $props();
 
 	const isMobile = new IsMobile();
@@ -35,10 +37,10 @@
 	<Card.Content class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible p-0">
 		<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
 			{#if effectiveAutoHeight}
-				<CodeEditor bind:value {language} fontSize="13px" autoHeight={true} />
+				<CodeEditor bind:value {language} fontSize="13px" autoHeight={true} {readOnly} />
 			{:else}
 				<div class="absolute inset-0">
-					<CodeEditor bind:value {language} fontSize="13px" />
+					<CodeEditor bind:value {language} fontSize="13px" {readOnly} />
 				</div>
 			{/if}
 		</div>

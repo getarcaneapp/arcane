@@ -43,6 +43,7 @@ type Config struct {
 	AnalyticsDisabled       bool
 	GPUMonitoringEnabled    bool
 	GPUType                 string
+	GitWorkDir              string
 }
 
 func Load() *Config {
@@ -74,6 +75,7 @@ func Load() *Config {
 		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
 		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
 		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
+		GitWorkDir:              getEnvOrDefault("GIT_WORK_DIR", "data/git"),
 	}
 }
 

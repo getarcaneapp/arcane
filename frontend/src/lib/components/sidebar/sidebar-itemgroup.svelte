@@ -25,6 +25,10 @@
 	const sidebar = useSidebar();
 
 	function isActiveItem(url: string): boolean {
+		// Special case: Don't highlight "Environments" when on GitOps page
+		if (url === '/environments' && page.url.pathname.includes('/gitops')) {
+			return false;
+		}
 		return page.url.pathname === url || (page.url.pathname.startsWith(url) && url !== '/');
 	}
 

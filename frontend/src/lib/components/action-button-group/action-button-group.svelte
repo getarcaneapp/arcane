@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { Action, ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon } from '$lib/icons';
+	import { EllipsisIcon, type IconType } from '$lib/icons';
 	import { cn } from '$lib/utils';
 
 	export interface ActionButton {
@@ -15,6 +15,7 @@
 		onclick: () => void;
 		showOnMobile?: boolean;
 		badge?: string | number;
+		icon?: IconType | null;
 	}
 
 	interface Props {
@@ -119,6 +120,7 @@
 					disabled={button.disabled}
 					onclick={() => {}}
 					{size}
+					icon={button.icon}
 				>
 					{#if button.badge !== undefined}
 						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
@@ -139,6 +141,7 @@
 					disabled={button.disabled}
 					onclick={button.onclick}
 					{size}
+					icon={button.icon}
 				>
 					{#if button.badge !== undefined}
 						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">

@@ -72,6 +72,7 @@ export interface Project {
 	statusReason?: string;
 	updatedAt: string;
 	createdAt: string;
+	gitOpsManagedBy?: string;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;
