@@ -7,28 +7,23 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository } from '$lib/types/gitops.type';
-	import type { Project } from '$lib/types/project.type';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
-	import { projectService } from '$lib/services/project-service';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
-	import { onMount } from 'svelte';
 	import { RefreshIcon } from '$lib/icons';
 
 	type GitOpsSyncFormProps = {
 		open: boolean;
 		syncToEdit: GitOpsSync | null;
-		environmentId: string;
 		onSubmit: (detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), syncToEdit = $bindable(), environmentId, onSubmit, isLoading }: GitOpsSyncFormProps = $props();
+	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
 
 	let isEditMode = $derived(!!syncToEdit);
 	let repositories = $state<GitRepository[]>([]);
-	let projects = $state<Project[]>([]);
 	let loadingData = $state(true);
 
 	const formSchema = z.object({
@@ -88,7 +83,6 @@
 
 		const payload: GitOpsSyncCreateDto | GitOpsSyncUpdateDto = {
 			name: data.name,
-			environmentId,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
@@ -143,7 +137,7 @@
 							}
 						}}
 					>
-						<Select.Trigger id="repository">
+						<Select.Trigger id="repository" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
 							<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
 						</Select.Trigger>
 						<Select.Content>
@@ -152,6 +146,9 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
+					{#if $inputs.repositoryId.error}
+						<p class="mt-1 text-sm text-red-500">{$inputs.repositoryId.error}</p>
+					{/if}
 				</div>
 
 				<FormInput label={m.gitops_sync_branch()} type="text" placeholder="main" bind:input={$inputs.branch} />
@@ -175,6 +172,7 @@
 					id="autoSyncSwitch"
 					label={m.gitops_sync_auto_sync()}
 					description={m.common_auto_sync_description()}
+					error={$inputs.autoSync.error}
 					bind:checked={$inputs.autoSync.value}
 				/>
 
@@ -184,6 +182,7 @@
 					id="isEnabledSwitch"
 					label={m.common_enabled()}
 					description={m.common_enabled_description()}
+					error={$inputs.enabled.error}
 					bind:checked={$inputs.enabled.value}
 				/>
 

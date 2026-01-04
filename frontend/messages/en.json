@@ -619,6 +619,9 @@
 	"networks_remove_success": "Network {name} removed successfully",
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "Projects",
+	"projects_col_provider": "Provider",
+	"projects_provider_local": "Local",
+	"projects_provider_git": "Git",
 	"compose_subtitle": "View and Manage Compose Projects",
 	"compose_services": "Services",
 	"compose_services_description": "Docker Compose services and their current status",
@@ -652,6 +655,7 @@
 	"compose_convert_action": "Convert to Compose",
 	"compose_convert_from_docker_run": "Convert from Docker Run",
 	"compose_project_name_invalid": "Only letters, numbers, and hyphens are allowed",
+	"compose_project_name_invalid_with_underscores": "Only letters, numbers, hyphens, and underscores are allowed",
 	"compose_compose_file_title": "Docker Compose File",
 	"compose_env_title": "Environment (.env)",
 	"compose_compose_placeholder": "Enter YAML…",
@@ -1118,6 +1122,9 @@
 	"gitops_sync_success": "Sync completed successfully",
 	"gitops_sync_failed": "Sync failed",
 	"gitops_sync_project_description": "Name of the project to create or update from the compose file",
+	"gitops_managed_badge": "GitOps Managed",
+	"gitops_managed_readonly_alert": "This project is managed by GitOps. The compose file and project name cannot be edited here. Changes must be made in the connected Git repository.",
+	"gitops_managed_env_note": "The environment file (.env) can still be edited in Arcane to provide runtime configuration.",
 	"gitops_environment_card_description": "Configure GitOps syncs to automatically deploy Docker Compose projects from Git repositories to this environment.",
 	"gitops_manage_syncs": "Manage GitOps Syncs",
 	"gitops_from_git_repo": "From Git Repo",
@@ -1602,5 +1609,6 @@
 	"environments_generate_config": "Generate Agent Configuration",
 	"environments_connect_existing_agent": "Connect to Existing Agent",
 	"environments_connect_existing_agent_description": "Connect to an already-running agent using a bootstrap token.",
-	"project_files": "Project Files"
+	"project_files": "Project Files",
+	"project_includes": "Includes"
 }

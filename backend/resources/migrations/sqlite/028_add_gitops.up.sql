@@ -42,3 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_gitops_syncs_repository_id ON gitops_syncs(reposi
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_project_id ON gitops_syncs(project_id);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_enabled ON gitops_syncs(enabled);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_auto_sync ON gitops_syncs(auto_sync);
+
+-- Add gitops_managed_by column to projects table
+ALTER TABLE projects ADD COLUMN gitops_managed_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_projects_gitops_managed_by ON projects(gitops_managed_by);

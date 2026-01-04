@@ -273,6 +273,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.ServiceCount = serviceCount
 	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
+	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 
 	// Load compose services from the compose file
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
@@ -738,7 +739,8 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	}
 
 	if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
-		s.db.WithContext(ctx).Delete(proj)
+		// Best-effort cleanup to restore pre-transaction behavior.
+		_ = s.db.WithContext(ctx).Delete(proj).Error
 		return nil, fmt.Errorf("failed to save project files: %w", err)
 	}
 
@@ -1139,6 +1141,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.DirName = utils.DerefString(p.DirName)
+	resp.GitOpsManagedBy = p.GitOpsManagedBy
 
 	// Find containers for this project
 	normName := normalizeComposeProjectName(p.Name)

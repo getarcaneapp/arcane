@@ -146,12 +146,10 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		ResourceName: &sync.Name,
 	})
 
-	// Trigger initial sync to create the project
-	go func(bgCtx context.Context, envID string) {
-		if _, err := s.PerformSync(bgCtx, envID, sync.ID); err != nil {
-			slog.Error("Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
-		}
-	}(context.WithoutCancel(ctx), sync.EnvironmentID)
+	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
+		slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
+		// Don't fail the entire creation - the sync config exists and can be retried
+	}
 
 	return s.GetSyncByID(ctx, "", sync.ID)
 }
@@ -323,7 +321,6 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 	// Create project if it doesn't exist
 	if project == nil {
-		// Create project from compose file
 		project, err = s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, systemUser)
 		if err != nil {
 			result.Message = "Failed to create project"
@@ -338,8 +335,24 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]interface{}{
 			"project_id": project.ID,
 		}).Error; err != nil {
-			slog.ErrorContext(ctx, "Failed to update sync with project ID", "syncId", id, "projectId", project.ID, "error", err)
+			result.Message = "Failed to update sync with project ID"
+			errMsg := err.Error()
+			result.Error = &errMsg
+			s.updateSyncStatus(ctx, id, "failed", errMsg)
+			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to update sync with project ID: %s", err.Error()))
+			return result, err
 		}
+
+		// Mark project as GitOps-managed
+		if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
+			result.Message = "Failed to mark project as GitOps-managed"
+			errMsg := err.Error()
+			result.Error = &errMsg
+			s.updateSyncStatus(ctx, id, "failed", errMsg)
+			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to mark project as GitOps-managed: %s", err.Error()))
+			return result, err
+		}
+
 		slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 	} else {
 		// Update existing project's compose file
