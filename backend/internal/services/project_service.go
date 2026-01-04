@@ -1069,7 +1069,13 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 
 // Table Functions
 
-func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
+// StoppedPosition constants for controlling stopped project placement
+const (
+	StoppedPositionFirst = "first"
+	StoppedPositionLast  = "last"
+)
+
+func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams, stoppedPosition string) ([]project.Details, pagination.Response, error) {
 	var projectsArray []models.Project
 	query := s.db.WithContext(ctx).Model(&models.Project{})
 
@@ -1092,10 +1098,34 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	// Fetch live status concurrently for all projects
 	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
 
+	// Apply stopped position sorting if specified
+	if stoppedPosition != "" && len(result) > 1 {
+		result = sortByStoppedPosition(result, stoppedPosition)
+	}
+
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
 
 	return result, paginationResp, nil
+}
+
+func sortByStoppedPosition(projects []project.Details, position string) []project.Details {
+	running := make([]project.Details, 0, len(projects))
+	notRunning := make([]project.Details, 0, len(projects))
+
+	for _, p := range projects {
+		if p.Status == string(models.ProjectStatusRunning) || p.Status == string(models.ProjectStatusPartiallyRunning) {
+			running = append(running, p)
+		} else {
+			notRunning = append(notRunning, p)
+		}
+	}
+
+	if position == StoppedPositionFirst {
+		return append(notRunning, running...)
+	}
+	// Default to "last"
+	return append(running, notRunning...)
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel

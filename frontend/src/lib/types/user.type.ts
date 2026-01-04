@@ -1,5 +1,7 @@
 import type { Locale } from '$lib/paraglide/runtime';
 
+export type StoppedPosition = '' | 'first' | 'last';
+
 export type User = {
 	id: string;
 	username: string;
@@ -13,6 +15,7 @@ export type User = {
 	oidcSubjectId?: string;
 	locale?: Locale;
 	requiresPasswordChange?: boolean;
+	projectsStoppedPosition?: StoppedPosition;
 };
 
 export type CreateUser = Omit<
