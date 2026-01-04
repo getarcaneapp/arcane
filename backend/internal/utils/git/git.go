@@ -69,6 +69,10 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 	if workDir == "" {
 		workDir = os.TempDir()
 	}
+	// Ensure the work directory exists
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create work dir: %w", err)
+	}
 	tmpDir, err := os.MkdirTemp(workDir, "gitops-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)

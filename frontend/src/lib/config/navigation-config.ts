@@ -14,9 +14,7 @@ import {
 	NetworksIcon,
 	VolumesIcon,
 	EventsIcon,
-	SettingsIcon,
-	AutomationIcon,
-	GitBranchIcon
+	SettingsIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 
@@ -33,13 +31,6 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.projects_title(), url: '/projects', icon: ProjectsIcon },
 		{ title: m.environments_title(), url: '/environments', icon: EnvironmentsIcon },
 		{ title: m.customize_title(), url: '/customize', icon: CustomizeIcon }
-	],
-	automationItems: [
-		{
-			title: m.automation_title(),
-			url: '/automation',
-			icon: AutomationIcon
-		}
 	],
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon },

@@ -19,11 +19,12 @@
 	type GitOpsSyncFormProps = {
 		open: boolean;
 		syncToEdit: GitOpsSync | null;
+		environmentId: string;
 		onSubmit: (detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
+	let { open = $bindable(false), syncToEdit = $bindable(), environmentId, onSubmit, isLoading }: GitOpsSyncFormProps = $props();
 
 	let isEditMode = $derived(!!syncToEdit);
 	let repositories = $state<GitRepository[]>([]);
@@ -87,6 +88,7 @@
 
 		const payload: GitOpsSyncCreateDto | GitOpsSyncUpdateDto = {
 			name: data.name,
+			environmentId,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,

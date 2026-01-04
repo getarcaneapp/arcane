@@ -29,10 +29,12 @@ type GitOpsSyncPaginatedResponse struct {
 }
 
 type ListGitOpsSyncsInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListGitOpsSyncsOutput struct {
@@ -40,7 +42,8 @@ type ListGitOpsSyncsOutput struct {
 }
 
 type CreateGitOpsSyncInput struct {
-	Body models.CreateGitOpsSyncRequest
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          models.CreateGitOpsSyncRequest
 }
 
 type CreateGitOpsSyncOutput struct {
@@ -48,7 +51,8 @@ type CreateGitOpsSyncOutput struct {
 }
 
 type GetGitOpsSyncInput struct {
-	ID string `path:"id" doc:"Sync ID"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
 type GetGitOpsSyncOutput struct {
@@ -56,8 +60,9 @@ type GetGitOpsSyncOutput struct {
 }
 
 type UpdateGitOpsSyncInput struct {
-	ID   string `path:"id" doc:"Sync ID"`
-	Body models.UpdateGitOpsSyncRequest
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Body          models.UpdateGitOpsSyncRequest
 }
 
 type UpdateGitOpsSyncOutput struct {
@@ -65,7 +70,8 @@ type UpdateGitOpsSyncOutput struct {
 }
 
 type DeleteGitOpsSyncInput struct {
-	ID string `path:"id" doc:"Sync ID"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
 type DeleteGitOpsSyncOutput struct {
@@ -73,7 +79,8 @@ type DeleteGitOpsSyncOutput struct {
 }
 
 type PerformSyncInput struct {
-	ID string `path:"id" doc:"Sync ID"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
 type PerformSyncOutput struct {
@@ -81,7 +88,8 @@ type PerformSyncOutput struct {
 }
 
 type GetSyncStatusInput struct {
-	ID string `path:"id" doc:"Sync ID"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
 type GetSyncStatusOutput struct {
@@ -89,8 +97,9 @@ type GetSyncStatusOutput struct {
 }
 
 type BrowseFilesInput struct {
-	ID   string `path:"id" doc:"Sync ID"`
-	Path string `query:"path" doc:"Path to browse (optional)"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Path          string `query:"path" doc:"Path to browse (optional)"`
 }
 
 type BrowseFilesOutput struct {
@@ -108,9 +117,9 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "listGitOpsSyncs",
 		Method:      "GET",
-		Path:        "/gitops-syncs",
+		Path:        "/environments/{id}/gitops-syncs",
 		Summary:     "List GitOps syncs",
-		Description: "Get a paginated list of GitOps syncs",
+		Description: "Get a paginated list of GitOps syncs for an environment",
 		Tags:        []string{"GitOps Syncs"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -121,9 +130,9 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "createGitOpsSync",
 		Method:      "POST",
-		Path:        "/gitops-syncs",
+		Path:        "/environments/{id}/gitops-syncs",
 		Summary:     "Create a GitOps sync",
-		Description: "Create a new GitOps sync configuration",
+		Description: "Create a new GitOps sync configuration for an environment",
 		Tags:        []string{"GitOps Syncs"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -134,7 +143,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "getGitOpsSync",
 		Method:      "GET",
-		Path:        "/gitops-syncs/{id}",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}",
 		Summary:     "Get a GitOps sync",
 		Description: "Get a GitOps sync by ID",
 		Tags:        []string{"GitOps Syncs"},
@@ -147,7 +156,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateGitOpsSync",
 		Method:      "PUT",
-		Path:        "/gitops-syncs/{id}",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}",
 		Summary:     "Update a GitOps sync",
 		Description: "Update an existing GitOps sync configuration",
 		Tags:        []string{"GitOps Syncs"},
@@ -160,7 +169,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteGitOpsSync",
 		Method:      "DELETE",
-		Path:        "/gitops-syncs/{id}",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}",
 		Summary:     "Delete a GitOps sync",
 		Description: "Delete a GitOps sync configuration by ID",
 		Tags:        []string{"GitOps Syncs"},
@@ -173,7 +182,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "performGitOpsSync",
 		Method:      "POST",
-		Path:        "/gitops-syncs/{id}/sync",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}/sync",
 		Summary:     "Perform a GitOps sync",
 		Description: "Manually trigger a sync operation",
 		Tags:        []string{"GitOps Syncs"},
@@ -186,7 +195,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "getGitOpsSyncStatus",
 		Method:      "GET",
-		Path:        "/gitops-syncs/{id}/status",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}/status",
 		Summary:     "Get GitOps sync status",
 		Description: "Get the current status of a GitOps sync",
 		Tags:        []string{"GitOps Syncs"},
@@ -199,7 +208,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	huma.Register(api, huma.Operation{
 		OperationID: "browseGitOpsSyncFiles",
 		Method:      "GET",
-		Path:        "/gitops-syncs/{id}/files",
+		Path:        "/environments/{id}/gitops-syncs/{syncId}/files",
 		Summary:     "Browse GitOps sync files",
 		Description: "Browse files in the synced repository",
 		Tags:        []string{"GitOps Syncs"},
@@ -220,9 +229,9 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
-	syncs, paginationResp, err := h.syncService.GetSyncsPaginated(ctx, params)
+	syncs, paginationResp, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.GitOpsSyncListError{Err: err}).Error())
 	}
@@ -248,7 +257,7 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	sync, err := h.syncService.CreateSync(ctx, input.Body)
+	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncCreationError{Err: err}).Error())
@@ -273,7 +282,7 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	sync, err := h.syncService.GetSyncByID(ctx, input.ID)
+	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncRetrievalError{Err: err}).Error())
@@ -298,7 +307,7 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	sync, err := h.syncService.UpdateSync(ctx, input.ID, input.Body)
+	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncUpdateError{Err: err}).Error())
@@ -323,7 +332,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.syncService.DeleteSync(ctx, input.ID); err != nil {
+	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncDeletionError{Err: err}).Error())
 	}
@@ -344,7 +353,7 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	result, err := h.syncService.PerformSync(ctx, input.ID)
+	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncPerformError{Err: err}).Error())
@@ -364,7 +373,7 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	status, err := h.syncService.GetSyncStatus(ctx, input.ID)
+	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncStatusError{Err: err}).Error())
@@ -384,7 +393,7 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseFilesI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	response, err := h.syncService.BrowseFiles(ctx, input.ID, input.Path)
+	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncBrowseError{Err: err}).Error())

@@ -34,6 +34,7 @@ export interface GitRepository {
 
 export interface GitOpsSyncCreateDto {
 	name: string;
+	environmentId: string;
 	repositoryId: string;
 	branch: string;
 	composePath: string;
@@ -45,6 +46,7 @@ export interface GitOpsSyncCreateDto {
 
 export interface GitOpsSyncUpdateDto {
 	name?: string;
+	environmentId?: string;
 	repositoryId?: string;
 	branch?: string;
 	composePath?: string;
@@ -57,6 +59,7 @@ export interface GitOpsSyncUpdateDto {
 export interface GitOpsSync {
 	id: string;
 	name: string;
+	environmentId: string;
 	repositoryId: string;
 	repository?: GitRepository;
 	branch: string;

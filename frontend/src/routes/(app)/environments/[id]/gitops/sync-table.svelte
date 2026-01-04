@@ -27,11 +27,13 @@
 	type FieldVisibility = Record<string, boolean>;
 
 	let {
+		environmentId,
 		syncs = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		onEditSync
 	}: {
+		environmentId: string;
 		syncs: Paginated<GitOpsSync>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
@@ -60,7 +62,7 @@
 					let failureCount = 0;
 					for (const id of ids) {
 						const sync = syncs.data.find((s) => s.id === id);
-						const result = await tryCatch(gitOpsSyncService.deleteSync(id));
+						const result = await tryCatch(gitOpsSyncService.deleteSync(environmentId, id));
 						if (result.error) {
 							failureCount++;
 							toast.error(m.common_delete_failed({ resource: sync?.name ?? m.common_unknown() }));
@@ -71,7 +73,7 @@
 
 					if (successCount > 0) {
 						toast.success(m.common_delete_success({ resource: `${successCount} ${m.resource_sync()}(s)` }));
-						syncs = await gitOpsSyncService.getSyncs(requestOptions);
+						syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
 					}
 					if (failureCount > 0) toast.error(m.common_delete_failed({ resource: `${failureCount} items` }));
 
@@ -93,14 +95,14 @@
 				action: async () => {
 					isLoading.removing = true;
 
-					const result = await tryCatch(gitOpsSyncService.deleteSync(id));
+					const result = await tryCatch(gitOpsSyncService.deleteSync(environmentId, id));
 					handleApiResultWithCallbacks({
 						result,
 						message: m.common_delete_failed({ resource: safeName }),
 						setLoadingState: () => {},
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
-							syncs = await gitOpsSyncService.getSyncs(requestOptions);
+							syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
 						}
 					});
 
@@ -112,14 +114,14 @@
 
 	async function handlePerformSync(id: string, name: string) {
 		isLoading.syncing = true;
-		const result = await tryCatch(gitOpsSyncService.performSync(id));
+		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, id));
 		handleApiResultWithCallbacks({
 			result,
 			message: m.gitops_sync_failed(),
 			setLoadingState: () => {},
 			onSuccess: () => {
 				toast.success(m.gitops_sync_success());
-				gitOpsSyncService.getSyncs(requestOptions).then((newSyncs) => {
+				gitOpsSyncService.getSyncs(environmentId, requestOptions).then((newSyncs) => {
 					syncs = newSyncs;
 				});
 			}
@@ -300,7 +302,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
-	onRefresh={async (options) => (syncs = await gitOpsSyncService.getSyncs(options))}
+	onRefresh={async (options) => (syncs = await gitOpsSyncService.getSyncs(environmentId, options))}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

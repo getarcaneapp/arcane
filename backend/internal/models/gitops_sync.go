@@ -6,6 +6,8 @@ import (
 
 type GitOpsSync struct {
 	Name           string         `json:"name" sortable:"true" search:"sync,gitops,automation,deploy,deployment,continuous"`
+	EnvironmentID  string         `json:"environmentId" sortable:"true"`
+	Environment    *Environment   `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID"`
 	RepositoryID   string         `json:"repositoryId" sortable:"true"`
 	Repository     *GitRepository `json:"repository,omitempty" gorm:"foreignKey:RepositoryID"`
 	Branch         string         `json:"branch" sortable:"true" search:"branch,main,master,develop,feature,release"`

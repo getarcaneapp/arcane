@@ -32,9 +32,10 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 	}
 }
 
-func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, error) {
+func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, error) {
 	var syncs []models.GitOpsSync
-	q := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Preload("Repository").Preload("Project")
+	q := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Preload("Repository").Preload("Project").
+		Where("environment_id = ?", environmentID)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -83,9 +84,13 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, params pagina
 	return out, paginationResp, nil
 }
 
-func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, id string) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
 	var sync models.GitOpsSync
-	if err := s.db.WithContext(ctx).Preload("Repository").Preload("Project").Where("id = ?", id).First(&sync).Error; err != nil {
+	q := s.db.WithContext(ctx).Preload("Repository").Preload("Project").Where("id = ?", id)
+	if environmentID != "" {
+		q = q.Where("environment_id = ?", environmentID)
+	}
+	if err := q.First(&sync).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("sync not found")
 		}
@@ -94,7 +99,7 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, id string) (*models
 	return &sync, nil
 }
 
-func (s *GitOpsSyncService) CreateSync(ctx context.Context, req models.CreateGitOpsSyncRequest) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req models.CreateGitOpsSyncRequest) (*models.GitOpsSync, error) {
 	// Validate repository exists
 	_, err := s.repoService.GetRepositoryByID(ctx, req.RepositoryID)
 	if err != nil {
@@ -103,15 +108,16 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, req models.CreateGit
 
 	// Store the project name - project will be created during first sync
 	sync := models.GitOpsSync{
-		Name:         req.Name,
-		RepositoryID: req.RepositoryID,
-		Branch:       req.Branch,
-		ComposePath:  req.ComposePath,
-		ProjectName:  req.ProjectName,
-		ProjectID:    nil, // Will be set during first sync
-		AutoSync:     false,
-		SyncInterval: 60,
-		Enabled:      true,
+		Name:          req.Name,
+		EnvironmentID: environmentID,
+		RepositoryID:  req.RepositoryID,
+		Branch:        req.Branch,
+		ComposePath:   req.ComposePath,
+		ProjectName:   req.ProjectName,
+		ProjectID:     nil, // Will be set during first sync
+		AutoSync:      false,
+		SyncInterval:  60,
+		Enabled:       true,
 	}
 
 	if req.AutoSync != nil {
@@ -141,17 +147,17 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, req models.CreateGit
 	})
 
 	// Trigger initial sync to create the project
-	go func(bgCtx context.Context) {
-		if _, err := s.PerformSync(bgCtx, sync.ID); err != nil {
+	go func(bgCtx context.Context, envID string) {
+		if _, err := s.PerformSync(bgCtx, envID, sync.ID); err != nil {
 			slog.Error("Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
 		}
-	}(context.WithoutCancel(ctx))
+	}(context.WithoutCancel(ctx), sync.EnvironmentID)
 
-	return s.GetSyncByID(ctx, sync.ID)
+	return s.GetSyncByID(ctx, "", sync.ID)
 }
 
-func (s *GitOpsSyncService) UpdateSync(ctx context.Context, id string, req models.UpdateGitOpsSyncRequest) (*models.GitOpsSync, error) {
-	sync, err := s.GetSyncByID(ctx, id)
+func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req models.UpdateGitOpsSyncRequest) (*models.GitOpsSync, error) {
+	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +212,12 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, id string, req model
 		})
 	}
 
-	return s.GetSyncByID(ctx, id)
+	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, id string) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string) error {
 	// Get sync info before deleting
-	sync, err := s.GetSyncByID(ctx, id)
+	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return err
 	}
@@ -235,8 +241,8 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *GitOpsSyncService) PerformSync(ctx context.Context, id string) (*gitops.SyncResult, error) {
-	sync, err := s.GetSyncByID(ctx, id)
+func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string) (*gitops.SyncResult, error) {
+	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -390,8 +396,8 @@ func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, er
 	}
 }
 
-func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, id string) (*gitops.SyncStatus, error) {
-	sync, err := s.GetSyncByID(ctx, id)
+func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*gitops.SyncStatus, error) {
+	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +440,7 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 		}
 
 		// Perform sync
-		result, err := s.PerformSync(ctx, sync.ID)
+		result, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to sync", "syncId", sync.ID, "error", err)
 			continue
@@ -448,8 +454,8 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 	return nil
 }
 
-func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, id string, path string) (*gitops.BrowseResponse, error) {
-	sync, err := s.GetSyncByID(ctx, id)
+func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id string, path string) (*gitops.BrowseResponse, error) {
+	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}

@@ -11,29 +11,29 @@ import { transformPaginationParams } from '$lib/utils/params.util';
 export default class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/git-repositories', { params });
+		const res = await this.api.get('/customize/git-repositories', { params });
 		return res.data;
 	}
 
 	async getRepository(id: string): Promise<GitRepository> {
-		return this.handleResponse(this.api.get(`/git-repositories/${id}`));
+		return this.handleResponse(this.api.get(`/customize/git-repositories/${id}`));
 	}
 
 	async createRepository(repository: GitRepositoryCreateDto): Promise<GitRepository> {
-		return this.handleResponse(this.api.post(`/git-repositories`, repository));
+		return this.handleResponse(this.api.post(`/customize/git-repositories`, repository));
 	}
 
 	async updateRepository(id: string, repository: GitRepositoryUpdateDto): Promise<GitRepository> {
-		return this.handleResponse(this.api.put(`/git-repositories/${id}`, repository));
+		return this.handleResponse(this.api.put(`/customize/git-repositories/${id}`, repository));
 	}
 
 	async deleteRepository(id: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/git-repositories/${id}`));
+		return this.handleResponse(this.api.delete(`/customize/git-repositories/${id}`));
 	}
 
 	async testRepository(id: string, branch?: string): Promise<GitRepositoryTestResponse> {
 		const params = branch ? { branch } : {};
-		return this.handleResponse(this.api.post(`/git-repositories/${id}/test`, {}, { params }));
+		return this.handleResponse(this.api.post(`/customize/git-repositories/${id}/test`, {}, { params }));
 	}
 }
 

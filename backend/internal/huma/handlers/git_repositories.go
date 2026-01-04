@@ -29,10 +29,11 @@ type GitRepositoryPaginatedResponse struct {
 }
 
 type ListGitRepositoriesInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Start  int    `query:"start" default:"0" doc:"Start index"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListGitRepositoriesOutput struct {
@@ -92,10 +93,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "listGitRepositories",
 		Method:      "GET",
-		Path:        "/git-repositories",
+		Path:        "/customize/git-repositories",
 		Summary:     "List git repositories",
 		Description: "Get a paginated list of git repositories",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -105,10 +106,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "createGitRepository",
 		Method:      "POST",
-		Path:        "/git-repositories",
+		Path:        "/customize/git-repositories",
 		Summary:     "Create a git repository",
 		Description: "Create a new git repository configuration",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -118,10 +119,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "getGitRepository",
 		Method:      "GET",
-		Path:        "/git-repositories/{id}",
+		Path:        "/customize/git-repositories/{id}",
 		Summary:     "Get a git repository",
 		Description: "Get a git repository by ID",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -131,10 +132,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "updateGitRepository",
 		Method:      "PUT",
-		Path:        "/git-repositories/{id}",
+		Path:        "/customize/git-repositories/{id}",
 		Summary:     "Update a git repository",
 		Description: "Update an existing git repository configuration",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -144,10 +145,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteGitRepository",
 		Method:      "DELETE",
-		Path:        "/git-repositories/{id}",
+		Path:        "/customize/git-repositories/{id}",
 		Summary:     "Delete a git repository",
 		Description: "Delete a git repository configuration by ID",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -157,10 +158,10 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 	huma.Register(api, huma.Operation{
 		OperationID: "testGitRepository",
 		Method:      "POST",
-		Path:        "/git-repositories/{id}/test",
+		Path:        "/customize/git-repositories/{id}/test",
 		Summary:     "Test a git repository",
 		Description: "Test connectivity and authentication to a git repository",
-		Tags:        []string{"Git Repositories"},
+		Tags:        []string{"Customize"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -178,7 +179,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {
