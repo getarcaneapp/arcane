@@ -20,6 +20,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon } from '$lib/icons';
+	import userStore from '$lib/stores/user-store';
+	import { userService } from '$lib/services/user-service';
+	import type { StoppedPosition, User } from '$lib/types/user.type';
+	import { get } from 'svelte/store';
 
 	let {
 		projects = $bindable(),
@@ -30,6 +34,17 @@
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
+
+	let user = $derived($userStore);
+	let stoppedPosition = $derived<StoppedPosition>(user?.projectsStoppedPosition ?? '');
+
+	async function setStoppedPosition(value: StoppedPosition) {
+		const currentUser = get(userStore);
+		if (!currentUser) return;
+		await userService.update(currentUser.id, { projectsStoppedPosition: value });
+		userStore.setUser({ ...currentUser, projectsStoppedPosition: value });
+		projects = await projectService.getProjects(requestOptions);
+	}
 
 	let isLoading = $state({
 		start: false,
@@ -302,6 +317,19 @@
 	</DropdownMenu.Root>
 {/snippet}
 
+{#snippet CustomViewOptions()}
+	<DropdownMenu.Sub>
+		<DropdownMenu.SubTrigger>{m.compose_stopped_position()}</DropdownMenu.SubTrigger>
+		<DropdownMenu.SubContent>
+			<DropdownMenu.RadioGroup value={stoppedPosition} onValueChange={(v) => setStoppedPosition((v ?? '') as StoppedPosition)}>
+				<DropdownMenu.RadioItem value="">{m.compose_stopped_default()}</DropdownMenu.RadioItem>
+				<DropdownMenu.RadioItem value="first">{m.compose_stopped_first()}</DropdownMenu.RadioItem>
+				<DropdownMenu.RadioItem value="last">{m.compose_stopped_last()}</DropdownMenu.RadioItem>
+			</DropdownMenu.RadioGroup>
+		</DropdownMenu.SubContent>
+	</DropdownMenu.Sub>
+{/snippet}
+
 <ArcaneTable
 	persistKey="arcane-project-table"
 	items={projects}
@@ -313,4 +341,5 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={ProjectMobileCardSnippet}
+	customViewOptions={CustomViewOptions}
 />
