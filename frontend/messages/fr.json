@@ -1177,7 +1177,7 @@
 	"progress_deploy_failed_to_start": "Impossible de démarrer le déploiement du projet ({status})",
 	"progress_deploy_waiting_for_service": "En attente que {service} soit en bonne santé",
 	"progress_deploy_waiting_for_service_with_health": "En attente que {service} soit en bonne santé ({health})",
-	"progress_deploy_service_healthy": "{service} is healthy",
+	"progress_deploy_service_healthy": "{service} est en bonne santé",
 	"progress_deploy_service_state": "État {service} : {state}",
 	"progress_deploy_service_status": "{service}: {status}",
 	"progress_layers_status": "{completed} des couches {total}",
