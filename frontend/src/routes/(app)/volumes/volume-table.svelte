@@ -156,19 +156,31 @@
 {#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
 	{#if volumeSizesPromise}
 		{#await volumeSizesPromise}
-			<span class="text-muted-foreground flex items-center gap-1 text-sm">
-				<Spinner class="size-4" />
-			</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground flex items-center gap-1 text-sm">
+					<Spinner class="size-4" />
+				</span>
+			{/if}
 		{:then sizesMap}
 			{@const sizeInfo = sizesMap.get(item.name)}
 			{#if sizeInfo && sizeInfo.size >= 0}
 				<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+			{:else if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 			{:else}
 				<span class="text-muted-foreground text-sm">-</span>
 			{/if}
 		{:catch}
-			<span class="text-muted-foreground text-sm">-</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground text-sm">-</span>
+			{/if}
 		{/await}
+	{:else if item.size > 0}
+		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}
 		<span class="text-muted-foreground text-sm">-</span>
 	{/if}
