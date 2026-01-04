@@ -22,6 +22,9 @@
 	backface-visibility: hidden;
 	/* Prevent body scroll leak */
 	contain: layout style paint;
+	/* Constrain width on small screens */
+	width: 98%;
+	max-width: 28rem;
 }
 
 /* Floating navigation specific positioning */
