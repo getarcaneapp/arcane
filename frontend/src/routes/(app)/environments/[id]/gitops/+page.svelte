@@ -11,7 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import SyncTable from './sync-table.svelte';
-	import { RefreshIcon as RefreshCwIcon, ClockIcon, SuccessIcon as CheckCircleIcon, GitBranchIcon } from '$lib/icons';
+	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -119,7 +119,7 @@
 		{
 			title: m.common_total(),
 			value: syncs?.pagination?.totalItems ?? 0,
-			icon: RefreshCwIcon,
+			icon: RefreshIcon,
 			iconColor: 'text-blue-500',
 			bgColor: 'bg-blue-500/10'
 		},
@@ -133,7 +133,7 @@
 		{
 			title: m.common_successful(),
 			value: successfulSyncs,
-			icon: CheckCircleIcon,
+			icon: SuccessIcon,
 			iconColor: 'text-green-500',
 			bgColor: 'bg-green-500/10'
 		}

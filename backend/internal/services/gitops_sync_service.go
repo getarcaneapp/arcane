@@ -253,33 +253,18 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	// Get repository and auth config
 	repository := sync.Repository
 	if repository == nil {
-		result.Message = "Repository not found"
-		errMsg := "repository not found"
-		result.Error = &errMsg
-		s.updateSyncStatus(ctx, id, "failed", errMsg)
-		s.logSyncError(ctx, sync, "Repository not found")
-		return result, fmt.Errorf("repository not found")
+		return result, s.failSync(ctx, id, result, sync, "Repository not found", "repository not found")
 	}
 
 	authConfig, err := s.repoService.GetAuthConfig(ctx, repository)
 	if err != nil {
-		result.Message = "Failed to get authentication config"
-		errMsg := err.Error()
-		result.Error = &errMsg
-		s.updateSyncStatus(ctx, id, "failed", errMsg)
-		s.logSyncError(ctx, sync, fmt.Sprintf("Failed to get authentication: %s", err.Error()))
-		return result, err
+		return result, s.failSync(ctx, id, result, sync, "Failed to get authentication config", err.Error())
 	}
 
 	// Clone the repository
 	repoPath, err := s.repoService.gitClient.Clone(repository.URL, sync.Branch, authConfig)
 	if err != nil {
-		result.Message = "Failed to clone repository"
-		errMsg := err.Error()
-		result.Error = &errMsg
-		s.updateSyncStatus(ctx, id, "failed", errMsg)
-		s.logSyncError(ctx, sync, fmt.Sprintf("Failed to clone repository: %s", err.Error()))
-		return result, err
+		return result, s.failSync(ctx, id, result, sync, "Failed to clone repository", err.Error())
 	}
 	defer func() {
 		if cleanupErr := s.repoService.gitClient.Cleanup(repoPath); cleanupErr != nil {
@@ -289,105 +274,20 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 	// Check if compose file exists
 	if !s.repoService.gitClient.FileExists(repoPath, sync.ComposePath) {
-		result.Message = fmt.Sprintf("Compose file not found at %s", sync.ComposePath)
 		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
-		result.Error = &errMsg
-		s.updateSyncStatus(ctx, id, "failed", errMsg)
-		s.logSyncError(ctx, sync, errMsg)
-		return result, fmt.Errorf("compose file not found: %s", sync.ComposePath)
+		return result, s.failSync(ctx, id, result, sync, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
 	}
 
 	// Read compose file content
 	composeContent, err := s.repoService.gitClient.ReadFile(repoPath, sync.ComposePath)
 	if err != nil {
-		result.Message = "Failed to read compose file"
-		errMsg := err.Error()
-		result.Error = &errMsg
-		s.updateSyncStatus(ctx, id, "failed", errMsg)
-		s.logSyncError(ctx, sync, fmt.Sprintf("Failed to read compose file: %s", err.Error()))
-		return result, err
+		return result, s.failSync(ctx, id, result, sync, "Failed to read compose file", err.Error())
 	}
 
 	// Get or create project
-	var project *models.Project
-	if sync.ProjectID != nil && *sync.ProjectID != "" {
-		// Try to get existing project
-		project, err = s.projectService.GetProjectFromDatabaseByID(ctx, *sync.ProjectID)
-		if err != nil {
-			slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID, "error", err)
-			project = nil
-		}
-	}
-
-	// Create project if it doesn't exist
-	if project == nil {
-		project, err = s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, systemUser)
-		if err != nil {
-			result.Message = "Failed to create project"
-			errMsg := err.Error()
-			result.Error = &errMsg
-			s.updateSyncStatus(ctx, id, "failed", errMsg)
-			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to create project: %s", err.Error()))
-			return result, err
-		}
-
-		// Update sync with project ID
-		if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"project_id": project.ID,
-		}).Error; err != nil {
-			result.Message = "Failed to update sync with project ID"
-			errMsg := err.Error()
-			result.Error = &errMsg
-			s.updateSyncStatus(ctx, id, "failed", errMsg)
-			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to update sync with project ID: %s", err.Error()))
-			return result, err
-		}
-
-		// Mark project as GitOps-managed
-		if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
-			result.Message = "Failed to mark project as GitOps-managed"
-			errMsg := err.Error()
-			result.Error = &errMsg
-			s.updateSyncStatus(ctx, id, "failed", errMsg)
-			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to mark project as GitOps-managed: %s", err.Error()))
-			return result, err
-		}
-
-		slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
-
-		// Deploy the project immediately after creation
-		slog.InfoContext(ctx, "Deploying project after initial Git sync", "projectName", project.Name, "projectId", project.ID)
-		if err := s.projectService.DeployProject(ctx, project.ID, systemUser); err != nil {
-			slog.ErrorContext(ctx, "Failed to deploy project after initial Git sync", "error", err, "projectId", project.ID)
-		}
-	} else {
-		// Get current content to see if it changed
-		oldCompose, _, _ := s.projectService.GetProjectContent(ctx, project.ID)
-		contentChanged := oldCompose != composeContent
-
-		// Update existing project's compose file
-		_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, nil)
-		if err != nil {
-			result.Message = "Failed to update project compose file"
-			errMsg := err.Error()
-			result.Error = &errMsg
-			s.updateSyncStatus(ctx, id, "failed", errMsg)
-			s.logSyncError(ctx, sync, fmt.Sprintf("Failed to update project: %s", err.Error()))
-			return result, err
-		}
-		slog.InfoContext(ctx, "Updated project compose file", "projectName", project.Name, "projectId", project.ID)
-
-		// If content changed and project is running, redeploy
-		if contentChanged {
-			details, err := s.projectService.GetProjectDetails(ctx, project.ID)
-			if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
-				slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
-				if err := s.projectService.RedeployProject(ctx, project.ID, systemUser); err != nil {
-					slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
-					// We don't fail the sync itself, as the files are updated, but we log the error
-				}
-			}
-		}
+	project, err := s.getOrCreateProject(ctx, sync, id, composeContent, result)
+	if err != nil {
+		return result, err
 	}
 
 	// Update sync status
@@ -539,4 +439,89 @@ func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOp
 		ResourceID:   &sync.ID,
 		ResourceName: &sync.Name,
 	})
+}
+
+func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, message, errMsg string) error {
+	result.Message = message
+	result.Error = &errMsg
+	s.updateSyncStatus(ctx, id, "failed", errMsg)
+	s.logSyncError(ctx, sync, errMsg)
+	return fmt.Errorf("%s", errMsg)
+}
+
+func (s *GitOpsSyncService) createProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, result *gitops.SyncResult) (*models.Project, error) {
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, systemUser)
+	if err != nil {
+		return nil, s.failSync(ctx, id, result, sync, "Failed to create project", err.Error())
+	}
+
+	// Update sync with project ID
+	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"project_id": project.ID,
+	}).Error; err != nil {
+		return nil, s.failSync(ctx, id, result, sync, "Failed to update sync with project ID", err.Error())
+	}
+
+	// Mark project as GitOps-managed
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
+		return nil, s.failSync(ctx, id, result, sync, "Failed to mark project as GitOps-managed", err.Error())
+	}
+
+	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
+
+	// Deploy the project immediately after creation
+	slog.InfoContext(ctx, "Deploying project after initial Git sync", "projectName", project.Name, "projectId", project.ID)
+	if err := s.projectService.DeployProject(ctx, project.ID, systemUser); err != nil {
+		slog.ErrorContext(ctx, "Failed to deploy project after initial Git sync", "error", err, "projectId", project.ID)
+	}
+
+	return project, nil
+}
+
+func (s *GitOpsSyncService) getOrCreateProject(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, result *gitops.SyncResult) (*models.Project, error) {
+	var project *models.Project
+	var err error
+
+	if sync.ProjectID != nil && *sync.ProjectID != "" {
+		project, err = s.projectService.GetProjectFromDatabaseByID(ctx, *sync.ProjectID)
+		if err != nil {
+			slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID, "error", err)
+			project = nil
+		}
+	}
+
+	if project == nil {
+		return s.createProjectForSync(ctx, sync, id, composeContent, result)
+	}
+
+	if err := s.updateProjectForSync(ctx, sync, id, project, composeContent, result); err != nil {
+		return nil, err
+	}
+	return project, nil
+}
+
+func (s *GitOpsSyncService) updateProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, result *gitops.SyncResult) error {
+	// Get current content to see if it changed
+	oldCompose, _, _ := s.projectService.GetProjectContent(ctx, project.ID)
+	contentChanged := oldCompose != composeContent
+
+	// Update existing project's compose file
+	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, nil)
+	if err != nil {
+		return s.failSync(ctx, id, result, sync, "Failed to update project compose file", err.Error())
+	}
+	slog.InfoContext(ctx, "Updated project compose file", "projectName", project.Name, "projectId", project.ID)
+
+	// If content changed and project is running, redeploy
+	if contentChanged {
+		details, err := s.projectService.GetProjectDetails(ctx, project.ID)
+		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
+			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
+			if err := s.projectService.RedeployProject(ctx, project.ID, systemUser); err != nil {
+				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
+			}
+		}
+	}
+
+	return nil
 }

@@ -62,6 +62,11 @@ type GitOpsSync struct {
 	// Required: true
 	Name string `json:"name"`
 
+	// EnvironmentID is the ID of the environment this sync belongs to.
+	//
+	// Required: true
+	EnvironmentID string `json:"environmentId"`
+
 	// RepositoryID is the ID of the git repository to sync from.
 	//
 	// Required: true

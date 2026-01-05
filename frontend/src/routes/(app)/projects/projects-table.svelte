@@ -20,6 +20,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon } from '$lib/icons';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
 		projects = $bindable(),
@@ -150,6 +151,7 @@
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	const envId = $derived(environmentStore.selected?.id);
 </script>
 
 {#snippet NameCell({ item }: { item: Project })}
@@ -164,7 +166,9 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<span>{m.projects_provider_git()}</span>
+			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
+				{m.projects_provider_git()}
+			</a>
 		{:else}
 			<ProjectsIcon class="size-4" />
 			<span>{m.projects_provider_local()}</span>

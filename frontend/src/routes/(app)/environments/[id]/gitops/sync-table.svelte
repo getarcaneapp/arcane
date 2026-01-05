@@ -9,6 +9,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { GitOpsSync } from '$lib/types/gitops.type';
+	import type { Row } from '@tanstack/table-core';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
@@ -23,6 +24,7 @@
 		GitBranchIcon,
 		ProjectsIcon as FolderIcon
 	} from '$lib/icons';
+	import { goto } from '$app/navigation';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -187,55 +189,59 @@
 	];
 </script>
 
-{#snippet NameCell({ value }: { value: unknown })}
-	<div class="flex items-center gap-2">
-		<RefreshCwIcon class="text-muted-foreground size-4" />
-		<span class="font-medium">{value}</span>
-	</div>
+{#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: Row<GitOpsSync> })}
+	<a class="font-medium hover:underline" href="/projects/{item.projectId}">
+		{value}
+	</a>
 {/snippet}
 
-{#snippet BranchCell({ value }: { value: unknown })}
+{#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
 		<GitBranchIcon class="text-muted-foreground size-3.5" />
 		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
 	</div>
 {/snippet}
 
-{#snippet PathCell({ value }: { value: unknown })}
+{#snippet PathCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
 		<FolderIcon class="text-muted-foreground size-3.5" />
 		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
 	</div>
 {/snippet}
 
-{#snippet AutoSyncCell({ value }: { value: unknown })}
-	{@const autoSync = Boolean(value)}
-	<StatusBadge variant={autoSync ? 'blue' : 'gray'} text={autoSync ? m.common_enabled() : m.common_disabled()} />
+{#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+	<StatusBadge variant={value ? 'blue' : 'gray'} text={value ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
-{#snippet StatusCell({ value }: { value: unknown })}
-	{@const status = String(value)}
-	{#if status === 'success'}
+{#snippet StatusCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+	{#if value === 'success'}
 		<StatusBadge variant="green" text={m.common_success()} />
-	{:else if status === 'failed'}
+	{:else if value === 'failed'}
 		<StatusBadge variant="red" text={m.common_failed()} />
-	{:else if status === 'pending'}
+	{:else if value === 'pending'}
 		<StatusBadge variant="amber" text={m.common_pending()} />
 	{:else}
 		<StatusBadge variant="gray" text={m.common_na()} />
 	{/if}
 {/snippet}
 
-{#snippet LastSyncCell({ value }: { value: unknown })}
-	<span class="text-sm">{value ? format(new Date(String(value)), 'PP p') : m.common_never()}</span>
+{#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
 {/snippet}
 
-{#snippet EnabledCell({ value }: { value: unknown })}
-	{@const enabled = Boolean(value)}
-	<StatusBadge variant={enabled ? 'green' : 'red'} text={enabled ? m.common_enabled() : m.common_disabled()} />
+{#snippet EnabledCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+	<StatusBadge variant={value ? 'green' : 'red'} text={value ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
-{#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: GitOpsSync; mobileFieldVisibility: FieldVisibility })}
+{#snippet SyncMobileCardSnippet({
+	item,
+	mobileFieldVisibility,
+	row
+}: {
+	item: GitOpsSync;
+	mobileFieldVisibility: FieldVisibility;
+	row: Row<GitOpsSync>;
+})}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: RefreshCwIcon, variant: 'purple' as const }}
@@ -262,7 +268,7 @@
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: GitOpsSync })}
+{#snippet RowActions({ item, row }: { item: GitOpsSync; row?: Row<GitOpsSync> })}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
