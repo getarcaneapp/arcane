@@ -45,16 +45,21 @@ export async function initShiki(monacoInstance: typeof monaco) {
 
 		// Register the themes from Shiki, and provide syntax highlighting for Monaco.
 		shikiToMonaco(highlighter, monacoInstance);
+
+		// Register providers after languages are guaranteed to be registered
+		registerProviders();
 	})();
 
 	return shikiPromise;
 }
 
-// Register YAML language providers (only once, survives hot reload)
-const globalWithFlag = globalThis as typeof globalThis & { _yamlProvidersRegistered?: boolean };
-if (!globalWithFlag._yamlProvidersRegistered) {
-	registerYamlProviders(monaco);
-	globalWithFlag._yamlProvidersRegistered = true;
+// Register YAML language providers
+let yamlProviders: monaco.IDisposable[] = [];
+
+export function registerProviders() {
+	// Dispose existing providers if any
+	yamlProviders.forEach((p) => p.dispose());
+	yamlProviders = registerYamlProviders(monaco);
 }
 
 if (typeof window !== 'undefined') {
