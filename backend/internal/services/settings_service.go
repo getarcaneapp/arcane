@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -31,6 +32,7 @@ type SettingsService struct {
 
 	OnImagePollingSettingsChanged func(ctx context.Context)
 	OnAutoUpdateSettingsChanged   func(ctx context.Context)
+	OnProjectsDirectoryChanged    func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -430,6 +432,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	}
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
+	}
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+		s.OnProjectsDirectoryChanged(ctx)
 	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
