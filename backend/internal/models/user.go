@@ -15,9 +15,6 @@ type User struct {
 	Locale                 *string     `json:"locale,omitempty" gorm:"column:locale"`
 	RequiresPasswordChange bool        `json:"requiresPasswordChange" gorm:"column:requires_password_change"`
 
-	// User specific preferences
-	ProjectsStoppedPosition *string `json:"projectsStoppedPosition,omitempty" gorm:"column:projects_stopped_position"`
-
 	// OIDC provider tokens
 	OidcAccessToken          *string    `json:"-" gorm:"type:text"`
 	OidcRefreshToken         *string    `json:"-" gorm:"type:text"`

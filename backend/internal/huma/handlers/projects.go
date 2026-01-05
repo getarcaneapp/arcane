@@ -340,13 +340,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		},
 	}
 
-	// Get stopped position preference from the current user
-	var stoppedPosition string
-	if user, exists := humamw.GetCurrentUserFromContext(ctx); exists && user.ProjectsStoppedPosition != nil {
-		stoppedPosition = *user.ProjectsStoppedPosition
-	}
-
-	projects, paginationResp, err := h.projectService.ListProjects(ctx, params, stoppedPosition)
+	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, huma.Error500InternalServerError("Request was canceled")
