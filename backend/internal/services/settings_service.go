@@ -591,13 +591,21 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
+	appCfg := config.Load()
+	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
-			key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
+			tag := field.Tag.Get("key")
+			key, attrs, _ := strings.Cut(tag, ",")
 
-			if key == "" || attrs == "internal" {
+			if key == "" || strings.Contains(attrs, "internal") {
+				continue
+			}
+
+			// If not in env-only mode, only persist if it's explicitly marked as envOverride
+			if !isEnvOnlyMode && !strings.Contains(attrs, "envOverride") {
 				continue
 			}
 
