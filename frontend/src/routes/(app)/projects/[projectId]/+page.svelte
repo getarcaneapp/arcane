@@ -27,6 +27,9 @@
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
+	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { RefreshIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -42,8 +45,11 @@
 		redeploying: false,
 		destroying: false,
 		pulling: false,
-		saving: false
+		saving: false,
+		syncing: false
 	});
+
+	const envId = $derived(environmentStore.selected?.id);
 
 	let originalName = $state(untrack(() => data.editorState.originalName));
 	let originalComposeContent = $state(untrack(() => data.editorState.originalComposeContent));
@@ -232,6 +238,20 @@
 			}
 		});
 	}
+
+	async function handleSyncFromGit() {
+		if (!envId || !project?.gitOpsManagedBy) return;
+		isLoading.syncing = true;
+		handleApiResultWithCallbacks({
+			result: await tryCatch(gitOpsSyncService.performSync(envId, project.gitOpsManagedBy)),
+			message: m.gitops_sync_failed(),
+			setLoadingState: (value) => (isLoading.syncing = value),
+			onSuccess: async () => {
+				toast.success(m.gitops_sync_success());
+				await invalidateAll();
+			}
+		});
+	}
 </script>
 
 {#if project}
@@ -334,14 +354,28 @@
 					{#if isGitOpsManaged}
 						<Alert.Root variant="default" class="mb-4">
 							<AlertIcon class="size-4" />
-							<Alert.Title>{m.gitops_title()} {m.read_only_label()}</Alert.Title>
-							<Alert.Description>
-								{m.gitops_managed_readonly_alert()}
-								<br />
-								<span class="text-muted-foreground text-xs">
-									{m.gitops_managed_env_note()}
-								</span>
-							</Alert.Description>
+							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+								<div class="flex-1">
+									<Alert.Title>{m.gitops_title()} {m.read_only_label()}</Alert.Title>
+									<Alert.Description>
+										{m.gitops_managed_readonly_alert()}
+										<br />
+										<span class="text-muted-foreground text-xs">
+											{m.gitops_managed_env_note()}
+										</span>
+									</Alert.Description>
+								</div>
+								<ArcaneButton
+									action="base"
+									tone="outline-primary"
+									loading={isLoading.syncing}
+									onclick={handleSyncFromGit}
+									icon={RefreshIcon}
+									customLabel={m.gitops_sync_from_git()}
+									loadingLabel={m.common_syncing()}
+									class="shrink-0"
+								/>
+							</div>
 						</Alert.Root>
 					{/if}
 					<div class="mb-4 flex-shrink-0">
@@ -394,7 +428,7 @@
 
 											{#if project?.includeFiles && project.includeFiles.length > 0}
 												<TreeView.Folder name={m.project_includes()}>
-													{#each project.includeFiles as includeFile}
+													{#each project.includeFiles as includeFile (includeFile.relativePath)}
 														<TreeView.File
 															name={includeFile.relativePath}
 															onclick={() => (selectedFile = includeFile.relativePath)}
@@ -448,7 +482,7 @@
 								{#if project?.includeFiles && project.includeFiles.length > 0}
 									<div class="border-border bg-card rounded-lg border">
 										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
-											{#each project.includeFiles as includeFile}
+											{#each project.includeFiles as includeFile (includeFile.relativePath)}
 												<ArcaneButton
 													action="base"
 													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}

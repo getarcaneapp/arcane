@@ -1128,6 +1128,8 @@
 	"gitops_environment_card_description": "Configure GitOps syncs to automatically deploy Docker Compose projects from Git repositories to this environment.",
 	"gitops_manage_syncs": "Manage GitOps Syncs",
 	"gitops_from_git_repo": "From Git Repo",
+	"gitops_sync_from_git": "Sync from Git",
+	"common_syncing": "Syncing...",
 	"_comment_customize_variables": "=== CUSTOMIZATION - VARIABLES ===",
 	"variables_title": "Variables",
 	"variables_subtitle": "Manage global environment variables that are available to all projects",

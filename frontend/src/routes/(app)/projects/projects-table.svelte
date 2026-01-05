@@ -19,7 +19,8 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon } from '$lib/icons';
+	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
@@ -39,7 +40,8 @@
 		remove: false,
 		destroy: false,
 		pull: false,
-		updating: false
+		updating: false,
+		syncing: false
 	});
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -129,6 +131,21 @@
 		} catch (error) {
 			toast.error(m.common_action_failed());
 		}
+	}
+
+	async function handleSyncFromGit(gitOpsSyncId: string) {
+		if (!envId) return;
+		isLoading.syncing = true;
+		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.gitops_sync_failed(),
+			setLoadingState: (value) => (isLoading.syncing = value),
+			onSuccess: async () => {
+				toast.success(m.gitops_sync_success());
+				projects = await projectService.getProjects(requestOptions);
+			}
+		});
 	}
 
 	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
@@ -279,6 +296,20 @@
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
+				{#if item.gitOpsManagedBy}
+					<DropdownMenu.Item
+						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
+						disabled={isLoading.syncing || isAnyLoading}
+					>
+						{#if isLoading.syncing}
+							<Spinner class="size-4" />
+						{:else}
+							<RefreshIcon class="size-4" />
+						{/if}
+						{m.gitops_sync_from_git()}
+					</DropdownMenu.Item>
+				{/if}
 
 				{#if item.status !== 'running'}
 					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>

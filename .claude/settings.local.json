@@ -5,7 +5,8 @@
       "Bash(ls:*)",
       "Bash(golangci-lint run:*)",
       "Bash(find:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(cat:*)"
     ]
   }
 }
