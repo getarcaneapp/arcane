@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
-
-const filePerm = 0600
 
 const (
 	globalEnvFileName  = ".env.global"
@@ -79,10 +78,10 @@ func (l *EnvLoader) ensureGlobalEnvFile(ctx context.Context, path string) error 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		header := fmt.Sprintf(globalEnvHeader, time.Now().Format(time.RFC3339))
 		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
 			return fmt.Errorf("create dir: %w", err)
 		}
-		if werr := os.WriteFile(path, []byte(header), filePerm); werr != nil {
+		if werr := os.WriteFile(path, []byte(header), common.FilePerm); werr != nil {
 			return fmt.Errorf("write file: %w", werr)
 		}
 		slog.InfoContext(ctx, "Created global env file", "path", path)

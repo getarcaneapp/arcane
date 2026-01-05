@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,17 +17,17 @@ func TestLoadEnvironment(t *testing.T) {
 	projectsDir := filepath.Join(tmpDir, "projects")
 	workdir := filepath.Join(projectsDir, "myproject")
 
-	err := os.MkdirAll(workdir, 0755)
+	err := os.MkdirAll(workdir, common.DirPerm)
 	require.NoError(t, err)
 
 	// Create .env.global
 	globalEnvContent := "GLOBAL_VAR=global_value\nSHARED_VAR=global_shared"
-	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), 0600)
+	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), common.FilePerm)
 	require.NoError(t, err)
 
 	// Create .env
 	projectEnvContent := "PROJECT_VAR=project_value\nSHARED_VAR=project_shared"
-	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), 0600)
+	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), common.FilePerm)
 	require.NoError(t, err)
 
 	t.Run("AutoInjectEnv=false", func(t *testing.T) {

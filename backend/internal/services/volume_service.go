@@ -426,8 +426,17 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		volumeContainerMap = make(map[string][]string)
 	}
 
-	// Skip usage data - it's fetched separately via GetVolumeSizes endpoint for lazy loading
-	volumes := s.enrichVolumesWithUsageData(volResult.volumes, nil)
+	// Fetch usage data if sorting by size is requested
+	var usageVolumes []volume.Volume
+	if params.Sort == "size" {
+		if uv, err := docker.GetVolumeUsageData(ctx, dockerClient); err == nil {
+			usageVolumes = uv
+		} else {
+			slog.WarnContext(ctx, "failed to get volume usage data for sorting", "error", err.Error())
+		}
+	}
+
+	volumes := s.enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
 
 	items := make([]volumetypes.Volume, 0, len(volumes))
 	for _, v := range volumes {

@@ -54,6 +54,11 @@ type Volume struct {
 	// Required: false
 	UsageData *volume.UsageData `json:"usageData,omitempty"`
 
+	// Size is the size of the volume in bytes.
+	//
+	// Required: false
+	Size int64 `json:"size"`
+
 	// Containers is a list of container IDs using this volume.
 	//
 	// Required: true
@@ -133,6 +138,8 @@ func NewSummary(v volume.Volume) Volume {
 
 	if v.UsageData != nil {
 		dto.InUse = v.UsageData.RefCount >= 1
+		dto.UsageData = v.UsageData
+		dto.Size = v.UsageData.Size
 	}
 
 	return dto
