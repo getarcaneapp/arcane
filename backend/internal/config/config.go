@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
 
 type AppEnvironment string
@@ -43,10 +45,13 @@ type Config struct {
 	AnalyticsDisabled       bool
 	GPUMonitoringEnabled    bool
 	GPUType                 string
+
+	FilePerm os.FileMode
+	DirPerm  os.FileMode
 }
 
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		AppUrl:        getEnvOrDefault("APP_URL", "http://localhost:3552"),
 		DatabaseURL:   getEnvOrDefault("DATABASE_URL", defaultSqliteString),
 		Port:          getEnvOrDefault("PORT", "3552"),
@@ -74,7 +79,15 @@ func Load() *Config {
 		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
 		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
 		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
+
+		FilePerm: getFileModeEnvOrDefault("FILE_PERM", 0644),
+		DirPerm:  getFileModeEnvOrDefault("DIR_PERM", 0755),
 	}
+
+	common.FilePerm = cfg.FilePerm
+	common.DirPerm = cfg.DirPerm
+
+	return cfg
 }
 
 func getEnvOrDefault[T interface{ ~string }](key string, defaultValue T) T {
@@ -135,6 +148,16 @@ func getBoolEnvOrDefault(key string, defaultValue bool) bool {
 		v = trimQuotes(v)
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
+		}
+	}
+	return defaultValue
+}
+
+func getFileModeEnvOrDefault(key string, defaultValue os.FileMode) os.FileMode {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		v = trimQuotes(v)
+		if i, err := strconv.ParseUint(v, 8, 32); err == nil {
+			return os.FileMode(i)
 		}
 	}
 	return defaultValue

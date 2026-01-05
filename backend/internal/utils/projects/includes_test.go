@@ -5,7 +5,53 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
+
+func TestWriteIncludeFilePermissions(t *testing.T) {
+	// Save original perms
+	origFilePerm := common.FilePerm
+	origDirPerm := common.DirPerm
+	defer func() {
+		common.FilePerm = origFilePerm
+		common.DirPerm = origDirPerm
+	}()
+
+	projectDir := t.TempDir()
+	includePath := filepath.Join("includes", "config.yaml")
+	content := "services: {}\n"
+
+	t.Run("Uses custom permissions", func(t *testing.T) {
+		common.FilePerm = 0600
+		common.DirPerm = 0700
+
+		if err := WriteIncludeFile(projectDir, includePath, content); err != nil {
+			t.Fatalf("WriteIncludeFile() returned error: %v", err)
+		}
+
+		targetPath := filepath.Join(projectDir, includePath)
+		info, err := os.Stat(targetPath)
+		if err != nil {
+			t.Fatalf("failed to stat include file: %v", err)
+		}
+
+		// On Linux/macOS, we can check permissions. On Windows, it's more limited.
+		if runtime.GOOS != "windows" {
+			if info.Mode().Perm() != 0600 {
+				t.Errorf("unexpected file permissions: got %o, want %o", info.Mode().Perm(), 0600)
+			}
+
+			dirInfo, err := os.Stat(filepath.Dir(targetPath))
+			if err != nil {
+				t.Fatalf("failed to stat include directory: %v", err)
+			}
+			if dirInfo.Mode().Perm() != 0700 {
+				t.Errorf("unexpected directory permissions: got %o, want %o", dirInfo.Mode().Perm(), 0700)
+			}
+		}
+	})
+}
 
 func TestWriteIncludeFileCreatesSafeDirectory(t *testing.T) {
 	t.Parallel()
