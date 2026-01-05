@@ -5,6 +5,7 @@
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { StartIcon, StopIcon, TrashIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
+	import type { User } from '$lib/types/user.type';
 
 	type IsLoadingFlags = {
 		starting: boolean;
@@ -13,6 +14,7 @@
 	};
 
 	let {
+		user = null,
 		dockerInfo,
 		stoppedContainers,
 		runningContainers,
@@ -26,6 +28,7 @@
 		compact = false,
 		class: className
 	}: {
+		user?: User | null;
 		dockerInfo: DockerInfo | null;
 		stoppedContainers: number;
 		runningContainers: number;
@@ -42,42 +45,46 @@
 
 	const isAnyActionLoading = $derived(isLoading.starting || isLoading.stopping || isLoading.pruning);
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'start-all',
-			action: 'start_all',
-			label: m.quick_actions_start_all(),
-			onclick: onStartAll,
-			loading: isLoading.starting,
-			disabled: !dockerInfo || stoppedContainers === 0 || isAnyActionLoading,
-			badge: stoppedContainers
-		},
-		{
-			id: 'stop-all',
-			action: 'stop_all',
-			label: m.quick_actions_stop_all(),
-			onclick: onStopAll,
-			loading: isLoading.stopping,
-			disabled: !dockerInfo || (dockerInfo?.ContainersRunning ?? 0) === 0 || isAnyActionLoading,
-			badge: runningContainers
-		},
-		{
-			id: 'prune',
-			action: 'prune',
-			label: m.quick_actions_prune_system(),
-			onclick: onOpenPruneDialog,
-			loading: isLoading.pruning,
-			disabled: !dockerInfo || isAnyActionLoading
-		},
-		{
-			id: 'refresh',
-			action: 'refresh',
-			label: m.common_refresh(),
-			onclick: onRefresh,
-			loading: refreshing,
-			disabled: isAnyActionLoading || refreshing
-		}
-	]);
+	const currentUserIsAdmin = $derived(!!user?.roles?.includes('admin'));
+
+	const actionButtons: ActionButton[] = $derived(
+		[
+			{
+				id: 'start-all',
+				action: 'start_all' as const,
+				label: m.quick_actions_start_all(),
+				onclick: onStartAll,
+				loading: isLoading.starting,
+				disabled: !dockerInfo || stoppedContainers === 0 || isAnyActionLoading,
+				badge: stoppedContainers
+			},
+			{
+				id: 'stop-all',
+				action: 'stop_all' as const,
+				label: m.quick_actions_stop_all(),
+				onclick: onStopAll,
+				loading: isLoading.stopping,
+				disabled: !dockerInfo || (dockerInfo?.ContainersRunning ?? 0) === 0 || isAnyActionLoading,
+				badge: runningContainers
+			},
+			{
+				id: 'prune',
+				action: 'prune' as const,
+				label: m.quick_actions_prune_system(),
+				onclick: onOpenPruneDialog,
+				loading: isLoading.pruning,
+				disabled: !dockerInfo || isAnyActionLoading
+			},
+			{
+				id: 'refresh',
+				action: 'refresh' as const,
+				label: m.common_refresh(),
+				onclick: onRefresh,
+				loading: refreshing,
+				disabled: isAnyActionLoading || refreshing
+			}
+		].filter((b) => currentUserIsAdmin || b.id === 'refresh')
+	);
 </script>
 
 <section class={cn(compact ? 'flex min-w-0 flex-1 items-center justify-end' : '', className)}>
@@ -92,7 +99,7 @@
 		{:else}
 			<ActionButtonGroup buttons={actionButtons} />
 		{/if}
-	{:else}
+	{:else if currentUserIsAdmin}
 		<h2 class="mb-3 text-lg font-semibold tracking-tight">{m.quick_actions_title()}</h2>
 
 		{#if loadingDockerInfo}

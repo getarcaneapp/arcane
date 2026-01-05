@@ -1,8 +1,20 @@
 package handlers
 
 import (
+	"context"
+
+	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 )
+
+// checkAdmin checks if the current user is an admin and returns a 403 error if not.
+func checkAdmin(ctx context.Context) error {
+	if !humamw.IsAdminFromContext(ctx) {
+		return huma.Error403Forbidden("admin access required")
+	}
+	return nil
+}
 
 // buildPaginationParams converts query parameters to pagination.QueryParams.
 // It supports both the legacy nested style (page/limit) and the standard style (start/limit).

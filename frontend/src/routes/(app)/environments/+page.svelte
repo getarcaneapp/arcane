@@ -29,6 +29,8 @@
 		);
 	}
 
+	const currentUserIsAdmin = $derived(!!data.user?.roles?.includes('admin'));
+
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
 
@@ -79,7 +81,7 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0
+		...(selectedIds.length > 0 && currentUserIsAdmin
 			? [
 					{
 						id: 'remove-selected',
@@ -91,12 +93,16 @@
 					}
 				]
 			: []),
-		{
-			id: 'create',
-			action: 'create' as const,
-			label: m.common_add_button({ resource: m.resource_environment_cap() }),
-			onclick: () => (showEnvironmentSheet = true)
-		},
+		...(currentUserIsAdmin
+			? [
+					{
+						id: 'create',
+						action: 'create' as const,
+						label: m.common_add_button({ resource: m.resource_environment_cap() }),
+						onclick: () => (showEnvironmentSheet = true)
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart' as const,

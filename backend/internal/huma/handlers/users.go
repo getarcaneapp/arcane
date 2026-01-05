@@ -158,6 +158,10 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	users, paginationResp, err := h.userService.ListUsersPaginated(ctx, params)
@@ -184,6 +188,10 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*CreateUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
@@ -231,6 +239,10 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
@@ -253,6 +265,10 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*UpdateUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
@@ -306,6 +322,10 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*DeleteUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := h.userService.DeleteUser(ctx, input.UserID); err != nil {

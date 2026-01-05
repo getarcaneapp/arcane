@@ -230,6 +230,10 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -280,6 +284,10 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -305,6 +313,10 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryDeletionError{Err: err}).Error())
@@ -324,6 +336,10 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *TestContainerRegistryInput) (*TestContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
@@ -356,6 +372,10 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*SyncContainerRegistriesOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
