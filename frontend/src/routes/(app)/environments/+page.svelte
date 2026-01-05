@@ -11,6 +11,7 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import userStore from '$lib/stores/user-store';
 
 	let { data } = $props();
 
@@ -28,6 +29,8 @@
 			(v) => (isLoading.refresh = v)
 		);
 	}
+
+	const currentUserIsAdmin = $derived(userStore.isAdmin());
 
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
@@ -79,7 +82,7 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0
+		...(selectedIds.length > 0 && currentUserIsAdmin
 			? [
 					{
 						id: 'remove-selected',
@@ -91,12 +94,16 @@
 					}
 				]
 			: []),
-		{
-			id: 'create',
-			action: 'create' as const,
-			label: m.common_add_button({ resource: m.resource_environment_cap() }),
-			onclick: () => (showEnvironmentSheet = true)
-		},
+		...(currentUserIsAdmin
+			? [
+					{
+						id: 'create',
+						action: 'create' as const,
+						label: m.common_add_button({ resource: m.resource_environment_cap() }),
+						onclick: () => (showEnvironmentSheet = true)
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart' as const,
