@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 )
 
@@ -18,7 +19,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 	}
 
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if err := os.MkdirAll(projectsDirectory, 0755); err != nil {
+		if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -45,7 +46,7 @@ func ReadProjectFiles(projectPath string) (composeContent, envContent string, er
 func GetTemplatesDirectory(ctx context.Context) (string, error) {
 	templatesDir := filepath.Join("data", "templates")
 	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		if err := os.MkdirAll(templatesDir, common.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", templatesDir)

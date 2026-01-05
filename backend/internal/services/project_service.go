@@ -16,6 +16,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/docker/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
@@ -638,14 +639,23 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
-	if err := projects.ComposeUp(ctx, project, project.Services.GetProfiles()); err != nil {
+	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services))
+	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
+	if err := projects.ComposeUp(ctx, project, nil); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
 		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+
+		// Provide more helpful error messages
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded") {
+			return fmt.Errorf("deployment timed out - check if services with 'condition: service_healthy' have healthchecks defined: %w", err)
+		}
 		return fmt.Errorf("failed to deploy project: %w", err)
 	}
+	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", project.Name)
 
 	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user.ID, user.Username, "0", metadata); logErr != nil {
@@ -710,7 +720,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	}
 
 	basePath := filepath.Join(projectsDirectory, sanitized)
-	projectPath, folderName, err := fs.CreateUniqueDir(projectsDirectory, basePath, name, 0755)
+	projectPath, folderName, err := fs.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}

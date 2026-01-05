@@ -288,6 +288,18 @@
 						disabled={!hasChanges}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
+						class="hidden xl:inline-flex"
+					/>
+					<ArcaneButton
+						action="save"
+						size="icon"
+						showLabel={false}
+						loading={isLoading.saving}
+						onclick={handleSaveChanges}
+						disabled={!hasChanges}
+						customLabel={m.common_save()}
+						loadingLabel={m.common_saving()}
+						class="xl:hidden"
 					/>
 				{/if}
 				<ActionButtons
@@ -295,6 +307,7 @@
 					name={project.name}
 					type="project"
 					itemState={project.status}
+					desktopVariant="adaptive"
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}
 					bind:restartLoading={isLoading.restarting}

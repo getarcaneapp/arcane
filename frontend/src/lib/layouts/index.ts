@@ -6,3 +6,4 @@ export {
 	type SettingsStatCard,
 	type SettingsPageType
 } from './settings-page-layout.svelte';
+export { default as ResourceDetailLayout, type DetailAction } from './resource-detail-layout.svelte';

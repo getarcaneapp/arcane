@@ -19,7 +19,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
-	import { untrack } from 'svelte';
 	import bytes from 'bytes';
 	import { CpuIcon, MemoryStickIcon } from '$lib/icons';
 
@@ -273,15 +272,17 @@
 	}
 </script>
 
-<div class="flex min-h-full flex-col space-y-8 pb-5 md:space-y-10 md:pb-5">
-	<div class="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-		<div class="flex-1">
-			<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{m.dashboard_title()}</h1>
-			<p class="text-muted-foreground mt-1 text-sm">{m.dashboard_subtitle()}</p>
+<div class="flex min-h-full flex-col space-y-6 pt-3 md:space-y-10 md:pt-5">
+	<header class="flex items-center justify-between gap-4">
+		<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+			<div class="min-w-0">
+				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{m.dashboard_title()}</h1>
+				<p class="text-muted-foreground mt-1 text-sm">{m.dashboard_subtitle()}</p>
+			</div>
 		</div>
 
 		<QuickActions
-			class="absolute top-4 right-4 shrink-0 sm:static"
+			class="min-w-0 flex-1"
 			compact
 			{dockerInfo}
 			{stoppedContainers}
@@ -294,7 +295,7 @@
 			onRefresh={refreshData}
 			refreshing={isLoading.refreshing}
 		/>
-	</div>
+	</header>
 
 	<section>
 		<div class="mb-4 flex items-center justify-between gap-4">

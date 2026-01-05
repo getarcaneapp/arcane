@@ -121,27 +121,16 @@
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{
-			accessorKey: 'inUse',
-			title: m.common_status(),
-			sortable: true,
-			cell: StatusCell
-		},
-		{
-			accessorKey: 'size',
-			title: m.common_size(),
-			sortable: true,
-			cell: SizeCell
-		},
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'driver', title: m.common_driver(), sortable: true }
 	] satisfies ColumnSpec<VolumeSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
@@ -167,19 +156,31 @@
 {#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
 	{#if volumeSizesPromise}
 		{#await volumeSizesPromise}
-			<span class="text-muted-foreground flex items-center gap-1 text-sm">
-				<Spinner class="size-4" />
-			</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground flex items-center gap-1 text-sm">
+					<Spinner class="size-4" />
+				</span>
+			{/if}
 		{:then sizesMap}
 			{@const sizeInfo = sizesMap.get(item.name)}
 			{#if sizeInfo && sizeInfo.size >= 0}
 				<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+			{:else if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 			{:else}
 				<span class="text-muted-foreground text-sm">-</span>
 			{/if}
 		{:catch}
-			<span class="text-muted-foreground text-sm">-</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground text-sm">-</span>
+			{/if}
 		{/await}
+	{:else if item.size > 0}
+		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}
 		<span class="text-muted-foreground text-sm">-</span>
 	{/if}
@@ -206,7 +207,7 @@
 		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.inUse ?? true)
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }

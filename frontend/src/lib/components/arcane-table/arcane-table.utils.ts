@@ -1,7 +1,7 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
 import type { FilterMap } from '$lib/types/pagination.type';
-import type { CompactTablePrefs, FieldSpec, MobileFieldVisibility } from './arcane-table.types.svelte';
-import { decodeFilters, applyMobileHiddenPatch } from './arcane-table.types.svelte';
+import type { CompactTablePrefs } from './arcane-table.types.svelte';
+import { decodeFilters } from './arcane-table.types.svelte';
 
 export type PersistedPreferencesSnapshot = {
 	hiddenColumns: string[];
@@ -9,7 +9,7 @@ export type PersistedPreferencesSnapshot = {
 	filtersMap: FilterMap;
 	search: string;
 	limit: number;
-	mobileHidden?: string[];
+	mobileVisibility?: string[];
 	customSettings?: Record<string, unknown>;
 };
 
@@ -73,23 +73,7 @@ export function extractPersistedPreferences(
 		filtersMap,
 		search,
 		limit,
-		mobileHidden: prefs.m,
+		mobileVisibility: prefs.m,
 		customSettings: prefs.c
 	};
-}
-
-export function buildInitialMobileVisibility(
-	fields: FieldSpec[],
-	mobileFieldVisibility: MobileFieldVisibility,
-	persistedHidden?: string[]
-): MobileFieldVisibility | null {
-	if (!fields.length || Object.keys(mobileFieldVisibility).length) return null;
-	const initial: MobileFieldVisibility = {};
-	for (const field of fields) {
-		initial[field.id] = field.defaultVisible ?? true;
-	}
-	if (persistedHidden && persistedHidden.length > 0) {
-		applyMobileHiddenPatch(initial, persistedHidden);
-	}
-	return initial;
 }

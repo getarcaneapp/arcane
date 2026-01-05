@@ -417,6 +417,14 @@ main {
 	overflow-x: hidden;
 }
 
-html {
-	scrollbar-gutter: stable;
+@media (max-width: 768px) {
+	.mobile-centered-popover {
+		position: fixed !important;
+		top: 50% !important;
+		left: 50% !important;
+		transform: translate(-50%, -50%) !important;
+		width: 90vw !important;
+		max-width: 24rem !important;
+		margin: 0 !important;
+	}
 }
