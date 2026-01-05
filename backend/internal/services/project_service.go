@@ -16,6 +16,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/docker/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
@@ -720,7 +721,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	}
 
 	basePath := filepath.Join(projectsDirectory, sanitized)
-	projectPath, folderName, err := fs.CreateUniqueDir(projectsDirectory, basePath, name, 0755)
+	projectPath, folderName, err := fs.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
