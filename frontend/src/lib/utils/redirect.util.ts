@@ -1,52 +1,50 @@
 import type { User } from '$lib/types/user.type';
 
 const PROTECTED_PREFIXES = [
-	'dashboard',
-	'compose',
-	'containers',
-	'customize',
-	'events',
-	'environments',
-	'images',
-	'volumes',
-	'networks',
-	'settings'
+	'/dashboard',
+	'/compose',
+	'/containers',
+	'/customize',
+	'/events',
+	'/environments',
+	'/images',
+	'/volumes',
+	'/networks',
+	'/settings'
 ];
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const PROTECTED_RE = new RegExp(`^/(?:${PROTECTED_PREFIXES.map(escapeRe).join('|')})(?:/.*)?$`);
+const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/oidc/callback', '/auth/oidc/callback', '/img', '/favicon.ico'];
 
-const isProtectedPath = (path: string) => {
-	const result = PROTECTED_RE.test(path);
-	return result;
-};
+const ADMIN_ONLY_PREFIXES = ['/settings', '/events', '/customize/registries', '/customize/variables'];
+
+/**
+ * Checks if a path matches a prefix exactly or as a parent directory
+ */
+const matchesAny = (path: string, prefixes: string[]) =>
+	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 export function getAuthRedirectPath(path: string, user: User | null) {
 	const isSignedIn = !!user;
+	const isAdmin = user?.roles.includes('admin');
 
-	const isUnauthenticatedOnlyPath =
-		path === '/login' ||
-		path.startsWith('/login/') ||
-		path === '/oidc/login' ||
-		path.startsWith('/oidc/login') ||
-		path === '/oidc/callback' ||
-		path.startsWith('/oidc/callback') ||
-		path === '/auth/oidc/callback' ||
-		path.startsWith('/auth/oidc/callback') ||
-		path === '/img' ||
-		path.startsWith('/img') ||
-		path === '/favicon.ico';
+	// 1. Handle root path
+	if (path === '/') {
+		return isSignedIn ? '/dashboard' : '/login';
+	}
 
-	if (!isSignedIn && isProtectedPath(path)) {
+	// 2. Redirect unauthenticated users away from protected areas
+	if (!isSignedIn && matchesAny(path, PROTECTED_PREFIXES)) {
 		return '/login';
 	}
 
-	if (isUnauthenticatedOnlyPath && isSignedIn) {
+	// 3. Redirect signed-in users away from login/auth pages
+	if (isSignedIn && matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) {
 		return '/dashboard';
 	}
 
-	if (path === '/') {
-		return isSignedIn ? '/dashboard' : '/login';
+	// 4. Redirect non-admins away from restricted management areas
+	if (isSignedIn && !isAdmin && matchesAny(path, ADMIN_ONLY_PREFIXES)) {
+		return '/dashboard';
 	}
 
 	return null;

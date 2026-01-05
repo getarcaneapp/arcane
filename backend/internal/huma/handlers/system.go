@@ -319,6 +319,10 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	slog.InfoContext(ctx, "System prune operation initiated",
 		"containers", input.Body.Containers,
 		"images", input.Body.Images,
@@ -354,6 +358,10 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	result, err := h.systemService.StartAllContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartAllError{Err: err}).Error())
@@ -373,6 +381,10 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	result, err := h.systemService.StartAllStoppedContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartStoppedError{Err: err}).Error())
@@ -390,6 +402,10 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllContainersInput) (*StopAllContainersOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	result, err := h.systemService.StopAllContainers(ctx)
@@ -437,6 +453,10 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	canUpgrade, err := h.upgradeService.CanUpgrade(ctx)
 	if err != nil {
 		slog.Debug("System upgrade check failed", "error", err)
@@ -462,6 +482,10 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput) (*TriggerUpgradeOutput, error) {
 	if h.upgradeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	user, exists := humamw.GetCurrentUserFromContext(ctx)

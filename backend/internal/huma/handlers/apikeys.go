@@ -152,8 +152,8 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 	}
 
 	// Check admin access
-	if !humamw.IsAdminFromContext(ctx) {
-		return nil, huma.Error403Forbidden("admin access required")
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	params := pagination.QueryParams{
@@ -202,8 +202,8 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 	}
 
 	// Check admin access
-	if !humamw.IsAdminFromContext(ctx) {
-		return nil, huma.Error403Forbidden("admin access required")
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, input.Body)
@@ -226,8 +226,8 @@ func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*
 	}
 
 	// Check admin access
-	if !humamw.IsAdminFromContext(ctx) {
-		return nil, huma.Error403Forbidden("admin access required")
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
@@ -250,8 +250,8 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 	}
 
 	// Check admin access
-	if !humamw.IsAdminFromContext(ctx) {
-		return nil, huma.Error403Forbidden("admin access required")
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, input.ID, input.Body)
@@ -277,8 +277,8 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 	}
 
 	// Check admin access
-	if !humamw.IsAdminFromContext(ctx) {
-		return nil, huma.Error403Forbidden("admin access required")
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
