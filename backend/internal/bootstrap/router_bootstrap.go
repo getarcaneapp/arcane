@@ -102,6 +102,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Version:           appServices.Version,
 		Environment:       appServices.Environment,
 		Settings:          appServices.Settings,
+		JobSchedule:       appServices.JobSchedule,
 		SettingsSearch:    appServices.SettingsSearch,
 		ContainerRegistry: appServices.ContainerRegistry,
 		Template:          appServices.Template,

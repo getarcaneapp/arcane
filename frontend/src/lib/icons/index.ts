@@ -105,3 +105,4 @@ export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';
 export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';
 export { default as GitBranchIcon } from 'virtual:icons/tabler/git-branch';
 export { default as AutomationIcon } from 'virtual:icons/tabler/automation';
+export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';

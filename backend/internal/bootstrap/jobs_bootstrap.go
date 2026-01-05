@@ -40,7 +40,8 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register analytics heartbeat job", "error", err)
 	}
 
-	if err := job.RegisterEventCleanupJob(appCtx, scheduler, appServices.Event); err != nil {
+	eventCleanupJob := job.NewEventCleanupJob(scheduler, appServices.Event, appServices.Settings)
+	if err := eventCleanupJob.Register(appCtx); err != nil {
 		slog.ErrorContext(appCtx, "Failed to register event cleanup job", "error", err)
 	}
 
@@ -51,6 +52,22 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 	gitOpsSyncJob := job.NewGitOpsSyncJob(scheduler, appServices.GitOpsSync, appServices.Settings)
 	if err := gitOpsSyncJob.Register(appCtx); err != nil {
 		slog.ErrorContext(appCtx, "Failed to register GitOps sync job", slog.Any("error", err))
+  }
+  
+	if appServices.JobSchedule != nil {
+		appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context) {
+			if !appConfig.AgentMode {
+				if err := environmentHealthJob.Reschedule(ctx); err != nil {
+					slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
+				}
+			}
+			if err := analyticsJob.Reschedule(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to reschedule analytics heartbeat job", "error", err)
+			}
+			if err := eventCleanupJob.Reschedule(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to reschedule event cleanup job", "error", err)
+			}
+		}
 	}
 
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
