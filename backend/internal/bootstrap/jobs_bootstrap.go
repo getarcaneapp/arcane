@@ -54,6 +54,11 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register GitOps sync job", slog.Any("error", err))
   }
   
+	setupJobScheduleCallbacks(appServices, appConfig, environmentHealthJob, analyticsJob, eventCleanupJob)
+	setupSettingsCallbacks(appServices, appConfig, imagePollingJob, autoUpdateJob, environmentHealthJob)
+}
+
+func setupJobScheduleCallbacks(appServices *Services, appConfig *config.Config, environmentHealthJob *job.EnvironmentHealthJob, analyticsJob *job.AnalyticsJob, eventCleanupJob *job.EventCleanupJob) {
 	if appServices.JobSchedule != nil {
 		appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context) {
 			if !appConfig.AgentMode {
@@ -69,7 +74,9 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 			}
 		}
 	}
+}
 
+func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, imagePollingJob *job.ImagePollingJob, autoUpdateJob *job.AutoUpdateJob, environmentHealthJob *job.EnvironmentHealthJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
