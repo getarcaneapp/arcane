@@ -131,8 +131,8 @@
 
 	let pageTitle = $derived(() => {
 		switch (currentPageName) {
-			case 'general':
-				return 'Job Schedule';
+			case 'jobs':
+				return m.jobs_title();
 			case 'docker':
 				return m.docker_title();
 			case 'security':

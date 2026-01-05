@@ -65,7 +65,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 		keywords := utils.ParseKeywords(metaTag["keywords"])
 		categoryID := metaTag["category"]
 		if categoryID == "" {
-			categoryID = "general"
+			categoryID = "jobs"
 		}
 
 		// Skip internal category

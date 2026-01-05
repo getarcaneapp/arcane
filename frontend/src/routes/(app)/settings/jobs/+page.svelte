@@ -6,7 +6,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import { SettingsIcon } from '$lib/icons';
+	import { JobsIcon } from '$lib/icons';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { Label } from '$lib/components/ui/label';
 	import { createForm } from '$lib/utils/form.utils';
@@ -92,7 +92,7 @@
 
 		savedSchedules = result.data;
 		resetForm();
-		toast.success('Job schedules updated');
+		toast.success(m.security_settings_saved());
 	}
 
 	$effect(() => {
@@ -105,9 +105,9 @@
 </script>
 
 <SettingsPageLayout
-	title="Job Schedule"
-	description="Configure how often Arcane background jobs run. Changes apply immediately."
-	icon={SettingsIcon}
+	title={m.jobs_title()}
+	description={m.jobs_description()}
+	icon={JobsIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -115,7 +115,7 @@
 		<fieldset disabled={isReadOnly || isLoading} class="relative space-y-8">
 			<!-- Monitoring -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">Monitoring</h3>
+				<h3 class="text-lg font-medium">{m.jobs_monitoring_heading()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
@@ -140,21 +140,21 @@
 
 			<!-- Maintenance -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">Maintenance</h3>
+				<h3 class="text-lg font-medium">{m.jobs_maintenance_heading()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
-								<Label class="text-base">Event Cleanup</Label>
-								<p class="text-muted-foreground mt-1 text-sm">How often Arcane deletes events older than 36 hours</p>
+								<Label class="text-base">{m.jobs_event_cleanup_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.jobs_event_cleanup_description()}</p>
 							</div>
 							<div class="max-w-xs">
 								<TextInputWithLabel
 									bind:value={$formInputs.eventCleanupInterval.value}
 									error={$formInputs.eventCleanupInterval.error}
-									label="Event Cleanup Interval (minutes)"
+									label={m.jobs_event_cleanup_interval_label()}
 									placeholder="360"
-									helpText="Run every 5–10080 minutes"
+									helpText={m.jobs_event_cleanup_interval_help()}
 									type="number"
 								/>
 							</div>
@@ -165,21 +165,21 @@
 
 			<!-- Telemetry -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">Telemetry</h3>
+				<h3 class="text-lg font-medium">{m.jobs_telemetry_heading()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
-								<Label class="text-base">Analytics Heartbeat</Label>
-								<p class="text-muted-foreground mt-1 text-sm">Only runs in production, and only if analytics are enabled</p>
+								<Label class="text-base">{m.jobs_analytics_title()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.jobs_analytics_description()}</p>
 							</div>
 							<div class="max-w-xs">
 								<TextInputWithLabel
 									bind:value={$formInputs.analyticsHeartbeatInterval.value}
 									error={$formInputs.analyticsHeartbeatInterval.error}
-									label="Analytics Heartbeat Interval (minutes)"
+									label={m.jobs_analytics_interval_label()}
 									placeholder="1440"
-									helpText="Minimum 60 minutes"
+									helpText={m.jobs_analytics_interval_help()}
 									type="number"
 								/>
 							</div>
