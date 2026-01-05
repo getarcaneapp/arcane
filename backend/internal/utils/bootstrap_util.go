@@ -42,12 +42,10 @@ func InitializeDefaultSettings(ctx context.Context, cfg *config.Config, settings
 		slog.InfoContext(ctx, "Default settings initialized successfully")
 	}
 
-	if cfg.AgentMode || cfg.UIConfigurationDisabled {
-		if err := settingsMgr.PersistEnvSettingsIfMissing(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to persist env-driven settings", "error", err.Error())
-		} else {
-			slog.DebugContext(ctx, "Persisted env-driven settings if missing")
-		}
+	if err := settingsMgr.PersistEnvSettingsIfMissing(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to persist env-driven settings", "error", err.Error())
+	} else {
+		slog.DebugContext(ctx, "Persisted env-driven settings")
 	}
 }
 
