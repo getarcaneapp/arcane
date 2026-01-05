@@ -5,7 +5,7 @@
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { StartIcon, StopIcon, TrashIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
-	import userStore from '$lib/stores/user-store';
+	import type { User } from '$lib/types/user.type';
 
 	type IsLoadingFlags = {
 		starting: boolean;
@@ -14,6 +14,7 @@
 	};
 
 	let {
+		user = null,
 		dockerInfo,
 		stoppedContainers,
 		runningContainers,
@@ -27,6 +28,7 @@
 		compact = false,
 		class: className
 	}: {
+		user?: User | null;
 		dockerInfo: DockerInfo | null;
 		stoppedContainers: number;
 		runningContainers: number;
@@ -43,7 +45,7 @@
 
 	const isAnyActionLoading = $derived(isLoading.starting || isLoading.stopping || isLoading.pruning);
 
-	const currentUserIsAdmin = $derived(userStore.isAdmin());
+	const currentUserIsAdmin = $derived(!!user?.roles?.includes('admin'));
 
 	const actionButtons: ActionButton[] = $derived(
 		[

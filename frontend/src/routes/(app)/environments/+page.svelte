@@ -11,7 +11,6 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
-	import userStore from '$lib/stores/user-store';
 
 	let { data } = $props();
 
@@ -30,7 +29,7 @@
 		);
 	}
 
-	const currentUserIsAdmin = $derived(userStore.isAdmin());
+	const currentUserIsAdmin = $derived(!!data.user?.roles?.includes('admin'));
 
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;

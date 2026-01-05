@@ -284,6 +284,7 @@
 		<QuickActions
 			class="min-w-0 flex-1"
 			compact
+			user={data.user}
 			{dockerInfo}
 			{stoppedContainers}
 			{runningContainers}
