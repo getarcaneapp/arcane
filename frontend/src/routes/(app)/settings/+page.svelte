@@ -11,7 +11,8 @@
 		DockerBrandIcon,
 		ApiKeyIcon,
 		ApperanceIcon,
-		CloseIcon
+		CloseIcon,
+		JobsIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
@@ -37,7 +38,8 @@
 		appearance: ApperanceIcon,
 		bell: NotificationsIcon,
 		user: UserIcon,
-		apikey: ApiKeyIcon
+		apikey: ApiKeyIcon,
+		jobs: JobsIcon
 	};
 
 	onMount(async () => {
