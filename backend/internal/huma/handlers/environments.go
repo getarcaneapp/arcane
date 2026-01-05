@@ -897,7 +897,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	}
 
 	// Make HTTP request to the environment's /api/app-version endpoint
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
@@ -906,7 +906,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("Failed to create request")
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
@@ -920,6 +920,12 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	var versionInfo version.Info
 	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to decode version response")
+	}
+
+	// Update environment status to online since we successfully contacted it
+	if updateErr := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); updateErr != nil {
+		slog.WarnContext(ctx, "Failed to update environment heartbeat", "environment_id", input.ID, "error", updateErr)
+		// Don't fail the request if heartbeat update fails
 	}
 
 	return &GetEnvironmentVersionOutput{

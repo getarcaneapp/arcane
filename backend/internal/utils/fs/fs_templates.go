@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
 
 func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string, bool, error) {
@@ -55,7 +57,7 @@ func EnsureTemplateDir(ctx context.Context, base string) (dir, composePath, envP
 		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
 	}
 	dir = filepath.Join(baseDir, base)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, common.DirPerm); err != nil {
 		return "", "", "", fmt.Errorf("failed to create template directory: %w", err)
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
