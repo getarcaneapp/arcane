@@ -45,10 +45,10 @@ type Config struct {
 	AnalyticsDisabled       bool
 	GPUMonitoringEnabled    bool
 	GPUType                 string
-  
-	FilePerm os.FileMode
-	DirPerm  os.FileMode
-  GitWorkDir              string
+
+	FilePerm   os.FileMode
+	DirPerm    os.FileMode
+	GitWorkDir string
 }
 
 func Load() *Config {
@@ -81,9 +81,9 @@ func Load() *Config {
 		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
 		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
 
-		FilePerm:                getFileModeEnvOrDefault("FILE_PERM", 0644),
-		DirPerm:                 getFileModeEnvOrDefault("DIR_PERM", 0755),
-    GitWorkDir:              getEnvOrDefault("GIT_WORK_DIR", "data/git"),
+		FilePerm:   getFileModeEnvOrDefault("FILE_PERM", 0644),
+		DirPerm:    getFileModeEnvOrDefault("DIR_PERM", 0755),
+		GitWorkDir: getEnvOrDefault("GIT_WORK_DIR", "data/git"),
 	}
 
 	common.FilePerm = cfg.FilePerm
