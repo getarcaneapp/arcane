@@ -40,7 +40,8 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register analytics heartbeat job", "error", err)
 	}
 
-	if err := job.RegisterEventCleanupJob(appCtx, scheduler, appServices.Event); err != nil {
+	eventCleanupJob := job.NewEventCleanupJob(scheduler, appServices.Event, appServices.Settings)
+	if err := eventCleanupJob.Register(appCtx); err != nil {
 		slog.ErrorContext(appCtx, "Failed to register event cleanup job", "error", err)
 	}
 
@@ -48,6 +49,29 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", "error", err)
 	}
 
+	setupJobScheduleCallbacks(appServices, appConfig, environmentHealthJob, analyticsJob, eventCleanupJob)
+	setupSettingsCallbacks(appServices, appConfig, imagePollingJob, autoUpdateJob, environmentHealthJob)
+}
+
+func setupJobScheduleCallbacks(appServices *Services, appConfig *config.Config, environmentHealthJob *job.EnvironmentHealthJob, analyticsJob *job.AnalyticsJob, eventCleanupJob *job.EventCleanupJob) {
+	if appServices.JobSchedule != nil {
+		appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context) {
+			if !appConfig.AgentMode {
+				if err := environmentHealthJob.Reschedule(ctx); err != nil {
+					slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
+				}
+			}
+			if err := analyticsJob.Reschedule(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to reschedule analytics heartbeat job", "error", err)
+			}
+			if err := eventCleanupJob.Reschedule(ctx); err != nil {
+				slog.WarnContext(ctx, "Failed to reschedule event cleanup job", "error", err)
+			}
+		}
+	}
+}
+
+func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, imagePollingJob *job.ImagePollingJob, autoUpdateJob *job.AutoUpdateJob, environmentHealthJob *job.EnvironmentHealthJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)

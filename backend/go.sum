@@ -159,6 +159,8 @@ github.com/gabriel-vasile/mimetype v1.4.10 h1:zyueNbySn/z8mJZHLt6IPw0KoZsiQNszIp
 github.com/gabriel-vasile/mimetype v1.4.10/go.mod h1:d+9Oxyo1wTzWdyVUPMmXFvp4F9tea18J8ufA774AB3s=
 github.com/getarcaneapp/arcane/types v0.0.0-20251217194738-c79cfaf0449e h1:j8yvKtBN702KQSr3L47lFb2LHJvyKYGoDj6zOIMuBC0=
 github.com/getarcaneapp/arcane/types v0.0.0-20251217194738-c79cfaf0449e/go.mod h1:7Wj+0JnpYq4RQS+otyM6e4zkyJKDC01wxkWPyFCHwZA=
+github.com/getarcaneapp/arcane/types v0.0.0-20260105162634-04fb9724f603 h1:NDVmgJ/muVCVzcQjc/L0fOQ9NZY5iWjm5P37CpV/h/I=
+github.com/getarcaneapp/arcane/types v0.0.0-20260105162634-04fb9724f603/go.mod h1:7Wj+0JnpYq4RQS+otyM6e4zkyJKDC01wxkWPyFCHwZA=
 github.com/gin-contrib/cors v1.7.6 h1:3gQ8GMzs1Ylpf70y8bMw4fVpycXIeX1ZemuSQIsnQQY=
 github.com/gin-contrib/cors v1.7.6/go.mod h1:Ulcl+xN4jel9t1Ry8vqph23a60FwH9xVLd+3ykmTjOk=
 github.com/gin-contrib/sse v1.1.0 h1:n0w2GMuUpWDVp7qSpvze6fAu9iRxJY4Hmj6AmBOU05w=
