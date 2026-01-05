@@ -2,7 +2,7 @@
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters, projectStatusFilters } from './data.js';
+	import { statusFilters, imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters } from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
@@ -39,9 +39,7 @@
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
-	const projectStatusColumn = $derived(
-		table.getAllColumns().some((col) => col.id === 'projectStatus') ? table.getColumn('projectStatus') : undefined
-	);
+	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
@@ -72,8 +70,8 @@
 			</div>
 
 			<div class="flex flex-wrap items-center gap-2 sm:gap-0 sm:space-x-2">
-				{#if projectStatusColumn}
-					<DataTableFacetedFilter column={projectStatusColumn} title={m.common_status()} options={projectStatusFilters} />
+				{#if statusColumn}
+					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={statusFilters} />
 				{/if}
 				{#if typeColumn && !severityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />

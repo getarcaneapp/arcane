@@ -1,7 +1,18 @@
 import { m } from '$lib/paraglide/messages';
-import { GlobeIcon, FolderOpenIcon, VerifiedCheckIcon, AlertIcon, InfoIcon, CloseIcon, CheckIcon, UpdateIcon, StartIcon, StopIcon } from '$lib/icons';
+import {
+	GlobeIcon,
+	FolderOpenIcon,
+	VerifiedCheckIcon,
+	AlertIcon,
+	InfoIcon,
+	CloseIcon,
+	CheckIcon,
+	UpdateIcon,
+	StartIcon,
+	StopIcon
+} from '$lib/icons';
 
-export const projectStatusFilters = [
+export const statusFilters = [
 	{
 		value: 'running',
 		label: m.common_running(),

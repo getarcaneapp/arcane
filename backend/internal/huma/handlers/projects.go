@@ -41,7 +41,7 @@ type ListProjectsInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	ProjectStatus string `query:"projectStatus" doc:"Filter by project status (comma-separated: running,stopped,partially running,unknown)"`
+	Status        string `query:"status" doc:"Filter by project status (comma-separated: running,stopped,partially running,unknown)"`
 }
 
 type ListProjectsOutput struct {
@@ -328,8 +328,8 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 
 	filters := make(map[string]string)
-	if input.ProjectStatus != "" {
-		filters["projectStatus"] = input.ProjectStatus
+	if input.Status != "" {
+		filters["status"] = input.Status
 	}
 
 	params := pagination.QueryParams{
