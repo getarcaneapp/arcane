@@ -354,7 +354,17 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		}
 
 		slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
+
+		// Deploy the project immediately after creation
+		slog.InfoContext(ctx, "Deploying project after initial Git sync", "projectName", project.Name, "projectId", project.ID)
+		if err := s.projectService.DeployProject(ctx, project.ID, systemUser); err != nil {
+			slog.ErrorContext(ctx, "Failed to deploy project after initial Git sync", "error", err, "projectId", project.ID)
+		}
 	} else {
+		// Get current content to see if it changed
+		oldCompose, _, _ := s.projectService.GetProjectContent(ctx, project.ID)
+		contentChanged := oldCompose != composeContent
+
 		// Update existing project's compose file
 		_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, nil)
 		if err != nil {
@@ -366,6 +376,18 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 			return result, err
 		}
 		slog.InfoContext(ctx, "Updated project compose file", "projectName", project.Name, "projectId", project.ID)
+
+		// If content changed and project is running, redeploy
+		if contentChanged {
+			details, err := s.projectService.GetProjectDetails(ctx, project.ID)
+			if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
+				slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
+				if err := s.projectService.RedeployProject(ctx, project.ID, systemUser); err != nil {
+					slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
+					// We don't fail the sync itself, as the files are updated, but we log the error
+				}
+			}
+		}
 	}
 
 	// Update sync status
