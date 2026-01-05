@@ -1082,6 +1082,13 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		)
 	}
 
+	if statusFilter, ok := params.Filters["projectStatus"]; ok && statusFilter != "" {
+		statuses := strings.Split(statusFilter, ",")
+		if len(statuses) > 0 {
+			query = query.Where("status IN ?", statuses)
+		}
+	}
+
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate projects: %w", err)

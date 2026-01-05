@@ -31,6 +31,7 @@
 	"common_total": "Total",
 	"common_running": "Running",
 	"common_stopped": "Stopped",
+	"common_partially_running": "Partially Running",
 	"common_size": "Size",
 	"common_overview": "Overview",
 	"common_configuration": "Configuration",

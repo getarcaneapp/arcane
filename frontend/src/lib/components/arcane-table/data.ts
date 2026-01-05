@@ -1,5 +1,23 @@
 import { m } from '$lib/paraglide/messages';
-import { GlobeIcon, FolderOpenIcon, VerifiedCheckIcon, AlertIcon, InfoIcon, CloseIcon, CheckIcon, UpdateIcon } from '$lib/icons';
+import { GlobeIcon, FolderOpenIcon, VerifiedCheckIcon, AlertIcon, InfoIcon, CloseIcon, CheckIcon, UpdateIcon, StartIcon, StopIcon } from '$lib/icons';
+
+export const projectStatusFilters = [
+	{
+		value: 'running',
+		label: m.common_running(),
+		icon: StartIcon
+	},
+	{
+		value: 'stopped',
+		label: m.common_stopped(),
+		icon: StopIcon
+	},
+	{
+		value: 'partially running',
+		label: m.common_partially_running(),
+		icon: AlertIcon
+	}
+];
 
 export const usageFilters = [
 	{
