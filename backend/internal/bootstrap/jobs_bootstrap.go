@@ -52,8 +52,8 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 	gitOpsSyncJob := job.NewGitOpsSyncJob(scheduler, appServices.GitOpsSync, appServices.Settings)
 	if err := gitOpsSyncJob.Register(appCtx); err != nil {
 		slog.ErrorContext(appCtx, "Failed to register GitOps sync job", slog.Any("error", err))
-  }
-  
+	}
+
 	setupJobScheduleCallbacks(appServices, appConfig, environmentHealthJob, analyticsJob, eventCleanupJob)
 	setupSettingsCallbacks(appServices, appConfig, imagePollingJob, autoUpdateJob, environmentHealthJob)
 }
