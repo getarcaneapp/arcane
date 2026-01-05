@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -31,6 +32,7 @@ type SettingsService struct {
 
 	OnImagePollingSettingsChanged func(ctx context.Context)
 	OnAutoUpdateSettingsChanged   func(ctx context.Context)
+	OnProjectsDirectoryChanged    func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -431,6 +433,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+		s.OnProjectsDirectoryChanged(ctx)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
@@ -586,13 +591,21 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
+	appCfg := config.Load()
+	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
-			key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
+			tag := field.Tag.Get("key")
+			key, attrs, _ := strings.Cut(tag, ",")
 
-			if key == "" || attrs == "internal" {
+			if key == "" || strings.Contains(attrs, "internal") {
+				continue
+			}
+
+			// If not in env-only mode, only persist if it's explicitly marked as envOverride
+			if !isEnvOnlyMode && !strings.Contains(attrs, "envOverride") {
 				continue
 			}
 

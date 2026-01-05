@@ -30,7 +30,7 @@ func NewFilesystemWatcherJob(
 	}
 }
 
-func RegisterFilesystemWatcherJob(ctx context.Context, scheduler *Scheduler, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService) error {
+func RegisterFilesystemWatcherJob(ctx context.Context, scheduler *Scheduler, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService) (*FilesystemWatcherJob, error) {
 	job := NewFilesystemWatcherJob(projectService, templateService, settingsService)
 
 	go func() {
@@ -40,7 +40,7 @@ func RegisterFilesystemWatcherJob(ctx context.Context, scheduler *Scheduler, pro
 	}()
 
 	slog.InfoContext(ctx, "Filesystem watcher job registered")
-	return nil
+	return job, nil
 }
 
 func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
@@ -152,4 +152,51 @@ func (j *FilesystemWatcherJob) handleTemplatesChange(ctx context.Context) {
 	} else {
 		slog.InfoContext(ctx, "Template sync completed after filesystem change")
 	}
+}
+
+func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error {
+	slog.InfoContext(ctx, "Restarting projects filesystem watcher")
+
+	// Stop the existing projects watcher if it exists
+	if j.projectsWatcher != nil {
+		if err := j.projectsWatcher.Stop(); err != nil {
+			slog.WarnContext(ctx, "Failed to stop projects watcher during restart", "error", err)
+		}
+	}
+
+	// Get fresh settings to get the new projects directory
+	settings, err := j.settingsService.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
+	if err != nil {
+		return err
+	}
+
+	// Create a new watcher with the updated path
+	sw, err := utils.NewFilesystemWatcher(projectsDirectory, utils.WatcherOptions{
+		Debounce: 3 * time.Second,
+		OnChange: j.handleFilesystemChange,
+		MaxDepth: 1,
+	})
+	if err != nil {
+		return err
+	}
+
+	j.projectsWatcher = sw
+
+	// Start the new watcher
+	if err := j.projectsWatcher.Start(ctx); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Projects filesystem watcher restarted", "path", projectsDirectory)
+
+	// Perform a sync to ensure we have the latest state from the new directory
+	if err := j.projectService.SyncProjectsFromFileSystem(ctx); err != nil {
+		slog.ErrorContext(ctx, "Initial project sync after watcher restart failed", "error", err)
+	}
+
+	return nil
 }
