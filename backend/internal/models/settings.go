@@ -44,7 +44,7 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 
 type Settings struct {
 	// General category
-	ProjectsDirectory         SettingVariable `key:"projectsDirectory" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
+	ProjectsDirectory         SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
 	DiskUsagePath             SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
 	BaseServerURL             SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
 	EnableGravatar            SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
