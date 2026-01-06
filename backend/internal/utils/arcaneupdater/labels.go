@@ -2,7 +2,6 @@ package arcaneupdater
 
 import "strings"
 
-// Container labels for Arcane updater features
 const (
 	// Core labels
 	LabelArcane  = "com.getarcaneapp.arcane"         // Identifies the Arcane container itself
@@ -22,7 +21,6 @@ const (
 	LabelDependsOn  = "com.getarcaneapp.arcane.depends-on"  // Comma-separated list of container names this depends on
 	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal" // Custom stop signal (e.g., SIGINT)
 
-	// Exit code that signals "skip this update" (matches Watchtower's EX_TEMPFAIL)
 	ExitCodeSkipUpdate = 75
 )
 
