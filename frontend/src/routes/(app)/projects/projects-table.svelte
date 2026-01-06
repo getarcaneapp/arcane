@@ -181,7 +181,7 @@
 
 {#snippet ProviderCell({ item }: { item: Project })}
 	<div class="flex items-center gap-2">
-		{#if item.gitManagedBy}
+		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
 			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
 				{m.projects_provider_git()}
@@ -245,8 +245,8 @@
 				label: m.projects_col_provider(),
 				type: 'component',
 				getValue: (item: Project) => ({
-					icon: item.gitManagedBy ? GitBranchIcon : ProjectsIcon,
-					text: item.gitManagedBy ? m.projects_provider_git() : m.projects_provider_local()
+					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
+					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
 				}),
 				component: ProviderField,
 				show: mobileFieldVisibility.provider ?? true
