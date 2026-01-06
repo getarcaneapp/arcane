@@ -28,10 +28,15 @@ func BuildShoutrrrURL(provider string, config map[string]interface{}) (string, e
 		return buildEmailURL(config)
 	case "webhook":
 		webhookURL, _ := config["webhookUrl"].(string)
+		if webhookURL == "" {
+			return "", fmt.Errorf("webhookUrl is required for webhook")
+		}
 		return webhookURL, nil
 	default:
-		// For generic or unknown providers, assume the URL is already in the "url" field
 		urlStr, _ := config["url"].(string)
+		if urlStr == "" {
+			return "", fmt.Errorf("url is required for provider %q", provider)
+		}
 		return urlStr, nil
 	}
 }
