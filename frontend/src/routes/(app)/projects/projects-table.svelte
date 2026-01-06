@@ -297,8 +297,11 @@
 					{m.common_edit()}
 				</DropdownMenu.Item>
 
-				{#if item.gitManagedBy}
-					<DropdownMenu.Item onclick={() => handleSyncFromGit(item.gitManagedBy!)} disabled={isLoading.syncing || isAnyLoading}>
+				{#if item.gitOpsManagedBy}
+					<DropdownMenu.Item
+						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
+						disabled={isLoading.syncing || isAnyLoading}
+					>
 						{#if isLoading.syncing}
 							<Spinner class="size-4" />
 						{:else}

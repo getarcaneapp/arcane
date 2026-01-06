@@ -367,7 +367,12 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
-	defer s.gitClient.Cleanup(repoPath)
+	defer func() {
+		if cleanupErr := s.gitClient.Cleanup(repoPath); cleanupErr != nil {
+			// Log cleanup error but don't fail the operation
+			_ = cleanupErr
+		}
+	}()
 
 	// Browse the tree
 	files, err := s.gitClient.BrowseTree(repoPath, path)
