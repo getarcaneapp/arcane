@@ -149,6 +149,8 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		ResourceType: &resourceType,
 		ResourceID:   &sync.ID,
 		ResourceName: &sync.Name,
+		UserID:       &systemUser.ID,
+		Username:     &systemUser.Username,
 	})
 
 	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
@@ -238,8 +240,8 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		Description:  fmt.Sprintf("Deleted git sync configuration '%s'", sync.Name),
 		ResourceType: &resourceType,
 		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name,
-	})
+		ResourceName: &sync.Name, UserID: &systemUser.ID,
+		Username: &systemUser.Username})
 
 	return nil
 }
@@ -318,6 +320,8 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		ResourceType: &resourceType,
 		ResourceID:   &sync.ID,
 		ResourceName: &sync.Name,
+		UserID:       &systemUser.ID,
+		Username:     &systemUser.Username,
 	})
 
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
@@ -454,8 +458,8 @@ func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOp
 		Description:  fmt.Sprintf("Failed to sync '%s': %s", sync.Name, errorMsg),
 		ResourceType: &resourceType,
 		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name,
-	})
+		ResourceName: &sync.Name, UserID: &systemUser.ID,
+		Username: &systemUser.Username})
 }
 
 func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, message, errMsg string) error {
