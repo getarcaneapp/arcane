@@ -31,6 +31,7 @@ type UpdaterService struct {
 	eventService        *EventService
 	imageService        *ImageService
 	notificationService *NotificationService
+	upgradeService      *SystemUpgradeService
 
 	updatingContainers map[string]bool
 	updatingProjects   map[string]bool
@@ -46,6 +47,7 @@ func NewUpdaterService(
 	events *EventService,
 	imageSvc *ImageService,
 	notifications *NotificationService,
+	upgrade *SystemUpgradeService,
 ) *UpdaterService {
 	return &UpdaterService{
 		db:                  db,
@@ -57,6 +59,7 @@ func NewUpdaterService(
 		eventService:        events,
 		imageService:        imageSvc,
 		notificationService: notifications,
+		upgradeService:      upgrade,
 		updatingContainers:  map[string]bool{},
 		updatingProjects:    map[string]bool{},
 	}
@@ -347,6 +350,8 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
+	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
+
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -368,6 +373,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	containerName := s.getContainerName(*targetContainer)
+	slog.InfoContext(ctx, "UpdateSingleContainer: found container", "containerID", containerID, "name", containerName, "image", targetContainer.Image)
 
 	// Inspect container to get full config (needed for label-based controls)
 	inspectBefore, err := dcli.ContainerInspect(ctx, targetContainer.ID)
@@ -388,7 +394,16 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	if inspectBefore.Config != nil && inspectBefore.Config.Labels != nil {
 		labels = inspectBefore.Config.Labels
 	}
+
+	isArcaneContainer := arcaneupdater.IsArcaneContainer(labels)
+	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container",
+		"containerID", containerID,
+		"imageID", inspectBefore.Image,
+		"isArcane", isArcaneContainer,
+		"hasArcaneLabel", labels["com.getarcaneapp.arcane"])
+
 	if arcaneupdater.IsUpdateDisabled(labels) {
+		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -439,7 +454,17 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	// Compare with pulled image to avoid unnecessary restart
 	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
+	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
+		"containerID", containerID,
+		"changed", changed,
+		"compareError", cmpErr,
+		"oldImageID", inspectBefore.Image,
+		"normalizedRef", normalizedRef)
+
 	if cmpErr == nil && !changed {
+		slog.InfoContext(ctx, "UpdateSingleContainer: no update needed - digest unchanged",
+			"containerID", containerID,
+			"imageID", inspectBefore.Image)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -454,6 +479,42 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	inspect := inspectBefore
+
+	// Check if this is Arcane self-update - use CLI upgrade instead
+	containerLabels := map[string]string{}
+	if inspect.Config != nil && inspect.Config.Labels != nil {
+		containerLabels = inspect.Config.Labels
+	}
+
+	if arcaneupdater.IsArcaneContainer(containerLabels) && s.upgradeService != nil {
+		slog.InfoContext(ctx, "UpdateSingleContainer: detected Arcane self-update, using CLI upgrade method", "containerID", containerID)
+
+		if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+			out.Items = append(out.Items, updater.ResourceResult{
+				ResourceID:   targetContainer.ID,
+				ResourceType: "container",
+				ResourceName: containerName,
+				Status:       "failed",
+				Error:        fmt.Sprintf("CLI upgrade failed: %v", err),
+			})
+			out.Failed++
+			out.Duration = time.Since(start).String()
+			return out, nil
+		}
+
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "updated",
+		})
+		out.Updated++
+		out.Checked = 1
+		out.Duration = time.Since(start).String()
+
+		slog.InfoContext(ctx, "UpdateSingleContainer: CLI upgrade triggered successfully", "containerID", containerID)
+		return out, nil
+	}
 
 	// Update the container
 	if err := s.updateContainer(ctx, *targetContainer, inspect, normalizedRef); err != nil {
@@ -576,44 +637,30 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	name := s.getContainerName(cnt)
 	labels := inspect.Config.Labels
 	isArcane := arcaneupdater.IsArcaneContainer(labels)
-	var selfUpdate *arcaneupdater.SelfUpdate
+
+	// Arcane containers should always use CLI upgrade, not inline update
+	// This method should not be called for Arcane containers
 	if isArcane {
-		selfUpdate = arcaneupdater.NewSelfUpdate(dcli)
-		if ok, ierr := selfUpdate.IsArcaneContainerByID(ctx, cnt.ID); ierr != nil {
-			slog.WarnContext(ctx, "updateContainer: failed to verify Arcane container by ID", "containerId", cnt.ID, "error", ierr.Error())
-		} else if !ok {
-			// Keep behavior label-driven, but log the inconsistency.
-			slog.WarnContext(ctx, "updateContainer: label indicated Arcane container but ID verification did not", "containerId", cnt.ID, "containerName", name)
-		}
+		slog.ErrorContext(ctx, "updateContainer: called for Arcane container - should use CLI upgrade instead", "containerId", cnt.ID, "containerName", name)
+		return fmt.Errorf("arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
 	}
 
 	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef, "isArcane", isArcane)
 
-	// Execute pre-update lifecycle hook (skip for Arcane self-update)
-	if !isArcane {
-		hookResult := arcaneupdater.ExecutePreUpdateCommand(ctx, dcli, cnt.ID, labels)
-		if hookResult.Executed {
-			if hookResult.SkipUpdate {
-				slog.InfoContext(ctx, "updateContainer: container requested skip via pre-update hook", "containerId", cnt.ID, "containerName", name)
-				return fmt.Errorf("container requested skip update via exit code %d", arcaneupdater.ExitCodeSkipUpdate)
-			}
-			if hookResult.Error != nil {
-				slog.WarnContext(ctx, "updateContainer: pre-update hook failed", "containerId", cnt.ID, "err", hookResult.Error)
-				// Continue with update despite hook failure (configurable in future)
-			}
+	// Execute pre-update lifecycle hook
+	hookResult := arcaneupdater.ExecutePreUpdateCommand(ctx, dcli, cnt.ID, labels)
+	if hookResult.Executed {
+		if hookResult.SkipUpdate {
+			slog.InfoContext(ctx, "updateContainer: container requested skip via pre-update hook", "containerId", cnt.ID, "containerName", name)
+			return fmt.Errorf("container requested skip update via exit code %d", arcaneupdater.ExitCodeSkipUpdate)
+		}
+		if hookResult.Error != nil {
+			slog.WarnContext(ctx, "updateContainer: pre-update hook failed", "containerId", cnt.ID, "err", hookResult.Error)
+			// Continue with update despite hook failure (configurable in future)
 		}
 	}
 
-	// For Arcane self-update: rename the old container so new one can use the same name
 	originalName := inspect.Name
-	if isArcane {
-		tempName, renameErr := selfUpdate.PrepareForSelfUpdate(ctx, cnt.ID, originalName)
-		if renameErr != nil {
-			slog.WarnContext(ctx, "updateContainer: failed to rename Arcane container for self-update", "err", renameErr)
-			return fmt.Errorf("cannot proceed with self-update without renaming old container: %w", renameErr)
-		}
-		slog.InfoContext(ctx, "updateContainer: renamed Arcane container for self-update", "oldName", originalName, "tempName", tempName)
-	}
 
 	// Get custom stop signal if configured
 	stopSignal := arcaneupdater.GetStopSignal(labels)
@@ -623,21 +670,19 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		slog.DebugContext(ctx, "updateContainer: using custom stop signal", "signal", stopSignal)
 	}
 
-	// stop (skip for Arcane - it will be stopped after new one starts)
-	if !isArcane {
-		if err := dcli.ContainerStop(ctx, cnt.ID, stopOpts); err != nil {
-			slog.DebugContext(ctx, "updateContainer: stop failed", "containerId", cnt.ID, "err", err)
-			return fmt.Errorf("stop: %w", err)
-		}
-		_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStop, cnt.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_stop"})
-
-		// remove
-		if err := dcli.ContainerRemove(ctx, cnt.ID, container.RemoveOptions{}); err != nil {
-			slog.DebugContext(ctx, "updateContainer: remove failed", "containerId", cnt.ID, "err", err)
-			return fmt.Errorf("remove: %w", err)
-		}
-		_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDelete, cnt.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_delete"})
+	// Stop the container
+	if err := dcli.ContainerStop(ctx, cnt.ID, stopOpts); err != nil {
+		slog.DebugContext(ctx, "updateContainer: stop failed", "containerId", cnt.ID, "err", err)
+		return fmt.Errorf("stop: %w", err)
 	}
+	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStop, cnt.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_stop"})
+
+	// Remove the container
+	if err := dcli.ContainerRemove(ctx, cnt.ID, container.RemoveOptions{}); err != nil {
+		slog.DebugContext(ctx, "updateContainer: remove failed", "containerId", cnt.ID, "err", err)
+		return fmt.Errorf("remove: %w", err)
+	}
+	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDelete, cnt.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_delete"})
 
 	// recreate with new image ref
 	cfg := inspect.Config
@@ -680,33 +725,11 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_start"})
 
-	// For Arcane self-update: now stop and remove the old container
-	if isArcane {
-		slog.InfoContext(ctx, "updateContainer: Arcane self-update - stopping old container", "oldContainerId", cnt.ID)
-		_ = dcli.ContainerStop(ctx, cnt.ID, container.StopOptions{})
-		_ = dcli.ContainerRemove(ctx, cnt.ID, container.RemoveOptions{Force: true})
-
-		// Best-effort cleanup of any leftover arcane-old-* containers from prior self-updates.
-		if selfUpdate != nil {
-			if removed, cerr := selfUpdate.CleanupOldArcaneInstances(ctx, false); cerr != nil {
-				slog.DebugContext(ctx, "updateContainer: CleanupOldArcaneInstances failed", "error", cerr.Error())
-			} else if len(removed) > 0 {
-				slog.InfoContext(ctx, "updateContainer: cleaned up old Arcane instances", "count", len(removed))
-			}
-
-			if cur, gerr := selfUpdate.GetCurrentArcaneContainer(ctx); gerr == nil && cur != nil {
-				slog.InfoContext(ctx, "updateContainer: current Arcane container after self-update", "containerId", cur.ID, "name", arcaneupdater.ExtractContainerName(*cur))
-			}
-		}
-	}
-
 	// Execute post-update lifecycle hook on the new container
-	if !isArcane {
-		hookResult := arcaneupdater.ExecutePostUpdateCommand(ctx, dcli, resp.ID, labels)
-		if hookResult.Executed && hookResult.Error != nil {
-			slog.WarnContext(ctx, "updateContainer: post-update hook failed", "newContainerId", resp.ID, "err", hookResult.Error)
-			// Log but don't fail the update
-		}
+	hookResult = arcaneupdater.ExecutePostUpdateCommand(ctx, dcli, resp.ID, labels)
+	if hookResult.Executed && hookResult.Error != nil {
+		slog.WarnContext(ctx, "updateContainer: post-update hook failed", "newContainerId", resp.ID, "err", hookResult.Error)
+		// Log but don't fail the update
 	}
 
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerUpdate, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{
@@ -1113,7 +1136,21 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 		slog.DebugContext(ctx, "restartContainersUsingOldIDs: restarting container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
 
-		if err := s.updateContainer(ctx, p.cnt, p.inspect, p.newRef); err != nil {
+		// Check if this is Arcane self-update - use CLI upgrade instead
+		if arcaneupdater.IsArcaneContainer(labels) && s.upgradeService != nil {
+			slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Arcane self-update, using CLI upgrade method", "containerId", p.cnt.ID, "container", name)
+
+			if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+				res.Status = "failed"
+				res.Error = fmt.Sprintf("CLI upgrade failed: %v", err)
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: CLI upgrade failed", "containerId", p.cnt.ID, "err", err)
+			} else {
+				res.Status = "updated"
+				res.UpdateAvailable = true
+				res.UpdateApplied = true
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: CLI upgrade triggered successfully", "containerId", p.cnt.ID)
+			}
+		} else if err := s.updateContainer(ctx, p.cnt, p.inspect, p.newRef); err != nil {
 			res.Status = "failed"
 			res.Error = err.Error()
 			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", p.cnt.ID, "err", err)

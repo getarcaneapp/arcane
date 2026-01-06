@@ -196,6 +196,7 @@
 			message: m.containers_update_confirm_message({ name: containerName }),
 			confirm: {
 				label: m.containers_update_container(),
+				destructive: false,
 				action: async () => {
 					actionStatus[container.id] = 'updating';
 					try {
