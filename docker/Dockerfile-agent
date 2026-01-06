@@ -74,7 +74,7 @@ LABEL org.opencontainers.image.title="Arcane Agent"
 LABEL org.opencontainers.image.description="Arcane Agent"
 
 LABEL com.getarcaneapp.arcane.updater="false"
-LABEL com.getarcaneapp.arcane.server="true"
+LABEL com.getarcaneapp.arcane.agent="true"
 
 EXPOSE 3553
 VOLUME ["/app/data"]

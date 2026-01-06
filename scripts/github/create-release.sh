@@ -112,7 +112,7 @@ fi
 
 # Update .arcane.json file with the new version and revision
 echo "Updating .arcane.json file..."
-LATEST_REVISION=$(git rev-parse --short HEAD)
+LATEST_REVISION=$(git rev-parse HEAD)
 jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
   '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
 git add .arcane.json

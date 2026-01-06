@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -31,6 +32,7 @@ type SettingsService struct {
 
 	OnImagePollingSettingsChanged func(ctx context.Context)
 	OnAutoUpdateSettingsChanged   func(ctx context.Context)
+	OnProjectsDirectoryChanged    func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -77,21 +79,23 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:  models.SettingVariable{Value: "data/projects"},
-		DiskUsagePath:      models.SettingVariable{Value: "data/projects"},
-		AutoUpdate:         models.SettingVariable{Value: "false"},
-		AutoUpdateInterval: models.SettingVariable{Value: "1440"},
-		PollingEnabled:     models.SettingVariable{Value: "true"},
-		PollingInterval:    models.SettingVariable{Value: "60"},
-		AutoInjectEnv:      models.SettingVariable{Value: "false"},
-		PruneMode:          models.SettingVariable{Value: "dangling"},
-		BaseServerURL:      models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:     models.SettingVariable{Value: "true"},
-		DefaultShell:       models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:         models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		AuthLocalEnabled:   models.SettingVariable{Value: "true"},
-		AuthSessionTimeout: models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy: models.SettingVariable{Value: "strong"},
+		ProjectsDirectory:          models.SettingVariable{Value: "data/projects"},
+		DiskUsagePath:              models.SettingVariable{Value: "data/projects"},
+		AutoUpdate:                 models.SettingVariable{Value: "false"},
+		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
+		PollingEnabled:             models.SettingVariable{Value: "true"},
+		PollingInterval:            models.SettingVariable{Value: "60"},
+		EventCleanupInterval:       models.SettingVariable{Value: "360"},
+		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
+		AutoInjectEnv:              models.SettingVariable{Value: "false"},
+		PruneMode:                  models.SettingVariable{Value: "dangling"},
+		BaseServerURL:              models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:             models.SettingVariable{Value: "true"},
+		DefaultShell:               models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:                 models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		AuthLocalEnabled:           models.SettingVariable{Value: "true"},
+		AuthSessionTimeout:         models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:         models.SettingVariable{Value: "strong"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -429,6 +433,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+		s.OnProjectsDirectoryChanged(ctx)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
@@ -584,13 +591,21 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
+	appCfg := config.Load()
+	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
-			key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
+			tag := field.Tag.Get("key")
+			key, attrs, _ := strings.Cut(tag, ",")
 
-			if key == "" || attrs == "internal" {
+			if key == "" || strings.Contains(attrs, "internal") {
+				continue
+			}
+
+			// If not in env-only mode, only persist if it's explicitly marked as envOverride
+			if !isEnvOnlyMode && !strings.Contains(attrs, "envOverride") {
 				continue
 			}
 

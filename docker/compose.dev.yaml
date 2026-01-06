@@ -127,21 +127,19 @@ networks:
   arcane-dev:
     driver: bridge
     name: arcane-dev-network
-    external: true
 
 volumes:
   arcane-dev-data:
     name: arcane-dev-data
-    external: true
+
   agent-dev-data:
     name: agent-dev-data
-    external: true
+
   go-build-cache:
     name: arcane-go-build-cache
-    external: true
+
   go-mod-cache:
     name: arcane-go-mod-cache
-    external: true
+
   pnpm-cache:
     name: arcane-pnpm-cache
-    external: true

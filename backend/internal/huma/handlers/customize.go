@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
@@ -78,6 +79,17 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 
 	results := h.customizeSearchService.Search(input.Body.Query)
 
+	if !humamw.IsAdminFromContext(ctx) {
+		filtered := []category.Category{}
+		for _, cat := range results.Results {
+			if cat.ID != "registries" && cat.ID != "variables" {
+				filtered = append(filtered, cat)
+			}
+		}
+		results.Results = filtered
+		results.Count = len(filtered)
+	}
+
 	return &SearchCustomizeOutput{
 		Body: results,
 	}, nil
@@ -90,6 +102,16 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 	}
 
 	categories := h.customizeSearchService.GetCustomizeCategories()
+
+	if !humamw.IsAdminFromContext(ctx) {
+		filtered := []category.Category{}
+		for _, cat := range categories {
+			if cat.ID != "registries" && cat.ID != "variables" {
+				filtered = append(filtered, cat)
+			}
+		}
+		categories = filtered
+	}
 
 	return &GetCustomizeCategoriesOutput{
 		Body: categories,

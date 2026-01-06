@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/converter"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/system"
@@ -253,8 +254,8 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*containertypes.
 
 	return s.performBatchContainerAction(ctx, containers, "stop",
 		func(c container.Summary) bool {
-			// Skip Arcane server container
-			return c.Labels == nil || c.Labels["com.getarcaneapp.arcane.server"] != "true"
+			// Skip Arcane container
+			return !arcaneupdater.IsArcaneContainer(c.Labels)
 		},
 		func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, systemUser)

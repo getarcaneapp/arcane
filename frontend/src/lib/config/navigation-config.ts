@@ -14,7 +14,8 @@ import {
 	NetworksIcon,
 	VolumesIcon,
 	EventsIcon,
-	SettingsIcon
+	SettingsIcon,
+	JobsIcon
 } from '$lib/icons';
 
 import { m } from '$lib/paraglide/messages';
@@ -50,12 +51,12 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			url: '/settings',
 			icon: SettingsIcon,
 			items: [
-				{ title: m.general_title(), url: '/settings/general', icon: SettingsIcon },
+				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon },
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon },
-				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon },
-				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon },
+				{ title: m.jobs_title(), url: '/settings/jobs', icon: JobsIcon },
 				{ title: m.notifications_title(), url: '/settings/notifications', icon: NotificationsIcon },
-				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon }
+				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon },
+				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon }
 			]
 		}
 	]

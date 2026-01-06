@@ -2,9 +2,12 @@ package utils
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -264,4 +267,111 @@ func readCgroupV1CPUControllerInt64(cgroupPath, filename string) (int64, error) 
 	}
 
 	return 0, lastErr
+}
+
+// Container ID detection patterns for cgroup v1 and v2
+var (
+	// cgroup v1: "12:memory:/docker/abc123..." or "12:memory:/kubepods/.../docker/abc123..."
+	cgroupV1ContainerPattern = regexp.MustCompile(`/docker/([a-f0-9]{64})`)
+	// cgroup v2: "0::/system.slice/docker-abc123.scope"
+	cgroupV2ContainerPattern = regexp.MustCompile(`docker-([a-f0-9]{64})\.scope`)
+)
+
+// GetCurrentContainerID detects the current container ID using multiple detection methods
+// It tries cgroup, mountinfo, and hostname in that order
+func GetCurrentContainerID() (string, error) {
+	// Try cgroup first (works on cgroup v1 and cgroupns=host mode)
+	if id, err := getContainerIDFromCgroup(); err == nil {
+		slog.Debug("GetCurrentContainerID: found via cgroup", "containerId", id)
+		return id, nil
+	}
+
+	// Try mountinfo (works when cgroup namespace is private)
+	if id, err := getContainerIDFromMountinfo(); err == nil {
+		slog.Debug("GetCurrentContainerID: found via mountinfo", "containerId", id)
+		return id, nil
+	}
+
+	// Try hostname (Docker often sets hostname to container ID)
+	if id, err := getContainerIDFromHostname(); err == nil {
+		slog.Debug("GetCurrentContainerID: found via hostname", "containerId", id)
+		return id, nil
+	}
+
+	return "", errors.New("no container ID found via cgroup, mountinfo, or hostname")
+}
+
+// getContainerIDFromCgroup tries to extract container ID from /proc/self/cgroup
+func getContainerIDFromCgroup() (string, error) {
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", err
+	}
+
+	content := string(data)
+
+	// Try cgroup v1 pattern
+	if matches := cgroupV1ContainerPattern.FindStringSubmatch(content); len(matches) >= 2 {
+		return matches[1], nil
+	}
+
+	// Try cgroup v2 pattern
+	if matches := cgroupV2ContainerPattern.FindStringSubmatch(content); len(matches) >= 2 {
+		return matches[1], nil
+	}
+
+	return "", errors.New("no container ID found in cgroup")
+}
+
+// getContainerIDFromMountinfo tries to extract container ID from /proc/self/mountinfo
+// This works even when cgroup namespace is private (cgroupns=private)
+func getContainerIDFromMountinfo() (string, error) {
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return "", err
+	}
+
+	content := string(data)
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		// Look for Docker container paths in mountinfo
+		if strings.Contains(line, "/docker/containers/") {
+			parts := strings.Split(line, "/docker/containers/")
+			if len(parts) > 1 {
+				idParts := strings.Split(parts[1], "/")
+				if len(idParts) > 0 && len(idParts[0]) >= 12 {
+					id := idParts[0]
+					if len(id) >= 64 {
+						return id[:64], nil
+					}
+					return id, nil
+				}
+			}
+		}
+	}
+
+	return "", errors.New("no container ID found in mountinfo")
+}
+
+// getContainerIDFromHostname tries to use hostname as container ID
+// Docker often sets the hostname to the container ID (12 or 64 hex chars)
+func getContainerIDFromHostname() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+
+	// Docker often sets hostname to the short container ID (12 chars) or full ID (64 chars)
+	if len(hostname) == 12 || len(hostname) == 64 {
+		// Verify it looks like a hex string
+		for _, c := range hostname {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				return "", errors.New("hostname doesn't match container ID pattern")
+			}
+		}
+		return hostname, nil
+	}
+
+	return "", errors.New("hostname doesn't match expected container ID length")
 }

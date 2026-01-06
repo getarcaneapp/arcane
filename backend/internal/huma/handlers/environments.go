@@ -376,6 +376,10 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
@@ -514,6 +518,10 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	isLocalEnv := input.ID == localDockerEnvironmentID
 	updates := h.buildUpdateMap(&input.Body, isLocalEnv)
 
@@ -601,6 +609,10 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.ID == localDockerEnvironmentID {
 		return nil, huma.Error400BadRequest((&common.LocalEnvironmentDeletionError{}).Error())
 	}
@@ -629,6 +641,10 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*TestConnectionOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	var apiUrl *string
@@ -683,6 +699,10 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.ID != localDockerEnvironmentID {
 		return nil, huma.Error404NotFound("Not found")
 	}
@@ -710,6 +730,10 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegistriesInput) (*SyncRegistriesOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
@@ -856,6 +880,10 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*GetDeploymentSnippetsOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)

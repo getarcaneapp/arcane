@@ -11,6 +11,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-data:/app/data
+    # Use host cgroup namespace for better container self-detection
+    # This allows Arcane to detect its own container ID more reliably
+    cgroup: host
     restart: unless-stopped
 
 volumes:

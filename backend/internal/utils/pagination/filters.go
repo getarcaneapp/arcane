@@ -1,11 +1,5 @@
 package pagination
 
-import (
-	"strconv"
-
-	"github.com/gin-gonic/gin"
-)
-
 type FilterResult[T any] struct {
 	Items          []T
 	TotalCount     int64
@@ -71,9 +65,4 @@ func filterFn[T any](items []T, filters map[string]string, accessors []FilterAcc
 		}
 	}
 	return results
-}
-
-func ApplyFilterResultsHeaders[T any](w *gin.ResponseWriter, result FilterResult[T]) {
-	(*w).Header().Set("X-Arcane-Total-Items", strconv.FormatInt(result.TotalCount, 10))
-	(*w).Header().Set("X-Arcane-Total-Available", strconv.FormatInt(result.TotalAvailable, 10))
 }

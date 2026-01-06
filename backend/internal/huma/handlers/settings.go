@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -189,6 +190,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	isAdmin := humamw.IsAdminFromContext(ctx)
+
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
@@ -207,7 +210,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return &GetSettingsOutput{Body: settingsDto}, nil
 	}
 
-	showAll := input.EnvironmentID == "0"
+	showAll := isAdmin
 	settingsList := h.settingsService.ListSettings(showAll)
 
 	var settingsDto []settings.PublicSetting
@@ -233,6 +236,10 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if input.EnvironmentID != "0" {
@@ -303,6 +310,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
@@ -315,6 +326,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	if h.settingsSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	categories := h.settingsSearchService.GetSettingsCategories()
