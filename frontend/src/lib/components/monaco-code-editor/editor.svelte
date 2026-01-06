@@ -105,6 +105,7 @@
 			fixedOverflowWidgets: true,
 			dragAndDrop: false,
 			contextmenu: true,
+			selectionClipboard: true,
 			quickSuggestions: {
 				other: true,
 				comments: false,
@@ -127,7 +128,7 @@
 			label: m.common_select_all(),
 			contextMenuGroupId: '9_cutcopypaste',
 			contextMenuOrder: 4,
-			run: (ed) => {
+			run: (ed: monaco.editor.IStandaloneCodeEditor) => {
 				ed.focus();
 				const model = ed.getModel();
 				if (model) {
@@ -186,6 +187,7 @@
 				wordWrap: 'on',
 				fixedOverflowWidgets: true,
 				dragAndDrop: false,
+				selectionClipboard: true,
 				scrollbar: autoHeight
 					? {
 							vertical: 'hidden',

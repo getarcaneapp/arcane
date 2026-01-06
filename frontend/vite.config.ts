@@ -6,6 +6,17 @@ import { defineConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
 
 export default defineConfig({
+	resolve: {
+		dedupe: [
+			'@codemirror/state',
+			'@codemirror/view',
+			'@codemirror/language',
+			'@codemirror/commands',
+			'@codemirror/history',
+			'@codemirror/lang-yaml',
+			'@lezer/highlight'
+		]
+	},
 	plugins: [
 		tailwindcss(),
 		sveltekit(),
