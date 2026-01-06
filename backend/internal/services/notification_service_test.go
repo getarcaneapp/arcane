@@ -310,7 +310,7 @@ func TestSendShoutrrrNotification_Providers(t *testing.T) {
 		},
 		{
 			name:       "ntfy",
-			url:        fmt.Sprintf("ntfy://%s/topic", tsHost),
+			url:        fmt.Sprintf("ntfy://%s/topic?scheme=http", tsHost),
 			message:    "hello ntfy",
 			title:      "ntfy Title",
 			expectHost: tsHost,
@@ -383,6 +383,8 @@ func TestSendShoutrrrNotification_Providers(t *testing.T) {
 				body := "{}"
 				if tt.name == "Slack" {
 					body = "ok"
+				} else if tt.name == "Pushbullet" {
+					body = fmt.Sprintf(`{"type": "note", "body": %q, "title": %q, "active": true}`, tt.message, tt.title)
 				}
 
 				return &http.Response{
