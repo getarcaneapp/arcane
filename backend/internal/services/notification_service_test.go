@@ -381,9 +381,10 @@ func TestSendShoutrrrNotification_Providers(t *testing.T) {
 				}
 
 				body := "{}"
-				if tt.name == "Slack" {
+				switch tt.name {
+				case "Slack":
 					body = "ok"
-				} else if tt.name == "Pushbullet" {
+				case "Pushbullet":
 					body = fmt.Sprintf(`{"type": "note", "body": %q, "title": %q, "active": true}`, tt.message, tt.title)
 				}
 
