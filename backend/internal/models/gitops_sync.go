@@ -20,6 +20,7 @@ type GitOpsSync struct {
 	LastSyncAt     *time.Time     `json:"lastSyncAt,omitempty" sortable:"true"`
 	LastSyncStatus *string        `json:"lastSyncStatus,omitempty" search:"status,success,failed,pending,error"`
 	LastSyncError  *string        `json:"lastSyncError,omitempty"`
+	LastSyncCommit *string        `json:"lastSyncCommit,omitempty" search:"commit,hash,sha,revision"`
 	Enabled        bool           `json:"enabled" sortable:"true" search:"enabled,active,disabled"`
 	BaseModel
 }
@@ -33,7 +34,7 @@ type CreateGitOpsSyncRequest struct {
 	RepositoryID string `json:"repositoryId" binding:"required"`
 	Branch       string `json:"branch" binding:"required"`
 	ComposePath  string `json:"composePath" binding:"required"`
-	ProjectName  string `json:"projectName" binding:"required"` // Project name to create
+	ProjectName  string `json:"projectName,omitempty"` // Project name to create - defaults to sync name if not provided
 	AutoSync     *bool  `json:"autoSync,omitempty"`
 	SyncInterval *int   `json:"syncInterval,omitempty"`
 	Enabled      *bool  `json:"enabled,omitempty"`

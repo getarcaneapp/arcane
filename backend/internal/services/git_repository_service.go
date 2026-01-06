@@ -323,3 +323,60 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 
 	return authConfig, nil
 }
+
+func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]gitops.BranchInfo, error) {
+	repository, err := s.GetRepositoryByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	authConfig, err := s.GetAuthConfig(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+
+	branches, err := s.gitClient.ListBranches(repository.URL, authConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list branches: %w", err)
+	}
+
+	var result []gitops.BranchInfo
+	for _, branch := range branches {
+		result = append(result, gitops.BranchInfo{
+			Name:      branch.Name,
+			IsDefault: branch.IsDefault,
+		})
+	}
+
+	return result, nil
+}
+
+func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path string) (*gitops.BrowseResponse, error) {
+	repository, err := s.GetRepositoryByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	authConfig, err := s.GetAuthConfig(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clone the repository
+	repoPath, err := s.gitClient.Clone(repository.URL, branch, authConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone repository: %w", err)
+	}
+	defer s.gitClient.Cleanup(repoPath)
+
+	// Browse the tree
+	files, err := s.gitClient.BrowseTree(repoPath, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gitops.BrowseResponse{
+		Path:  path,
+		Files: files,
+	}, nil
+}

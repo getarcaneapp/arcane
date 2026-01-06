@@ -139,10 +139,10 @@
 		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
 		handleApiResultWithCallbacks({
 			result,
-			message: m.gitops_sync_failed(),
+			message: m.git_sync_failed(),
 			setLoadingState: (value) => (isLoading.syncing = value),
 			onSuccess: async () => {
-				toast.success(m.gitops_sync_success());
+				toast.success(m.git_sync_success());
 				projects = await projectService.getProjects(requestOptions);
 			}
 		});
@@ -181,7 +181,7 @@
 
 {#snippet ProviderCell({ item }: { item: Project })}
 	<div class="flex items-center gap-2">
-		{#if item.gitOpsManagedBy}
+		{#if item.gitManagedBy}
 			<GitBranchIcon class="size-4" />
 			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
 				{m.projects_provider_git()}
@@ -245,8 +245,8 @@
 				label: m.projects_col_provider(),
 				type: 'component',
 				getValue: (item: Project) => ({
-					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
-					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
+					icon: item.gitManagedBy ? GitBranchIcon : ProjectsIcon,
+					text: item.gitManagedBy ? m.projects_provider_git() : m.projects_provider_local()
 				}),
 				component: ProviderField,
 				show: mobileFieldVisibility.provider ?? true
@@ -297,17 +297,14 @@
 					{m.common_edit()}
 				</DropdownMenu.Item>
 
-				{#if item.gitOpsManagedBy}
-					<DropdownMenu.Item
-						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
-						disabled={isLoading.syncing || isAnyLoading}
-					>
+				{#if item.gitManagedBy}
+					<DropdownMenu.Item onclick={() => handleSyncFromGit(item.gitManagedBy!)} disabled={isLoading.syncing || isAnyLoading}>
 						{#if isLoading.syncing}
 							<Spinner class="size-4" />
 						{:else}
 							<RefreshIcon class="size-4" />
 						{/if}
-						{m.gitops_sync_from_git()}
+						{m.git_sync_from_git()}
 					</DropdownMenu.Item>
 				{/if}
 

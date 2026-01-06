@@ -25,7 +25,7 @@ type CustomizeItem struct {
 	VariableTemplates CustomizeVariable `key:"variableTemplates" meta:"label=Variable Templates;type=array;keywords=templates,reusable,preset,configuration,standard,common;category=variables;description=Create reusable variable configurations"`
 
 	// Git Repositories category
-	GitRepositories        CustomizeVariable `key:"gitRepositories" meta:"label=Git Repositories;type=array;keywords=git,repository,repositories,source,code,version,control,github,gitlab,bitbucket;category=git-repositories;description=Manage git repository connections for GitOps" catmeta:"id=git-repositories;title=Git Repositories;icon=git-branch;url=/customize/git-repositories;description=Configure git repositories for GitOps deployments"`
+	GitRepositories        CustomizeVariable `key:"gitRepositories" meta:"label=Git Repositories;type=array;keywords=git,repository,repositories,source,code,version,control,github,gitlab,bitbucket;category=git-repositories;description=Manage git repository connections for GitOps" catmeta:"id=git-repositories;title=Git Repositories;icon=git-branch;url=/customize/git-repositories;description=Configure git repositories for Git synchronization"`
 	GitRepositoryDefaults  CustomizeVariable `key:"gitRepositoryDefaults" meta:"label=Repository Defaults;type=object;keywords=defaults,settings,configuration,branch,auth,authentication;category=git-repositories;description=Set default settings for git repositories"`
 	GitRepositoryTemplates CustomizeVariable `key:"gitRepositoryTemplates" meta:"label=Repository Templates;type=array;keywords=templates,presets,common,reusable,standard;category=git-repositories;description=Create reusable repository configurations"`
 }

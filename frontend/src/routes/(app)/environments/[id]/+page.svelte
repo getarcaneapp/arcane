@@ -867,18 +867,18 @@
 			<Card.Header icon={GitBranchIcon}>
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
-						<h2>{m.gitops_syncs_title()}</h2>
+						<h2>{m.git_syncs_title()}</h2>
 					</Card.Title>
-					<Card.Description>{m.gitops_subtitle()}</Card.Description>
+					<Card.Description>{m.git_subtitle()}</Card.Description>
 				</div>
 			</Card.Header>
 			<Card.Content class="p-4">
-				<p class="text-muted-foreground mb-4 text-sm">{m.gitops_environment_card_description()}</p>
+				<p class="text-muted-foreground mb-4 text-sm">{m.git_environment_card_description()}</p>
 				<ArcaneButton
 					action="base"
 					onclick={() => goto(`/environments/${environment.id}/gitops`)}
 					icon={ArrowRightIcon}
-					customLabel={m.gitops_manage_syncs()}
+					customLabel={m.git_manage_syncs()}
 					class="w-full"
 				/>
 			</Card.Content>

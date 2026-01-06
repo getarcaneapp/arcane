@@ -96,13 +96,13 @@ type GetSyncStatusOutput struct {
 	Body base.ApiResponse[gitops.SyncStatus]
 }
 
-type BrowseFilesInput struct {
+type BrowseSyncFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
 	Path          string `query:"path" doc:"Path to browse (optional)"`
 }
 
-type BrowseFilesOutput struct {
+type BrowseSyncFilesOutput struct {
 	Body base.ApiResponse[gitops.BrowseResponse]
 }
 
@@ -388,7 +388,7 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 }
 
 // BrowseFiles returns the file tree at the specified path in the repository.
-func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*BrowseFilesOutput, error) {
+func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*BrowseSyncFilesOutput, error) {
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -399,7 +399,7 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseFilesI
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncBrowseError{Err: err}).Error())
 	}
 
-	return &BrowseFilesOutput{
+	return &BrowseSyncFilesOutput{
 		Body: base.ApiResponse[gitops.BrowseResponse]{
 			Success: true,
 			Data:    *response,

@@ -48,11 +48,11 @@
 		isLoading.refresh = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(gitOpsSyncService.getSyncs(environmentId, syncRequestOptions)),
-			message: m.common_refresh_failed({ resource: m.gitops_syncs_title() }),
+			message: m.common_refresh_failed({ resource: m.git_syncs_title() }),
 			setLoadingState: (value) => (isLoading.refresh = value),
 			onSuccess: async (newSyncs) => {
 				syncs = newSyncs;
-				toast.success(m.common_refresh_success({ resource: m.gitops_syncs_title() }));
+				toast.success(m.common_refresh_success({ resource: m.git_syncs_title() }));
 			}
 		});
 	}
@@ -140,7 +140,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.gitops_syncs_title()} subtitle={m.gitops_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<SyncTable
 			{environmentId}

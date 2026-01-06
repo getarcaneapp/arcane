@@ -15,7 +15,8 @@ import {
 	VolumesIcon,
 	EventsIcon,
 	SettingsIcon,
-	JobsIcon
+	JobsIcon,
+	GitBranchIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 
@@ -106,3 +107,14 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	showLabels: true,
 	scrollToHide: true
 };
+
+export function getManagementItems(environmentId: string): NavigationItem[] {
+	return [
+		...navigationItems.managementItems,
+		{
+			title: m.git_syncs_title?.() ?? 'Git Sync',
+			url: `/environments/${environmentId}/gitops`,
+			icon: GitBranchIcon
+		}
+	];
+}

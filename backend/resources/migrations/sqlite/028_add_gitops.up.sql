@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS gitops_syncs (
     last_sync_at DATETIME,
     last_sync_status TEXT,
     last_sync_error TEXT,
+    last_sync_commit TEXT,
     environment_id TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,6 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_gitops_syncs_repository_id ON gitops_syncs(reposi
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_project_id ON gitops_syncs(project_id);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_enabled ON gitops_syncs(enabled);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_auto_sync ON gitops_syncs(auto_sync);
+CREATE INDEX IF NOT EXISTS idx_gitops_syncs_last_sync_commit ON gitops_syncs(last_sync_commit);
 
 -- Add gitops_managed_by column to projects table
 ALTER TABLE projects ADD COLUMN gitops_managed_by TEXT;

@@ -258,7 +258,7 @@
 										goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
 								>
 									<GitBranchIcon class="size-4" />
-									{m.gitops_from_git_repo()}
+									{m.git_from_git_repo()}
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item

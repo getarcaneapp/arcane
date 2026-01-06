@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -105,6 +107,95 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 	}
 
 	return tmpDir, nil
+}
+
+// GetCurrentCommit returns the HEAD commit hash of a cloned repository
+func (c *Client) GetCurrentCommit(repoPath string) (string, error) {
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	ref, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	return ref.Hash().String(), nil
+}
+
+// BranchInfo holds information about a git branch
+type BranchInfo struct {
+	Name      string
+	IsDefault bool
+}
+
+// ListBranches lists all branches in a remote repository
+func (c *Client) ListBranches(url string, auth AuthConfig) ([]BranchInfo, error) {
+	authMethod, err := c.getAuth(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a remote without cloning
+	rem := git.NewRemote(nil, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+
+	listOptions := &git.ListOptions{}
+	if authMethod != nil {
+		listOptions.Auth = authMethod
+	}
+
+	refs, err := rem.List(listOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote references: %w", err)
+	}
+
+	var branches []BranchInfo
+	var defaultBranch string
+
+	// Find the default branch (HEAD points to it)
+	for _, ref := range refs {
+		if ref.Name().String() == "HEAD" {
+			// HEAD is a symbolic reference that points to the default branch
+			if ref.Target().IsBranch() {
+				defaultBranch = ref.Target().Short()
+			}
+			break
+		}
+	}
+
+	// Collect all branches
+	seen := make(map[string]bool)
+	for _, ref := range refs {
+		if ref.Name().IsBranch() {
+			branchName := ref.Name().Short()
+			if seen[branchName] {
+				continue
+			}
+			seen[branchName] = true
+
+			branches = append(branches, BranchInfo{
+				Name:      branchName,
+				IsDefault: branchName == defaultBranch,
+			})
+		}
+	}
+
+	// Sort branches with default first
+	sort.Slice(branches, func(i, j int) bool {
+		if branches[i].IsDefault {
+			return true
+		}
+		if branches[j].IsDefault {
+			return false
+		}
+		return branches[i].Name < branches[j].Name
+	})
+
+	return branches, nil
 }
 
 // ValidatePath ensures the path is safe and doesn't escape the repo

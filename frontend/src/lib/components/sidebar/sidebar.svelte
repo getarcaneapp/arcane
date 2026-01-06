@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -19,7 +19,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
-	import { LogoutIcon, GitBranchIcon } from '$lib/icons';
+	import { LogoutIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
@@ -60,14 +60,7 @@
 		}) ?? [];
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsWithGitOps = $derived([
-		...navigationItems.managementItems,
-		{
-			title: m.gitops_syncs_title?.() ?? 'GitOps',
-			url: `/environments/${currentEnvId}/gitops`,
-			icon: GitBranchIcon
-		}
-	]);
+	const managementItems = $derived(getManagementItems(currentEnvId));
 </script>
 
 <VersionInfoDialog
@@ -102,7 +95,7 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={managementItemsWithGitOps} />
+		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />

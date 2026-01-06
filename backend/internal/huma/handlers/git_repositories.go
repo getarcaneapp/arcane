@@ -82,6 +82,24 @@ type TestGitRepositoryOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type ListBranchesInput struct {
+	ID string `path:"id" doc:"Repository ID"`
+}
+
+type ListBranchesOutput struct {
+	Body base.ApiResponse[gitops.BranchesResponse]
+}
+
+type BrowseFilesInput struct {
+	ID     string `path:"id" doc:"Repository ID"`
+	Branch string `query:"branch" doc:"Branch to browse"`
+	Path   string `query:"path" doc:"Path within repository (optional)"`
+}
+
+type BrowseFilesOutput struct {
+	Body base.ApiResponse[gitops.BrowseResponse]
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -167,6 +185,32 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"ApiKeyAuth": {}},
 		},
 	}, h.TestRepository)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "listGitRepositoryBranches",
+		Method:      "GET",
+		Path:        "/customize/git-repositories/{id}/branches",
+		Summary:     "List repository branches",
+		Description: "Get all branches from a git repository with default branch detection",
+		Tags:        []string{"Customize"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListBranches)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "browseGitRepositoryFiles",
+		Method:      "GET",
+		Path:        "/customize/git-repositories/{id}/files",
+		Summary:     "Browse repository files",
+		Description: "Browse files and directories in a git repository",
+		Tags:        []string{"Customize"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.BrowseFiles)
 }
 
 // ============================================================================
@@ -313,6 +357,50 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 			Data: base.MessageResponse{
 				Message: "Connection successful",
 			},
+		},
+	}, nil
+}
+
+// ListBranches returns all branches from a git repository.
+func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*ListBranchesOutput, error) {
+	if h.repoService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	branches, err := h.repoService.ListBranches(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+	}
+
+	return &ListBranchesOutput{
+		Body: base.ApiResponse[gitops.BranchesResponse]{
+			Success: true,
+			Data: gitops.BranchesResponse{
+				Branches: branches,
+			},
+		},
+	}, nil
+}
+
+// BrowseFiles returns files and directories from a git repository.
+func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*BrowseFilesOutput, error) {
+	if h.repoService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.Branch == "" {
+		return nil, huma.Error400BadRequest("branch parameter is required")
+	}
+
+	result, err := h.repoService.BrowseFiles(ctx, input.ID, input.Branch, input.Path)
+	if err != nil {
+		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+	}
+
+	return &BrowseFilesOutput{
+		Body: base.ApiResponse[gitops.BrowseResponse]{
+			Success: true,
+			Data:    *result,
 		},
 	}, nil
 }

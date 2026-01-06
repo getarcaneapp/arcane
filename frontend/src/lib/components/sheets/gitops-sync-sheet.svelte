@@ -1,17 +1,18 @@
 <script lang="ts">
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
+	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository } from '$lib/types/gitops.type';
+	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
+	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/gitops.type';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
-	import { RefreshIcon } from '$lib/icons';
+	import { FolderOpenIcon } from '$lib/icons';
 
 	type GitOpsSyncFormProps = {
 		open: boolean;
@@ -24,14 +25,16 @@
 
 	let isEditMode = $derived(!!syncToEdit);
 	let repositories = $state<GitRepository[]>([]);
+	let branches = $state<BranchInfo[]>([]);
 	let loadingData = $state(true);
+	let loadingBranches = $state(false);
+	let showFileBrowser = $state(false);
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_name_required()),
 		repositoryId: z.string().min(1, m.common_required()),
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
-		projectName: z.string().min(1, m.common_required()),
 		autoSync: z.boolean().default(true),
 		syncInterval: z.number().min(1).default(5),
 		enabled: z.boolean().default(true)
@@ -42,7 +45,6 @@
 		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
-		projectName: open && syncToEdit ? syncToEdit.projectName : '',
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
 		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
 		enabled: open && syncToEdit ? (syncToEdit.enabled ?? true) : true
@@ -51,6 +53,29 @@
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
 	let selectedRepository = $state<{ value: string; label: string } | undefined>(undefined);
+
+	async function loadBranches(repositoryId: string) {
+		if (!repositoryId) return;
+
+		loadingBranches = true;
+		branches = [];
+		try {
+			const result = await gitRepositoryService.getBranches(repositoryId);
+			branches = result.branches || [];
+
+			// Auto-select default branch if not editing
+			if (!isEditMode && branches.length > 0) {
+				const defaultBranch = branches.find((b) => b.isDefault);
+				if (defaultBranch) {
+					$inputs.branch.value = defaultBranch.name;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to load branches:', error);
+		} finally {
+			loadingBranches = false;
+		}
+	}
 
 	async function loadData() {
 		loadingData = true;
@@ -62,6 +87,7 @@
 				const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
 				if (repo) {
 					selectedRepository = { value: repo.id, label: repo.name };
+					await loadBranches(repo.id);
 				}
 			}
 		} catch (error) {
@@ -86,7 +112,7 @@
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
-			projectName: data.projectName,
+			projectName: data.name,
 			autoSync: data.autoSync,
 			syncInterval: data.syncInterval,
 			enabled: data.enabled
@@ -96,34 +122,23 @@
 	}
 </script>
 
-<Sheet.Root bind:open>
-	<Sheet.Content class="p-6">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<RefreshIcon class="text-primary size-5" />
-				</div>
-				<div>
-					<Sheet.Title class="text-xl font-semibold">
-						{isEditMode ? m.gitops_sync_edit_title() : m.gitops_sync_add_title()}
-					</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{isEditMode ? m.common_edit_description() : m.common_add_description()}
-					</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-
+<ResponsiveDialog
+	bind:open
+	title={isEditMode ? m.git_sync_edit_title() : m.git_sync_add_title()}
+	description={isEditMode ? m.common_edit_description() : m.common_add_description()}
+	contentClass="sm:max-w-2xl"
+>
+	{#snippet children()}
 		{#if loadingData}
 			<div class="flex items-center justify-center py-8">
 				<Spinner class="size-6" />
 			</div>
 		{:else}
-			<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-				<FormInput label={m.gitops_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={$inputs.name} />
+			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4">
+				<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={$inputs.name} />
 
 				<div class="space-y-2">
-					<Label for="repository">{m.gitops_sync_repository()}</Label>
+					<Label for="repository">{m.git_sync_repository()}</Label>
 					<Select.Root
 						type="single"
 						value={selectedRepository?.value}
@@ -133,16 +148,17 @@
 								if (repo) {
 									selectedRepository = { value: repo.id, label: repo.name };
 									$inputs.repositoryId.value = v;
+									loadBranches(v);
 								}
 							}
 						}}
 					>
-						<Select.Trigger id="repository" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
+						<Select.Trigger id="repository" class="w-full" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
 							<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
 						</Select.Trigger>
-						<Select.Content>
+						<Select.Content style="width: var(--bits-select-anchor-width);">
 							{#each repositories as repo}
-								<Select.Item value={repo.id}>{repo.name}</Select.Item>
+								<Select.Item value={repo.id} class="truncate">{repo.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -151,32 +167,79 @@
 					{/if}
 				</div>
 
-				<FormInput label={m.gitops_sync_branch()} type="text" placeholder="main" bind:input={$inputs.branch} />
+				<div class="space-y-2">
+					<Label for="branch">{m.git_sync_branch()}</Label>
+					{#if loadingBranches}
+						<div class="flex items-center gap-2">
+							<Spinner class="size-4" />
+							<span class="text-muted-foreground text-sm">Loading branches...</span>
+						</div>
+					{:else if branches.length > 0}
+						<Select.Root
+							type="single"
+							value={$inputs.branch.value}
+							onValueChange={(v) => {
+								if (v) {
+									$inputs.branch.value = v;
+								}
+							}}
+						>
+							<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
+								<span>{$inputs.branch.value || m.common_select_placeholder()}</span>
+							</Select.Trigger>
+							<Select.Content style="width: var(--bits-select-anchor-width);">
+								{#each branches as branch}
+									<Select.Item value={branch.name} class="truncate">
+										{branch.name}
+										{#if branch.isDefault}
+											<span class="text-muted-foreground ml-2 text-xs">(default)</span>
+										{/if}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{:else}
+						<FormInput type="text" placeholder="main" bind:input={$inputs.branch} />
+					{/if}
+					{#if $inputs.branch.error}
+						<p class="mt-1 text-sm text-red-500">{$inputs.branch.error}</p>
+					{/if}
+					<p class="text-muted-foreground text-xs">
+						{branches.length > 0 ? m.git_sync_branch_select_hint() : m.git_sync_branch_manual_hint()}
+					</p>
+				</div>
 
-				<FormInput
-					label={m.gitops_sync_compose_path()}
-					type="text"
-					placeholder="docker-compose.yml"
-					bind:input={$inputs.composePath}
-				/>
-
-				<FormInput
-					label={m.gitops_sync_project()}
-					type="text"
-					placeholder={m.common_name_placeholder()}
-					bind:input={$inputs.projectName}
-					description={m.gitops_sync_project_description()}
-				/>
+				<div class="space-y-2">
+					<Label for="composePath">{m.git_sync_compose_path()}</Label>
+					<div class="flex gap-2">
+						<div class="flex-1">
+							<FormInput type="text" placeholder="docker-compose.yml" bind:input={$inputs.composePath} />
+						</div>
+						<Button
+							type="button"
+							variant="outline"
+							size="icon"
+							onclick={() => (showFileBrowser = true)}
+							disabled={!selectedRepository?.value || !$inputs.branch.value}
+							title="Browse files"
+						>
+							<FolderOpenIcon class="size-4" />
+						</Button>
+					</div>
+					{#if !selectedRepository?.value || !$inputs.branch.value}
+						<p class="text-muted-foreground text-xs">Select a repository and branch to browse files</p>
+					{/if}
+				</div>
 
 				<SwitchWithLabel
 					id="autoSyncSwitch"
-					label={m.gitops_sync_auto_sync()}
+					label={m.git_sync_auto_sync()}
 					description={m.common_auto_sync_description()}
 					error={$inputs.autoSync.error}
 					bind:checked={$inputs.autoSync.value}
 				/>
 
-				<FormInput label={m.gitops_sync_sync_interval()} type="number" placeholder="5" bind:input={$inputs.syncInterval} />
+				<FormInput label={m.git_sync_sync_interval()} type="number" placeholder="5" bind:input={$inputs.syncInterval} />
 
 				<SwitchWithLabel
 					id="isEnabledSwitch"
@@ -185,26 +248,35 @@
 					error={$inputs.enabled.error}
 					bind:checked={$inputs.enabled.value}
 				/>
-
-				<Sheet.Footer class="flex flex-row gap-2">
-					<Button
-						type="button"
-						class="arcane-button-cancel flex-1"
-						variant="outline"
-						onclick={() => (open = false)}
-						disabled={isLoading}
-					>
-						{m.common_cancel()}
-					</Button>
-
-					<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
-						{#if isLoading}
-							<Spinner class="mr-2 size-4" />
-						{/if}
-						{isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_sync_cap() })}
-					</Button>
-				</Sheet.Footer>
 			</form>
 		{/if}
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+
+	{#snippet footer()}
+		<Button
+			type="button"
+			class="arcane-button-cancel flex-1"
+			variant="outline"
+			onclick={() => (open = false)}
+			disabled={isLoading}
+		>
+			{m.common_cancel()}
+		</Button>
+
+		<Button type="submit" form="sync-form" class="arcane-button-create flex-1" disabled={isLoading}>
+			{#if isLoading}
+				<Spinner class="mr-2 size-4" />
+			{/if}
+			{isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_sync_cap() })}
+		</Button>
+	{/snippet}
+</ResponsiveDialog>
+
+<FileBrowserDialog
+	bind:open={showFileBrowser}
+	repositoryId={selectedRepository?.value || ''}
+	branch={$inputs.branch.value}
+	onSelect={(path) => {
+		$inputs.composePath.value = path;
+	}}
+/>

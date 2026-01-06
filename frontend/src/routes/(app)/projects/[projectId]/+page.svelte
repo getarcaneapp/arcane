@@ -244,10 +244,10 @@
 		isLoading.syncing = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(gitOpsSyncService.performSync(envId, project.gitOpsManagedBy)),
-			message: m.gitops_sync_failed(),
+			message: m.git_sync_failed(),
 			setLoadingState: (value) => (isLoading.syncing = value),
 			onSuccess: async () => {
-				toast.success(m.gitops_sync_success());
+				toast.success(m.git_sync_success());
 				await invalidateAll();
 			}
 		});
@@ -356,12 +356,12 @@
 							<AlertIcon class="size-4" />
 							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
 								<div class="flex-1">
-									<Alert.Title>{m.gitops_title()} {m.read_only_label()}</Alert.Title>
+									<Alert.Title>{m.git_title()} {m.read_only_label()}</Alert.Title>
 									<Alert.Description>
-										{m.gitops_managed_readonly_alert()}
+										{m.git_managed_readonly_alert()}
 										<br />
 										<span class="text-muted-foreground text-xs">
-											{m.gitops_managed_env_note()}
+											{m.git_managed_env_note()}
 										</span>
 									</Alert.Description>
 								</div>
@@ -371,7 +371,7 @@
 									loading={isLoading.syncing}
 									onclick={handleSyncFromGit}
 									icon={RefreshIcon}
-									customLabel={m.gitops_sync_from_git()}
+									customLabel={m.git_sync_from_git()}
 									loadingLabel={m.common_syncing()}
 									class="shrink-0"
 								/>

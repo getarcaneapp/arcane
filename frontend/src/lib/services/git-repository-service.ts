@@ -3,7 +3,9 @@ import type {
 	GitRepositoryCreateDto,
 	GitRepositoryUpdateDto,
 	GitRepository,
-	GitRepositoryTestResponse
+	GitRepositoryTestResponse,
+	BranchesResponse,
+	BrowseResponse
 } from '$lib/types/gitops.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -34,6 +36,15 @@ export default class GitRepositoryService extends BaseAPIService {
 	async testRepository(id: string, branch?: string): Promise<GitRepositoryTestResponse> {
 		const params = branch ? { branch } : {};
 		return this.handleResponse(this.api.post(`/customize/git-repositories/${id}/test`, {}, { params }));
+	}
+
+	async getBranches(id: string): Promise<BranchesResponse> {
+		return this.handleResponse(this.api.get(`/customize/git-repositories/${id}/branches`));
+	}
+
+	async browseFiles(id: string, branch: string, path?: string): Promise<BrowseResponse> {
+		const params = { branch, ...(path && { path }) };
+		return this.handleResponse(this.api.get(`/customize/git-repositories/${id}/files`, { params }));
 	}
 }
 

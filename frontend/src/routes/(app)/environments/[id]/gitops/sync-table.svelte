@@ -22,9 +22,11 @@
 		TrashIcon as Trash2Icon,
 		RefreshIcon as RefreshCwIcon,
 		GitBranchIcon,
-		ProjectsIcon as FolderIcon
+		ProjectsIcon as FolderIcon,
+		HashIcon
 	} from '$lib/icons';
 	import { goto } from '$app/navigation';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -89,8 +91,8 @@
 	async function handleDeleteOne(id: string, name: string) {
 		const safeName = name ?? m.common_unknown();
 		openConfirmDialog({
-			title: m.gitops_sync_remove_confirm(),
-			message: m.gitops_sync_remove_message(),
+			title: m.git_sync_remove_confirm(),
+			message: m.git_sync_remove_message(),
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
@@ -119,10 +121,10 @@
 		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, id));
 		handleApiResultWithCallbacks({
 			result,
-			message: m.gitops_sync_failed(),
+			message: m.git_sync_failed(),
 			setLoadingState: () => {},
 			onSuccess: () => {
-				toast.success(m.gitops_sync_success());
+				toast.success(m.git_sync_success());
 				gitOpsSyncService.getSyncs(environmentId, requestOptions).then((newSyncs) => {
 					syncs = newSyncs;
 				});
@@ -135,37 +137,43 @@
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{
 			accessorKey: 'name',
-			title: m.gitops_sync_name(),
+			title: m.git_sync_name(),
 			sortable: true,
 			cell: NameCell
 		},
 		{
 			accessorKey: 'branch',
-			title: m.gitops_sync_branch(),
+			title: m.git_sync_branch(),
 			sortable: true,
 			cell: BranchCell
 		},
 		{
 			accessorKey: 'composePath',
-			title: m.gitops_sync_compose_path(),
+			title: m.git_sync_compose_path(),
 			sortable: true,
 			cell: PathCell
 		},
 		{
 			accessorKey: 'autoSync',
-			title: m.gitops_sync_auto_sync(),
+			title: m.git_sync_auto_sync(),
 			sortable: true,
 			cell: AutoSyncCell
 		},
 		{
 			accessorKey: 'lastSyncStatus',
-			title: m.gitops_sync_status(),
+			title: m.git_sync_status(),
 			sortable: true,
 			cell: StatusCell
 		},
 		{
+			accessorKey: 'lastSyncCommit',
+			title: 'Commit',
+			sortable: true,
+			cell: CommitCell
+		},
+		{
 			accessorKey: 'lastSyncAt',
-			title: m.gitops_sync_last_sync(),
+			title: m.git_sync_last_sync(),
 			sortable: true,
 			cell: LastSyncCell
 		},
@@ -179,12 +187,13 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
-		{ id: 'name', label: m.gitops_sync_name(), defaultVisible: true },
-		{ id: 'branch', label: m.gitops_sync_branch(), defaultVisible: true },
-		{ id: 'composePath', label: m.gitops_sync_compose_path(), defaultVisible: true },
-		{ id: 'autoSync', label: m.gitops_sync_auto_sync(), defaultVisible: true },
-		{ id: 'lastSyncStatus', label: m.gitops_sync_status(), defaultVisible: true },
-		{ id: 'lastSyncAt', label: m.gitops_sync_last_sync(), defaultVisible: true },
+		{ id: 'name', label: m.git_sync_name(), defaultVisible: true },
+		{ id: 'branch', label: m.git_sync_branch(), defaultVisible: true },
+		{ id: 'composePath', label: m.git_sync_compose_path(), defaultVisible: true },
+		{ id: 'autoSync', label: m.git_sync_auto_sync(), defaultVisible: true },
+		{ id: 'lastSyncStatus', label: m.git_sync_status(), defaultVisible: true },
+		{ id: 'lastSyncCommit', label: 'Commit', defaultVisible: false },
+		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true },
 		{ id: 'enabled', label: m.common_status(), defaultVisible: true }
 	];
 </script>
@@ -225,6 +234,26 @@
 	{/if}
 {/snippet}
 
+{#snippet CommitCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+	{#if value}
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<div class="flex items-center gap-1.5">
+					<HashIcon class="text-muted-foreground size-3.5" />
+					<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs">
+						{value.substring(0, 7)}
+					</code>
+				</div>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<code class="font-mono text-xs">{value}</code>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	{:else}
+		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+	{/if}
+{/snippet}
+
 {#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
 {/snippet}
@@ -250,14 +279,14 @@
 		badges={[{ variant: 'purple' as const, text: m.resource_sync_cap() }]}
 		fields={[
 			{
-				label: m.gitops_sync_branch(),
+				label: m.git_sync_branch(),
 				getValue: (item: GitOpsSync) => item.branch,
 				icon: GitBranchIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.branch ?? true
 			},
 			{
-				label: m.gitops_sync_compose_path(),
+				label: m.git_sync_compose_path(),
 				getValue: (item: GitOpsSync) => item.composePath,
 				icon: FolderIcon,
 				iconVariant: 'gray' as const,
@@ -282,7 +311,7 @@
 			<DropdownMenu.Group>
 				<DropdownMenu.Item onclick={() => handlePerformSync(item.id, item.name)} disabled={isLoading.syncing}>
 					<PlayIcon class="size-4" />
-					{m.gitops_sync_perform()}
+					{m.git_sync_perform()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => onEditSync(item)}>
 					<PencilIcon class="size-4" />

@@ -106,14 +106,19 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		return nil, fmt.Errorf("repository not found: %w", err)
 	}
 
-	// Store the project name - project will be created during first sync
+	// Store the project name - use sync name if project name not provided
+	projectName := req.ProjectName
+	if projectName == "" {
+		projectName = req.Name
+	}
+
 	sync := models.GitOpsSync{
 		Name:          req.Name,
 		EnvironmentID: environmentID,
 		RepositoryID:  req.RepositoryID,
 		Branch:        req.Branch,
 		ComposePath:   req.ComposePath,
-		ProjectName:   req.ProjectName,
+		ProjectName:   projectName,
 		ProjectID:     nil, // Will be set during first sync
 		AutoSync:      false,
 		SyncInterval:  60,
@@ -272,6 +277,13 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		}
 	}()
 
+	// Get the current commit hash
+	commitHash, err := s.repoService.gitClient.GetCurrentCommit(repoPath)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to get commit hash", "error", err)
+		commitHash = ""
+	}
+
 	// Check if compose file exists
 	if !s.repoService.gitClient.FileExists(repoPath, sync.ComposePath) {
 		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
@@ -291,7 +303,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	}
 
 	// Update sync status
-	s.updateSyncStatus(ctx, id, "success", "")
+	s.updateSyncStatus(ctx, id, "success", "", commitHash)
 
 	result.Success = true
 	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
@@ -313,7 +325,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	return result, nil
 }
 
-func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, errorMsg string) {
+func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, errorMsg, commitHash string) {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"last_sync_at":     now,
@@ -324,6 +336,10 @@ func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, er
 		updates["last_sync_error"] = errorMsg
 	} else {
 		updates["last_sync_error"] = nil
+	}
+
+	if commitHash != "" {
+		updates["last_sync_commit"] = commitHash
 	}
 
 	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -344,6 +360,7 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 		LastSyncAt:     sync.LastSyncAt,
 		LastSyncStatus: sync.LastSyncStatus,
 		LastSyncError:  sync.LastSyncError,
+		LastSyncCommit: sync.LastSyncCommit,
 	}
 
 	// Calculate next sync time
@@ -444,7 +461,7 @@ func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOp
 func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, message, errMsg string) error {
 	result.Message = message
 	result.Error = &errMsg
-	s.updateSyncStatus(ctx, id, "failed", errMsg)
+	s.updateSyncStatus(ctx, id, "failed", errMsg, "")
 	s.logSyncError(ctx, sync, errMsg)
 	return fmt.Errorf("%s", errMsg)
 }

@@ -37,7 +37,7 @@ export interface GitOpsSyncCreateDto {
 	repositoryId: string;
 	branch: string;
 	composePath: string;
-	projectName: string;
+	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
 	enabled?: boolean;
@@ -69,6 +69,7 @@ export interface GitOpsSync {
 	lastSyncAt?: string;
 	lastSyncStatus?: string;
 	lastSyncError?: string;
+	lastSyncCommit?: string;
 	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -102,8 +103,18 @@ export interface SyncStatus {
 	lastSyncAt?: string;
 	lastSyncStatus?: string;
 	lastSyncError?: string;
+	lastSyncCommit?: string;
 }
 
 export interface GitRepositoryTestResponse {
 	message: string;
+}
+
+export interface BranchInfo {
+	name: string;
+	isDefault: boolean;
+}
+
+export interface BranchesResponse {
+	branches: BranchInfo[];
 }

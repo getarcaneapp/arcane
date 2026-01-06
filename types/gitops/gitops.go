@@ -122,6 +122,11 @@ type GitOpsSync struct {
 	// Required: false
 	LastSyncError *string `json:"lastSyncError,omitempty"`
 
+	// LastSyncCommit is the commit hash from the last successful sync.
+	//
+	// Required: false
+	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
 	// Enabled indicates if the sync is enabled.
 	//
 	// Required: true
@@ -248,9 +253,10 @@ type CreateSyncRequest struct {
 
 	// ProjectName is the name of the project to create/update.
 	// The actual project will be created on first sync, and ProjectID will be set then.
+	// If not provided, defaults to the sync name.
 	//
-	// Required: true
-	ProjectName string `json:"projectName" binding:"required"`
+	// Required: false
+	ProjectName string `json:"projectName,omitempty"`
 
 	// AutoSync indicates if the sync should run automatically.
 	//
@@ -393,6 +399,27 @@ type BrowseResponse struct {
 	Files []FileTreeNode `json:"files"`
 }
 
+// BranchInfo represents information about a git branch.
+type BranchInfo struct {
+	// Name of the branch.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// IsDefault indicates if this is the default branch.
+	//
+	// Required: true
+	IsDefault bool `json:"isDefault"`
+}
+
+// BranchesResponse represents the response for listing repository branches.
+type BranchesResponse struct {
+	// Branches available in the repository.
+	//
+	// Required: true
+	Branches []BranchInfo `json:"branches"`
+}
+
 // SyncStatus represents the current status of a sync configuration.
 type SyncStatus struct {
 	// ID of the sync configuration.
@@ -429,4 +456,9 @@ type SyncStatus struct {
 	//
 	// Required: false
 	LastSyncError *string `json:"lastSyncError,omitempty"`
+
+	// LastSyncCommit is the commit hash from the last successful sync.
+	//
+	// Required: false
+	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 }
