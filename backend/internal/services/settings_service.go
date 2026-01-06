@@ -609,31 +609,8 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 				continue
 			}
 
-			envVarName := utils.CamelCaseToScreamingSnakeCase(key)
-			envVal, ok := os.LookupEnv(envVarName)
-			if !ok {
-				continue
-			}
-			envVal = utils.TrimQuotes(envVal)
-
-			var existing models.SettingVariable
-			err := tx.Where("key = ?", key).First(&existing).Error
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				newVar := models.SettingVariable{Key: key, Value: envVal}
-				if err := tx.Create(&newVar).Error; err != nil {
-					return fmt.Errorf("persist env setting %s: %w", key, err)
-				}
-				slog.DebugContext(ctx, "Created setting from environment", "key", key)
-			case err != nil:
-				return fmt.Errorf("check setting %s: %w", key, err)
-			default:
-				if existing.Value != envVal {
-					if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
-						return fmt.Errorf("update env setting %s: %w", key, err)
-					}
-					slog.DebugContext(ctx, "Updated setting from environment", "key", key)
-				}
+			if err := s.persistSingleEnvSetting(ctx, tx, key); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -643,6 +620,36 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 
 	// Reload settings after persisting env vars
 	return s.LoadDatabaseSettings(ctx)
+}
+
+func (s *SettingsService) persistSingleEnvSetting(ctx context.Context, tx *gorm.DB, key string) error {
+	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+	envVal, ok := os.LookupEnv(envVarName)
+	if !ok {
+		return nil
+	}
+	envVal = utils.TrimQuotes(envVal)
+
+	var existing models.SettingVariable
+	err := tx.Where("key = ?", key).First(&existing).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		newVar := models.SettingVariable{Key: key, Value: envVal}
+		if err := tx.Create(&newVar).Error; err != nil {
+			return fmt.Errorf("persist env setting %s: %w", key, err)
+		}
+		slog.DebugContext(ctx, "Created setting from environment", "key", key)
+	case err != nil:
+		return fmt.Errorf("check setting %s: %w", key, err)
+	default:
+		if existing.Value != envVal {
+			if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
+				return fmt.Errorf("update env setting %s: %w", key, err)
+			}
+			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
+		}
+	}
+	return nil
 }
 
 func (s *SettingsService) ListSettings(all bool) []models.SettingVariable {

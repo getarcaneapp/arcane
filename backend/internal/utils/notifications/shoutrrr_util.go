@@ -50,10 +50,10 @@ func buildDiscordURL(config map[string]interface{}) (string, error) {
 	// Format: https://discord.com/api/webhooks/ID/TOKEN
 	re := regexp.MustCompile(`webhooks/(\d+)/(.+)`)
 	match := re.FindStringSubmatch(webhookURL)
-	if len(match) == 3 {
-		return fmt.Sprintf("discord://%s@%s", match[2], match[1]), nil
+	if len(match) != 3 {
+		return "", fmt.Errorf("invalid discord webhook URL format, expected https://discord.com/api/webhooks/ID/TOKEN")
 	}
-	return webhookURL, nil
+	return fmt.Sprintf("discord://%s@%s", match[2], match[1]), nil
 }
 
 func buildTelegramURL(config map[string]interface{}) (string, error) {
@@ -78,10 +78,10 @@ func buildSlackURL(config map[string]interface{}) (string, error) {
 	// Format: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
 	re := regexp.MustCompile(`services/(.+)/(.+)/(.+)`)
 	match := re.FindStringSubmatch(webhookURL)
-	if len(match) == 4 {
-		return fmt.Sprintf("slack://%s/%s/%s", match[1], match[2], match[3]), nil
+	if len(match) != 4 {
+		return "", fmt.Errorf("invalid slack webhook URL format, expected https://hooks.slack.com/services/T.../B.../XXX")
 	}
-	return webhookURL, nil
+	return fmt.Sprintf("slack://%s/%s/%s", match[1], match[2], match[3]), nil
 }
 
 func buildGotifyURL(config map[string]interface{}) (string, error) {
@@ -165,10 +165,30 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 	}
 	query := url.Values{}
 	if from, _ := config["fromAddress"].(string); from != "" {
+		from = strings.TrimSpace(from)
+		if !isValidEmail(from) {
+			return "", fmt.Errorf("invalid from email address format: %s", from)
+		}
 		query.Set("from", from)
 	}
+	// shoutrrr accepts comma-separated emails for toaddresses (no spaces)
 	if to, _ := config["toAddresses"].(string); to != "" {
-		query.Set("to", to)
+		emails := strings.Split(to, ",")
+		var validEmails []string
+		for _, e := range emails {
+			trimmed := strings.TrimSpace(e)
+			if trimmed == "" {
+				continue
+			}
+			if !isValidEmail(trimmed) {
+				return "", fmt.Errorf("invalid to email address format: %s", trimmed)
+			}
+			validEmails = append(validEmails, trimmed)
+		}
+		if len(validEmails) == 0 {
+			return "", fmt.Errorf("no valid to email addresses provided")
+		}
+		query.Set("toaddresses", strings.Join(validEmails, ","))
 	}
 
 	tlsMode, _ := config["tlsMode"].(string)
@@ -187,4 +207,10 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 	}
 
 	return fmt.Sprintf("smtp://%s%s:%.0f/?%s", userPass, host, port, query.Encode()), nil
+}
+
+var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
+
+func isValidEmail(email string) bool {
+	return emailRegex.MatchString(strings.ToLower(email))
 }

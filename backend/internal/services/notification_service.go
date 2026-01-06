@@ -467,7 +467,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 	var isHTML bool
 
 	if provider == "email" {
-		if testType == "image-update" {
+		switch testType {
+		case "image-update":
 			htmlBody, _, err := s.renderEmailTemplate("nginx:latest", testUpdate)
 			if err != nil {
 				return err
@@ -475,7 +476,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			message = htmlBody
 			title = "Container Update Available: nginx:latest"
 			isHTML = true
-		} else if testType == "batch-image-update" {
+		case "batch-image-update":
 			// Create test batch updates with multiple images
 			testUpdates := map[string]*imageupdate.Response{
 				"nginx:latest": {
@@ -510,7 +511,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			message = htmlBody
 			title = "3 Image Updates Available"
 			isHTML = true
-		} else {
+		default:
 			htmlBody, _, err := s.renderTestEmailTemplate()
 			if err != nil {
 				return err
@@ -616,76 +617,86 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 
 	var errors []string
 	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
+		if err := s.sendBatchNotificationToProvider(ctx, setting, updatesWithChanges); err != nil {
+			errors = append(errors, err.Error())
 		}
-
-		if !s.isEventEnabled(setting.Config, models.NotificationEventImageUpdate) {
-			continue
-		}
-
-		var sendErr error
-		var message string
-		var title string
-		var isHTML bool
-
-		if setting.Provider == "email" {
-			htmlBody, _, err := s.renderBatchEmailTemplate(updatesWithChanges)
-			if err != nil {
-				sendErr = err
-			} else {
-				message = htmlBody
-				updateCount := len(updatesWithChanges)
-				title = fmt.Sprintf("%d Image Update%s Available", updateCount, func() string {
-					if updateCount > 1 {
-						return "s"
-					}
-					return ""
-				}())
-				isHTML = true
-			}
-		} else {
-			message = fmt.Sprintf("%d Image Updates Available:\n", len(updatesWithChanges))
-			for ref, update := range updatesWithChanges {
-				message += fmt.Sprintf("- %s: %s -> %s\n", ref, truncateDigest(update.CurrentDigest), truncateDigest(update.LatestDigest))
-			}
-			title = "Batch Image Updates"
-		}
-
-		if sendErr == nil {
-			urlStr, err := s.getURLFromConfig(setting.Config)
-			if err != nil {
-				sendErr = err
-			} else {
-				sendErr = s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
-			}
-		}
-
-		status := "success"
-		var errMsg *string
-		if sendErr != nil {
-			status = "failed"
-			msg := sendErr.Error()
-			errMsg = &msg
-			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
-		}
-
-		imageRefs := make([]string, 0, len(updatesWithChanges))
-		for ref := range updatesWithChanges {
-			imageRefs = append(imageRefs, ref)
-		}
-
-		s.logNotification(ctx, setting.Provider, strings.Join(imageRefs, ", "), status, errMsg, models.JSON{
-			"updateCount": len(updatesWithChanges),
-			"eventType":   string(models.NotificationEventImageUpdate),
-			"batch":       true,
-		})
 	}
 
 	if len(errors) > 0 {
 		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
 	}
 
+	return nil
+}
+
+func (s *NotificationService) sendBatchNotificationToProvider(ctx context.Context, setting models.NotificationSettings, updatesWithChanges map[string]*imageupdate.Response) error {
+	if !setting.Enabled {
+		return nil
+	}
+
+	if !s.isEventEnabled(setting.Config, models.NotificationEventImageUpdate) {
+		return nil
+	}
+
+	var sendErr error
+	var message string
+	var title string
+	var isHTML bool
+
+	if setting.Provider == "email" {
+		htmlBody, _, err := s.renderBatchEmailTemplate(updatesWithChanges)
+		if err != nil {
+			sendErr = err
+		} else {
+			message = htmlBody
+			updateCount := len(updatesWithChanges)
+			title = fmt.Sprintf("%d Image Update%s Available", updateCount, func() string {
+				if updateCount > 1 {
+					return "s"
+				}
+				return ""
+			}())
+			isHTML = true
+		}
+	} else {
+		message = fmt.Sprintf("%d Image Updates Available:\n", len(updatesWithChanges))
+		for ref, update := range updatesWithChanges {
+			message += fmt.Sprintf("- %s: %s -> %s\n", ref, truncateDigest(update.CurrentDigest), truncateDigest(update.LatestDigest))
+		}
+		title = "Batch Image Updates"
+	}
+
+	if sendErr == nil {
+		urlStr, err := s.getURLFromConfig(setting.Config)
+		if err != nil {
+			sendErr = err
+		} else {
+			sendErr = s.sendShoutrrrNotification(ctx, urlStr, message, title, isHTML)
+		}
+	}
+
+	status := "success"
+	var errMsg *string
+	if sendErr != nil {
+		status = "failed"
+		msg := sendErr.Error()
+		errMsg = &msg
+	}
+
+	imageRefs := make([]string, 0, len(updatesWithChanges))
+	for ref := range updatesWithChanges {
+		imageRefs = append(imageRefs, ref)
+	}
+
+	s.logNotification(ctx, setting.Provider, strings.Join(imageRefs, ", "), status, errMsg, models.JSON{
+		"updateCount": len(updatesWithChanges),
+		"eventType":   string(models.NotificationEventImageUpdate),
+		"batch":       true,
+	})
+
+	if sendErr != nil {
+		return fmt.Errorf("%s: %s", setting.Provider, *errMsg)
+	}
 	return nil
 }
 
