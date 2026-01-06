@@ -73,7 +73,6 @@ LABEL org.opencontainers.image.ref.name="arcane-agent"
 LABEL org.opencontainers.image.title="Arcane Agent"
 LABEL org.opencontainers.image.description="Arcane Agent"
 
-LABEL com.getarcaneapp.arcane.updater="false"
 LABEL com.getarcaneapp.arcane.agent="true"
 
 EXPOSE 3553

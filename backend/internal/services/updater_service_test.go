@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
@@ -108,7 +109,7 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 	}
 
 	// Verify error is propagated
-	assert.Error(t, err, "Error should be propagated from TriggerUpgradeViaCLI")
+	require.Error(t, err, "Error should be propagated from TriggerUpgradeViaCLI")
 	assert.Equal(t, expectedErr, err, "Should return the same error")
 	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been attempted")
 }

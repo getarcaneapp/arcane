@@ -394,14 +394,14 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	if inspectBefore.Config != nil && inspectBefore.Config.Labels != nil {
 		labels = inspectBefore.Config.Labels
 	}
-	
+
 	isArcaneContainer := arcaneupdater.IsArcaneContainer(labels)
-	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container", 
-		"containerID", containerID, 
+	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container",
+		"containerID", containerID,
 		"imageID", inspectBefore.Image,
 		"isArcane", isArcaneContainer,
 		"hasArcaneLabel", labels["com.getarcaneapp.arcane"])
-	
+
 	if arcaneupdater.IsUpdateDisabled(labels) {
 		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
 		out.Items = append(out.Items, updater.ResourceResult{
@@ -454,15 +454,15 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	// Compare with pulled image to avoid unnecessary restart
 	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
-	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison", 
+	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
 		"containerID", containerID,
 		"changed", changed,
 		"compareError", cmpErr,
 		"oldImageID", inspectBefore.Image,
 		"normalizedRef", normalizedRef)
-	
+
 	if cmpErr == nil && !changed {
-		slog.InfoContext(ctx, "UpdateSingleContainer: no update needed - digest unchanged", 
+		slog.InfoContext(ctx, "UpdateSingleContainer: no update needed - digest unchanged",
 			"containerID", containerID,
 			"imageID", inspectBefore.Image)
 		out.Items = append(out.Items, updater.ResourceResult{
@@ -637,12 +637,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	name := s.getContainerName(cnt)
 	labels := inspect.Config.Labels
 	isArcane := arcaneupdater.IsArcaneContainer(labels)
-	
+
 	// Arcane containers should always use CLI upgrade, not inline update
 	// This method should not be called for Arcane containers
 	if isArcane {
 		slog.ErrorContext(ctx, "updateContainer: called for Arcane container - should use CLI upgrade instead", "containerId", cnt.ID, "containerName", name)
-		return fmt.Errorf("Arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
+		return fmt.Errorf("arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
 	}
 
 	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef, "isArcane", isArcane)
