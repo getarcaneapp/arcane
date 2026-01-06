@@ -1223,6 +1223,14 @@ func (e *GitRepositoryMappingError) Error() string {
 	return "Failed to map git repository"
 }
 
+type GitRepositorySyncError struct {
+	Err error
+}
+
+func (e *GitRepositorySyncError) Error() string {
+	return fmt.Sprintf("Failed to sync git repositories: %v", e.Err)
+}
+
 type GitOpsSyncListError struct {
 	Err error
 }

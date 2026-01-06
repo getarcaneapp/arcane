@@ -121,11 +121,11 @@ type PairAgentOutput struct {
 	Body base.ApiResponse[environment.AgentPairResponse]
 }
 
-type SyncRegistriesInput struct {
+type SyncEnvironmentInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type SyncRegistriesOutput struct {
+type SyncEnvironmentOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -277,17 +277,17 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 	}, h.PairAgent)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "syncEnvironmentRegistries",
+		OperationID: "syncEnvironment",
 		Method:      "POST",
-		Path:        "/environments/{id}/sync-registries",
-		Summary:     "Sync container registries",
-		Description: "Sync container registries to a remote environment",
+		Path:        "/environments/{id}/sync",
+		Summary:     "Sync environment",
+		Description: "Sync container registries and git repositories to a remote environment",
 		Tags:        []string{"Environments"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.SyncRegistries)
+	}, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
 		OperationID:  "pairEnvironment",
@@ -462,12 +462,19 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
 	}
 
-	// Sync registries in background (intentionally detached from request context)
+	// Sync registries and git repositories in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
 			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
 				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
+			}
+		}(created.ID, created.Name)
+		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
+			bgCtx := context.Background()
+			if err := h.environmentService.SyncRepositoriesToEnvironment(bgCtx, envID); err != nil {
+				slog.WarnContext(bgCtx, "Failed to sync git repositories to new environment",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(created.ID, created.Name)
@@ -726,8 +733,8 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 	}, nil
 }
 
-// SyncRegistries syncs container registries to an environment.
-func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegistriesInput) (*SyncRegistriesOutput, error) {
+// SyncEnvironment syncs container registries and git repositories to an environment.
+func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*SyncEnvironmentOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -736,15 +743,21 @@ func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegi
 		return nil, err
 	}
 
+	// Sync registries
 	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistrySyncError{Err: err}).Error())
+		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
 	}
 
-	return &SyncRegistriesOutput{
+	// Sync git repositories
+	if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, input.ID); err != nil {
+		slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", input.ID, "error", err.Error())
+	}
+
+	return &SyncEnvironmentOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: "Registries synced successfully",
+				Message: "Environment synced successfully",
 			},
 		},
 	}, nil
@@ -819,6 +832,13 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, update
 			ctx := context.Background()
 			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID); err != nil {
 				slog.WarnContext(ctx, "Failed to sync registries after environment update",
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
+			}
+		}(environmentID, updated.Name)
+		go func(envID string, envName string) {
+			ctx := context.Background()
+			if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, envID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync git repositories after environment update",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(environmentID, updated.Name)

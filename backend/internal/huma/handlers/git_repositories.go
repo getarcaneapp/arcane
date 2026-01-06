@@ -100,6 +100,14 @@ type BrowseFilesOutput struct {
 	Body base.ApiResponse[gitops.BrowseResponse]
 }
 
+type SyncGitRepositoriesInput struct {
+	Body gitops.RepositorySyncRequest
+}
+
+type SyncGitRepositoriesOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -211,6 +219,19 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"ApiKeyAuth": {}},
 		},
 	}, h.BrowseFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "syncGitRepositories",
+		Method:      "POST",
+		Path:        "/git-repositories/sync",
+		Summary:     "Sync git repositories",
+		Description: "Sync git repositories from a manager to this agent instance",
+		Tags:        []string{"Git Repositories"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.SyncRepositories)
 }
 
 // ============================================================================
@@ -401,6 +422,31 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 		Body: base.ApiResponse[gitops.BrowseResponse]{
 			Success: true,
 			Data:    *result,
+		},
+	}, nil
+}
+
+// SyncRepositories syncs git repositories from a manager to this agent instance.
+func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
+	if h.repoService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
+		apiErr := models.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositorySyncError{Err: err}).Error())
+	}
+
+	return &SyncGitRepositoriesOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Repositories synced successfully",
+			},
 		},
 	}, nil
 }

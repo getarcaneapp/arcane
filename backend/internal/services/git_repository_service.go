@@ -385,3 +385,108 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 		Files: files,
 	}, nil
 }
+
+// SyncRepositories syncs repositories from a manager to this agent instance.
+// It creates, updates, or deletes repositories to match the provided list.
+func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems []gitops.RepositorySync) error {
+	existingMap, err := s.getExistingRepositoriesMap(ctx)
+	if err != nil {
+		return err
+	}
+
+	syncedIDs := make(map[string]bool)
+
+	// Process each sync item
+	for _, item := range syncItems {
+		syncedIDs[item.ID] = true
+
+		if err := s.processSyncItem(ctx, item, existingMap); err != nil {
+			return err
+		}
+	}
+
+	// Delete repositories that are not in the sync list
+	return s.deleteUnsynced(ctx, existingMap, syncedIDs)
+}
+
+func (s *GitRepositoryService) getExistingRepositoriesMap(ctx context.Context) (map[string]*models.GitRepository, error) {
+	var existing []models.GitRepository
+	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
+		return nil, fmt.Errorf("failed to get existing repositories: %w", err)
+	}
+
+	existingMap := make(map[string]*models.GitRepository)
+	for i := range existing {
+		existingMap[existing[i].ID] = &existing[i]
+	}
+	return existingMap, nil
+}
+
+func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.RepositorySync, existingMap map[string]*models.GitRepository) error {
+	// Encrypt sensitive fields
+	var encryptedToken, encryptedSSHKey string
+	var err error
+
+	if item.Token != "" {
+		encryptedToken, err = utils.Encrypt(item.Token)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt token for repository %s: %w", item.ID, err)
+		}
+	}
+
+	if item.SSHKey != "" {
+		encryptedSSHKey, err = utils.Encrypt(item.SSHKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt SSH key for repository %s: %w", item.ID, err)
+		}
+	}
+
+	if existing, found := existingMap[item.ID]; found {
+		// Update existing repository
+		updates := map[string]interface{}{
+			"name":        item.Name,
+			"url":         item.URL,
+			"auth_type":   item.AuthType,
+			"username":    item.Username,
+			"token":       encryptedToken,
+			"ssh_key":     encryptedSSHKey,
+			"description": item.Description,
+			"enabled":     item.Enabled,
+		}
+		if err := s.db.WithContext(ctx).Model(existing).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to update repository %s: %w", item.ID, err)
+		}
+	} else {
+		// Create new repository with the same ID from manager
+		repo := models.GitRepository{
+			Name:        item.Name,
+			URL:         item.URL,
+			AuthType:    item.AuthType,
+			Username:    item.Username,
+			Token:       encryptedToken,
+			SSHKey:      encryptedSSHKey,
+			Description: item.Description,
+			Enabled:     item.Enabled,
+		}
+		repo.ID = item.ID
+		repo.CreatedAt = item.CreatedAt
+		repo.UpdatedAt = &item.UpdatedAt
+
+		if err := s.db.WithContext(ctx).Create(&repo).Error; err != nil {
+			return fmt.Errorf("failed to create repository %s: %w", item.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *GitRepositoryService) deleteUnsynced(ctx context.Context, existingMap map[string]*models.GitRepository, syncedIDs map[string]bool) error {
+	for id := range existingMap {
+		if !syncedIDs[id] {
+			if err := s.db.WithContext(ctx).Delete(&models.GitRepository{}, "id = ?", id).Error; err != nil {
+				return fmt.Errorf("failed to delete repository %s: %w", id, err)
+			}
+		}
+	}
+	return nil
+}

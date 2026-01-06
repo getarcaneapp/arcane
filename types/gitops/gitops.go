@@ -420,6 +420,72 @@ type BranchesResponse struct {
 	Branches []BranchInfo `json:"branches"`
 }
 
+// RepositorySync represents a git repository for syncing to remote environments.
+type RepositorySync struct {
+	// ID of the git repository.
+	//
+	// Required: true
+	ID string `json:"id" binding:"required"`
+
+	// Name of the git repository.
+	//
+	// Required: true
+	Name string `json:"name" binding:"required"`
+
+	// URL of the git repository.
+	//
+	// Required: true
+	URL string `json:"url" binding:"required"`
+
+	// AuthType specifies the authentication method (none, http, ssh).
+	//
+	// Required: true
+	AuthType string `json:"authType" binding:"required"`
+
+	// Username for HTTP authentication.
+	//
+	// Required: false
+	Username string `json:"username,omitempty"`
+
+	// Token for HTTP authentication (decrypted).
+	//
+	// Required: false
+	Token string `json:"token,omitempty"`
+
+	// SSHKey for SSH authentication (decrypted).
+	//
+	// Required: false
+	SSHKey string `json:"sshKey,omitempty"`
+
+	// Description of the git repository.
+	//
+	// Required: false
+	Description *string `json:"description,omitempty"`
+
+	// Enabled indicates if the repository is enabled.
+	//
+	// Required: true
+	Enabled bool `json:"enabled"`
+
+	// CreatedAt is the date and time at which the repository was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the date and time at which the repository was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// RepositorySyncRequest represents a request to sync git repositories to an agent.
+type RepositorySyncRequest struct {
+	// Repositories is a list of git repositories to sync.
+	//
+	// Required: true
+	Repositories []RepositorySync `json:"repositories" binding:"required"`
+}
+
 // SyncStatus represents the current status of a sync configuration.
 type SyncStatus struct {
 	// ID of the sync configuration.

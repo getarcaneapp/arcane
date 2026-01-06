@@ -27,7 +27,7 @@
 		EnvironmentsIcon,
 		AlertIcon,
 		TestIcon,
-		RegistryIcon,
+		RefreshIcon,
 		ResetIcon,
 		ApiKeyIcon,
 		DockerBrandIcon,
@@ -59,7 +59,7 @@
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
 	let isSaving = $state(false);
-	let isSyncingRegistries = $state(false);
+	let isSyncing = $state(false);
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
@@ -239,17 +239,17 @@
 		}
 	}
 
-	async function syncRegistries() {
-		if (isSyncingRegistries) return;
+	async function syncEnvironment() {
+		if (isSyncing) return;
 		try {
-			isSyncingRegistries = true;
-			await environmentManagementService.syncRegistries(environment.id);
-			toast.success('Registries synced successfully');
+			isSyncing = true;
+			await environmentManagementService.sync(environment.id);
+			toast.success(m.sync_environment_success());
 		} catch (error) {
-			console.error('Failed to sync registries:', error);
-			toast.error('Failed to sync registries');
+			console.error('Failed to sync environment:', error);
+			toast.error(m.sync_environment_failed());
 		} finally {
-			isSyncingRegistries = false;
+			isSyncing = false;
 		}
 	}
 
@@ -435,11 +435,11 @@
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						onclick={syncRegistries}
-						disabled={isSyncingRegistries}
-						loading={isSyncingRegistries}
-						icon={RegistryIcon}
-						customLabel={m.sync_registries()}
+						onclick={syncEnvironment}
+						disabled={isSyncing}
+						loading={isSyncing}
+						icon={RefreshIcon}
+						customLabel={m.sync_environment()}
 					/>
 				{/if}
 
