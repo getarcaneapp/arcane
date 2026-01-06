@@ -350,6 +350,8 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
+	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
+
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -371,6 +373,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	containerName := s.getContainerName(*targetContainer)
+	slog.InfoContext(ctx, "UpdateSingleContainer: found container", "containerID", containerID, "name", containerName, "image", targetContainer.Image)
 
 	// Inspect container to get full config (needed for label-based controls)
 	inspectBefore, err := dcli.ContainerInspect(ctx, targetContainer.ID)
@@ -391,7 +394,16 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	if inspectBefore.Config != nil && inspectBefore.Config.Labels != nil {
 		labels = inspectBefore.Config.Labels
 	}
+	
+	isArcaneContainer := arcaneupdater.IsArcaneContainer(labels)
+	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container", 
+		"containerID", containerID, 
+		"imageID", inspectBefore.Image,
+		"isArcane", isArcaneContainer,
+		"hasArcaneLabel", labels["com.getarcaneapp.arcane"])
+	
 	if arcaneupdater.IsUpdateDisabled(labels) {
+		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -442,7 +454,17 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	// Compare with pulled image to avoid unnecessary restart
 	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
+	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison", 
+		"containerID", containerID,
+		"changed", changed,
+		"compareError", cmpErr,
+		"oldImageID", inspectBefore.Image,
+		"normalizedRef", normalizedRef)
+	
 	if cmpErr == nil && !changed {
+		slog.InfoContext(ctx, "UpdateSingleContainer: no update needed - digest unchanged", 
+			"containerID", containerID,
+			"imageID", inspectBefore.Image)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
