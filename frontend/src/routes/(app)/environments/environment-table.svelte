@@ -9,6 +9,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
@@ -161,8 +162,9 @@
 				toast.error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 		} catch (error: any) {
-			const errorMessage = error?.response?.data?.error || error?.message || 'Unknown error';
-			toast.error(m.upgrade_failed({ error: errorMessage }));
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 		} finally {
 			isLoading.upgrading = false;
 			upgradingEnvironmentId = null;

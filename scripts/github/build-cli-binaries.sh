@@ -18,7 +18,7 @@ fi
 VERSION=${VERSION:-"dev"}
 # Tags are typically like v1.2.3; the CLI version string expects 1.2.3.
 VERSION=${VERSION#v}
-REVISION=${REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
+REVISION=${REVISION:-$(git rev-parse HEAD 2>/dev/null || echo "unknown")}
 
 LDFLAGS="-w -s -buildid=${VERSION} \
   -X github.com/getarcaneapp/arcane/cli/internal/config.Version=${VERSION} \
