@@ -423,7 +423,60 @@ func (s *GitRepositoryService) getExistingRepositoriesMap(ctx context.Context) (
 }
 
 func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.RepositorySync, existingMap map[string]*models.GitRepository) error {
-	// Encrypt sensitive fields
+	existing, exists := existingMap[item.ID]
+	if exists {
+		return s.updateExistingRepository(ctx, item, existing)
+	}
+	return s.createNewRepository(ctx, item)
+}
+
+func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, item gitops.RepositorySync, existing *models.GitRepository) error {
+	needsUpdate := s.checkRepositoryNeedsUpdate(item, existing)
+
+	if needsUpdate {
+		// Use Save to trigger GORM callbacks including UpdatedAt
+		if err := s.db.WithContext(ctx).Save(existing).Error; err != nil {
+			return fmt.Errorf("failed to update repository %s: %w", item.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *models.GitRepository) bool {
+	needsUpdate := utils.UpdateIfChanged(&existing.Name, item.Name)
+	needsUpdate = utils.UpdateIfChanged(&existing.URL, item.URL) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.AuthType, item.AuthType) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
+
+	// Handle Token update
+	if item.Token != "" {
+		encryptedToken, err := utils.Encrypt(item.Token)
+		if err == nil {
+			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+		}
+	} else if existing.Token != "" {
+		existing.Token = ""
+		needsUpdate = true
+	}
+
+	// Handle SSH Key update
+	if item.SSHKey != "" {
+		encryptedSSHKey, err := utils.Encrypt(item.SSHKey)
+		if err == nil {
+			needsUpdate = utils.UpdateIfChanged(&existing.SSHKey, encryptedSSHKey) || needsUpdate
+		}
+	} else if existing.SSHKey != "" {
+		existing.SSHKey = ""
+		needsUpdate = true
+	}
+
+	return needsUpdate
+}
+
+func (s *GitRepositoryService) createNewRepository(ctx context.Context, item gitops.RepositorySync) error {
 	var encryptedToken, encryptedSSHKey string
 	var err error
 
@@ -441,40 +494,20 @@ func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.
 		}
 	}
 
-	if existing, found := existingMap[item.ID]; found {
-		// Update existing repository
-		updates := map[string]interface{}{
-			"name":        item.Name,
-			"url":         item.URL,
-			"auth_type":   item.AuthType,
-			"username":    item.Username,
-			"token":       encryptedToken,
-			"ssh_key":     encryptedSSHKey,
-			"description": item.Description,
-			"enabled":     item.Enabled,
-		}
-		if err := s.db.WithContext(ctx).Model(existing).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to update repository %s: %w", item.ID, err)
-		}
-	} else {
-		// Create new repository with the same ID from manager
-		repo := models.GitRepository{
-			Name:        item.Name,
-			URL:         item.URL,
-			AuthType:    item.AuthType,
-			Username:    item.Username,
-			Token:       encryptedToken,
-			SSHKey:      encryptedSSHKey,
-			Description: item.Description,
-			Enabled:     item.Enabled,
-		}
-		repo.ID = item.ID
-		repo.CreatedAt = item.CreatedAt
-		repo.UpdatedAt = &item.UpdatedAt
+	repo := models.GitRepository{
+		Name:        item.Name,
+		URL:         item.URL,
+		AuthType:    item.AuthType,
+		Username:    item.Username,
+		Token:       encryptedToken,
+		SSHKey:      encryptedSSHKey,
+		Description: item.Description,
+		Enabled:     item.Enabled,
+	}
+	repo.ID = item.ID
 
-		if err := s.db.WithContext(ctx).Create(&repo).Error; err != nil {
-			return fmt.Errorf("failed to create repository %s: %w", item.ID, err)
-		}
+	if err := s.db.WithContext(ctx).Create(&repo).Error; err != nil {
+		return fmt.Errorf("failed to create repository %s: %w", item.ID, err)
 	}
 
 	return nil
