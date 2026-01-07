@@ -13,12 +13,12 @@
 
 	let { value, limit, loading = false, stopped = false, type }: Props = $props();
 
-	const memoryPercent = $derived(() => {
+	const memoryPercent = $derived.by(() => {
 		if (type !== 'memory' || !value || !limit || limit === 0) return undefined;
 		return (value / limit) * 100;
 	});
 
-	const memoryFormatted = $derived(() => {
+	const memoryFormatted = $derived.by(() => {
 		if (type !== 'memory' || value === undefined) return undefined;
 		return bytes.format(value, { unitSeparator: ' ' });
 	});
@@ -31,14 +31,13 @@
 		<div class="bg-muted h-1.5 flex-1 animate-pulse rounded-full"></div>
 		<div class="bg-muted h-3 w-16 animate-pulse rounded"></div>
 	</div>
-{:else if type === 'memory' && memoryFormatted()}
-	{@const percent = memoryPercent()}
+{:else if type === 'memory' && memoryFormatted}
 	<div class="flex items-center gap-2">
-		{#if percent !== undefined}
-			<Progress value={percent} max={100} class="h-1.5 flex-1" />
+		{#if memoryPercent !== undefined}
+			<Progress value={memoryPercent} max={100} class="h-1.5 flex-1" />
 		{/if}
 		<span class="text-foreground min-w-16 text-right text-xs font-medium tabular-nums">
-			{memoryFormatted()}
+			{memoryFormatted}
 		</span>
 	</div>
 {:else if type === 'cpu' && value !== undefined}
