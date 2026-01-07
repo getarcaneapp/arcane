@@ -36,7 +36,7 @@
     "prettier-plugin-svelte": "^3.4.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "svelte": "^5.46.1",
-    "@sveltejs/kit": "^2.49.2"
+    "@sveltejs/kit": "^2.49.3"
   },
   "devDependencies": {
     "@iconify/json": "^2.2.424",
