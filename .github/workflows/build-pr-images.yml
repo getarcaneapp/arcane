@@ -1,0 +1,111 @@
+name: Build PR Images
+
+on:
+    pull_request:
+        branches:
+            - main
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+    packages: write
+    id-token: write
+
+jobs:
+    build-pr-images:
+        # Only build if the PR is from a branch within the getarcaneapp organization
+        if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
+        runs-on: depot-ubuntu-24.04-16
+        timeout-minutes: 60
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Set up Depot CLI
+              uses: depot/setup-action@v1
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.repository_owner }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Resolve image names
+              id: images
+              run: |
+                  OWNER=${{ github.repository_owner }}
+                  echo "manager=ghcr.io/${OWNER,,}/arcane" >> "$GITHUB_OUTPUT"
+                  echo "agent=ghcr.io/${OWNER,,}/arcane-headless" >> "$GITHUB_OUTPUT"
+
+            - name: Manager image metadata
+              id: manager-meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ steps.images.outputs.manager }}
+                  tags: |
+                      type=raw,value=pr-${{ github.event.pull_request.number }}
+
+            - name: Agent image metadata
+              id: agent-meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ steps.images.outputs.agent }}
+                  tags: |
+                      type=raw,value=pr-${{ github.event.pull_request.number }}
+
+            - name: Build and push manager image
+              uses: depot/build-push-action@v1
+              with:
+                  context: .
+                  file: docker/Dockerfile
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.manager-meta.outputs.tags }}
+                  labels: ${{ steps.manager-meta.outputs.labels }}
+                  build-args: |
+                      VERSION=pr-${{ github.event.pull_request.number }}
+                      REVISION=${{ github.event.pull_request.head.sha }}
+                  sbom: true
+                  provenance: true
+
+            - name: Build and push agent image
+              uses: depot/build-push-action@v1
+              with:
+                  context: .
+                  file: docker/Dockerfile-agent
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.agent-meta.outputs.tags }}
+                  labels: ${{ steps.agent-meta.outputs.labels }}
+                  build-args: |
+                      VERSION=pr-${{ github.event.pull_request.number }}
+                      REVISION=${{ github.event.pull_request.head.sha }}
+                  sbom: true
+                  provenance: true
+
+            - name: Find Comment
+              uses: peter-evans/find-comment@v4
+              id: fc
+              with:
+                  issue-number: ${{ github.event.pull_request.number }}
+                  comment-author: "getarcaneappbot"
+                  body-includes: Docker images for this PR have been built successfully!
+
+            - name: Comment PR Images
+              uses: peter-evans/create-or-update-comment@v5
+              with:
+                  comment-id: ${{ steps.fc.outputs.comment-id }}
+                  issue-number: ${{ github.event.pull_request.number }}
+                  token: ${{ secrets.ARCANE_BOT_TOKEN }}
+                  body: |
+                      Docker images for this PR have been built successfully!
+
+                      - **Manager**: `${{ steps.images.outputs.manager }}:pr-${{ github.event.pull_request.number }}`
+                      - **Agent**: `${{ steps.images.outputs.agent }}:pr-${{ github.event.pull_request.number }}`
+
+                      Built from commit ${{ github.event.pull_request.head.sha }}
+                  edit-mode: replace

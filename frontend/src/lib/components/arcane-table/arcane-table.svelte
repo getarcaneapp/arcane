@@ -56,7 +56,8 @@
 		persistKey,
 		customViewOptions,
 		customTableView,
-		customSettings = $bindable<Record<string, unknown>>({})
+		customSettings = $bindable<Record<string, unknown>>({}),
+		columnVisibility = $bindable<VisibilityState>({})
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -85,10 +86,10 @@
 			]
 		>;
 		customSettings?: Record<string, unknown>;
+		columnVisibility?: VisibilityState;
 	} = $props();
 
 	let rowSelection = $state<RowSelectionState>({});
-	let columnVisibility = $state<VisibilityState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let sorting = $state<SortingState>([]);
 	let globalFilter = $state<string>('');

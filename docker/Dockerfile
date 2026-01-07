@@ -95,7 +95,6 @@ org.opencontainers.image.licenses="BSD-3-Clause" \
 org.opencontainers.image.ref.name="arcane" \
 org.opencontainers.image.title="Arcane" \
 org.opencontainers.image.description="Modern Docker Management, Made for Everyone" \
-com.getarcaneapp.arcane.updater="false" \
 com.getarcaneapp.arcane="true"
 
 CMD ["./arcane"]
