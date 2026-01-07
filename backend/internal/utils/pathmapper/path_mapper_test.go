@@ -5,33 +5,34 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPathMapper_MatchingMount_NoTranslation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "")
 	result, err := pm.ContainerToHost("/app/data/projects/test/data")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "/app/data/projects/test/data", result)
 }
 
 func TestPathMapper_WindowsMount_Translation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "D:/arcane/projects")
 	result, err := pm.ContainerToHost("/app/data/projects/test/data")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "D:/arcane/projects/test/data", result)
 }
 
 func TestPathMapper_PathOutsidePrefix_NoTranslation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "D:/arcane/projects")
 	result, err := pm.ContainerToHost("/etc/hosts")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "/etc/hosts", result)
 }
 
 func TestPathMapper_PathTraversalPrevention(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "/host/projects")
 	result, err := pm.ContainerToHost("/app/data/projects/../../etc/passwd")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "/app/etc/passwd", result)
 }
 
@@ -69,7 +70,7 @@ func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 	}
 
 	err := pm.TranslateVolumeSources(project)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, "C:/User/arcane/projects/myproj/data", project.Services["app"].Volumes[0].Source)
 	assert.Equal(t, "named-vol", project.Services["app"].Volumes[1].Source)

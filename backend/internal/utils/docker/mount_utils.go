@@ -29,7 +29,7 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	inspect, err := dockerCli.ContainerInspect(ctx, hostname)
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
-		return "", nil
+		return "", err
 	}
 
 	// 3. Find mount point for the target path
