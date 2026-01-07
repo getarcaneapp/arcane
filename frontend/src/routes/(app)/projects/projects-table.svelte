@@ -84,7 +84,7 @@
 				});
 			} else if (action === 'pull') {
 				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.pullProjectImages(id)),
+					result: await tryCatch(projectService.redeployProject(id)),
 					message: m.compose_pull_failed(),
 					setLoadingState: (value) => (isLoading.pull = value),
 					onSuccess: async () => {

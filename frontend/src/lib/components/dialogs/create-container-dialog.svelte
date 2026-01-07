@@ -238,9 +238,9 @@
 			cmd: data.command.trim() ? data.command.trim().split(' ') : undefined,
 			workingDir: data.workingDir.trim() || undefined,
 			user: data.user.trim() || undefined,
-			tty: data.tty,
-			openStdin: data.openStdin,
-			stdinOnce: data.stdinOnce,
+			...(data.tty && { tty: true }),
+			...(data.openStdin && { openStdin: true }),
+			...(data.stdinOnce && { stdinOnce: true }),
 			env: dynamicEnvVars.length > 0 ? dynamicEnvVars : undefined,
 			labels: Object.keys(labels).length > 0 ? labels : undefined,
 			exposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
@@ -248,12 +248,14 @@
 				binds: allBinds.length > 0 ? allBinds : undefined,
 				portBindings: Object.keys(dynamicPortBindings).length > 0 ? dynamicPortBindings : undefined,
 				networkMode: data.networkDisabled ? 'none' : undefined,
-				privileged: data.privileged,
-				autoRemove: data.autoRemove,
-				restartPolicy: {
-					name: data.restartPolicy as 'no' | 'always' | 'on-failure' | 'unless-stopped',
-					maximumRetryCount: data.restartPolicy === 'on-failure' ? data.restartMaxRetries : undefined
-				}
+				...(data.privileged && { privileged: true }),
+				...(data.autoRemove && { autoRemove: true }),
+				...(data.restartPolicy !== 'no' && {
+					restartPolicy: {
+						name: data.restartPolicy as 'no' | 'always' | 'on-failure' | 'unless-stopped',
+						maximumRetryCount: data.restartPolicy === 'on-failure' ? data.restartMaxRetries : undefined
+					}
+				})
 			}
 		};
 

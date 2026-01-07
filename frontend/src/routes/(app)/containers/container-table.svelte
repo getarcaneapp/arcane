@@ -27,6 +27,9 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
+	import ContainerStatsCell from './components/container-stats-cell.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import {
 		StartIcon,
 		StopIcon,
@@ -59,6 +62,8 @@
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
 	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
+
+	let statsManager = $state<ContainerStatsManager | null>(null);
 
 	// Parse image reference into repo and tag
 	function parseImageRef(imageRef: string): { repo: string; tag: string } {
@@ -235,9 +240,75 @@
 	let customSettings = $state<Record<string, unknown>>({});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
+	let columnVisibility = $state<Record<string, boolean>>({});
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
+
+		statsManager = new ContainerStatsManager();
+
+		// Check if stats columns are visible
+		const areStatsColumnsVisible = () => {
+			const cpuVisible = columnVisibility.cpuUsage !== false;
+			const memoryVisible = columnVisibility.memoryUsage !== false;
+			return cpuVisible || memoryVisible;
+		};
+
+		// Function to sync connections with running containers
+		const syncConnections = () => {
+			if (!statsManager) return;
+
+			// Only connect if stats columns are visible
+			if (!areStatsColumnsVisible()) {
+				// Disconnect all if columns are hidden
+				const connectedIds = statsManager.getConnectedIds();
+				for (const id of connectedIds) {
+					statsManager.disconnect(id);
+				}
+				return;
+			}
+
+			const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
+			const runningIds = new Set(runningContainers.map((c) => c.id));
+
+			const envId = environmentStore.selected?.id || '0';
+
+			// Connect new running containers
+			for (const container of runningContainers) {
+				if (!statsManager.hasConnection(container.id)) {
+					statsManager.connect(container.id, envId);
+				}
+			}
+
+			// Disconnect stopped containers
+			const connectedIds = statsManager.getConnectedIds();
+			for (const id of connectedIds) {
+				if (!runningIds.has(id)) {
+					statsManager.disconnect(id);
+				}
+			}
+		};
+
+		// Sync connections when containers or column visibility changes
+		const unsubscribe = $effect.root(() => {
+			$effect(() => {
+				// Track containers.data changes
+				containers.data;
+				// Track environment changes
+				environmentStore.selected?.id;
+				// Track column visibility changes
+				columnVisibility;
+
+				syncConnections();
+			});
+
+			return () => {};
+		});
+
+		return () => {
+			unsubscribe();
+			statsManager?.destroy();
+		};
 	});
 
 	let groupByProject = $derived.by(() => {
@@ -271,6 +342,20 @@
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
+		{
+			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
+			id: 'cpuUsage',
+			title: m.containers_cpu_usage(),
+			sortable: false,
+			cell: CPUCell
+		},
+		{
+			accessorFn: (row) => statsManager?.getMemoryPercent(row.id) ?? -1,
+			id: 'memoryUsage',
+			title: m.containers_memory_usage(),
+			sortable: false,
+			cell: MemoryCell
+		},
 		{ accessorKey: 'status', title: m.common_status() },
 		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
@@ -281,6 +366,8 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
+		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
+		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'image', label: m.common_image(), defaultVisible: true },
 		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
@@ -319,6 +406,20 @@
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
 	{@const ip = getContainerIpAddress(item)}
 	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
+{/snippet}
+
+{#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
+	<ContainerStatsCell
+		value={statsManager?.getCPUPercent(item.id)}
+		loading={statsManager?.isLoading(item.id) ?? false}
+		stopped={item.state !== 'running'}
+		type="cpu"
+	/>
+{/snippet}
+
+{#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
+	{@const memoryData = statsManager?.getMemoryUsage(item.id)}
+	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
@@ -395,7 +496,7 @@
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
-			<span class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+			<span class="block w-full cursor-default truncate text-left">
 				{item.image}
 			</span>
 		</ArcaneTooltip.Trigger>
@@ -602,6 +703,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
+	bind:columnVisibility
 	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
 	{columns}
 	{mobileFields}
