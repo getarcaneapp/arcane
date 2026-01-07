@@ -85,7 +85,7 @@
 				<div class="min-w-0">
 					<h1 class="text-xl font-bold tracking-tight sm:text-3xl">{title}</h1>
 					{#if description}
-						<p class="text-muted-foreground mt-1 hidden text-sm sm:block sm:text-base">{description}</p>
+						<p class="text-muted-foreground mt-1 hidden text-sm sm:block sm:text-base">{@html description}</p>
 					{/if}
 				</div>
 			</div>
