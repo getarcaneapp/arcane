@@ -340,6 +340,8 @@
 	"containers_nav_networks": "Redes",
 	"containers_nav_storage": "Almacenamiento",
 	"containers_ip_address": "Dirección IP",
+	"containers_cpu_usage": "Uso de CPU",
+	"containers_memory_usage": "Uso de memoria",
 	"containers_mac_address": "Dirección MAC",
 	"containers_aliases": "Alias",
 	"containers_resource_metrics": "Métricas de recursos",
