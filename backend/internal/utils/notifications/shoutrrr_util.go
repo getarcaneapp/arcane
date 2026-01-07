@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -49,14 +48,32 @@ func buildDiscordURL(config map[string]interface{}) (string, error) {
 	if webhookURL == "" {
 		return "", fmt.Errorf("webhookUrl is required for discord")
 	}
-	// Extract token and id from discord webhook URL
+
+	u, err := url.Parse(webhookURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid discord webhook URL: %w", err)
+	}
+
 	// Format: https://discord.com/api/webhooks/ID/TOKEN
-	re := regexp.MustCompile(`webhooks/(\d+)/(.+)`)
-	match := re.FindStringSubmatch(webhookURL)
-	if len(match) != 3 {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+
+	// Find "webhooks" in the path
+	idx := -1
+	for i, p := range parts {
+		if p == "webhooks" {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 || len(parts) < idx+3 {
 		return "", fmt.Errorf("invalid discord webhook URL format, expected https://discord.com/api/webhooks/ID/TOKEN")
 	}
-	return fmt.Sprintf("discord://%s@%s", match[2], match[1]), nil
+
+	id := parts[idx+1]
+	token := parts[idx+2]
+
+	return fmt.Sprintf("discord://%s@%s", token, id), nil
 }
 
 func buildTelegramURL(config map[string]interface{}) (string, error) {
@@ -78,13 +95,19 @@ func buildSlackURL(config map[string]interface{}) (string, error) {
 	if webhookURL == "" {
 		return "", fmt.Errorf("webhookUrl is required for slack")
 	}
+
+	u, err := url.Parse(webhookURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid slack webhook URL: %w", err)
+	}
+
 	// Format: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
-	re := regexp.MustCompile(`services/(.+)/(.+)/(.+)`)
-	match := re.FindStringSubmatch(webhookURL)
-	if len(match) != 4 {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 4 || parts[0] != "services" {
 		return "", fmt.Errorf("invalid slack webhook URL format, expected https://hooks.slack.com/services/T.../B.../XXX")
 	}
-	return fmt.Sprintf("slack://%s/%s/%s", match[1], match[2], match[3]), nil
+
+	return fmt.Sprintf("slack://%s/%s/%s", parts[1], parts[2], parts[3]), nil
 }
 
 func buildGotifyURL(config map[string]interface{}) (string, error) {
@@ -247,9 +270,4 @@ func normalizeEmailAddress(email string) (string, error) {
 		return "", fmt.Errorf("invalid address syntax: %w", err)
 	}
 	return normalized, nil
-}
-
-func isValidEmail(email string) bool {
-	_, err := normalizeEmailAddress(email)
-	return err == nil
 }
