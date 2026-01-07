@@ -79,8 +79,8 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:          models.SettingVariable{Value: "data/projects"},
-		DiskUsagePath:              models.SettingVariable{Value: "data/projects"},
+		ProjectsDirectory:          models.SettingVariable{Value: "/app/data/projects"},
+		DiskUsagePath:              models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                 models.SettingVariable{Value: "false"},
 		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
 		PollingEnabled:             models.SettingVariable{Value: "true"},
@@ -110,7 +110,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "false"},
+		GlassEffectEnabled:         models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
