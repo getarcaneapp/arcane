@@ -1,17 +1,15 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { NotificationSettings } from '$lib/types/notification.type';
 	import { notificationProviders } from '$lib/types/notification.type';
-	import { providerSchemas, type ProviderField } from '$lib/constants/notification-providers';
 	import { m } from '$lib/paraglide/messages';
 	import { AddIcon, SaveIcon } from '$lib/icons';
-	import { preventDefault } from '$lib/utils/form.utils';
+	import { z } from 'zod/v4';
+	import { createForm, preventDefault } from '$lib/utils/form.utils';
 
 	type ProviderFormProps = {
 		open: boolean;
@@ -24,33 +22,81 @@
 
 	let isEditMode = $derived(!!providerToEdit);
 	let SubmitIcon = $derived(isEditMode ? SaveIcon : AddIcon);
+	let provider = $state(providerToEdit?.provider || 'discord');
 
-	let name = $state('');
-	let provider = $state('discord');
-	let enabled = $state(true);
-	let config = $state<Record<string, any>>({});
-
-	// Reset form when opening/closing or changing providerToEdit
-	$effect(() => {
-		if (open && providerToEdit) {
-			name = providerToEdit.name;
-			provider = providerToEdit.provider;
-			enabled = providerToEdit.enabled;
-			// Load config from providerToEdit, ensuring we have all fields
-			config = { ...providerToEdit.config };
-		} else if (open && !providerToEdit) {
-			// New provider defaults
-			if (!name) name = '';
-			if (!provider) provider = 'discord';
-			enabled = true;
-			config = {};
-		}
+	const formSchema = z.object({
+		name: z.string().min(1, 'Name is required'),
+		enabled: z.boolean().default(true),
+		webhookUrl: z.string().default(''),
+		fromAddress: z.string().default(''),
+		toAddresses: z.string().default(''),
+		smtpHost: z.string().default(''),
+		smtpPort: z.number().default(587),
+		smtpUsername: z.string().default(''),
+		smtpPassword: z.string().default(''),
+		tlsMode: z.string().default('starttls'),
+		skipTLSVerify: z.boolean().default(false),
+		url: z.string().default('')
 	});
 
-	let currentSchema = $derived(providerSchemas[provider] || providerSchemas['generic']);
+	let formData = $derived({
+		name: providerToEdit?.name || '',
+		enabled: providerToEdit?.enabled ?? true,
+		webhookUrl: (providerToEdit?.config?.webhookUrl as string) || '',
+		fromAddress: (providerToEdit?.config?.fromAddress as string) || '',
+		toAddresses: (providerToEdit?.config?.toAddresses as string) || '',
+		smtpHost: (providerToEdit?.config?.smtpHost as string) || '',
+		smtpPort: (providerToEdit?.config?.smtpPort as number) || 587,
+		smtpUsername: (providerToEdit?.config?.smtpUsername as string) || '',
+		smtpPassword: (providerToEdit?.config?.smtpPassword as string) || '',
+		tlsMode: (providerToEdit?.config?.tlsMode as string) || 'starttls',
+		skipTLSVerify: (providerToEdit?.config?.skipTLSVerify as boolean) ?? false,
+		url: (providerToEdit?.config?.url as string) || ''
+	});
+
+	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
 	function handleSubmit() {
-		if (!name) return; // Basic validation
+		const data = form.validate();
+		if (!data) return;
+
+		// Manual validation based on provider
+		if (provider === 'email') {
+			if (!data.fromAddress) {
+				$inputs.fromAddress.error = 'Sender address is required';
+				return;
+			}
+			if (!data.toAddresses) {
+				$inputs.toAddresses.error = 'Recipient addresses are required';
+				return;
+			}
+			if (!data.smtpHost) {
+				$inputs.smtpHost.error = 'SMTP host is required';
+				return;
+			}
+		} else if ((provider === 'discord' || provider === 'webhook' || provider === 'slack') && !data.webhookUrl) {
+			$inputs.webhookUrl.error = 'Webhook URL is required';
+			return;
+		}
+
+		const { name, enabled, ...allConfig } = data;
+
+		// Filter config to only include relevant fields
+		const config: Record<string, any> = {};
+		if (provider === 'email') {
+			config.fromAddress = allConfig.fromAddress;
+			config.toAddresses = allConfig.toAddresses;
+			config.smtpHost = allConfig.smtpHost;
+			config.smtpPort = allConfig.smtpPort;
+			config.smtpUsername = allConfig.smtpUsername;
+			config.smtpPassword = allConfig.smtpPassword;
+			config.tlsMode = allConfig.tlsMode;
+			config.skipTLSVerify = allConfig.skipTLSVerify;
+		} else if (provider === 'discord' || provider === 'webhook' || provider === 'slack') {
+			config.webhookUrl = allConfig.webhookUrl;
+		} else {
+			config.url = allConfig.url;
+		}
 
 		const providerData: NotificationSettings = {
 			id: providerToEdit?.id || '',
@@ -67,11 +113,7 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			providerToEdit = null;
-			// Reset state
-			name = '';
 			provider = 'discord';
-			enabled = true;
-			config = {};
 		}
 	}
 
@@ -88,50 +130,62 @@
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={isEditMode ? m.common_edit() : m.common_add_button({ resource: 'Provider' })}
-	description={isEditMode ? m.common_edit() : m.common_add_button({ resource: 'Provider' })}
 	contentClass="sm:max-w-[500px]"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<div class="grid gap-2">
-				<Label for="name">{m.common_name()}</Label>
-				<Input id="name" type="text" placeholder={m.common_name()} bind:value={name} required />
-			</div>
+			<FormInput label={m.common_name()} placeholder={m.common_name()} bind:input={$inputs.name} />
 
 			<SelectWithLabel id="provider-select" label={m.common_type()} bind:value={provider} options={providerOptions} />
 
-			<div class="space-y-4 rounded-lg border p-4">
-				<h4 class="text-muted-foreground text-sm font-medium">Configuration</h4>
+			{#if provider === 'email'}
+				<div class="space-y-4 rounded-lg border p-4">
+					<h4 class="text-muted-foreground text-sm font-medium">Configuration</h4>
 
-				{#each currentSchema as field}
-					{#if field.type === 'select'}
-						<SelectWithLabel
-							id={field.name}
-							label={field.label()}
-							bind:value={config[field.name]}
-							options={field.options || []}
-						/>
-					{:else if field.type === 'switch'}
-						<SwitchWithLabel id={field.name} label={field.label()} bind:checked={config[field.name]} />
-					{:else}
-						<div class="grid gap-2">
-							<Label for={field.name}>{field.label()}</Label>
-							<Input
-								id={field.name}
-								type={field.type}
-								placeholder={field.placeholder?.()}
-								bind:value={config[field.name]}
-								required={field.required}
-							/>
-							{#if field.description}
-								<p class="text-muted-foreground text-[0.8rem]">{field.description()}</p>
-							{/if}
-						</div>
-					{/if}
-				{/each}
-			</div>
+					<FormInput
+						label={m.notification_field_from_address()}
+						placeholder="arcane@example.com"
+						bind:input={$inputs.fromAddress}
+					/>
+					<FormInput
+						label={m.notification_field_to_addresses()}
+						helpText="Comma separated list of email addresses"
+						bind:input={$inputs.toAddresses}
+					/>
+					<FormInput label={m.notification_field_smtp_host()} placeholder="smtp.gmail.com" bind:input={$inputs.smtpHost} />
+					<FormInput label={m.notification_field_smtp_port()} type="number" bind:input={$inputs.smtpPort} />
+					<FormInput label={m.notification_field_smtp_username()} bind:input={$inputs.smtpUsername} />
+					<FormInput label={m.notification_field_smtp_password()} type="password" bind:input={$inputs.smtpPassword} />
+					<SelectWithLabel
+						id="tlsMode"
+						label={m.notification_field_tls_mode()}
+						bind:value={$inputs.tlsMode.value}
+						error={$inputs.tlsMode.error}
+						options={[
+							{ value: 'none', label: m.notification_field_tls_mode_none() },
+							{ value: 'starttls', label: m.notification_field_tls_mode_starttls() },
+							{ value: 'ssl', label: m.notification_field_tls_mode_ssl() }
+						]}
+					/>
+					<FormInput label={m.notification_field_skip_tls_verify()} type="switch" bind:input={$inputs.skipTLSVerify} />
+				</div>
+			{:else if provider === 'discord'}
+				<div class="space-y-4 rounded-lg border p-4">
+					<h4 class="text-muted-foreground text-sm font-medium">Configuration</h4>
+					<FormInput
+						label={m.notification_field_webhook_url()}
+						placeholder="https://discord.com/api/webhooks/..."
+						bind:input={$inputs.webhookUrl}
+					/>
+				</div>
+			{:else}
+				<div class="space-y-4 rounded-lg border p-4">
+					<h4 class="text-muted-foreground text-sm font-medium">Configuration</h4>
+					<FormInput label={m.notification_field_server_url()} helpText="Full Shoutrrr URL" bind:input={$inputs.url} />
+				</div>
+			{/if}
 
-			<SwitchWithLabel id="enabledSwitch" label={m.common_enabled()} bind:checked={enabled} />
+			<FormInput label={m.common_enabled()} type="switch" bind:input={$inputs.enabled} />
 		</form>
 	{/snippet}
 

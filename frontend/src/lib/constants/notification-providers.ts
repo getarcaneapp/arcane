@@ -1,20 +1,4 @@
 import { m } from '$lib/paraglide/messages';
-import { z } from 'zod/v4';
-
-const emailSchema = z.email();
-const commaSeparatedEmailsSchema = z
-	.string()
-	.min(1, 'At least one email address is required')
-	.refine(
-		(val) => {
-			const emails = val
-				.split(',')
-				.map((e) => e.trim())
-				.filter((e) => e.length > 0);
-			return emails.length > 0 && emails.every((e) => emailSchema.safeParse(e).success);
-		},
-		{ message: 'Invalid email address format' }
-	);
 
 export interface ProviderField {
 	name: string;
@@ -25,7 +9,6 @@ export interface ProviderField {
 	description?: () => string;
 	options?: { value: string; label: string }[];
 	defaultValue?: any;
-	validate?: z.ZodSchema;
 }
 
 export const providerSchemas: Record<string, ProviderField[]> = {
@@ -44,16 +27,14 @@ export const providerSchemas: Record<string, ProviderField[]> = {
 			label: () => m.notification_field_from_address(),
 			type: 'text',
 			required: true,
-			placeholder: () => 'arcane@example.com',
-			validate: emailSchema
+			placeholder: () => 'arcane@example.com'
 		},
 		{
 			name: 'toAddresses',
 			label: () => m.notification_field_to_addresses(),
 			type: 'text',
 			required: true,
-			description: () => 'Comma separated list of email addresses',
-			validate: commaSeparatedEmailsSchema
+			description: () => 'Comma separated list of email addresses'
 		},
 		{
 			name: 'smtpHost',
