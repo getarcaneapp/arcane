@@ -340,6 +340,8 @@
 	"containers_nav_networks": "Netwerken",
 	"containers_nav_storage": "Opslagruimte",
 	"containers_ip_address": "IP adres",
+	"containers_cpu_usage": "CPU gebruik",
+	"containers_memory_usage": "Geheugen gebruik",
 	"containers_mac_address": "MAC Adres",
 	"containers_aliases": "Aliassen",
 	"containers_resource_metrics": "Grondstof Statistieken",
