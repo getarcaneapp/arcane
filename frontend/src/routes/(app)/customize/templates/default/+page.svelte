@@ -116,10 +116,7 @@
 					disabled={!hasChanges || isLoadingTemplate}
 					loading={saving}
 					loadingLabel={m.common_action_saving()}
-					class="gap-2"
-				>
-					{m.common_save()}
-				</ArcaneButton>
+				/>
 			</div>
 		</div>
 	</div>
