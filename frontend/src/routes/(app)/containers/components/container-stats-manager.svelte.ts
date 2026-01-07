@@ -70,7 +70,7 @@ export class ContainerStatsManager {
 	}
 
 	destroy(): void {
-		for (const [id, ws] of this.connections) {
+		for (const ws of this.connections.values()) {
 			ws.close();
 		}
 		this.connections.clear();
