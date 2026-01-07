@@ -79,6 +79,12 @@
 
 	async function loadData() {
 		loadingData = true;
+		// Reset state before loading data to ensure a clean state
+		selectedRepository = undefined;
+		branches = [];
+		loadingBranches = false;
+		showFileBrowser = false;
+
 		try {
 			const reposResult = await gitRepositoryService.getRepositories({ pagination: { page: 1, limit: 100 } });
 			repositories = reposResult.data || [];
@@ -100,6 +106,9 @@
 	$effect(() => {
 		if (open) {
 			loadData();
+			if (!isEditMode) {
+				form.reset();
+			}
 		}
 	});
 
@@ -134,10 +143,10 @@
 				<Spinner class="size-6" />
 			</div>
 		{:else}
-			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4">
+			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-y-3 py-4">
 				<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={$inputs.name} />
 
-				<div class="space-y-2">
+				<div class="space-y-1.5">
 					<Label for="repository">{m.git_sync_repository()}</Label>
 					<Select.Root
 						type="single"
@@ -167,7 +176,7 @@
 					{/if}
 				</div>
 
-				<div class="space-y-2">
+				<div class="space-y-1.5">
 					<Label for="branch">{m.git_sync_branch()}</Label>
 					{#if loadingBranches}
 						<div class="flex items-center gap-2">
@@ -209,7 +218,7 @@
 					</p>
 				</div>
 
-				<div class="space-y-2">
+				<div class="space-y-1.5">
 					<Label for="composePath">{m.git_sync_compose_path()}</Label>
 					<div class="flex gap-2">
 						<div class="flex-1">
