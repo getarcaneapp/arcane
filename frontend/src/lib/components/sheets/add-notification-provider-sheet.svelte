@@ -56,6 +56,21 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
+	function isValidEmail(email: string): boolean {
+		const trimmed = email.trim();
+		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+	}
+
+	function validateEmailAddresses(addresses: string): string | null {
+		if (!addresses.trim()) return 'Recipient addresses are required';
+		const emails = addresses.split(',').map((e) => e.trim());
+		const invalidEmails = emails.filter((e) => e && !isValidEmail(e));
+		if (invalidEmails.length > 0) {
+			return `Invalid email format: ${invalidEmails.join(', ')}`;
+		}
+		return null;
+	}
+
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
@@ -66,8 +81,9 @@
 				$inputs.fromAddress.error = 'Sender address is required';
 				return;
 			}
-			if (!data.toAddresses) {
-				$inputs.toAddresses.error = 'Recipient addresses are required';
+			const toAddressError = validateEmailAddresses(data.toAddresses);
+			if (toAddressError) {
+				$inputs.toAddresses.error = toAddressError;
 				return;
 			}
 			if (!data.smtpHost) {
