@@ -9,6 +9,9 @@ body:
       value: |
         Thanks for taking the time to fill out this bug report!
 
+        **Before you start:**
+        Please check if the issue has already been reported or completed by searching [existing issues](https://github.com/getarcaneapp/arcane/issues) and checking the [latest milestones](https://github.com/getarcaneapp/arcane/milestones).
+
   - type: textarea
     id: description
     attributes:
