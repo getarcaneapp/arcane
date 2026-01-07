@@ -53,7 +53,7 @@
     "formsnap": "^2.0.1",
     "i18n-unused": "^0.19.0",
     "isomorphic-dompurify": "^2.35.0",
-    "knip": "^5.77.4",
+    "knip": "^5.80.0",
     "mode-watcher": "^1.1.0",
     "paneforge": "^1.0.2",
     "runed": "^0.37.0",
