@@ -279,91 +279,41 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
 
-	// Parse include files from the compose file
-	var includeFiles []project.IncludeFile
-	composeFile, detectErr := projects.DetectComposeFile(proj.Path)
-	if detectErr == nil {
-		includes, parseErr := projects.ParseIncludes(composeFile)
-		if parseErr == nil {
-			slog.InfoContext(ctx, "Parsed includes", "count", len(includes), "projectID", projectID)
-			for _, inc := range includes {
-				includeFiles = append(includeFiles, project.IncludeFile{
-					Path:         inc.Path,
-					RelativePath: inc.RelativePath,
-					Content:      inc.Content,
-				})
-			}
-		} else {
-			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "projectID", projectID)
-		}
-	} else {
-		slog.WarnContext(ctx, "Failed to detect compose file", "error", detectErr, "projectID", projectID, "path", proj.Path)
-	}
-
-	services, serr := s.GetProjectServices(ctx, projectID)
-
-	var serviceCount, runningCount int
-	var liveStatus models.ProjectStatus
-
-	if serr == nil && services != nil {
-		serviceCount = len(services)
-		_, runningCount = s.getServiceCounts(services)
-		liveStatus = s.calculateProjectStatus(services)
-	} else {
-		serviceCount = proj.ServiceCount
-		runningCount = proj.RunningCount
-		liveStatus = proj.Status
-	}
-
 	var resp project.Details
 	if err := mapper.MapStruct(proj, &resp); err != nil {
 		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
 	}
-	resp.Status = string(liveStatus)
+
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.ComposeContent = composeContent
 	resp.EnvContent = envContent
-	resp.IncludeFiles = includeFiles
-	resp.ServiceCount = serviceCount
-	resp.RunningCount = runningCount
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 
-	// Populate GitOps last sync commit if managed by GitOps
-	if proj.GitOpsManagedBy != nil {
-		var sync models.GitOpsSync
-		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&sync).Error; err == nil {
-			resp.LastSyncCommit = sync.LastSyncCommit
-			if sync.Repository != nil {
-				resp.GitRepositoryURL = sync.Repository.URL
-			}
-		}
-	}
+	// Default counts/status from DB (will be overridden if runtime check succeeds)
+	resp.ServiceCount = proj.ServiceCount
+	resp.RunningCount = proj.RunningCount
+	resp.Status = string(proj.Status)
 
-	// Load compose services from the compose file
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
-	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	// Enrich with details
+	s.enrichWithIncludeFiles(ctx, proj.Path, &resp)
+	s.enrichWithGitOpsInfo(ctx, proj, &resp)
+
+	// Load compose project for service definitions
+	composeFile, _ := projects.DetectComposeFile(proj.Path)
 	if composeFile != "" {
-		pathMapper, pmErr := s.getPathMapper(ctx)
-		if pmErr != nil {
-			slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-		}
-
-		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-		composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
-		if loadErr == nil && composeProj != nil {
-			// Convert map to slice
-			svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
-			for _, svc := range composeProj.Services {
-				svcList = append(svcList, svc)
-			}
-			resp.Services = svcList
-		}
+		s.enrichWithComposeServiceConfigs(ctx, proj, composeFile, &resp)
 	}
 
-	// Convert ProjectServiceInfo to project.RuntimeService
+	// Get runtime services and update status/counts
+	services, serr := s.GetProjectServices(ctx, projectID)
 	if serr == nil && services != nil {
+		resp.ServiceCount = len(services)
+		_, runningCount := s.getServiceCounts(services)
+		resp.RunningCount = runningCount
+		resp.Status = string(s.calculateProjectStatus(services))
+
 		runtimeServices := make([]project.RuntimeService, len(services))
 		for i, svc := range services {
 			runtimeServices[i] = project.RuntimeService{
@@ -381,6 +331,59 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}
 
 	return resp, nil
+}
+
+func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath string, resp *project.Details) {
+	composeFile, detectErr := projects.DetectComposeFile(projectPath)
+	if detectErr == nil {
+		includes, parseErr := projects.ParseIncludes(composeFile)
+		if parseErr == nil {
+			var includeFiles []project.IncludeFile
+			for _, inc := range includes {
+				includeFiles = append(includeFiles, project.IncludeFile{
+					Path:         inc.Path,
+					RelativePath: inc.RelativePath,
+					Content:      inc.Content,
+				})
+			}
+			resp.IncludeFiles = includeFiles
+		} else {
+			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", projectPath)
+		}
+	}
+}
+
+func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
+	if proj.GitOpsManagedBy != nil {
+		var sync models.GitOpsSync
+		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&sync).Error; err == nil {
+			resp.LastSyncCommit = sync.LastSyncCommit
+			if sync.Repository != nil {
+				resp.GitRepositoryURL = sync.Repository.URL
+			}
+		}
+	}
+}
+
+func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	if loadErr == nil && composeProj != nil {
+		// Convert map to slice
+		svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
+		for _, svc := range composeProj.Services {
+			svcList = append(svcList, svc)
+		}
+		resp.Services = svcList
+	}
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto } from '$lib/types/gitops.type';
+	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, ImportGitOpsSyncRequest } from '$lib/types/gitops.type';
 	import GitOpsSyncFormSheet from '$lib/components/dialogs/gitops-sync-dialog.svelte';
+	import GitOpsImportDialog from '$lib/components/dialogs/gitops-import-dialog.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
@@ -11,13 +12,14 @@
 	import { goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import SyncTable from './sync-table.svelte';
-	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon } from '$lib/icons';
+	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '$lib/icons';
 
 	let { data } = $props();
 
 	let syncs = $state(untrack(() => data.syncs));
 	let selectedIds = $state<string[]>([]);
 	let isSyncDialogOpen = $state(false);
+	let isImportDialogOpen = $state(false);
 	let syncToEdit = $state<GitOpsSync | null>(null);
 	let syncRequestOptions = $state(untrack(() => data.syncRequestOptions));
 	let environmentId = $derived(data.environmentId);
@@ -25,7 +27,8 @@
 	let isLoading = $state({
 		create: false,
 		edit: false,
-		refresh: false
+		refresh: false,
+		import: false
 	});
 
 	const activeSyncs = $derived(syncs.data?.filter((s) => s.enabled && s.autoSync).length ?? 0);
@@ -91,12 +94,53 @@
 		}
 	}
 
+	async function handleImportSubmit(data: ImportGitOpsSyncRequest[]) {
+		isLoading.import = true;
+		try {
+			const response = await gitOpsSyncService.importSyncs(environmentId, data);
+
+			if (response.failedCount === 0) {
+				toast.success(m.git_sync_import_success({ count: response.successCount }));
+				isImportDialogOpen = false;
+			} else {
+				if (response.successCount > 0) {
+					toast.warning(
+						m.git_sync_import_partial_success({ successCount: response.successCount, failedCount: response.failedCount })
+					);
+				} else {
+					toast.error(m.git_sync_import_failed_count({ count: response.failedCount }));
+				}
+
+				// Show error details
+				if (response.errors && response.errors.length > 0) {
+					console.error('Import errors:', response.errors);
+					// Could show a dialog with errors here, for now just toast the first few
+					response.errors.slice(0, 3).forEach((err) => toast.error(err));
+				}
+			}
+
+			syncs = await gitOpsSyncService.getSyncs(environmentId, syncRequestOptions);
+		} catch (error) {
+			console.error('Error importing syncs:', error);
+			toast.error(error instanceof Error ? error.message : m.git_sync_import_failed());
+		} finally {
+			isLoading.import = false;
+		}
+	}
+
 	const actionButtons: ActionButton[] = [
 		{
 			id: 'create',
 			action: 'create',
 			label: m.common_add_button({ resource: m.resource_sync_cap() }),
 			onclick: openCreateSyncDialog
+		},
+		{
+			id: 'import',
+			action: 'create',
+			label: m.git_sync_import_open_button(),
+			icon: UploadIcon,
+			onclick: () => (isImportDialogOpen = true)
 		},
 		{
 			id: 'manage-repos',
@@ -158,5 +202,6 @@
 			onSubmit={handleSyncDialogSubmit}
 			isLoading={isLoading.create || isLoading.edit}
 		/>
+		<GitOpsImportDialog bind:open={isImportDialogOpen} onSubmit={handleImportSubmit} isLoading={isLoading.import} />
 	{/snippet}
 </ResourcePageLayout>

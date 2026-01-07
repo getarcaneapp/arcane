@@ -79,6 +79,17 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 	return &repository, nil
 }
 
+func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name string) (*models.GitRepository, error) {
+	var repository models.GitRepository
+	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("repository not found")
+		}
+		return nil, fmt.Errorf("failed to get repository: %w", err)
+	}
+	return &repository, nil
+}
+
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest) (*models.GitRepository, error) {
 	repository := models.GitRepository{
 		Name:        req.Name,

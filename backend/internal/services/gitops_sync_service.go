@@ -99,7 +99,7 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id s
 	return &sync, nil
 }
 
-func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req models.CreateGitOpsSyncRequest) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest) (*models.GitOpsSync, error) {
 	// Validate repository exists
 	_, err := s.repoService.GetRepositoryByID(ctx, req.RepositoryID)
 	if err != nil {
@@ -161,7 +161,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	return s.GetSyncByID(ctx, "", sync.ID)
 }
 
-func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req models.UpdateGitOpsSyncRequest) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest) (*models.GitOpsSync, error) {
 	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
@@ -447,6 +447,45 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 		Path:  path,
 		Files: files,
 	}, nil
+}
+
+func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest) (*gitops.ImportGitOpsSyncResponse, error) {
+	response := &gitops.ImportGitOpsSyncResponse{
+		SuccessCount: 0,
+		FailedCount:  0,
+		Errors:       []string{},
+	}
+
+	for _, importItem := range req {
+		// Find repository by name
+		repo, err := s.repoService.GetRepositoryByName(ctx, importItem.GitRepo)
+		if err != nil {
+			response.FailedCount++
+			response.Errors = append(response.Errors, fmt.Sprintf("Stack '%s': Repository '%s' not found (%v)", importItem.SyncName, importItem.GitRepo, err))
+			continue
+		}
+
+		createReq := gitops.CreateSyncRequest{
+			Name:         importItem.SyncName,
+			RepositoryID: repo.ID,
+			Branch:       importItem.Branch,
+			ComposePath:  importItem.DockerComposePath,
+			ProjectName:  importItem.SyncName,
+			AutoSync:     &importItem.AutoSync,
+			SyncInterval: &importItem.SyncInterval,
+			Enabled:      &importItem.Enabled,
+		}
+
+		_, err = s.CreateSync(ctx, environmentID, createReq)
+		if err != nil {
+			response.FailedCount++
+			response.Errors = append(response.Errors, fmt.Sprintf("Stack '%s': %v", importItem.SyncName, err))
+		} else {
+			response.SuccessCount++
+		}
+	}
+
+	return response, nil
 }
 
 func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOpsSync, errorMsg string) {

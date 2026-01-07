@@ -28,25 +28,3 @@ type GitOpsSync struct {
 func (GitOpsSync) TableName() string {
 	return "gitops_syncs"
 }
-
-type CreateGitOpsSyncRequest struct {
-	Name         string `json:"name" binding:"required"`
-	RepositoryID string `json:"repositoryId" binding:"required"`
-	Branch       string `json:"branch" binding:"required"`
-	ComposePath  string `json:"composePath" binding:"required"`
-	ProjectName  string `json:"projectName,omitempty"` // Project name to create - defaults to sync name if not provided
-	AutoSync     *bool  `json:"autoSync,omitempty"`
-	SyncInterval *int   `json:"syncInterval,omitempty"`
-	Enabled      *bool  `json:"enabled,omitempty"`
-}
-
-type UpdateGitOpsSyncRequest struct {
-	Name         *string `json:"name,omitempty"`
-	RepositoryID *string `json:"repositoryId,omitempty"`
-	Branch       *string `json:"branch,omitempty"`
-	ComposePath  *string `json:"composePath,omitempty"`
-	ProjectName  *string `json:"projectName,omitempty"` // Project name to update
-	AutoSync     *bool   `json:"autoSync,omitempty"`
-	SyncInterval *int    `json:"syncInterval,omitempty"`
-	Enabled      *bool   `json:"enabled,omitempty"`
-}

@@ -43,7 +43,7 @@ type ListGitOpsSyncsOutput struct {
 
 type CreateGitOpsSyncInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          models.CreateGitOpsSyncRequest
+	Body          gitops.CreateSyncRequest
 }
 
 type CreateGitOpsSyncOutput struct {
@@ -62,7 +62,7 @@ type GetGitOpsSyncOutput struct {
 type UpdateGitOpsSyncInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
-	Body          models.UpdateGitOpsSyncRequest
+	Body          gitops.UpdateSyncRequest
 }
 
 type UpdateGitOpsSyncOutput struct {
@@ -106,6 +106,15 @@ type BrowseSyncFilesOutput struct {
 	Body base.ApiResponse[gitops.BrowseResponse]
 }
 
+type ImportGitOpsSyncsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          []gitops.ImportGitOpsSyncRequest
+}
+
+type ImportGitOpsSyncsOutput struct {
+	Body base.ApiResponse[gitops.ImportGitOpsSyncResponse]
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -139,6 +148,19 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"ApiKeyAuth": {}},
 		},
 	}, h.CreateSync)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "importGitOpsSyncs",
+		Method:      "POST",
+		Path:        "/environments/{id}/gitops-syncs/import",
+		Summary:     "Import GitOps syncs",
+		Description: "Import multiple GitOps sync configurations from JSON",
+		Tags:        []string{"GitOps Syncs"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ImportSyncs)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getGitOpsSync",
@@ -272,6 +294,25 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		Body: base.ApiResponse[gitops.GitOpsSync]{
 			Success: true,
 			Data:    out,
+		},
+	}, nil
+}
+
+// ImportSyncs imports multiple GitOps syncs.
+func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*ImportGitOpsSyncsOutput, error) {
+	if h.syncService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &ImportGitOpsSyncsOutput{
+		Body: base.ApiResponse[gitops.ImportGitOpsSyncResponse]{
+			Success: true,
+			Data:    *response,
 		},
 	}, nil
 }

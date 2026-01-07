@@ -118,3 +118,19 @@ export interface BranchInfo {
 export interface BranchesResponse {
 	branches: BranchInfo[];
 }
+
+export interface ImportGitOpsSyncRequest {
+	syncName: string;
+	gitRepo: string;
+	branch: string;
+	dockerComposePath: string;
+	autoSync: boolean;
+	syncInterval: number;
+	enabled: boolean;
+}
+
+export interface ImportGitOpsSyncResponse {
+	successCount: number;
+	failedCount: number;
+	errors: string[];
+}

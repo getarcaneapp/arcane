@@ -528,3 +528,59 @@ type SyncStatus struct {
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 }
+
+// ImportGitOpsSyncRequest represents the request to import gitops syncs.
+type ImportGitOpsSyncRequest struct {
+	// SyncName is the name of the sync configuration.
+	//
+	// Required: true
+	SyncName string `json:"syncName"`
+
+	// GitRepo is the repository identifier or URL.
+	//
+	// Required: true
+	GitRepo string `json:"gitRepo"`
+
+	// Branch to sync from.
+	//
+	// Required: true
+	Branch string `json:"branch"`
+
+	// DockerComposePath is the path to the docker-compose file.
+	//
+	// Required: true
+	DockerComposePath string `json:"dockerComposePath"`
+
+	// AutoSync indicates if the sync should run automatically.
+	//
+	// Required: true
+	AutoSync bool `json:"autoSync"`
+
+	// SyncInterval is the interval in minutes between automatic syncs.
+	//
+	// Required: true
+	SyncInterval int `json:"syncInterval"`
+
+	// Enabled indicates if the sync is enabled.
+	//
+	// Required: true
+	Enabled bool `json:"enabled"`
+}
+
+// ImportGitOpsSyncResponse represents the response for importing gitops syncs.
+type ImportGitOpsSyncResponse struct {
+	// SuccessCount is the number of successfully imported syncs.
+	//
+	// Required: true
+	SuccessCount int `json:"successCount"`
+
+	// FailedCount is the number of failed imports.
+	//
+	// Required: true
+	FailedCount int `json:"failedCount"`
+
+	// Errors contains error messages for failed imports.
+	//
+	// Required: true
+	Errors []string `json:"errors"`
+}

@@ -5,7 +5,9 @@ import type {
 	GitOpsSync,
 	SyncResult,
 	SyncStatus,
-	BrowseResponse
+	BrowseResponse,
+	ImportGitOpsSyncRequest,
+	ImportGitOpsSyncResponse
 } from '$lib/types/gitops.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -44,6 +46,10 @@ export default class GitOpsSyncService extends BaseAPIService {
 	async browseFiles(environmentId: string, syncId: string, path?: string): Promise<BrowseResponse> {
 		const params = path ? { path } : {};
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/files`, { params }));
+	}
+
+	async importSyncs(environmentId: string, syncs: ImportGitOpsSyncRequest[]): Promise<ImportGitOpsSyncResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/import`, syncs));
 	}
 }
 

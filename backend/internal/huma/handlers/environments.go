@@ -400,61 +400,69 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	useApiKey := input.Body.UseApiKey != nil && *input.Body.UseApiKey
 
 	if useApiKey {
-		// New API key-based pairing flow
-		env.Status = string(models.EnvironmentStatusPending)
-
-		created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
-		if err != nil {
-			return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
-		}
-
-		// Generate API key for environment
-		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
-			return nil, huma.Error500InternalServerError("Failed to create environment API key")
-		}
-
-		// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
-		encryptedKey := apiKeyDto.Key // Store the full key
-
-		// Link API key to environment and store encrypted key for manager use
-		updates := map[string]interface{}{
-			"api_key_id":   apiKeyDto.ID,
-			"access_token": encryptedKey,
-		}
-		created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
-			return nil, huma.Error500InternalServerError("Failed to link API key")
-		}
-
-		out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
-		if mapErr != nil {
-			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
-		}
-
-		return &CreateEnvironmentOutput{
-			Body: base.ApiResponse[EnvironmentWithApiKey]{
-				Success: true,
-				Data: EnvironmentWithApiKey{
-					Environment: out,
-					ApiKey:      &apiKeyDto.Key,
-				},
-			},
-		}, nil
+		return h.createEnvironmentWithApiKey(ctx, env, user)
 	}
 
+	return h.createEnvironmentLegacy(ctx, env, user, input.Body)
+}
+
+func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, env *models.Environment, user *models.User) (*CreateEnvironmentOutput, error) {
+	// New API key-based pairing flow
+	env.Status = string(models.EnvironmentStatusPending)
+
+	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
+	}
+
+	// Generate API key for environment
+	apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to create environment API key")
+	}
+
+	// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
+	encryptedKey := apiKeyDto.Key // Store the full key
+
+	// Link API key to environment and store encrypted key for manager use
+	updates := map[string]interface{}{
+		"api_key_id":   apiKeyDto.ID,
+		"access_token": encryptedKey,
+	}
+	created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to link API key")
+	}
+
+	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+	}
+
+	return &CreateEnvironmentOutput{
+		Body: base.ApiResponse[EnvironmentWithApiKey]{
+			Success: true,
+			Data: EnvironmentWithApiKey{
+				Environment: out,
+				ApiKey:      &apiKeyDto.Key,
+			},
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
 	// Legacy pairing flows
-	if (input.Body.AccessToken == nil || *input.Body.AccessToken == "") && input.Body.BootstrapToken != nil && *input.Body.BootstrapToken != "" {
-		token, err := h.environmentService.PairAgentWithBootstrap(ctx, input.Body.ApiUrl, *input.Body.BootstrapToken)
+	if (body.AccessToken == nil || *body.AccessToken == "") && body.BootstrapToken != nil && *body.BootstrapToken != "" {
+		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken)
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", input.Body.ApiUrl, "error", err.Error())
+			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", body.ApiUrl, "error", err.Error())
 			return nil, huma.Error502BadGateway((&common.AgentPairingError{Err: err}).Error())
 		}
 		env.AccessToken = &token
-	} else if input.Body.AccessToken != nil && *input.Body.AccessToken != "" {
-		env.AccessToken = input.Body.AccessToken
+	} else if body.AccessToken != nil && *body.AccessToken != "" {
+		env.AccessToken = body.AccessToken
 	}
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
