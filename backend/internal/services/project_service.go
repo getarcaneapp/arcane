@@ -276,6 +276,17 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 
+	// Populate GitOps last sync commit if managed by GitOps
+	if proj.GitOpsManagedBy != nil {
+		var sync models.GitOpsSync
+		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&sync).Error; err == nil {
+			resp.LastSyncCommit = sync.LastSyncCommit
+			if sync.Repository != nil {
+				resp.GitRepositoryURL = sync.Repository.URL
+			}
+		}
+	}
+
 	// Load compose services from the compose file
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
 	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))

@@ -234,21 +234,24 @@
 	{/if}
 {/snippet}
 
-{#snippet CommitCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet CommitCell({ value, item }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	{#if value}
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<div class="flex items-center gap-1.5">
-					<HashIcon class="text-muted-foreground size-3.5" />
-					<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs">
-						{value.substring(0, 7)}
-					</code>
-				</div>
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<code class="font-mono text-xs">{value}</code>
-			</Tooltip.Content>
-		</Tooltip.Root>
+		<div class="flex items-center gap-1.5">
+			<HashIcon class="text-muted-foreground size-3.5" />
+			{#if item.repository?.url}
+				<a
+					href="{item.repository.url.replace(/\.git$/, '')}/commit/{value}"
+					target="_blank"
+					class="hover:text-primary bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs transition-colors"
+				>
+					{value}
+				</a>
+			{:else}
+				<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs">
+					{value}
+				</code>
+			{/if}
+		</div>
 	{:else}
 		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
 	{/if}

@@ -296,11 +296,31 @@
 					/>
 				{/if}
 			</div>
-			{#if project.createdAt}
-				<p class="text-muted-foreground mt-0.5 hidden text-xs sm:block">
-					{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
-				</p>
-			{/if}
+			<div class="mt-0.5 flex items-center gap-4">
+				{#if project.createdAt}
+					<p class="text-muted-foreground hidden text-xs sm:block">
+						{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
+					</p>
+				{/if}
+				{#if project.lastSyncCommit}
+					<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+						<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
+						{#if project.gitRepositoryURL}
+							<a
+								href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+								target="_blank"
+								class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
+							>
+								{project.lastSyncCommit}
+							</a>
+						{:else}
+							<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
+								{project.lastSyncCommit}
+							</span>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		{/snippet}
 
 		{#snippet headerActions()}
@@ -360,9 +380,27 @@
 									<Alert.Description>
 										{m.git_managed_readonly_alert()}
 										<br />
-										<span class="text-muted-foreground text-xs">
-											{m.git_managed_env_note()}
-										</span>
+										<div class="mt-2 flex flex-col gap-1">
+											{#if project.lastSyncCommit}
+												<div class="flex items-center gap-1.5 font-mono text-xs">
+													<span class="text-muted-foreground">{m.git_sync_commit()}:</span>
+													{#if project.gitRepositoryURL}
+														<a
+															href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+															target="_blank"
+															class="bg-muted hover:text-primary rounded px-1.5 py-0.5 transition-colors"
+														>
+															{project.lastSyncCommit}
+														</a>
+													{:else}
+														<span class="bg-muted rounded px-1.5 py-0.5">{project.lastSyncCommit}</span>
+													{/if}
+												</div>
+											{/if}
+											<span class="text-muted-foreground text-xs">
+												{m.git_managed_env_note()}
+											</span>
+										</div>
 									</Alert.Description>
 								</div>
 								<ArcaneButton
