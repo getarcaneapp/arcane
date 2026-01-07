@@ -340,6 +340,8 @@
 	"containers_nav_networks": "Δίκτυα",
 	"containers_nav_storage": "Αποθηκευτικός χώρος",
 	"containers_ip_address": "Διεύθυνση IP",
+	"containers_cpu_usage": "Χρήση CPU",
+	"containers_memory_usage": "Χρήση Μνήμης",
 	"containers_mac_address": "Διεύθυνση MAC",
 	"containers_aliases": "Aliases",
 	"containers_resource_metrics": "Μετρήσεις Πόρων",
