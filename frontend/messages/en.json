@@ -1504,6 +1504,11 @@
 	"notification_field_bot_token": "Bot Token",
 	"notification_field_chat_id": "Chat ID",
 	"notification_field_send_silently": "Send Silently",
+	"notification_field_skip_tls_verify": "Skip TLS Certificate Verification",
+	"notification_field_skip_tls_verify_description": "Allow insecure SSL certificates (not recommended for production)",
+	"notification_field_tls_mode_none": "None",
+	"notification_field_tls_mode_starttls": "StartTLS",
+	"notification_field_tls_mode_ssl": "SSL/TLS",
 
 	"_comment_api_keys": "=== API KEYS ===",
 	"api_key_name": "Name",

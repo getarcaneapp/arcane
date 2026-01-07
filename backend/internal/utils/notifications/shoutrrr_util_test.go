@@ -63,6 +63,40 @@ func TestBuildShoutrrrURL_Email(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "with skipTLSVerify enabled",
+			config: map[string]interface{}{
+				"smtpHost":      "smtp.example.com",
+				"smtpPort":      587.0,
+				"toAddresses":   "test@example.com",
+				"fromAddress":   "from@example.com",
+				"skipTLSVerify": true,
+			},
+			want: "smtp://smtp.example.com:587/?from=from%40example.com&skiptlsverify=yes&toaddresses=test%40example.com",
+		},
+		{
+			name: "with skipTLSVerify disabled",
+			config: map[string]interface{}{
+				"smtpHost":      "smtp.example.com",
+				"smtpPort":      587.0,
+				"toAddresses":   "test@example.com",
+				"fromAddress":   "from@example.com",
+				"skipTLSVerify": false,
+			},
+			want: "smtp://smtp.example.com:587/?from=from%40example.com&toaddresses=test%40example.com",
+		},
+		{
+			name: "with TLS mode and skipTLSVerify",
+			config: map[string]interface{}{
+				"smtpHost":      "smtp.example.com",
+				"smtpPort":      587.0,
+				"toAddresses":   "test@example.com",
+				"fromAddress":   "from@example.com",
+				"tlsMode":       "starttls",
+				"skipTLSVerify": true,
+			},
+			want: "smtp://smtp.example.com:587/?from=from%40example.com&skiptlsverify=yes&toaddresses=test%40example.com&usestarttls=yes",
+		},
 	}
 
 	for _, tt := range tests {

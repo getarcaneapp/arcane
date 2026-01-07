@@ -206,6 +206,10 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 		query.Set("auth", "Plain")
 	}
 
+	if skipTLS, ok := config["skipTLSVerify"].(bool); ok && skipTLS {
+		query.Set("skiptlsverify", "yes")
+	}
+
 	return fmt.Sprintf("smtp://%s%s:%.0f/?%s", userPass, host, port, query.Encode()), nil
 }
 
