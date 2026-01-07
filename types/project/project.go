@@ -157,6 +157,11 @@ type CreateReponse struct {
 	// Required: true
 	RunningCount int `json:"runningCount"`
 
+	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
+	//
+	// Required: false
+	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
+
 	// CreatedAt is the date and time when the project was created.
 	//
 	// Required: true
@@ -244,6 +249,21 @@ type Details struct {
 	//
 	// Required: false
 	RuntimeServices []RuntimeService `json:"runtimeServices,omitempty"`
+
+	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
+	//
+	// Required: false
+	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
+
+	// LastSyncCommit is the last commit synced from Git (if GitOps managed).
+	//
+	// Required: false
+	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
+	// GitRepositoryURL is the URL of the Git repository (if GitOps managed).
+	//
+	// Required: false
+	GitRepositoryURL string `json:"gitRepositoryURL,omitempty"`
 }
 
 // Destroy is used to destroy a project.

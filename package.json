@@ -14,10 +14,8 @@
     "preinstall": "npx only-allow pnpm",
     "dev": "pnpm --filter arcane-frontend dev",
     "build": "pnpm --filter arcane-frontend build",
-    "test:up": "docker compose -f tests/setup/compose.yaml up -d --build",
-    "test:down": "docker compose -f tests/setup/compose.yaml down",
     "test": "pnpm --filter arcane-tests test",
-    "format": "pnpm --filter arcane-frontend format",
+    "format": "pnpm --filter arcane-frontend format && gofmt -w -s .",
     "check": "pnpm --filter arcane-frontend check",
     "knip": "pnpm --filter arcane-frontend knip"
   },

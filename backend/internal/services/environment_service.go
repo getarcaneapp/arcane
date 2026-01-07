@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
+	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -572,6 +573,134 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	}
 
 	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", environment.Name)
+
+	return nil
+}
+
+// SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
+func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
+	// Get the environment
+	environment, err := s.GetEnvironmentByID(ctx, environmentID)
+	if err != nil {
+		return fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	// Don't sync to local environment (ID "0")
+	if environmentID == "0" {
+		return fmt.Errorf("cannot sync repositories to local environment")
+	}
+
+	slog.InfoContext(ctx, "Starting git repository sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
+
+	// Get all git repositories from this manager
+	var repositories []models.GitRepository
+	if err := s.db.WithContext(ctx).Find(&repositories).Error; err != nil {
+		return fmt.Errorf("failed to get git repositories: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Found git repositories to sync", "count", len(repositories))
+
+	// Prepare sync items with decrypted credentials
+	syncItems := make([]gitops.RepositorySync, 0, len(repositories))
+	for _, repo := range repositories {
+		item := gitops.RepositorySync{
+			ID:          repo.ID,
+			Name:        repo.Name,
+			URL:         repo.URL,
+			AuthType:    repo.AuthType,
+			Username:    repo.Username,
+			Description: repo.Description,
+			Enabled:     repo.Enabled,
+			CreatedAt:   repo.CreatedAt,
+		}
+		if repo.UpdatedAt != nil {
+			item.UpdatedAt = *repo.UpdatedAt
+		}
+
+		// Decrypt token if present
+		if repo.Token != "" {
+			decryptedToken, err := utils.Decrypt(repo.Token)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt repository token for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
+				continue
+			}
+			item.Token = decryptedToken
+		}
+
+		// Decrypt SSH key if present
+		if repo.SSHKey != "" {
+			decryptedSSHKey, err := utils.Decrypt(repo.SSHKey)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt repository SSH key for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
+				continue
+			}
+			item.SSHKey = decryptedSSHKey
+		}
+
+		syncItems = append(syncItems, item)
+	}
+
+	// Prepare the sync request
+	syncReq := gitops.RepositorySyncRequest{
+		Repositories: syncItems,
+	}
+
+	// Marshal the request
+	reqBody, err := json.Marshal(syncReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync request: %w", err)
+	}
+
+	// Send the sync request to the remote environment
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/git-repositories/sync"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to create sync request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use appropriate auth header based on environment type
+	if environment.AccessToken != nil && *environment.AccessToken != "" {
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		req.Header.Set("X-API-Key", *environment.AccessToken)
+		slog.DebugContext(ctx, "Set auth headers for git repository sync request")
+	} else {
+		slog.WarnContext(ctx, "No access token available for environment git repository sync", "environmentID", environmentID)
+	}
+
+	slog.InfoContext(ctx, "Sending git repository sync request to agent", "url", targetURL, "repositoryCount", len(syncItems))
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		slog.ErrorContext(ctx, "Git repository sync request failed", "statusCode", resp.StatusCode, "response", string(body))
+		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode sync response: %w", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("sync failed: %s", result.Data.Message)
+	}
+
+	slog.InfoContext(ctx, "Successfully synced git repositories to environment", "environmentID", environmentID, "environmentName", environment.Name)
 
 	return nil
 }

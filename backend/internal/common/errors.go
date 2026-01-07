@@ -1166,3 +1166,139 @@ type ApiKeyDeletionError struct {
 func (e *ApiKeyDeletionError) Error() string {
 	return "Failed to delete API key"
 }
+
+type GitRepositoryListError struct {
+	Err error
+}
+
+func (e *GitRepositoryListError) Error() string {
+	return fmt.Sprintf("Failed to list git repositories: %v", e.Err)
+}
+
+type GitRepositoryCreationError struct {
+	Err error
+}
+
+func (e *GitRepositoryCreationError) Error() string {
+	return "Failed to create git repository"
+}
+
+type GitRepositoryRetrievalError struct {
+	Err error
+}
+
+func (e *GitRepositoryRetrievalError) Error() string {
+	return "Failed to retrieve git repository"
+}
+
+type GitRepositoryUpdateError struct {
+	Err error
+}
+
+func (e *GitRepositoryUpdateError) Error() string {
+	return "Failed to update git repository"
+}
+
+type GitRepositoryDeletionError struct {
+	Err error
+}
+
+func (e *GitRepositoryDeletionError) Error() string {
+	return "Failed to delete git repository"
+}
+
+type GitRepositoryTestError struct {
+	Err error
+}
+
+func (e *GitRepositoryTestError) Error() string {
+	return fmt.Sprintf("Failed to test git repository connection: %v", e.Err)
+}
+
+type GitRepositoryMappingError struct {
+	Err error
+}
+
+func (e *GitRepositoryMappingError) Error() string {
+	return "Failed to map git repository"
+}
+
+type GitRepositorySyncError struct {
+	Err error
+}
+
+func (e *GitRepositorySyncError) Error() string {
+	return fmt.Sprintf("Failed to sync git repositories: %v", e.Err)
+}
+
+type GitOpsSyncListError struct {
+	Err error
+}
+
+func (e *GitOpsSyncListError) Error() string {
+	return fmt.Sprintf("Failed to list GitOps syncs: %v", e.Err)
+}
+
+type GitOpsSyncCreationError struct {
+	Err error
+}
+
+func (e *GitOpsSyncCreationError) Error() string {
+	return "Failed to create GitOps sync"
+}
+
+type GitOpsSyncRetrievalError struct {
+	Err error
+}
+
+func (e *GitOpsSyncRetrievalError) Error() string {
+	return "Failed to retrieve GitOps sync"
+}
+
+type GitOpsSyncUpdateError struct {
+	Err error
+}
+
+func (e *GitOpsSyncUpdateError) Error() string {
+	return "Failed to update GitOps sync"
+}
+
+type GitOpsSyncDeletionError struct {
+	Err error
+}
+
+func (e *GitOpsSyncDeletionError) Error() string {
+	return "Failed to delete GitOps sync"
+}
+
+type GitOpsSyncPerformError struct {
+	Err error
+}
+
+func (e *GitOpsSyncPerformError) Error() string {
+	return "Failed to perform GitOps sync"
+}
+
+type GitOpsSyncStatusError struct {
+	Err error
+}
+
+func (e *GitOpsSyncStatusError) Error() string {
+	return "Failed to get GitOps sync status"
+}
+
+type GitOpsSyncBrowseError struct {
+	Err error
+}
+
+func (e *GitOpsSyncBrowseError) Error() string {
+	return "Failed to browse GitOps sync files"
+}
+
+type GitOpsSyncMappingError struct {
+	Err error
+}
+
+func (e *GitOpsSyncMappingError) Error() string {
+	return "Failed to map GitOps sync"
+}

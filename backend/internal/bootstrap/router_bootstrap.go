@@ -118,6 +118,8 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		CustomizeSearch:   appServices.CustomizeSearch,
 		System:            appServices.System,
 		SystemUpgrade:     appServices.SystemUpgrade,
+		GitRepository:     appServices.GitRepository,
+		GitOpsSync:        appServices.GitOpsSync,
 		Config:            cfg,
 	})
 

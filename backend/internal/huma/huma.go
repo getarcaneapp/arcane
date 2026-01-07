@@ -141,6 +141,8 @@ type Services struct {
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
 	SystemUpgrade     *services.SystemUpgradeService
+	GitRepository     *services.GitRepositoryService
+	GitOpsSync        *services.GitOpsSyncService
 	Config            *config.Config
 }
 
@@ -297,6 +299,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService
 	var systemUpgradeSvc *services.SystemUpgradeService
+	var gitRepositorySvc *services.GitRepositoryService
+	var gitOpsSyncSvc *services.GitOpsSyncService
 	var cfg *config.Config
 
 	if svc != nil {
@@ -327,6 +331,8 @@ func registerHandlers(api huma.API, svc *Services) {
 		customizeSearchSvc = svc.CustomizeSearch
 		systemSvc = svc.System
 		systemUpgradeSvc = svc.SystemUpgrade
+		gitRepositorySvc = svc.GitRepository
+		gitOpsSyncSvc = svc.GitOpsSync
 		cfg = svc.Config
 	}
 	handlers.RegisterHealth(api)
@@ -353,4 +359,6 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
+	handlers.RegisterGitRepositories(api, gitRepositorySvc)
+	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
 }
