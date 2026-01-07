@@ -57,7 +57,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	// Handle mapping format: "container_path:host_path"
 	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 {
 		// Only treat as mapping if first part is absolute Linux path (not Windows drive)
-		if !pathmapper.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[1], "/") {
+		if !pathmapper.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
 			containerDir = parts[0]
 			hostDir = parts[1]
 		}
