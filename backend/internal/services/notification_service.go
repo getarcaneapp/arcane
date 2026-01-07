@@ -177,17 +177,16 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 }
 
 func (s *NotificationService) getURLFromConfig(config models.JSON) (string, error) {
-	var cfg map[string]interface{}
-	b, err := json.Marshal(config)
-	if err != nil {
-		return "", err
+	if config == nil {
+		return "", fmt.Errorf("config is empty")
 	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return "", err
-	}
-	urlStr, ok := cfg["url"].(string)
+	urlVal, ok := config["url"]
 	if !ok {
 		return "", fmt.Errorf("url not found in config")
+	}
+	urlStr, ok := urlVal.(string)
+	if !ok {
+		return "", fmt.Errorf("url is not a string")
 	}
 	return urlStr, nil
 }

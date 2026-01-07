@@ -2,9 +2,12 @@ package notifications
 
 import (
 	"fmt"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // BuildShoutrrrURL constructs a Shoutrrr-compatible URL from provider and configuration map
@@ -165,25 +168,29 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 	}
 	query := url.Values{}
 	if from, _ := config["fromAddress"].(string); from != "" {
-		from = strings.TrimSpace(from)
-		if !isValidEmail(from) {
-			return "", fmt.Errorf("invalid from email address format: %s", from)
+		normalizedFrom, err := normalizeEmailAddress(from)
+		if err != nil {
+			return "", fmt.Errorf("invalid from email address %q: %w", from, err)
 		}
-		query.Set("from", from)
+		query.Set("from", normalizedFrom)
 	}
 	// shoutrrr accepts comma-separated emails for toaddresses (no spaces)
 	if to, _ := config["toAddresses"].(string); to != "" {
 		emails := strings.Split(to, ",")
 		var validEmails []string
 		for _, e := range emails {
-			trimmed := strings.TrimSpace(e)
-			if trimmed == "" {
+			normalized, err := normalizeEmailAddress(e)
+			if err != nil {
+				trimmed := strings.TrimSpace(e)
+				if trimmed == "" {
+					continue
+				}
+				return "", fmt.Errorf("invalid to email address %q: %w", trimmed, err)
+			}
+			if normalized == "" {
 				continue
 			}
-			if !isValidEmail(trimmed) {
-				return "", fmt.Errorf("invalid to email address format: %s", trimmed)
-			}
-			validEmails = append(validEmails, trimmed)
+			validEmails = append(validEmails, normalized)
 		}
 		if len(validEmails) == 0 {
 			return "", fmt.Errorf("no valid to email addresses provided")
@@ -213,8 +220,36 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 	return fmt.Sprintf("smtp://%s%s:%.0f/?%s", userPass, host, port, query.Encode()), nil
 }
 
-var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
+var (
+	idnaProfile = idna.New(
+		idna.ValidateForRegistration(),
+		idna.MapForLookup(),
+	)
+)
+
+func normalizeEmailAddress(email string) (string, error) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", fmt.Errorf("email address is empty")
+	}
+	at := strings.LastIndex(trimmed, "@")
+	if at <= 0 || at == len(trimmed)-1 {
+		return "", fmt.Errorf("email address must contain local and domain parts")
+	}
+	local := trimmed[:at]
+	domain := trimmed[at+1:]
+	asciiDomain, err := idnaProfile.ToASCII(domain)
+	if err != nil {
+		return "", fmt.Errorf("invalid domain: %w", err)
+	}
+	normalized := fmt.Sprintf("%s@%s", local, asciiDomain)
+	if _, err := mail.ParseAddress(normalized); err != nil {
+		return "", fmt.Errorf("invalid address syntax: %w", err)
+	}
+	return normalized, nil
+}
 
 func isValidEmail(email string) bool {
-	return emailRegex.MatchString(strings.ToLower(email))
+	_, err := normalizeEmailAddress(email)
+	return err == nil
 }
