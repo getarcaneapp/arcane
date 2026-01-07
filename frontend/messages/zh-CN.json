@@ -340,6 +340,8 @@
 	"containers_nav_networks": "网络",
 	"containers_nav_storage": "存储",
 	"containers_ip_address": "IP 地址",
+	"containers_cpu_usage": "CPU 使用",
+	"containers_memory_usage": "内存使用",
 	"containers_mac_address": "MAC地址",
 	"containers_aliases": "别名",
 	"containers_resource_metrics": "资源仪表盘",
