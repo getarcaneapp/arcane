@@ -57,6 +57,15 @@ export class ContainerStatsManager {
 		return calculateMemoryPercent(stats);
 	}
 
+	getMemoryUsage(containerId: string): { usage: number; limit: number } | undefined {
+		const stats = this.stats.get(containerId);
+		if (!stats) return undefined;
+		return {
+			usage: stats.memory_stats?.usage || 0,
+			limit: stats.memory_stats?.limit || 0
+		};
+	}
+
 	isLoading(containerId: string): boolean {
 		return this.loadingStates.get(containerId) ?? false;
 	}

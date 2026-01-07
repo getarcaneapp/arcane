@@ -289,10 +289,7 @@
 			}
 		};
 
-		// Initial sync
-		syncConnections();
-
-		// Re-sync when containers or column visibility changes
+		// Sync connections when containers or column visibility changes
 		const unsubscribe = $effect.root(() => {
 			$effect(() => {
 				// Track containers.data changes
@@ -421,12 +418,8 @@
 {/snippet}
 
 {#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
-	<ContainerStatsCell
-		value={statsManager?.getMemoryPercent(item.id)}
-		loading={statsManager?.isLoading(item.id) ?? false}
-		stopped={item.state !== 'running'}
-		type="memory"
-	/>
+	{@const memoryData = statsManager?.getMemoryUsage(item.id)}
+	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
@@ -503,7 +496,7 @@
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
-			<span class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+			<span class="block w-full cursor-default truncate text-left">
 				{item.image}
 			</span>
 		</ArcaneTooltip.Trigger>

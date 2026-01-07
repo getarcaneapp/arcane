@@ -7,9 +7,8 @@ export function calculateCPUPercent(stats: ContainerStats | null): number {
 	const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats.system_cpu_usage || 0);
 
 	if (systemDelta > 0 && cpuDelta > 0) {
-		const onlineCpus = stats.cpu_stats.online_cpus || 1;
-		const cpuPercent = (cpuDelta / systemDelta) * onlineCpus * 100.0;
-		return Math.min(Math.max(cpuPercent, 0), 100 * onlineCpus);
+		const cpuPercent = (cpuDelta / systemDelta) * 100.0;
+		return Math.min(Math.max(cpuPercent, 0), 100);
 	}
 	return 0;
 }
