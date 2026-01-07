@@ -37,7 +37,7 @@ func TestPathMapper_PathTraversalPrevention(t *testing.T) {
 
 func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "C:/User/arcane/projects")
-	
+
 	project := &composetypes.Project{
 		Services: composetypes.Services{
 			"app": {

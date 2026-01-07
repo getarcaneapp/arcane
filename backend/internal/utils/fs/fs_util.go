@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 )
 
@@ -20,7 +21,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 
 	// Handle mapping format: "container_path:host_path"
 	if parts := strings.SplitN(projectsDirectory, ":", 2); len(parts) == 2 {
-		if strings.HasPrefix(parts[0], "/") { // First part must be absolute container path
+		if !pathmapper.IsWindowsDrivePath(projectsDirectory) && strings.HasPrefix(parts[0], "/") { // First part must be absolute container path
 			projectsDirectory = parts[0]
 		}
 	}

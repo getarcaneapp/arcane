@@ -120,3 +120,13 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) erro
 func (pm *PathMapper) IsNonMatchingMount() bool {
 	return pm.isNonMatching
 }
+
+// IsWindowsDrivePath returns true if the path looks like a Windows drive path (e.g., "C:/path")
+func IsWindowsDrivePath(path string) bool {
+	if len(path) < 3 {
+		return false
+	}
+	return ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')) &&
+		path[1] == ':' &&
+		(path[2] == '/' || path[2] == '\\')
+}

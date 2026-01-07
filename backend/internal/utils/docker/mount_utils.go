@@ -8,6 +8,7 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
 
 // GetHostPathForContainerPath attempts to discover the host-side path for a given container path
@@ -47,18 +48,16 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 		// Calculate the relative path from mount destination to target path
 		rel := strings.TrimPrefix(containerPath, bestMatch.Destination)
 		rel = strings.TrimPrefix(rel, "/") // Ensure no double slash
-		
+
 		hostPath := bestMatch.Source
 		if rel != "" {
-			// Join with host-side source path
-			// Note: We use strings.ReplaceAll for backslashes if bestMatch.Source looks like Windows
-			// but we are on Linux. filepath.Join might not be ideal if we're doing cross-platform paths.
+			// Determine path separator from the host path
 			separator := "/"
-			if strings.Contains(hostPath, "\\") || (len(hostPath) > 2 && hostPath[1] == ':') {
+			if pathmapper.IsWindowsDrivePath(hostPath) && strings.Contains(hostPath, "\\") {
 				separator = "\\"
 				rel = strings.ReplaceAll(rel, "/", "\\")
 			}
-			
+
 			if !strings.HasSuffix(hostPath, separator) {
 				hostPath += separator
 			}
