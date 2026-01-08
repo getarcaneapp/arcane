@@ -245,10 +245,10 @@ func (s *NetworkService) buildNetworkFilterAccessors() []pagination.FilterAccess
 			Key: "inUse",
 			Fn: func(n networktypes.Summary, filterValue string) bool {
 				if filterValue == "true" {
-					return n.InUse
+					return n.InUse || n.IsDefault
 				}
 				if filterValue == "false" {
-					return !n.InUse
+					return !n.InUse && !n.IsDefault
 				}
 				return true
 			},
