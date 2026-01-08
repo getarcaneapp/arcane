@@ -261,7 +261,7 @@ func (s *NetworkService) calculateNetworkUsageCounts(items []networktypes.Summar
 		Total: len(items),
 	}
 	for _, n := range items {
-		if n.InUse {
+		if n.InUse || n.IsDefault {
 			counts.Inuse++
 		} else if !n.IsDefault {
 			// Only count non-default networks as unused
