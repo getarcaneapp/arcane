@@ -199,6 +199,12 @@ func buildEmailURL(config map[string]interface{}) (string, error) {
 	}
 	// shoutrrr accepts comma-separated emails for toaddresses (no spaces)
 	if to, _ := config["toAddresses"].(string); to != "" {
+		trimmedTo := strings.TrimSpace(to)
+		// Common mistake: users enter multiple emails separated by whitespace instead of commas.
+		if !strings.Contains(trimmedTo, ",") && strings.Count(trimmedTo, "@") > 1 && strings.ContainsAny(trimmedTo, " \t\r\n") {
+			return "", fmt.Errorf("invalid toAddresses %q: please separate multiple email addresses with commas", trimmedTo)
+		}
+
 		emails := strings.Split(to, ",")
 		var validEmails []string
 		for _, e := range emails {

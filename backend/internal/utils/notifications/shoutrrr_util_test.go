@@ -12,6 +12,7 @@ func TestBuildShoutrrrURL_Email(t *testing.T) {
 		config  map[string]interface{}
 		want    string
 		wantErr bool
+		wantErrContains string
 	}{
 		{
 			name: "valid single recipient",
@@ -42,6 +43,17 @@ func TestBuildShoutrrrURL_Email(t *testing.T) {
 				"fromAddress": "from@example.com",
 			},
 			wantErr: true,
+		},
+		{
+			name: "invalid to address - missing commas",
+			config: map[string]interface{}{
+				"smtpHost":    "smtp.example.com",
+				"smtpPort":    587.0,
+				"toAddresses": "test1@example.com test2@example.com",
+				"fromAddress": "from@example.com",
+			},
+			wantErr:         true,
+			wantErrContains: "separate multiple email addresses with commas",
 		},
 		{
 			name: "invalid from address",
@@ -104,6 +116,9 @@ func TestBuildShoutrrrURL_Email(t *testing.T) {
 			got, err := BuildShoutrrrURL("email", tt.config)
 			if tt.wantErr {
 				require.Error(t, err)
+				if tt.wantErrContains != "" {
+					require.Contains(t, err.Error(), tt.wantErrContains)
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.want, got)
