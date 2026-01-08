@@ -10,6 +10,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
 
 var ComposeFileCandidates = []string{
@@ -37,7 +38,7 @@ func DetectComposeFile(dir string) (string, error) {
 	return compose, nil
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool) (*composetypes.Project, error) {
+func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -87,6 +88,13 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	// Resolve relative paths for bind mounts, secrets, and configs
 	resolveRelativeProjectPaths(project, workdir)
 
+	// Translate container paths to host paths for Docker execution
+	if pathMapper != nil {
+		if err := pathMapper.TranslateVolumeSources(project); err != nil {
+			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
+		}
+	}
+
 	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
 
 	project.ComposeFiles = []string{composeFile}
@@ -122,7 +130,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool) (*composetypes.Project, string, error) {
+func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, string, error) {
 	composeFile, err := DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err
@@ -132,7 +140,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		projectsDirectory = filepath.Dir(dir)
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper)
 	if err != nil {
 		return nil, "", err
 	}

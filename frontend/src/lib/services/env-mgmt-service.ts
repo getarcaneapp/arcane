@@ -36,8 +36,8 @@ export default class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
 
-	async syncRegistries(environmentId: string): Promise<void> {
-		await this.api.post(`/environments/${environmentId}/sync-registries`);
+	async sync(environmentId: string): Promise<void> {
+		await this.api.post(`/environments/${environmentId}/sync`);
 	}
 
 	async getDeploymentSnippets(environmentId: string): Promise<{ dockerRun: string; dockerCompose: string }> {

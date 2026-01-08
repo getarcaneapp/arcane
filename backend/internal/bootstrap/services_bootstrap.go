@@ -38,6 +38,8 @@ type Services struct {
 	Notification      *services.NotificationService
 	Apprise           *services.AppriseService
 	ApiKey            *services.ApiKeyService
+	GitRepository     *services.GitRepositoryService
+	GitOpsSync        *services.GitOpsSyncService
 	Font              *services.FontService
 }
 
@@ -62,7 +64,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Event)
-	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image)
+	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event)
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event)
@@ -75,6 +77,8 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
+	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event)
+	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
 
 	return svcs, dockerClient, nil
 }

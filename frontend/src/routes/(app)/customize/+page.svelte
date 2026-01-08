@@ -9,7 +9,16 @@
 	import type { CustomizeCategory } from '$lib/types/customize-search.type';
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { SearchIcon, TemplateIcon, ArrowRightIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon } from '$lib/icons';
+	import {
+		SearchIcon,
+		TemplateIcon,
+		ArrowRightIcon,
+		FileTextIcon,
+		RegistryIcon,
+		VariableIcon,
+		CustomizeIcon,
+		GitBranchIcon
+	} from '$lib/icons';
 	import HeaderCard from '$lib/components/header-card.svelte';
 
 	let { data } = $props();
@@ -24,7 +33,8 @@
 		'file-text': FileTextIcon,
 		layers: TemplateIcon,
 		package: RegistryIcon,
-		code: VariableIcon
+		code: VariableIcon,
+		'git-branch': GitBranchIcon
 	};
 
 	onMount(async () => {

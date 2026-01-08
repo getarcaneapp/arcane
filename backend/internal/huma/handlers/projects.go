@@ -486,6 +486,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	response.DirName = utils.DerefString(proj.DirName)
+	response.GitOpsManagedBy = proj.GitOpsManagedBy
 
 	return &CreateProjectOutput{
 		Body: base.ApiResponse[project.CreateReponse]{

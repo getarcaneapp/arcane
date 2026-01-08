@@ -42,7 +42,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string) error {
+func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool) error {
 	c, err := NewClient(ctx)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 
 	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
 
-	upOptions, startOptions := composeUpOptions(proj, services)
+	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans)
 
 	// If we don't need progress, just run compose up normally.
 	if progressWriter == nil {
@@ -61,11 +61,12 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string) erro
 	return composeUpWithProgress(ctx, c.svc, proj, api.UpOptions{Create: upOptions, Start: startOptions}, progressWriter)
 }
 
-func composeUpOptions(proj *types.Project, services []string) (api.CreateOptions, api.StartOptions) {
+func composeUpOptions(proj *types.Project, services []string, removeOrphans bool) (api.CreateOptions, api.StartOptions) {
 	upOptions := api.CreateOptions{
 		Services:             services,
 		Recreate:             api.RecreateDiverged,
 		RecreateDependencies: api.RecreateDiverged,
+		RemoveOrphans:        removeOrphans,
 	}
 
 	startOptions := api.StartOptions{

@@ -100,9 +100,9 @@
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
-	const currentPage = $derived(items.pagination.currentPage ?? requestOptions?.pagination?.page ?? 1);
-	const totalPages = $derived(items.pagination.totalPages ?? 1);
-	const totalItems = $derived(items.pagination.totalItems ?? 0);
+	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
+	const totalPages = $derived(items.pagination?.totalPages ?? 1);
+	const totalItems = $derived(items.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20);
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(currentPage < totalPages);
