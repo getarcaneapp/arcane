@@ -227,10 +227,13 @@ func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {
 }
 
 func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
-	if a.InUse == b.InUse {
+	aInUse := a.InUse || a.IsDefault
+	bInUse := b.InUse || b.IsDefault
+
+	if aInUse == bInUse {
 		return 0
 	}
-	if a.InUse {
+	if aInUse {
 		return -1
 	}
 	return 1
