@@ -61,10 +61,8 @@ func filterFn[T any](items []T, filters map[string]string, accessors []FilterAcc
 						if !anyMatch {
 							matches = false
 						}
-					} else {
-						if !accessor.Fn(item, value) {
-							matches = false
-						}
+					} else if !accessor.Fn(item, value) {
+						matches = false
 					}
 					found = true
 					break
