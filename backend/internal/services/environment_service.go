@@ -127,16 +127,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	}
 
 	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		if !strings.Contains(enabled, ",") {
-			switch enabled {
-			case "true", "1":
-				q = q.Where("enabled = ?", true)
-			case "false", "0":
-				q = q.Where("enabled = ?", false)
-			}
-		}
-	}
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
 	if err != nil {

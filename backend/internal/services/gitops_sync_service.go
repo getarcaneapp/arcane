@@ -45,27 +45,8 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		)
 	}
 
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		if !strings.Contains(enabled, ",") {
-			switch enabled {
-			case "true", "1":
-				q = q.Where("enabled = ?", true)
-			case "false", "0":
-				q = q.Where("enabled = ?", false)
-			}
-		}
-	}
-
-	if autoSync := params.Filters["autoSync"]; autoSync != "" {
-		if !strings.Contains(autoSync, ",") {
-			switch autoSync {
-			case "true", "1":
-				q = q.Where("auto_sync = ?", true)
-			case "false", "0":
-				q = q.Where("auto_sync = ?", false)
-			}
-		}
-	}
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
+	q = pagination.ApplyBooleanFilter(q, "auto_sync", params.Filters["autoSync"])
 
 	q = pagination.ApplyFilter(q, "repository_id", params.Filters["repositoryId"])
 	q = pagination.ApplyFilter(q, "project_id", params.Filters["projectId"])

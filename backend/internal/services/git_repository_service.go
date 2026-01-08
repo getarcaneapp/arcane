@@ -42,17 +42,7 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 		)
 	}
 
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		if !strings.Contains(enabled, ",") {
-			switch enabled {
-			case "true", "1":
-				q = q.Where("enabled = ?", true)
-			case "false", "0":
-				q = q.Where("enabled = ?", false)
-			}
-		}
-	}
-
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyFilter(q, "auth_type", params.Filters["authType"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &repositories)
