@@ -100,7 +100,7 @@
 				{#if selectedValues.size > 0}
 					<Command.Separator />
 					<Command.Group>
-						<Command.Item onselect={() => column?.setFilterValue(undefined)} class="justify-center text-center">
+						<Command.Item onSelect={() => column?.setFilterValue(undefined)} class="justify-center text-center">
 							{m.common_clear_filters()}
 						</Command.Item>
 					</Command.Group>

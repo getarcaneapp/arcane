@@ -41,6 +41,7 @@ type ListProjectsInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	Status        string `query:"status" doc:"Filter by project status (comma-separated: running,stopped,partially running,unknown)"`
 }
 
 type ListProjectsOutput struct {
@@ -326,6 +327,11 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	filters := make(map[string]string)
+	if input.Status != "" {
+		filters["status"] = input.Status
+	}
+
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{
 			Search: input.Search,
@@ -338,6 +344,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 			Start: input.Start,
 			Limit: input.Limit,
 		},
+		Filters: filters,
 	}
 
 	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
