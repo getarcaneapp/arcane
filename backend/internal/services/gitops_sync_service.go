@@ -46,30 +46,29 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 	}
 
 	if enabled := params.Filters["enabled"]; enabled != "" {
-		switch enabled {
-		case "true", "1":
-			q = q.Where("enabled = ?", true)
-		case "false", "0":
-			q = q.Where("enabled = ?", false)
+		if !strings.Contains(enabled, ",") {
+			switch enabled {
+			case "true", "1":
+				q = q.Where("enabled = ?", true)
+			case "false", "0":
+				q = q.Where("enabled = ?", false)
+			}
 		}
 	}
 
 	if autoSync := params.Filters["autoSync"]; autoSync != "" {
-		switch autoSync {
-		case "true", "1":
-			q = q.Where("auto_sync = ?", true)
-		case "false", "0":
-			q = q.Where("auto_sync = ?", false)
+		if !strings.Contains(autoSync, ",") {
+			switch autoSync {
+			case "true", "1":
+				q = q.Where("auto_sync = ?", true)
+			case "false", "0":
+				q = q.Where("auto_sync = ?", false)
+			}
 		}
 	}
 
-	if repositoryID := params.Filters["repositoryId"]; repositoryID != "" {
-		q = q.Where("repository_id = ?", repositoryID)
-	}
-
-	if projectID := params.Filters["projectId"]; projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
+	q = pagination.ApplyFilter(q, "repository_id", params.Filters["repositoryId"])
+	q = pagination.ApplyFilter(q, "project_id", params.Filters["projectId"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &syncs)
 	if err != nil {

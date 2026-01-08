@@ -126,15 +126,15 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		)
 	}
 
-	if status := params.Filters["status"]; status != "" {
-		q = q.Where("status = ?", status)
-	}
+	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
 	if enabled := params.Filters["enabled"]; enabled != "" {
-		switch enabled {
-		case "true", "1":
-			q = q.Where("enabled = ?", true)
-		case "false", "0":
-			q = q.Where("enabled = ?", false)
+		if !strings.Contains(enabled, ",") {
+			switch enabled {
+			case "true", "1":
+				q = q.Where("enabled = ?", true)
+			case "false", "0":
+				q = q.Where("enabled = ?", false)
+			}
 		}
 	}
 

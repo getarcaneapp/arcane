@@ -18,15 +18,15 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	for (const f of filters ?? []) {
 		const id = f.id;
 		let value: unknown = (f as any).value;
+
+		if (value instanceof Set) {
+			value = Array.from(value);
+		}
+
 		if (Array.isArray(value)) {
 			if (value.length === 0) continue;
-			value = value[0];
-		} else if (value && typeof value === 'object' && value instanceof Set) {
-			const first = (value as Set<unknown>).values().next().value;
-			if (first === undefined) continue;
-			value = first;
-		}
-		if (value !== undefined && value !== null && String(value).trim() !== '') {
+			out[id] = value as any[];
+		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
 			out[id] = value as any;
 		}
 	}
