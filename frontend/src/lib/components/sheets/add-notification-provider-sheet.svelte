@@ -56,18 +56,64 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
-	function isValidEmail(email: string): boolean {
+	function normalizeEmailAddressForValidation(email: string): string | null {
 		const trimmed = email.trim();
-		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+		if (!trimmed) return null;
+		if (trimmed.includes('<') || trimmed.includes('>')) return null;
+
+		const at = trimmed.lastIndexOf('@');
+		if (at <= 0 || at === trimmed.length - 1) return null;
+
+		const local = trimmed.slice(0, at);
+		const domain = trimmed.slice(at + 1);
+		if (!local || !domain) return null;
+
+		try {
+			// Normalizes IDNs to ASCII (punycode) similarly to backend's IDNA normalization.
+			const asciiDomain = new URL(`https://${domain}`).hostname;
+			return `${local}@${asciiDomain}`;
+		} catch {
+			return null;
+		}
+	}
+
+	function isValidEmail(email: string): boolean {
+		const normalized = normalizeEmailAddressForValidation(email);
+		if (!normalized) return false;
+
+		// Prefer the browser's built-in email validation algorithm when available.
+		if (typeof document !== 'undefined') {
+			const input = document.createElement('input');
+			input.type = 'email';
+			input.value = normalized;
+			return input.checkValidity();
+		}
+
+		// SSR fallback: keep this intentionally permissive; backend remains the source of truth.
+		return /^[^\s@]+@[^\s@]+$/.test(normalized);
 	}
 
 	function validateEmailAddresses(addresses: string): string | null {
-		if (!addresses.trim()) return 'Recipient addresses are required';
-		const emails = addresses.split(',').map((e) => e.trim());
-		const invalidEmails = emails.filter((e) => e && !isValidEmail(e));
-		if (invalidEmails.length > 0) {
-			return `Invalid email format: ${invalidEmails.join(', ')}`;
+		const raw = addresses.trim();
+		if (!raw) return 'Recipient addresses are required';
+
+		// Common mistake: two emails separated by whitespace instead of commas.
+		if (!raw.includes(',') && /\s/.test(raw) && (raw.match(/@/g)?.length ?? 0) > 1) {
+			return 'Please separate multiple email addresses with commas';
 		}
+
+		// Match backend behavior: ignore empty entries from extra commas/spaces.
+		const emails = raw
+			.split(',')
+			.map((e) => e.trim())
+			.filter(Boolean);
+		if (emails.length === 0) return 'Recipient addresses are required';
+
+		const invalidEmails = emails.filter((e) => !isValidEmail(e));
+		if (invalidEmails.length > 0) {
+			return `Invalid email address${invalidEmails.length > 1 ? 'es' : ''}: ${invalidEmails.join(', ')}`;
+		}
+
 		return null;
 	}
 
