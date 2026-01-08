@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -254,24 +253,33 @@ func ensureSMTPUseHTML(urlStr string, useHTML bool) (string, error) {
 
 // isEventEnabled checks if a specific event type is enabled in the config
 func (s *NotificationService) isEventEnabled(config models.JSON, eventType models.NotificationEventType) bool {
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return true // Default to enabled if we can't parse
+	if config == nil {
+		return true // Default to enabled if no config
 	}
 
-	var configMap map[string]interface{}
-	if err := json.Unmarshal(configBytes, &configMap); err != nil {
-		return true // Default to enabled if we can't parse
-	}
-
-	events, ok := configMap["events"].(map[string]interface{})
+	eventsRaw, ok := config["events"]
 	if !ok {
 		return true // If no events config, default to enabled
 	}
 
-	enabled, ok := events[string(eventType)].(bool)
+	var events map[string]interface{}
+	switch v := eventsRaw.(type) {
+	case map[string]interface{}:
+		events = v
+	case models.JSON:
+		events = v
+	default:
+		return true // If we can't parse, default to enabled
+	}
+
+	enabledRaw, ok := events[string(eventType)]
 	if !ok {
 		return true // If event type not specified, default to enabled
+	}
+
+	enabled, ok := enabledRaw.(bool)
+	if !ok {
+		return true
 	}
 
 	return enabled
