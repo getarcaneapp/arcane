@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, TerminalIcon, CopyIcon, InfoIcon, TemplateIcon, AddIcon } from '$lib/icons';
+	import { ArrowLeftIcon, TerminalIcon, CopyIcon, InfoIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -24,6 +24,7 @@
 	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
@@ -250,6 +251,14 @@
 								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (showConverterDialog = true)}>
 									<TerminalIcon class="size-4" />
 									{m.compose_convert_from_docker_run()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									class={dropdownItemClass}
+									onclick={async () =>
+										goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
+								>
+									<GitBranchIcon class="size-4" />
+									{m.git_from_git_repo()}
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item

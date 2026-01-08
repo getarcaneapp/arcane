@@ -19,7 +19,9 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon } from '$lib/icons';
+	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
 		projects = $bindable(),
@@ -38,7 +40,8 @@
 		remove: false,
 		destroy: false,
 		pull: false,
-		updating: false
+		updating: false,
+		syncing: false
 	});
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -130,11 +133,27 @@
 		}
 	}
 
+	async function handleSyncFromGit(gitOpsSyncId: string) {
+		if (!envId) return;
+		isLoading.syncing = true;
+		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.git_sync_failed(),
+			setLoadingState: (value) => (isLoading.syncing = value),
+			onSuccess: async () => {
+				toast.success(m.git_sync_success());
+				projects = await projectService.getProjects(requestOptions);
+			}
+		});
+	}
+
 	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'serviceCount', title: m.compose_services(), sortable: true }
@@ -142,18 +161,44 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	const envId = $derived(environmentStore.selected?.id);
 </script>
 
 {#snippet NameCell({ item }: { item: Project })}
-	<a class="font-medium hover:underline" href="/projects/{item.id}">
-		{item.name}
-	</a>
+	<div class="flex items-center gap-2">
+		<a class="font-medium hover:underline" href="/projects/{item.id}">
+			{item.name}
+		</a>
+	</div>
+{/snippet}
+
+{#snippet ProviderCell({ item }: { item: Project })}
+	<div class="flex items-center gap-2">
+		{#if item.gitOpsManagedBy}
+			<GitBranchIcon class="size-4" />
+			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
+				{m.projects_provider_git()}
+			</a>
+		{:else}
+			<ProjectsIcon class="size-4" />
+			<span>{m.projects_provider_local()}</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet ProviderField(value: { icon: any; text: string })}
+	{@const Icon = value.icon}
+	<span class="inline-flex items-center gap-2">
+		<Icon class="size-3" />
+		<span>{value.text}</span>
+	</span>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
@@ -196,6 +241,16 @@
 					: null
 		]}
 		fields={[
+			{
+				label: m.projects_col_provider(),
+				type: 'component',
+				getValue: (item: Project) => ({
+					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
+					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
+				}),
+				component: ProviderField,
+				show: mobileFieldVisibility.provider ?? true
+			},
 			{
 				label: m.compose_services(),
 				getValue: (item: Project) => {
@@ -241,6 +296,20 @@
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
+				{#if item.gitOpsManagedBy}
+					<DropdownMenu.Item
+						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
+						disabled={isLoading.syncing || isAnyLoading}
+					>
+						{#if isLoading.syncing}
+							<Spinner class="size-4" />
+						{:else}
+							<RefreshIcon class="size-4" />
+						{/if}
+						{m.git_sync_from_git()}
+					</DropdownMenu.Item>
+				{/if}
 
 				{#if item.status !== 'running'}
 					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>

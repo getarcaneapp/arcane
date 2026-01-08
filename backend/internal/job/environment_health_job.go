@@ -99,7 +99,7 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 			offlineCount++
 		case status == "online":
 			onlineCount++
-			// Sync registries to online remote environments (skip local environment ID "0")
+			// Sync registries and git repositories to online remote environments (skip local environment ID "0")
 			if env.ID != "0" {
 				go func(envID, envName string) {
 					syncCtx := context.WithoutCancel(ctx)
@@ -110,6 +110,19 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 							"error", err)
 					} else {
 						slog.DebugContext(syncCtx, "successfully synced registries during health check",
+							"environment_id", envID,
+							"environment_name", envName)
+					}
+				}(env.ID, env.Name)
+				go func(envID, envName string) {
+					syncCtx := context.WithoutCancel(ctx)
+					if err := j.environmentService.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
+						slog.WarnContext(syncCtx, "failed to sync git repositories during health check",
+							"environment_id", envID,
+							"environment_name", envName,
+							"error", err)
+					} else {
+						slog.DebugContext(syncCtx, "successfully synced git repositories during health check",
 							"environment_id", envID,
 							"environment_name", envName)
 					}

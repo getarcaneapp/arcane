@@ -3,8 +3,9 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import * as Card from '$lib/components/ui/card';
+	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
+	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -26,6 +27,9 @@
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
+	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { RefreshIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -41,8 +45,11 @@
 		redeploying: false,
 		destroying: false,
 		pulling: false,
-		saving: false
+		saving: false,
+		syncing: false
 	});
+
+	const envId = $derived(environmentStore.selected?.id);
 
 	let originalName = $state(untrack(() => data.editorState.originalName));
 	let originalComposeContent = $state(untrack(() => data.editorState.originalComposeContent));
@@ -53,9 +60,9 @@
 	const formSchema = z.object({
 		name: z
 			.string()
-			.min(1, 'Project name is required')
-			.regex(/^[a-z0-9_-]+$/i, 'Only letters, numbers, hyphens, and underscores are allowed'),
-		composeContent: z.string().min(1, 'Compose content is required'),
+			.min(1, m.compose_project_name_required())
+			.regex(/^[a-z0-9_-]+$/i, m.compose_project_name_invalid_with_underscores()),
+		composeContent: z.string().min(1, m.compose_compose_content_required()),
 		envContent: z.string().optional().default('')
 	});
 
@@ -74,7 +81,11 @@
 			JSON.stringify(includeFilesState) !== JSON.stringify(originalIncludeFiles)
 	);
 
-	let canEditName = $derived(!isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running');
+	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
+	let canEditName = $derived(
+		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
+	);
+	let canEditCompose = $derived(!isGitOpsManaged);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -172,7 +183,7 @@
 		// First update the main project files
 		handleApiResultWithCallbacks({
 			result: await tryCatch(projectService.updateProject(projectId, name, composeContent, envContent)),
-			message: 'Failed to Save Project',
+			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
 			onSuccess: async (updatedStack: Project) => {
 				// Then update any changed include files
@@ -182,13 +193,13 @@
 							projectService.updateProjectIncludeFile(projectId, relativePath, includeFilesState[relativePath])
 						);
 						if (includeResult.error) {
-							toast.error(`Failed to update ${relativePath}: ${includeResult.error.message || 'Unknown error'}`);
+							toast.error(includeResult.error.message || m.common_update_failed({ resource: relativePath }));
 							return;
 						}
 					}
 				}
 
-				toast.success('Project updated successfully!');
+				toast.success(m.common_update_success({ resource: m.project() }));
 				originalName = updatedStack.name;
 				originalComposeContent = $inputs.composeContent.value;
 				originalEnvContent = $inputs.envContent.value;
@@ -224,6 +235,20 @@
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: (updatedProject) => {
 				project = updatedProject;
+			}
+		});
+	}
+
+	async function handleSyncFromGit() {
+		if (!envId || !project?.gitOpsManagedBy) return;
+		isLoading.syncing = true;
+		handleApiResultWithCallbacks({
+			result: await tryCatch(gitOpsSyncService.performSync(envId, project.gitOpsManagedBy)),
+			message: m.git_sync_failed(),
+			setLoadingState: (value) => (isLoading.syncing = value),
+			onSuccess: async () => {
+				toast.success(m.git_sync_success());
+				await invalidateAll();
 			}
 		});
 	}
@@ -271,11 +296,31 @@
 					/>
 				{/if}
 			</div>
-			{#if project.createdAt}
-				<p class="text-muted-foreground mt-0.5 hidden text-xs sm:block">
-					{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
-				</p>
-			{/if}
+			<div class="mt-0.5 flex items-center gap-4">
+				{#if project.createdAt}
+					<p class="text-muted-foreground hidden text-xs sm:block">
+						{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
+					</p>
+				{/if}
+				{#if project.lastSyncCommit}
+					<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+						<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
+						{#if project.gitRepositoryURL}
+							<a
+								href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+								target="_blank"
+								class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
+							>
+								{project.lastSyncCommit}
+							</a>
+						{:else}
+							<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
+								{project.lastSyncCommit}
+							</span>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		{/snippet}
 
 		{#snippet headerActions()}
@@ -326,6 +371,51 @@
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
 				<div class="flex h-full min-h-0 flex-col">
+					{#if isGitOpsManaged}
+						<Alert.Root variant="default" class="mb-4">
+							<AlertIcon class="size-4" />
+							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+								<div class="flex-1">
+									<Alert.Title>{m.git_title()} {m.read_only_label()}</Alert.Title>
+									<Alert.Description>
+										{m.git_managed_readonly_alert()}
+										<br />
+										<div class="mt-2 flex flex-col gap-1">
+											{#if project.lastSyncCommit}
+												<div class="flex items-center gap-1.5 font-mono text-xs">
+													<span class="text-muted-foreground">{m.git_sync_commit()}:</span>
+													{#if project.gitRepositoryURL}
+														<a
+															href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+															target="_blank"
+															class="bg-muted hover:text-primary rounded px-1.5 py-0.5 transition-colors"
+														>
+															{project.lastSyncCommit}
+														</a>
+													{:else}
+														<span class="bg-muted rounded px-1.5 py-0.5">{project.lastSyncCommit}</span>
+													{/if}
+												</div>
+											{/if}
+											<span class="text-muted-foreground text-xs">
+												{m.git_managed_env_note()}
+											</span>
+										</div>
+									</Alert.Description>
+								</div>
+								<ArcaneButton
+									action="base"
+									tone="outline-primary"
+									loading={isLoading.syncing}
+									onclick={handleSyncFromGit}
+									icon={RefreshIcon}
+									customLabel={m.git_sync_from_git()}
+									loadingLabel={m.common_syncing()}
+									class="shrink-0"
+								/>
+							</div>
+						</Alert.Root>
+					{/if}
 					<div class="mb-4 flex-shrink-0">
 						<SwitchWithLabel
 							id="layout-mode-toggle"
@@ -375,8 +465,8 @@
 											</TreeView.File>
 
 											{#if project?.includeFiles && project.includeFiles.length > 0}
-												<TreeView.Folder name="Includes">
-													{#each project.includeFiles as includeFile}
+												<TreeView.Folder name={m.project_includes()}>
+													{#each project.includeFiles as includeFile (includeFile.relativePath)}
 														<TreeView.File
 															name={includeFile.relativePath}
 															onclick={() => (selectedFile = includeFile.relativePath)}
@@ -401,6 +491,7 @@
 											language="yaml"
 											bind:value={$inputs.composeContent.value}
 											error={$inputs.composeContent.error ?? undefined}
+											readOnly={!canEditCompose}
 										/>
 									{:else if selectedFile === 'env'}
 										<CodePanel
@@ -429,7 +520,7 @@
 								{#if project?.includeFiles && project.includeFiles.length > 0}
 									<div class="border-border bg-card rounded-lg border">
 										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
-											{#each project.includeFiles as includeFile}
+											{#each project.includeFiles as includeFile (includeFile.relativePath)}
 												<ArcaneButton
 													action="base"
 													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
@@ -467,6 +558,7 @@
 												language="yaml"
 												bind:value={$inputs.composeContent.value}
 												error={$inputs.composeContent.error ?? undefined}
+												readOnly={!canEditCompose}
 											/>
 										</div>
 
@@ -491,7 +583,7 @@
 				{#if project.status == 'running'}
 					<ProjectsLogsPanel projectId={project.id} bind:autoScroll={autoScrollStackLogs} />
 				{:else}
-					<div class="text-muted-foreground py-12 text-center">{m.compose_logs_title()} Unavailable</div>
+					<div class="text-muted-foreground py-12 text-center">{m.compose_logs_title()} {m.common_disabled()}</div>
 				{/if}
 			</Tabs.Content>
 		{/snippet}
@@ -503,7 +595,7 @@
 				<ProjectsIcon class="text-muted-foreground size-10" />
 			</div>
 			<h2 class="mb-3 text-2xl font-medium">
-				{data.error ? 'Error Loading Project' : m.common_not_found_title({ resource: m.project() })}
+				{data.error ? m.common_action_failed() : m.common_not_found_title({ resource: m.project() })}
 			</h2>
 			<p class="text-muted-foreground mb-8 max-w-md text-center">
 				{data.error || m.common_not_found_description({ resource: m.project().toLowerCase() })}
