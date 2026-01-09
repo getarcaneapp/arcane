@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	glsqlite "github.com/glebarez/sqlite"
@@ -461,7 +462,11 @@ func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t
 	// Verify it was updated to absolute path
 	var setting models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
-	require.Equal(t, "/app/data/projects", setting.Value)
+
+	// Should be converted to absolute path
+	expectedPath, _ := filepath.Abs("data/projects")
+	require.Equal(t, expectedPath, setting.Value)
+	require.True(t, filepath.IsAbs(setting.Value), "path should be absolute")
 }
 
 func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T) {
@@ -536,5 +541,7 @@ func TestSettingsService_NormalizeProjectsDirectory_UpdatesCacheAfterNormalizati
 
 	// Verify cache was updated to absolute path
 	cfg2 := svc.GetSettingsConfig()
-	require.Equal(t, "/app/data/projects", cfg2.ProjectsDirectory.Value)
+	expectedPath, _ := filepath.Abs("data/projects")
+	require.Equal(t, expectedPath, cfg2.ProjectsDirectory.Value)
+	require.True(t, filepath.IsAbs(cfg2.ProjectsDirectory.Value), "path should be absolute")
 }

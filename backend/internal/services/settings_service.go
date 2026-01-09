@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -846,10 +847,15 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
 	}
 
-	if projectsDirSetting.Value == "data/projects" {
-		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", "data/projects", "to", "/app/data/projects")
+	value := strings.TrimSpace(projectsDirSetting.Value)
+	if !filepath.IsAbs(value) && !strings.Contains(value, ":") {
+		absPath, absErr := filepath.Abs(value)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+		}
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath)
 
-		if err := s.UpdateSetting(ctx, "projectsDirectory", "/app/data/projects"); err != nil {
+		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
 			return fmt.Errorf("failed to update projectsDirectory: %w", err)
 		}
 
