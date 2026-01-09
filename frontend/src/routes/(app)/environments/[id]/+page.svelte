@@ -328,7 +328,8 @@
 			}
 		} catch (error) {
 			console.error('Failed to save environment:', error);
-			toast.error(m.common_update_failed({ resource: m.resource_environment() }));
+			const message = error instanceof Error ? error.message : undefined;
+			toast.error(message ?? m.common_update_failed({ resource: m.resource_environment() }));
 		} finally {
 			isSaving = false;
 		}
