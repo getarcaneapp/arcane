@@ -1,0 +1,24 @@
+name: Potential Duplicate Issues
+on:
+    issues:
+        types: [opened, edited] #edited means the issue title changed
+jobs:
+    run:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: wow-actions/potential-duplicates@4d4ea0352e0383859279938e255179dd1dbb67b5 #v1.1.0
+              with:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  filter: ""
+                  exclude: "regression"
+                  label: potential-duplicate
+                  state: all
+                  threshold: 0.6
+                  reactions: "confused"
+                  comment: |
+                      We have found issues that are potential duplicates: {{#issues}}
+                        - #{{ number }} ({{ accuracy }}%)
+                      {{/issues}}
+
+                      If any of the issues listed above are a duplicate, please consider closing this issue & upvoting/commenting the original one.
+                      Doing so will help prioritize bugs and features.
