@@ -42,7 +42,9 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		return "", fmt.Errorf("failed to calculate relative path: %w", err)
+		// filepath.Rel fails when mixing absolute and relative paths.
+		// Treat this as a path outside our prefix - return unchanged.
+		return cleaned, nil
 	}
 
 	// Only translate paths within container prefix

@@ -36,6 +36,16 @@ func TestPathMapper_PathTraversalPrevention(t *testing.T) {
 	assert.Equal(t, "/app/etc/passwd", result)
 }
 
+func TestPathMapper_AbsolutePathWithRelativePrefix_NoTranslation(t *testing.T) {
+	// When containerPrefix is relative but the volume path is absolute and outside the prefix,
+	// the path should be returned unchanged (not error).
+	// This happens with compose includes that use project_directory with absolute paths.
+	pm := NewPathMapper("data/projects", "/host/projects")
+	result, err := pm.ContainerToHost("/home/user/docker/project/data")
+	require.NoError(t, err)
+	assert.Equal(t, "/home/user/docker/project/data", result)
+}
+
 func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "C:/User/arcane/projects")
 
