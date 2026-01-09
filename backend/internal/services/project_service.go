@@ -74,6 +74,11 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 		containerDirResolved = "data/projects"
 	}
 
+	// Always ensure container directory is absolute for path mapper to work correctly with filepath.Rel
+	if abs, err := filepath.Abs(containerDirResolved); err == nil {
+		containerDirResolved = abs
+	}
+
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
 	if hostDir == "" {
 		if dockerCli, derr := s.dockerService.GetClient(); derr == nil {
