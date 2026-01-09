@@ -90,8 +90,8 @@
 						icon={ResetIcon}
 						customLabel={m.common_reset()}
 						onclick={() => {
-							table.resetColumnFilters();
-							table.resetGlobalFilter();
+							table.setColumnFilters([]);
+							table.setGlobalFilter('');
 						}}
 						class="h-8 px-2 lg:px-3"
 					/>

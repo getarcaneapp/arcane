@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	glsqlite "github.com/glebarez/sqlite"
@@ -443,4 +444,104 @@ func TestSettingsService_MigrateOidcConfigToFields_DefaultScopes(t *testing.T) {
 	var scopes models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "oidcScopes").First(&scopes).Error)
 	require.Equal(t, "openid email profile", scopes.Value)
+}
+
+func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// Seed with relative path
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
+
+	// Run normalization without env var set (empty string)
+	err = svc.NormalizeProjectsDirectory(ctx, "")
+	require.NoError(t, err)
+
+	// Verify it was updated to absolute path
+	var setting models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
+
+	// Should be converted to absolute path
+	expectedPath, _ := filepath.Abs("data/projects")
+	require.Equal(t, expectedPath, setting.Value)
+	require.True(t, filepath.IsAbs(setting.Value), "path should be absolute")
+}
+
+func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// Seed with relative path
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
+
+	// Run normalization WITH env var set
+	err = svc.NormalizeProjectsDirectory(ctx, "/custom/env/path")
+	require.NoError(t, err)
+
+	// Verify it was NOT changed
+	var setting models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
+	require.Equal(t, "data/projects", setting.Value, "should not change when env var is set")
+}
+
+func TestSettingsService_NormalizeProjectsDirectory_LeavesOtherPathsUnchanged(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	customPath := "/custom/projects/path"
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", customPath))
+
+	// Run normalization
+	err = svc.NormalizeProjectsDirectory(ctx, "")
+	require.NoError(t, err)
+
+	// Verify it was NOT changed
+	var setting models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
+	require.Equal(t, customPath, setting.Value, "should not change custom paths")
+}
+
+func TestSettingsService_NormalizeProjectsDirectory_HandlesNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// Don't create the setting at all
+
+	// Run normalization - should not error
+	err = svc.NormalizeProjectsDirectory(ctx, "")
+	require.NoError(t, err)
+}
+
+func TestSettingsService_NormalizeProjectsDirectory_UpdatesCacheAfterNormalization(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	// Set to relative path
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
+	require.NoError(t, svc.LoadDatabaseSettings(ctx))
+
+	// Verify cache has relative path
+	cfg1 := svc.GetSettingsConfig()
+	require.Equal(t, "data/projects", cfg1.ProjectsDirectory.Value)
+
+	// Run normalization
+	err = svc.NormalizeProjectsDirectory(ctx, "")
+	require.NoError(t, err)
+
+	// Verify cache was updated to absolute path
+	cfg2 := svc.GetSettingsConfig()
+	expectedPath, _ := filepath.Abs("data/projects")
+	require.Equal(t, expectedPath, cfg2.ProjectsDirectory.Value)
+	require.True(t, filepath.IsAbs(cfg2.ProjectsDirectory.Value), "path should be absolute")
 }

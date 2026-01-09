@@ -60,3 +60,44 @@ func TestWriteFilesPermissions(t *testing.T) {
 		}
 	})
 }
+
+func TestWriteProjectFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectsRoot := tmpDir
+	projectDir := filepath.Join(tmpDir, "test-project")
+
+	t.Run("creates new project with empty env when envContent is nil", func(t *testing.T) {
+		err := WriteProjectFiles(projectsRoot, projectDir, "services: {}", nil)
+		require.NoError(t, err)
+
+		envPath := filepath.Join(projectDir, ".env")
+		content, err := os.ReadFile(envPath)
+		require.NoError(t, err)
+		assert.Empty(t, string(content))
+	})
+
+	t.Run("preserves existing env when envContent is nil", func(t *testing.T) {
+		envPath := filepath.Join(projectDir, ".env")
+		expected := "EXISTING=true"
+		err := os.WriteFile(envPath, []byte(expected), 0600)
+		require.NoError(t, err)
+
+		err = WriteProjectFiles(projectsRoot, projectDir, "services: { updated: true }", nil)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(envPath)
+		require.NoError(t, err)
+		assert.Equal(t, expected, string(content))
+	})
+
+	t.Run("overwrites env when envContent is provided", func(t *testing.T) {
+		envPath := filepath.Join(projectDir, ".env")
+		newContent := "NEW=true"
+		err := WriteProjectFiles(projectsRoot, projectDir, "services: {}", &newContent)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(envPath)
+		require.NoError(t, err)
+		assert.Equal(t, newContent, string(content))
+	})
+}

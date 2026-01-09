@@ -509,7 +509,6 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
-												autoHeight={true}
 											/>
 										{/if}
 									{/if}
@@ -546,7 +545,6 @@
 											title={includeFile.relativePath}
 											language="yaml"
 											bind:value={includeFilesState[includeFile.relativePath]}
-											autoHeight={true}
 										/>
 									{/if}
 								{:else}

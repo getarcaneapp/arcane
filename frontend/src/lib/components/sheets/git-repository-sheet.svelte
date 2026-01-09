@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -96,26 +96,22 @@
 
 		onSubmit({ repository: payload, isEditMode });
 	}
+
+	function handleOpenChange(newOpenState: boolean) {
+		open = newOpenState;
+	}
 </script>
 
-<Sheet.Root bind:open>
-	<Sheet.Content class="p-6">
-		<Sheet.Header class="space-y-3 border-b pb-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
-					<GitBranchIcon class="text-primary size-5" />
-				</div>
-				<div>
-					<Sheet.Title class="text-xl font-semibold">
-						{isEditMode ? m.git_repository_edit_title() : m.git_repository_add_title()}
-					</Sheet.Title>
-					<Sheet.Description class="text-muted-foreground mt-1 text-sm">
-						{isEditMode ? m.common_edit_description() : m.common_add_description()}
-					</Sheet.Description>
-				</div>
-			</div>
-		</Sheet.Header>
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+<ResponsiveDialog.Root
+	bind:open
+	onOpenChange={handleOpenChange}
+	variant="sheet"
+	title={isEditMode ? m.git_repository_edit_title() : m.git_repository_add_title()}
+	description={isEditMode ? m.common_edit_description() : m.common_add_description()}
+	contentClass="sm:max-w-md"
+>
+	{#snippet children()}
+		<form id="git-repository-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<FormInput
 				label={m.git_repository_name()}
 				type="text"
@@ -189,25 +185,29 @@
 				description={m.common_enabled_description()}
 				bind:checked={$inputs.enabled.value}
 			/>
-
-			<Sheet.Footer class="flex flex-row gap-2">
-				<Button
-					type="button"
-					class="arcane-button-cancel flex-1"
-					variant="outline"
-					onclick={() => (open = false)}
-					disabled={isLoading}
-				>
-					{m.common_cancel()}
-				</Button>
-
-				<Button type="submit" class="arcane-button-create flex-1" disabled={isLoading}>
-					{#if isLoading}
-						<Spinner class="mr-2 size-4" />
-					{/if}
-					{isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_repository_cap() })}
-				</Button>
-			</Sheet.Footer>
 		</form>
-	</Sheet.Content>
-</Sheet.Root>
+	{/snippet}
+
+	{#snippet footer()}
+		<div class="flex w-full flex-row gap-2">
+			<ArcaneButton
+				action="cancel"
+				tone="outline"
+				type="button"
+				class="flex-1"
+				onclick={() => (open = false)}
+				disabled={isLoading}
+			/>
+
+			<ArcaneButton
+				action={isEditMode ? 'save' : 'create'}
+				type="submit"
+				form="git-repository-form"
+				class="flex-1"
+				disabled={isLoading}
+				loading={isLoading}
+				customLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_repository_cap() })}
+			/>
+		</div>
+	{/snippet}
+</ResponsiveDialog.Root>

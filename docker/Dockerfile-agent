@@ -45,7 +45,7 @@ RUN apt-get update && apt-get upgrade -y \
 WORKDIR /app
 RUN mkdir -p /app/data
 
-COPY --from=agent-builder /out/arcane-agent /usr/local/bin/arcane-agent
+COPY --from=agent-builder /out/arcane-agent ./arcane-agent
 
 ARG VERSION="dev"
 ARG REVISION="unknown"
@@ -78,4 +78,4 @@ LABEL com.getarcaneapp.arcane.agent="true"
 EXPOSE 3553
 VOLUME ["/app/data"]
 
-CMD ["/usr/local/bin/arcane-agent"]
+CMD ["./arcane-agent"]

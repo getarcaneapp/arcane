@@ -163,6 +163,13 @@
 	button {
 		@apply cursor-pointer;
 	}
+
+	.font-mono {
+		font-variant-ligatures: none;
+		font-feature-settings:
+			'liga' 0,
+			'clig' 0;
+	}
 }
 
 body:not(.glass-enabled) {

@@ -227,10 +227,13 @@ func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {
 }
 
 func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
-	if a.InUse == b.InUse {
+	aInUse := a.InUse || a.IsDefault
+	bInUse := b.InUse || b.IsDefault
+
+	if aInUse == bInUse {
 		return 0
 	}
-	if a.InUse {
+	if aInUse {
 		return -1
 	}
 	return 1
@@ -242,10 +245,10 @@ func (s *NetworkService) buildNetworkFilterAccessors() []pagination.FilterAccess
 			Key: "inUse",
 			Fn: func(n networktypes.Summary, filterValue string) bool {
 				if filterValue == "true" {
-					return n.InUse
+					return n.InUse || n.IsDefault
 				}
 				if filterValue == "false" {
-					return !n.InUse
+					return !n.InUse && !n.IsDefault
 				}
 				return true
 			},
@@ -258,9 +261,9 @@ func (s *NetworkService) calculateNetworkUsageCounts(items []networktypes.Summar
 		Total: len(items),
 	}
 	for _, n := range items {
-		if n.InUse {
+		if n.InUse || n.IsDefault {
 			counts.Inuse++
-		} else if !n.IsDefault {
+		} else {
 			// Only count non-default networks as unused
 			// Default networks (bridge, host, none, ingress) are never "unused"
 			counts.Unused++

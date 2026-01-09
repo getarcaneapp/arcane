@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -826,4 +828,60 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 	}
 
 	return key, nil
+}
+
+func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
+	if projectsDirEnv != "" {
+		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
+		return nil
+	}
+
+	var projectsDirSetting models.SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+	}
+
+	value := strings.TrimSpace(projectsDirSetting.Value)
+	// Detect mapping format (container:host), allowing Windows or Unix container paths.
+	isMapping := false
+	if strings.Contains(value, ":") {
+		// Treat as mapping if the container side looks like an absolute Unix path
+		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
+		// first colon to not break on Windows drive letters.
+		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+			isMapping = true
+		}
+	}
+
+	if !filepath.IsAbs(value) && !isMapping {
+		// Resolve relative path using current working directory for transparency.
+		// Note: In containers, WORKDIR is set to /app so "data/..." becomes "/app/data/...".
+		cwd, _ := os.Getwd()
+		absPath, absErr := filepath.Abs(value)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+		}
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+
+		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
+			return fmt.Errorf("failed to update projectsDirectory: %w", err)
+		}
+
+		if err := s.LoadDatabaseSettings(ctx); err != nil {
+			return fmt.Errorf("failed to reload settings after normalization: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Successfully normalized projects directory")
+	} else {
+		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
+	}
+
+	return nil
 }

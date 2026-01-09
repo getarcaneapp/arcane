@@ -111,8 +111,8 @@
 				strings: true
 			},
 			suggestOnTriggerCharacters: true,
-			fontFamily:
-				'"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+			fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+			fontLigatures: false,
 			padding: { top: 10, bottom: 10 },
 			scrollbar: autoHeight
 				? {

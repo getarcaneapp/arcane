@@ -58,9 +58,11 @@
 					{@render children()}
 				</div>
 				{#if footer}
-					<Sheet.Footer class="shrink-0 px-6 pb-6">
-						{@render footer()}
-					</Sheet.Footer>
+					<div class="bg-background border-t p-4">
+						<Sheet.Footer class="mt-0 p-0 sm:justify-end">
+							{@render footer()}
+						</Sheet.Footer>
+					</div>
 				{/if}
 			</Sheet.Content>
 		</Sheet.Root>

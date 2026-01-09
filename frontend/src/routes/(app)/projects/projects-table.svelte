@@ -2,7 +2,7 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon } from '$lib/icons';
+	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -82,7 +82,7 @@
 						projects = await projectService.getProjects(requestOptions);
 					}
 				});
-			} else if (action === 'pull') {
+			} else if (action === 'redeploy') {
 				handleApiResultWithCallbacks({
 					result: await tryCatch(projectService.redeployProject(id)),
 					message: m.compose_pull_failed(),
@@ -343,11 +343,11 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item onclick={() => performProjectAction('pull', item.id)} disabled={isLoading.pull || isAnyLoading}>
+				<DropdownMenu.Item onclick={() => performProjectAction('redeploy', item.id)} disabled={isLoading.pull || isAnyLoading}>
 					{#if isLoading.pull}
 						<Spinner class="size-4" />
 					{:else}
-						<RestartIcon class="size-4" />
+						<RedeployIcon class="size-4" />
 					{/if}
 					{m.compose_pull_redeploy()}
 				</DropdownMenu.Item>
