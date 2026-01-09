@@ -73,23 +73,8 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 		)
 	}
 
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		switch enabled {
-		case "true", "1":
-			q = q.Where("enabled = ?", true)
-		case "false", "0":
-			q = q.Where("enabled = ?", false)
-		}
-	}
-
-	if insecure := params.Filters["insecure"]; insecure != "" {
-		switch insecure {
-		case "true", "1":
-			q = q.Where("insecure = ?", true)
-		case "false", "0":
-			q = q.Where("insecure = ?", false)
-		}
-	}
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
+	q = pagination.ApplyBooleanFilter(q, "insecure", params.Filters["insecure"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &registries)
 	if err != nil {

@@ -17,6 +17,7 @@
     "test": "pnpm --filter arcane-tests test",
     "format": "pnpm --filter arcane-frontend format && gofmt -w -s .",
     "check": "pnpm --filter arcane-frontend check",
+    "check:ci": "pnpm --filter arcane-frontend check:ci",
     "knip": "pnpm --filter arcane-frontend knip"
   },
   "dependencies": {

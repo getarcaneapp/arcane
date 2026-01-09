@@ -187,12 +187,18 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		host, repo, tag := s.parseNormalizedRef(normNew)
 		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs)
 		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew, authHeader)
+		skipPull := false
+
 		if check.CheckedViaAPI && check.Error == nil && !check.NeedsUpdate {
 			item.Status = "skipped"
 			item.Error = "image already up to date"
 			out.Skipped++
-			out.Items = append(out.Items, item)
-			_ = s.recordRun(ctx, item)
+			// We skip checking for pull, but we still proceed to container update checks
+			// treating this as "successful" for the pipeline, but invalidating oldIDs
+			// because they represent the *current* image, not a stale one.
+			plans[i].pulled = true
+			plans[i].oldIDs = nil
+			skipPull = true
 
 			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
 				"phase":         "image_pull",
@@ -204,34 +210,35 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 				"checkedViaApi": true,
 				"error":         item.Error,
 			})
-			continue
 		}
 
-		if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
-			item.Status = "failed"
-			item.Error = err.Error()
-			out.Failed++
-		} else {
-			item.Status = "updated"
-			item.UpdateApplied = true
-			out.Updated++
-			plans[i].pulled = true
-			for _, id := range p.oldIDs {
-				if id != "" {
-					oldIDSet[id] = struct{}{}
+		if !skipPull {
+			if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
+				item.Status = "failed"
+				item.Error = err.Error()
+				out.Failed++
+			} else {
+				item.Status = "updated"
+				item.UpdateApplied = true
+				out.Updated++
+				plans[i].pulled = true
+				for _, id := range p.oldIDs {
+					if id != "" {
+						oldIDSet[id] = struct{}{}
+					}
 				}
 			}
+			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+				"phase":    "image_pull",
+				"imageOld": p.oldRef,
+				"imageNew": p.newRef,
+				"status":   item.Status,
+				"error":    item.Error,
+			})
 		}
+
 		out.Items = append(out.Items, item)
 		_ = s.recordRun(ctx, item)
-
-		s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
-			"phase":    "image_pull",
-			"imageOld": p.oldRef,
-			"imageNew": p.newRef,
-			"status":   item.Status,
-			"error":    item.Error,
-		})
 	}
 
 	// Build maps for fast matching later (only for successfully pulled updates)
@@ -996,6 +1003,9 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	markedForRestart := map[string]bool{}
 	containersWithDeps := make([]arcaneupdater.ContainerWithDeps, 0, len(list))
 
+	// Cache resolved IDs for newRefs to avoid repeated API calls
+	targetImageIDs := map[string][]string{}
+
 	for _, c := range list {
 		inspect, err := dcli.ContainerInspect(ctx, c.ID)
 		if err != nil {
@@ -1035,6 +1045,25 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				if nr, ok := updatedNorm[t]; ok {
 					newRef = nr
 					match = t
+					break
+				}
+			}
+		}
+
+		if newRef != "" {
+			// Check if container is already on the target image
+			tids, cached := targetImageIDs[newRef]
+			if !cached {
+				tids, _ = s.resolveLocalImageIDsForRef(ctx, newRef)
+				targetImageIDs[newRef] = tids
+			}
+
+			for _, tid := range tids {
+				if tid == inspect.Image {
+					// Already on target image
+					slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
+						"containerId", c.ID, "containerName", dep.Name, "imageID", inspect.Image, "newRef", newRef)
+					newRef = ""
 					break
 				}
 			}

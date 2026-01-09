@@ -1093,15 +1093,8 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 			return nil, fmt.Errorf("failed to save project files: %w", err)
 		}
 	case envContent != nil:
-		envPath := filepath.Join(proj.Path, ".env")
-		if *envContent == "" {
-			if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
-				return nil, fmt.Errorf("failed to remove env file: %w", err)
-			}
-		} else {
-			if err := fs.WriteEnvFile(projectsDirectory, proj.Path, *envContent); err != nil {
-				return nil, err
-			}
+		if err := fs.WriteEnvFile(projectsDirectory, proj.Path, *envContent); err != nil {
+			return nil, err
 		}
 	}
 

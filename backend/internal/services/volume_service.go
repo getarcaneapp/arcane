@@ -275,6 +275,8 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumety
 }
 
 func (s *VolumeService) buildVolumeSortBindings() []pagination.SortBinding[volumetypes.Volume] {
+	createdSortFn := func(a, b volumetypes.Volume) int { return strings.Compare(a.CreatedAt, b.CreatedAt) }
+
 	return []pagination.SortBinding[volumetypes.Volume]{
 		{
 			Key: "name",
@@ -294,7 +296,11 @@ func (s *VolumeService) buildVolumeSortBindings() []pagination.SortBinding[volum
 		},
 		{
 			Key: "created",
-			Fn:  func(a, b volumetypes.Volume) int { return strings.Compare(a.CreatedAt, b.CreatedAt) },
+			Fn:  createdSortFn,
+		},
+		{
+			Key: "createdAt",
+			Fn:  createdSortFn,
 		},
 		{
 			Key: "inUse",
@@ -316,14 +322,16 @@ func (s *VolumeService) buildVolumeSortBindings() []pagination.SortBinding[volum
 }
 
 func (s *VolumeService) compareVolumeSizes(a, b volumetypes.Volume) int {
-	aSize := int64(-1)
-	bSize := int64(-1)
-	if a.UsageData != nil {
+	aSize := a.Size
+	bSize := b.Size
+
+	if aSize == 0 && a.UsageData != nil {
 		aSize = a.UsageData.Size
 	}
-	if b.UsageData != nil {
+	if bSize == 0 && b.UsageData != nil {
 		bSize = b.UsageData.Size
 	}
+
 	if aSize == bSize {
 		return 0
 	}

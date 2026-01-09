@@ -92,6 +92,7 @@ func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, ima
 		}
 	}
 	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
+		slog.DebugContext(ctx, "AutoUpdateSettingsChanged callback triggered")
 		if err := autoUpdateJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
 		}

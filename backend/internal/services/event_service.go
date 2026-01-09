@@ -122,21 +122,11 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 		)
 	}
 
-	if severity := params.Filters["severity"]; severity != "" {
-		q = q.Where("severity = ?", severity)
-	}
-	if eventType := params.Filters["type"]; eventType != "" {
-		q = q.Where("type = ?", eventType)
-	}
-	if resourceType := params.Filters["resourceType"]; resourceType != "" {
-		q = q.Where("resource_type = ?", resourceType)
-	}
-	if username := params.Filters["username"]; username != "" {
-		q = q.Where("username = ?", username)
-	}
-	if environmentId := params.Filters["environmentId"]; environmentId != "" {
-		q = q.Where("environment_id = ?", environmentId)
-	}
+	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
+	q = pagination.ApplyFilter(q, "type", params.Filters["type"])
+	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
+	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
+	q = pagination.ApplyFilter(q, "environment_id", params.Filters["environmentId"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {
@@ -163,18 +153,10 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		)
 	}
 
-	if severity := params.Filters["severity"]; severity != "" {
-		q = q.Where("severity = ?", severity)
-	}
-	if eventType := params.Filters["type"]; eventType != "" {
-		q = q.Where("type = ?", eventType)
-	}
-	if resourceType := params.Filters["resourceType"]; resourceType != "" {
-		q = q.Where("resource_type = ?", resourceType)
-	}
-	if username := params.Filters["username"]; username != "" {
-		q = q.Where("username = ?", username)
-	}
+	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
+	q = pagination.ApplyFilter(q, "type", params.Filters["type"])
+	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
+	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {

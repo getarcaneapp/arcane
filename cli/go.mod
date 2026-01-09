@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/cli
 
-go 1.25.4
+go 1.25.5
 
 require (
 	github.com/charmbracelet/fang v0.4.4
