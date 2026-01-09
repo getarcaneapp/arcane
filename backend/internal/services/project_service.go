@@ -1080,6 +1080,10 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
+	// Ensure the project's path is under the projects root (repair legacy relative paths)
+	if err := s.ensureProjectPathUnderRoot(ctx, &proj, false); err != nil {
+		return nil, err
+	}
 
 	if name != nil {
 		if newName := strings.TrimSpace(*name); newName != "" && proj.Name != newName {
@@ -1112,11 +1116,55 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		return err
 	}
 
+	// Normalize and persist project path to ensure include writes occur under projects root
+	if err := s.ensureProjectPathUnderRoot(ctx, proj, true); err != nil {
+		return err
+	}
+
 	if err := projects.WriteIncludeFile(proj.Path, relativePath, content); err != nil {
 		return fmt.Errorf("failed to update include file: %w", err)
 	}
 
 	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)
+	return nil
+}
+
+// ensureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
+// If not, it normalizes the path to `<projectsRoot>/<dirName or sanitized project name>`. When persist=true, it saves
+// the updated project path to the database.
+func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *models.Project, persist bool) error {
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	if err != nil {
+		return fmt.Errorf("failed to get projects directory: %w", err)
+	}
+
+	rootAbs, _ := filepath.Abs(projectsDirectory)
+	rootAbs = filepath.Clean(rootAbs)
+
+	projPathAbs := proj.Path
+	if abs, aerr := filepath.Abs(proj.Path); aerr == nil {
+		projPathAbs = filepath.Clean(abs)
+	}
+
+	if fs.IsSafeSubdirectory(rootAbs, projPathAbs) {
+		return nil
+	}
+
+	// Attempt to repair using known directory name or sanitized project name
+	dirName := utils.DerefString(proj.DirName)
+	if strings.TrimSpace(dirName) == "" {
+		dirName = fs.SanitizeProjectName(proj.Name)
+	}
+	candidate := filepath.Join(projectsDirectory, dirName)
+
+	slog.WarnContext(ctx, "Normalizing project path to projects root", "projectID", proj.ID, "oldPath", proj.Path, "newPath", candidate, "root", projectsDirectory)
+	proj.Path = filepath.Clean(candidate)
+
+	if persist {
+		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+			slog.WarnContext(ctx, "failed to persist normalized project path", "error", saveErr)
+		}
+	}
 	return nil
 }
 

@@ -26,6 +26,16 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 		}
 	}
 
+	// Always resolve to an absolute, cleaned path so downstream code and DB
+	// store a canonical location (prevents relative paths like "data/projects").
+	absDir, err := filepath.Abs(projectsDirectory)
+	if err == nil {
+		projectsDirectory = filepath.Clean(absDir)
+	} else {
+		// If Abs fails for any reason, still clean the provided value
+		projectsDirectory = filepath.Clean(projectsDirectory)
+	}
+
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
 		if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
 			return "", err
