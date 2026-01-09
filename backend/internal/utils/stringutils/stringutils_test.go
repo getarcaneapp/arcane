@@ -56,7 +56,7 @@ func TestCamelCaseToScreamingSnakeCase(t *testing.T) {
 	}{
 		{"empty string", "", ""},
 		{"simple", "camelCase", "CAMEL_CASE"},
-		{"multiple words", "thisIsALongerString", "THIS_IS_ALONGER_STRING"},
+		{"multiple words", "thisIsALongerString", "THIS_IS_A_LONGER_STRING"},
 		{"with number", "version2", "VERSION2"},
 	}
 
