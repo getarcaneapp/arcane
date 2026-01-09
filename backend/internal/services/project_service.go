@@ -51,6 +51,7 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 
 func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	slog.DebugContext(ctx, "Initializing path mapper", "configured_path", configuredPath)
 
 	var containerDir, hostDir string
 
@@ -60,33 +61,44 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 		if !pathmapper.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
 			containerDir = parts[0]
 			hostDir = parts[1]
+			slog.DebugContext(ctx, "Parsed path mapping", "container_dir", containerDir, "host_dir", hostDir)
 		}
 	}
 
 	if containerDir == "" {
 		containerDir = configuredPath
+		slog.DebugContext(ctx, "Using configured path as container directory", "container_dir", containerDir)
 	}
 
 	// Resolve container directory to absolute path
 	containerDirResolved, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
 	if err != nil {
-		slog.WarnContext(ctx, "unable to resolve container projects directory, using default", "error", err)
+		slog.WarnContext(ctx, "unable to resolve container projects directory, using default", "error", err, "input", containerDir)
 		containerDirResolved = "data/projects"
 	}
+	slog.DebugContext(ctx, "Resolved container directory", "resolved", containerDirResolved)
 
-	// Always ensure container directory is absolute for path mapper to work correctly with filepath.Rel
-	if abs, err := filepath.Abs(containerDirResolved); err == nil {
-		containerDirResolved = abs
+	// CRITICAL: Always ensure container directory is absolute for path mapper to work correctly
+	// Internal paths MUST be absolute to avoid filepath.Rel errors with mixed absolute/relative paths
+	absContainerDir, absErr := filepath.Abs(containerDirResolved)
+	if absErr != nil {
+		return nil, fmt.Errorf("failed to resolve absolute path for container directory %q: %w", containerDirResolved, absErr)
 	}
+	containerDirResolved = absContainerDir
+	slog.DebugContext(ctx, "Converted container directory to absolute path", "absolute_path", containerDirResolved)
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
 	if hostDir == "" {
+		slog.DebugContext(ctx, "Attempting auto-discovery of host path from Docker mounts")
 		if dockerCli, derr := s.dockerService.GetClient(); derr == nil {
-			absContainerDir, _ := filepath.Abs(containerDirResolved)
-			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
+			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, containerDirResolved); aerr == nil && discovery != "" {
 				hostDir = discovery
-				slog.DebugContext(ctx, "Auto-discovered host path for projects", "container", absContainerDir, "host", hostDir)
+				slog.DebugContext(ctx, "Auto-discovered host path for projects", "container", containerDirResolved, "host", hostDir)
+			} else if aerr != nil {
+				slog.DebugContext(ctx, "Auto-discovery failed", "error", aerr)
 			}
+		} else {
+			slog.DebugContext(ctx, "Could not get Docker client for auto-discovery", "error", derr)
 		}
 	}
 
@@ -94,9 +106,18 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	hostDirResolved := strings.TrimSpace(hostDir)
 	if hostDirResolved != "" {
 		hostDirResolved = filepath.Clean(hostDirResolved)
+		slog.DebugContext(ctx, "Cleaned host directory", "host_dir", hostDirResolved)
+	} else {
+		slog.DebugContext(ctx, "No host directory mapping - using matching mount")
 	}
 
-	return pathmapper.NewPathMapper(containerDirResolved, hostDirResolved), nil
+	pathMapper := pathmapper.NewPathMapper(containerDirResolved, hostDirResolved)
+	slog.DebugContext(ctx, "Created path mapper",
+		"container_prefix", containerDirResolved,
+		"host_prefix", hostDirResolved,
+		"is_non_matching", pathMapper.IsNonMatchingMount())
+
+	return pathMapper, nil
 }
 
 // Helpers

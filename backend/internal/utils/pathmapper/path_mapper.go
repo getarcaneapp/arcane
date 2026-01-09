@@ -32,6 +32,7 @@ func NewPathMapper(containerDir, hostDir string) *PathMapper {
 }
 
 // ContainerToHost translates a container path to host path
+// Assumes containerPrefix is always absolute (enforced by caller)
 func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	if !pm.isNonMatching {
 		return containerPath, nil // No translation needed
@@ -39,31 +40,25 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 
 	cleaned := filepath.Clean(containerPath)
 
-	// If containerPath is absolute and containerPrefix is not, or vice versa,
-	// we cannot safely determine if the path is within our prefix.
-	// Return the path unchanged as it's outside our scope.
-	cleanedAbs := filepath.IsAbs(cleaned)
-	prefixAbs := filepath.IsAbs(pm.containerPrefix)
-	if cleanedAbs != prefixAbs {
+	// If the volume path is not absolute, it's likely a relative path within the project
+	// which should be handled by Docker Compose - return unchanged
+	if !filepath.IsAbs(cleaned) {
 		return cleaned, nil
 	}
 
-	// If both are absolute, check if cleaned is under containerPrefix
-	if cleanedAbs && prefixAbs {
-		if !strings.HasPrefix(cleaned, pm.containerPrefix) {
-			// Path is absolute but outside our container prefix - no translation
-			return cleaned, nil
-		}
+	// Check if the absolute path is under our containerPrefix
+	if !strings.HasPrefix(cleaned, pm.containerPrefix) {
+		// Path is outside our container prefix - no translation needed
+		return cleaned, nil
 	}
 
-	// Calculate relative path
+	// Calculate relative path from container prefix
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		// This should not happen now given the checks above, but return error as safety net
 		return "", fmt.Errorf("failed to calculate relative path: %w", err)
 	}
 
-	// Only translate paths within container prefix
+	// Sanity check: ensure we didn't escape the prefix
 	if strings.HasPrefix(relPath, "..") || relPath == ".." || filepath.IsAbs(relPath) {
 		return cleaned, nil
 	}
