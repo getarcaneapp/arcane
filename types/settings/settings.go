@@ -32,6 +32,7 @@ type SettingDto struct {
 // Update is used to update application settings.
 type Update struct {
 	// ProjectsDirectory is the directory path where projects are stored.
+	// Must be an absolute path.
 	//
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`

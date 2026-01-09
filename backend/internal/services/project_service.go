@@ -50,7 +50,7 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 }
 
 func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
-	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
 	var containerDir, hostDir string
 
@@ -71,7 +71,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	containerDirResolved, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
 	if err != nil {
 		slog.WarnContext(ctx, "unable to resolve container projects directory, using default", "error", err)
-		containerDirResolved = "data/projects"
+		containerDirResolved = "/app/data/projects"
 	}
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
@@ -190,11 +190,11 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -366,7 +366,7 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.
 }
 
 func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -387,7 +387,7 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDir, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		slog.WarnContext(ctx, "unable to prepare projects directory", "error", err)
@@ -547,7 +547,7 @@ func formatDockerPorts(ports []container.Port) []string {
 }
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDir, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		return 0, fmt.Errorf("could not determine projects directory: %w", err)
@@ -692,11 +692,11 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -757,11 +757,11 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -800,7 +800,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
 	sanitized := fs.SanitizeProjectName(name)
 
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects"))
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
@@ -861,11 +861,11 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 	if removeVolumes {
 		// Get configured projects directory from settings
-		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 		projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 		if pdErr != nil {
 			slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-			projectsDirectory = "data/projects"
+			projectsDirectory = "/app/data/projects"
 		}
 
 		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
@@ -931,11 +931,11 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -975,11 +975,11 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -1030,11 +1030,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
@@ -1076,9 +1076,13 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	}
 
 	// Get projects directory for security validation
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects"))
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	}
+	// Ensure the project's path is under the projects root (repair legacy relative paths)
+	if err := s.ensureProjectPathUnderRoot(ctx, &proj, false); err != nil {
+		return nil, err
 	}
 
 	if name != nil {
@@ -1112,11 +1116,55 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		return err
 	}
 
+	// Normalize and persist project path to ensure include writes occur under projects root
+	if err := s.ensureProjectPathUnderRoot(ctx, proj, true); err != nil {
+		return err
+	}
+
 	if err := projects.WriteIncludeFile(proj.Path, relativePath, content); err != nil {
 		return fmt.Errorf("failed to update include file: %w", err)
 	}
 
 	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)
+	return nil
+}
+
+// ensureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
+// If not, it normalizes the path to `<projectsRoot>/<dirName or sanitized project name>`. When persist=true, it saves
+// the updated project path to the database.
+func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *models.Project, persist bool) error {
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	if err != nil {
+		return fmt.Errorf("failed to get projects directory: %w", err)
+	}
+
+	rootAbs, _ := filepath.Abs(projectsDirectory)
+	rootAbs = filepath.Clean(rootAbs)
+
+	projPathAbs := proj.Path
+	if abs, aerr := filepath.Abs(proj.Path); aerr == nil {
+		projPathAbs = filepath.Clean(abs)
+	}
+
+	if fs.IsSafeSubdirectory(rootAbs, projPathAbs) {
+		return nil
+	}
+
+	// Attempt to repair using known directory name or sanitized project name
+	dirName := utils.DerefString(proj.DirName)
+	if strings.TrimSpace(dirName) == "" {
+		dirName = fs.SanitizeProjectName(proj.Name)
+	}
+	candidate := filepath.Join(projectsDirectory, dirName)
+
+	slog.WarnContext(ctx, "Normalizing project path to projects root", "projectID", proj.ID, "oldPath", proj.Path, "newPath", candidate, "root", projectsDirectory)
+	proj.Path = filepath.Clean(candidate)
+
+	if persist {
+		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+			slog.WarnContext(ctx, "failed to persist normalized project path", "error", saveErr)
+		}
+	}
 	return nil
 }
 
@@ -1340,7 +1388,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 // End Table Functions
 
 func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.Project) (int, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDirectory, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		return 0, err

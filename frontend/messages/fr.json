@@ -226,7 +226,7 @@
 	"common_save_failed": "Échec de l'enregistrement",
 	"common_test_failed": "Échec du test : {resource}",
 	"common_test_success": "Test réussi : {resource}",
-	"common_refresh_success": "{resource} refreshed",
+	"common_refresh_success": "{resource} actualisé",
 	"common_remove_message": "Êtes-vous sûr de vouloir supprimer {resource}? Cette action ne peut pas être annulée.",
 	"common_required": "Ce champ est obligatoire",
 	"common_success": "Succès",

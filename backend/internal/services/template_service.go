@@ -902,7 +902,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 }
 
 func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, error) {
-	projectsDirectory, err := appfs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects"))
+	projectsDirectory, err := appfs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
