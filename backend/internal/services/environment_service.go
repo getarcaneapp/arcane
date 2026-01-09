@@ -14,7 +14,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
@@ -396,7 +396,7 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 			continue
 		}
 
-		decryptedToken, err := utils.Decrypt(reg.Token)
+		decryptedToken, err := crypto.Decrypt(reg.Token)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryURL", reg.URL, "error", err.Error())
 			continue
@@ -484,7 +484,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	// Prepare sync items with decrypted tokens
 	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
-		decryptedToken, err := utils.Decrypt(reg.Token)
+		decryptedToken, err := crypto.Decrypt(reg.Token)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
 			continue
@@ -610,7 +610,7 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 
 		// Decrypt token if present
 		if repo.Token != "" {
-			decryptedToken, err := utils.Decrypt(repo.Token)
+			decryptedToken, err := crypto.Decrypt(repo.Token)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to decrypt repository token for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
 				continue
@@ -620,7 +620,7 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 
 		// Decrypt SSH key if present
 		if repo.SSHKey != "" {
-			decryptedSSHKey, err := utils.Decrypt(repo.SSHKey)
+			decryptedSSHKey, err := crypto.Decrypt(repo.SSHKey)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to decrypt repository SSH key for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
 				continue

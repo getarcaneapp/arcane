@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,14 +17,14 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (
 		sortDirection = "asc"
 	}
 
-	capitalizedSortColumn := utils.CapitalizeFirstLetter(sortColumn)
+	capitalizedSortColumn := stringutils.CapitalizeFirstLetter(sortColumn)
 	sortField, sortFieldFound := reflect.TypeOf(result).Elem().Elem().FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
 	sortDirection = normalizeSortDirection(sortDirection)
 
 	if sortFieldFound && isSortable {
-		columnName := utils.CamelCaseToSnakeCase(sortColumn)
+		columnName := stringutils.CamelCaseToSnakeCase(sortColumn)
 		query = query.Clauses(clause.OrderBy{
 			Columns: []clause.OrderByColumn{
 				{Column: clause.Column{Name: columnName}, Desc: sortDirection == "desc"},

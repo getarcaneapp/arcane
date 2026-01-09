@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
@@ -567,7 +567,7 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 
 // applyCgroupLimits applies cgroup limits when running in a container.
 func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
-	cgroupLimits, err := utils.DetectCgroupLimits()
+	cgroupLimits, err := docker.DetectCgroupLimits()
 	if err != nil {
 		return cpuCount, memUsed, memTotal
 	}

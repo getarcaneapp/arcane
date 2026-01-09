@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/git"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
@@ -96,7 +97,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 
 	// Encrypt sensitive fields
 	if req.Token != "" {
-		encrypted, err := utils.Encrypt(req.Token)
+		encrypted, err := crypto.Encrypt(req.Token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt token: %w", err)
 		}
@@ -104,7 +105,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 	}
 
 	if req.SSHKey != "" {
-		encrypted, err := utils.Encrypt(req.SSHKey)
+		encrypted, err := crypto.Encrypt(req.SSHKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
 		}
@@ -161,7 +162,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		if *req.Token == "" {
 			updates["token"] = ""
 		} else {
-			encrypted, err := utils.Encrypt(*req.Token)
+			encrypted, err := crypto.Encrypt(*req.Token)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt token: %w", err)
 			}
@@ -173,7 +174,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		if *req.SSHKey == "" {
 			updates["ssh_key"] = ""
 		} else {
-			encrypted, err := utils.Encrypt(*req.SSHKey)
+			encrypted, err := crypto.Encrypt(*req.SSHKey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
 			}
@@ -250,7 +251,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 	}
 
 	if repository.Token != "" {
-		token, err := utils.Decrypt(repository.Token)
+		token, err := crypto.Decrypt(repository.Token)
 		if err != nil {
 			return fmt.Errorf("failed to decrypt token: %w", err)
 		}
@@ -258,7 +259,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 	}
 
 	if repository.SSHKey != "" {
-		sshKey, err := utils.Decrypt(repository.SSHKey)
+		sshKey, err := crypto.Decrypt(repository.SSHKey)
 		if err != nil {
 			return fmt.Errorf("failed to decrypt SSH key: %w", err)
 		}
@@ -307,7 +308,7 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 	}
 
 	if repository.Token != "" {
-		token, err := utils.Decrypt(repository.Token)
+		token, err := crypto.Decrypt(repository.Token)
 		if err != nil {
 			return authConfig, fmt.Errorf("failed to decrypt token: %w", err)
 		}
@@ -315,7 +316,7 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 	}
 
 	if repository.SSHKey != "" {
-		sshKey, err := utils.Decrypt(repository.SSHKey)
+		sshKey, err := crypto.Decrypt(repository.SSHKey)
 		if err != nil {
 			return authConfig, fmt.Errorf("failed to decrypt SSH key: %w", err)
 		}
@@ -454,7 +455,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 
 	// Handle Token update
 	if item.Token != "" {
-		encryptedToken, err := utils.Encrypt(item.Token)
+		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err == nil {
 			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
 		}
@@ -465,7 +466,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 
 	// Handle SSH Key update
 	if item.SSHKey != "" {
-		encryptedSSHKey, err := utils.Encrypt(item.SSHKey)
+		encryptedSSHKey, err := crypto.Encrypt(item.SSHKey)
 		if err == nil {
 			needsUpdate = utils.UpdateIfChanged(&existing.SSHKey, encryptedSSHKey) || needsUpdate
 		}
@@ -482,14 +483,14 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 	var err error
 
 	if item.Token != "" {
-		encryptedToken, err = utils.Encrypt(item.Token)
+		encryptedToken, err = crypto.Encrypt(item.Token)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt token for repository %s: %w", item.ID, err)
 		}
 	}
 
 	if item.SSHKey != "" {
-		encryptedSSHKey, err = utils.Encrypt(item.SSHKey)
+		encryptedSSHKey, err = crypto.Encrypt(item.SSHKey)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt SSH key for repository %s: %w", item.ID, err)
 		}
