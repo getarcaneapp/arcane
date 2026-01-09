@@ -102,9 +102,10 @@
 			minimap: { enabled: false },
 			scrollBeyondLastLine: false,
 			wordWrap: 'on',
-			fixedOverflowWidgets: true,
+			fixedOverflowWidgets: false,
 			dragAndDrop: false,
 			contextmenu: true,
+			selectionClipboard: true,
 			quickSuggestions: {
 				other: true,
 				comments: false,
@@ -127,7 +128,7 @@
 			label: m.common_select_all(),
 			contextMenuGroupId: '9_cutcopypaste',
 			contextMenuOrder: 4,
-			run: (ed) => {
+			run: (ed: monaco.editor.IStandaloneCodeEditor) => {
 				ed.focus();
 				const model = ed.getModel();
 				if (model) {
@@ -184,8 +185,9 @@
 				theme,
 				fontSize: parseInt(fontSize.replace('px', '')),
 				wordWrap: 'on',
-				fixedOverflowWidgets: true,
+				fixedOverflowWidgets: false,
 				dragAndDrop: false,
+				selectionClipboard: true,
 				scrollbar: autoHeight
 					? {
 							vertical: 'hidden',

@@ -424,6 +424,17 @@ main {
 	overflow-x: hidden;
 }
 
+/* Monaco editor widget positioning fixes - ensure suggestions align with cursor */
+.monaco-editor .suggest-widget {
+	z-index: 50;
+}
+
+/* Allow Monaco suggestion widgets to overflow card boundaries when needed */
+.monaco-editor .monaco-editor-overlaymessage,
+.monaco-editor .suggest-widget {
+	contain: none !important;
+}
+
 @media (max-width: 768px) {
 	.mobile-centered-popover {
 		position: fixed !important;

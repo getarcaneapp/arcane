@@ -22,6 +22,16 @@
     "i18n:mark": "i18n-unused mark-unused"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/legacy-modes": "^6.5.2",
+    "@codemirror/lint": "^6.9.1",
+    "@codemirror/history": "^0.19.2",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.1",
+    "@lezer/highlight": "^1.2.1",
+    "@uiw/codemirror-themes": "^4.25.2",
     "@shikijs/monaco": "^3.20.0",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.49.3",
