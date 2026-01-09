@@ -56,6 +56,11 @@ func Bootstrap(ctx context.Context) error {
 	utils.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
 
+	projectsDirEnv := os.Getenv("PROJECTS_DIRECTORY")
+	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, projectsDirEnv); err != nil {
+		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
+	}
+
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}

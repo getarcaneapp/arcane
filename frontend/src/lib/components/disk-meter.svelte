@@ -103,14 +103,14 @@
 							</div>
 							<div class="space-y-2">
 								<Label for="disk-path">{m.directory_path()}</Label>
-								<Input id="disk-path" placeholder="data/projects" bind:value={diskUsagePath} disabled={isSaving} />
+								<Input id="disk-path" placeholder="/app/data/projects" bind:value={diskUsagePath} disabled={isSaving} />
 							</div>
 							<div class="flex justify-end gap-2">
 								<ArcaneButton
 									action="cancel"
 									size="sm"
 									onclick={() => {
-										diskUsagePath = $settingsStore.diskUsagePath || 'data/projects';
+										diskUsagePath = $settingsStore.diskUsagePath || '/app/data/projects';
 										popoverOpen = false;
 									}}
 									disabled={isSaving}

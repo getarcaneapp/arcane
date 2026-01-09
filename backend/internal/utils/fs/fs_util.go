@@ -16,7 +16,7 @@ import (
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := projectsDir
 	if projectsDirectory == "" {
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	// Handle mapping format: "container_path:host_path"

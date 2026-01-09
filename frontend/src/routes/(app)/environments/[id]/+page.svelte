@@ -81,8 +81,8 @@
 	let formAutoInjectEnv = $state(false);
 	let formPruneMode = $state<'all' | 'dangling'>('dangling');
 	let formDefaultShell = $state('/bin/sh');
-	let formProjectsDirectory = $state('data/projects');
-	let formDiskUsagePath = $state('data/projects');
+	let formProjectsDirectory = $state('/app/data/projects');
+	let formDiskUsagePath = $state('/app/data/projects');
 	let formMaxImageUploadSize = $state(500);
 	let formBaseServerUrl = $state('http://localhost');
 
@@ -142,8 +142,8 @@
 			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
-			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
-			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 
@@ -198,8 +198,8 @@
 					formAutoInjectEnv !== settings.autoInjectEnv ||
 					formPruneMode !== (settings.dockerPruneMode || 'dangling') ||
 					formDefaultShell !== (settings.defaultShell || '/bin/sh') ||
-					formProjectsDirectory !== (settings.projectsDirectory || 'data/projects') ||
-					formDiskUsagePath !== (settings.diskUsagePath || 'data/projects') ||
+					formProjectsDirectory !== (settings.projectsDirectory || '/app/data/projects') ||
+					formDiskUsagePath !== (settings.diskUsagePath || '/app/data/projects') ||
 					formMaxImageUploadSize !== (settings.maxImageUploadSize || 500) ||
 					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost')))
 	);
@@ -347,8 +347,8 @@
 			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
-			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
-			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 

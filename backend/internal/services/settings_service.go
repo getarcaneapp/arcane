@@ -827,3 +827,38 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 
 	return key, nil
 }
+
+func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
+	if projectsDirEnv != "" {
+		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
+		return nil
+	}
+
+	var projectsDirSetting models.SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+	}
+
+	if projectsDirSetting.Value == "data/projects" {
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", "data/projects", "to", "/app/data/projects")
+
+		if err := s.UpdateSetting(ctx, "projectsDirectory", "/app/data/projects"); err != nil {
+			return fmt.Errorf("failed to update projectsDirectory: %w", err)
+		}
+
+		if err := s.LoadDatabaseSettings(ctx); err != nil {
+			return fmt.Errorf("failed to reload settings after normalization: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Successfully normalized projects directory")
+	}
+
+	return nil
+}
