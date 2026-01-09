@@ -91,7 +91,12 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 		hostDirResolved = filepath.Clean(hostDirResolved)
 	}
 
-	return pathmapper.NewPathMapper(containerDirResolved, hostDirResolved), nil
+	pm := pathmapper.NewPathMapper(containerDirResolved, hostDirResolved)
+	if !pm.IsNonMatchingMount() {
+		return nil, nil
+	}
+
+	return pm, nil
 }
 
 // Helpers

@@ -238,17 +238,6 @@ func setUserInContext(ctx context.Context, user *models.User) context.Context {
 	return ctx
 }
 
-// RequireAdmin is a Huma middleware that ensures the current user is an admin.
-func RequireAdmin(api huma.API) func(ctx huma.Context, next func(huma.Context)) {
-	return func(ctx huma.Context, next func(huma.Context)) {
-		if !IsAdminFromContext(ctx.Context()) {
-			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "Forbidden: admin access required")
-			return
-		}
-		next(ctx)
-	}
-}
-
 func userHasRole(user *models.User, role string) bool {
 	for _, r := range user.Roles {
 		if r == role {

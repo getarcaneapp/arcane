@@ -164,10 +164,16 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 	}
 
 	follow := c.DefaultQuery("follow", "true") == "true"
-	tail := c.DefaultQuery("tail", "100")
-	since := c.Query("since")
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
 	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format := c.DefaultQuery("format", "text")
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
 	batched := c.DefaultQuery("batched", "false") == "true"
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -267,10 +273,16 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 	}
 
 	follow := c.DefaultQuery("follow", "true") == "true"
-	tail := c.DefaultQuery("tail", "100")
-	since := c.Query("since")
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
 	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format := c.DefaultQuery("format", "text")
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
 	batched := c.DefaultQuery("batched", "false") == "true"
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -659,7 +671,12 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	ticker := time.NewTicker(2 * time.Second)
+	interval, _ := httputil.GetIntQueryParam(c, "interval", false)
+	if interval <= 0 {
+		interval = 2
+	}
+
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
 	cpuUpdateTicker := time.NewTicker(1 * time.Second)
