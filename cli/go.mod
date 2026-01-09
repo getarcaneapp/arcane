@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/fatih/color v1.18.0
-	github.com/getarcaneapp/arcane/types v0.0.0-20251219045603-8a9960a2bf04
+	github.com/getarcaneapp/arcane/types v0.0.0-20260109000917-dc7f88c0ea1b
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/sirupsen/logrus v1.9.3

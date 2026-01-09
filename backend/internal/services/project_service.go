@@ -785,7 +785,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	dockerCtx := context.WithoutCancel(ctx)
 
 	if err := projects.ComposeDown(dockerCtx, proj, false); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(dockerCtx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to bring down project: %w", err)
 	}
 
@@ -794,11 +794,11 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		"projectID":   projectID,
 		"projectName": projectFromDb.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project down action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(dockerCtx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(dockerCtx, "could not log project down action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+	return s.updateProjectStatusandCountsInternal(dockerCtx, projectID, models.ProjectStatusStopped)
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
@@ -1068,7 +1068,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	dockerCtx := context.WithoutCancel(ctx)
 
 	if err := projects.ComposeRestart(dockerCtx, compProj, nil); err != nil {
-		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		_ = s.updateProjectStatusInternal(dockerCtx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to restart project: %w", err)
 	}
 
@@ -1077,11 +1077,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		"projectID":   projectID,
 		"projectName": proj.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project restart action", "error", logErr)
+	if logErr := s.eventService.LogProjectEvent(dockerCtx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(dockerCtx, "could not log project restart action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	return s.updateProjectStatusandCountsInternal(dockerCtx, projectID, models.ProjectStatusRunning)
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string) (*models.Project, error) {
