@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -848,7 +849,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 	}
 
 	value := strings.TrimSpace(projectsDirSetting.Value)
-	if !filepath.IsAbs(value) && !strings.Contains(value, ":") {
+	if !filepath.IsAbs(value) && !strings.Contains(value, ":") && !pathmapper.IsWindowsDrivePath(value) {
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
 			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)

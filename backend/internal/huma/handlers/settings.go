@@ -13,6 +13,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
@@ -244,7 +245,26 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 
 	// Validate projects directory if provided
 	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
-		if !strings.HasPrefix(*input.Body.ProjectsDirectory, "/") {
+		path := *input.Body.ProjectsDirectory
+		
+		// Check if it's a Windows drive path first
+		if pathmapper.IsWindowsDrivePath(path) {
+			// Valid Windows path, allow it
+		} else if strings.Contains(path, ":") {
+			// Check if it's a mapping format (container:host)
+			parts := strings.SplitN(path, ":", 2)
+			if len(parts) == 2 {
+				// Validate container path (first part)
+				if !strings.HasPrefix(parts[0], "/") && !pathmapper.IsWindowsDrivePath(parts[0]) {
+					return nil, huma.Error400BadRequest("projectsDirectory mapping format: container path must be absolute")
+				}
+				// Host path (second part) can be any valid path
+			} else {
+				// Single colon but not Windows drive path or valid mapping
+				return nil, huma.Error400BadRequest("projectsDirectory must be an absolute path or valid mapping format")
+			}
+		} else if !strings.HasPrefix(path, "/") {
+			// No colon and doesn't start with / - must be relative
 			return nil, huma.Error400BadRequest("projectsDirectory must be an absolute path starting with '/'")
 		}
 	}
