@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,19 +78,16 @@ func parseIncludeItem(item interface{}, baseDir string) (IncludeFile, error) {
 		return IncludeFile{}, fmt.Errorf("empty include path")
 	}
 
-	var fullPath string
-	if filepath.IsAbs(includePath) {
-		fullPath = includePath
-	} else {
+	fullPath := includePath
+	if !filepath.IsAbs(includePath) {
 		fullPath = filepath.Join(baseDir, includePath)
 	}
-
 	fullPath = filepath.Clean(fullPath)
 
 	var content string
 	fileContent, err := os.ReadFile(fullPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// File doesn't exist yet - return empty content so it can be created
 			content = "# This file will be created when you save changes\nservices:\n"
 		} else {
@@ -134,10 +132,8 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	}
 
 	// Resolve include path to absolute path
-	var fullPath string
-	if filepath.IsAbs(includePath) {
-		fullPath = includePath
-	} else {
+	fullPath := includePath
+	if !filepath.IsAbs(includePath) {
 		fullPath = filepath.Join(absProjectDir, includePath)
 	}
 
@@ -148,23 +144,19 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	absFullPath = filepath.Clean(absFullPath)
 
 	// Resolve symlinks in the include path to prevent symlink-based path traversal attacks
-	// For parent directories, we evaluate what exists up to the file itself
 	evalPath := absFullPath
 	if evalFullPath, err := filepath.EvalSymlinks(absFullPath); err == nil {
 		evalPath = evalFullPath
-	} else if !os.IsNotExist(err) {
-		// If error is not "file doesn't exist", it's a real error
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("failed to resolve include path: %w", err)
 	} else {
 		// File doesn't exist yet - evaluate parent directory symlinks
 		dir := filepath.Dir(absFullPath)
 		if evalDir, err := filepath.EvalSymlinks(dir); err == nil {
 			evalPath = filepath.Join(evalDir, filepath.Base(absFullPath))
-		} else if !os.IsNotExist(err) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("failed to resolve parent directory: %w", err)
 		}
-		// If parent also doesn't exist, use the original path
-		// The validation will still catch if it's outside the project
 	}
 
 	// Prevent targeting the project directory itself
@@ -191,46 +183,13 @@ func WriteIncludeFile(projectDir, includePath, content string) error {
 		return err
 	}
 
-	// Resolve project directory symlinks for comparison
-	absProjectDir, err := filepath.Abs(projectDir)
-	if err != nil {
-		return fmt.Errorf("invalid project directory: %w", err)
-	}
-	absProjectDir = filepath.Clean(absProjectDir)
-	absProjectDir, err = filepath.EvalSymlinks(absProjectDir)
-	if err != nil {
-		return fmt.Errorf("failed to resolve project directory symlinks: %w", err)
-	}
-	absProjectDir = filepath.Clean(absProjectDir)
-
-	// Use the validated path for all operations
 	dir := filepath.Dir(validatedPath)
-
-	// Only validate that the directory path is not empty or current directory
 	if dir == "" || dir == "." {
 		return fmt.Errorf("invalid include path: cannot create directory '%s'", dir)
 	}
 
-	// Additional check: ensure 'dir' (after resolving symlinks) is inside the project directory
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return fmt.Errorf("invalid include directory: %w", err)
-	}
-	absDir = filepath.Clean(absDir)
-	realDir := absDir
-	if evaluatedDir, evalErr := filepath.EvalSymlinks(absDir); evalErr == nil {
-		realDir = filepath.Clean(evaluatedDir)
-	} else if !os.IsNotExist(evalErr) {
-		return fmt.Errorf("failed to resolve include directory symlinks: %w", evalErr)
-	}
-	projectPrefix := absProjectDir + string(filepath.Separator)
-	isWithinProject := strings.HasPrefix(realDir+string(filepath.Separator), projectPrefix) || realDir == absProjectDir
-	if !isWithinProject {
-		return fmt.Errorf("write access denied: include directory is outside project directory")
-	}
-
 	// Only create directory if it doesn't exist
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}

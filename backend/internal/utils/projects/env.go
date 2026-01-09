@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -75,14 +76,14 @@ func (l *EnvLoader) loadProcessEnv() EnvMap {
 }
 
 func (l *EnvLoader) ensureGlobalEnvFile(ctx context.Context, path string) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		header := fmt.Sprintf(globalEnvHeader, time.Now().Format(time.RFC3339))
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
 			return fmt.Errorf("create dir: %w", err)
 		}
-		if werr := os.WriteFile(path, []byte(header), common.FilePerm); werr != nil {
-			return fmt.Errorf("write file: %w", werr)
+		if err := os.WriteFile(path, []byte(header), common.FilePerm); err != nil {
+			return fmt.Errorf("write file: %w", err)
 		}
 		slog.InfoContext(ctx, "Created global env file", "path", path)
 	} else if err != nil {
@@ -96,7 +97,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 
 	info, err := os.Stat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			slog.DebugContext(ctx, "Global env file does not exist", "path", path)
 		} else {
 			slog.DebugContext(ctx, "Global env file not accessible", "path", path, "error", err)
@@ -108,14 +109,10 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 		return fmt.Errorf("path is a directory: %s", path)
 	}
 
-	slog.DebugContext(ctx, "Found global env file", "path", path)
-
 	globalEnv, err := parseEnvFileWithContext(path, envMap)
 	if err != nil {
 		return fmt.Errorf("parse env file: %w", err)
 	}
-
-	slog.DebugContext(ctx, "Read global env file", "count", len(globalEnv))
 
 	for k, v := range globalEnv {
 		if _, exists := envMap[k]; !exists {
@@ -133,7 +130,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 
 	info, err := os.Stat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			slog.DebugContext(ctx, "Project .env file does not exist", "path", path)
 		} else {
 			slog.DebugContext(ctx, "Project .env file not accessible", "path", path, "error", err)
@@ -145,21 +142,16 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 		return fmt.Errorf("path is a directory: %s", path)
 	}
 
-	slog.DebugContext(ctx, "Found project .env file", "path", path)
-
 	projectEnv, err := parseEnvFileWithContext(path, envMap)
 	if err != nil {
 		return fmt.Errorf("parse env file: %w", err)
 	}
-
-	slog.DebugContext(ctx, "Read project .env file", "count", len(projectEnv))
 
 	for k, v := range projectEnv {
 		envMap[k] = v
 		if l.autoInjectEnv {
 			injectionVars[k] = v
 		}
-		slog.DebugContext(ctx, "Loaded env var from project .env", "key", k, "value", v)
 	}
 
 	slog.DebugContext(ctx, "Merged project .env into environment map", "total_env_count", len(envMap))
