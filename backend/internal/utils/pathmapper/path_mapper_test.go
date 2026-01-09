@@ -50,7 +50,7 @@ func TestPathMapper_BugScenario_RelativePrefixAbsoluteVolumes(t *testing.T) {
 	// Reproduces the exact bug scenario from issue:
 	// relative containerPrefix with absolute host volume paths
 	pm := NewPathMapper("data/projects", "/host/projects")
-	
+
 	tests := []struct {
 		name     string
 		input    string
