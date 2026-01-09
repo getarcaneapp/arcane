@@ -39,11 +39,27 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 
 	cleaned := filepath.Clean(containerPath)
 
+	// If containerPath is absolute and containerPrefix is not, or vice versa,
+	// we cannot safely determine if the path is within our prefix.
+	// Return the path unchanged as it's outside our scope.
+	cleanedAbs := filepath.IsAbs(cleaned)
+	prefixAbs := filepath.IsAbs(pm.containerPrefix)
+	if cleanedAbs != prefixAbs {
+		return cleaned, nil
+	}
+
+	// If both are absolute, check if cleaned is under containerPrefix
+	if cleanedAbs && prefixAbs {
+		if !strings.HasPrefix(cleaned, pm.containerPrefix) {
+			// Path is absolute but outside our container prefix - no translation
+			return cleaned, nil
+		}
+	}
+
 	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		// filepath.Rel fails when mixing absolute and relative paths.
-		// Treat this as a path outside our prefix - return unchanged.
+		// This should not happen now, but keep as safety net
 		return cleaned, nil
 	}
 

@@ -46,6 +46,42 @@ func TestPathMapper_AbsolutePathWithRelativePrefix_NoTranslation(t *testing.T) {
 	assert.Equal(t, "/home/user/docker/project/data", result)
 }
 
+func TestPathMapper_BugScenario_RelativePrefixAbsoluteVolumes(t *testing.T) {
+	// Reproduces the exact bug scenario from issue:
+	// relative containerPrefix with absolute host volume paths
+	pm := NewPathMapper("data/projects", "/host/projects")
+	
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "absolute path outside prefix",
+			input:    "/home/abstract/docker/ai/codeproject-ai/data",
+			expected: "/home/abstract/docker/ai/codeproject-ai/data",
+		},
+		{
+			name:     "absolute path /mnt/app_jellyfin",
+			input:    "/mnt/app_jellyfin",
+			expected: "/mnt/app_jellyfin",
+		},
+		{
+			name:     "absolute path /home/ethan/app/file.db",
+			input:    "/home/ethan/app/file.db",
+			expected: "/home/ethan/app/file.db",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := pm.ContainerToHost(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "C:/User/arcane/projects")
 
