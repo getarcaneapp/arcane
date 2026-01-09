@@ -780,7 +780,11 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return fmt.Errorf("failed to update project status to stopping: %w", err)
 	}
 
-	if err := projects.ComposeDown(ctx, proj, false); err != nil {
+	// Use a detached context for Docker operations to ensure they complete
+	// even if the HTTP request context is cancelled (e.g., proxy timeout).
+	dockerCtx := context.WithoutCancel(ctx)
+
+	if err := projects.ComposeDown(dockerCtx, proj, false); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to bring down project: %w", err)
 	}
@@ -859,6 +863,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)
 	}
 
+	// Use a detached context for Docker operations to ensure they complete
+	// even if the HTTP request context is cancelled (e.g., proxy timeout).
+	dockerCtx := context.WithoutCancel(ctx)
+
 	if removeVolumes {
 		// Get configured projects directory from settings
 		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects")
@@ -875,7 +883,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		}
 
 		if compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper); lerr == nil {
-			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
+			if derr := projects.ComposeDown(dockerCtx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
 			}
 		} else {
@@ -912,7 +920,13 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
-	if err := s.PullProjectImages(ctx, projectID, io.Discard, nil); err != nil {
+	// Use a detached context for long-running Docker operations.
+	// This ensures the deployment completes even if the HTTP request context
+	// is cancelled (e.g., due to proxy timeout when deploying to remote agents).
+	// The deployment will continue in the background and update the project status.
+	deployCtx := context.WithoutCancel(ctx)
+
+	if err := s.PullProjectImages(deployCtx, projectID, io.Discard, nil); err != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
 
@@ -921,7 +935,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
 	}
 
-	return s.DeployProject(ctx, projectID, systemUser)
+	return s.DeployProject(deployCtx, projectID, systemUser)
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
@@ -1049,7 +1063,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
-	if err := projects.ComposeRestart(ctx, compProj, nil); err != nil {
+	// Use a detached context for Docker operations to ensure they complete
+	// even if the HTTP request context is cancelled (e.g., proxy timeout).
+	dockerCtx := context.WithoutCancel(ctx)
+
+	if err := projects.ComposeRestart(dockerCtx, compProj, nil); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to restart project: %w", err)
 	}
