@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,6 +66,32 @@ type SearchSettingsOutput struct {
 
 type GetCategoriesOutput struct {
 	Body []category.Category
+}
+
+// validateProjectsDirectoryValue validates a projects directory value allowing:
+// - Unix absolute paths (/...)
+// - Windows drive paths (C:/..., C:\...)
+// - Mapping format "container:host" where container is absolute Unix or Windows path
+func validateProjectsDirectoryValue(path string) error {
+	switch {
+	case pathmapper.IsWindowsDrivePath(path):
+		return nil
+	case strings.Contains(path, ":"):
+		parts := strings.SplitN(path, ":", 2)
+		if len(parts) != 2 {
+			return errors.New("projectsDirectory must be an absolute path or valid mapping format")
+		}
+		container := parts[0]
+		if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
+			return errors.New("projectsDirectory mapping format: container path must be absolute")
+		}
+		return nil
+	default:
+		if !strings.HasPrefix(path, "/") {
+			return errors.New("projectsDirectory must be an absolute path starting with '/'")
+		}
+		return nil
+	}
 }
 
 // RegisterSettings registers settings management routes using Huma.
@@ -245,27 +272,8 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 
 	// Validate projects directory if provided
 	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
-		path := *input.Body.ProjectsDirectory
-		
-		// Check if it's a Windows drive path first
-		if pathmapper.IsWindowsDrivePath(path) {
-			// Valid Windows path, allow it
-		} else if strings.Contains(path, ":") {
-			// Check if it's a mapping format (container:host)
-			parts := strings.SplitN(path, ":", 2)
-			if len(parts) == 2 {
-				// Validate container path (first part)
-				if !strings.HasPrefix(parts[0], "/") && !pathmapper.IsWindowsDrivePath(parts[0]) {
-					return nil, huma.Error400BadRequest("projectsDirectory mapping format: container path must be absolute")
-				}
-				// Host path (second part) can be any valid path
-			} else {
-				// Single colon but not Windows drive path or valid mapping
-				return nil, huma.Error400BadRequest("projectsDirectory must be an absolute path or valid mapping format")
-			}
-		} else if !strings.HasPrefix(path, "/") {
-			// No colon and doesn't start with / - must be relative
-			return nil, huma.Error400BadRequest("projectsDirectory must be an absolute path starting with '/'")
+		if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 	}
 

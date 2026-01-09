@@ -50,6 +50,21 @@ func TestProjectsDirectoryValidation(t *testing.T) {
 			expectValid: true,
 		},
 		{
+			name:        "valid Windows drive path backslashes",
+			projectsDir: "C:\\projects",
+			expectValid: true,
+		},
+		{
+			name:        "valid mapping with Windows backslashes",
+			projectsDir: "/app/data/projects:D:\\host\\path",
+			expectValid: true,
+		},
+		{
+			name:        "valid mapping with Windows container path",
+			projectsDir: "C:/container:D:/host",
+			expectValid: true,
+		},
+		{
 			name:        "invalid single colon not Windows",
 			projectsDir: "invalid:path",
 			expectValid: false,
@@ -61,27 +76,28 @@ func TestProjectsDirectoryValidation(t *testing.T) {
 			// Replicate the validation logic from UpdateSettings handler
 			path := tt.projectsDir
 			isValid := true
-			
-			// Check if it's a Windows drive path first
-			if pathmapper.IsWindowsDrivePath(path) {
+
+			switch {
+			case pathmapper.IsWindowsDrivePath(path):
 				// Valid Windows path
-			} else if strings.Contains(path, ":") {
-				// Check if it's a mapping format (container:host)
+			case strings.Contains(path, ":"):
+				// Mapping format (container:host)
 				parts := strings.SplitN(path, ":", 2)
-				if len(parts) == 2 {
-					// Validate container path (first part)
-					if !strings.HasPrefix(parts[0], "/") && !pathmapper.IsWindowsDrivePath(parts[0]) {
-						isValid = false
-					}
-				} else {
-					// Single colon but not Windows drive path or valid mapping
+				if len(parts) != 2 {
+					isValid = false
+					break
+				}
+				container := parts[0]
+				if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
 					isValid = false
 				}
-			} else if !strings.HasPrefix(path, "/") {
-				// No colon and doesn't start with / - must be relative
-				isValid = false
+			default:
+				if !strings.HasPrefix(path, "/") {
+					// No colon and doesn't start with / - must be relative
+					isValid = false
+				}
 			}
-			
+
 			assert.Equal(t, tt.expectValid, isValid, "path: %s", tt.projectsDir)
 		})
 	}

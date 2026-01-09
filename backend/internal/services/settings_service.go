@@ -849,12 +849,26 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 	}
 
 	value := strings.TrimSpace(projectsDirSetting.Value)
-	if !filepath.IsAbs(value) && !strings.Contains(value, ":") && !pathmapper.IsWindowsDrivePath(value) {
+	// Detect mapping format (container:host), allowing Windows or Unix container paths.
+	isMapping := false
+	if strings.Contains(value, ":") {
+		// Treat as mapping if the container side looks like an absolute Unix path
+		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
+		// first colon to not break on Windows drive letters.
+		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+			isMapping = true
+		}
+	}
+
+	if !filepath.IsAbs(value) && !isMapping {
+		// Resolve relative path using current working directory for transparency.
+		// Note: In containers, WORKDIR is set to /app so "data/..." becomes "/app/data/...".
+		cwd, _ := os.Getwd()
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
 			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
 		}
-		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath)
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
 
 		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
 			return fmt.Errorf("failed to update projectsDirectory: %w", err)
