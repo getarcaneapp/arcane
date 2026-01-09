@@ -858,6 +858,8 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		}
 
 		slog.InfoContext(ctx, "Successfully normalized projects directory")
+	} else {
+		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
 	}
 
 	return nil

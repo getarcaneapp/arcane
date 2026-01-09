@@ -242,6 +242,13 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, err
 	}
 
+	// Validate projects directory if provided
+	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
+		if !strings.HasPrefix(*input.Body.ProjectsDirectory, "/") {
+			return nil, huma.Error400BadRequest("projectsDirectory must be an absolute path starting with '/'")
+		}
+	}
+
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
