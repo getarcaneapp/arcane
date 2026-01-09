@@ -33,9 +33,12 @@
 			<h3 class="text-lg font-semibold">{m.templates_registries_section_title()}</h3>
 			<p class="text-muted-foreground text-sm">{m.templates_registries_section_description()}</p>
 		</div>
-		<ArcaneButton action="create" onclick={onAddRegistry} class="w-full sm:w-auto">
-			{m.common_add_button({ resource: m.resource_registry_cap() })}
-		</ArcaneButton>
+		<ArcaneButton
+			action="create"
+			onclick={onAddRegistry}
+			customLabel={m.common_add_button({ resource: m.resource_registry_cap() })}
+			class="w-full sm:w-auto"
+		/>
 	</div>
 
 	{#if registries.length === 0}

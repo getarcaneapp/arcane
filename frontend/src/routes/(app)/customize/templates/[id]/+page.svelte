@@ -94,8 +94,8 @@
 	}
 </script>
 
-<div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
-	<div class="space-y-3 sm:space-y-4">
+<div class="mx-auto flex h-full min-h-0 w-full max-w-full flex-col gap-6 p-2 sm:p-6">
+	<div class="flex-shrink-0 space-y-3 sm:space-y-4">
 		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
@@ -130,10 +130,9 @@
 			<ArcaneButton
 				action="create"
 				onclick={() => goto(`/projects/new?templateId=${template.id}`)}
+				customLabel={m.compose_create_project()}
 				class="w-full gap-2 sm:w-auto"
-			>
-				{m.compose_create_project()}
-			</ArcaneButton>
+			/>
 
 			{#if canDownload}
 				<ArcaneButton
@@ -165,15 +164,14 @@
 					disabled={isDeleting}
 					loading={isDeleting}
 					loadingLabel={m.common_action_deleting()}
+					customLabel={m.templates_delete_template()}
 					class="w-full gap-2 sm:w-auto"
-				>
-					{m.templates_delete_template()}
-				</ArcaneButton>
+				/>
 			{/if}
 		</div>
 	</div>
 
-	<div class="grid gap-4 sm:grid-cols-2">
+	<div class="grid flex-shrink-0 gap-4 sm:grid-cols-2">
 		<Card.Root variant="subtle">
 			<Card.Content class="flex items-center gap-4 p-4">
 				<div class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
@@ -208,93 +206,97 @@
 		</Card.Root>
 	</div>
 
-	<div class="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-		<Card.Root class="flex min-w-0 flex-col lg:col-span-1 xl:col-span-2">
-			<Card.Header icon={CodeIcon} class="flex-shrink-0">
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.common_docker_compose()}</h2>
-					</Card.Title>
-					<Card.Description>{m.templates_service_definitions()}</Card.Description>
-				</div>
-			</Card.Header>
-			<Card.Content class="flex min-h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
-				<div class="min-h-0 min-w-0 flex-1 rounded-t-none rounded-b-xl">
-					<CodeEditor bind:value={compose} language="yaml" readOnly={true} fontSize="13px" />
-				</div>
-			</Card.Content>
-		</Card.Root>
+	<div class="min-h-0 flex-1">
+		<div class="grid h-full min-h-0 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+			<Card.Root class="flex h-full min-h-0 min-w-0 flex-col lg:col-span-1 xl:col-span-2">
+				<Card.Header icon={CodeIcon} class="flex-shrink-0">
+					<div class="flex flex-col space-y-1.5">
+						<Card.Title>
+							<h2>{m.common_docker_compose()}</h2>
+						</Card.Title>
+						<Card.Description>{m.templates_service_definitions()}</Card.Description>
+					</div>
+				</Card.Header>
+				<Card.Content class="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
+					<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-t-none rounded-b-xl">
+						<CodeEditor bind:value={compose} language="yaml" readOnly={true} fontSize="13px" />
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-		<div class="flex min-w-0 flex-col gap-6 lg:col-span-1">
-			{#if services?.length}
-				<Card.Root class="min-w-0 flex-shrink-0">
-					<Card.Header icon={ContainersIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>
-								<h2>{m.services()}</h2>
-							</Card.Title>
-							<Card.Description>{m.templates_containers_to_create()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="grid grid-cols-1 gap-2 p-4">
-						{#each services as service}
-							<Card.Root variant="subtle" class="min-w-0">
-								<Card.Content class="flex min-w-0 items-center gap-3 p-3">
-									<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-										<BoxIcon class="size-4 text-blue-500" />
-									</div>
-									<div class="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{service}</div>
-								</Card.Content>
-							</Card.Root>
-						{/each}
-					</Card.Content>
-				</Card.Root>
-			{/if}
+			<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 lg:col-span-1">
+				{#if services?.length}
+					<Card.Root class="min-w-0 flex-shrink-0">
+						<Card.Header icon={ContainersIcon}>
+							<div class="flex flex-col space-y-1.5">
+								<Card.Title>
+									<h2>{m.services()}</h2>
+								</Card.Title>
+								<Card.Description>{m.templates_containers_to_create()}</Card.Description>
+							</div>
+						</Card.Header>
+						<Card.Content class="grid grid-cols-1 gap-2 p-4">
+							{#each services as service}
+								<Card.Root variant="subtle" class="min-w-0">
+									<Card.Content class="flex min-w-0 items-center gap-3 p-3">
+										<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+											<BoxIcon class="size-4 text-blue-500" />
+										</div>
+										<div class="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{service}</div>
+									</Card.Content>
+								</Card.Root>
+							{/each}
+						</Card.Content>
+					</Card.Root>
+				{/if}
 
-			{#if envVars?.length}
-				<Card.Root class="min-w-0 flex-shrink-0">
-					<Card.Header icon={VariableIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>
-								<h2>{m.common_environment_variables()}</h2>
-							</Card.Title>
-							<Card.Description>{m.templates_default_config_values()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="grid grid-cols-1 gap-2 p-4">
-						{#each envVars as envVar}
-							<Card.Root variant="subtle" class="min-w-0">
-								<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
-									<div class="text-muted-foreground truncate text-xs font-semibold tracking-wide uppercase">{envVar.key}</div>
-									{#if envVar.value}
-										<div class="text-foreground min-w-0 font-mono text-sm break-words select-all">{envVar.value}</div>
-									{:else}
-										<div class="text-muted-foreground text-xs italic">{m.common_no_default_value()}</div>
-									{/if}
-								</Card.Content>
-							</Card.Root>
-						{/each}
-					</Card.Content>
-				</Card.Root>
-			{/if}
+				{#if envVars?.length}
+					<Card.Root class="min-w-0 flex-shrink-0">
+						<Card.Header icon={VariableIcon}>
+							<div class="flex flex-col space-y-1.5">
+								<Card.Title>
+									<h2>{m.common_environment_variables()}</h2>
+								</Card.Title>
+								<Card.Description>{m.templates_default_config_values()}</Card.Description>
+							</div>
+						</Card.Header>
+						<Card.Content class="grid grid-cols-1 gap-2 p-4">
+							{#each envVars as envVar}
+								<Card.Root variant="subtle" class="min-w-0">
+									<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
+										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-words uppercase select-all">
+											{envVar.key}
+										</div>
+										{#if envVar.value}
+											<div class="text-foreground min-w-0 font-mono text-sm break-words select-all">{envVar.value}</div>
+										{:else}
+											<div class="text-muted-foreground text-xs italic">{m.common_no_default_value()}</div>
+										{/if}
+									</Card.Content>
+								</Card.Root>
+							{/each}
+						</Card.Content>
+					</Card.Root>
+				{/if}
 
-			{#if env}
-				<Card.Root class="flex min-w-0 flex-grow flex-col lg:h-full">
-					<Card.Header icon={FileTextIcon} class="flex-shrink-0">
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>
-								<h2>{m.environment_file()}</h2>
-							</Card.Title>
-							<Card.Description>{m.templates_raw_env_config()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="flex h-[500px] min-w-0 flex-grow flex-col p-0 lg:h-full">
-						<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-							<CodeEditor bind:value={env} language="env" readOnly={true} fontSize="13px" />
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
+				{#if env}
+					<Card.Root class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+						<Card.Header icon={FileTextIcon} class="flex-shrink-0">
+							<div class="flex flex-col space-y-1.5">
+								<Card.Title>
+									<h2>{m.environment_file()}</h2>
+								</Card.Title>
+								<Card.Description>{m.templates_raw_env_config()}</Card.Description>
+							</div>
+						</Card.Header>
+						<Card.Content class="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
+							<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
+								<CodeEditor bind:value={env} language="env" readOnly={true} fontSize="13px" />
+							</div>
+						</Card.Content>
+					</Card.Root>
+				{/if}
+			</div>
 		</div>
 	</div>
 </div>
