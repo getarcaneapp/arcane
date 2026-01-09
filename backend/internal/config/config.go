@@ -35,6 +35,7 @@ type Config struct {
 	OidcSkipTlsVerify bool
 
 	DockerHost              string
+	ProjectsDirectory       string
 	LogJson                 bool
 	LogLevel                string
 	AgentMode               bool
@@ -70,6 +71,7 @@ func Load() *Config {
 		OidcSkipTlsVerify: getBoolEnvOrDefault("OIDC_SKIP_TLS_VERIFY", false),
 
 		DockerHost:              getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		ProjectsDirectory:       os.Getenv("PROJECTS_DIRECTORY"),
 		LogJson:                 getBoolEnvOrDefault("LOG_JSON", false),
 		LogLevel:                strings.ToLower(getEnvOrDefault("LOG_LEVEL", "info")),
 		AgentMode:               getBoolEnvOrDefault("AGENT_MODE", false),
