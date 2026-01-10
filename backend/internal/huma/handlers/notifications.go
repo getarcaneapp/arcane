@@ -215,7 +215,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		return nil, err
 	}
 	provider := models.NotificationProvider(input.Body.Provider)
-	if provider != models.NotificationProviderDiscord && provider != models.NotificationProviderEmail {
+	if provider != models.NotificationProviderDiscord && provider != models.NotificationProviderEmail && provider != models.NotificationProviderTelegram {
 		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
 	}
 
@@ -281,6 +281,9 @@ func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *Get
 	}
 	settings, err := h.appriseService.GetSettings(ctx)
 	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to retrieve Apprise settings", err)
+	}
+	if settings == nil {
 		return nil, huma.Error404NotFound((&common.AppriseSettingsNotFoundError{}).Error())
 	}
 

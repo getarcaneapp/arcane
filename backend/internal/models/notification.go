@@ -7,8 +7,12 @@ import (
 type NotificationProvider string
 
 const (
-	NotificationProviderDiscord NotificationProvider = "discord"
-	NotificationProviderEmail   NotificationProvider = "email"
+	NotificationProviderDiscord  NotificationProvider = "discord"
+	NotificationProviderEmail    NotificationProvider = "email"
+	NotificationProviderTelegram NotificationProvider = "telegram"
+	NotificationProviderSignal   NotificationProvider = "signal"
+	NotificationProviderSlack    NotificationProvider = "slack"
+	NotificationProviderNtfy     NotificationProvider = "ntfy"
 )
 
 type NotificationEventType string
@@ -56,10 +60,11 @@ func (NotificationLog) TableName() string {
 }
 
 type DiscordConfig struct {
-	WebhookURL string                         `json:"webhookUrl"`
-	Username   string                         `json:"username,omitempty"`
-	AvatarURL  string                         `json:"avatarUrl,omitempty"`
-	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+	WebhookID string                         `json:"webhookId"`
+	Token     string                         `json:"token"`
+	Username  string                         `json:"username,omitempty"`
+	AvatarURL string                         `json:"avatarUrl,omitempty"`
+	Events    map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type EmailConfig struct {
@@ -71,6 +76,53 @@ type EmailConfig struct {
 	ToAddresses  []string                       `json:"toAddresses"`
 	TLSMode      EmailTLSMode                   `json:"tlsMode"`
 	Events       map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type TelegramConfig struct {
+	BotToken     string                         `json:"botToken"`
+	ChatIDs      []string                       `json:"chatIds"`
+	Preview      bool                           `json:"preview"`
+	Notification bool                           `json:"notification"`
+	Title        string                         `json:"title,omitempty"`
+	Events       map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type SignalConfig struct {
+	Host       string                         `json:"host"`
+	Port       int                            `json:"port"`
+	User       string                         `json:"user,omitempty"`
+	Password   string                         `json:"password,omitempty"`
+	Token      string                         `json:"token,omitempty"`
+	Source     string                         `json:"source"`
+	Recipients []string                       `json:"recipients"`
+	DisableTLS bool                           `json:"disableTls"`
+	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type SlackConfig struct {
+	Token    string                         `json:"token"`
+	BotName  string                         `json:"botName,omitempty"`
+	Icon     string                         `json:"icon,omitempty"`
+	Color    string                         `json:"color,omitempty"`
+	Title    string                         `json:"title,omitempty"`
+	Channel  string                         `json:"channel,omitempty"`
+	ThreadTS string                         `json:"threadTs,omitempty"`
+	Events   map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type NtfyConfig struct {
+	Host                   string                         `json:"host"`
+	Port                   int                            `json:"port"`
+	Topic                  string                         `json:"topic"`
+	Username               string                         `json:"username,omitempty"`
+	Password               string                         `json:"password,omitempty"`
+	Priority               string                         `json:"priority,omitempty"`
+	Tags                   []string                       `json:"tags,omitempty"`
+	Icon                   string                         `json:"icon,omitempty"`
+	Cache                  bool                           `json:"cache"`
+	Firebase               bool                           `json:"firebase"`
+	DisableTLSVerification bool                           `json:"disableTlsVerification"`
+	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type AppriseSettings struct {
