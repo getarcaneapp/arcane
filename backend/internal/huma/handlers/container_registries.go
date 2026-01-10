@@ -8,7 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -348,7 +348,7 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryRetrievalError{Err: err}).Error())
 	}
 
-	decryptedToken, err := utils.Decrypt(reg.Token)
+	decryptedToken, err := crypto.Decrypt(reg.Token)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.TokenDecryptionError{Err: err}).Error())
 	}

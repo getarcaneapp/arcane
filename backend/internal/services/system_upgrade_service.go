@@ -16,7 +16,6 @@ import (
 	imagetypes "github.com/docker/docker/api/types/image"
 	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 )
 
@@ -186,7 +185,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
 func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
-	id, err := utils.GetCurrentContainerID()
+	id, err := dockerutils.GetCurrentContainerID()
 	if err != nil {
 		return "", ErrNotRunningInDocker
 	}

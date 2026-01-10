@@ -14,9 +14,9 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/types/version"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/mod/semver"
@@ -374,7 +374,7 @@ func (s *VersionService) normalizeImageRef(configImage string) string {
 
 // getCurrentContainerID detects if we're running in Docker via cgroup, mountinfo, or hostname
 func (s *VersionService) getCurrentContainerID() (string, error) {
-	return utils.GetCurrentContainerID()
+	return docker.GetCurrentContainerID()
 }
 
 // extractTagFromImageRef extracts the tag from an image reference using distribution/reference

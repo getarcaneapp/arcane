@@ -1,4 +1,4 @@
-package utils
+package crypto
 
 import (
 	"crypto/rand"
@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// GetStringClaim extracts a string claim from a map
 func GetStringClaim(m map[string]any, key string) string {
 	if v, ok := m[key]; ok {
 		switch t := v.(type) {
@@ -20,6 +21,7 @@ func GetStringClaim(m map[string]any, key string) string {
 	return ""
 }
 
+// GetBoolClaim extracts a boolean claim from a map
 func GetBoolClaim(m map[string]any, key string) bool {
 	if v, ok := m[key]; ok {
 		switch t := v.(type) {
@@ -39,6 +41,7 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
+// GetStringSliceClaim extracts a string slice claim from a map
 func GetStringSliceClaim(m map[string]any, key string) []string {
 	v, ok := m[key]
 	if !ok || v == nil {
@@ -80,6 +83,7 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 	return nil
 }
 
+// CheckOrGenerateJwtSecret verifies a secret exists or generates a random one
 func CheckOrGenerateJwtSecret(jwtSecret string) []byte {
 	var secretBytes []byte
 	if jwtSecret != "" {
@@ -91,9 +95,10 @@ func CheckOrGenerateJwtSecret(jwtSecret string) []byte {
 			panic(fmt.Errorf("failed to generate random JWT secret: %w", err))
 		}
 	}
-	return nil
+	return secretBytes
 }
 
+// ParseJWTClaims decodes and unmarshals the payload part of a JWT
 func ParseJWTClaims(idToken string) map[string]any {
 	parts := strings.Split(idToken, ".")
 	if len(parts) < 2 {
@@ -110,6 +115,7 @@ func ParseJWTClaims(idToken string) map[string]any {
 	return claims
 }
 
+// GetByPath extracts a value from a nested map using a dot-separated path
 func GetByPath(m map[string]any, path string) (any, bool) {
 	if m == nil {
 		return nil, false
@@ -130,6 +136,7 @@ func GetByPath(m map[string]any, path string) (any, bool) {
 	return cur, true
 }
 
+// EvalMatch checks if a claim matches any of the desired values
 func EvalMatch(v any, want []string) bool {
 	if len(want) == 0 {
 		if b, ok := v.(bool); ok {

@@ -137,7 +137,8 @@ func emitDeployContainerUpdate(w io.Writer, lastSig map[string]string, cs api.Co
 	}
 
 	phase := deployPhaseFromSummary(cs)
-	sig := strings.Join([]string{phase, cs.State, cs.Health, strings.TrimSpace(cs.Status)}, "|")
+	status := strings.TrimSpace(cs.Status)
+	sig := strings.Join([]string{phase, cs.State, cs.Health, status}, "|")
 	if lastSig[name] == sig {
 		return
 	}
@@ -150,8 +151,8 @@ func emitDeployContainerUpdate(w io.Writer, lastSig map[string]string, cs api.Co
 		"state":   cs.State,
 		"health":  cs.Health,
 	}
-	if strings.TrimSpace(cs.Status) != "" {
-		payload["status"] = strings.TrimSpace(cs.Status)
+	if status != "" {
+		payload["status"] = status
 	}
 	writeJSONLine(w, payload)
 }
@@ -163,7 +164,7 @@ func deployPhaseFromSummary(cs api.ContainerSummary) string {
 	switch {
 	case state == "running" && health == "healthy":
 		return "service_healthy"
-	case health == "starting" || health == "unhealthy":
+	case health == "starting", health == "unhealthy":
 		return "service_waiting_healthy"
 	case state != "running" && state != "":
 		return "service_state"

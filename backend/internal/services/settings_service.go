@@ -23,8 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -188,7 +188,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -197,7 +197,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
 			continue
 		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
@@ -249,10 +249,10 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		}
 
 		// Check if environment variable is set
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
 		}
 	}
 }
@@ -620,12 +620,12 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
 	}
-	envVal = utils.TrimQuotes(envVal)
+	envVal = stringutils.TrimQuotes(envVal)
 
 	return s.upsertEnvSetting(ctx, tx, key, envVal)
 }

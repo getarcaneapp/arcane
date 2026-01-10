@@ -1,4 +1,4 @@
-package utils
+package crypto
 
 import (
 	"encoding/base64"
@@ -233,7 +233,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	})
 
 	t.Run("encrypt and decrypt unicode text", func(t *testing.T) {
-		plaintext := "Unicode test: hello world with emoji" // Removed non-Latin characters per gosmopolitan
+		plaintext := "Unicode test: hello world with emoji"
 
 		encrypted, err := Encrypt(plaintext)
 		require.NoError(t, err)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
 )
 
@@ -14,8 +13,8 @@ type FilesystemWatcherJob struct {
 	projectService   *services.ProjectService
 	templateService  *services.TemplateService
 	settingsService  *services.SettingsService
-	projectsWatcher  *utils.FilesystemWatcher
-	templatesWatcher *utils.FilesystemWatcher
+	projectsWatcher  *fs.Watcher
+	templatesWatcher *fs.Watcher
 }
 
 func NewFilesystemWatcherJob(
@@ -54,7 +53,7 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 		return err
 	}
 
-	sw, err := utils.NewFilesystemWatcher(projectsDirectory, utils.WatcherOptions{
+	sw, err := fs.NewWatcher(projectsDirectory, fs.WatcherOptions{
 		Debounce: 3 * time.Second, // Wait 3 seconds after last change before syncing
 		OnChange: j.handleFilesystemChange,
 		MaxDepth: 1,
@@ -71,7 +70,7 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 	}
 
 	if j.templateService != nil {
-		tw, err := utils.NewFilesystemWatcher(templatesDir, utils.WatcherOptions{
+		tw, err := fs.NewWatcher(templatesDir, fs.WatcherOptions{
 			Debounce: 3 * time.Second,
 			OnChange: j.handleTemplatesChange,
 			MaxDepth: 1,
@@ -175,7 +174,7 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	}
 
 	// Create a new watcher with the updated path
-	sw, err := utils.NewFilesystemWatcher(projectsDirectory, utils.WatcherOptions{
+	sw, err := fs.NewWatcher(projectsDirectory, fs.WatcherOptions{
 		Debounce: 3 * time.Second,
 		OnChange: j.handleFilesystemChange,
 		MaxDepth: 1,

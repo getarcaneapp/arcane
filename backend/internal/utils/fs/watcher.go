@@ -1,4 +1,4 @@
-package utils
+package fs
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type FilesystemWatcher struct {
+type Watcher struct {
 	watcher     *fsnotify.Watcher
 	watchedPath string
 	maxDepth    int
@@ -27,7 +27,7 @@ type WatcherOptions struct {
 	MaxDepth int
 }
 
-func NewFilesystemWatcher(watchPath string, opts WatcherOptions) (*FilesystemWatcher, error) {
+func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewFilesystemWatcher(watchPath string, opts WatcherOptions) (*FilesystemWat
 		opts.MaxDepth = 0
 	}
 
-	return &FilesystemWatcher{
+	return &Watcher{
 		watcher:     watcher,
 		watchedPath: filepath.Clean(watchPath),
 		maxDepth:    opts.MaxDepth,
@@ -52,7 +52,7 @@ func NewFilesystemWatcher(watchPath string, opts WatcherOptions) (*FilesystemWat
 	}, nil
 }
 
-func (fw *FilesystemWatcher) Start(ctx context.Context) error {
+func (fw *Watcher) Start(ctx context.Context) error {
 	if err := fw.watcher.Add(fw.watchedPath); err != nil {
 		return err
 	}
@@ -69,13 +69,13 @@ func (fw *FilesystemWatcher) Start(ctx context.Context) error {
 	return nil
 }
 
-func (fw *FilesystemWatcher) Stop() error {
+func (fw *Watcher) Stop() error {
 	close(fw.stopCh)
 	<-fw.stoppedCh // Wait for watchLoop to finish
 	return fw.watcher.Close()
 }
 
-func (fw *FilesystemWatcher) watchLoop(ctx context.Context) {
+func (fw *Watcher) watchLoop(ctx context.Context) {
 	defer close(fw.stoppedCh)
 
 	debounceTimer := time.NewTimer(0)
@@ -105,7 +105,7 @@ func (fw *FilesystemWatcher) watchLoop(ctx context.Context) {
 	}
 }
 
-func (fw *FilesystemWatcher) handleEvent(ctx context.Context, event fsnotify.Event, debounceTimer *time.Timer) {
+func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event, debounceTimer *time.Timer) {
 	if event.Has(fsnotify.Create) {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 			if fw.shouldWatchDir(event.Name) {
@@ -144,7 +144,7 @@ func (fw *FilesystemWatcher) handleEvent(ctx context.Context, event fsnotify.Eve
 	}
 }
 
-func (fw *FilesystemWatcher) handleDebounce(ctx context.Context, timer *time.Timer) {
+func (fw *Watcher) handleDebounce(ctx context.Context, timer *time.Timer) {
 	select {
 	case <-ctx.Done():
 		return
@@ -157,12 +157,12 @@ func (fw *FilesystemWatcher) handleDebounce(ctx context.Context, timer *time.Tim
 	}
 }
 
-func (fw *FilesystemWatcher) shouldHandleEvent(event fsnotify.Event) bool {
+func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 	name := filepath.Base(event.Name)
 
 	// Watch for new directories, compose files, .env being manipulated.
 	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || isProjectFile(name) {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || IsProjectFile(name) {
 			return true
 		}
 	}
@@ -170,7 +170,7 @@ func (fw *FilesystemWatcher) shouldHandleEvent(event fsnotify.Event) bool {
 	return false
 }
 
-func (fw *FilesystemWatcher) addExistingDirectories(root string) error {
+func (fw *Watcher) addExistingDirectories(root string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			slog.Warn("Error walking directory",
@@ -202,7 +202,8 @@ func (fw *FilesystemWatcher) addExistingDirectories(root string) error {
 	})
 }
 
-func isProjectFile(filename string) bool {
+// IsProjectFile checks if a filename is a common Docker Compose or environment file
+func IsProjectFile(filename string) bool {
 	composeFiles := []string{
 		"compose.yaml",
 		"compose.yml",
@@ -219,7 +220,7 @@ func isProjectFile(filename string) bool {
 	return false
 }
 
-func (fw *FilesystemWatcher) dirDepth(path string) int {
+func (fw *Watcher) dirDepth(path string) int {
 	cleanRoot := fw.watchedPath
 	cleanPath := filepath.Clean(path)
 	if cleanPath == cleanRoot {
@@ -238,7 +239,7 @@ func (fw *FilesystemWatcher) dirDepth(path string) int {
 	return strings.Count(rel, "/") + 1
 }
 
-func (fw *FilesystemWatcher) shouldWatchDir(path string) bool {
+func (fw *Watcher) shouldWatchDir(path string) bool {
 	if fw.maxDepth <= 0 {
 		return true
 	}
