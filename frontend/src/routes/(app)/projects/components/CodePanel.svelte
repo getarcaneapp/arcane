@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
 	import MobileCodeEditor from '$lib/components/codemirror-code-editor/editor.svelte';
 	import { CodeIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+	import { IsTouchDevice } from '$lib/hooks/is-touch-device.svelte.js';
 
 	type CodeLanguage = 'yaml' | 'env';
 
@@ -27,15 +27,9 @@
 	} = $props();
 
 	const isMobile = new IsMobile();
-	let isTouchDevice = $state(false);
+	const isTouchDevice = new IsTouchDevice();
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
-	const useMobileEditor = $derived(isMobile.current || isTouchDevice);
-
-	onMount(() => {
-		isTouchDevice =
-			(typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
-			(typeof window !== 'undefined' && 'ontouchstart' in window);
-	});
+	const useMobileEditor = $derived(isMobile.current || isTouchDevice.current);
 </script>
 
 <Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden">

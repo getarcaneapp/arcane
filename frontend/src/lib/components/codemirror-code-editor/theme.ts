@@ -2,6 +2,7 @@ import { tags as t } from '@lezer/highlight';
 import { createTheme, type CreateThemeOptions } from '@uiw/codemirror-themes';
 
 function getAccentColor(): string {
+	if (typeof document === 'undefined') return 'oklch(0.606 0.25 292.717)';
 	const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
 	return primary || 'oklch(0.606 0.25 292.717)';
 }
