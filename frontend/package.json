@@ -22,7 +22,7 @@
     "i18n:mark": "i18n-unused mark-unused"
   },
   "dependencies": {
-    "@shikijs/monaco": "^3.20.0",
+    "@shikijs/monaco": "^3.21.0",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.49.3",
     "@tanstack/table-core": "^8.21.3",
