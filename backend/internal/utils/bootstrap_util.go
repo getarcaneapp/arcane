@@ -55,7 +55,7 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, migrateOidcFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, migrateOidcFunc func(context.Context) error, migrateDiscordFunc func(context.Context) error) {
 	if cfg.AgentMode {
 		return
 	}
@@ -68,6 +68,13 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 	if migrateOidcFunc != nil {
 		if err := migrateOidcFunc(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to migrate OIDC config to individual fields", "error", err.Error())
+		}
+	}
+
+	// Migrate legacy Discord webhookUrl to separate webhookId and token fields
+	if migrateDiscordFunc != nil {
+		if err := migrateDiscordFunc(ctx); err != nil {
+			slog.WarnContext(ctx, "Failed to migrate Discord webhook config", "error", err.Error())
 		}
 	}
 }

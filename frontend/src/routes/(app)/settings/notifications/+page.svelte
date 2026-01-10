@@ -1,201 +1,136 @@
 <script lang="ts">
 	import * as Alert from '$lib/components/ui/alert';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
-	import { z } from 'zod/v4';
-	import { createForm } from '$lib/utils/form.utils';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import settingsStore from '$lib/stores/config-store';
-	import { Label } from '$lib/components/ui/label';
-	import { Input } from '$lib/components/ui/input';
-	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { notificationService } from '$lib/services/notification-service';
-	import type { EmailTLSMode, AppriseSettings } from '$lib/types/notification.type';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { NotificationsIcon, SendEmailIcon, ArrowDownIcon } from '$lib/icons';
-
-	interface FormNotificationSettings {
-		discordEnabled: boolean;
-		discordWebhookUrl: string;
-		discordUsername: string;
-		discordAvatarUrl: string;
-		discordEventImageUpdate: boolean;
-		discordEventContainerUpdate: boolean;
-		emailEnabled: boolean;
-		emailSmtpHost: string;
-		emailSmtpPort: number;
-		emailSmtpUsername: string;
-		emailSmtpPassword: string;
-		emailFromAddress: string;
-		emailToAddresses: string;
-		emailTlsMode: EmailTLSMode;
-		emailEventImageUpdate: boolean;
-		emailEventContainerUpdate: boolean;
-	}
+	import type { NotificationSettings } from '$lib/types/notification.type';
+	import {
+		type DiscordFormValues,
+		type EmailFormValues,
+		type TelegramFormValues,
+		type SignalFormValues,
+		type SlackFormValues,
+		type NtfyFormValues,
+		type GenericFormValues,
+		type AppriseFormValues,
+		type NotificationProviderKey,
+		NOTIFICATION_PROVIDER_KEYS,
+		discordSettingsToFormValues,
+		emailSettingsToFormValues,
+		telegramSettingsToFormValues,
+		signalSettingsToFormValues,
+		slackSettingsToFormValues,
+		ntfySettingsToFormValues,
+		genericSettingsToFormValues,
+		appriseSettingsToFormValues,
+		discordFormValuesToSettings,
+		emailFormValuesToSettings,
+		telegramFormValuesToSettings,
+		signalFormValuesToSettings,
+		slackFormValuesToSettings,
+		ntfyFormValuesToSettings,
+		genericFormValuesToSettings,
+		appriseFormValuesToSettings
+	} from '$lib/types/notification-providers';
+	import { NotificationsIcon } from '$lib/icons';
+	import {
+		EmailProviderForm,
+		DiscordProviderForm,
+		TelegramProviderForm,
+		SignalProviderForm,
+		SlackProviderForm,
+		NtfyProviderForm,
+		GenericProviderForm,
+		AppriseProviderForm
+	} from './providers';
 
 	let { data } = $props();
+
+	// UI state
 	let isLoading = $state(false);
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
+	let notificationsTab = $state<'built-in' | 'apprise'>('built-in');
+	let providerTab = $state<NotificationProviderKey>('email');
+
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const formState = getContext('settingsFormState') as any;
 
-	let appriseSettings: AppriseSettings = $state({
-		apiUrl: '',
-		enabled: false,
-		imageUpdateTag: '',
-		containerUpdateTag: ''
+	// Settings form context
+	let formState: any = null;
+	try {
+		formState = getContext('settingsFormState') as any;
+	} catch {
+		// Context not available (shouldn't happen in settings routes)
+	}
+
+	// Provider form references for validation
+	let emailFormRef: EmailProviderForm;
+	let discordFormRef: DiscordProviderForm;
+	let telegramFormRef: TelegramProviderForm;
+	let signalFormRef: SignalProviderForm;
+	let slackFormRef: SlackProviderForm;
+	let ntfyFormRef: NtfyProviderForm;
+	let genericFormRef: GenericProviderForm;
+
+	// Saved settings from server (used to detect if settings exist)
+	let savedSettings = $state<Record<NotificationProviderKey, NotificationSettings | null>>({
+		email: null,
+		discord: null,
+		telegram: null,
+		signal: null,
+		slack: null,
+		ntfy: null,
+		generic: null
 	});
 
-	let savedAppriseSettings: AppriseSettings = $state({
-		apiUrl: '',
-		enabled: false,
-		imageUpdateTag: '',
-		containerUpdateTag: ''
-	});
+	// Current form values - these are what the user edits
+	let emailValues = $state<EmailFormValues>(emailSettingsToFormValues());
+	let discordValues = $state<DiscordFormValues>(discordSettingsToFormValues());
+	let telegramValues = $state<TelegramFormValues>(telegramSettingsToFormValues());
+	let signalValues = $state<SignalFormValues>(signalSettingsToFormValues());
+	let slackValues = $state<SlackFormValues>(slackSettingsToFormValues());
+	let ntfyValues = $state<NtfyFormValues>(ntfySettingsToFormValues());
+	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
+	let appriseValues = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
-	// IMPORTANT: don't call `form.validate()` inside a `$derived` — it updates stores and will throw
-	// `state_unsafe_mutation`, which can make buttons appear unresponsive until refresh.
-	let currentSettings = $state<FormNotificationSettings>({
-		discordEnabled: false,
-		discordWebhookUrl: '',
-		discordUsername: 'Arcane',
-		discordAvatarUrl: '',
-		discordEventImageUpdate: true,
-		discordEventContainerUpdate: true,
-		emailEnabled: false,
-		emailSmtpHost: '',
-		emailSmtpPort: 587,
-		emailSmtpUsername: '',
-		emailSmtpPassword: '',
-		emailFromAddress: '',
-		emailToAddresses: '',
-		emailTlsMode: 'starttls',
-		emailEventImageUpdate: true,
-		emailEventContainerUpdate: true
-	});
+	// Baseline values - what was last saved (for change detection)
+	let emailBaseline = $state<EmailFormValues>(emailSettingsToFormValues());
+	let discordBaseline = $state<DiscordFormValues>(discordSettingsToFormValues());
+	let telegramBaseline = $state<TelegramFormValues>(telegramSettingsToFormValues());
+	let signalBaseline = $state<SignalFormValues>(signalSettingsToFormValues());
+	let slackBaseline = $state<SlackFormValues>(slackSettingsToFormValues());
+	let ntfyBaseline = $state<NtfyFormValues>(ntfySettingsToFormValues());
+	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
+	let appriseBaseline = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
-	const formSchema = z
-		.object({
-			discordEnabled: z.boolean(),
-			discordWebhookUrl: z.url().or(z.literal('')),
-			discordUsername: z.string(),
-			discordAvatarUrl: z.string(),
-			discordEventImageUpdate: z.boolean(),
-			discordEventContainerUpdate: z.boolean(),
-			emailEnabled: z.boolean(),
-			emailSmtpHost: z.string(),
-			emailSmtpPort: z.number().int().min(1).max(65535),
-			emailSmtpUsername: z.string(),
-			emailSmtpPassword: z.string(),
-			emailFromAddress: z.email().or(z.literal('')),
-			emailToAddresses: z.string(),
-			emailTlsMode: z.enum(['none', 'starttls', 'ssl']),
-			emailEventImageUpdate: z.boolean(),
-			emailEventContainerUpdate: z.boolean()
-		})
-		.superRefine((data, ctx) => {
-			// Validate Discord fields when Discord is enabled
-			if (data.discordEnabled && !data.discordWebhookUrl.trim()) {
-				ctx.addIssue({
-					code: 'custom',
-					message: 'Webhook URL is required when Discord is enabled',
-					path: ['discordWebhookUrl']
-				});
-			} // Validate Email fields when Email is enabled
-			if (data.emailEnabled) {
-				if (!data.emailSmtpHost.trim()) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'SMTP host is required when email is enabled',
-						path: ['emailSmtpHost']
-					});
-				}
-
-				if (!data.emailFromAddress.trim()) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'From address is required when email is enabled',
-						path: ['emailFromAddress']
-					});
-				} else {
-					// Validate email format using Zod's built-in email validator
-					const emailValidation = z.string().email().safeParse(data.emailFromAddress.trim());
-					if (!emailValidation.success) {
-						ctx.addIssue({
-							code: 'custom',
-							message: 'Invalid email address format',
-							path: ['emailFromAddress']
-						});
-					}
-				}
-
-				if (!data.emailToAddresses.trim()) {
-					ctx.addIssue({
-						code: 'custom',
-						message: 'At least one recipient address is required when email is enabled',
-						path: ['emailToAddresses']
-					});
-				} else {
-					// Validate each email in the comma-separated list
-					const addresses = data.emailToAddresses
-						.split(',')
-						.map((addr) => addr.trim())
-						.filter((addr) => addr.length > 0);
-					const invalidAddresses: string[] = [];
-
-					addresses.forEach((addr) => {
-						const emailValidation = z.string().email().safeParse(addr);
-						if (!emailValidation.success) {
-							invalidAddresses.push(addr);
-						}
-					});
-
-					if (invalidAddresses.length > 0) {
-						ctx.addIssue({
-							code: 'custom',
-							message: `Invalid email addresses: ${invalidAddresses.join(', ')}`,
-							path: ['emailToAddresses']
-						});
-					}
-				}
-			}
-		});
-
-	let { inputs: formInputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, currentSettings));
-
+	// Change detection
+	const emailHasChanges = $derived(JSON.stringify(emailValues) !== JSON.stringify(emailBaseline));
+	const discordHasChanges = $derived(JSON.stringify(discordValues) !== JSON.stringify(discordBaseline));
+	const telegramHasChanges = $derived(JSON.stringify(telegramValues) !== JSON.stringify(telegramBaseline));
+	const signalHasChanges = $derived(JSON.stringify(signalValues) !== JSON.stringify(signalBaseline));
+	const slackHasChanges = $derived(JSON.stringify(slackValues) !== JSON.stringify(slackBaseline));
+	const ntfyHasChanges = $derived(JSON.stringify(ntfyValues) !== JSON.stringify(ntfyBaseline));
+	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
+	const appriseHasChanges = $derived(JSON.stringify(appriseValues) !== JSON.stringify(appriseBaseline));
 	const hasChanges = $derived(
-		$formInputs.discordEnabled.value !== currentSettings.discordEnabled ||
-			$formInputs.discordWebhookUrl.value !== currentSettings.discordWebhookUrl ||
-			$formInputs.discordUsername.value !== currentSettings.discordUsername ||
-			$formInputs.discordAvatarUrl.value !== currentSettings.discordAvatarUrl ||
-			$formInputs.discordEventImageUpdate.value !== currentSettings.discordEventImageUpdate ||
-			$formInputs.discordEventContainerUpdate.value !== currentSettings.discordEventContainerUpdate ||
-			$formInputs.emailEnabled.value !== currentSettings.emailEnabled ||
-			$formInputs.emailSmtpHost.value !== currentSettings.emailSmtpHost ||
-			$formInputs.emailSmtpPort.value !== currentSettings.emailSmtpPort ||
-			$formInputs.emailSmtpUsername.value !== currentSettings.emailSmtpUsername ||
-			$formInputs.emailSmtpPassword.value !== currentSettings.emailSmtpPassword ||
-			$formInputs.emailFromAddress.value !== currentSettings.emailFromAddress ||
-			$formInputs.emailToAddresses.value !== currentSettings.emailToAddresses ||
-			$formInputs.emailTlsMode.value !== currentSettings.emailTlsMode ||
-			$formInputs.emailEventImageUpdate.value !== currentSettings.emailEventImageUpdate ||
-			$formInputs.emailEventContainerUpdate.value !== currentSettings.emailEventContainerUpdate ||
-			appriseSettings.enabled !== savedAppriseSettings.enabled ||
-			appriseSettings.apiUrl !== savedAppriseSettings.apiUrl ||
-			appriseSettings.imageUpdateTag !== savedAppriseSettings.imageUpdateTag ||
-			appriseSettings.containerUpdateTag !== savedAppriseSettings.containerUpdateTag
+		emailHasChanges ||
+			discordHasChanges ||
+			telegramHasChanges ||
+			signalHasChanges ||
+			slackHasChanges ||
+			ntfyHasChanges ||
+			genericHasChanges ||
+			appriseHasChanges
 	);
 
+	// Sync with settings form context
 	$effect(() => {
 		if (formState) {
 			formState.hasChanges = hasChanges;
@@ -205,65 +140,57 @@
 		}
 	});
 
+	// Load initial data
 	onMount(async () => {
-		// Initialize settings from loaded data
-		if (data?.notificationSettings) {
-			const discordSetting = data.notificationSettings.find((s) => s.provider === 'discord');
-			if (discordSetting) {
-				currentSettings.discordEnabled = discordSetting.enabled;
-				currentSettings.discordWebhookUrl = discordSetting.config?.webhookUrl || '';
-				currentSettings.discordUsername = discordSetting.config?.username || 'Arcane';
-				currentSettings.discordAvatarUrl = discordSetting.config?.avatarUrl || '';
-				currentSettings.discordEventImageUpdate = discordSetting.config?.events?.image_update ?? true;
-				currentSettings.discordEventContainerUpdate = discordSetting.config?.events?.container_update ?? true;
-			}
-
-			const emailSetting = data.notificationSettings.find((s) => s.provider === 'email');
-			if (emailSetting) {
-				currentSettings.emailEnabled = emailSetting.enabled;
-				currentSettings.emailSmtpHost = emailSetting.config?.smtpHost || '';
-				currentSettings.emailSmtpPort = emailSetting.config?.smtpPort || 587;
-				currentSettings.emailSmtpUsername = emailSetting.config?.smtpUsername || '';
-				currentSettings.emailSmtpPassword = emailSetting.config?.smtpPassword || '';
-				currentSettings.emailFromAddress = emailSetting.config?.fromAddress || '';
-				currentSettings.emailToAddresses = (emailSetting.config?.toAddresses || []).join(', ');
-				currentSettings.emailTlsMode = emailSetting.config?.tlsMode || 'starttls';
-				currentSettings.emailEventImageUpdate = emailSetting.config?.events?.image_update ?? true;
-				currentSettings.emailEventContainerUpdate = emailSetting.config?.events?.container_update ?? true;
-			}
-
-			// Sync form inputs after currentSettings is updated
-			$formInputs.discordEnabled.value = currentSettings.discordEnabled;
-			$formInputs.discordWebhookUrl.value = currentSettings.discordWebhookUrl;
-			$formInputs.discordUsername.value = currentSettings.discordUsername;
-			$formInputs.discordAvatarUrl.value = currentSettings.discordAvatarUrl;
-			$formInputs.discordEventImageUpdate.value = currentSettings.discordEventImageUpdate;
-			$formInputs.discordEventContainerUpdate.value = currentSettings.discordEventContainerUpdate;
-			$formInputs.emailEnabled.value = currentSettings.emailEnabled;
-			$formInputs.emailSmtpHost.value = currentSettings.emailSmtpHost;
-			$formInputs.emailSmtpPort.value = currentSettings.emailSmtpPort;
-			$formInputs.emailSmtpUsername.value = currentSettings.emailSmtpUsername;
-			$formInputs.emailSmtpPassword.value = currentSettings.emailSmtpPassword;
-			$formInputs.emailFromAddress.value = currentSettings.emailFromAddress;
-			$formInputs.emailToAddresses.value = currentSettings.emailToAddresses;
-			$formInputs.emailTlsMode.value = currentSettings.emailTlsMode;
-			$formInputs.emailEventImageUpdate.value = currentSettings.emailEventImageUpdate;
-			$formInputs.emailEventContainerUpdate.value = currentSettings.emailEventContainerUpdate;
+		// Load built-in provider settings
+		for (const provider of NOTIFICATION_PROVIDER_KEYS) {
+			const found = data?.notificationSettings?.find((s: NotificationSettings) => s.provider === provider);
+			savedSettings[provider] = found ?? null;
 		}
+
+		// Apply saved values to form
+		emailValues = emailSettingsToFormValues(savedSettings.email ?? undefined);
+		emailBaseline = { ...emailValues };
+
+		discordValues = discordSettingsToFormValues(savedSettings.discord ?? undefined);
+		discordBaseline = { ...discordValues };
+
+		telegramValues = telegramSettingsToFormValues(savedSettings.telegram ?? undefined);
+		telegramBaseline = { ...telegramValues };
+
+		signalValues = signalSettingsToFormValues(savedSettings.signal ?? undefined);
+		signalBaseline = { ...signalValues };
+
+		slackValues = slackSettingsToFormValues(savedSettings.slack ?? undefined);
+		slackBaseline = { ...slackValues };
+
+		ntfyValues = ntfySettingsToFormValues(savedSettings.ntfy ?? undefined);
+		ntfyBaseline = { ...ntfyValues };
+
+		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
+		genericBaseline = { ...genericValues };
 
 		// Load Apprise settings
 		try {
 			const settings = await notificationService.getAppriseSettings();
-			appriseSettings = settings;
-			savedAppriseSettings = { ...settings };
-		} catch (error) {
+			appriseValues = appriseSettingsToFormValues(settings);
+			appriseBaseline = { ...appriseValues };
+		} catch {
 			// Apprise not configured yet, keep defaults
 		}
 	});
 
 	async function onSubmit() {
-		const formData = form.validate();
-		if (!formData) {
+		// Validate all forms
+		const emailValid = emailFormRef?.isValid() ?? true;
+		const discordValid = discordFormRef?.isValid() ?? true;
+		const telegramValid = telegramFormRef?.isValid() ?? true;
+		const signalValid = signalFormRef?.isValid() ?? true;
+		const slackValid = slackFormRef?.isValid() ?? true;
+		const ntfyValid = ntfyFormRef?.isValid() ?? true;
+		const genericValid = genericFormRef?.isValid() ?? true;
+
+		if (!(emailValid && discordValid && telegramValid && signalValid && slackValid && ntfyValid && genericValid)) {
 			toast.error('Please check the form for errors');
 			return;
 		}
@@ -273,66 +200,103 @@
 		try {
 			const errors: string[] = [];
 
-			// Save Discord settings
-			try {
-				await notificationService.updateSettings('discord', {
-					provider: 'discord',
-					enabled: formData.discordEnabled,
-					config: {
-						webhookUrl: formData.discordWebhookUrl,
-						username: formData.discordUsername,
-						avatarUrl: formData.discordAvatarUrl,
-						events: {
-							image_update: formData.discordEventImageUpdate,
-							container_update: formData.discordEventContainerUpdate
-						}
-					}
-				});
-			} catch (error: any) {
-				const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-				errors.push(m.notifications_saved_failed({ provider: 'Discord', error: errorMsg }));
-			}
-
-			// Save Email settings
-			try {
-				const toAddressArray = formData.emailToAddresses
-					.split(',')
-					.map((addr) => addr.trim())
-					.filter((addr) => addr.length > 0);
-
-				await notificationService.updateSettings('email', {
-					provider: 'email',
-					enabled: formData.emailEnabled,
-					config: {
-						smtpHost: formData.emailSmtpHost,
-						smtpPort: formData.emailSmtpPort,
-						smtpUsername: formData.emailSmtpUsername,
-						smtpPassword: formData.emailSmtpPassword,
-						fromAddress: formData.emailFromAddress,
-						toAddresses: toAddressArray,
-						tlsMode: formData.emailTlsMode,
-						events: {
-							image_update: formData.emailEventImageUpdate,
-							container_update: formData.emailEventContainerUpdate
-						}
-					}
-				});
-			} catch (error: any) {
-				const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
-				errors.push(m.notifications_saved_failed({ provider: 'Email', error: errorMsg }));
-			}
-
-			// Save Apprise settings only if they changed
-			const appriseChanged =
-				appriseSettings.enabled !== savedAppriseSettings.enabled ||
-				appriseSettings.apiUrl !== savedAppriseSettings.apiUrl ||
-				appriseSettings.imageUpdateTag !== savedAppriseSettings.imageUpdateTag ||
-				appriseSettings.containerUpdateTag !== savedAppriseSettings.containerUpdateTag;
-
-			if (appriseChanged) {
+			// Save Email settings if changed
+			if (emailHasChanges) {
 				try {
-					await notificationService.updateAppriseSettings(appriseSettings);
-					savedAppriseSettings = { ...appriseSettings };
+					const settings = emailFormValuesToSettings(emailValues);
+					await notificationService.updateSettings('email', settings);
+					savedSettings.email = settings;
+					emailBaseline = { ...emailValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Email', error: errorMsg }));
+				}
+			}
+
+			// Save Discord settings if changed
+			if (discordHasChanges) {
+				try {
+					const settings = discordFormValuesToSettings(discordValues);
+					await notificationService.updateSettings('discord', settings);
+					savedSettings.discord = settings;
+					discordBaseline = { ...discordValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Discord', error: errorMsg }));
+				}
+			}
+
+			// Save Telegram settings if changed
+			if (telegramHasChanges) {
+				try {
+					const settings = telegramFormValuesToSettings(telegramValues);
+					await notificationService.updateSettings('telegram', settings);
+					savedSettings.telegram = settings;
+					telegramBaseline = { ...telegramValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Telegram', error: errorMsg }));
+				}
+			}
+
+			// Save Signal settings if changed
+			if (signalHasChanges) {
+				try {
+					const settings = signalFormValuesToSettings(signalValues);
+					await notificationService.updateSettings('signal', settings);
+					savedSettings.signal = settings;
+					signalBaseline = { ...signalValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Signal', error: errorMsg }));
+				}
+			}
+
+			// Save Slack settings if changed
+			if (slackHasChanges) {
+				try {
+					const settings = slackFormValuesToSettings(slackValues);
+					await notificationService.updateSettings('slack', settings);
+					savedSettings.slack = settings;
+					slackBaseline = { ...slackValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Slack', error: errorMsg }));
+				}
+			}
+
+			// Save Ntfy settings if changed
+			if (ntfyHasChanges) {
+				try {
+					const settings = ntfyFormValuesToSettings(ntfyValues);
+					await notificationService.updateSettings('ntfy', settings);
+					savedSettings.ntfy = settings;
+					ntfyBaseline = { ...ntfyValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Ntfy', error: errorMsg }));
+				}
+			}
+
+			// Save Generic settings if changed
+			if (genericHasChanges) {
+				try {
+					const settings = genericFormValuesToSettings(genericValues);
+					await notificationService.updateSettings('generic', settings);
+					savedSettings.generic = settings;
+					genericBaseline = { ...genericValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Generic', error: errorMsg }));
+				}
+			}
+
+			// Save Apprise settings if changed
+			if (appriseHasChanges) {
+				try {
+					const settings = appriseFormValuesToSettings(appriseValues);
+					await notificationService.updateAppriseSettings(settings);
+					appriseBaseline = { ...appriseValues };
 				} catch (error: any) {
 					const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
 					errors.push(m.notifications_saved_failed({ provider: 'Apprise', error: errorMsg }));
@@ -340,7 +304,6 @@
 			}
 
 			if (errors.length === 0) {
-				currentSettings = formData;
 				toast.success(m.general_settings_saved());
 			} else {
 				errors.forEach((err) => toast.error(err));
@@ -354,26 +317,17 @@
 	}
 
 	function resetForm() {
-		$formInputs.discordEnabled.value = currentSettings.discordEnabled;
-		$formInputs.discordWebhookUrl.value = currentSettings.discordWebhookUrl;
-		$formInputs.discordUsername.value = currentSettings.discordUsername;
-		$formInputs.discordAvatarUrl.value = currentSettings.discordAvatarUrl;
-		$formInputs.discordEventImageUpdate.value = currentSettings.discordEventImageUpdate;
-		$formInputs.discordEventContainerUpdate.value = currentSettings.discordEventContainerUpdate;
-		$formInputs.emailEnabled.value = currentSettings.emailEnabled;
-		$formInputs.emailSmtpHost.value = currentSettings.emailSmtpHost;
-		$formInputs.emailSmtpPort.value = currentSettings.emailSmtpPort;
-		$formInputs.emailSmtpUsername.value = currentSettings.emailSmtpUsername;
-		$formInputs.emailSmtpPassword.value = currentSettings.emailSmtpPassword;
-		$formInputs.emailFromAddress.value = currentSettings.emailFromAddress;
-		$formInputs.emailToAddresses.value = currentSettings.emailToAddresses;
-		$formInputs.emailTlsMode.value = currentSettings.emailTlsMode;
-		$formInputs.emailEventImageUpdate.value = currentSettings.emailEventImageUpdate;
-		$formInputs.emailEventContainerUpdate.value = currentSettings.emailEventContainerUpdate;
-		appriseSettings = { ...savedAppriseSettings };
+		emailValues = { ...emailBaseline };
+		discordValues = { ...discordBaseline };
+		telegramValues = { ...telegramBaseline };
+		signalValues = { ...signalBaseline };
+		slackValues = { ...slackBaseline };
+		ntfyValues = { ...ntfyBaseline };
+		genericValues = { ...genericBaseline };
+		appriseValues = { ...appriseBaseline };
 	}
 
-	async function testNotification(provider: 'discord' | 'email', testType: string = 'simple') {
+	async function testNotification(provider: NotificationProviderKey, testType: string = 'simple') {
 		if (hasChanges) {
 			pendingTestAction = () => executeTest(provider, testType);
 			showUnsavedDialog = true;
@@ -382,7 +336,7 @@
 		await executeTest(provider, testType);
 	}
 
-	async function executeTest(provider: 'discord' | 'email', testType: string = 'simple') {
+	async function executeTest(provider: NotificationProviderKey, testType: string = 'simple') {
 		isTesting = true;
 		try {
 			await notificationService.testNotification(provider, testType);
@@ -394,6 +348,7 @@
 			isTesting = false;
 		}
 	}
+
 	async function testAppriseNotification() {
 		if (hasChanges) {
 			pendingTestAction = executeAppriseTest;
@@ -442,366 +397,104 @@
 				</Alert.Root>
 			{/if}
 
-			<Tabs.Root value="built-in">
+			<Tabs.Root bind:value={notificationsTab}>
 				<Tabs.List class="inline-flex w-auto">
 					<Tabs.Trigger value="built-in">{m.notifications_tab_built_in()}</Tabs.Trigger>
 					<Tabs.Trigger value="apprise">{m.notifications_tab_apprise()}</Tabs.Trigger>
 				</Tabs.List>
 
-				<Tabs.Content value="built-in" class="mt-4 space-y-8 sm:mt-6">
-					<!-- Discord Section -->
-					<div class="space-y-4">
-						<h3 class="text-lg font-medium">Discord</h3>
-						<div class="bg-card rounded-lg border shadow-sm">
-							<div class="space-y-6 p-6">
-								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-									<div>
-										<Label class="text-base">{m.notifications_discord_title()}</Label>
-										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_discord_description()}</p>
-									</div>
-									<div class="space-y-4">
-										<div class="flex items-center gap-2">
-											<Switch
-												id="discord-enabled"
-												bind:checked={$formInputs.discordEnabled.value}
-												disabled={isReadOnly}
-												onCheckedChange={(checked) => {
-													$formInputs.discordEnabled.value = checked;
-												}}
-											/>
-											<Label for="discord-enabled" class="font-normal">
-												{m.notifications_discord_enabled_label()}
-											</Label>
-										</div>
+				<Tabs.Content value="built-in" class="mt-4 sm:mt-6">
+					<div class="space-y-8">
+						<Tabs.Root bind:value={providerTab}>
+							<Tabs.List class="inline-flex w-auto">
+								{#each NOTIFICATION_PROVIDER_KEYS as provider}
+									<Tabs.Trigger value={provider}>{provider.charAt(0).toUpperCase() + provider.slice(1)}</Tabs.Trigger>
+								{/each}
+							</Tabs.List>
 
-										{#if $formInputs.discordEnabled.value}
-											<div class="space-y-4 pt-2">
-												<TextInputWithLabel
-													bind:value={$formInputs.discordWebhookUrl.value}
-													disabled={isReadOnly}
-													label={m.notifications_discord_webhook_url_label()}
-													placeholder={m.notifications_discord_webhook_url_placeholder()}
-													type="text"
-													autocomplete="off"
-													helpText={m.notifications_discord_webhook_url_help()}
-												/>
-												{#if $formInputs.discordWebhookUrl.error}
-													<p class="text-destructive -mt-2 text-sm">{$formInputs.discordWebhookUrl.error}</p>
-												{/if}
+							<Tabs.Content value="email" class="mt-4 space-y-4">
+								<EmailProviderForm
+									bind:this={emailFormRef}
+									bind:values={emailValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={(testType) => testNotification('email', testType)}
+								/>
+							</Tabs.Content>
 
-												<TextInputWithLabel
-													bind:value={$formInputs.discordUsername.value}
-													disabled={isReadOnly}
-													label={m.notifications_discord_username_label()}
-													placeholder={m.notifications_discord_username_placeholder()}
-													type="text"
-													autocomplete="off"
-													helpText={m.notifications_discord_username_help()}
-												/>
+							<Tabs.Content value="discord" class="mt-4 space-y-4">
+								<DiscordProviderForm
+									bind:this={discordFormRef}
+									bind:values={discordValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('discord')}
+								/>
+							</Tabs.Content>
 
-												<TextInputWithLabel
-													bind:value={$formInputs.discordAvatarUrl.value}
-													disabled={isReadOnly}
-													label={m.notifications_discord_avatar_url_label()}
-													placeholder={m.notifications_discord_avatar_url_placeholder()}
-													type="text"
-													autocomplete="off"
-													helpText={m.notifications_discord_avatar_url_help()}
-												/>
+							<Tabs.Content value="telegram" class="mt-4 space-y-4">
+								<TelegramProviderForm
+									bind:this={telegramFormRef}
+									bind:values={telegramValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('telegram')}
+								/>
+							</Tabs.Content>
 
-												<div class="space-y-3 pt-2">
-													<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
-													<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
-													<div class="space-y-2">
-														<SwitchWithLabel
-															id="discord-event-image-update"
-															bind:checked={$formInputs.discordEventImageUpdate.value}
-															disabled={isReadOnly}
-															label={m.notifications_event_image_update_label()}
-															description={m.notifications_event_image_update_description()}
-														/>
-														<SwitchWithLabel
-															id="discord-event-container-update"
-															bind:checked={$formInputs.discordEventContainerUpdate.value}
-															disabled={isReadOnly}
-															label={m.notifications_event_container_update_label()}
-															description={m.notifications_event_container_update_description()}
-														/>
-													</div>
-												</div>
+							<Tabs.Content value="signal" class="mt-4 space-y-4">
+								<SignalProviderForm
+									bind:this={signalFormRef}
+									bind:values={signalValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('signal')}
+								/>
+							</Tabs.Content>
 
-												<div class="pt-2">
-													<ArcaneButton
-														action="base"
-														tone="outline"
-														onclick={() => testNotification('discord')}
-														disabled={isReadOnly || isTesting}
-														loading={isTesting}
-														icon={SendEmailIcon}
-														customLabel={m.notifications_discord_test_button()}
-													/>
-												</div>
-											</div>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
+							<Tabs.Content value="slack" class="mt-4 space-y-4">
+								<SlackProviderForm
+									bind:this={slackFormRef}
+									bind:values={slackValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('slack')}
+								/>
+							</Tabs.Content>
 
-					<!-- Email Section -->
-					<div class="space-y-4">
-						<h3 class="text-lg font-medium">Email</h3>
-						<div class="bg-card rounded-lg border shadow-sm">
-							<div class="space-y-6 p-6">
-								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-									<div>
-										<Label class="text-base">{m.notifications_email_title()}</Label>
-										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_email_description()}</p>
-									</div>
-									<div class="space-y-4">
-										<div class="flex items-center gap-2">
-											<Switch
-												id="email-enabled"
-												bind:checked={$formInputs.emailEnabled.value}
-												disabled={isReadOnly}
-												onCheckedChange={(checked) => {
-													$formInputs.emailEnabled.value = checked;
-												}}
-											/>
-											<Label for="email-enabled" class="font-normal">
-												{m.notifications_email_enabled_label()}
-											</Label>
-										</div>
+							<Tabs.Content value="ntfy" class="mt-4 space-y-4">
+								<NtfyProviderForm
+									bind:this={ntfyFormRef}
+									bind:values={ntfyValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('ntfy')}
+								/>
+							</Tabs.Content>
 
-										{#if $formInputs.emailEnabled.value}
-											<div class="space-y-4 pt-2">
-												<div class="grid grid-cols-2 gap-4">
-													<TextInputWithLabel
-														bind:value={$formInputs.emailSmtpHost.value}
-														disabled={isReadOnly}
-														label={m.notifications_email_smtp_host_label()}
-														placeholder={m.notifications_email_smtp_host_placeholder()}
-														type="text"
-														autocomplete="off"
-														helpText={m.notifications_email_smtp_host_help()}
-													/>
-													{#if $formInputs.emailSmtpHost.error}
-														<p class="text-destructive col-span-2 -mt-2 text-sm">{$formInputs.emailSmtpHost.error}</p>
-													{/if}
-
-													<div class="space-y-2">
-														<Label for="smtp-port">{m.notifications_email_smtp_port_label()}</Label>
-														<Input
-															id="smtp-port"
-															type="number"
-															bind:value={$formInputs.emailSmtpPort.value}
-															disabled={isReadOnly}
-															autocomplete="off"
-															placeholder={m.notifications_email_smtp_port_placeholder()}
-														/>
-														<p class="text-muted-foreground text-sm">{m.notifications_email_smtp_port_help()}</p>
-													</div>
-												</div>
-
-												<div class="grid grid-cols-2 gap-4">
-													<TextInputWithLabel
-														bind:value={$formInputs.emailSmtpUsername.value}
-														disabled={isReadOnly}
-														label={m.notifications_email_username_label()}
-														placeholder={m.notifications_email_username_placeholder()}
-														type="text"
-														autocomplete="off"
-														helpText={m.notifications_email_username_help()}
-													/>
-
-													<TextInputWithLabel
-														bind:value={$formInputs.emailSmtpPassword.value}
-														disabled={isReadOnly}
-														label={m.notifications_email_password_label()}
-														placeholder={m.notifications_email_password_placeholder()}
-														type="password"
-														autocomplete="new-password"
-														helpText={m.notifications_email_password_help()}
-													/>
-												</div>
-
-												<TextInputWithLabel
-													bind:value={$formInputs.emailFromAddress.value}
-													disabled={isReadOnly}
-													label={m.notifications_email_from_address_label()}
-													placeholder={m.notifications_email_from_address_placeholder()}
-													type="email"
-													autocomplete="off"
-													helpText={m.notifications_email_from_address_help()}
-												/>
-												{#if $formInputs.emailFromAddress.error}
-													<p class="text-destructive -mt-2 text-sm">{$formInputs.emailFromAddress.error}</p>
-												{/if}
-
-												<div class="space-y-2">
-													<Label for="to-addresses">{m.notifications_email_to_addresses_label()}</Label>
-													<Textarea
-														id="to-addresses"
-														bind:value={$formInputs.emailToAddresses.value}
-														disabled={isReadOnly}
-														autocomplete="off"
-														placeholder={m.notifications_email_to_addresses_placeholder()}
-														rows={2}
-													/>
-													{#if $formInputs.emailToAddresses.error}
-														<p class="text-destructive text-sm">{$formInputs.emailToAddresses.error}</p>
-													{:else}
-														<p class="text-muted-foreground text-sm">{m.notifications_email_to_addresses_help()}</p>
-													{/if}
-												</div>
-
-												<SelectWithLabel
-													id="email-tls-mode"
-													label={m.notifications_email_tls_mode_label()}
-													bind:value={$formInputs.emailTlsMode.value}
-													disabled={isReadOnly}
-													placeholder={m.notifications_email_tls_mode_placeholder()}
-													options={[
-														{ value: 'none', label: 'None' },
-														{ value: 'starttls', label: 'StartTLS' },
-														{ value: 'ssl', label: 'SSL/TLS' }
-													]}
-													description={m.notifications_email_tls_mode_description()}
-												/>
-												<div class="space-y-3 pt-2">
-													<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
-													<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
-													<div class="space-y-2">
-														<SwitchWithLabel
-															id="email-event-image-update"
-															bind:checked={$formInputs.emailEventImageUpdate.value}
-															disabled={isReadOnly}
-															label={m.notifications_event_image_update_label()}
-															description={m.notifications_event_image_update_description()}
-														/>
-														<SwitchWithLabel
-															id="email-event-container-update"
-															bind:checked={$formInputs.emailEventContainerUpdate.value}
-															disabled={isReadOnly}
-															label={m.notifications_event_container_update_label()}
-															description={m.notifications_event_container_update_description()}
-														/>
-													</div>
-												</div>
-
-												<div class="pt-2">
-													<DropdownMenu.Root>
-														<DropdownMenu.Trigger>
-															<ArcaneButton
-																action="base"
-																tone="outline"
-																disabled={isReadOnly || isTesting}
-																loading={isTesting}
-																icon={SendEmailIcon}
-																customLabel={m.notifications_email_test_button()}
-															>
-																<ArrowDownIcon class="ml-2 size-4" />
-															</ArcaneButton>
-														</DropdownMenu.Trigger>
-														<DropdownMenu.Content align="start">
-															<DropdownMenu.Item onclick={() => testNotification('email', 'simple')}>
-																<SendEmailIcon class="size-4" />
-																{m.notifications_email_test_simple()}
-															</DropdownMenu.Item>
-															<DropdownMenu.Item onclick={() => testNotification('email', 'image-update')}>
-																<SendEmailIcon class="size-4" />
-																{m.notifications_email_test_image_update()}
-															</DropdownMenu.Item>
-															<DropdownMenu.Item onclick={() => testNotification('email', 'batch-image-update')}>
-																<SendEmailIcon class="size-4" />
-																{m.notifications_email_test_batch_image_update()}
-															</DropdownMenu.Item>
-														</DropdownMenu.Content>
-													</DropdownMenu.Root>
-												</div>
-											</div>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</div>
+							<Tabs.Content value="generic" class="mt-4 space-y-4">
+								<GenericProviderForm
+									bind:this={genericFormRef}
+									bind:values={genericValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('generic')}
+								/>
+							</Tabs.Content>
+						</Tabs.Root>
 					</div>
 				</Tabs.Content>
 
 				<Tabs.Content value="apprise" class="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
-					<div class="space-y-4">
-						<h3 class="text-lg font-medium">Apprise</h3>
-						<div class="bg-card rounded-lg border shadow-sm">
-							<div class="space-y-6 p-6">
-								<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-									<div>
-										<Label class="text-base">{m.notifications_apprise_title()}</Label>
-										<p class="text-muted-foreground mt-1 text-sm">{m.notifications_apprise_description()}</p>
-									</div>
-									<div class="space-y-4">
-										<div class="flex items-center gap-2">
-											<Switch
-												id="apprise-enabled"
-												bind:checked={appriseSettings.enabled}
-												disabled={isReadOnly}
-												onCheckedChange={(checked) => {
-													appriseSettings.enabled = checked;
-												}}
-											/>
-											<Label for="apprise-enabled" class="font-normal">
-												{m.notifications_apprise_enabled_label()}
-											</Label>
-										</div>
+					<Alert.Root variant="default" class="border-yellow-500/50 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+						<Alert.Title>Deprecated</Alert.Title>
+						<Alert.Description>
+							Apprise support is deprecated and will be removed in a future release. Please migrate to the built-in notification
+							providers.
+						</Alert.Description>
+					</Alert.Root>
 
-										{#if appriseSettings.enabled}
-											<div class="space-y-4 pt-2">
-												<TextInputWithLabel
-													bind:value={appriseSettings.apiUrl}
-													disabled={isReadOnly}
-													label={m.notifications_apprise_api_url_label()}
-													placeholder={m.notifications_apprise_api_url_placeholder()}
-													type="url"
-													autocomplete="off"
-													helpText={m.notifications_apprise_api_url_help()}
-												/>
-												<TextInputWithLabel
-													bind:value={appriseSettings.imageUpdateTag}
-													disabled={isReadOnly}
-													label={m.notifications_apprise_image_tag_label()}
-													placeholder={m.notifications_apprise_image_tag_placeholder()}
-													type="text"
-													autocomplete="off"
-													helpText={m.notifications_apprise_image_tag_help()}
-												/>
-												<TextInputWithLabel
-													bind:value={appriseSettings.containerUpdateTag}
-													disabled={isReadOnly}
-													label={m.notifications_apprise_container_tag_label()}
-													placeholder={m.notifications_apprise_container_tag_placeholder()}
-													type="text"
-													autocomplete="off"
-													helpText={m.notifications_apprise_container_tag_help()}
-												/>
-
-												<div class="pt-2">
-													<ArcaneButton
-														action="base"
-														tone="outline"
-														onclick={() => testAppriseNotification()}
-														disabled={isReadOnly || isTesting}
-														loading={isTesting}
-														icon={SendEmailIcon}
-														customLabel={m.notifications_apprise_test_button()}
-													/>
-												</div>
-											</div>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
+					<AppriseProviderForm bind:values={appriseValues} disabled={isReadOnly} {isTesting} onTest={testAppriseNotification} />
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

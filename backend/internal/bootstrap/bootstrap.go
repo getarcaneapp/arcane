@@ -76,7 +76,8 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
-		appServices.Settings.MigrateOidcConfigToFields)
+		appServices.Settings.MigrateOidcConfigToFields,
+		appServices.Notification.MigrateDiscordWebhookUrlToFields)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {

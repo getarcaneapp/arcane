@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/mail"
-	"net/url"
 	"strings"
 	"text/template"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -119,6 +119,16 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 			sendErr = s.sendDiscordNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderEmail:
 			sendErr = s.sendEmailNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericNotification(ctx, imageRef, updateInfo, setting.Config)
 		default:
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
@@ -202,6 +212,16 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 			sendErr = s.sendDiscordContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderEmail:
 			sendErr = s.sendEmailContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		default:
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
@@ -241,101 +261,99 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, image
 		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
 	}
 
-	if discordConfig.WebhookURL == "" {
-		return fmt.Errorf("discord webhook URL not configured")
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
 	}
 
-	// Decrypt webhook URL if encrypted
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
+	// Decrypt token if encrypted
+	if discordConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+			discordConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
 	}
 
-	// Validate webhook URL to prevent SSRF
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	username := discordConfig.Username
-	if username == "" {
-		username = "Arcane"
-	}
-
-	color := 3447003 // Blue
+	// Build message content - Discord embeds via Shoutrrr are sent as formatted markdown
+	updateStatus := "No Update"
 	if updateInfo.HasUpdate {
-		color = 15844367 // Gold for updates
+		updateStatus = "⚠️ Update Available"
 	}
 
-	fields := []map[string]interface{}{
-		{
-			"name":   "Image",
-			"value":  imageRef,
-			"inline": false,
-		},
-		{
-			"name":   "Update Available",
-			"value":  fmt.Sprintf("%t", updateInfo.HasUpdate),
-			"inline": true,
-		},
-		{
-			"name":   "Update Type",
-			"value":  updateInfo.UpdateType,
-			"inline": true,
-		},
-	}
+	message := fmt.Sprintf("**🔔 Container Image Update Notification**\n\n"+
+		"**Image:** %s\n"+
+		"**Status:** %s\n"+
+		"**Update Type:** %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
 
 	if updateInfo.CurrentDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Current Digest",
-			"value":  truncateDigest(updateInfo.CurrentDigest),
-			"inline": true,
-		})
+		message += fmt.Sprintf("**Current Digest:** `%s`\n", updateInfo.CurrentDigest)
 	}
 	if updateInfo.LatestDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Latest Digest",
-			"value":  truncateDigest(updateInfo.LatestDigest),
-			"inline": true,
-		})
+		message += fmt.Sprintf("**Latest Digest:** `%s`\n", updateInfo.LatestDigest)
 	}
 
-	payload := map[string]interface{}{
-		"username": username,
-		"embeds": []map[string]interface{}{
-			{
-				"title":       "🔔 Container Image Update Available",
-				"description": fmt.Sprintf("A new update has been detected for **%s**", imageRef),
-				"color":       color,
-				"fields":      fields,
-				"timestamp":   time.Now().Format(time.RFC3339),
-			},
-		},
-	}
-
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create Discord request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
 		return fmt.Errorf("failed to send Discord notification: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord webhook returned status %d", resp.StatusCode)
+	return nil
+}
+
+func (s *NotificationService) sendTelegramNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Telegram config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
+	}
+
+	if telegramConfig.BotToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+	if len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("no telegram chat IDs configured")
+	}
+
+	// Decrypt bot token if encrypted
+	if telegramConfig.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+			telegramConfig.BotToken = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content using HTML formatting
+	// HTML is easier to escape than Markdown and better supported
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	// Use HTML formatting - it's more reliable than Markdown
+	message := fmt.Sprintf("🔔 <b>Container Image Update Notification</b>\n\n"+
+		"<b>Image:</b> %s\n"+
+		"<b>Status:</b> %s\n"+
+		"<b>Update Type:</b> %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("<b>Current Digest:</b> <code>%s</code>\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("<b>Latest Digest:</b> <code>%s</code>\n", updateInfo.LatestDigest)
+	}
+
+	// Set parse mode to HTML if not already set
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
 	}
 
 	return nil
@@ -370,27 +388,18 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	if emailConfig.SMTPPassword != "" {
 		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
+		} else {
+			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
 		}
 	}
 
-	htmlBody, textBody, err := s.renderEmailTemplate(imageRef, updateInfo)
+	htmlBody, _, err := s.renderEmailTemplate(imageRef, updateInfo)
 	if err != nil {
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
 	subject := fmt.Sprintf("Container Update Available: %s", notifications.SanitizeForEmail(imageRef))
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -407,8 +416,8 @@ func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *i
 		"ImageRef":      imageRef,
 		"HasUpdate":     updateInfo.HasUpdate,
 		"UpdateType":    updateInfo.UpdateType,
-		"CurrentDigest": truncateDigest(updateInfo.CurrentDigest),
-		"LatestDigest":  truncateDigest(updateInfo.LatestDigest),
+		"CurrentDigest": updateInfo.CurrentDigest,
+		"LatestDigest":  updateInfo.LatestDigest,
 		"CheckTime":     updateInfo.CheckTime.Format(time.RFC1123),
 	}
 
@@ -455,95 +464,89 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
 	}
 
-	if discordConfig.WebhookURL == "" {
-		return fmt.Errorf("discord webhook URL not configured")
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
 	}
 
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
+	// Decrypt token if encrypted
+	if discordConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+			discordConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
 	}
 
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	username := discordConfig.Username
-	if username == "" {
-		username = "Arcane"
-	}
-
-	fields := []map[string]interface{}{
-		{
-			"name":   "Container",
-			"value":  containerName,
-			"inline": false,
-		},
-		{
-			"name":   "Image",
-			"value":  imageRef,
-			"inline": false,
-		},
-		{
-			"name":   "Status",
-			"value":  "✅ Updated Successfully",
-			"inline": false,
-		},
-	}
+	// Build message content
+	message := fmt.Sprintf("**✅ Container Successfully Updated**\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"**Container:** %s\n"+
+		"**Image:** %s\n"+
+		"**Status:** ✅ Updated Successfully\n",
+		containerName, imageRef)
 
 	if oldDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Previous Version",
-			"value":  truncateDigest(oldDigest),
-			"inline": true,
-		})
+		message += fmt.Sprintf("**Previous Version:** `%s`\n", oldDigest)
 	}
 	if newDigest != "" {
-		fields = append(fields, map[string]interface{}{
-			"name":   "Current Version",
-			"value":  truncateDigest(newDigest),
-			"inline": true,
-		})
+		message += fmt.Sprintf("**Current Version:** `%s`\n", newDigest)
 	}
 
-	embed := map[string]interface{}{
-		"title":       "Container Successfully Updated",
-		"description": "Your container has been updated with the latest image version.",
-		"color":       5025616, // Green color for success
-		"fields":      fields,
-		"timestamp":   time.Now().Format(time.RFC3339),
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
 	}
 
-	payload := map[string]interface{}{
-		"username": username,
-		"embeds":   []map[string]interface{}{embed},
-	}
+	return nil
+}
 
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	configBytes, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
+		return fmt.Errorf("failed to marshal Telegram config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	if telegramConfig.BotToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
+	if len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("no telegram chat IDs configured")
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	// Decrypt bot token if encrypted
+	if telegramConfig.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+			telegramConfig.BotToken = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content using HTML formatting
+	message := fmt.Sprintf("✅ <b>Container Successfully Updated</b>\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"<b>Container:</b> %s\n"+
+		"<b>Image:</b> %s\n"+
+		"<b>Status:</b> ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("<b>Previous Version:</b> <code>%s</code>\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("<b>Current Version:</b> <code>%s</code>\n", newDigest)
+	}
+
+	// Set parse mode to HTML if not already set
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
 	}
 
 	return nil
@@ -578,27 +581,18 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	if emailConfig.SMTPPassword != "" {
 		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
+		} else {
+			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
 		}
 	}
 
-	htmlBody, textBody, err := s.renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest)
+	htmlBody, _, err := s.renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest)
 	if err != nil {
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
 	subject := fmt.Sprintf("Container Updated: %s", notifications.SanitizeForEmail(containerName))
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -614,8 +608,8 @@ func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, 
 		"Environment":   "Local Docker",
 		"ContainerName": containerName,
 		"ImageRef":      imageRef,
-		"OldDigest":     truncateDigest(oldDigest),
-		"NewDigest":     truncateDigest(newDigest),
+		"OldDigest":     oldDigest,
+		"NewDigest":     newDigest,
 		"UpdateTime":    time.Now().Format(time.RFC1123),
 	}
 
@@ -705,6 +699,16 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			return s.sendBatchEmailNotification(ctx, testUpdates, setting.Config)
 		}
 		return s.sendTestEmail(ctx, setting.Config)
+	case models.NotificationProviderTelegram:
+		return s.sendTelegramNotification(ctx, "nginx:latest", testUpdate, setting.Config)
+	case models.NotificationProviderSignal:
+		return s.sendSignalNotification(ctx, "nginx:latest", testUpdate, setting.Config)
+	case models.NotificationProviderSlack:
+		return s.sendSlackNotification(ctx, "nginx:latest", testUpdate, setting.Config)
+	case models.NotificationProviderNtfy:
+		return s.sendNtfyNotification(ctx, "test/image:latest", testUpdate, setting.Config)
+	case models.NotificationProviderGeneric:
+		return s.sendGenericNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	default:
 		return fmt.Errorf("unknown provider: %s", provider)
 	}
@@ -742,24 +746,13 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 		}
 	}
 
-	htmlBody, textBody, err := s.renderTestEmailTemplate()
+	htmlBody, _, err := s.renderTestEmailTemplate()
 	if err != nil {
 		return fmt.Errorf("failed to render test email template: %w", err)
 	}
 
 	subject := "Test Email from Arcane"
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -864,6 +857,16 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 			sendErr = s.sendBatchDiscordNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderEmail:
 			sendErr = s.sendBatchEmailNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendBatchTelegramNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendBatchSignalNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendBatchSlackNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendBatchNtfyNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendBatchGenericNotification(ctx, updatesWithChanges, setting.Config)
 		default:
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
@@ -907,76 +910,77 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to unmarshal discord config: %w", err)
 	}
 
-	// Decrypt webhook URL if encrypted
-	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
-		webhookURL = decrypted
+	// Decrypt token if encrypted
+	if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+		discordConfig.Token = decrypted
 	}
 
-	if err := validateWebhookURL(webhookURL); err != nil {
-		return fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	fields := make([]map[string]interface{}, 0, len(updates))
-	for imageRef, update := range updates {
-		fields = append(fields, map[string]interface{}{
-			"name": imageRef,
-			"value": fmt.Sprintf(
-				"**Type:** %s\n**Current:** `%s`\n**Latest:** `%s`",
-				update.UpdateType,
-				truncateDigest(update.CurrentDigest),
-				truncateDigest(update.LatestDigest),
-			),
-			"inline": false,
-		})
-	}
-
+	// Build batch message content
 	title := "Container Image Updates Available"
 	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
 	if len(updates) == 1 {
 		description = "1 container image has an update available."
 	}
 
-	embed := map[string]interface{}{
-		"title":       title,
-		"description": description,
-		"color":       3447003,
-		"fields":      fields,
-		"timestamp":   time.Now().Format(time.RFC3339),
+	message := fmt.Sprintf("**%s**\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("**%s**\n"+
+			"• **Type:** %s\n"+
+			"• **Current:** `%s`\n"+
+			"• **Latest:** `%s`\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
 	}
 
-	payload := map[string]interface{}{
-		"embeds": []interface{}{embed},
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Discord notification: %w", err)
 	}
 
-	if discordConfig.Username != "" {
-		payload["username"] = discordConfig.Username
-	}
-	if discordConfig.AvatarURL != "" {
-		payload["avatar_url"] = discordConfig.AvatarURL
-	}
+	return nil
+}
 
-	jsonPayload, err := json.Marshal(payload)
+func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	configBytes, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal Discord payload: %w", err)
+		return fmt.Errorf("failed to marshal telegram config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal telegram config: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(jsonPayload))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
+	// Decrypt bot token if encrypted
+	if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+		telegramConfig.BotToken = decrypted
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send Discord webhook: %w", err)
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("discord webhook failed with status %d: %s", resp.StatusCode, string(body))
+	message := fmt.Sprintf("*%s*\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("*%s*\n"+
+			"• *Type:* %s\n"+
+			"• *Current:* `%s`\n"+
+			"• *Latest:* `%s`\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Telegram notification: %w", err)
 	}
 
 	return nil
@@ -1011,10 +1015,12 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 	if emailConfig.SMTPPassword != "" {
 		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
+		} else {
+			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
 		}
 	}
 
-	htmlBody, textBody, err := s.renderBatchEmailTemplate(updates)
+	htmlBody, _, err := s.renderBatchEmailTemplate(updates)
 	if err != nil {
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
@@ -1026,18 +1032,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 		}
 		return ""
 	}())
-	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
-	if err != nil {
-		return fmt.Errorf("failed to build email message: %w", err)
-	}
-
-	client, err := notifications.ConnectSMTP(ctx, emailConfig)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	if err := client.SendMessage(emailConfig.FromAddress, emailConfig.ToAddresses, message); err != nil {
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
 
@@ -1094,48 +1089,703 @@ func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*image
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func truncateDigest(digest string) string {
-	if len(digest) > 19 {
-		return digest[:19] + "..."
-	}
-	return digest
-}
-
-// validateWebhookURL validates that the webhook URL is a valid Discord webhook URL
-// This prevents SSRF attacks by ensuring the URL points to Discord's API
-func validateWebhookURL(webhookURL string) error {
-	parsedURL, err := url.Parse(webhookURL)
+func (s *NotificationService) sendSignalNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	configBytes, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to parse webhook URL: %w", err)
+		return fmt.Errorf("failed to marshal Signal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
 	}
 
-	// Ensure it's HTTPS
-	if parsedURL.Scheme != "https" {
-		return fmt.Errorf("webhook URL must use HTTPS")
+	if signalConfig.Host == "" {
+		return fmt.Errorf("signal host not configured")
+	}
+	if signalConfig.Port == 0 {
+		return fmt.Errorf("signal port not configured")
+	}
+	if signalConfig.Source == "" {
+		return fmt.Errorf("signal source phone number not configured")
+	}
+	if len(signalConfig.Recipients) == 0 {
+		return fmt.Errorf("no signal recipients configured")
 	}
 
-	// Validate it's a Discord webhook URL
-	validHosts := []string{
-		"discord.com",
-		"discordapp.com",
+	// Validate authentication
+	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
+	hasTokenAuth := signalConfig.Token != ""
+	if !hasBasicAuth && !hasTokenAuth {
+		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+	}
+	if hasBasicAuth && hasTokenAuth {
+		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
-	isValid := false
-	for _, validHost := range validHosts {
-		if parsedURL.Host == validHost || strings.HasSuffix(parsedURL.Host, "."+validHost) {
-			isValid = true
-			break
+	// Decrypt sensitive fields if encrypted
+	if signalConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
+			signalConfig.Password = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Signal password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	if signalConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
+			signalConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Signal token, using raw value (may be unencrypted legacy value)", "error", err)
 		}
 	}
 
-	if !isValid {
-		return fmt.Errorf("webhook URL must be a Discord webhook URL")
+	// Build message content
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
 	}
 
-	// Validate it's a webhook path
-	if !strings.HasPrefix(parsedURL.Path, "/api/webhooks/") {
-		return fmt.Errorf("invalid Discord webhook path")
+	message := fmt.Sprintf("🔔 Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
 	}
 
+	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+		return fmt.Errorf("failed to send Signal notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendSignalContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Signal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
+	}
+
+	if signalConfig.Host == "" {
+		return fmt.Errorf("signal host not configured")
+	}
+	if signalConfig.Port == 0 {
+		return fmt.Errorf("signal port not configured")
+	}
+	if signalConfig.Source == "" {
+		return fmt.Errorf("signal source phone number not configured")
+	}
+	if len(signalConfig.Recipients) == 0 {
+		return fmt.Errorf("no signal recipients configured")
+	}
+
+	// Validate authentication
+	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
+	hasTokenAuth := signalConfig.Token != ""
+	if !hasBasicAuth && !hasTokenAuth {
+		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+	}
+	if hasBasicAuth && hasTokenAuth {
+		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
+	}
+
+	// Decrypt sensitive fields if encrypted
+	if signalConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
+			signalConfig.Password = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Signal password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	if signalConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
+			signalConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Signal token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content
+	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+		return fmt.Errorf("failed to send Signal notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal signal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal signal config: %w", err)
+	}
+
+	// Validate authentication
+	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
+	hasTokenAuth := signalConfig.Token != ""
+	if !hasBasicAuth && !hasTokenAuth {
+		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+	}
+	if hasBasicAuth && hasTokenAuth {
+		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
+	}
+
+	// Decrypt sensitive fields if encrypted
+	if signalConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
+			signalConfig.Password = decrypted
+		}
+	}
+	if signalConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
+			signalConfig.Token = decrypted
+		}
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Signal notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendSlackNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Slack config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &slackConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Slack config: %w", err)
+	}
+
+	if slackConfig.Token == "" {
+		return fmt.Errorf("slack token not configured")
+	}
+
+	// Decrypt token if encrypted
+	if slackConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+			slackConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	message := fmt.Sprintf("🔔 *Container Image Update Notification*\n\n"+
+		"*Image:* %s\n"+
+		"*Status:* %s\n"+
+		"*Update Type:* %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("*Current Digest:* `%s`\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("*Latest Digest:* `%s`\n", updateInfo.LatestDigest)
+	}
+
+	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+		return fmt.Errorf("failed to send Slack notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendSlackContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Slack config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &slackConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Slack config: %w", err)
+	}
+
+	if slackConfig.Token == "" {
+		return fmt.Errorf("slack token not configured")
+	}
+
+	// Decrypt token if encrypted
+	if slackConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+			slackConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content
+	message := fmt.Sprintf("✅ *Container Successfully Updated*\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"*Container:* %s\n"+
+		"*Image:* %s\n"+
+		"*Status:* ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("*Previous Version:* `%s`\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("*Current Version:* `%s`\n", newDigest)
+	}
+
+	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+		return fmt.Errorf("failed to send Slack notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal slack config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &slackConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal slack config: %w", err)
+	}
+
+	// Decrypt token if encrypted
+	if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+		slackConfig.Token = decrypted
+	}
+
+	// Build batch message content
+	title := "*Container Image Updates Available*"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("*%s*\n"+
+			"• *Type:* %s\n"+
+			"• *Current:* `%s`\n"+
+			"• *Latest:* `%s`\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Slack notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendNtfyNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Ntfy config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &ntfyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Ntfy config: %w", err)
+	}
+
+	if ntfyConfig.Topic == "" {
+		return fmt.Errorf("ntfy topic is required")
+	}
+
+	// Decrypt password if encrypted
+	if ntfyConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
+			ntfyConfig.Password = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Ntfy password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	message := fmt.Sprintf("🔔 Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
+	}
+
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Ntfy notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendNtfyContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Ntfy config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &ntfyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Ntfy config: %w", err)
+	}
+
+	if ntfyConfig.Topic == "" {
+		return fmt.Errorf("ntfy topic is required")
+	}
+
+	// Decrypt password if encrypted
+	if ntfyConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
+			ntfyConfig.Password = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Ntfy password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	// Build message content
+	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Ntfy notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ntfy config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &ntfyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal ntfy config: %w", err)
+	}
+
+	// Decrypt password if encrypted
+	if ntfyConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
+			ntfyConfig.Password = decrypted
+		}
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Ntfy notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendGenericNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Generic config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
+	}
+
+	if genericConfig.WebhookURL == "" {
+		return fmt.Errorf("webhook URL not configured")
+	}
+
+	// Build message content
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "Update Available"
+	}
+
+	message := fmt.Sprintf("Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
+	}
+
+	// Use SendGenericWithTitle to include a title
+	title := "Container Image Update"
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Generic config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
+	}
+
+	if genericConfig.WebhookURL == "" {
+		return fmt.Errorf("webhook URL not configured")
+	}
+
+	// Build message content
+	message := fmt.Sprintf("Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	// Use SendGenericWithTitle to include a title
+	title := "Container Updated"
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal generic config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal generic config: %w", err)
+	}
+
+	if genericConfig.WebhookURL == "" {
+		return fmt.Errorf("webhook URL not configured")
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n", description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+		return fmt.Errorf("failed to send batch Generic webhook notification: %w", err)
+	}
+
+	return nil
+}
+
+// MigrateDiscordWebhookUrlToFields migrates legacy Discord webhookUrl to separate webhookId and token fields.
+// This should be called during bootstrap to ensure existing Discord configurations are preserved.
+func (s *NotificationService) MigrateDiscordWebhookUrlToFields(ctx context.Context) error {
+	var setting models.NotificationSettings
+	err := s.db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&setting).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// No Discord config exists, nothing to migrate
+			return nil
+		}
+		return fmt.Errorf("failed to query Discord settings: %w", err)
+	}
+
+	var discordConfig models.DiscordConfig
+	configBytes, err := json.Marshal(setting.Config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Discord config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
+		slog.WarnContext(ctx, "Failed to parse Discord config for migration", "error", err)
+		return nil
+	}
+
+	// Check if already migrated (has webhookId and token)
+	if discordConfig.WebhookID != "" && discordConfig.Token != "" {
+		slog.DebugContext(ctx, "Discord config already migrated, skipping")
+		return nil
+	}
+
+	// Check for legacy webhookUrl field
+	var legacyConfig struct {
+		WebhookUrl string                                `json:"webhookUrl"`
+		Username   string                                `json:"username,omitempty"`
+		AvatarURL  string                                `json:"avatarUrl,omitempty"`
+		Events     map[models.NotificationEventType]bool `json:"events,omitempty"`
+	}
+	if err := json.Unmarshal(configBytes, &legacyConfig); err != nil {
+		slog.WarnContext(ctx, "Failed to parse legacy Discord config structure", "error", err)
+		return nil
+	}
+
+	if legacyConfig.WebhookUrl == "" {
+		slog.DebugContext(ctx, "No legacy webhookUrl to migrate")
+		return nil
+	}
+
+	// Parse webhook URL: https://discord.com/api/webhooks/{id}/{token}
+	parts := strings.Split(legacyConfig.WebhookUrl, "/webhooks/")
+	if len(parts) != 2 {
+		slog.WarnContext(ctx, "Invalid Discord webhook URL format, skipping migration", "url", legacyConfig.WebhookUrl)
+		return nil
+	}
+
+	webhookParts := strings.Split(parts[1], "/")
+	if len(webhookParts) != 2 {
+		slog.WarnContext(ctx, "Invalid Discord webhook URL format, skipping migration", "url", legacyConfig.WebhookUrl)
+		return nil
+	}
+
+	webhookID := webhookParts[0]
+	token := webhookParts[1]
+
+	slog.InfoContext(ctx, "Migrating legacy Discord webhookUrl to webhookId and token")
+
+	// Encrypt token before storing
+	encryptedToken, err := crypto.Encrypt(token)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt Discord token: %w", err)
+	}
+
+	// Update with new structure
+	newConfig := models.DiscordConfig{
+		WebhookID: webhookID,
+		Token:     encryptedToken,
+		Username:  legacyConfig.Username,
+		AvatarURL: legacyConfig.AvatarURL,
+		Events:    legacyConfig.Events,
+	}
+
+	var configMap models.JSON
+	newConfigBytes, err := json.Marshal(newConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal new Discord config: %w", err)
+	}
+	if err = json.Unmarshal(newConfigBytes, &configMap); err != nil {
+		return fmt.Errorf("failed to unmarshal new Discord config to JSON: %w", err)
+	}
+
+	setting.Config = configMap
+	if err = s.db.WithContext(ctx).Save(&setting).Error; err != nil {
+		return fmt.Errorf("failed to save migrated Discord config: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Successfully migrated Discord config")
 	return nil
 }

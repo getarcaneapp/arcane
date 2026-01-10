@@ -36,7 +36,7 @@ type Services struct {
 	Event             *services.EventService
 	Version           *services.VersionService
 	Notification      *services.NotificationService
-	Apprise           *services.AppriseService
+	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	ApiKey            *services.ApiKeyService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
