@@ -5,6 +5,7 @@ export interface GitRepositoryCreateDto {
 	username?: string;
 	token?: string;
 	sshKey?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -16,6 +17,7 @@ export interface GitRepositoryUpdateDto {
 	username?: string;
 	token?: string;
 	sshKey?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -26,6 +28,7 @@ export interface GitRepository {
 	url: string;
 	authType: string;
 	username?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled: boolean;
 	createdAt: string;

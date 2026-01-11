@@ -83,12 +83,18 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest) (*models.GitRepository, error) {
 	repository := models.GitRepository{
-		Name:        req.Name,
-		URL:         req.URL,
-		AuthType:    req.AuthType,
-		Username:    req.Username,
-		Description: req.Description,
-		Enabled:     true,
+		Name:                   req.Name,
+		URL:                    req.URL,
+		AuthType:               req.AuthType,
+		Username:               req.Username,
+		SSHHostKeyVerification: req.SSHHostKeyVerification,
+		Description:            req.Description,
+		Enabled:                true,
+	}
+
+	// Default to accept_new if not specified
+	if repository.SSHHostKeyVerification == "" {
+		repository.SSHHostKeyVerification = "accept_new"
 	}
 
 	if req.Enabled != nil {
@@ -156,6 +162,9 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
+	}
+	if req.SSHHostKeyVerification != nil {
+		updates["ssh_host_key_verification"] = *req.SSHHostKeyVerification
 	}
 
 	if req.Token != nil {
@@ -245,25 +254,9 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 		return err
 	}
 
-	authConfig := git.AuthConfig{
-		AuthType: repository.AuthType,
-		Username: repository.Username,
-	}
-
-	if repository.Token != "" {
-		token, err := crypto.Decrypt(repository.Token)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt token: %w", err)
-		}
-		authConfig.Token = token
-	}
-
-	if repository.SSHKey != "" {
-		sshKey, err := crypto.Decrypt(repository.SSHKey)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt SSH key: %w", err)
-		}
-		authConfig.SSHKey = sshKey
+	authConfig, err := s.GetAuthConfig(ctx, repository)
+	if err != nil {
+		return err
 	}
 
 	if branch == "" {
@@ -303,8 +296,9 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 
 func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *models.GitRepository) (git.AuthConfig, error) {
 	authConfig := git.AuthConfig{
-		AuthType: repository.AuthType,
-		Username: repository.Username,
+		AuthType:               repository.AuthType,
+		Username:               repository.Username,
+		SSHHostKeyVerification: repository.SSHHostKeyVerification,
 	}
 
 	if repository.Token != "" {
@@ -450,6 +444,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 	needsUpdate = utils.UpdateIfChanged(&existing.URL, item.URL) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.AuthType, item.AuthType) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.SSHHostKeyVerification, item.SSHHostKeyVerification) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
 
@@ -496,15 +491,21 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		}
 	}
 
+	sshHostKeyVerification := item.SSHHostKeyVerification
+	if sshHostKeyVerification == "" {
+		sshHostKeyVerification = "accept_new"
+	}
+
 	repo := models.GitRepository{
-		Name:        item.Name,
-		URL:         item.URL,
-		AuthType:    item.AuthType,
-		Username:    item.Username,
-		Token:       encryptedToken,
-		SSHKey:      encryptedSSHKey,
-		Description: item.Description,
-		Enabled:     item.Enabled,
+		Name:                   item.Name,
+		URL:                    item.URL,
+		AuthType:               item.AuthType,
+		Username:               item.Username,
+		Token:                  encryptedToken,
+		SSHKey:                 encryptedSSHKey,
+		SSHHostKeyVerification: sshHostKeyVerification,
+		Description:            item.Description,
+		Enabled:                item.Enabled,
 	}
 	repo.ID = item.ID
 
