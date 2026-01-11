@@ -98,24 +98,30 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 
 	// Create insecure client
 	insecureClient := *s.httpClient
+
+	var insecureTransport *http.Transport
 	if transport, ok := insecureClient.Transport.(*http.Transport); ok {
-		insecureTransport := transport.Clone()
-		if insecureTransport.TLSClientConfig == nil {
-			// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
-			insecureTransport.TLSClientConfig = &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			}
-		}
-		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
-		// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
-		// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
-		if err := http2.ConfigureTransport(insecureTransport); err != nil {
-			slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
-		}
-		insecureClient.Transport = insecureTransport
+		insecureTransport = transport.Clone()
 	} else {
-		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
+		// Transport is nil or not *http.Transport - create a new default transport
+		insecureTransport = http.DefaultTransport.(*http.Transport).Clone()
 	}
+
+	if insecureTransport.TLSClientConfig == nil {
+		// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
+		insecureTransport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true,
+		}
+	} else {
+		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
+	}
+	// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
+	// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
+	if err := http2.ConfigureTransport(insecureTransport); err != nil {
+		slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
+	}
+	insecureClient.Transport = insecureTransport
 	s.insecureHttpClient = &insecureClient
 	return s.insecureHttpClient
 }
