@@ -85,6 +85,7 @@
 	let formDiskUsagePath = $state('/app/data/projects');
 	let formMaxImageUploadSize = $state(500);
 	let formBaseServerUrl = $state('http://localhost');
+	let formAllowedCustomFilePaths = $state('');
 
 	type PollingIntervalMode = 'hourly' | 'daily' | 'weekly' | 'custom';
 
@@ -146,6 +147,7 @@
 			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+			formAllowedCustomFilePaths = settings.allowedCustomFilePaths || '';
 
 			// Initialize derived states
 			pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
@@ -201,7 +203,8 @@
 					formProjectsDirectory !== (settings.projectsDirectory || '/app/data/projects') ||
 					formDiskUsagePath !== (settings.diskUsagePath || '/app/data/projects') ||
 					formMaxImageUploadSize !== (settings.maxImageUploadSize || 500) ||
-					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost')))
+					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost') ||
+					formAllowedCustomFilePaths !== (settings.allowedCustomFilePaths || '')))
 	);
 
 	async function refreshEnvironment() {
@@ -223,6 +226,11 @@
 				formAutoInjectEnv = settings.autoInjectEnv;
 				formPruneMode = settings.dockerPruneMode || 'dangling';
 				formDefaultShell = settings.defaultShell || '/bin/sh';
+				formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+				formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
+				formMaxImageUploadSize = settings.maxImageUploadSize || 500;
+				formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+				formAllowedCustomFilePaths = settings.allowedCustomFilePaths || '';
 
 				// Initialize derived states
 				pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
@@ -309,7 +317,8 @@
 					projectsDirectory: formProjectsDirectory,
 					diskUsagePath: formDiskUsagePath,
 					maxImageUploadSize: formMaxImageUploadSize,
-					baseServerUrl: formBaseServerUrl
+					baseServerUrl: formBaseServerUrl,
+					allowedCustomFilePaths: formAllowedCustomFilePaths
 				});
 			}
 
@@ -352,6 +361,7 @@
 			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+			formAllowedCustomFilePaths = settings.allowedCustomFilePaths || '';
 
 			// Initialize derived states
 			pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
@@ -677,6 +687,15 @@
 										label={m.docker_max_upload_size_label()}
 										bind:value={formMaxImageUploadSize}
 										helpText={m.docker_max_upload_size_description()}
+									/>
+								</div>
+								<div class="space-y-2 sm:col-span-2">
+									<TextInputWithLabel
+										id="allowed-custom-file-paths"
+										label={m.general_allowed_custom_file_paths_label()}
+										bind:value={formAllowedCustomFilePaths}
+										placeholder={m.general_allowed_custom_file_paths_placeholder()}
+										helpText={m.general_allowed_custom_file_paths_help()}
 									/>
 								</div>
 							</div>

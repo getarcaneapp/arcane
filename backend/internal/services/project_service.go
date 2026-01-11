@@ -33,12 +33,11 @@ import (
 )
 
 type ProjectService struct {
-	db                *database.DB
-	settingsService   *SettingsService
-	eventService      *EventService
-	imageService      *ImageService
-	dockerService     *DockerClientService
-	customFilesConfig projects.CustomFilesConfig
+	db              *database.DB
+	settingsService *SettingsService
+	eventService    *EventService
+	imageService    *ImageService
+	dockerService   *DockerClientService
 }
 
 func NewProjectService(db *database.DB, cfg *config.Config, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService) *ProjectService {
@@ -48,9 +47,13 @@ func NewProjectService(db *database.DB, cfg *config.Config, settingsService *Set
 		eventService:    eventService,
 		imageService:    imageService,
 		dockerService:   dockerService,
-		customFilesConfig: projects.CustomFilesConfig{
-			AllowedPaths: projects.ParseAllowedPaths(cfg.AllowedCustomFilePaths),
-		},
+	}
+}
+
+func (s *ProjectService) getCustomFilesConfig(ctx context.Context) projects.CustomFilesConfig {
+	allowedPaths := s.settingsService.GetStringSetting(ctx, "allowedCustomFilePaths", "")
+	return projects.CustomFilesConfig{
+		AllowedPaths: projects.ParseAllowedPaths(allowedPaths),
 	}
 }
 
@@ -1164,7 +1167,7 @@ func (s *ProjectService) CreateProjectCustomFile(ctx context.Context, projectID,
 		return err
 	}
 
-	if err := projects.RegisterCustomFile(proj.Path, filePath, s.customFilesConfig); err != nil {
+	if err := projects.RegisterCustomFile(proj.Path, filePath, s.getCustomFilesConfig(ctx)); err != nil {
 		return fmt.Errorf("failed to register custom file: %w", err)
 	}
 
@@ -1179,7 +1182,7 @@ func (s *ProjectService) UpdateProjectCustomFile(ctx context.Context, projectID,
 		return err
 	}
 
-	if err := projects.WriteCustomFile(proj.Path, filePath, content, s.customFilesConfig); err != nil {
+	if err := projects.WriteCustomFile(proj.Path, filePath, content, s.getCustomFilesConfig(ctx)); err != nil {
 		return fmt.Errorf("failed to update custom file: %w", err)
 	}
 
