@@ -29,6 +29,8 @@
 		);
 	}
 
+	const currentUserIsAdmin = $derived(!!data.user?.roles?.includes('admin'));
+
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
 
@@ -49,7 +51,9 @@
 							result,
 							message: m.common_bulk_remove_failed({ count: selectedIds.length, resource: m.environments_title() }),
 							setLoadingState: () => {},
-							onSuccess: () => { successCount += 1; }
+							onSuccess: () => {
+								successCount += 1;
+							}
 						});
 						if (result.error) failureCount += 1;
 					}
@@ -77,11 +81,36 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0
-			? [{ id: 'remove-selected', action: 'remove' as const, label: m.environments_remove_selected_button(), onclick: handleBulkDelete, loading: isLoading.deleting, disabled: isLoading.deleting }]
+		...(selectedIds.length > 0 && currentUserIsAdmin
+			? [
+					{
+						id: 'remove-selected',
+						action: 'remove' as const,
+						label: m.environments_remove_selected_button(),
+						onclick: handleBulkDelete,
+						loading: isLoading.deleting,
+						disabled: isLoading.deleting
+					}
+				]
 			: []),
-		{ id: 'create', action: 'create' as const, label: m.common_add_button({ resource: m.resource_environment_cap() }), onclick: () => (showEnvironmentSheet = true) },
-		{ id: 'refresh', action: 'restart' as const, label: m.common_refresh(), onclick: refresh, loading: isLoading.refresh, disabled: isLoading.refresh }
+		...(currentUserIsAdmin
+			? [
+					{
+						id: 'create',
+						action: 'create' as const,
+						label: m.common_add_button({ resource: m.resource_environment_cap() }),
+						onclick: () => (showEnvironmentSheet = true)
+					}
+				]
+			: []),
+		{
+			id: 'refresh',
+			action: 'restart' as const,
+			label: m.common_refresh(),
+			onclick: refresh,
+			loading: isLoading.refresh,
+			disabled: isLoading.refresh
+		}
 	]);
 </script>
 

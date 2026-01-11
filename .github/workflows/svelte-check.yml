@@ -55,4 +55,4 @@ jobs:
         run: pnpm --filter arcane-frontend build
 
       - name: Run svelte-check
-        run: pnpm --filter arcane-frontend check
+        run: pnpm --filter arcane-frontend check:ci

@@ -59,6 +59,7 @@ services:
       - APP_URL=http://localhost:3000
       - PUID=1000
       - PGID=1000
+      - LOG_LEVEL=debug
       - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
       - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
       - DATABASE_URL=file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate
@@ -92,6 +93,7 @@ services:
     environment:
       - GIN_MODE=debug
       - ENVIRONMENT=development
+      - LOG_LEVEL=debug
       - PORT=3553
       - AGENT_MODE=true
       - AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -128,21 +130,19 @@ networks:
   arcane-dev:
     driver: bridge
     name: arcane-dev-network
-    external: true
 
 volumes:
   arcane-dev-data:
     name: arcane-dev-data
-    external: true
+
   agent-dev-data:
     name: agent-dev-data
-    external: true
+
   go-build-cache:
     name: arcane-go-build-cache
-    external: true
+
   go-mod-cache:
     name: arcane-go-mod-cache
-    external: true
+
   pnpm-cache:
     name: arcane-pnpm-cache
-    external: true

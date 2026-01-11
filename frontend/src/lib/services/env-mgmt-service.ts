@@ -2,6 +2,7 @@ import BaseAPIService from './api-service';
 import type { Environment } from '$lib/types/environment.type';
 import type { CreateEnvironmentDTO, UpdateEnvironmentDTO } from '$lib/types/environment.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import type { AppVersionInformation } from '$lib/types/application-configuration';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
 export default class EnvironmentManagementService extends BaseAPIService {
@@ -35,13 +36,18 @@ export default class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
 
-	async syncRegistries(environmentId: string): Promise<void> {
-		await this.api.post(`/environments/${environmentId}/sync-registries`);
+	async sync(environmentId: string): Promise<void> {
+		await this.api.post(`/environments/${environmentId}/sync`);
 	}
 
 	async getDeploymentSnippets(environmentId: string): Promise<{ dockerRun: string; dockerCompose: string }> {
 		const res = await this.api.get(`/environments/${environmentId}/deployment`);
 		return res.data.data as { dockerRun: string; dockerCompose: string };
+	}
+
+	async getVersion(environmentId: string): Promise<AppVersionInformation> {
+		const res = await this.api.get(`/environments/${environmentId}/version`);
+		return res.data.data as AppVersionInformation;
 	}
 }
 

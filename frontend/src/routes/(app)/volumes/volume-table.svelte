@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -75,62 +75,62 @@
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
-		isLoading.removing = true;
-		let successCount = 0;
-		let failureCount = 0;
 
-		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+		openConfirmDialog({
+			title: m.volumes_remove_selected_title({ count: ids.length }),
+			message: m.volumes_remove_selected_message({ count: ids.length }),
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					isLoading.removing = true;
+					let successCount = 0;
+					let failureCount = 0;
 
-		for (const id of ids) {
-			const name = idToName.get(id);
-			const safeName = name?.trim() || m.common_unknown();
-			const result = await tryCatch(volumeService.deleteVolume(safeName));
-			handleApiResultWithCallbacks({
-				result,
-				message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
-				setLoadingState: () => {},
-				onSuccess: (_data) => {
-					successCount += 1;
+					const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+
+					for (const id of ids) {
+						const name = idToName.get(id);
+						const safeName = name?.trim() || m.common_unknown();
+						const result = await tryCatch(volumeService.deleteVolume(safeName));
+						handleApiResultWithCallbacks({
+							result,
+							message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
+							setLoadingState: () => {},
+							onSuccess: (_data) => {
+								successCount += 1;
+							}
+						});
+						if (result.error) failureCount += 1;
+					}
+
+					isLoading.removing = false;
+					if (successCount > 0) {
+						const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
+						toast.success(successMsg);
+						volumes = await volumeService.getVolumes(requestOptions);
+					}
+					if (failureCount > 0) {
+						const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
+						toast.error(failureMsg);
+					}
+					selectedIds = [];
 				}
-			});
-			if (result.error) failureCount += 1;
-		}
-
-		isLoading.removing = false;
-		if (successCount > 0) {
-			const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
-			toast.success(successMsg);
-			volumes = await volumeService.getVolumes(requestOptions);
-		}
-		if (failureCount > 0) {
-			const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
-			toast.error(failureMsg);
-		}
-		selectedIds = [];
+			}
+		});
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{
-			accessorKey: 'inUse',
-			title: m.common_status(),
-			sortable: true,
-			cell: StatusCell
-		},
-		{
-			accessorKey: 'size',
-			title: m.common_size(),
-			sortable: true,
-			cell: SizeCell
-		},
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'driver', title: m.common_driver(), sortable: true }
 	] satisfies ColumnSpec<VolumeSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
@@ -156,19 +156,31 @@
 {#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
 	{#if volumeSizesPromise}
 		{#await volumeSizesPromise}
-			<span class="text-muted-foreground flex items-center gap-1 text-sm">
-				<Spinner class="size-4" />
-			</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground flex items-center gap-1 text-sm">
+					<Spinner class="size-4" />
+				</span>
+			{/if}
 		{:then sizesMap}
 			{@const sizeInfo = sizesMap.get(item.name)}
 			{#if sizeInfo && sizeInfo.size >= 0}
 				<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+			{:else if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 			{:else}
 				<span class="text-muted-foreground text-sm">-</span>
 			{/if}
 		{:catch}
-			<span class="text-muted-foreground text-sm">-</span>
+			{#if item.size > 0}
+				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			{:else}
+				<span class="text-muted-foreground text-sm">-</span>
+			{/if}
 		{/await}
+	{:else if item.size > 0}
+		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}
 		<span class="text-muted-foreground text-sm">-</span>
 	{/if}
@@ -195,7 +207,7 @@
 		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.inUse ?? true)
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }
@@ -226,10 +238,16 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="relative size-8 p-0"
+					icon={EllipsisIcon}
+					showLabel={false}
+					customLabel={m.common_open_menu()}
+				/>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">

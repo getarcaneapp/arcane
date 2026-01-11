@@ -1,0 +1,15 @@
+CREATE INDEX IF NOT EXISTS idx_environments_enabled ON environments(enabled);
+CREATE INDEX IF NOT EXISTS idx_environments_status ON environments(status);
+CREATE INDEX IF NOT EXISTS idx_environments_last_seen ON environments(last_seen);
+CREATE INDEX IF NOT EXISTS idx_container_registries_enabled ON container_registries(enabled);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_oidc_subject_id ON users(oidc_subject_id);
+CREATE INDEX IF NOT EXISTS idx_image_updates_has_update ON image_updates(has_update);
+CREATE INDEX IF NOT EXISTS idx_image_updates_has_update_notification ON image_updates(has_update, notification_sent);
+CREATE INDEX IF NOT EXISTS idx_image_updates_check_time ON image_updates(check_time);
+CREATE INDEX IF NOT EXISTS idx_image_updates_notification_sent ON image_updates(notification_sent);
+CREATE INDEX IF NOT EXISTS idx_notification_settings_enabled ON notification_settings(enabled);
+CREATE INDEX IF NOT EXISTS idx_apprise_settings_enabled ON apprise_settings(enabled);

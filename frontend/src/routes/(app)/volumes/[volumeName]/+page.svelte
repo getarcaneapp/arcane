@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
-	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { truncateString } from '$lib/utils/string.utils';
@@ -14,6 +13,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
+	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -48,58 +48,33 @@
 			}
 		});
 	}
+
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isLoading.remove,
+			disabled: isLoading.remove,
+			onclick: () => handleRemoveVolumeConfirm(volume.name)
+		}
+	]);
 </script>
 
-<div class="space-y-6 pb-8">
-	<div class="flex flex-col space-y-4">
-		<Breadcrumb.Root>
-			<Breadcrumb.List>
-				<Breadcrumb.Item>
-					<Breadcrumb.Link href="/volumes">{m.volumes_title()}</Breadcrumb.Link>
-				</Breadcrumb.Item>
-				<Breadcrumb.Separator />
-				<Breadcrumb.Item>
-					<Breadcrumb.Page>{volume.name}</Breadcrumb.Page>
-				</Breadcrumb.Item>
-			</Breadcrumb.List>
-		</Breadcrumb.Root>
-
-		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-			<div class="flex flex-col">
-				<div class="flex items-center gap-3">
-					<h1 class="text-2xl font-bold tracking-tight">
-						{volume.name}
-					</h1>
-				</div>
-
-				<div class="mt-2 flex gap-2">
-					{#if volume.inUse}
-						<StatusBadge variant="green" text={m.common_in_use()} />
-					{:else}
-						<StatusBadge variant="amber" text={m.common_unused()} />
-					{/if}
-
-					{#if volume.driver}
-						<StatusBadge variant="blue" text={volume.driver} />
-					{/if}
-
-					{#if volume.scope}
-						<StatusBadge variant="purple" text={volume.scope} />
-					{/if}
-				</div>
-			</div>
-
-			<div class="flex gap-2 self-start">
-				<ArcaneButton
-					action="remove"
-					customLabel={m.common_remove_title({ resource: m.resource_volume_cap() })}
-					onclick={() => handleRemoveVolumeConfirm(volume.name)}
-					loading={isLoading.remove}
-					disabled={isLoading.remove}
-				/>
-			</div>
-		</div>
-	</div>
+<ResourceDetailLayout backUrl="/volumes" backLabel={m.volumes_title()} title={volume.name} {actions}>
+	{#snippet badges()}
+		{#if volume.inUse}
+			<StatusBadge variant="green" text={m.common_in_use()} />
+		{:else}
+			<StatusBadge variant="amber" text={m.common_unused()} />
+		{/if}
+		{#if volume.driver}
+			<StatusBadge variant="blue" text={volume.driver} />
+		{/if}
+		{#if volume.scope}
+			<StatusBadge variant="purple" text={volume.scope} />
+		{/if}
+	{/snippet}
 
 	{#if volume}
 		<div class="space-y-6">
@@ -325,4 +300,4 @@
 			/>
 		</div>
 	{/if}
-</div>
+</ResourceDetailLayout>

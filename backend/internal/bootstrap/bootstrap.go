@@ -17,6 +17,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
@@ -26,7 +27,7 @@ func Bootstrap(ctx context.Context) error {
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)
-	slog.InfoContext(ctx, "Arcane is starting")
+	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
@@ -40,7 +41,7 @@ func Bootstrap(ctx context.Context) error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:contextcheck
 		defer shutdownCancel()
 		if err := db.Close(); err != nil {
-			slog.ErrorContext(shutdownCtx, "Error closing database", slog.Any("error", err)) //nolint:contextcheck
+			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err) //nolint:contextcheck
 		}
 	}(appCtx)
 
@@ -53,8 +54,12 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
-	utils.InitEncryption(cfg)
+	crypto.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
+
+	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
+		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
+	}
 
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
@@ -100,7 +105,7 @@ func Bootstrap(ctx context.Context) error {
 func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
-	pairURL := strings.TrimRight(cfg.ManagerApiUrl, "/") + "/api/environments/pair"
+	pairURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/") + "/api/environments/pair"
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -133,7 +138,7 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 		slog.InfoContext(appCtx, "Starting scheduler")
 		if err := scheduler.Run(appCtx); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				slog.ErrorContext(appCtx, "Job scheduler exited with error", slog.Any("error", err))
+				slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
 			}
 		}
 		slog.InfoContext(appCtx, "Scheduler stopped")
@@ -146,9 +151,9 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	}
 
 	go func() {
-		slog.InfoContext(appCtx, "Starting HTTP server", slog.String("port", cfg.Port))
+		slog.InfoContext(appCtx, "Starting HTTP server", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.ErrorContext(appCtx, "Failed to start server", slog.Any("error", err))
+			slog.ErrorContext(appCtx, "Failed to start server", "error", err)
 		}
 	}()
 
@@ -167,7 +172,7 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
-		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", slog.Any("error", err)) //nolint:contextcheck
+		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", "error", err) //nolint:contextcheck
 		return err
 	}
 

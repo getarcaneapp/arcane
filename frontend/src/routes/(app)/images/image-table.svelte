@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -145,32 +145,31 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{
-			id: 'updates',
-			accessorFn: (row) => row.updateInfo?.hasUpdate ?? false,
-			title: m.images_updates(),
-			cell: UpdatesCell
-		},
+		{ accessorKey: 'repo', title: m.images_repository(), sortable: true, cell: RepoCell },
+		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
 		{
 			accessorKey: 'inUse',
 			title: m.common_status(),
 			sortable: true,
 			cell: StatusCell
 		},
-		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell },
+		{
+			id: 'updates',
+			accessorFn: (row) => row.updateInfo?.hasUpdate ?? false,
+			title: m.images_updates(),
+			cell: UpdatesCell
+		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'repo', title: m.images_repository(), sortable: true, cell: RepoCell },
-		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell }
+		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
 	] satisfies ColumnSpec<ImageSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'updates', label: m.images_updates(), defaultVisible: true },
-		{ id: 'inUse', label: m.common_in_use(), defaultVisible: true },
-		{ id: 'created', label: m.common_created(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
-		{ id: 'repo', label: m.images_repository(), defaultVisible: true },
-		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true }
+		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -265,13 +264,6 @@
 				show: mobileFieldVisibility.size ?? true
 			},
 			{
-				label: m.images_repository(),
-				getValue: (item: ImageSummaryDto) => (item.repo && item.repo !== '<none>' ? item.repo : m.images_untagged()),
-				icon: ImagesIcon,
-				iconVariant: 'purple' as const,
-				show: mobileFieldVisibility.repo ?? true
-			},
-			{
 				label: m.common_tags(),
 				getValue: (item: ImageSummaryDto) => {
 					if (item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>') {
@@ -294,9 +286,9 @@
 		rowActions={RowActions}
 		onclick={(item: ImageSummaryDto) => goto(`/images/${item.id}`)}
 	>
-		{#if (mobileFieldVisibility.updates ?? true) && item.updateInfo !== undefined}
-			<div class="flex flex-wrap gap-x-4 gap-y-3 border-t pt-3">
-				<div class="flex min-w-0 flex-1 basis-[180px] flex-col">
+		{#if mobileFieldVisibility.updates ?? true}
+			<div class="flex items-center gap-x-2 gap-y-2 border-t pt-2">
+				<div class="flex min-w-0 shrink flex-col">
 					<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
 						{m.images_updates()}
 					</div>
@@ -319,10 +311,16 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="relative size-8 p-0"
+					icon={EllipsisIcon}
+					showLabel={false}
+					customLabel={m.common_open_menu()}
+				/>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">

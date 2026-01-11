@@ -32,6 +32,7 @@ type SettingDto struct {
 // Update is used to update application settings.
 type Update struct {
 	// ProjectsDirectory is the directory path where projects are stored.
+	// Must be an absolute path.
 	//
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
@@ -60,6 +61,11 @@ type Update struct {
 	//
 	// Required: false
 	PollingInterval *string `json:"pollingInterval,omitempty"`
+
+	// AutoInjectEnv indicates if project .env variables should be automatically injected into all containers.
+	//
+	// Required: false
+	AutoInjectEnv *string `json:"autoInjectEnv,omitempty"`
 
 	// EnvironmentHealthInterval is the interval for checking environment health.
 	//
@@ -161,15 +167,10 @@ type Update struct {
 	// Required: false
 	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
 
-	// OnboardingCompleted indicates if the onboarding process is complete.
+	// OidcSkipTlsVerify indicates if TLS verification should be skipped for OIDC.
 	//
 	// Required: false
-	OnboardingCompleted *string `json:"onboardingCompleted,omitempty"`
-
-	// OnboardingSteps tracks the completed onboarding steps.
-	//
-	// Required: false
-	OnboardingSteps *string `json:"onboardingSteps,omitempty"`
+	OidcSkipTlsVerify *string `json:"oidcSkipTlsVerify,omitempty"`
 
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//

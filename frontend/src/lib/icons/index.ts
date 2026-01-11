@@ -106,3 +106,8 @@ export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';
 export { default as FileSymlinkIcon } from 'virtual:icons/solar/link-round-angle-linear';
 export { default as FilePenIcon } from 'virtual:icons/solar/document-add-linear';
 export { default as UnlinkIcon } from 'virtual:icons/solar/link-broken-minimalistic-linear';
+export { default as GitBranchIcon } from 'virtual:icons/tabler/git-branch';
+export { default as AutomationIcon } from 'virtual:icons/tabler/automation';
+export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';
+export { default as UploadIcon } from 'virtual:icons/solar/upload-minimalistic-linear';
+export { default as RedeployIcon } from 'virtual:icons/solar/refresh-circle-linear';

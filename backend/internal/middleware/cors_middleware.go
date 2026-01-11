@@ -56,15 +56,17 @@ func deriveAllowedOrigins(cfg *config.Config, custom []string) []string {
 	}
 
 	var origins []string
-	if cfg != nil && cfg.AppUrl != "" {
-		appURL := cfg.AppUrl
-		if !strings.HasPrefix(appURL, "http://") && !strings.HasPrefix(appURL, "https://") {
-			appURL = "https://" + appURL
-		}
-		if u, err := url.Parse(appURL); err == nil {
-			origins = append(origins, u.Scheme+"://"+u.Host)
-		} else {
-			slog.Warn("Failed to parse APP_URL for CORS origins", "url", cfg.AppUrl, "error", err)
+	if cfg != nil {
+		appURL := cfg.GetAppURL()
+		if appURL != "" {
+			if !strings.HasPrefix(appURL, "http://") && !strings.HasPrefix(appURL, "https://") {
+				appURL = "https://" + appURL
+			}
+			if u, err := url.Parse(appURL); err == nil {
+				origins = append(origins, u.Scheme+"://"+u.Host)
+			} else {
+				slog.Warn("Failed to parse APP_URL for CORS origins", "url", appURL, "error", err)
+			}
 		}
 	}
 

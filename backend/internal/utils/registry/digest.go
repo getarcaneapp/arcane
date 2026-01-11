@@ -78,9 +78,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 
 	// If HEAD isn't supported by the registry, fall back to GET and try again.
 	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
-		slog.DebugContext(ctx, "HEAD not supported or returned unexpected status, retrying with GET",
-			slog.String("url", url),
-			slog.Int("status", resp.StatusCode))
+		slog.DebugContext(ctx, "HEAD not supported or returned unexpected status, retrying with GET", "url", url, "status", resp.StatusCode)
 		// create GET request
 		getReq, rerr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if rerr != nil {
@@ -96,16 +94,12 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 	}
 
 	elapsed := time.Since(start)
-	slog.DebugContext(ctx, "manifest request completed",
-		slog.String("url", url),
-		slog.Int("status", resp.StatusCode),
-		slog.Duration("elapsed", elapsed))
+	slog.DebugContext(ctx, "manifest request completed", "url", url, "status", resp.StatusCode, "elapsed", elapsed)
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		h := getHeaderCI(resp.Header, "WWW-Authenticate")
 		if h != "" {
-			slog.DebugContext(ctx, "manifest request unauthorized",
-				slog.String("www-authenticate", h))
+			slog.DebugContext(ctx, "manifest request unauthorized", "www-authenticate", h)
 			return "", fmt.Errorf("unauthorized: %s", h)
 		}
 		return "", fmt.Errorf("manifest request failed with status: 401")
@@ -115,8 +109,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 		if www == "" {
 			www = "not present"
 		}
-		slog.DebugContext(ctx, "manifest request unexpected status",
-			slog.String("www-authenticate", www))
+		slog.DebugContext(ctx, "manifest request unexpected status", "www-authenticate", www)
 		return "", fmt.Errorf("manifest request failed with status: %d, auth: %q", resp.StatusCode, www)
 	}
 
@@ -125,12 +118,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 		return "", fmt.Errorf("no digest header found in response")
 	}
 
-	slog.DebugContext(ctx, "resolved remote digest",
-		slog.String("registry", registry),
-		slog.String("repository", repository),
-		slog.String("tag", tag),
-		slog.String("digest", d),
-		slog.Duration("elapsed", elapsed))
+	slog.DebugContext(ctx, "resolved remote digest", "registry", registry, "repository", repository, "tag", tag, "digest", d, "elapsed", elapsed)
 
 	return d, nil
 }

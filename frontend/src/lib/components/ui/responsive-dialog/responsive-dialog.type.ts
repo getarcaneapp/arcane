@@ -21,7 +21,7 @@ export interface ResponsiveDialogProps {
 	/**
 	 * Title displayed in the dialog/drawer header
 	 */
-	title?: string;
+	title?: string | Snippet;
 
 	/**
 	 * Description displayed in the dialog/drawer header

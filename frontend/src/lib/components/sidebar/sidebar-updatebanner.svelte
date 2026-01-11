@@ -6,12 +6,13 @@
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import type { User } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 	import { DownloadIcon, ExternalLinkIcon } from '$lib/icons';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 
 	let {
 		isCollapsed,
@@ -104,8 +105,9 @@
 			await systemUpgradeService.triggerUpgrade();
 			// Dialog will handle countdown and reload
 		} catch (error: any) {
-			const errorMessage = error?.response?.data?.error || error?.message || 'Unknown error';
-			toast.error(m.upgrade_failed({ error: errorMessage }));
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 			upgrading = false;
 		}
 	}
@@ -135,22 +137,23 @@
 {/snippet}
 
 {#snippet upgradeButton()}
-	<Button
-		variant="default"
+	<ArcaneButton
+		action="update"
 		size="sm"
-		class="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-primary/40 h-9 w-full gap-2 rounded-xl shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+		class="h-9 w-full gap-2 rounded-xl shadow-sm transition-colors"
 		onclick={handleUpgradeClick}
 		disabled={upgrading || checkingUpgrade}
-	>
-		<DownloadIcon class="size-4" />
-		{upgradeButtonText}
-	</Button>
+		customLabel={upgradeButtonText}
+		icon={DownloadIcon}
+	/>
 {/snippet}
 
 <UpgradeConfirmationDialog
 	bind:open={showConfirmDialog}
 	bind:upgrading
 	version={versionInformation?.newestVersion ?? ''}
+	expectedVersion={versionInformation?.newestVersion}
+	expectedDigest={versionInformation?.newestDigest}
 	onConfirm={handleConfirmUpgrade}
 />
 

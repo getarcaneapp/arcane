@@ -19,7 +19,7 @@ import (
 const (
 	AnalyticsJobName         = "analytics-heartbeat"
 	defaultHeartbeatEndpoint = "https://checkin.getarcane.app/heartbeat"
-	analyticsInterval        = 24 * time.Hour
+	defaultAnalyticsInterval = 24 * time.Hour
 )
 
 type AnalyticsJob struct {
@@ -50,16 +50,21 @@ func NewAnalyticsJob(
 
 func (j *AnalyticsJob) Register(ctx context.Context) error {
 	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
-		slog.InfoContext(ctx, "analytics disabled or not in production; heartbeat job not registered",
-			"analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
+		slog.InfoContext(ctx, "analytics disabled or not in production; heartbeat job not registered", "analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
+		j.scheduler.RemoveJobByName(AnalyticsJobName)
 		return nil
+	}
+
+	intervalMinutes := j.settingsService.GetIntSetting(ctx, "analyticsHeartbeatInterval", int(defaultAnalyticsInterval/time.Minute))
+	interval := time.Duration(intervalMinutes) * time.Minute
+	if interval < 60*time.Minute {
+		interval = defaultAnalyticsInterval
 	}
 
 	j.scheduler.RemoveJobByName(AnalyticsJobName)
 
-	jobDefinition := gocron.DurationJob(analyticsInterval)
-	slog.InfoContext(ctx, "registering analytics heartbeat job",
-		"jobName", AnalyticsJobName, "interval", analyticsInterval.String(), "endpoint", j.heartbeatURL)
+	jobDefinition := gocron.DurationJob(interval)
+	slog.InfoContext(ctx, "registering analytics heartbeat job", "jobName", AnalyticsJobName, "interval", interval.String(), "endpoint", j.heartbeatURL)
 
 	return j.scheduler.RegisterJob(
 		ctx,
@@ -70,10 +75,27 @@ func (j *AnalyticsJob) Register(ctx context.Context) error {
 	)
 }
 
+func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
+	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
+		j.scheduler.RemoveJobByName(AnalyticsJobName)
+		return nil
+	}
+
+	intervalMinutes := j.settingsService.GetIntSetting(ctx, "analyticsHeartbeatInterval", int(defaultAnalyticsInterval/time.Minute))
+	interval := time.Duration(intervalMinutes) * time.Minute
+	if interval < 60*time.Minute {
+		interval = defaultAnalyticsInterval
+	}
+
+	slog.InfoContext(ctx, "analytics heartbeat settings changed; rescheduling",
+		"jobName", AnalyticsJobName, "interval", interval.String())
+
+	return j.scheduler.RescheduleDurationJobByName(ctx, AnalyticsJobName, interval, j.Execute, false)
+}
+
 func (j *AnalyticsJob) Execute(parentCtx context.Context) error {
 	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
-		slog.InfoContext(parentCtx, "analytics disabled or not in production; skipping heartbeat",
-			"analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
+		slog.InfoContext(parentCtx, "analytics disabled or not in production; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
 		return nil
 	}
 
@@ -92,8 +114,7 @@ func (j *AnalyticsJob) Execute(parentCtx context.Context) error {
 		return fmt.Errorf("failed to marshal analytics heartbeat body: %w", err)
 	}
 
-	slog.InfoContext(parentCtx, "sending analytics heartbeat",
-		"jobName", AnalyticsJobName)
+	slog.InfoContext(parentCtx, "sending analytics heartbeat", "jobName", AnalyticsJobName)
 
 	_, err = backoff.Retry(
 		parentCtx,

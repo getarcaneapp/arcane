@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -63,7 +64,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		userService:     userService,
 		settingsService: settingsService,
 		eventService:    eventService,
-		jwtSecret:       utils.CheckOrGenerateJwtSecret(jwtSecret),
+		jwtSecret:       crypto.CheckOrGenerateJwtSecret(jwtSecret),
 		refreshExpiry:   7 * 24 * time.Hour,
 		config:          cfg,
 	}
@@ -85,12 +86,13 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	if authSettings.OidcEnabled {
 		oidcConfig := &models.OidcConfig{
-			ClientID:     settings.OidcClientId.Value,
-			ClientSecret: settings.OidcClientSecret.Value,
-			IssuerURL:    settings.OidcIssuerUrl.Value,
-			Scopes:       settings.OidcScopes.Value,
-			AdminClaim:   settings.OidcAdminClaim.Value,
-			AdminValue:   settings.OidcAdminValue.Value,
+			ClientID:      settings.OidcClientId.Value,
+			ClientSecret:  settings.OidcClientSecret.Value,
+			IssuerURL:     settings.OidcIssuerUrl.Value,
+			Scopes:        settings.OidcScopes.Value,
+			AdminClaim:    settings.OidcAdminClaim.Value,
+			AdminValue:    settings.OidcAdminValue.Value,
+			SkipTlsVerify: settings.OidcSkipTlsVerify.IsTrue(),
 		}
 
 		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {
@@ -445,13 +447,13 @@ func (s *AuthService) isAdminFromOidc(ctx context.Context, userInfo auth.OidcUse
 		return false
 	}
 
-	if v, ok := utils.GetByPath(userInfo.Extra, claimKey); ok && utils.EvalMatch(v, values) {
+	if v, ok := crypto.GetByPath(userInfo.Extra, claimKey); ok && crypto.EvalMatch(v, values) {
 		return true
 	}
 
 	if tokenResp != nil && tokenResp.IDToken != "" {
-		if claims := utils.ParseJWTClaims(tokenResp.IDToken); claims != nil {
-			if v, ok := utils.GetByPath(claims, claimKey); ok && utils.EvalMatch(v, values) {
+		if claims := crypto.ParseJWTClaims(tokenResp.IDToken); claims != nil {
+			if v, ok := crypto.GetByPath(claims, claimKey); ok && crypto.EvalMatch(v, values) {
 				return true
 			}
 		}
@@ -571,28 +573,22 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
-		slog.InfoContext(ctx, "Token version mismatch detected",
-			"tokenVersion", claims.AppVersion,
-			"currentVersion", config.Version,
-			"user", claims.Username)
+		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, ErrTokenVersionMismatch
 	}
 
-	user := &models.User{
-		BaseModel: models.BaseModel{ID: claims.ID},
-		Username:  claims.Username,
-		Roles:     models.StringSlice(claims.Roles),
+	// Verify user exists in DB
+	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
+	// even if the JWT signature is still valid (e.g. same JWT_SECRET).
+	dbUser, err := s.userService.GetUserByID(ctx, claims.ID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrInvalidToken
+		}
+		return nil, err
 	}
 
-	if claims.Email != "" {
-		user.Email = &claims.Email
-	}
-
-	if claims.DisplayName != "" {
-		user.DisplayName = &claims.DisplayName
-	}
-
-	return user, nil
+	return dbUser, nil
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {

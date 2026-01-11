@@ -32,7 +32,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	loggerSkipPatterns := []string{
 		"GET /api/environments/*/ws/containers/*/logs",
 		"GET /api/environments/*/ws/containers/*/stats",
-		"GET /api/environments/*/ws/containers/*/exec",
+		"GET /api/environments/*/ws/containers/*/terminal",
 		"GET /api/environments/*/ws/projects/*/logs",
 		"GET /api/environments/*/ws/system/stats",
 		"GET /_app/*",
@@ -102,6 +102,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Version:           appServices.Version,
 		Environment:       appServices.Environment,
 		Settings:          appServices.Settings,
+		JobSchedule:       appServices.JobSchedule,
 		SettingsSearch:    appServices.SettingsSearch,
 		ContainerRegistry: appServices.ContainerRegistry,
 		Template:          appServices.Template,
@@ -117,6 +118,8 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		CustomizeSearch:   appServices.CustomizeSearch,
 		System:            appServices.System,
 		SystemUpgrade:     appServices.SystemUpgrade,
+		GitRepository:     appServices.GitRepository,
+		GitOpsSync:        appServices.GitOpsSync,
 		Config:            cfg,
 	})
 

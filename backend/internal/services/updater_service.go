@@ -13,9 +13,11 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
+	arcRegistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
@@ -29,6 +31,7 @@ type UpdaterService struct {
 	eventService        *EventService
 	imageService        *ImageService
 	notificationService *NotificationService
+	upgradeService      *SystemUpgradeService
 
 	updatingContainers map[string]bool
 	updatingProjects   map[string]bool
@@ -44,6 +47,7 @@ func NewUpdaterService(
 	events *EventService,
 	imageSvc *ImageService,
 	notifications *NotificationService,
+	upgrade *SystemUpgradeService,
 ) *UpdaterService {
 	return &UpdaterService{
 		db:                  db,
@@ -55,6 +59,7 @@ func NewUpdaterService(
 		eventService:        events,
 		imageService:        imageSvc,
 		notificationService: notifications,
+		upgradeService:      upgrade,
 		updatingContainers:  map[string]bool{},
 		updatingProjects:    map[string]bool{},
 	}
@@ -89,11 +94,9 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		oldRef string
 		newRef string
 		oldIDs []string // sha256:... image IDs that currently back oldRef
+		pulled bool
 	}
 	var plans []updatePlan
-
-	// track all old image IDs we saw so we can prune them after restart
-	oldIDSet := map[string]struct{}{}
 
 	for _, r := range records {
 		if r.Repository == "" || r.Tag == "" {
@@ -114,11 +117,6 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		}
 
 		oldIDs, _ := s.resolveLocalImageIDsForRef(ctx, oldRef)
-		for _, id := range oldIDs {
-			if id != "" {
-				oldIDSet[id] = struct{}{}
-			}
-		}
 		plans = append(plans, updatePlan{oldRef: oldRef, newRef: newRef, oldIDs: oldIDs})
 	}
 
@@ -135,20 +133,28 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
 
-	// Build maps for fast matching later
-	oldRefToNewRef := map[string]string{}
-	oldIDToNewRef := map[string]string{} // sha256 -> newRef
-	for _, p := range plans {
-		oldRefToNewRef[p.oldRef] = p.newRef
-		for _, id := range p.oldIDs {
-			oldIDToNewRef[id] = p.newRef
+	// Pull images with ImageService (waits for completion)
+	// Only containers using the OLD image IDs will be restarted after pulls succeed.
+	// This prevents restarts when pulls fail or when the image digest didn't change.
+	dcli, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("docker connect: %w", err)
+	}
+	registryClient := arcRegistry.NewClient()
+	digestChecker := arcaneupdater.NewDigestChecker(dcli, registryClient)
+
+	enabledRegs := []models.ContainerRegistry{}
+	if s.registryService != nil {
+		if regs, rerr := s.registryService.GetEnabledRegistries(ctx); rerr == nil {
+			enabledRegs = regs
 		}
 	}
 
-	// Pull images with ImageService (waits for completion)
-	newImageIDs := map[string][]string{} // newRef -> []imageIDs after pull
+	// track all old image IDs we saw for pulled updates so we can prune them after restart
+	oldIDSet := map[string]struct{}{}
 
-	for _, p := range plans {
+	for i := range plans {
+		p := plans[i]
 		item := updater.ResourceResult{
 			ResourceID:   p.oldRef,
 			ResourceType: "image",
@@ -175,37 +181,82 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			continue
 		}
 
-		if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
-			item.Status = "failed"
-			item.Error = err.Error()
-			out.Failed++
-		} else {
-			item.Status = "updated"
-			item.UpdateApplied = true
-			out.Updated++
-			newIDs, _ := s.resolveLocalImageIDsForRef(ctx, p.newRef)
-			if len(newIDs) > 0 {
-				newImageIDs[p.newRef] = newIDs
-				for _, newID := range newIDs {
-					if newID != "" {
-						oldIDToNewRef[newID] = p.newRef
+		// Digest pre-check: if registry supports it and digests match, avoid pulling entirely.
+		// This also prevents unnecessary restarts when the update record is stale.
+		normNew := s.normalizeRef(p.newRef)
+		host, repo, tag := s.parseNormalizedRef(normNew)
+		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs)
+		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew, authHeader)
+		skipPull := false
+
+		if check.CheckedViaAPI && check.Error == nil && !check.NeedsUpdate {
+			item.Status = "skipped"
+			item.Error = "image already up to date"
+			out.Skipped++
+			// We skip checking for pull, but we still proceed to container update checks
+			// treating this as "successful" for the pipeline, but invalidating oldIDs
+			// because they represent the *current* image, not a stale one.
+			plans[i].pulled = true
+			plans[i].oldIDs = nil
+			skipPull = true
+
+			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+				"phase":         "image_pull",
+				"imageOld":      p.oldRef,
+				"imageNew":      p.newRef,
+				"status":        item.Status,
+				"digestLocal":   check.LocalDigest,
+				"digestRemote":  check.RemoteDigest,
+				"checkedViaApi": true,
+				"error":         item.Error,
+			})
+		}
+
+		if !skipPull {
+			if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
+				item.Status = "failed"
+				item.Error = err.Error()
+				out.Failed++
+			} else {
+				item.Status = "updated"
+				item.UpdateApplied = true
+				out.Updated++
+				plans[i].pulled = true
+				for _, id := range p.oldIDs {
+					if id != "" {
+						oldIDSet[id] = struct{}{}
 					}
 				}
 			}
+			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
+				"phase":    "image_pull",
+				"imageOld": p.oldRef,
+				"imageNew": p.newRef,
+				"status":   item.Status,
+				"error":    item.Error,
+			})
 		}
+
 		out.Items = append(out.Items, item)
 		_ = s.recordRun(ctx, item)
-
-		s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
-			"phase":    "image_pull",
-			"imageOld": p.oldRef,
-			"imageNew": p.newRef,
-			"status":   item.Status,
-			"error":    item.Error,
-		})
 	}
 
-	if !dryRun && len(oldIDToNewRef) > 0 {
+	// Build maps for fast matching later (only for successfully pulled updates)
+	oldRefToNewRef := map[string]string{}
+	oldIDToNewRef := map[string]string{} // sha256 -> newRef
+	for _, p := range plans {
+		if !p.pulled {
+			continue
+		}
+		oldRefToNewRef[p.oldRef] = p.newRef
+		for _, id := range p.oldIDs {
+			if id != "" {
+				oldIDToNewRef[id] = p.newRef
+			}
+		}
+	}
+
+	if !dryRun && (len(oldIDToNewRef) > 0 || len(oldRefToNewRef) > 0) {
 		results, err := s.restartContainersUsingOldIDs(ctx, oldIDToNewRef, oldRefToNewRef)
 		if err != nil {
 			slog.Warn("container restarts had errors", "err", err)
@@ -245,7 +296,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		}
 	}
 
-	// Prune old images that are no longer used
+	// Prune old images that are no longer used (only for images that were actually updated)
 	if !dryRun && len(oldIDSet) > 0 {
 		ids := make([]string, 0, len(oldIDSet))
 		for id := range oldIDSet {
@@ -306,6 +357,8 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
+	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
+
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -327,6 +380,49 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	containerName := s.getContainerName(*targetContainer)
+	slog.InfoContext(ctx, "UpdateSingleContainer: found container", "containerID", containerID, "name", containerName, "image", targetContainer.Image)
+
+	// Inspect container to get full config (needed for label-based controls)
+	inspectBefore, err := dcli.ContainerInspect(ctx, targetContainer.ID)
+	if err != nil {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "failed",
+			Error:        fmt.Sprintf("inspect failed: %v", err),
+		})
+		out.Failed++
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
+	labels := map[string]string{}
+	if inspectBefore.Config != nil && inspectBefore.Config.Labels != nil {
+		labels = inspectBefore.Config.Labels
+	}
+
+	isArcaneContainer := arcaneupdater.IsArcaneContainer(labels)
+	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container",
+		"containerID", containerID,
+		"imageID", inspectBefore.Image,
+		"isArcane", isArcaneContainer,
+		"hasArcaneLabel", labels["com.getarcaneapp.arcane"])
+
+	if arcaneupdater.IsUpdateDisabled(labels) {
+		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "skipped",
+			Error:        "updates disabled by label",
+		})
+		out.Skipped++
+		out.Checked = 1
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
 
 	// Get the image reference
 	imageRef := targetContainer.Image
@@ -362,18 +458,68 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	// Inspect container to get full config
-	inspect, err := dcli.ContainerInspect(ctx, targetContainer.ID)
-	if err != nil {
+	// Compare with pulled image to avoid unnecessary restart
+	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
+	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
+		"containerID", containerID,
+		"changed", changed,
+		"compareError", cmpErr,
+		"oldImageID", inspectBefore.Image,
+		"normalizedRef", normalizedRef)
+
+	if cmpErr == nil && !changed {
+		slog.InfoContext(ctx, "UpdateSingleContainer: no update needed - digest unchanged",
+			"containerID", containerID,
+			"imageID", inspectBefore.Image)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
 			ResourceName: containerName,
-			Status:       "failed",
-			Error:        fmt.Sprintf("inspect failed: %v", err),
+			Status:       "skipped",
+			Error:        "image digest unchanged after pull",
 		})
-		out.Failed++
+		out.Skipped++
+		out.Checked = 1
 		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
+	inspect := inspectBefore
+
+	// Check if this is Arcane self-update - use CLI upgrade instead
+	containerLabels := map[string]string{}
+	if inspect.Config != nil && inspect.Config.Labels != nil {
+		containerLabels = inspect.Config.Labels
+	}
+
+	if arcaneupdater.IsArcaneContainer(containerLabels) && s.upgradeService != nil {
+		slog.InfoContext(ctx, "UpdateSingleContainer: detected Arcane self-update, using CLI upgrade method", "containerID", containerID)
+
+		if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+			out.Items = append(out.Items, updater.ResourceResult{
+				ResourceID:   targetContainer.ID,
+				ResourceType: "container",
+				ResourceName: containerName,
+				Status:       "failed",
+				Error:        fmt.Sprintf("CLI upgrade failed: %v", err),
+			})
+			out.Failed++
+			out.Duration = time.Since(start).String()
+			return out, nil
+		}
+
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "updated",
+		})
+		out.Updated++
+		out.Checked = 1
+		out.Duration = time.Since(start).String()
+
+		slog.InfoContext(ctx, "UpdateSingleContainer: CLI upgrade triggered successfully", "containerID", containerID)
 		return out, nil
 	}
 
@@ -488,6 +634,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 
 // --- internals ---
 
+//nolint:gocognit
 func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summary, inspect container.InspectResponse, newRef string) error {
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
@@ -495,16 +642,49 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	}
 
 	name := s.getContainerName(cnt)
-	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef)
+	labels := inspect.Config.Labels
+	isArcane := arcaneupdater.IsArcaneContainer(labels)
 
-	// stop
-	if err := dcli.ContainerStop(ctx, cnt.ID, container.StopOptions{}); err != nil {
+	// Arcane containers should always use CLI upgrade, not inline update
+	// This method should not be called for Arcane containers
+	if isArcane {
+		slog.ErrorContext(ctx, "updateContainer: called for Arcane container - should use CLI upgrade instead", "containerId", cnt.ID, "containerName", name)
+		return fmt.Errorf("arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
+	}
+
+	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef, "isArcane", isArcane)
+
+	// Execute pre-update lifecycle hook
+	hookResult := arcaneupdater.ExecutePreUpdateCommand(ctx, dcli, cnt.ID, labels)
+	if hookResult.Executed {
+		if hookResult.SkipUpdate {
+			slog.InfoContext(ctx, "updateContainer: container requested skip via pre-update hook", "containerId", cnt.ID, "containerName", name)
+			return fmt.Errorf("container requested skip update via exit code %d", arcaneupdater.ExitCodeSkipUpdate)
+		}
+		if hookResult.Error != nil {
+			slog.WarnContext(ctx, "updateContainer: pre-update hook failed", "containerId", cnt.ID, "err", hookResult.Error)
+			// Continue with update despite hook failure (configurable in future)
+		}
+	}
+
+	originalName := inspect.Name
+
+	// Get custom stop signal if configured
+	stopSignal := arcaneupdater.GetStopSignal(labels)
+	stopOpts := container.StopOptions{}
+	if stopSignal != "" {
+		stopOpts.Signal = stopSignal
+		slog.DebugContext(ctx, "updateContainer: using custom stop signal", "signal", stopSignal)
+	}
+
+	// Stop the container
+	if err := dcli.ContainerStop(ctx, cnt.ID, stopOpts); err != nil {
 		slog.DebugContext(ctx, "updateContainer: stop failed", "containerId", cnt.ID, "err", err)
 		return fmt.Errorf("stop: %w", err)
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStop, cnt.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_stop"})
 
-	// remove
+	// Remove the container
 	if err := dcli.ContainerRemove(ctx, cnt.ID, container.RemoveOptions{}); err != nil {
 		slog.DebugContext(ctx, "updateContainer: remove failed", "containerId", cnt.ID, "err", err)
 		return fmt.Errorf("remove: %w", err)
@@ -517,15 +697,31 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	// Fix for "conflicting options: hostname and the network mode"
 	// When network mode is "host" or "container:...", Hostname must be empty
-	nm := string(inspect.HostConfig.NetworkMode)
-	if nm == "host" || strings.HasPrefix(nm, "container:") {
+	nm := inspect.HostConfig.NetworkMode
+	if nm.IsHost() || nm.IsContainer() {
 		cfg.Hostname = ""
 		cfg.Domainname = ""
 	}
 
-	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}, nil, inspect.Name)
+	// Fix for "conflicting options: port exposing and the container type network mode"
+	// When network mode is "container:...", port mappings are not allowed
+	if nm.IsContainer() {
+		cfg.ExposedPorts = nil
+		inspect.HostConfig.PortBindings = nil
+		inspect.HostConfig.PublishAllPorts = false
+	}
+
+	var networkingConfig *network.NetworkingConfig
+	if !nm.IsContainer() {
+		networkingConfig = &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}
+	}
+
+	// Use original name for new container
+	containerName := strings.TrimPrefix(originalName, "/")
+
+	resp, err := dcli.ContainerCreate(ctx, cfg, inspect.HostConfig, networkingConfig, nil, containerName)
 	if err != nil {
-		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", inspect.Name, "err", err)
+		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", containerName, "err", err)
 		return fmt.Errorf("create: %w", err)
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerCreate, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_create", "newImageId": resp.ID})
@@ -535,6 +731,13 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		return fmt.Errorf("start: %w", err)
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_start"})
+
+	// Execute post-update lifecycle hook on the new container
+	hookResult = arcaneupdater.ExecutePostUpdateCommand(ctx, dcli, resp.ID, labels)
+	if hookResult.Executed && hookResult.Error != nil {
+		slog.WarnContext(ctx, "updateContainer: post-update hook failed", "newContainerId", resp.ID, "err", hookResult.Error)
+		// Log but don't fail the update
+	}
 
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerUpdate, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{
 		"oldContainerId": cnt.ID,
@@ -589,27 +792,6 @@ func (s *UpdaterService) stripDigest(ref string) string {
 	return ref
 }
 
-const arcaneUpdaterLabel = "com.getarcaneapp.arcane.updater"
-
-// isUpdateDisabled returns true if the special label is present and evaluates to false.
-// Accepts false/0/no/off (case-insensitive) as "disabled". Default is enabled.
-func (s *UpdaterService) isUpdateDisabled(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
-	for k, v := range labels {
-		if strings.EqualFold(k, arcaneUpdaterLabel) {
-			switch strings.TrimSpace(strings.ToLower(v)) {
-			case "false", "0", "no", "off":
-				return true
-			default:
-				return false
-			}
-		}
-	}
-	return false
-}
-
 // collectUsedImagesFromContainers adds normalized image tags from non-opted-out running containers.
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
 	if dcli == nil {
@@ -621,7 +803,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 	}
 	slog.DebugContext(ctx, "collectUsedImagesFromContainers: container list fetched", "count", len(list))
 	for _, c := range list {
-		if s.isUpdateDisabled(c.Labels) {
+		if arcaneupdater.IsUpdateDisabled(c.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container opted out by labels", "containerId", c.ID)
 			continue
 		}
@@ -630,7 +812,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", c.ID, "err", err)
 			continue
 		}
-		if inspect.Config != nil && s.isUpdateDisabled(inspect.Config.Labels) {
+		if inspect.Config != nil && arcaneupdater.IsUpdateDisabled(inspect.Config.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", c.ID)
 			continue
 		}
@@ -639,22 +821,6 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 		}
 	}
 	return nil
-}
-
-func (s *UpdaterService) isProjectOptedOut(ctx context.Context, dcli *client.Client, projectName string) bool {
-	if dcli == nil {
-		return false
-	}
-	containers, err := s.getProjectContainers(ctx, dcli, projectName)
-	if err != nil {
-		return false
-	}
-	for _, c := range containers {
-		if s.isUpdateDisabled(c.Labels) {
-			return true
-		}
-	}
-	return false
 }
 
 // Aggregate images in use across containers and compose projects
@@ -670,13 +836,13 @@ func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]stru
 	}
 
 	_ = s.collectUsedImagesFromContainers(ctx, dcli, out)
-	_ = s.collectUsedImagesFromProjects(ctx, dcli, out)
+	_ = s.collectUsedImagesFromProjects(ctx, out)
 
 	slog.DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))
 	return out, nil
 }
 
-func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
+func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out map[string]struct{}) error {
 	if s.projectService == nil {
 		return nil
 	}
@@ -691,16 +857,15 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, dcli
 		if p.Status != models.ProjectStatusRunning && p.Status != models.ProjectStatusPartiallyRunning {
 			continue
 		}
-		// optional opt-out via labels on compose project
-		if dcli != nil && s.isProjectOptedOut(ctx, dcli, p.Name) {
-			continue
-		}
 
 		services, serr := s.projectService.GetProjectServices(ctx, p.ID)
 		if serr != nil {
 			continue
 		}
 		for _, svc := range services {
+			if svc.ServiceConfig != nil && arcaneupdater.IsUpdateDisabled(svc.ServiceConfig.Labels) {
+				continue
+			}
 			img := strings.TrimSpace(svc.Image)
 			if img == "" {
 				continue
@@ -798,14 +963,16 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 		return nil, err
 	}
 
-	ids := []string{}
-	if ii, err := dcli.ImageInspect(ctx, ref); err == nil && ii.ID != "" {
-		ids = append(ids, ii.ID)
+	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	ids, err := checker.GetImageIDsForRef(ctx, ref)
+	if err != nil {
+		return nil, err
 	}
 	slog.DebugContext(ctx, "resolveLocalImageIDsForRef: resolved ids", "ref", ref, "ids", ids)
 	return ids, nil
 }
 
+//nolint:gocognit
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
@@ -818,21 +985,50 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: scanning containers for matching images", "containers", len(list), "oldIDMatches", len(oldIDToNewRef), "oldRefMatches", len(oldRefToNewRef))
 
-	var results []updater.ResourceResult
-	for _, c := range list {
-		// Skip containers with opt-out label
-		if s.isUpdateDisabled(c.Labels) {
-			continue
-		}
+	updatedNorm := map[string]string{}
+	for oldRef, nr := range oldRefToNewRef {
+		updatedNorm[s.normalizeRef(oldRef)] = nr
+	}
 
+	type restartPlan struct {
+		cnt      container.Summary
+		inspect  container.InspectResponse
+		newRef   string
+		match    string
+		explicit bool
+		implicit bool
+	}
+
+	plansByName := map[string]*restartPlan{}
+	markedForRestart := map[string]bool{}
+	containersWithDeps := make([]arcaneupdater.ContainerWithDeps, 0, len(list))
+
+	// Cache resolved IDs for newRefs to avoid repeated API calls
+	targetImageIDs := map[string][]string{}
+
+	for _, c := range list {
 		inspect, err := dcli.ContainerInspect(ctx, c.ID)
 		if err != nil {
 			continue
 		}
-		// Also honor labels from full inspect
-		if inspect.Config != nil && s.isUpdateDisabled(inspect.Config.Labels) {
+
+		labels := c.Labels
+		if inspect.Config != nil && inspect.Config.Labels != nil {
+			labels = inspect.Config.Labels
+		}
+
+		// Skip containers with opt-out label
+		if arcaneupdater.IsUpdateDisabled(labels) {
 			continue
 		}
+
+		// Ensure labels map exists to avoid nil panics in implicit restart marking
+		if c.Labels == nil {
+			c.Labels = map[string]string{}
+		}
+
+		dep := arcaneupdater.ExtractContainerDeps(ctx, dcli, c, inspect)
+		containersWithDeps = append(containersWithDeps, dep)
 
 		var (
 			newRef string
@@ -845,10 +1041,6 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			match = inspect.Image
 		} else {
 			// Fallback: resolve tags and match by tag
-			updatedNorm := map[string]string{}
-			for oldRef, nr := range oldRefToNewRef {
-				updatedNorm[s.normalizeRef(oldRef)] = nr
-			}
 			for _, t := range s.getNormalizedTagsForContainer(ctx, dcli, inspect) {
 				if nr, ok := updatedNorm[t]; ok {
 					newRef = nr
@@ -856,41 +1048,151 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 					break
 				}
 			}
-			if newRef == "" {
-				continue
+		}
+
+		if newRef != "" {
+			// Check if container is already on the target image
+			tids, cached := targetImageIDs[newRef]
+			if !cached {
+				tids, _ = s.resolveLocalImageIDsForRef(ctx, newRef)
+				targetImageIDs[newRef] = tids
+			}
+
+			for _, tid := range tids {
+				if tid == inspect.Image {
+					// Already on target image
+					slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
+						"containerId", c.ID, "containerName", dep.Name, "imageID", inspect.Image, "newRef", newRef)
+					newRef = ""
+					break
+				}
 			}
 		}
 
-		slog.DebugContext(ctx, "restartContainersUsingOldIDs: matched container for update", "containerId", c.ID, "match", match, "newRef", newRef)
+		p := &restartPlan{cnt: c, inspect: inspect, newRef: newRef, match: match, explicit: newRef != ""}
+		plansByName[dep.Name] = p
+		if p.explicit {
+			markedForRestart[dep.Name] = true
+		}
+	}
 
-		name := s.getContainerName(c)
+	// Propagate implicit restarts: if a dependency is restarting, restart dependents too.
+	for {
+		added := arcaneupdater.UpdateImplicitRestart(containersWithDeps, markedForRestart)
+		if len(added) == 0 {
+			break
+		}
+		for _, name := range added {
+			if p, ok := plansByName[name]; ok {
+				if p.newRef == "" {
+					if p.inspect.Config != nil {
+						p.newRef = strings.TrimSpace(p.inspect.Config.Image)
+					}
+					if p.newRef == "" {
+						p.newRef = p.cnt.Image
+					}
+					p.match = "dependency_restart"
+					p.implicit = true
+				}
+			}
+		}
+	}
+
+	// Build the set of containers that will be restarted and sort them by dependency order.
+	candidates := make([]arcaneupdater.ContainerWithDeps, 0, len(containersWithDeps))
+	for _, cd := range containersWithDeps {
+		if markedForRestart[cd.Name] {
+			candidates = append(candidates, cd)
+		}
+	}
+
+	sorter := arcaneupdater.NewContainerSorter(candidates)
+	sorted, sortErr := sorter.Sort()
+	_, _ = sorter.SortReverse() // keep method used; reverse order may be useful for future stop-first flows
+	if sortErr != nil {
+		slog.WarnContext(ctx, "restartContainersUsingOldIDs: dependency sort failed, falling back to unsorted order", "error", sortErr.Error())
+		sorted = candidates
+	}
+
+	var results []updater.ResourceResult
+	for _, cd := range sorted {
+		p := plansByName[cd.Name]
+		if p == nil {
+			continue
+		}
+
+		name := cd.Name
+		labels := map[string]string{}
+		if p.inspect.Config != nil && p.inspect.Config.Labels != nil {
+			labels = p.inspect.Config.Labels
+		}
+
 		res := updater.ResourceResult{
-			ResourceID:   c.ID,
+			ResourceID:   p.cnt.ID,
 			ResourceName: name,
 			ResourceType: "container",
 			Status:       "checked",
-			OldImages:    map[string]string{"main": match},
-			NewImages:    map[string]string{"main": s.normalizeRef(newRef)},
+			OldImages:    map[string]string{"main": p.match},
+			NewImages:    map[string]string{"main": s.normalizeRef(p.newRef)},
 		}
 
-		if err := s.updateContainer(ctx, c, inspect, newRef); err != nil {
+		// Lifecycle hooks for "check" phase (best-effort)
+		if !arcaneupdater.IsArcaneContainer(labels) {
+			pre := arcaneupdater.ExecutePreCheckCommand(ctx, dcli, p.cnt.ID, labels)
+			if pre.Executed {
+				if pre.SkipUpdate {
+					res.Status = "skipped"
+					res.Error = fmt.Sprintf("container requested skip via pre-check hook (exit %d)", arcaneupdater.ExitCodeSkipUpdate)
+					results = append(results, res)
+					continue
+				}
+				if pre.Error != nil {
+					slog.WarnContext(ctx, "restartContainersUsingOldIDs: pre-check hook failed", "container", name, "error", pre.Error.Error())
+				}
+			}
+			post := arcaneupdater.ExecutePostCheckCommand(ctx, dcli, p.cnt.ID, labels)
+			if post.Executed && post.Error != nil {
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: post-check hook failed", "container", name, "error", post.Error.Error())
+			}
+		}
+
+		if p.newRef == "" {
+			res.Status = "skipped"
+			res.Error = "no matching updated image"
+			results = append(results, res)
+			continue
+		}
+
+		slog.DebugContext(ctx, "restartContainersUsingOldIDs: restarting container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
+
+		// Check if this is Arcane self-update - use CLI upgrade instead
+		if arcaneupdater.IsArcaneContainer(labels) && s.upgradeService != nil {
+			slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Arcane self-update, using CLI upgrade method", "containerId", p.cnt.ID, "container", name)
+
+			if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+				res.Status = "failed"
+				res.Error = fmt.Sprintf("CLI upgrade failed: %v", err)
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: CLI upgrade failed", "containerId", p.cnt.ID, "err", err)
+			} else {
+				res.Status = "updated"
+				res.UpdateAvailable = true
+				res.UpdateApplied = true
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: CLI upgrade triggered successfully", "containerId", p.cnt.ID)
+			}
+		} else if err := s.updateContainer(ctx, p.cnt, p.inspect, p.newRef); err != nil {
 			res.Status = "failed"
 			res.Error = err.Error()
-			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", c.ID, "err", err)
+			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", p.cnt.ID, "err", err)
 		} else {
 			res.Status = "updated"
 			res.UpdateAvailable = true
 			res.UpdateApplied = true
-			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update succeeded", "containerId", c.ID)
+			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update succeeded", "containerId", p.cnt.ID)
 
 			// Send notification after successful container update
 			if s.notificationService != nil {
-				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, newRef, match, s.normalizeRef(newRef)); notifErr != nil {
-					slog.WarnContext(ctx, "Failed to send container update notification",
-						slog.String("containerId", c.ID),
-						slog.String("containerName", name),
-						slog.String("imageRef", newRef),
-						slog.String("error", notifErr.Error()))
+				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+					slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
 				}
 			}
 		}
@@ -900,28 +1202,23 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	return results, nil
 }
 
-func (s *UpdaterService) getProjectContainers(ctx context.Context, dcli *client.Client, projectName string) ([]container.Summary, error) {
-	byID := map[string]container.Summary{}
-
-	// Compose label
-	f1 := filters.NewArgs()
-	f1.Add("label", "com.docker.compose.project="+projectName)
-	cs1, err := dcli.ContainerList(ctx, container.ListOptions{All: true, Filters: f1})
-	if err == nil {
-		for _, c := range cs1 {
-			byID[c.ID] = c
-		}
+// parseNormalizedRef expects a normalized ref in the form "host/repository:tag".
+func (s *UpdaterService) parseNormalizedRef(ref string) (host, repository, tag string) {
+	// host/repo:tag
+	parts := strings.SplitN(ref, "/", 2)
+	if len(parts) != 2 {
+		return "", "", ""
 	}
-
-	if err != nil {
-		return nil, err
+	host = parts[0]
+	rest := parts[1]
+	tag = "latest"
+	if i := strings.LastIndex(rest, ":"); i != -1 && strings.LastIndex(rest, "/") < i {
+		tag = rest[i+1:]
+		repository = rest[:i]
+	} else {
+		repository = rest
 	}
-
-	out := make([]container.Summary, 0, len(byID))
-	for _, c := range byID {
-		out = append(out, c)
-	}
-	return out, nil
+	return host, repository, tag
 }
 
 func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeverity, metadata models.JSON) {

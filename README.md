@@ -19,7 +19,7 @@
 
 <br />
 
-<img width="1685" alt="image" align="center" src=".github/assets/arcane.jpeg" />
+<img width="1685" alt="image" align="center" src=".github/assets/arcane-dashboard.png" />
 
 ## Documentation
 

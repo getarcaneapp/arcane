@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress/index.js';
@@ -71,7 +71,7 @@
 	}
 </script>
 
-<Card.Root class={className}>
+<Card.Root class="flex h-full flex-col {className}">
 	{#snippet children()}
 		<Card.Header icon={VolumesIcon} iconVariant="primary" compact {loading}>
 			{#snippet children()}
@@ -85,9 +85,14 @@
 				<Popover.Root bind:open={popoverOpen}>
 					<Popover.Trigger>
 						{#snippet child({ props })}
-							<Button {...props} variant="ghost" size="icon" class="hover:bg-muted h-7 w-7 shrink-0">
-								<SettingsIcon class="size-4" />
-							</Button>
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="ghost"
+								size="icon"
+								icon={SettingsIcon}
+								class="hover:bg-muted size-7 shrink-0"
+							/>
 						{/snippet}
 					</Popover.Trigger>
 					<Popover.Content class="w-80">
@@ -98,23 +103,19 @@
 							</div>
 							<div class="space-y-2">
 								<Label for="disk-path">{m.directory_path()}</Label>
-								<Input id="disk-path" placeholder="data/projects" bind:value={diskUsagePath} disabled={isSaving} />
+								<Input id="disk-path" placeholder="/app/data/projects" bind:value={diskUsagePath} disabled={isSaving} />
 							</div>
 							<div class="flex justify-end gap-2">
-								<Button
-									variant="outline"
+								<ArcaneButton
+									action="cancel"
 									size="sm"
 									onclick={() => {
-										diskUsagePath = $settingsStore.diskUsagePath || 'data/projects';
+										diskUsagePath = $settingsStore.diskUsagePath || '/app/data/projects';
 										popoverOpen = false;
 									}}
 									disabled={isSaving}
-								>
-									Cancel
-								</Button>
-								<Button size="sm" onclick={saveDiskUsagePath} disabled={isSaving}>
-									{isSaving ? m.common_saving() : m.common_save()}
-								</Button>
+								/>
+								<ArcaneButton action="save" size="sm" onclick={saveDiskUsagePath} disabled={isSaving} loading={isSaving} />
 							</div>
 						</div>
 					</Popover.Content>
@@ -122,60 +123,37 @@
 			{/snippet}
 		</Card.Header>
 
-		<Card.Content class="flex flex-1 items-center p-3 sm:p-4">
-			<div class="flex w-full items-center gap-4">
-				<div class="flex-1 space-y-2">
-					{#if loading}
-						<div class="bg-muted h-2 w-full animate-pulse rounded"></div>
-					{:else}
-						<Progress value={percentage} max={100} class="h-2" />
-					{/if}
-
-					<div class="flex items-center justify-between text-xs">
-						{#if loading}
-							<div class="bg-muted h-3 w-16 animate-pulse rounded"></div>
-							<div class="bg-muted h-3 w-24 animate-pulse rounded"></div>
-						{:else}
-							<span class="text-muted-foreground font-medium">
-								{percentage.toFixed(1)}%
-							</span>
-							<span class="text-muted-foreground/70 font-mono">
-								{formatBytes(diskUsage ?? 0)} / {formatBytes(diskTotal ?? 0)}
-							</span>
-						{/if}
-					</div>
+		<Card.Content class="flex flex-1 flex-col justify-end gap-3 p-3 sm:p-4">
+			{#if loading}
+				<div class="flex items-center gap-3">
+					<div class="bg-muted h-2.5 flex-1 animate-pulse rounded-full"></div>
+					<div class="bg-muted h-4 w-12 animate-pulse rounded"></div>
+				</div>
+				<div class="flex justify-between gap-4">
+					<div class="bg-muted h-4 w-20 animate-pulse rounded"></div>
+					<div class="bg-muted h-4 w-20 animate-pulse rounded"></div>
+				</div>
+			{:else}
+				<div class="flex items-center gap-3">
+					<Progress value={percentage} max={100} class="h-2.5 flex-1" />
+					<span class="text-foreground min-w-12 text-right text-sm font-bold tabular-nums">
+						{percentage.toFixed(1)}%
+					</span>
 				</div>
 
-				<div class="bg-muted/50 hidden shrink-0 gap-4 rounded-lg p-3 sm:flex">
-					<div class="space-y-0.5">
-						{#if loading}
-							<div class="bg-muted h-3 w-12 animate-pulse rounded"></div>
-							<div class="bg-muted h-4 w-16 animate-pulse rounded"></div>
-						{:else}
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-								{m.dashboard_meter_disk_used()}
-							</div>
-							<div class="text-foreground text-sm font-semibold">
-								{formatBytes(diskUsage ?? 0)}
-							</div>
-						{/if}
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+					<div class="flex items-center gap-2 whitespace-nowrap">
+						<div class="bg-primary size-2 shrink-0 rounded-full"></div>
+						<span class="text-muted-foreground text-xs">{m.dashboard_meter_disk_used()}</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{formatBytes(diskUsage ?? 0)}</span>
 					</div>
-
-					<div class="space-y-0.5">
-						{#if loading}
-							<div class="bg-muted h-3 w-12 animate-pulse rounded"></div>
-							<div class="bg-muted h-4 w-16 animate-pulse rounded"></div>
-						{:else}
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-								{m.dashboard_meter_disk_free()}
-							</div>
-							<div class="text-foreground text-sm font-semibold">
-								{formatBytes(diskFree)}
-							</div>
-						{/if}
+					<div class="flex items-center gap-2 whitespace-nowrap">
+						<div class="bg-primary/20 size-2 shrink-0 rounded-full"></div>
+						<span class="text-muted-foreground text-xs">{m.dashboard_meter_disk_free()}</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{formatBytes(diskFree)}</span>
 					</div>
 				</div>
-			</div>
+			{/if}
 		</Card.Content>
 	{/snippet}
 </Card.Root>

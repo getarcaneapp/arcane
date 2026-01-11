@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,7 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -31,6 +34,7 @@ type SettingsService struct {
 
 	OnImagePollingSettingsChanged func(ctx context.Context)
 	OnAutoUpdateSettingsChanged   func(ctx context.Context)
+	OnProjectsDirectoryChanged    func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -77,20 +81,23 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:  models.SettingVariable{Value: "data/projects"},
-		DiskUsagePath:      models.SettingVariable{Value: "data/projects"},
-		AutoUpdate:         models.SettingVariable{Value: "false"},
-		AutoUpdateInterval: models.SettingVariable{Value: "1440"},
-		PollingEnabled:     models.SettingVariable{Value: "true"},
-		PollingInterval:    models.SettingVariable{Value: "60"},
-		PruneMode:          models.SettingVariable{Value: "dangling"},
-		BaseServerURL:      models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:     models.SettingVariable{Value: "true"},
-		DefaultShell:       models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:         models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		AuthLocalEnabled:   models.SettingVariable{Value: "true"},
-		AuthSessionTimeout: models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy: models.SettingVariable{Value: "strong"},
+		ProjectsDirectory:          models.SettingVariable{Value: "/app/data/projects"},
+		DiskUsagePath:              models.SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                 models.SettingVariable{Value: "false"},
+		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
+		PollingEnabled:             models.SettingVariable{Value: "true"},
+		PollingInterval:            models.SettingVariable{Value: "60"},
+		EventCleanupInterval:       models.SettingVariable{Value: "360"},
+		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
+		AutoInjectEnv:              models.SettingVariable{Value: "false"},
+		PruneMode:                  models.SettingVariable{Value: "dangling"},
+		BaseServerURL:              models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:             models.SettingVariable{Value: "true"},
+		DefaultShell:               models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:                 models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		AuthLocalEnabled:           models.SettingVariable{Value: "true"},
+		AuthSessionTimeout:         models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:         models.SettingVariable{Value: "strong"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -100,13 +107,12 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
+		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		OnboardingCompleted:        models.SettingVariable{Value: "false"},
-		OnboardingSteps:            models.SettingVariable{Value: "[]"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "false"},
+		GlassEffectEnabled:         models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
@@ -182,7 +188,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -191,10 +197,15 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
+			continue
+		} else if val, ok := settingsMap[key]; ok {
+			// Fallback to database if environment variable is not set
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
 			rv.Field(i).FieldByName("Value").SetString(val)
 			continue
 		} else {
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set", "key", key, "env", envVarName)
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 		}
 	}
 
@@ -238,10 +249,10 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		}
 
 		// Check if environment variable is set
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(val)
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
 		}
 	}
 }
@@ -424,6 +435,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+		s.OnProjectsDirectoryChanged(ctx)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
@@ -579,40 +593,14 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
+	appCfg := config.Load()
+	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
-			key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
-
-			if key == "" || attrs == "internal" {
-				continue
-			}
-
-			envVarName := utils.CamelCaseToScreamingSnakeCase(key)
-			envVal, ok := os.LookupEnv(envVarName)
-			if !ok {
-				continue
-			}
-
-			var existing models.SettingVariable
-			err := tx.Where("key = ?", key).First(&existing).Error
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				newVar := models.SettingVariable{Key: key, Value: envVal}
-				if err := tx.Create(&newVar).Error; err != nil {
-					return fmt.Errorf("persist env setting %s: %w", key, err)
-				}
-				slog.DebugContext(ctx, "Created setting from environment", "key", key)
-			case err != nil:
-				return fmt.Errorf("check setting %s: %w", key, err)
-			default:
-				if existing.Value != envVal {
-					if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
-						return fmt.Errorf("update env setting %s: %w", key, err)
-					}
-					slog.DebugContext(ctx, "Updated setting from environment", "key", key)
-				}
+			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -622,6 +610,62 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 
 	// Reload settings after persisting env vars
 	return s.LoadDatabaseSettings(ctx)
+}
+
+func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, field reflect.StructField, isEnvOnlyMode bool) error {
+	tag := field.Tag.Get("key")
+	key, attrs, _ := strings.Cut(tag, ",")
+
+	if !s.shouldProcessField(key, attrs, isEnvOnlyMode) {
+		return nil
+	}
+
+	envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+	envVal, ok := os.LookupEnv(envVarName)
+	if !ok {
+		return nil
+	}
+	envVal = stringutils.TrimQuotes(envVal)
+
+	return s.upsertEnvSetting(ctx, tx, key, envVal)
+}
+
+func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
+	if key == "" || strings.Contains(attrs, "internal") {
+		return false
+	}
+
+	// If not in env-only mode, only persist if it's explicitly marked as envOverride
+	if !isEnvOnlyMode && !strings.Contains(attrs, "envOverride") {
+		return false
+	}
+
+	return true
+}
+
+func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key, envVal string) error {
+	var existing models.SettingVariable
+	err := tx.Where("key = ?", key).First(&existing).Error
+
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		newVar := models.SettingVariable{Key: key, Value: envVal}
+		if err := tx.Create(&newVar).Error; err != nil {
+			return fmt.Errorf("persist env setting %s: %w", key, err)
+		}
+		slog.DebugContext(ctx, "Created setting from environment", "key", key)
+	case err != nil:
+		return fmt.Errorf("check setting %s: %w", key, err)
+	default:
+		if existing.Value != envVal {
+			if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
+				return fmt.Errorf("update env setting %s: %w", key, err)
+			}
+			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
+		}
+	}
+
+	return nil
 }
 
 func (s *SettingsService) ListSettings(all bool) []models.SettingVariable {
@@ -784,4 +828,60 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 	}
 
 	return key, nil
+}
+
+func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
+	if projectsDirEnv != "" {
+		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
+		return nil
+	}
+
+	var projectsDirSetting models.SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+	}
+
+	value := strings.TrimSpace(projectsDirSetting.Value)
+	// Detect mapping format (container:host), allowing Windows or Unix container paths.
+	isMapping := false
+	if strings.Contains(value, ":") {
+		// Treat as mapping if the container side looks like an absolute Unix path
+		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
+		// first colon to not break on Windows drive letters.
+		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+			isMapping = true
+		}
+	}
+
+	if !filepath.IsAbs(value) && !isMapping {
+		// Resolve relative path using current working directory for transparency.
+		// Note: In containers, WORKDIR is set to /app so "data/..." becomes "/app/data/...".
+		cwd, _ := os.Getwd()
+		absPath, absErr := filepath.Abs(value)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+		}
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+
+		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
+			return fmt.Errorf("failed to update projectsDirectory: %w", err)
+		}
+
+		if err := s.LoadDatabaseSettings(ctx); err != nil {
+			return fmt.Errorf("failed to reload settings after normalization: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Successfully normalized projects directory")
+	} else {
+		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
+	}
+
+	return nil
 }

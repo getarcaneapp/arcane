@@ -3,10 +3,9 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import type { Component } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { CheckIcon, FilterIcon } from '$lib/icons';
@@ -33,39 +32,36 @@
 <Popover.Root>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button
+			<ArcaneButton
 				{...props}
-				variant="outline"
+				action="base"
+				tone="ghost"
 				size="sm"
-				class="h-8 border-dashed"
+				icon={FilterIcon}
+				customLabel={title}
+				class="border-input hover:bg-card/60 h-8 border border-dashed hover:text-inherit"
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
-				<FilterIcon />
-				{title}
 				{#if selectedValues.size > 0}
-					<Separator orientation="vertical" class="mx-2 h-4" />
-					<Badge variant="secondary" class="rounded-sm px-1 font-normal lg:hidden">
-						{selectedValues.size}
-					</Badge>
-					<div class="hidden space-x-1 lg:flex">
+					<Separator orientation="vertical" class="mx-1 h-4" />
+					<div class="text-muted-foreground flex items-center gap-1 text-xs font-medium">
 						{#if selectedValues.size > 2}
-							<Badge variant="secondary" class="rounded-sm px-1 font-normal">
-								{m.common_selected_count({ count: selectedValues.size })}
-							</Badge>
+							<span>{selectedValues.size}</span>
 						{:else}
-							{#each options.filter((opt) => selectedValues.has(opt.value)) as option (option)}
-								<Badge variant="secondary" class="rounded-sm px-1 font-normal">
-									{option.label}
-								</Badge>
+							{#each options.filter((opt) => selectedValues.has(opt.value)) as option, i (option)}
+								{#if i > 0}
+									<span class="opacity-50">,</span>
+								{/if}
+								<span>{option.label}</span>
 							{/each}
 						{/if}
 					</div>
 				{/if}
-			</Button>
+			</ArcaneButton>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
-		<Command.Root>
+		<Command.Root class="rounded-none bg-transparent">
 			<Command.Input placeholder={title} />
 			<Command.List>
 				<Command.Empty>{m.common_no_results_found()}</Command.Empty>
@@ -104,7 +100,7 @@
 				{#if selectedValues.size > 0}
 					<Command.Separator />
 					<Command.Group>
-						<Command.Item onselect={() => column?.setFilterValue(undefined)} class="justify-center text-center">
+						<Command.Item onSelect={() => column?.setFilterValue(undefined)} class="justify-center text-center">
 							{m.common_clear_filters()}
 						</Command.Item>
 					</Command.Group>

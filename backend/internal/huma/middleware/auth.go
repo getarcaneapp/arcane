@@ -55,8 +55,12 @@ type securityRequirements struct {
 	apiKeyAuth bool
 }
 
+type operationProvider interface {
+	Operation() *huma.Operation
+}
+
 // parseSecurityRequirements extracts security requirements from a Huma operation.
-func parseSecurityRequirements(ctx huma.Context) securityRequirements {
+func parseSecurityRequirements(ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
 	if ctx.Operation() == nil || len(ctx.Operation().Security) == 0 {
 		return reqs
@@ -88,8 +92,18 @@ func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models
 }
 
 // tryApiKeyAuth checks if API key authentication should be allowed through.
-func tryApiKeyAuth(ctx huma.Context) bool {
-	return ctx.Header(headerApiKey) != ""
+func tryApiKeyAuth(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, bool) {
+	apiKey := ctx.Header(headerApiKey)
+	if apiKey == "" {
+		return nil, false
+	}
+
+	user, err := apiKeyService.ValidateApiKey(ctx.Context(), apiKey)
+	if err != nil || user == nil {
+		return nil, false
+	}
+
+	return user, true
 }
 
 // tryAgentAuth checks if the request is from an authenticated agent.
@@ -113,6 +127,11 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 		return createAgentSudoUser(), true
 	}
 
+	// Check for API key as agent token
+	if tok := ctx.Header(headerApiKey); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
+		return createAgentSudoUser(), true
+	}
+
 	return nil, false
 }
 
@@ -128,7 +147,7 @@ func createAgentSudoUser() *models.User {
 
 // NewAuthBridge creates a Huma middleware that validates JWT tokens and
 // enforces security requirements defined on operations.
-func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
+func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if authService == nil {
 			next(ctx)
@@ -151,6 +170,20 @@ func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(c
 			return
 		}
 
+		// If API key header is present and API key auth is allowed, prioritize it.
+		// If validation fails, do NOT fall back to Bearer auth.
+		if reqs.apiKeyAuth && ctx.Header(headerApiKey) != "" {
+			if user, ok := tryApiKeyAuth(ctx, apiKeyService); ok {
+				newCtx := setUserInContext(ctx.Context(), user)
+				ctx = huma.WithContext(ctx, newCtx)
+				next(ctx)
+				return
+			}
+			// API key was present but invalid. Fail immediately.
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
+			return
+		}
+
 		if reqs.bearerAuth {
 			if user, ok := tryBearerAuth(ctx, authService); ok {
 				newCtx := setUserInContext(ctx.Context(), user)
@@ -160,15 +193,8 @@ func NewAuthBridge(authService *services.AuthService, cfg *config.Config) func(c
 			}
 		}
 
-		if reqs.apiKeyAuth && tryApiKeyAuth(ctx) {
-			next(ctx)
-			return
-		}
-
 		// Write unauthorized response directly
-		ctx.SetStatus(http.StatusUnauthorized)
-		ctx.SetHeader("Content-Type", "application/json")
-		_, _ = ctx.BodyWriter().Write([]byte(`{"$schema":"","title":"Unauthorized","status":401,"detail":"Unauthorized: valid authentication required"}`))
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
 }
 

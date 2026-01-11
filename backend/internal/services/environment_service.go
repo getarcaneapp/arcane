@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,11 +14,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
+	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -124,17 +126,8 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		)
 	}
 
-	if status := params.Filters["status"]; status != "" {
-		q = q.Where("status = ?", status)
-	}
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		switch enabled {
-		case "true", "1":
-			q = q.Where("enabled = ?", true)
-		case "false", "0":
-			q = q.Where("enabled = ?", false)
-		}
-	}
+	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
 	if err != nil {
@@ -282,13 +275,20 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 
 func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id string) error {
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"last_seen":  &now,
-		"status":     string(models.EnvironmentStatusOnline),
-		"updated_at": &now,
-	}).Error; err != nil {
-		return fmt.Errorf("failed to update environment heartbeat: %w", err)
+
+	// Use Exec with raw SQL for better performance
+	// Only update if last_seen is NULL or older than 30 seconds to reduce write frequency
+	result := s.db.WithContext(ctx).Exec(`
+		UPDATE environments 
+		SET last_seen = ?, status = ?, updated_at = ?
+		WHERE id = ? 
+		AND (last_seen IS NULL OR last_seen < ?)
+	`, &now, string(models.EnvironmentStatusOnline), &now, id, now.Add(-30*time.Second))
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
 	}
+
 	return nil
 }
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
@@ -396,11 +396,9 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 			continue
 		}
 
-		decryptedToken, err := utils.Decrypt(reg.Token)
+		decryptedToken, err := crypto.Decrypt(reg.Token)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token",
-				slog.String("registryURL", reg.URL),
-				slog.String("error", err.Error()))
+			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryURL", reg.URL, "error", err.Error())
 			continue
 		}
 
@@ -431,7 +429,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
   -e AGENT_MODE=true \
   -e AGENT_TOKEN=%s \
   -e MANAGER_API_URL=%s \
-  -p 3000:3000 \
+  -p 3553:3553 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v arcane-data:/data \
   ghcr.io/getarcaneapp/arcane-headless:latest`, apiKey, managerURL)
@@ -446,10 +444,10 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
       - AGENT_TOKEN=%s
       - MANAGER_API_URL=%s
     ports:
-      - "3000:3000"
+      - "3553:3553"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - arcane-data:/data
+      - arcane-data:/app/data
 
 volumes:
   arcane-data:`, apiKey, managerURL)
@@ -473,10 +471,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("cannot sync registries to local environment")
 	}
 
-	slog.InfoContext(ctx, "Starting registry sync to environment",
-		slog.String("environmentID", environmentID),
-		slog.String("environmentName", environment.Name),
-		slog.String("apiUrl", environment.ApiUrl))
+	slog.InfoContext(ctx, "Starting registry sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
 
 	// Get all registries from this manager
 	var registries []models.ContainerRegistry
@@ -484,18 +479,14 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("failed to get registries: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Found registries to sync",
-		slog.Int("count", len(registries)))
+	slog.InfoContext(ctx, "Found registries to sync", "count", len(registries))
 
 	// Prepare sync items with decrypted tokens
 	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
-		decryptedToken, err := utils.Decrypt(reg.Token)
+		decryptedToken, err := crypto.Decrypt(reg.Token)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token for sync",
-				slog.String("registryID", reg.ID),
-				slog.String("registryURL", reg.URL),
-				slog.String("error", err.Error()))
+			slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
 			continue
 		}
 
@@ -528,7 +519,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	defer cancel()
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/container-registries/sync"
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, strings.NewReader(string(reqBody)))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("failed to create sync request: %w", err)
 	}
@@ -537,23 +528,14 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	// Use appropriate auth header based on environment type
 	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		// For API key-based environments, AccessToken contains the API key
-		if environment.ApiKeyID != nil && *environment.ApiKeyID != "" {
-			req.Header.Set("X-API-KEY", *environment.AccessToken)
-			slog.DebugContext(ctx, "Set API key header for sync request")
-		} else {
-			// Legacy bootstrap token-based environments
-			req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
-			slog.DebugContext(ctx, "Set agent token header for sync request")
-		}
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		req.Header.Set("X-API-Key", *environment.AccessToken)
+		slog.DebugContext(ctx, "Set auth headers for sync request")
 	} else {
-		slog.WarnContext(ctx, "No access token available for environment sync",
-			slog.String("environmentID", environmentID))
+		slog.WarnContext(ctx, "No access token available for environment sync", "environmentID", environmentID)
 	}
 
-	slog.InfoContext(ctx, "Sending sync request to agent",
-		slog.String("url", targetURL),
-		slog.Int("registryCount", len(syncItems)))
+	slog.InfoContext(ctx, "Sending sync request to agent", "url", targetURL, "registryCount", len(syncItems))
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -563,9 +545,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		slog.ErrorContext(ctx, "Sync request failed",
-			slog.Int("statusCode", resp.StatusCode),
-			slog.String("response", string(body)))
+		slog.ErrorContext(ctx, "Sync request failed", "statusCode", resp.StatusCode, "response", string(body))
 		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -583,9 +563,180 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 
-	slog.InfoContext(ctx, "Successfully synced registries to environment",
-		slog.String("environmentID", environmentID),
-		slog.String("environmentName", environment.Name))
+	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", environment.Name)
 
 	return nil
+}
+
+// SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
+func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
+	// Get the environment
+	environment, err := s.GetEnvironmentByID(ctx, environmentID)
+	if err != nil {
+		return fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	// Don't sync to local environment (ID "0")
+	if environmentID == "0" {
+		return fmt.Errorf("cannot sync repositories to local environment")
+	}
+
+	slog.InfoContext(ctx, "Starting git repository sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
+
+	// Get all git repositories from this manager
+	var repositories []models.GitRepository
+	if err := s.db.WithContext(ctx).Find(&repositories).Error; err != nil {
+		return fmt.Errorf("failed to get git repositories: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Found git repositories to sync", "count", len(repositories))
+
+	// Prepare sync items with decrypted credentials
+	syncItems := make([]gitops.RepositorySync, 0, len(repositories))
+	for _, repo := range repositories {
+		item := gitops.RepositorySync{
+			ID:          repo.ID,
+			Name:        repo.Name,
+			URL:         repo.URL,
+			AuthType:    repo.AuthType,
+			Username:    repo.Username,
+			Description: repo.Description,
+			Enabled:     repo.Enabled,
+			CreatedAt:   repo.CreatedAt,
+		}
+		if repo.UpdatedAt != nil {
+			item.UpdatedAt = *repo.UpdatedAt
+		}
+
+		// Decrypt token if present
+		if repo.Token != "" {
+			decryptedToken, err := crypto.Decrypt(repo.Token)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt repository token for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
+				continue
+			}
+			item.Token = decryptedToken
+		}
+
+		// Decrypt SSH key if present
+		if repo.SSHKey != "" {
+			decryptedSSHKey, err := crypto.Decrypt(repo.SSHKey)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt repository SSH key for sync", "repositoryID", repo.ID, "repositoryName", repo.Name, "error", err.Error())
+				continue
+			}
+			item.SSHKey = decryptedSSHKey
+		}
+
+		syncItems = append(syncItems, item)
+	}
+
+	// Prepare the sync request
+	syncReq := gitops.RepositorySyncRequest{
+		Repositories: syncItems,
+	}
+
+	// Marshal the request
+	reqBody, err := json.Marshal(syncReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync request: %w", err)
+	}
+
+	// Send the sync request to the remote environment
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/git-repositories/sync"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, targetURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to create sync request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use appropriate auth header based on environment type
+	if environment.AccessToken != nil && *environment.AccessToken != "" {
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		req.Header.Set("X-API-Key", *environment.AccessToken)
+		slog.DebugContext(ctx, "Set auth headers for git repository sync request")
+	} else {
+		slog.WarnContext(ctx, "No access token available for environment git repository sync", "environmentID", environmentID)
+	}
+
+	slog.InfoContext(ctx, "Sending git repository sync request to agent", "url", targetURL, "repositoryCount", len(syncItems))
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		slog.ErrorContext(ctx, "Git repository sync request failed", "statusCode", resp.StatusCode, "response", string(body))
+		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode sync response: %w", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("sync failed: %s", result.Data.Message)
+	}
+
+	slog.InfoContext(ctx, "Successfully synced git repositories to environment", "environmentID", environmentID, "environmentName", environment.Name)
+
+	return nil
+}
+
+// ProxyRequest sends a request to a remote environment's API.
+func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error) {
+	environment, err := s.GetEnvironmentByID(ctx, envID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	if envID == "0" {
+		return nil, 0, fmt.Errorf("cannot proxy request to local environment")
+	}
+
+	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
+	var bodyReader io.Reader
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if method != http.MethodGet && len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	// Use appropriate auth header
+	if environment.AccessToken != nil && *environment.AccessToken != "" {
+		req.Header.Set("X-Arcane-Agent-Token", *environment.AccessToken)
+		req.Header.Set("X-API-Key", *environment.AccessToken)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return respBody, resp.StatusCode, nil
 }

@@ -1,10 +1,6 @@
 package pagination
 
-import (
-	"strconv"
-
-	"github.com/gin-gonic/gin"
-)
+import "strings"
 
 type FilterResult[T any] struct {
 	Items          []T
@@ -47,33 +43,46 @@ func filterFn[T any](items []T, filters map[string]string, accessors []FilterAcc
 
 	results := []T{}
 	for _, item := range items {
-		matches := true
-		for key, value := range filters {
-			found := false
-			for _, accessor := range accessors {
-				if accessor.Key == key {
-					if !accessor.Fn(item, value) {
-						matches = false
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				matches = false
-			}
-			if !matches {
-				break
-			}
-		}
-		if matches {
+		if itemMatches(item, filters, accessors) {
 			results = append(results, item)
 		}
 	}
 	return results
 }
 
-func ApplyFilterResultsHeaders[T any](w *gin.ResponseWriter, result FilterResult[T]) {
-	(*w).Header().Set("X-Arcane-Total-Items", strconv.FormatInt(result.TotalCount, 10))
-	(*w).Header().Set("X-Arcane-Total-Available", strconv.FormatInt(result.TotalAvailable, 10))
+func itemMatches[T any](item T, filters map[string]string, accessors []FilterAccessor[T]) bool {
+	for key, value := range filters {
+		accessor := getAccessor(key, accessors)
+		if accessor == nil {
+			return false
+		}
+
+		if !matchValue(item, value, accessor) {
+			return false
+		}
+	}
+	return true
+}
+
+func getAccessor[T any](key string, accessors []FilterAccessor[T]) *FilterAccessor[T] {
+	for i := range accessors {
+		if accessors[i].Key == key {
+			return &accessors[i]
+		}
+	}
+	return nil
+}
+
+func matchValue[T any](item T, value string, accessor *FilterAccessor[T]) bool {
+	if strings.Contains(value, ",") {
+		values := strings.Split(value, ",")
+		for _, v := range values {
+			v = strings.TrimSpace(v)
+			if accessor.Fn(item, v) {
+				return true
+			}
+		}
+		return false
+	}
+	return accessor.Fn(item, value)
 }

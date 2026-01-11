@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -28,7 +28,6 @@
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
-		RefreshIcon,
 		VolumesIcon,
 		FileTextIcon,
 		SettingsIcon,
@@ -260,11 +259,6 @@
 		return isNaN(d.getTime()) ? null : d;
 	}
 
-	function formatDockerDate(input: string | Date | undefined | null, fmt = 'PP p'): string {
-		const d = parseDockerDate(input);
-		return d ? format(d, fmt) : 'N/A';
-	}
-
 	const backUrl = $derived.by(() => {
 		const from = page.url.searchParams.get('from');
 		const projectId = page.url.searchParams.get('projectId');
@@ -299,6 +293,7 @@
 				name={containerDisplayName}
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
+				desktopVariant="adaptive"
 				loading={{ start: starting, stop: stopping, restart: restarting, remove: removing }}
 			/>
 		{/snippet}
@@ -376,14 +371,13 @@
 				{m.common_not_found_description({ resource: m.container().toLowerCase() })}
 			</p>
 			<div class="flex justify-center gap-4">
-				<Button variant="outline" href="/containers">
+				<ArcaneButton action="base" href="/containers">
 					<ArrowLeftIcon class="size-4" />
 					{m.common_back_to({ resource: m.containers_title() })}
-				</Button>
-				<Button variant="default" onclick={refreshData}>
-					<RefreshIcon class="size-4" />
+				</ArcaneButton>
+				<ArcaneButton action="refresh" onclick={refreshData}>
 					{m.common_retry()}
-				</Button>
+				</ArcaneButton>
 			</div>
 		</div>
 	</div>

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,8 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
@@ -21,6 +25,7 @@ import (
 type SettingsHandler struct {
 	settingsService       *services.SettingsService
 	settingsSearchService *services.SettingsSearchService
+	environmentService    *services.EnvironmentService
 	cfg                   *config.Config
 }
 
@@ -63,11 +68,38 @@ type GetCategoriesOutput struct {
 	Body []category.Category
 }
 
+// validateProjectsDirectoryValue validates a projects directory value allowing:
+// - Unix absolute paths (/...)
+// - Windows drive paths (C:/..., C:\...)
+// - Mapping format "container:host" where container is absolute Unix or Windows path
+func validateProjectsDirectoryValue(path string) error {
+	switch {
+	case pathmapper.IsWindowsDrivePath(path):
+		return nil
+	case strings.Contains(path, ":"):
+		parts := strings.SplitN(path, ":", 2)
+		if len(parts) != 2 {
+			return errors.New("projectsDirectory must be an absolute path or valid mapping format")
+		}
+		container := parts[0]
+		if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
+			return errors.New("projectsDirectory mapping format: container path must be absolute")
+		}
+		return nil
+	default:
+		if !strings.HasPrefix(path, "/") {
+			return errors.New("projectsDirectory must be an absolute path starting with '/'")
+		}
+		return nil
+	}
+}
+
 // RegisterSettings registers settings management routes using Huma.
-func RegisterSettings(api huma.API, settingsService *services.SettingsService, settingsSearchService *services.SettingsSearchService, cfg *config.Config) {
+func RegisterSettings(api huma.API, settingsService *services.SettingsService, settingsSearchService *services.SettingsSearchService, environmentService *services.EnvironmentService, cfg *config.Config) {
 	h := &SettingsHandler{
 		settingsService:       settingsService,
 		settingsSearchService: settingsSearchService,
+		environmentService:    environmentService,
 		cfg:                   cfg,
 	}
 
@@ -141,6 +173,24 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+		var settingsDto []settings.PublicSetting
+		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+		return &GetPublicSettingsOutput{Body: settingsDto}, nil
+	}
+
 	settingsList := h.settingsService.ListSettings(false)
 
 	var settingsDto []settings.PublicSetting
@@ -168,7 +218,27 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	showAll := input.EnvironmentID == "0"
+	isAdmin := humamw.IsAdminFromContext(ctx)
+
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+		var settingsDto []settings.PublicSetting
+		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+		return &GetSettingsOutput{Body: settingsDto}, nil
+	}
+
+	showAll := isAdmin
 	settingsList := h.settingsService.ListSettings(showAll)
 
 	var settingsDto []settings.PublicSetting
@@ -196,17 +266,53 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	// Check if trying to update auth settings on non-local environment
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	// Validate projects directory if provided
+	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
+		if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
 	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+
+		// Check if trying to update auth settings on non-local environment
 		req := input.Body
 		if req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 			req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
 			req.AuthOidcConfig != nil || req.OidcClientId != nil ||
 			req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
 			req.OidcScopes != nil || req.OidcAdminClaim != nil ||
-			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil {
+			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
+			req.OidcSkipTlsVerify != nil {
 			return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 		}
+
+		body, err := json.Marshal(input.Body)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+		}
+
+		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", body)
+		if err != nil {
+			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+		}
+
+		var apiResp base.ApiResponse[[]settings.SettingDto]
+		if err := json.Unmarshal(respBody, &apiResp); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+		}
+
+		return &UpdateSettingsOutput{Body: apiResp}, nil
 	}
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input.Body)
@@ -239,6 +345,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
@@ -251,6 +361,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	if h.settingsSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	categories := h.settingsSearchService.GetSettingsCategories()

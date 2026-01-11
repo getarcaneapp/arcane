@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
@@ -9,7 +9,17 @@
 	import type { CustomizeCategory } from '$lib/types/customize-search.type';
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { SearchIcon, TemplateIcon, ArrowRightIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon } from '$lib/icons';
+	import {
+		SearchIcon,
+		TemplateIcon,
+		ArrowRightIcon,
+		FileTextIcon,
+		RegistryIcon,
+		VariableIcon,
+		CustomizeIcon,
+		GitBranchIcon
+	} from '$lib/icons';
+	import HeaderCard from '$lib/components/header-card.svelte';
 
 	let { data } = $props();
 	let searchQuery = $state('');
@@ -23,7 +33,8 @@
 		'file-text': FileTextIcon,
 		layers: TemplateIcon,
 		package: RegistryIcon,
-		code: VariableIcon
+		code: VariableIcon,
+		'git-branch': GitBranchIcon
 	};
 
 	onMount(async () => {
@@ -86,60 +97,50 @@
 	}
 </script>
 
-<div class="px-2 py-4 sm:px-6 sm:py-6 lg:px-8">
-	<div class="mb-6 sm:mb-8">
-		<div
-			class="from-background/60 via-background/40 to-background/60 relative overflow-hidden rounded-xl border bg-gradient-to-br p-4 shadow-sm sm:p-6"
-		>
-			<div class="bg-primary/10 pointer-events-none absolute -top-10 -right-10 size-40 rounded-full blur-3xl"></div>
-			<div class="bg-muted/40 pointer-events-none absolute -bottom-10 -left-10 size-40 rounded-full blur-3xl"></div>
-			<div class="relative">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-					<div class="flex w-full items-start gap-3 sm:gap-4">
-						<div
-							class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
-						>
-							<CustomizeIcon class="size-4 sm:size-5" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="flex items-start justify-between gap-3">
-								<h1 class="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{m.customize_title()}</h1>
-								<div class="shrink-0">
-									<UiConfigDisabledTag />
-								</div>
-							</div>
-							<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.customize_subtitle()}</p>
-						</div>
-					</div>
+<div class="space-y-8 pb-5 md:space-y-10 md:pb-5">
+	<HeaderCard>
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
+				<div
+					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+				>
+					<CustomizeIcon class="size-4 sm:size-5" />
 				</div>
-
-				<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
-					<InputGroup.Root>
-						<InputGroup.Input
-							placeholder={m.customize_search_placeholder()}
-							value={searchQuery}
-							oninput={(e) => {
-								searchQuery = e.currentTarget.value;
-								debouncedSearch(e.currentTarget.value);
-							}}
-							onkeydown={(e) => {
-								if (e.key === 'Enter') {
-									performSearch((e.currentTarget as HTMLInputElement).value, true);
-								}
-							}}
-						/>
-						<InputGroup.Addon>
-							{#if showSearchResults}
-								<Button variant="ghost" size="icon" onclick={clearSearch} class="size-6 p-0">×</Button>
-							{:else}
-								<SearchIcon class="size-4" />
-							{/if}
-						</InputGroup.Addon>
-					</InputGroup.Root>
+				<div class="min-w-0">
+					<h1 class="text-3xl font-bold tracking-tight">{m.customize_title()}</h1>
+					<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.customize_subtitle()}</p>
 				</div>
 			</div>
+			<div class="flex items-center gap-3">
+				<UiConfigDisabledTag />
+			</div>
 		</div>
-	</div>
+
+		<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
+			<InputGroup.Root>
+				<InputGroup.Input
+					placeholder={m.customize_search_placeholder()}
+					value={searchQuery}
+					oninput={(e) => {
+						searchQuery = e.currentTarget.value;
+						debouncedSearch(e.currentTarget.value);
+					}}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							performSearch((e.currentTarget as HTMLInputElement).value, true);
+						}
+					}}
+				/>
+				<InputGroup.Addon>
+					{#if showSearchResults}
+						<ArcaneButton action="base" tone="ghost" size="icon" onclick={clearSearch} class="size-6 p-0">×</ArcaneButton>
+					{:else}
+						<SearchIcon class="size-4" />
+					{/if}
+				</InputGroup.Addon>
+			</InputGroup.Root>
+		</div>
+	</HeaderCard>
 
 	{#if !showSearchResults}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
@@ -201,9 +202,9 @@
 											<p class="text-muted-foreground text-xs sm:text-sm">{result.description}</p>
 										</div>
 									</div>
-									<Button variant="outline" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
+									<ArcaneButton action="base" size="sm" onclick={() => navigateToCategory(result.url)} class="shrink-0">
 										{m.customize_button()}
-									</Button>
+									</ArcaneButton>
 								</div>
 							</div>
 

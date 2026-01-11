@@ -1,7 +1,7 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
 import type { FilterMap } from '$lib/types/pagination.type';
-import type { CompactTablePrefs, FieldSpec, MobileFieldVisibility } from './arcane-table.types.svelte';
-import { decodeFilters, applyMobileHiddenPatch } from './arcane-table.types.svelte';
+import type { CompactTablePrefs } from './arcane-table.types.svelte';
+import { decodeFilters } from './arcane-table.types.svelte';
 
 export type PersistedPreferencesSnapshot = {
 	hiddenColumns: string[];
@@ -9,7 +9,7 @@ export type PersistedPreferencesSnapshot = {
 	filtersMap: FilterMap;
 	search: string;
 	limit: number;
-	mobileHidden?: string[];
+	mobileVisibility?: string[];
 	customSettings?: Record<string, unknown>;
 };
 
@@ -18,15 +18,15 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	for (const f of filters ?? []) {
 		const id = f.id;
 		let value: unknown = (f as any).value;
+
+		if (value instanceof Set) {
+			value = Array.from(value);
+		}
+
 		if (Array.isArray(value)) {
 			if (value.length === 0) continue;
-			value = value[0];
-		} else if (value && typeof value === 'object' && value instanceof Set) {
-			const first = (value as Set<unknown>).values().next().value;
-			if (first === undefined) continue;
-			value = first;
-		}
-		if (value !== undefined && value !== null && String(value).trim() !== '') {
+			out[id] = value as any[];
+		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
 			out[id] = value as any;
 		}
 	}
@@ -73,23 +73,7 @@ export function extractPersistedPreferences(
 		filtersMap,
 		search,
 		limit,
-		mobileHidden: prefs.m,
+		mobileVisibility: prefs.m,
 		customSettings: prefs.c
 	};
-}
-
-export function buildInitialMobileVisibility(
-	fields: FieldSpec[],
-	mobileFieldVisibility: MobileFieldVisibility,
-	persistedHidden?: string[]
-): MobileFieldVisibility | null {
-	if (!fields.length || Object.keys(mobileFieldVisibility).length) return null;
-	const initial: MobileFieldVisibility = {};
-	for (const field of fields) {
-		initial[field.id] = field.defaultVisible ?? true;
-	}
-	if (persistedHidden && persistedHidden.length > 0) {
-		applyMobileHiddenPatch(initial, persistedHidden);
-	}
-	return initial;
 }

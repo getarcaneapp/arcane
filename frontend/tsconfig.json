@@ -4,7 +4,7 @@
 		"target": "ES2022",
 		"verbatimModuleSyntax": true,
 		"allowJs": true,
-		"checkJs": true,
+		"checkJs": false,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,

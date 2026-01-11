@@ -1,6 +1,6 @@
 <script lang="ts" generics="TData">
 	import type { Table } from '@tanstack/table-core';
-	import { buttonVariants } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
@@ -20,17 +20,20 @@
 </script>
 
 <DropdownMenu.Root>
-	<DropdownMenu.Trigger
-		class={buttonVariants({
-			variant: 'outline',
-			size: 'sm',
-			class: 'h-8'
-		})}
-	>
-		<ViewOptionsIcon />
-		{m.common_view()}
+	<DropdownMenu.Trigger>
+		{#snippet child({ props })}
+			<ArcaneButton
+				{...props}
+				action="base"
+				tone="ghost"
+				size="sm"
+				icon={ViewOptionsIcon}
+				customLabel={m.common_view()}
+				class="border-input hover:bg-card/60 h-8 border hover:text-inherit"
+			/>
+		{/snippet}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content align="end">
+	<DropdownMenu.Content align="center">
 		{#if customViewOptions}
 			<DropdownMenu.Group>
 				<DropdownMenu.Label>{m.common_view()}</DropdownMenu.Label>
@@ -47,16 +50,15 @@
 				{#each table
 					.getAllColumns()
 					.filter((col) => typeof col.accessorFn !== 'undefined' && col.getCanHide()) as column (column)}
-					<DropdownMenu.CheckboxItem
-						bind:checked={() => column.getIsVisible(), (v) => column.toggleVisibility(!!v)}
-						class="capitalize"
-					>
-						{column.id}
+					{@const meta = column.columnDef.meta as { title?: string }}
+					{@const headerText = meta?.title ?? column.id}
+					<DropdownMenu.CheckboxItem bind:checked={() => column.getIsVisible(), (v) => column.toggleVisibility(!!v)}>
+						{headerText}
 					</DropdownMenu.CheckboxItem>
 				{/each}
 			{:else if fields && onToggleField}
 				{#each fields as field (field.id)}
-					<DropdownMenu.CheckboxItem bind:checked={() => field.visible, (v) => onToggleField(field.id)} class="capitalize">
+					<DropdownMenu.CheckboxItem bind:checked={() => field.visible, (v) => onToggleField(field.id)}>
 						{field.label}
 					</DropdownMenu.CheckboxItem>
 				{/each}

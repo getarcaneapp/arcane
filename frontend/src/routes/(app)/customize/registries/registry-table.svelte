@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -155,9 +155,11 @@
 	] satisfies ColumnSpec<ContainerRegistry>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'username', label: m.common_username(), defaultVisible: true },
-		{ id: 'description', label: m.common_description(), defaultVisible: true }
+		{ id: 'description', label: m.common_description(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -224,10 +226,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
 					<span class="sr-only">{m.common_open_menu()}</span>
 					<EllipsisIcon />
-				</Button>
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">

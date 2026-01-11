@@ -34,7 +34,10 @@
 		nl: 'Nederlands',
 		'pt-BR': 'Português brasileiro',
 		ru: 'Русский',
-		zh: '中文'
+		sv: 'Svenska',
+		vi: 'Tiếng Việt',
+		'zh-CN': '中文',
+		'zh-TW': '繁體中文'
 	};
 
 	async function updateLocale(locale: Locale) {
@@ -67,7 +70,7 @@
 			>
 				<span class="truncate">{locales[currentLocale]}</span>
 			</Select.Trigger>
-			<Select.Content class="bg-card/60 bubble-shadow max-w-[280px] min-w-[160px] rounded-xl backdrop-blur-sm">
+			<Select.Content class="bg-card/60 bubble-shadow max-w-70 min-w-40 rounded-xl backdrop-blur-sm">
 				{#each Object.entries(locales) as [value, label]}
 					<Select.Item class="text-sm" {value}>{label}</Select.Item>
 				{/each}

@@ -8,17 +8,36 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 )
 
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := projectsDir
 	if projectsDirectory == "" {
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
+	}
+
+	// Handle mapping format: "container_path:host_path"
+	if parts := strings.SplitN(projectsDirectory, ":", 2); len(parts) == 2 {
+		if !pathmapper.IsWindowsDrivePath(projectsDirectory) && strings.HasPrefix(parts[0], "/") { // First part must be absolute container path
+			projectsDirectory = parts[0]
+		}
+	}
+
+	// Always resolve to an absolute, cleaned path so downstream code and DB
+	// store a canonical location (prevents relative paths like "data/projects").
+	absDir, err := filepath.Abs(projectsDirectory)
+	if err == nil {
+		projectsDirectory = filepath.Clean(absDir)
+	} else {
+		// If Abs fails for any reason, still clean the provided value
+		projectsDirectory = filepath.Clean(projectsDirectory)
 	}
 
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if err := os.MkdirAll(projectsDirectory, 0755); err != nil {
+		if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -45,7 +64,7 @@ func ReadProjectFiles(projectPath string) (composeContent, envContent string, er
 func GetTemplatesDirectory(ctx context.Context) (string, error) {
 	templatesDir := filepath.Join("data", "templates")
 	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		if err := os.MkdirAll(templatesDir, common.DirPerm); err != nil {
 			return "", err
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", templatesDir)

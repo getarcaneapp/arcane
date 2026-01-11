@@ -31,7 +31,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	// Setup dependencies
 	settingsService, _ := NewSettingsService(ctx, db)
 	cfg := &config.Config{}
-	svc := NewProjectService(db, cfg, settingsService, nil, nil)
+	svc := NewProjectService(db, cfg, settingsService, nil, nil, nil)
 
 	// Create test project
 	proj := &models.Project{
@@ -149,7 +149,7 @@ func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 	cfg := &config.Config{}
-	svc := NewProjectService(db, cfg, nil, nil, nil)
+	svc := NewProjectService(db, cfg, nil, nil, nil, nil)
 
 	proj := &models.Project{
 		BaseModel: models.BaseModel{

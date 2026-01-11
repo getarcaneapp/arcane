@@ -19,31 +19,18 @@
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
-	import { untrack } from 'svelte';
 	import bytes from 'bytes';
 	import { CpuIcon, MemoryStickIcon } from '$lib/icons';
 
 	let { data } = $props();
-	let containers = $state(untrack(() => data.containers));
-	let images = $state(untrack(() => data.images));
-	let dockerInfo = $state(untrack(() => data.dockerInfo));
-	let containerStatusCounts = $state(untrack(() => data.containerStatusCounts));
+	let containers = $derived(data.containers);
+	let images = $derived(data.images);
+	let dockerInfo = $derived(data.dockerInfo);
+	let containerStatusCounts = $derived(data.containerStatusCounts);
+	let settings = $derived(data.settings);
 
-	let dashboardStates = $state({
-		dockerInfo: untrack(() => data.dockerInfo) as typeof data.dockerInfo | null,
-		settings: untrack(() => data.settings) as typeof data.settings | null,
-		systemStats: null as SystemStats | null,
-		isPruneDialogOpen: false
-	});
-
-	$effect(() => {
-		containers = data.containers;
-		images = data.images;
-		dockerInfo = data.dockerInfo;
-		containerStatusCounts = data.containerStatusCounts;
-		dashboardStates.dockerInfo = data.dockerInfo;
-		dashboardStates.settings = data.settings;
-	});
+	let systemStats = $state<SystemStats | null>(null);
+	let isPruneDialogOpen = $state(false);
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
 
@@ -58,7 +45,6 @@
 		loadingImages: false
 	});
 
-	let liveSystemStats = $state(null as SystemStats | null);
 	let statsWSClient: ReconnectingWebSocket<SystemStats> | null = null;
 	let hasInitialStatsLoaded = $state(false);
 
@@ -73,7 +59,7 @@
 	const stoppedContainers = $derived(containerStatusCounts.stoppedContainers);
 	const runningContainers = $derived(containerStatusCounts.runningContainers);
 	const totalContainers = $derived(containerStatusCounts.totalContainers);
-	const currentStats = $derived(dashboardStates.systemStats || liveSystemStats);
+	const currentStats = $derived(systemStats);
 
 	function addToHistoricalData(stats: SystemStats) {
 		const now = new Date();
@@ -150,7 +136,7 @@
 	});
 
 	function resetStats() {
-		liveSystemStats = null;
+		systemStats = null;
 		hasInitialStatsLoaded = false;
 		historicalData = {
 			cpu: [],
@@ -180,8 +166,7 @@
 				}
 			},
 			onMessage: (data) => {
-				liveSystemStats = data;
-				dashboardStates.systemStats = data;
+				systemStats = data;
 				addToHistoricalData(data);
 				hasInitialStatsLoaded = true;
 				isLoading.loadingStats = false;
@@ -212,7 +197,7 @@
 	});
 
 	async function handleStartAll() {
-		if (isLoading.starting || !dashboardStates.dockerInfo || stoppedContainers === 0) return;
+		if (isLoading.starting || !dockerInfo || stoppedContainers === 0) return;
 		isLoading.starting = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(systemService.startAllStoppedContainers()),
@@ -226,7 +211,7 @@
 	}
 
 	async function handleStopAll() {
-		if (isLoading.stopping || !dashboardStates.dockerInfo || dockerInfo?.ContainersRunning === 0) return;
+		if (isLoading.stopping || !dockerInfo || dockerInfo?.ContainersRunning === 0) return;
 		openConfirmDialog({
 			title: m.dashboard_stop_all_title(),
 			message: m.dashboard_stop_all_confirm(),
@@ -258,7 +243,7 @@
 			volumes: selectedTypes.includes('volumes'),
 			networks: selectedTypes.includes('networks'),
 			buildCache: selectedTypes.includes('buildCache'),
-			dangling: dashboardStates.settings?.dockerPruneMode === 'dangling'
+			dangling: settings?.dockerPruneMode === 'dangling'
 		};
 
 		const typeLabels: Record<PruneType, string> = {
@@ -275,7 +260,7 @@
 			message: m.dashboard_prune_failed({ types: typesString }),
 			setLoadingState: (value) => (isLoading.pruning = value),
 			onSuccess: async () => {
-				dashboardStates.isPruneDialogOpen = false;
+				isPruneDialogOpen = false;
 				if (selectedTypes.length === 1) {
 					toast.success(m.dashboard_prune_success_one({ types: typesString }));
 				} else {
@@ -287,30 +272,31 @@
 	}
 </script>
 
-<div class="flex min-h-[calc(100vh-5rem-2.5rem)] flex-col space-y-8">
-	<div class="flex flex-col gap-4">
-		<div class="flex items-start justify-between gap-3">
-			<div class="flex-1 space-y-1">
-				<h1 class="text-3xl font-bold tracking-tight">{m.dashboard_title()}</h1>
-				<p class="text-muted-foreground max-w-2xl text-sm">{m.dashboard_subtitle()}</p>
+<div class="flex min-h-full flex-col space-y-6 pt-3 md:space-y-10 md:pt-5">
+	<header class="flex items-center justify-between gap-4">
+		<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+			<div class="min-w-0">
+				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{m.dashboard_title()}</h1>
+				<p class="text-muted-foreground mt-1 text-sm">{m.dashboard_subtitle()}</p>
 			</div>
-
-			<QuickActions
-				class="shrink-0"
-				compact
-				dockerInfo={dashboardStates.dockerInfo}
-				{stoppedContainers}
-				{runningContainers}
-				loadingDockerInfo={isLoading.loadingDockerInfo}
-				isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
-				onStartAll={handleStartAll}
-				onStopAll={handleStopAll}
-				onOpenPruneDialog={() => (dashboardStates.isPruneDialogOpen = true)}
-				onRefresh={refreshData}
-				refreshing={isLoading.refreshing}
-			/>
 		</div>
-	</div>
+
+		<QuickActions
+			class="min-w-0 flex-1"
+			compact
+			user={data.user}
+			{dockerInfo}
+			{stoppedContainers}
+			{runningContainers}
+			loadingDockerInfo={isLoading.loadingDockerInfo}
+			isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
+			onStartAll={handleStartAll}
+			onStopAll={handleStopAll}
+			onOpenPruneDialog={() => (isPruneDialogOpen = true)}
+			onRefresh={refreshData}
+			refreshing={isLoading.refreshing}
+		/>
+	</header>
 
 	<section>
 		<div class="mb-4 flex items-center justify-between gap-4">
@@ -372,7 +358,7 @@
 			</div>
 
 			<DockerOverview
-				dockerInfo={dashboardStates.dockerInfo}
+				{dockerInfo}
 				containersRunning={runningContainers}
 				containersStopped={stoppedContainers}
 				{totalContainers}
@@ -391,10 +377,10 @@
 	</section>
 
 	<PruneConfirmationDialog
-		bind:open={dashboardStates.isPruneDialogOpen}
+		bind:open={isPruneDialogOpen}
 		isPruning={isLoading.pruning}
-		imagePruneMode={(dashboardStates.settings?.dockerPruneMode as 'dangling' | 'all') || 'dangling'}
+		imagePruneMode={(settings?.dockerPruneMode as 'dangling' | 'all') || 'dangling'}
 		onConfirm={confirmPrune}
-		onCancel={() => (dashboardStates.isPruneDialogOpen = false)}
+		onCancel={() => (isPruneDialogOpen = false)}
 	/>
 </div>

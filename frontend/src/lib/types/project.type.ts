@@ -77,6 +77,9 @@ export interface Project {
 	statusReason?: string;
 	updatedAt: string;
 	createdAt: string;
+	gitOpsManagedBy?: string;
+	lastSyncCommit?: string;
+	gitRepositoryURL?: string;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;

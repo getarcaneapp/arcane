@@ -17,13 +17,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
-const logoURLPath = "/api/app-images/logo?full=true"
+const logoURLPath = "/api/app-images/logo-email"
 
 type NotificationService struct {
 	db             *database.DB
@@ -247,7 +247,7 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, image
 
 	// Decrypt webhook URL if encrypted
 	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
 		webhookURL = decrypted
 	}
 
@@ -368,7 +368,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -379,7 +379,10 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	}
 
 	subject := fmt.Sprintf("Container Update Available: %s", notifications.SanitizeForEmail(imageRef))
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -395,10 +398,11 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 }
 
 func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":       logoURL,
-		"AppURL":        s.config.AppUrl,
+		"AppURL":        appURL,
 		"Environment":   "Local Docker",
 		"ImageRef":      imageRef,
 		"HasUpdate":     updateInfo.HasUpdate,
@@ -456,7 +460,7 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 	}
 
 	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
 		webhookURL = decrypted
 	}
 
@@ -572,7 +576,7 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -583,7 +587,10 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	subject := fmt.Sprintf("Container Updated: %s", notifications.SanitizeForEmail(containerName))
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -599,10 +606,11 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 }
 
 func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":       logoURL,
-		"AppURL":        s.config.AppUrl,
+		"AppURL":        appURL,
 		"Environment":   "Local Docker",
 		"ContainerName": containerName,
 		"ImageRef":      imageRef,
@@ -729,7 +737,7 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -740,7 +748,10 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 	}
 
 	subject := "Test Email from Arcane"
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -756,10 +767,11 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 }
 
 func (s *NotificationService) renderTestEmailTemplate() (string, string, error) {
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL": logoURL,
-		"AppURL":  s.config.AppUrl,
+		"AppURL":  appURL,
 	}
 
 	htmlContent, err := resources.FS.ReadFile("email-templates/test_html.tmpl")
@@ -806,9 +818,7 @@ func (s *NotificationService) logNotification(ctx context.Context, provider mode
 	}
 
 	if err := s.db.WithContext(ctx).Create(log).Error; err != nil {
-		slog.WarnContext(ctx, "Failed to log notification",
-			slog.String("provider", string(provider)),
-			slog.String("error", err.Error()))
+		slog.WarnContext(ctx, "Failed to log notification", "provider", string(provider), "error", err.Error())
 	}
 }
 
@@ -897,7 +907,13 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to unmarshal discord config: %w", err)
 	}
 
-	if err := validateWebhookURL(discordConfig.WebhookURL); err != nil {
+	// Decrypt webhook URL if encrypted
+	webhookURL := discordConfig.WebhookURL
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
+		webhookURL = decrypted
+	}
+
+	if err := validateWebhookURL(webhookURL); err != nil {
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
@@ -945,7 +961,7 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to marshal Discord payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, discordConfig.WebhookURL, bytes.NewReader(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(jsonPayload))
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -993,7 +1009,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -1010,7 +1026,10 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 		}
 		return ""
 	}())
-	message := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	message, err := notifications.BuildMultipartMessage(emailConfig.FromAddress, emailConfig.ToAddresses, subject, htmlBody, textBody)
+	if err != nil {
+		return fmt.Errorf("failed to build email message: %w", err)
+	}
 
 	client, err := notifications.ConnectSMTP(ctx, emailConfig)
 	if err != nil {
@@ -1032,10 +1051,11 @@ func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*image
 		imageList = append(imageList, imageRef)
 	}
 
-	logoURL := s.config.AppUrl + logoURLPath
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
 		"LogoURL":     logoURL,
-		"AppURL":      s.config.AppUrl,
+		"AppURL":      appURL,
 		"UpdateCount": len(updates),
 		"CheckTime":   time.Now().Format(time.RFC1123),
 		"ImageList":   imageList,

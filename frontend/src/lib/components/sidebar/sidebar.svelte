@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -17,9 +17,10 @@
 	import SidebarPinButton from './sidebar-pin-button.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
-	import * as Button from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
 	import { LogoutIcon } from '$lib/icons';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -57,6 +58,9 @@
 			}
 			return item;
 		}) ?? [];
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const managementItems = $derived(getManagementItems(currentEnvId));
 </script>
 
 <VersionInfoDialog
@@ -91,7 +95,7 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
+		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
@@ -117,14 +121,16 @@
 					<div class="flex items-center gap-2">
 						<SidebarUser {isCollapsed} user={effectiveUser} />
 						<form action="/logout" method="POST" class="ml-auto">
-							<Button.Root
-								variant="ghost"
+							<ArcaneButton
+								action="base"
+								tone="ghost"
 								title={m.common_logout()}
 								type="submit"
 								class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
-							>
-								<LogoutIcon class="size-5" />
-							</Button.Root>
+								icon={LogoutIcon}
+								showLabel={false}
+								customLabel={m.common_logout()}
+							/>
 						</form>
 					</div>
 				</div>

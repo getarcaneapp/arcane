@@ -27,10 +27,13 @@ type EventPaginatedResponse struct {
 }
 
 type ListEventsInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search   string `query:"search" doc:"Search query"`
+	Sort     string `query:"sort" doc:"Column to sort by"`
+	Order    string `query:"order" default:"asc" doc:"Sort direction"`
+	Start    int    `query:"start" default:"0" doc:"Start index"`
+	Limit    int    `query:"limit" default:"20" doc:"Limit"`
+	Severity string `query:"severity" doc:"Filter by severity"`
+	Type     string `query:"type" doc:"Filter by event type"`
 }
 
 type ListEventsOutput struct {
@@ -39,10 +42,13 @@ type ListEventsOutput struct {
 
 type GetEventsByEnvironmentInput struct {
 	EnvironmentID string `path:"environmentId" doc:"Environment ID"`
-	Page          int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit         int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol       string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir       string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+	Severity      string `query:"severity" doc:"Filter by severity"`
+	Type          string `query:"type" doc:"Filter by event type"`
 }
 
 type GetEventsByEnvironmentOutput struct {
@@ -136,7 +142,18 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+
+	if input.Severity != "" {
+		params.Filters["severity"] = input.Severity
+	}
+	if input.Type != "" {
+		params.Filters["type"] = input.Type
+	}
 
 	events, paginationResp, err := h.eventService.ListEventsPaginated(ctx, params)
 	if err != nil {
@@ -164,11 +181,22 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+
+	if input.Severity != "" {
+		params.Filters["severity"] = input.Severity
+	}
+	if input.Type != "" {
+		params.Filters["type"] = input.Type
+	}
 
 	events, paginationResp, err := h.eventService.GetEventsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
@@ -196,6 +224,10 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	evt, err := h.eventService.CreateEventFromDto(ctx, input.Body)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EventCreationError{Err: err}).Error())
@@ -213,6 +245,10 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if input.EventID == "" {

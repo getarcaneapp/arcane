@@ -3,7 +3,7 @@
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ArrowDownIcon } from '$lib/icons';
 
 	type Props = {
@@ -44,15 +44,21 @@
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="secondary" class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm" {disabled}>
-						{protocol}://
-						<ArrowDownIcon class="size-3 opacity-50" />
-					</Button>
+					<ArcaneButton
+						{...props}
+						action="base"
+						tone="outline"
+						class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm"
+						{disabled}
+						customLabel="{protocol}://"
+					>
+						<ArrowDownIcon />
+					</ArcaneButton>
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="center" class="min-w-0">
-				<DropdownMenu.Item class="px-2 py-1.5" onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
-				<DropdownMenu.Item class="px-2 py-1.5" onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
+				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
+				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 		<InputGroup.Root class={['flex-1', error ? 'border-destructive' : ''].filter(Boolean).join(' ')}>

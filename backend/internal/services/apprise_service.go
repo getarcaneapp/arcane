@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"gorm.io/gorm"
 )
 
 type AppriseService struct {
@@ -39,6 +41,9 @@ type AppriseNotificationPayload struct {
 func (s *AppriseService) GetSettings(ctx context.Context) (*models.AppriseSettings, error) {
 	var settings models.AppriseSettings
 	if err := s.db.WithContext(ctx).First(&settings).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &settings, nil
@@ -49,6 +54,9 @@ func (s *AppriseService) CreateOrUpdateSettings(ctx context.Context, apiURL stri
 
 	err := s.db.WithContext(ctx).First(&settings).Error
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to check apprise settings: %w", err)
+		}
 		settings = models.AppriseSettings{
 			APIURL:             apiURL,
 			Enabled:            enabled,
@@ -77,7 +85,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 		return fmt.Errorf("failed to get apprise settings: %w", err)
 	}
 
-	if !settings.Enabled {
+	if settings == nil || !settings.Enabled {
 		return nil
 	}
 
@@ -110,11 +118,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 		return fmt.Errorf("failed to marshal notification payload: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Sending Apprise notification",
-		slog.String("url", settings.APIURL),
-		slog.String("title", title),
-		slog.Any("tags", tags),
-		slog.String("type", string(notificationType)))
+	slog.InfoContext(ctx, "Sending Apprise notification", "url", settings.APIURL, "title", title, "tags", tags, "type", string(notificationType))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, settings.APIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -134,16 +138,11 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	bodyString := string(bodyBytes)
 
 	if resp.StatusCode != http.StatusOK {
-		slog.ErrorContext(ctx, "Apprise API returned error",
-			slog.Int("status", resp.StatusCode),
-			slog.String("response", bodyString),
-			slog.String("url", settings.APIURL))
+		slog.ErrorContext(ctx, "Apprise API returned error", "status", resp.StatusCode, "response", bodyString, "url", settings.APIURL)
 		return fmt.Errorf("apprise API returned status %d: %s", resp.StatusCode, bodyString)
 	}
 
-	slog.InfoContext(ctx, "Apprise notification sent successfully",
-		slog.Int("status", resp.StatusCode),
-		slog.String("response", bodyString))
+	slog.InfoContext(ctx, "Apprise notification sent successfully", "status", resp.StatusCode, "response", bodyString)
 
 	return nil
 }

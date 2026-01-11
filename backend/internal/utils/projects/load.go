@@ -10,6 +10,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
 
 var ComposeFileCandidates = []string{
@@ -37,7 +38,7 @@ func DetectComposeFile(dir string) (string, error) {
 	return compose, nil
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string) (*composetypes.Project, error) {
+func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -45,7 +46,7 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 		projectsDir = filepath.Dir(workdir)
 	}
 
-	envLoader := NewEnvLoader(projectsDir, workdir)
+	envLoader := NewEnvLoader(projectsDir, workdir, autoInjectEnv)
 
 	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
@@ -60,14 +61,9 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 		slog.WarnContext(ctx, "Failed to set PWD environment variable", "workdir", workdir, "error", absErr)
 	}
 
-	// Debug: Log all environment variables being passed to compose
-	slog.DebugContext(ctx, "Environment variables for compose interpolation", "count", len(fullEnvMap))
-	for k, v := range fullEnvMap {
-		slog.DebugContext(ctx, "Env var", "key", k, "value", v)
-	}
-
 	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
 	cfg := composetypes.ConfigDetails{
+		Version:    api.ComposeVersion,
 		WorkingDir: workdir,
 		ConfigFiles: []composetypes.ConfigFile{
 			{Filename: composeFile},
@@ -87,14 +83,34 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	// Resolve relative paths for bind mounts, secrets, and configs
 	resolveRelativeProjectPaths(project, workdir)
 
+	// Translate container paths to host paths for Docker execution
+	if pathMapper != nil {
+		if err := pathMapper.TranslateVolumeSources(project); err != nil {
+			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
+		}
+	}
+
 	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
 
 	project.ComposeFiles = []string{composeFile}
 	return project, nil
 }
 
+func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFile string) composetypes.Labels {
+	return composetypes.Labels{
+		api.ProjectLabel:     projectName,
+		api.ServiceLabel:     serviceName,
+		api.VersionLabel:     api.ComposeVersion,
+		api.OneoffLabel:      "False",
+		api.WorkingDirLabel:  workingDirectory,
+		api.ConfigFilesLabel: composeFile,
+	}
+}
+
 func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string) {
 	for i, s := range project.Services {
+		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, workdir, composeFile)
+
 		// Initialize environment if nil
 		if s.Environment == nil {
 			s.Environment = make(composetypes.MappingWithEquals)
@@ -107,22 +123,11 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 			}
 		}
 
-		if s.CustomLabels == nil {
-			s.CustomLabels = composetypes.Labels{}
-		}
-
-		s.CustomLabels[api.ProjectLabel] = project.Name
-		s.CustomLabels[api.ServiceLabel] = s.Name
-		s.CustomLabels[api.VersionLabel] = api.ComposeVersion
-		s.CustomLabels[api.OneoffLabel] = "False"
-		s.CustomLabels[api.WorkingDirLabel] = workdir
-		s.CustomLabels[api.ConfigFilesLabel] = composeFile
-
 		project.Services[i] = s
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string) (*composetypes.Project, string, error) {
+func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, string, error) {
 	composeFile, err := DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err
@@ -132,7 +137,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		projectsDirectory = filepath.Dir(dir)
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper)
 	if err != nil {
 		return nil, "", err
 	}
@@ -145,19 +150,20 @@ func resolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 		return
 	}
 
-	for si := range project.Services {
-		service := project.Services[si]
-		for vi := range service.Volumes {
-			volume := service.Volumes[vi]
-			if volume.Type != composetypes.VolumeTypeBind {
-				continue
-			}
-			if resolved, ok := resolvePathRelative(workdir, volume.Source); ok {
-				volume.Source = resolved
-				service.Volumes[vi] = volume
+	for name, service := range project.Services {
+		modified := false
+		for i := range service.Volumes {
+			v := &service.Volumes[i]
+			if v.Type == composetypes.VolumeTypeBind {
+				if resolved, ok := resolvePathRelative(workdir, v.Source); ok {
+					v.Source = resolved
+					modified = true
+				}
 			}
 		}
-		project.Services[si] = service
+		if modified {
+			project.Services[name] = service
+		}
 	}
 
 	for name, secret := range project.Secrets {
@@ -176,15 +182,8 @@ func resolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 }
 
 func resolvePathRelative(workdir, candidate string) (string, bool) {
-	if candidate == "" {
-		return candidate, false
-	}
-	if filepath.IsAbs(candidate) {
+	if candidate == "" || filepath.IsAbs(candidate) || workdir == "" {
 		return filepath.Clean(candidate), false
 	}
-	if workdir == "" {
-		return candidate, false
-	}
-	resolved := filepath.Join(workdir, candidate)
-	return filepath.Clean(resolved), true
+	return filepath.Clean(filepath.Join(workdir, candidate)), true
 }

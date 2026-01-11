@@ -2,7 +2,7 @@
 	import * as Avatar from '$lib/components/ui/avatar/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import * as Button from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { User } from '$lib/types/user.type';
 	import { mode, toggleMode } from 'mode-watcher';
@@ -78,7 +78,8 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content
-				class="border-border/20 min-w-56 rounded-2xl border p-0 shadow-lg backdrop-blur-(--glass-blur-popup) backdrop-saturate-150"
+				class="border-border/20 min-w-56 rounded-2xl border p-0 shadow-lg backdrop-blur-2xl
+ backdrop-saturate-150"
 				side="right"
 				align="end"
 				sideOffset={12}
@@ -136,8 +137,9 @@
 					/>
 
 					<DropdownMenu.Group class="px-3 pb-2">
-						<Button.Root
-							variant="ghost"
+						<ArcaneButton
+							action="base"
+							tone="ghost"
 							class={cn(
 								'text-muted-foreground flex w-full items-center rounded-xl text-sm font-medium transition-all duration-200 hover:bg-linear-to-br',
 								'h-11 justify-start gap-3 px-3 py-2.5'
@@ -153,7 +155,7 @@
 								{/if}
 							</div>
 							<span class="font-medium">{m.common_toggle_theme()}</span>
-						</Button.Root>
+						</ArcaneButton>
 					</DropdownMenu.Group>
 				</div>
 			</DropdownMenu.Content>

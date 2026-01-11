@@ -5,7 +5,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -23,28 +22,8 @@ func SetupPlaywrightRoutes(api *gin.RouterGroup, playwrightService *services.Pla
 
 	playwrightHandler := NewPlaywrightHandler(playwrightService)
 
-	playwright.POST("/skip-onboarding", playwrightHandler.SkipOnboardingHandler)
-	playwright.POST("/reset-onboarding", playwrightHandler.ResetOnboardingHandler)
 	playwright.POST("/create-test-api-keys", playwrightHandler.CreateTestApiKeysHandler)
 	playwright.POST("/delete-test-api-keys", playwrightHandler.DeleteTestApiKeysHandler)
-}
-
-func (ph *PlaywrightHandler) SkipOnboardingHandler(c *gin.Context) {
-	if err := ph.PlaywrightService.SkipOnboarding(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.SkipOnboardingError{Err: err}).Error()})
-		return
-	}
-
-	c.Status(http.StatusNoContent)
-}
-
-func (ph *PlaywrightHandler) ResetOnboardingHandler(c *gin.Context) {
-	if err := ph.PlaywrightService.ResetOnboarding(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": (&common.ResetOnboardingError{Err: err}).Error()})
-		return
-	}
-
-	c.Status(http.StatusNoContent)
 }
 
 type CreateTestApiKeysRequest struct {

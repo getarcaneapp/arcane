@@ -17,6 +17,8 @@
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
 		data,
@@ -74,15 +76,23 @@
 	function handlePasswordChangeSuccess() {
 		invalidateAll();
 	}
+
+	const pageTitle = $derived(
+		environmentStore.selected
+			? `${m.layout_title()} | ${environmentStore.selected.name}`
+			: m.layout_title()
+	);
 </script>
 
-<svelte:head><title>{m.layout_title()}</title></svelte:head>
+<svelte:head><title>{pageTitle}</title></svelte:head>
 
 <div class={cn('flex min-h-dvh flex-col', isGlassEnabled ? 'bg-transparent' : 'bg-background')}>
 	{#if !settings && data.user}
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}
-		{@render children()}
+		<Tooltip.Provider>
+			{@render children()}
+		</Tooltip.Provider>
 	{/if}
 </div>
 

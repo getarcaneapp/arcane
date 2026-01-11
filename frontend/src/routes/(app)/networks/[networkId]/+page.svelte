@@ -16,7 +16,6 @@
 		ArrowUpIcon,
 		ArrowDownIcon
 	} from '$lib/icons';
-	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
@@ -28,6 +27,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
+	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 
 	let { data }: { data: PageData } = $props();
 	let errorMessage = $state('');
@@ -55,7 +55,9 @@
 
 		if (data.network?.id) {
 			try {
-				network = await networkService.getNetwork(data.network.id, sortCol, sortDir);
+				network = await networkService.getNetwork(data.network.id, {
+					sort: { column: sortCol, direction: sortDir }
+				});
 			} catch (err) {
 				console.error('Failed to sort network containers:', err);
 				toast.error(m.common_action_failed());
@@ -99,60 +101,37 @@
 			}
 		});
 	}
+
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isRemoving,
+			disabled: isRemoving || isPredefined,
+			onclick: triggerRemove
+		}
+	]);
 </script>
 
-<div class="space-y-6 pb-8">
-	<div class="flex flex-col space-y-4">
-		<Breadcrumb.Root>
-			<Breadcrumb.List>
-				<Breadcrumb.Item>
-					<Breadcrumb.Link href="/networks">{m.networks_title()}</Breadcrumb.Link>
-				</Breadcrumb.Item>
-				<Breadcrumb.Separator />
-				<Breadcrumb.Item>
-					<Breadcrumb.Page>{network?.name ?? shortId}</Breadcrumb.Page>
-				</Breadcrumb.Item>
-			</Breadcrumb.List>
-		</Breadcrumb.Root>
-
-		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-			<div class="flex flex-col">
-				<div class="flex items-center gap-3">
-					<h1 class="text-2xl font-bold tracking-tight">
-						{network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
-					</h1>
-
-					<div class="hidden sm:block">
-						<StatusBadge variant="gray" text={`${m.common_id()}: ${shortId}`} />
-					</div>
-				</div>
-
-				<div class="mt-2 flex gap-2">
-					{#if inUse}
-						<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
-					{:else}
-						<StatusBadge variant="amber" text={m.common_unused()} />
-					{/if}
-
-					{#if isPredefined}
-						<StatusBadge variant="blue" text={m.networks_predefined()} />
-					{/if}
-
-					<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
-				</div>
-			</div>
-
-			<div class="self-start">
-				<ArcaneButton
-					action="remove"
-					customLabel={m.common_remove_title({ resource: m.resource_network_cap() })}
-					onclick={triggerRemove}
-					loading={isRemoving}
-					disabled={isRemoving || isPredefined}
-				/>
-			</div>
-		</div>
-	</div>
+<ResourceDetailLayout
+	backUrl="/networks"
+	backLabel={m.networks_title()}
+	title={network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
+	subtitle={`${m.common_id()}: ${shortId}`}
+	{actions}
+>
+	{#snippet badges()}
+		{#if inUse}
+			<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
+		{:else}
+			<StatusBadge variant="amber" text={m.common_unused()} />
+		{/if}
+		{#if isPredefined}
+			<StatusBadge variant="blue" text={m.networks_predefined()} />
+		{/if}
+		<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
+	{/snippet}
 
 	{#if errorMessage}
 		<Alert.Root variant="destructive">
@@ -280,9 +259,141 @@
 								</p>
 							</div>
 						</div>
+
+						<div class="flex items-start gap-3">
+							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
+								<NetworksIcon class="size-5 text-indigo-500" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="text-muted-foreground text-sm font-medium">{m.ipv4_enabled()}</p>
+								<p class="mt-1 text-base font-semibold">
+									<StatusBadge
+										variant={network.enableIPv4 ? 'indigo' : 'gray'}
+										text={network.enableIPv4 ? m.common_yes() : m.common_no()}
+									/>
+								</p>
+							</div>
+						</div>
+
+						<div class="flex items-start gap-3">
+							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 p-2">
+								<SettingsIcon class="size-5 text-cyan-500" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="text-muted-foreground text-sm font-medium">{m.ingress()}</p>
+								<p class="mt-1 text-base font-semibold">
+									<StatusBadge
+										variant={network.ingress ? 'cyan' : 'gray'}
+										text={network.ingress ? m.common_yes() : m.common_no()}
+									/>
+								</p>
+							</div>
+						</div>
+
+						<div class="flex items-start gap-3">
+							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10 p-2">
+								<SettingsIcon class="size-5 text-pink-500" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="text-muted-foreground text-sm font-medium">{m.config_only()}</p>
+								<p class="mt-1 text-base font-semibold">
+									<StatusBadge
+										variant={network.configOnly ? 'pink' : 'gray'}
+										text={network.configOnly ? m.common_yes() : m.common_no()}
+									/>
+								</p>
+							</div>
+						</div>
 					</div>
 				</Card.Content>
 			</Card.Root>
+
+			{#if network.peers && network.peers.length > 0}
+				<Card.Root>
+					<Card.Header icon={GlobeIcon}>
+						<div class="flex flex-col space-y-1.5">
+							<Card.Title>{m.networks_peers_title()}</Card.Title>
+							<Card.Description>{m.networks_peers_description()}</Card.Description>
+						</div>
+					</Card.Header>
+					<Card.Content class="p-4">
+						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+							{#each network.peers as peer}
+								<Card.Root variant="subtle">
+									<Card.Content class="flex flex-col gap-2 p-4">
+										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{peer.Name}</div>
+										<div
+											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+											title="Click to select"
+										>
+											{peer.IP}
+										</div>
+									</Card.Content>
+								</Card.Root>
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
+			{#if network.services && Object.keys(network.services).length > 0}
+				<Card.Root>
+					<Card.Header icon={LayersIcon}>
+						<div class="flex flex-col space-y-1.5">
+							<Card.Title>{m.networks_services_title()}</Card.Title>
+							<Card.Description>{m.networks_services_description()}</Card.Description>
+						</div>
+					</Card.Header>
+					<Card.Content class="p-4">
+						<div class="space-y-3">
+							{#each Object.entries(network.services) as [name, service]}
+								<Card.Root variant="outlined">
+									<Card.Content class="p-4">
+										<div class="space-y-2">
+											<div class="flex flex-col sm:flex-row sm:items-center">
+												<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+													>{m.networks_service_name_label()}:</span
+												>
+												<code
+													class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
+												>
+													{name}
+												</code>
+											</div>
+											{#if service.VIP}
+												<div class="flex flex-col sm:flex-row sm:items-center">
+													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+														>{m.networks_service_vip_label()}:</span
+													>
+													<code
+														class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
+													>
+														{service.VIP}
+													</code>
+												</div>
+											{/if}
+											{#if service.Ports && service.Ports.length > 0}
+												<div class="flex flex-col sm:flex-row sm:items-start">
+													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+														>{m.networks_service_ports_label()}:</span
+													>
+													<div class="flex flex-wrap gap-1">
+														{#each service.Ports as port}
+															<code class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs sm:text-sm">
+																{port}
+															</code>
+														{/each}
+													</div>
+												</div>
+											{/if}
+										</div>
+									</Card.Content>
+								</Card.Root>
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
 
 			{#if network.ipam?.config && network.ipam.config.length > 0}
 				<Card.Root>
@@ -533,4 +644,4 @@
 			/>
 		</div>
 	{/if}
-</div>
+</ResourceDetailLayout>

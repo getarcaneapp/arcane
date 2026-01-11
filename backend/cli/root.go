@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/getarcaneapp/arcane/backend/cli/generate"
 	"github.com/getarcaneapp/arcane/backend/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -38,6 +39,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
+	rootCmd.AddCommand(generate.GenerateCmd)
 }
 
 func getVersion() string {

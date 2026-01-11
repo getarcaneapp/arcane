@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from './context.svelte.js';
@@ -21,11 +21,12 @@
 	const sidebar = useSidebar();
 </script>
 
-<Button
+<ArcaneButton
 	bind:ref
 	data-sidebar="trigger"
 	data-slot="sidebar-trigger"
-	variant="ghost"
+	action="base"
+	tone="ghost"
 	size="icon"
 	class={cn('size-7', className)}
 	type="button"
@@ -40,4 +41,4 @@
 >
 	<ArrowLeftIcon />
 	<span class="sr-only">Toggle Sidebar</span>
-</Button>
+</ArcaneButton>

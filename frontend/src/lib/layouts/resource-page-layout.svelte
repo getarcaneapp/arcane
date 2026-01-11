@@ -1,160 +1,87 @@
-<script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import StatCard from '$lib/components/stat-card.svelte';
-	import type { Snippet } from 'svelte';
-	import type { Action } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, type IconType } from '$lib/icons';
-
-	export interface ActionButton {
-		id: string;
-		action: Action;
-		label: string;
-		loadingLabel?: string;
-		loading?: boolean;
-		disabled?: boolean;
-		onclick: () => void;
-		showOnMobile?: boolean;
-	}
+<script lang="ts" module>
+	import type { ActionButton as ActionButtonType } from '$lib/components/action-button-group/index.js';
+	export type ActionButton = ActionButtonType;
 
 	export interface StatCardConfig {
 		title: string;
 		value: string | number;
 		subtitle?: string;
-		icon: IconType;
+		icon: import('$lib/icons').IconType;
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
 	}
+</script>
 
-	export type StatCardsColumns = 'auto' | 1 | 2 | 3 | 4 | 5;
+<script lang="ts">
+	import { ActionButtonGroup } from '$lib/components/action-button-group/index.js';
+	import StatCard from '$lib/components/stat-card.svelte';
+	import type { Snippet } from 'svelte';
+	import type { IconType } from '$lib/icons';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		title: string;
 		subtitle?: string;
+		icon?: IconType;
 		actionButtons?: ActionButton[];
 		statCards?: StatCardConfig[];
-		statCardsColumns?: StatCardsColumns;
 		mainContent: Snippet;
 		additionalContent?: Snippet;
 		class?: string;
-		containerClass?: string;
 	}
 
 	let {
 		title,
 		subtitle,
+		icon: Icon,
 		actionButtons = [],
 		statCards = [],
-		statCardsColumns = 'auto',
 		mainContent,
 		additionalContent,
-		class: className = '',
-		containerClass = 'space-y-8 md:space-y-10'
+		class: className = ''
 	}: Props = $props();
-
-	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
-	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
-
-	const getStatCardsGridClass = (columns: typeof statCardsColumns) => {
-		switch (columns) {
-			case 1:
-				return 'grid-cols-1';
-			case 2:
-				return 'grid-cols-2 sm:grid-cols-2';
-			case 3:
-				return 'grid-cols-2 sm:grid-cols-3 [&>*:nth-child(3)]:col-span-2 sm:[&>*:nth-child(3)]:col-span-1';
-			case 4:
-				return 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4';
-			case 5:
-				return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5';
-			case 'auto':
-			default:
-				if (statCards.length <= 2) return 'grid-cols-2 sm:grid-cols-2';
-				if (statCards.length === 3)
-					return 'grid-cols-2 sm:grid-cols-3 [&>*:nth-child(3)]:col-span-2 sm:[&>*:nth-child(3)]:col-span-1';
-				if (statCards.length === 4) return 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4';
-				return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5';
-		}
-	};
 </script>
 
-<div class="{containerClass} {className}">
-	<div class="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-		<div>
-			<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-			{#if subtitle}
-				<p class="text-muted-foreground mt-1 text-sm">{subtitle}</p>
+<div class={cn('space-y-6 pt-3 md:space-y-10 md:pt-5', className)}>
+	<header class="flex items-center justify-between gap-4">
+		<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+			{#if Icon}
+				<div
+					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+				>
+					<Icon class="size-4 sm:size-5" />
+				</div>
 			{/if}
-		</div>
-
-		{#if actionButtons.length > 0}
-			<div class="hidden items-center gap-2 sm:flex">
-				{#each actionButtons as button}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={button.onclick}
-					/>
-				{/each}
-			</div>
-
-			<div class="absolute top-4 right-4 flex items-center gap-2 sm:hidden">
-				{#each mobileVisibleButtons as button}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={button.onclick}
-						size="sm"
-					/>
-				{/each}
-
-				{#if mobileDropdownButtons.length > 0}
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
-							<span class="sr-only">Open menu</span>
-							<EllipsisIcon class="size-4" />
-						</DropdownMenu.Trigger>
-
-						<DropdownMenu.Content
-							align="end"
-							class="bg-popover/90 z-50 min-w-[160px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
-						>
-							<DropdownMenu.Group>
-								{#each mobileDropdownButtons as button}
-									<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-										{button.loading ? button.loadingLabel || button.label : button.label}
-									</DropdownMenu.Item>
-								{/each}
-							</DropdownMenu.Group>
-						</DropdownMenu.Content>
-					</DropdownMenu.Root>
+			<div class="min-w-0">
+				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+				{#if subtitle}
+					<p class="text-muted-foreground mt-1 text-sm">{subtitle}</p>
 				{/if}
 			</div>
-		{/if}
-	</div>
-
-	{#if statCards && statCards.length > 0}
-		<div class="grid gap-4 {getStatCardsGridClass(statCardsColumns)}">
-			{#each statCards as card}
-				<StatCard
-					title={card.title}
-					value={card.value}
-					subtitle={card.subtitle}
-					icon={card.icon}
-					iconColor={card.iconColor}
-					bgColor={card.bgColor}
-					class={card.class}
-				/>
-			{/each}
 		</div>
-	{/if}
+
+		{#if statCards && statCards.length > 0}
+			<div class="hidden shrink items-center justify-center md:flex">
+				<div class="border-border/50 bg-muted/30 relative overflow-hidden rounded-xl border backdrop-blur-sm">
+					<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
+						{#each statCards as card, i}
+							<StatCard
+								variant="mini"
+								title={card.title}
+								value={card.value}
+								icon={card.icon}
+								iconColor={card.iconColor}
+								class={card.class}
+							/>
+						{/each}
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<ActionButtonGroup buttons={actionButtons} />
+	</header>
 
 	{@render mainContent()}
 

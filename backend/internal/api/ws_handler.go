@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
@@ -120,7 +120,7 @@ func NewWebSocketHandler(
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
 		wsUpgrader: websocket.Upgrader{
-			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.AppUrl),
+			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
 			WriteBufferSize:   32 * 1024,
 			EnableCompression: true,
@@ -133,7 +133,7 @@ func NewWebSocketHandler(
 		wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
 		wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
 		wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
-		wsGroup.GET("/containers/:containerId/exec", handler.ContainerExec)
+		wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
 		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
 }
@@ -164,10 +164,16 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 	}
 
 	follow := c.DefaultQuery("follow", "true") == "true"
-	tail := c.DefaultQuery("tail", "100")
-	since := c.Query("since")
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
 	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format := c.DefaultQuery("format", "text")
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
 	batched := c.DefaultQuery("batched", "false") == "true"
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -267,10 +273,16 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 	}
 
 	follow := c.DefaultQuery("follow", "true") == "true"
-	tail := c.DefaultQuery("tail", "100")
-	since := c.Query("since")
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
 	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format := c.DefaultQuery("format", "text")
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
 	batched := c.DefaultQuery("batched", "false") == "true"
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -403,8 +415,8 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string) *ws.Hub {
 //	@Tags			WebSocket
 //	@Param			id			path	string	true	"Environment ID"
 //	@Param			containerId	path	string	true	"Container ID"
-//	@Param			cmd			query	string	false	"Command to execute"	default(/bin/sh)
-//	@Router			/api/environments/{id}/ws/containers/{containerId}/exec [get]
+//	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
+//	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
 func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
@@ -412,7 +424,7 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 		return
 	}
 
-	cmd := c.DefaultQuery("cmd", "/bin/sh")
+	shell := c.DefaultQuery("shell", "/bin/sh")
 
 	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -424,7 +436,7 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	defer cancel()
 
 	// Create exec instance
-	execID, err := h.containerService.CreateExec(ctx, containerID, []string{cmd})
+	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
 		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecCreationError{Err: err}).Error()+"\r\n"))
 		return
@@ -567,7 +579,7 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 
 // applyCgroupLimits applies cgroup limits when running in a container.
 func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
-	cgroupLimits, err := utils.DetectCgroupLimits()
+	cgroupLimits, err := docker.DetectCgroupLimits()
 	if err != nil {
 		return cpuCount, memUsed, memTotal
 	}
@@ -659,7 +671,12 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	ticker := time.NewTicker(2 * time.Second)
+	interval, _ := httputil.GetIntQueryParam(c, "interval", false)
+	if interval <= 0 {
+		interval = 2
+	}
+
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
 	cpuUpdateTicker := time.NewTicker(1 * time.Second)
@@ -787,7 +804,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "nvidia"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
 				return nil
 			}
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
@@ -801,7 +818,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "amd"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
 			return fmt.Errorf("rocm-smi not found but GPU_TYPE set to amd")
@@ -815,13 +832,13 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", slog.String("type", "intel"))
+				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
 				return nil
 			}
 			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
 
 		default:
-			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", slog.String("gpu_type", h.gpuType))
+			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", h.gpuType)
 		}
 	}
 

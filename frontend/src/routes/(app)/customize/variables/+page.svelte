@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { toast } from 'svelte-sonner';
@@ -195,10 +195,14 @@
 									<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
 									<Input type="text" placeholder={m.common_search()} bind:value={searchQuery} class="h-9 pl-10" />
 								</div>
-								<Button type="button" size="sm" onclick={addEnvVar} disabled={isLoading} class="shrink-0">
-									<AddIcon class="mr-1.5 size-4" />
-									{m.variables_add_button()}
-								</Button>
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addEnvVar}
+									disabled={isLoading}
+									customLabel={m.variables_add_button()}
+									class="shrink-0"
+								/>
 							</div>
 						</div>
 					</Card.Header>

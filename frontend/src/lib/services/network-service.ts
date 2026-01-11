@@ -1,6 +1,12 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { NetworkSummaryDto, NetworkUsageCounts, NetworkCreateRequest, NetworkCreateOptions } from '$lib/types/network.type';
+import type {
+	NetworkSummaryDto,
+	NetworkUsageCounts,
+	NetworkCreateRequest,
+	NetworkCreateOptions,
+	NetworkInspectDto
+} from '$lib/types/network.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
@@ -20,11 +26,9 @@ export class NetworkService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getNetwork(networkId: string, sort?: string, order?: string): Promise<any> {
+	async getNetwork(networkId: string, options?: SearchPaginationSortRequest): Promise<NetworkInspectDto> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const params: Record<string, string> = {};
-		if (sort) params['sort[column]'] = sort;
-		if (order) params['sort[direction]'] = order;
+		const params = transformPaginationParams(options);
 		return this.handleResponse(this.api.get(`/environments/${envId}/networks/${networkId}`, { params }));
 	}
 

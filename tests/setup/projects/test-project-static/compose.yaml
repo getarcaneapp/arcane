@@ -5,7 +5,7 @@ services:
     env_file:
       - .env
     ports:
-      - '8081:80'
+      - "8081:80"
     volumes:
       - nginx_data:/usr/share/nginx/html
     restart: unless-stopped

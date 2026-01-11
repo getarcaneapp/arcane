@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -9,6 +9,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
@@ -161,8 +162,9 @@
 				toast.error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 		} catch (error: any) {
-			const errorMessage = error?.response?.data?.error || error?.message || 'Unknown error';
-			toast.error(m.upgrade_failed({ error: errorMessage }));
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 		} finally {
 			isLoading.upgrading = false;
 			upgradingEnvironmentId = null;
@@ -223,7 +225,9 @@
 	] satisfies ColumnSpec<Environment>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_enabled(), defaultVisible: true },
 		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true }
 	];
 
@@ -307,10 +311,16 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="ghost"
+					size="icon"
+					class="relative size-8 p-0"
+					icon={EllipsisIcon}
+					showLabel={false}
+					customLabel={m.common_open_menu()}
+				/>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">

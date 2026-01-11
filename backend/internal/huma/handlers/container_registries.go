@@ -8,7 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -32,10 +32,11 @@ type ContainerRegistryPaginatedResponse struct {
 }
 
 type ListContainerRegistriesInput struct {
-	Page    int    `query:"pagination[page]" default:"1" doc:"Page number"`
-	Limit   int    `query:"pagination[limit]" default:"20" doc:"Items per page"`
-	SortCol string `query:"sort[column]" doc:"Column to sort by"`
-	SortDir string `query:"sort[direction]" default:"asc" doc:"Sort direction"`
+	Search string `query:"search" doc:"Search query"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Start  int    `query:"start" default:"0" doc:"Start index"`
+	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListContainerRegistriesOutput struct {
@@ -201,7 +202,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParams(input.Page, input.Limit, input.SortCol, input.SortDir)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {
@@ -227,6 +228,10 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*CreateContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
@@ -279,6 +284,10 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -304,6 +313,10 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryDeletionError{Err: err}).Error())
@@ -325,13 +338,17 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryRetrievalError{Err: err}).Error())
 	}
 
-	decryptedToken, err := utils.Decrypt(reg.Token)
+	decryptedToken, err := crypto.Decrypt(reg.Token)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.TokenDecryptionError{Err: err}).Error())
 	}
@@ -355,6 +372,10 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*SyncContainerRegistriesOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -145,7 +145,7 @@ func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repo
 		if reg.Username == "" || reg.Token == "" {
 			continue
 		}
-		decrypted, decErr := utils.Decrypt(reg.Token)
+		decrypted, decErr := crypto.Decrypt(reg.Token)
 		if decErr != nil {
 			lastErr = decErr
 			continue
@@ -730,7 +730,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 			if _, exists := credMap[host]; !exists {
 				credMap[host] = batchCred{username: c.Username, token: c.Token}
 			}
-			encToken, encErr := utils.Encrypt(c.Token)
+			encToken, encErr := crypto.Encrypt(c.Token)
 			if encErr != nil {
 				slog.WarnContext(ctx, "Failed to encrypt external registry token", "registryURL", c.URL, "error", encErr.Error())
 				continue
@@ -761,7 +761,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 		if host == "" {
 			continue
 		}
-		dec, decErr := utils.Decrypt(r.Token)
+		dec, decErr := crypto.Decrypt(r.Token)
 		if decErr != nil {
 			slog.DebugContext(ctx, "Decrypt registry token failed", "registryURL", r.URL, "error", decErr.Error())
 			continue
@@ -953,19 +953,19 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	regAuthMap := s.buildRegistryAuthMap(ctx, rc, regRepos, credMap)
 
 	var mu sync.Mutex
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
 		g.Go(func() error {
-			res := s.checkSingleImageInBatch(ctx, rc, regAuthMap, enabledRegs, img.parts)
+			res := s.checkSingleImageInBatch(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
 
 			mu.Lock()
 			results[img.ref] = res
 			mu.Unlock()
 
-			if err := s.saveUpdateResult(ctx, img.ref, res); err != nil {
-				slog.WarnContext(ctx, "Failed to save update result", "imageRef", img.ref, "error", err.Error())
+			if err := s.saveUpdateResult(groupCtx, img.ref, res); err != nil {
+				slog.WarnContext(groupCtx, "Failed to save update result", "imageRef", img.ref, "error", err.Error())
 			}
 			return nil
 		})
@@ -1098,22 +1098,22 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 		errorsCount       int64
 	)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Count(&totalImages).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Count(&totalImages).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ?", true).Count(&imagesWithUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ?", true).Count(&imagesWithUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "digest").Count(&digestUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "digest").Count(&digestUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "tag").Count(&tagUpdates).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "tag").Count(&tagUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("last_error IS NOT NULL").Count(&errorsCount).Error
+		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("last_error IS NOT NULL").Count(&errorsCount).Error
 	})
 
 	if err := g.Wait(); err != nil {

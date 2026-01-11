@@ -29,14 +29,8 @@ test.describe('Networks Page', () => {
     // Fetch counts directly in the test to ensure we have fresh data
     const counts = await fetchNetworksCountsWithRetry(page);
 
-    console.log('Network Counts:', counts);
-
-    // Use the new stat card structure with h3 for values
-    const totalValue = page.locator('div:has(> p:has-text("Total Networks")) h3').first();
-    const unusedValue = page.locator('div:has(> p:has-text("Unused Networks")) h3').first();
-
-    await expect(totalValue).toHaveText(String(counts.total));
-    await expect(unusedValue).toHaveText(String(counts.unused));
+    await expect(page.getByText(`${counts.total} Total Networks`)).toBeVisible();
+    await expect(page.getByText(`${counts.unused} Unused Networks`)).toBeVisible();
   });
 
   test('Table displays when networks exist, else empty state', async ({ page }) => {
@@ -51,7 +45,7 @@ test.describe('Networks Page', () => {
 
   test('Open Create Network sheet', async ({ page }) => {
     await navigateToNetworks(page);
-    await page.locator('button:has-text("Create Network")').first().click();
+    await page.getByRole('button', { name: 'Create Network' }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
 
@@ -63,7 +57,7 @@ test.describe('Networks Page', () => {
       await page.locator('input[id^="network-name-"]').first().fill(networkName);
     }
 
-    await page.getByRole('dialog').locator('button:has-text("Create Network")').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Create Network' }).click();
     await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
   });
 
@@ -77,9 +71,22 @@ test.describe('Networks Page', () => {
   });
 
   test('Remove Network from table', async ({ page }) => {
-    const networkName = 'my-test-network';
+    const networkName = `test-remove-network-${Date.now()}`;
     await navigateToNetworks(page);
 
+    // 1. Create the network first
+    await page.getByRole('button', { name: 'Create Network' }).first().click();
+    const nameInput = page.getByLabel('Name').first();
+    if (await nameInput.isVisible().catch(() => false)) {
+      await nameInput.fill(networkName);
+    } else {
+      await page.getByRole('textbox', { name: 'Network Name *' }).fill(networkName);
+    }
+    await page.getByLabel('Create New Network').getByRole('button', { name: 'Create Network' }).click();
+    await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
+
+    // 2. Find and remove it
+    await navigateToNetworks(page);
     const row = page.locator('tbody tr', { has: page.getByText(networkName) }).first();
     await expect(row).toBeVisible();
 
@@ -96,7 +103,7 @@ test.describe('Networks Page', () => {
     await page.goto(`/networks/${bridge.id}`);
     await page.waitForLoadState('networkidle');
 
-    const removeBtn = page.getByRole('button', { name: 'Remove Network' });
+    const removeBtn = page.getByRole('button', { name: 'Remove' });
     await expect(removeBtn).toBeDisabled();
   });
 

@@ -128,25 +128,11 @@ type Inspect struct {
 	// Required: true
 	Created time.Time `json:"created"`
 
-	// Options contains driver-specific options.
-	//
-	// Required: true
-	Options map[string]string `json:"options"`
+	// EnableIPv4 represents whether IPv4 is enabled.
+	EnableIPv4 bool `json:"enableIPv4"`
 
-	// Labels contains user-defined metadata for the network.
-	//
-	// Required: true
-	Labels map[string]string `json:"labels"`
-
-	// Containers is a map of containers connected to this network.
-	//
-	// Required: true
-	Containers map[string]network.EndpointResource `json:"containers"`
-
-	// ContainersList is a sorted list of containers connected to this network.
-	//
-	// Required: true
-	ContainersList []ContainerEndpoint `json:"containersList"`
+	// EnableIPv6 represents whether IPv6 is enabled.
+	EnableIPv6 bool `json:"enableIPv6"`
 
 	// IPAM contains IP address management configuration.
 	//
@@ -167,6 +153,38 @@ type Inspect struct {
 	//
 	// Required: true
 	Ingress bool `json:"ingress"`
+
+	// ConfigFrom specifies the source which will provide the configuration for this network.
+	ConfigFrom network.ConfigReference `json:"configFrom"`
+
+	// ConfigOnly networks are place-holder networks.
+	ConfigOnly bool `json:"configOnly"`
+
+	// Containers is a map of containers connected to this network.
+	//
+	// Required: true
+	Containers map[string]network.EndpointResource `json:"containers"`
+
+	// Options contains driver-specific options.
+	//
+	// Required: true
+	Options map[string]string `json:"options"`
+
+	// Labels contains user-defined metadata for the network.
+	//
+	// Required: true
+	Labels map[string]string `json:"labels"`
+
+	// Peers is the list of peer nodes for an overlay network.
+	Peers []network.PeerInfo `json:"peers,omitempty"`
+
+	// Services contains service info.
+	Services map[string]network.ServiceInfo `json:"services,omitempty"`
+
+	// ContainersList is a sorted list of containers connected to this network.
+	//
+	// Required: true
+	ContainersList []ContainerEndpoint `json:"containersList"`
 }
 
 type CreateResponse struct {

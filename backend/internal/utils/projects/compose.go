@@ -52,24 +52,17 @@ func (w writerConsumer) Start(container string)       {}
 func (w writerConsumer) Stop(container string)        {}
 func (w writerConsumer) Status(container, msg string) {}
 func (w writerConsumer) Log(container, msg string) {
-	if w.out == nil {
-		return
-	}
-	// Include container/service name in the format expected by NormalizeProjectLine
-	output := msg
-	if container != "" {
-		output = container + " | " + msg
-	}
-	if !strings.HasSuffix(output, "\n") {
-		output += "\n"
-	}
-	_, _ = io.WriteString(w.out, output)
+	w.write(container, msg)
 }
+
 func (w writerConsumer) Err(container, msg string) {
+	w.write(container, msg)
+}
+
+func (w writerConsumer) write(container, msg string) {
 	if w.out == nil {
 		return
 	}
-	// Include container/service name in the format expected by NormalizeProjectLine
 	output := msg
 	if container != "" {
 		output = container + " | " + msg

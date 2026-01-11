@@ -61,17 +61,35 @@ export function decodeFilters(pairs?: [string, unknown][]): ColumnFiltersState {
 	return pairs.map(([id, value]) => ({ id, value }));
 }
 
-export function encodeMobileHidden(visibility: Record<string, boolean>): string[] {
-	const hidden: string[] = [];
+export function encodeMobileVisibility(visibility: Record<string, boolean>): string[] {
+	const encoded: string[] = [];
 	for (const [id, visible] of Object.entries(visibility)) {
-		if (visible === false) hidden.push(id);
+		encoded.push(visible ? id : `-${id}`);
 	}
-	return hidden;
+	return encoded;
 }
 
-export function applyMobileHiddenPatch(target: Record<string, boolean>, hidden?: string[]) {
-	if (!hidden?.length) return;
-	for (const id of hidden) {
-		target[id] = false;
+export function decodeMobileVisibility(encoded?: string[]): Record<string, boolean> {
+	if (!encoded?.length) return {};
+	const visibility: Record<string, boolean> = {};
+	for (const entry of encoded) {
+		if (entry.startsWith('-')) {
+			visibility[entry.slice(1)] = false;
+		} else {
+			visibility[entry] = true;
+		}
 	}
+	return visibility;
+}
+
+export function buildMobileVisibility(fields: FieldSpec[], persisted?: string[]): Record<string, boolean> {
+	const visibility: Record<string, boolean> = {};
+	for (const field of fields) {
+		visibility[field.id] = field.defaultVisible ?? true;
+	}
+	const overrides = decodeMobileVisibility(persisted);
+	for (const [id, visible] of Object.entries(overrides)) {
+		visibility[id] = visible;
+	}
+	return visibility;
 }

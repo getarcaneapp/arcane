@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -23,10 +23,13 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
+	import ContainerStatsCell from './components/container-stats-cell.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import {
 		StartIcon,
 		StopIcon,
@@ -60,6 +63,8 @@
 	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 
+	let statsManager = $state<ContainerStatsManager | null>(null);
+
 	// Parse image reference into repo and tag
 	function parseImageRef(imageRef: string): { repo: string; tag: string } {
 		// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
@@ -74,6 +79,13 @@
 			};
 		}
 		return { repo: imageRef, tag: 'latest' };
+	}
+
+	function getContainerDisplayName(container: ContainerSummaryDto): string {
+		if (container.names && container.names.length > 0) {
+			return container.names[0].replace(/^\//, '');
+		}
+		return container.id.substring(0, 12);
 	}
 
 	function getActionStatusMessage(status: ActionStatus): string {
@@ -149,10 +161,10 @@
 		}
 	}
 
-	async function handleRemoveContainer(id: string) {
+	async function handleRemoveContainer(id: string, name: string) {
 		openConfirmDialog({
 			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message(),
+			message: m.containers_remove_confirm_message({ resource: name }),
 			checkboxes: [
 				{
 					id: 'force',
@@ -189,13 +201,14 @@
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
-		const containerName = container.names?.[0]?.replace(/^\//, '') || container.id.substring(0, 12);
+		const containerName = getContainerDisplayName(container);
 
 		openConfirmDialog({
 			title: m.containers_update_confirm_title(),
 			message: m.containers_update_confirm_message({ name: containerName }),
 			confirm: {
 				label: m.containers_update_container(),
+				destructive: false,
 				action: async () => {
 					actionStatus[container.id] = 'updating';
 					try {
@@ -234,9 +247,75 @@
 	let customSettings = $state<Record<string, unknown>>({});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
+	let columnVisibility = $state<Record<string, boolean>>({});
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
+
+		statsManager = new ContainerStatsManager();
+
+		// Check if stats columns are visible
+		const areStatsColumnsVisible = () => {
+			const cpuVisible = columnVisibility.cpuUsage !== false;
+			const memoryVisible = columnVisibility.memoryUsage !== false;
+			return cpuVisible || memoryVisible;
+		};
+
+		// Function to sync connections with running containers
+		const syncConnections = () => {
+			if (!statsManager) return;
+
+			// Only connect if stats columns are visible
+			if (!areStatsColumnsVisible()) {
+				// Disconnect all if columns are hidden
+				const connectedIds = statsManager.getConnectedIds();
+				for (const id of connectedIds) {
+					statsManager.disconnect(id);
+				}
+				return;
+			}
+
+			const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
+			const runningIds = new Set(runningContainers.map((c) => c.id));
+
+			const envId = environmentStore.selected?.id || '0';
+
+			// Connect new running containers
+			for (const container of runningContainers) {
+				if (!statsManager.hasConnection(container.id)) {
+					statsManager.connect(container.id, envId);
+				}
+			}
+
+			// Disconnect stopped containers
+			const connectedIds = statsManager.getConnectedIds();
+			for (const id of connectedIds) {
+				if (!runningIds.has(id)) {
+					statsManager.disconnect(id);
+				}
+			}
+		};
+
+		// Sync connections when containers or column visibility changes
+		const unsubscribe = $effect.root(() => {
+			$effect(() => {
+				// Track containers.data changes
+				containers.data;
+				// Track environment changes
+				environmentStore.selected?.id;
+				// Track column visibility changes
+				columnVisibility;
+
+				syncConnections();
+			});
+
+			return () => {};
+		});
+
+		return () => {
+			unsubscribe();
+			statsManager?.destroy();
+		};
 	});
 
 	let groupByProject = $derived.by(() => {
@@ -266,40 +345,42 @@
 	}
 
 	const columns = $derived([
+		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
-		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
+		{
+			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
+			id: 'cpuUsage',
+			title: m.containers_cpu_usage(),
+			sortable: false,
+			cell: CPUCell
+		},
+		{
+			accessorFn: (row) => statsManager?.getMemoryPercent(row.id) ?? -1,
+			id: 'memoryUsage',
+			title: m.containers_memory_usage(),
+			sortable: false,
+			cell: MemoryCell
+		},
 		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
-		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
+		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
-
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? true
-		}))
-	);
 
 	function getProjectName(container: ContainerSummaryDto): string {
 		const projectLabel = container.labels?.['com.docker.compose.project'];
@@ -334,6 +415,20 @@
 	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
 {/snippet}
 
+{#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
+	<ContainerStatsCell
+		value={statsManager?.getCPUPercent(item.id)}
+		loading={statsManager?.isLoading(item.id) ?? false}
+		stopped={item.state !== 'running'}
+		type="cpu"
+	/>
+{/snippet}
+
+{#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
+	{@const memoryData = statsManager?.getMemoryUsage(item.id)}
+	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
+{/snippet}
+
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
 	<PortBadge ports={item.ports ?? []} />
 {/snippet}
@@ -349,7 +444,7 @@
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
-	<span class="font-mono text-sm">{String(item.id).substring(0, 12)}</span>
+	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
@@ -367,55 +462,55 @@
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="outline"
 					size="sm"
-					class="size-7 p-0"
+					class="size-7 border-transparent bg-transparent p-0 text-green-600 shadow-none hover:bg-green-600/10 hover:text-green-500"
 					onclick={() => performContainerAction('start', item.id)}
 					disabled={isAnyLoading}
+					icon={StartIcon}
 					title={m.common_start()}
-				>
-					<StartIcon class="size-3.5" />
-				</Button>
+				/>
 			{:else if !status && item.state === 'running'}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="outline"
 					size="sm"
-					class="size-7 p-0"
+					class="size-7 border-transparent bg-transparent p-0 text-red-600 shadow-none hover:bg-red-600/10 hover:text-red-500"
 					onclick={() => performContainerAction('stop', item.id)}
 					disabled={isAnyLoading}
 					title={m.common_stop()}
-				>
-					<StopIcon class="size-3.5" />
-				</Button>
+					icon={StopIcon}
+				/>
 			{/if}
 			{#if !status && item.updateInfo?.hasUpdate}
-				<Button
-					variant="ghost"
+				<ArcaneButton
+					action="base"
+					tone="ghost"
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
 					title={m.containers_update_container()}
-				>
-					<UpdateIcon class="size-3.5" />
-				</Button>
+					icon={UpdateIcon}
+				/>
 			{/if}
 		</div>
 	</div>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
-	<Tooltip.Provider>
-		<Tooltip.Root>
-			<Tooltip.Trigger class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			<span class="block w-full cursor-default truncate text-left">
 				{item.image}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<p>{item.image}</p>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content>
+			<p>{item.image}</p>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
@@ -482,6 +577,14 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+			},
+			{
+				label: m.containers_ip_address(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				icon: NetworksIcon,
+				iconVariant: 'sky' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility.ipAddress ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
@@ -519,10 +622,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
 					<span class="sr-only">{m.common_open_menu()}</span>
 					<EllipsisIcon />
-				</Button>
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -585,7 +688,7 @@
 
 				<DropdownMenu.Item
 					variant="destructive"
-					onclick={() => handleRemoveContainer(item.id)}
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
 					disabled={status === 'removing' || isAnyLoading}
 				>
 					{#if status === 'removing'}
@@ -607,6 +710,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
+	bind:columnVisibility
 	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
 	{columns}
 	{mobileFields}
@@ -623,7 +727,17 @@
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 
-{#snippet GroupedTableView({ table, renderPagination }: { table: TableType<ContainerSummaryDto>; renderPagination: import('svelte').Snippet })}
+{#snippet GroupedTableView({
+	table,
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
+}: {
+	table: TableType<ContainerSummaryDto>;
+	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
+})}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar
@@ -697,7 +811,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-4 px-6 py-2 md:hidden">
+		<div class="space-y-4 py-2 md:hidden">
 			{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
 				{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
 				{@const projectRows = table
@@ -710,15 +824,13 @@
 					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
 					icon={ProjectsIcon}
 				>
-					<div class="space-y-3">
-						{#each projectRows as row (row.id)}
-							{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
-						{:else}
-							<div class="h-24 flex items-center justify-center text-center text-muted-foreground">
-								{m.common_no_results_found()}
-							</div>
-						{/each}
-					</div>
+					{#each projectRows as row (row.id)}
+						{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
+					{:else}
+						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
+							{m.common_no_results_found()}
+						</div>
+					{/each}
 				</DropdownCard>
 			{/each}
 		</div>
