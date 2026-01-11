@@ -8,7 +8,16 @@ import { m } from '$lib/paraglide/messages';
 export class ProjectService extends BaseAPIService {
 	async getProjects(options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const params = transformPaginationParams(options);
+
+		// Map projectStatus back to status for the API
+		const apiOptions = options ? { ...options } : undefined;
+		if (apiOptions?.filters && 'projectStatus' in apiOptions.filters) {
+			apiOptions.filters = { ...apiOptions.filters };
+			apiOptions.filters.status = apiOptions.filters.projectStatus;
+			delete apiOptions.filters.projectStatus;
+		}
+
+		const params = transformPaginationParams(apiOptions);
 		const res = await this.api.get(`/environments/${envId}/projects`, { params });
 		return res.data;
 	}

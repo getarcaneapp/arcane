@@ -39,7 +39,9 @@
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
-	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
+	const projectStatusColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'projectStatus') ? table.getColumn('projectStatus') : undefined
+	);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
@@ -70,8 +72,8 @@
 			</div>
 
 			<div class="flex flex-wrap items-center gap-2 sm:gap-0 sm:space-x-2">
-				{#if statusColumn}
-					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={statusFilters} />
+				{#if projectStatusColumn}
+					<DataTableFacetedFilter column={projectStatusColumn} title={m.common_status()} options={statusFilters} />
 				{/if}
 				{#if typeColumn && !severityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />

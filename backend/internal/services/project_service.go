@@ -1225,33 +1225,111 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
 	var projectsArray []models.Project
-	query := s.db.WithContext(ctx).Model(&models.Project{})
 
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
+	// We fetch all projects from the database first, then enrich with live status,
+	// and finally filter and paginate in memory. This ensures the status filter
+	// always works against the true live status.
+	if err := s.db.WithContext(ctx).Find(&projectsArray).Error; err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to fetch projects: %w", err)
 	}
-
-	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
-
-	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate projects: %w", err)
-	}
-
-	slog.DebugContext(ctx, "Retrieved projects from database",
-		"count", len(projectsArray))
 
 	// Fetch live status concurrently for all projects
-	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	enriched := s.fetchProjectStatusConcurrently(ctx, projectsArray)
 
-	slog.DebugContext(ctx, "Completed ListProjects request",
-		"result_count", len(result))
+	// In-memory pagination/filtering/sorting
+	config := s.getProjectPaginationConfig()
+	result := pagination.SearchOrderAndPaginate(enriched, params, config)
 
-	return result, paginationResp, nil
+	totalPages := int64(0)
+	if params.Limit > 0 {
+		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
+	}
+
+	page := 1
+	if params.Limit > 0 {
+		page = (params.Start / params.Limit) + 1
+	}
+
+	paginationResp := pagination.Response{
+		TotalPages:      totalPages,
+		TotalItems:      int64(result.TotalCount),
+		CurrentPage:     page,
+		ItemsPerPage:    params.Limit,
+		GrandTotalItems: int64(result.TotalAvailable),
+	}
+
+	return result.Items, paginationResp, nil
+}
+
+func (s *ProjectService) getProjectPaginationConfig() pagination.Config[project.Details] {
+	return pagination.Config[project.Details]{
+		SearchAccessors: []pagination.SearchAccessor[project.Details]{
+			func(p project.Details) (string, error) {
+				return p.Name, nil
+			},
+			func(p project.Details) (string, error) {
+				return p.Path, nil
+			},
+			func(p project.Details) (string, error) {
+				return p.DirName, nil
+			},
+			func(p project.Details) (string, error) {
+				return p.Status, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[project.Details]{
+			{
+				Key: "name",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+				},
+			},
+			{
+				Key: "status",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(strings.ToLower(a.Status), strings.ToLower(b.Status))
+				},
+			},
+			{
+				Key: "projectStatus", // Map frontend ID
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(strings.ToLower(a.Status), strings.ToLower(b.Status))
+				},
+			},
+			{
+				Key: "createdAt",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(a.CreatedAt, b.CreatedAt)
+				},
+			},
+			{
+				Key: "serviceCount",
+				Fn: func(a, b project.Details) int {
+					if a.ServiceCount < b.ServiceCount {
+						return -1
+					}
+					if a.ServiceCount > b.ServiceCount {
+						return 1
+					}
+					return 0
+				},
+			},
+		},
+		FilterAccessors: []pagination.FilterAccessor[project.Details]{
+			{
+				Key: "status",
+				Fn: func(p project.Details, filterValue string) bool {
+					return strings.EqualFold(p.Status, filterValue)
+				},
+			},
+			{
+				Key: "projectStatus", // Map frontend ID
+				Fn: func(p project.Details, filterValue string) bool {
+					return strings.EqualFold(p.Status, filterValue)
+				},
+			},
+		},
+	}
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel

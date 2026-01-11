@@ -154,7 +154,7 @@
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
-		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'status', id: 'projectStatus', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'serviceCount', title: m.compose_services(), sortable: true }
 	] satisfies ColumnSpec<Project>[];
@@ -162,7 +162,7 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'projectStatus', label: m.common_status(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
@@ -232,7 +232,7 @@
 		subtitle={(item: Project) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item: Project) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.projectStatus ?? true)
 					? {
 							variant: getStatusVariant(item.status),
 							text: capitalizeFirstLetter(item.status),
