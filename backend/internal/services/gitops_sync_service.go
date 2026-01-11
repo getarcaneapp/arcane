@@ -133,9 +133,11 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		Username:     &systemUser.Username,
 	})
 
-	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
-		slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
-		// Don't fail the entire creation - the sync config exists and can be retried
+	if sync.Enabled {
+		if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
+			slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
+			// Don't fail the entire creation - the sync config exists and can be retried
+		}
 	}
 
 	return s.GetSyncByID(ctx, "", sync.ID)
@@ -370,7 +372,8 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 		// Check if sync is due
 		if sync.LastSyncAt != nil {
 			nextSync := sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute)
-			if time.Now().Before(nextSync) {
+			// Use a 30-second buffer to account for execution time drift
+			if time.Now().Add(30 * time.Second).Before(nextSync) {
 				continue
 			}
 		}

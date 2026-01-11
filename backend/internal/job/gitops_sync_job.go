@@ -32,8 +32,8 @@ func (j *GitOpsSyncJob) Register(ctx context.Context) error {
 		return nil
 	}
 
-	// Default interval: 5 minutes
-	interval := 5 * time.Minute
+	// Default interval: 1 minute to check for due syncs
+	interval := 1 * time.Minute
 
 	slog.InfoContext(ctx, "registering GitOps sync job", "interval", interval.String())
 
