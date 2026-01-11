@@ -49,7 +49,7 @@ func NewProjectService(db *database.DB, cfg *config.Config, settingsService *Set
 		imageService:    imageService,
 		dockerService:   dockerService,
 		customFilesConfig: projects.CustomFilesConfig{
-			AllowedPaths: projects.ParseAllowedPaths(cfg.CustomFilesAllowedPaths),
+			AllowedPaths: projects.ParseAllowedPaths(cfg.AllowedCustomFilePaths),
 		},
 	}
 }

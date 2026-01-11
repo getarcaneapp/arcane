@@ -124,7 +124,13 @@ func ValidateCustomFilePath(projectDir, filePath string, cfg CustomFilesConfig) 
 
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid project directory: %w", err)
+	}
+	absProjectDir = filepath.Clean(absProjectDir)
+
+	// Resolve symlinks for the project directory if it exists
+	if evalProjectDir, err := filepath.EvalSymlinks(absProjectDir); err == nil {
+		absProjectDir = evalProjectDir
 	}
 
 	// Resolve to absolute path
@@ -163,7 +169,7 @@ func ValidateCustomFilePath(projectDir, filePath string, cfg CustomFilesConfig) 
 	// Path must be within project or an allowed directory
 	if !withinProject && !withinAllowed {
 		if len(cfg.AllowedPaths) == 0 {
-			return "", fmt.Errorf("path outside project; configure CUSTOM_FILES_ALLOWED_PATHS to allow external paths")
+			return "", fmt.Errorf("path outside project; configure ALLOWED_CUSTOM_FILE_PATHS to allow external paths")
 		}
 		return "", fmt.Errorf("path not in project or allowed directories")
 	}
@@ -193,6 +199,26 @@ func manifestPath(absPath, absProjectDir string) string {
 	return absPath
 }
 
+// addToManifest adds a file path to the manifest if not already present.
+func addToManifest(projectDir, absPath string) error {
+	absProjectDir, _ := filepath.Abs(projectDir)
+	mPath := manifestPath(absPath, absProjectDir)
+
+	manifest, err := ReadManifest(projectDir)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range manifest.CustomFiles {
+		if f == mPath {
+			return nil // Already registered
+		}
+	}
+
+	manifest.CustomFiles = append(manifest.CustomFiles, mPath)
+	return WriteManifest(projectDir, manifest)
+}
+
 // RegisterCustomFile adds a file to the manifest. Creates empty file if it doesn't exist.
 func RegisterCustomFile(projectDir, filePath string, cfg CustomFilesConfig) error {
 	absPath, err := ValidateCustomFilePath(projectDir, filePath, cfg)
@@ -212,22 +238,7 @@ func RegisterCustomFile(projectDir, filePath string, cfg CustomFilesConfig) erro
 		}
 	}
 
-	absProjectDir, _ := filepath.Abs(projectDir)
-	mPath := manifestPath(absPath, absProjectDir)
-
-	manifest, err := ReadManifest(projectDir)
-	if err != nil {
-		return err
-	}
-
-	for _, f := range manifest.CustomFiles {
-		if f == mPath {
-			return nil
-		}
-	}
-
-	manifest.CustomFiles = append(manifest.CustomFiles, mPath)
-	return WriteManifest(projectDir, manifest)
+	return addToManifest(projectDir, absPath)
 }
 
 // WriteCustomFile writes content to a file and adds it to the manifest.
@@ -243,25 +254,10 @@ func WriteCustomFile(projectDir, filePath, content string, cfg CustomFilesConfig
 		}
 	}
 	if err := os.WriteFile(absPath, []byte(content), common.FilePerm); err != nil {
-		return err
+		return fmt.Errorf("failed to write custom file: %w", err)
 	}
 
-	absProjectDir, _ := filepath.Abs(projectDir)
-	mPath := manifestPath(absPath, absProjectDir)
-
-	manifest, err := ReadManifest(projectDir)
-	if err != nil {
-		return err
-	}
-
-	for _, f := range manifest.CustomFiles {
-		if f == mPath {
-			return nil
-		}
-	}
-
-	manifest.CustomFiles = append(manifest.CustomFiles, mPath)
-	return WriteManifest(projectDir, manifest)
+	return addToManifest(projectDir, absPath)
 }
 
 // RemoveCustomFile removes a file from the manifest.
