@@ -17,7 +17,7 @@
 		value = $bindable(''),
 		language = 'yaml' as CodeLanguage,
 		readOnly = false,
-		fontSize = '13px',
+		fontSize = '12px',
 		autoHeight = false
 	}: {
 		value: string;
@@ -173,7 +173,4 @@
 	});
 </script>
 
-<div
-	bind:this={container}
-	class="relative min-h-0 w-full overflow-hidden {autoHeight ? '' : 'h-full'}"
-></div>
+<div bind:this={container} class="relative min-h-0 w-full overflow-hidden {autoHeight ? '' : 'h-full'}"></div>

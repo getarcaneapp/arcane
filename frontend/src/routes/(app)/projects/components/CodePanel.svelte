@@ -41,7 +41,7 @@
 	<Card.Content class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible p-0">
 		<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0 overflow-visible">
 			{#if useMobileEditor}
-				<MobileCodeEditor bind:value {language} fontSize="13px" autoHeight={effectiveAutoHeight} />
+				<MobileCodeEditor bind:value {language} fontSize="13px" autoHeight={effectiveAutoHeight} {readOnly} />
 			{:else if effectiveAutoHeight}
 				<CodeEditor bind:value {language} fontSize="13px" autoHeight={true} {readOnly} />
 			{:else}
