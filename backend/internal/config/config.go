@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -14,91 +17,200 @@ const (
 	AppEnvironmentProduction  AppEnvironment = "production"
 	AppEnvironmentDevelopment AppEnvironment = "development"
 	AppEnvironmentTest        AppEnvironment = "test"
-	defaultSqliteString       string         = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
 )
 
+// Config holds all application configuration.
+// Fields tagged with `env` will be loaded from the corresponding environment variable.
+// Fields with `options:"file"` support Docker secrets via the _FILE suffix.
+// Available options: file, toLower, trimTrailingSlash
 type Config struct {
-	AppUrl        string
-	DatabaseURL   string
-	Port          string
-	Environment   AppEnvironment
-	JWTSecret     string
-	EncryptionKey string
+	AppUrl        string         `env:"APP_URL" default:"http://localhost:3552"`
+	DatabaseURL   string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	Port          string         `env:"PORT" default:"3552"`
+	Environment   AppEnvironment `env:"ENVIRONMENT" default:"production"`
+	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
+	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 
-	OidcEnabled       bool
-	OidcClientID      string
-	OidcClientSecret  string
-	OidcIssuerURL     string
-	OidcScopes        string
-	OidcAdminClaim    string
-	OidcAdminValue    string
-	OidcSkipTlsVerify bool
+	OidcEnabled       bool   `env:"OIDC_ENABLED" default:"false"`
+	OidcClientID      string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
+	OidcClientSecret  string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
+	OidcIssuerURL     string `env:"OIDC_ISSUER_URL" default:""`
+	OidcScopes        string `env:"OIDC_SCOPES" default:"openid email profile"`
+	OidcAdminClaim    string `env:"OIDC_ADMIN_CLAIM" default:""`
+	OidcAdminValue    string `env:"OIDC_ADMIN_VALUE" default:""`
+	OidcSkipTlsVerify bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
 
-	DockerHost              string
-	ProjectsDirectory       string
-	LogJson                 bool
-	LogLevel                string
-	AgentMode               bool
-	AgentToken              string
-	ManagerApiUrl           string
-	UpdateCheckDisabled     bool
-	UIConfigurationDisabled bool
-	AnalyticsDisabled       bool
-	GPUMonitoringEnabled    bool
-	GPUType                 string
+	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
+	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
+	LogJson                 bool   `env:"LOG_JSON" default:"false"`
+	LogLevel                string `env:"LOG_LEVEL" default:"info" options:"toLower"`
+	AgentMode               bool   `env:"AGENT_MODE" default:"false"`
+	AgentToken              string `env:"AGENT_TOKEN" default:"" options:"file"`
+	ManagerApiUrl           string `env:"MANAGER_API_URL" default:""`
+	UpdateCheckDisabled     bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
+	UIConfigurationDisabled bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
+	AnalyticsDisabled       bool   `env:"ANALYTICS_DISABLED" default:"false"`
+	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
+	GPUType                 string `env:"GPU_TYPE" default:"auto"`
 
-	FilePerm   os.FileMode
-	DirPerm    os.FileMode
-	GitWorkDir string
+	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
+	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
+	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
 }
 
 func Load() *Config {
-	cfg := &Config{
-		AppUrl:        getEnvOrDefault("APP_URL", "http://localhost:3552"),
-		DatabaseURL:   getEnvOrDefault("DATABASE_URL", defaultSqliteString),
-		Port:          getEnvOrDefault("PORT", "3552"),
-		Environment:   getEnvOrDefault("ENVIRONMENT", AppEnvironmentProduction),
-		JWTSecret:     getEnvOrDefault("JWT_SECRET", "default-jwt-secret-change-me"),
-		EncryptionKey: getEnvOrDefault("ENCRYPTION_KEY", "arcane-dev-key-32-characters!!!"),
+	cfg := &Config{}
+	loadFromEnv(cfg)
+	applyOptions(cfg)
 
-		OidcEnabled:       getBoolEnvOrDefault("OIDC_ENABLED", false),
-		OidcClientID:      getEnvOrDefault("OIDC_CLIENT_ID", ""),
-		OidcClientSecret:  getEnvOrDefault("OIDC_CLIENT_SECRET", ""),
-		OidcIssuerURL:     getEnvOrDefault("OIDC_ISSUER_URL", ""),
-		OidcScopes:        getEnvOrDefault("OIDC_SCOPES", "openid email profile"),
-		OidcAdminClaim:    getEnvOrDefault("OIDC_ADMIN_CLAIM", ""),
-		OidcAdminValue:    getEnvOrDefault("OIDC_ADMIN_VALUE", ""),
-		OidcSkipTlsVerify: getBoolEnvOrDefault("OIDC_SKIP_TLS_VERIFY", false),
-
-		DockerHost:              getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"),
-		ProjectsDirectory:       os.Getenv("PROJECTS_DIRECTORY"),
-		LogJson:                 getBoolEnvOrDefault("LOG_JSON", false),
-		LogLevel:                strings.ToLower(getEnvOrDefault("LOG_LEVEL", "info")),
-		AgentMode:               getBoolEnvOrDefault("AGENT_MODE", false),
-		AgentToken:              os.Getenv("AGENT_TOKEN"),
-		ManagerApiUrl:           os.Getenv("MANAGER_API_URL"),
-		UpdateCheckDisabled:     getBoolEnvOrDefault("UPDATE_CHECK_DISABLED", false),
-		UIConfigurationDisabled: getBoolEnvOrDefault("UI_CONFIGURATION_DISABLED", false),
-		AnalyticsDisabled:       getBoolEnvOrDefault("ANALYTICS_DISABLED", false),
-		GPUMonitoringEnabled:    getBoolEnvOrDefault("GPU_MONITORING_ENABLED", false),
-		GPUType:                 getEnvOrDefault("GPU_TYPE", "auto"),
-
-		FilePerm:   getFileModeEnvOrDefault("FILE_PERM", 0644),
-		DirPerm:    getFileModeEnvOrDefault("DIR_PERM", 0755),
-		GitWorkDir: getEnvOrDefault("GIT_WORK_DIR", "data/git"),
-	}
-
+	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
 	common.DirPerm = cfg.DirPerm
 
 	return cfg
 }
 
-func getEnvOrDefault[T interface{ ~string }](key string, defaultValue T) T {
-	if value := os.Getenv(key); value != "" {
-		return T(trimQuotes(value))
+// loadFromEnv uses reflection to load configuration from environment variables.
+func loadFromEnv(cfg *Config) {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		envTag := fieldType.Tag.Get("env")
+		if envTag == "" {
+			continue
+		}
+
+		defaultValue := fieldType.Tag.Get("default")
+
+		// Get the environment value directly first
+		envValue := trimQuotes(os.Getenv(envTag))
+		if envValue == "" {
+			envValue = defaultValue
+		}
+
+		setFieldValue(field, envValue)
 	}
-	return defaultValue
+}
+
+// applyOptions processes special options for Config fields after initial load.
+func applyOptions(cfg *Config) {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		optionsTag := fieldType.Tag.Get("options")
+		if optionsTag == "" {
+			continue
+		}
+
+		options := strings.Split(optionsTag, ",")
+		for _, option := range options {
+			switch strings.TrimSpace(option) {
+			case "file":
+				resolveFileBasedEnvVariable(field, fieldType)
+			case "toLower":
+				if field.Kind() == reflect.String {
+					field.SetString(strings.ToLower(field.String()))
+				}
+			case "trimTrailingSlash":
+				if field.Kind() == reflect.String {
+					field.SetString(strings.TrimRight(field.String(), "/"))
+				}
+			}
+		}
+	}
+}
+
+// resolveFileBasedEnvVariable checks if an environment variable with the suffix "_FILE" is set,
+// reads the content of the file specified by that variable, and sets the corresponding field's value.
+func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructField) {
+	// Only process string and []byte fields
+	isString := field.Kind() == reflect.String
+	isByteSlice := field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8
+	if !isString && !isByteSlice {
+		return
+	}
+
+	// Only process fields with the "env" tag
+	envTag := fieldType.Tag.Get("env")
+	if envTag == "" {
+		return
+	}
+
+	// Check both double underscore (__FILE) and single underscore (_FILE) variants
+	// Double underscore takes precedence
+	var filePath string
+	for _, suffix := range []string{"__FILE", "_FILE"} {
+		if fp := os.Getenv(envTag + suffix); fp != "" {
+			filePath = fp
+			break
+		}
+	}
+
+	if filePath == "" {
+		return
+	}
+
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		slog.Warn("Failed to read secret from file, falling back to direct env var",
+			"env_var", envTag+"_FILE", "file_path", filePath, "error", err)
+		return
+	}
+
+	// Log when file value overrides a direct env var
+	if os.Getenv(envTag) != "" {
+		slog.Debug("Using secret from file, overriding direct env var", "env_var", envTag, "file_path", filePath)
+	}
+
+	if isString {
+		field.SetString(strings.TrimSpace(string(fileContent)))
+	} else {
+		field.SetBytes(fileContent)
+	}
+}
+
+// setFieldValue sets a reflect.Value from a string based on the field's type.
+func setFieldValue(field reflect.Value, value string) {
+	if !field.CanSet() {
+		return
+	}
+
+	//nolint:exhaustive
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+
+	case reflect.Bool:
+		if b, err := strconv.ParseBool(value); err == nil {
+			field.SetBool(b)
+		}
+
+	case reflect.Uint32:
+		// Handle os.FileMode (which is uint32)
+		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
+			field.SetUint(i)
+		}
+
+	default:
+		// Handle custom types based on underlying kind
+		if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
+			// String-based types like AppEnvironment
+			field.Set(reflect.ValueOf(value).Convert(field.Type()))
+		} else if field.Type() == reflect.TypeFor[os.FileMode]() {
+			// os.FileMode
+			if i, err := strconv.ParseUint(value, 8, 32); err == nil {
+				field.Set(reflect.ValueOf(os.FileMode(i)))
+			}
+		}
+	}
 }
 
 func trimQuotes(s string) string {
@@ -147,22 +259,38 @@ func (c *Config) GetAppURL() string {
 	return c.AppUrl
 }
 
-func getBoolEnvOrDefault(key string, defaultValue bool) bool {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
-		v = trimQuotes(v)
-		if b, err := strconv.ParseBool(v); err == nil {
-			return b
-		}
-	}
-	return defaultValue
-}
+// MaskSensitive returns a copy of the config with sensitive fields masked.
+// Useful for logging configuration without exposing secrets.
+func (c *Config) MaskSensitive() map[string]any {
+	result := make(map[string]any)
+	v := reflect.ValueOf(c).Elem()
+	t := v.Type()
 
-func getFileModeEnvOrDefault(key string, defaultValue os.FileMode) os.FileMode {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
-		v = trimQuotes(v)
-		if i, err := strconv.ParseUint(v, 8, 32); err == nil {
-			return os.FileMode(i)
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		envTag := fieldType.Tag.Get("env")
+		if envTag == "" {
+			envTag = fieldType.Name
+		}
+
+		// Fields with "file" option are considered sensitive
+		optionsTag := fieldType.Tag.Get("options")
+		isSensitive := strings.Contains(optionsTag, "file")
+
+		if isSensitive {
+			// Mask sensitive values
+			strVal := fmt.Sprintf("%v", field.Interface())
+			if len(strVal) > 0 {
+				result[envTag] = "****"
+			} else {
+				result[envTag] = "(empty)"
+			}
+		} else {
+			result[envTag] = field.Interface()
 		}
 	}
-	return defaultValue
+
+	return result
 }
