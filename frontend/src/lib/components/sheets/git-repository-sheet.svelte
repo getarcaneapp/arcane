@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -11,7 +10,6 @@
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
-	import { GitBranchIcon } from '$lib/icons';
 
 	type GitRepositoryFormProps = {
 		open: boolean;
@@ -31,6 +29,7 @@
 		username: z.string().optional(),
 		token: z.string().optional(),
 		sshKey: z.string().optional(),
+		sshHostKeyVerification: z.enum(['strict', 'accept_new', 'skip']).default('accept_new'),
 		description: z.string().optional(),
 		enabled: z.boolean().default(true)
 	});
@@ -42,6 +41,9 @@
 		username: open && repositoryToEdit ? repositoryToEdit.username || '' : '',
 		token: '',
 		sshKey: '',
+		sshHostKeyVerification: (open && repositoryToEdit
+			? repositoryToEdit.sshHostKeyVerification || 'accept_new'
+			: 'accept_new') as 'strict' | 'accept_new' | 'skip',
 		description: open && repositoryToEdit ? repositoryToEdit.description || '' : '',
 		enabled: open && repositoryToEdit ? (repositoryToEdit.enabled ?? true) : true
 	});
@@ -51,6 +53,11 @@
 	let selectedAuthType = $state<{ value: string; label: string }>({
 		value: 'http',
 		label: m.git_repository_auth_http()
+	});
+
+	let selectedSshHostKeyVerification = $state<{ value: string; label: string }>({
+		value: 'accept_new',
+		label: m.git_repository_ssh_host_key_accept_new()
 	});
 
 	function getAuthTypeLabel(type: string): string {
@@ -64,14 +71,30 @@
 		}
 	}
 
+	function getSshHostKeyVerificationLabel(mode: string): string {
+		switch (mode) {
+			case 'strict':
+				return m.git_repository_ssh_host_key_strict();
+			case 'skip':
+				return m.git_repository_ssh_host_key_skip();
+			default:
+				return m.git_repository_ssh_host_key_accept_new();
+		}
+	}
+
 	$effect(() => {
 		if (open && repositoryToEdit) {
 			selectedAuthType = {
 				value: repositoryToEdit.authType,
 				label: getAuthTypeLabel(repositoryToEdit.authType)
 			};
+			selectedSshHostKeyVerification = {
+				value: repositoryToEdit.sshHostKeyVerification || 'accept_new',
+				label: getSshHostKeyVerificationLabel(repositoryToEdit.sshHostKeyVerification || 'accept_new')
+			};
 		} else if (open && !repositoryToEdit) {
 			selectedAuthType = { value: 'http', label: m.git_repository_auth_http() };
+			selectedSshHostKeyVerification = { value: 'accept_new', label: m.git_repository_ssh_host_key_accept_new() };
 		}
 	});
 
@@ -92,6 +115,7 @@
 			if (data.token) payload.token = data.token;
 		} else if (selectedAuthType.value === 'ssh') {
 			if (data.sshKey) payload.sshKey = data.sshKey;
+			payload.sshHostKeyVerification = selectedSshHostKeyVerification.value;
 		}
 
 		onSubmit({ repository: payload, isEditMode });
@@ -138,7 +162,7 @@
 						}
 					}}
 				>
-					<Select.Trigger id="authType">
+					<Select.Trigger id="authType" class="w-full">
 						<span>{selectedAuthType.label}</span>
 					</Select.Trigger>
 					<Select.Content>
@@ -170,6 +194,45 @@
 						/>
 					</div>
 				{/if}
+
+				<div class="space-y-2">
+					<Label for="sshHostKeyVerification">{m.git_repository_ssh_host_key_verification()}</Label>
+					<Select.Root
+						type="single"
+						bind:value={selectedSshHostKeyVerification.value}
+						onValueChange={(v) => {
+							if (v) {
+								selectedSshHostKeyVerification = { value: v, label: getSshHostKeyVerificationLabel(v) };
+								$inputs.sshHostKeyVerification.value = v as any;
+							}
+						}}
+					>
+						<Select.Trigger id="sshHostKeyVerification" class="w-full">
+							<span>{selectedSshHostKeyVerification.label}</span>
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="accept_new">
+								<div class="flex flex-col">
+									<span>{m.git_repository_ssh_host_key_accept_new()}</span>
+									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_accept_new_description()}</span>
+								</div>
+							</Select.Item>
+							<Select.Item value="strict">
+								<div class="flex flex-col">
+									<span>{m.git_repository_ssh_host_key_strict()}</span>
+									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_strict_description()}</span>
+								</div>
+							</Select.Item>
+							<Select.Item value="skip">
+								<div class="flex flex-col">
+									<span>{m.git_repository_ssh_host_key_skip()}</span>
+									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_skip_description()}</span>
+								</div>
+							</Select.Item>
+						</Select.Content>
+					</Select.Root>
+					<p class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_verification_description()}</p>
+				</div>
 			{/if}
 
 			<FormInput
