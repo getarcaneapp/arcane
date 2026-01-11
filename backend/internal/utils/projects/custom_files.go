@@ -2,10 +2,13 @@ package projects
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
 
 // CustomFile represents a user-defined custom file within a project.
@@ -77,7 +80,7 @@ func WriteManifest(projectDir string, m *ArcaneManifest) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0644)
+	return os.WriteFile(path, append(data, '\n'), common.FilePerm)
 }
 
 // ParseCustomFiles reads all custom files for a project.
@@ -129,15 +132,29 @@ func ValidateCustomFilePath(projectDir, filePath string, cfg CustomFilesConfig) 
 	if !filepath.IsAbs(filePath) {
 		absPath = filepath.Join(absProjectDir, filePath)
 	}
-	absPath, _ = filepath.Abs(absPath)
+	absPath = filepath.Clean(absPath)
+
+	// Resolve symlinks to prevent symlink-based path traversal attacks
+	evalPath := absPath
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		evalPath = resolved
+	} else if !errors.Is(err, os.ErrNotExist) {
+		// File doesn't exist yet - evaluate parent directory symlinks
+		dir := filepath.Dir(absPath)
+		if evalDir, err := filepath.EvalSymlinks(dir); err == nil {
+			evalPath = filepath.Join(evalDir, filepath.Base(absPath))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+	}
 
 	// Check if path is within project directory
-	withinProject := strings.HasPrefix(absPath, absProjectDir+string(filepath.Separator))
+	withinProject := strings.HasPrefix(evalPath, absProjectDir+string(filepath.Separator))
 
 	// Check if path is within any allowed directory
 	withinAllowed := false
 	for _, ap := range cfg.AllowedPaths {
-		if strings.HasPrefix(absPath, ap+string(filepath.Separator)) || absPath == ap {
+		if strings.HasPrefix(evalPath, ap+string(filepath.Separator)) || evalPath == ap {
 			withinAllowed = true
 			break
 		}
@@ -186,9 +203,11 @@ func RegisterCustomFile(projectDir, filePath string, cfg CustomFilesConfig) erro
 	// Create if doesn't exist
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		if dir := filepath.Dir(absPath); dir != "." {
-			os.MkdirAll(dir, 0755)
+			if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
 		}
-		if err := os.WriteFile(absPath, []byte{}, 0644); err != nil {
+		if err := os.WriteFile(absPath, []byte{}, common.FilePerm); err != nil {
 			return err
 		}
 	}
@@ -219,9 +238,11 @@ func WriteCustomFile(projectDir, filePath, content string, cfg CustomFilesConfig
 	}
 
 	if dir := filepath.Dir(absPath); dir != "." {
-		os.MkdirAll(dir, 0755)
+		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
 	}
-	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(absPath, []byte(content), common.FilePerm); err != nil {
 		return err
 	}
 
