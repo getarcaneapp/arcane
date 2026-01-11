@@ -1656,5 +1656,12 @@
 	"environments_connect_existing_agent": "Connect to Existing Agent",
 	"environments_connect_existing_agent_description": "Connect to an already-running agent using a bootstrap token.",
 	"project_files": "Project Files",
-	"project_includes": "Includes"
+	"project_includes": "Includes",
+	"project_custom_files": "Custom Files",
+	"project_custom_file_add": "Add Custom File",
+	"project_custom_file_add_description": "Track and edit any file within your project. Enter a relative path like \"config/app.yaml\" or \"scripts/init.sh\". If the file doesn't exist, it will be created.",
+	"project_custom_file_path_label": "File Path",
+	"project_custom_file_path_placeholder": "config/my-file.yaml",
+	"project_custom_file_unlink": "Unlink file",
+	"project_custom_file_add_button": "Add file"
 }

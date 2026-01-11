@@ -288,9 +288,12 @@
 		delete originalCustomFiles[filePath];
 		delete customFilesPanelStates[filePath];
 
-		// Reset selected file if it was the removed one
+		// Reset to default view if the removed file was active
 		if (selectedFile === `custom:${filePath}`) {
 			selectedFile = 'compose';
+		}
+		if (selectedIncludeTab === `custom:${filePath}`) {
+			selectedIncludeTab = null;
 		}
 
 		toast.success(`Removed ${filePath}`);
@@ -567,7 +570,7 @@
 												</TreeView.Folder>
 											{/if}
 
-											<TreeView.Folder name="Custom Files">
+											<TreeView.Folder name={m.project_custom_files()}>
 												{#if project?.customFiles && project.customFiles.length > 0}
 													{#each project.customFiles as customFile (customFile.path)}
 														<TreeView.File
@@ -586,7 +589,7 @@
 													onclick={() => (showAddCustomFileDialog = true)}
 												>
 													<AddIcon class="size-4" />
-													<span>Add file...</span>
+													<span>{m.project_custom_file_add_button()}...</span>
 												</button>
 											</TreeView.Folder>
 										</TreeView.Root>
@@ -615,28 +618,24 @@
 										{@const customPath = selectedFile.replace('custom:', '')}
 										{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
 										{#if customFile}
-											<div class="flex h-full min-h-0 flex-col">
-												<div class="mb-2 flex items-center justify-between">
-													<div class="flex items-center gap-2">
-														<FilePenIcon class="size-4 text-purple-500" />
-														<span class="text-sm font-medium">{customFile.path}</span>
-													</div>
+											<CodePanel
+												bind:open={customFilesPanelStates[customFile.path]}
+												title={customFile.path}
+												language="yaml"
+												bind:value={customFilesState[customFile.path]}
+											>
+												{#snippet headerAction()}
 													<Button
 														variant="ghost"
-														size="sm"
-														class="text-muted-foreground hover:text-foreground"
+														size="icon"
+														class="text-muted-foreground hover:text-foreground -mr-2 size-8"
 														onclick={() => handleRemoveCustomFile(customFile.path)}
+														title={m.project_custom_file_unlink()}
 													>
 														<UnlinkIcon class="size-4" />
 													</Button>
-												</div>
-												<CodePanel
-													bind:open={customFilesPanelStates[customFile.path]}
-													title={customFile.path}
-													language="yaml"
-													bind:value={customFilesState[customFile.path]}
-												/>
-											</div>
+												{/snippet}
+											</CodePanel>
 										{/if}
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -653,81 +652,73 @@
 							</div>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
-								{#if (project?.includeFiles && project.includeFiles.length > 0) || (project?.customFiles && project.customFiles.length > 0)}
-									<div class="border-border bg-card rounded-lg border">
-										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
-											{#if project?.includeFiles}
-												{#each project.includeFiles as includeFile (includeFile.relativePath)}
-													<ArcaneButton
-														action="base"
-														tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
-														size="sm"
-														class="shrink-0"
-														onclick={() => {
-															selectedIncludeTab =
-																selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
-														}}
-														icon={FileSymlinkIcon}
-														customLabel={includeFile.relativePath}
-													/>
-												{/each}
-											{/if}
-											{#if project?.customFiles}
-												{#each project.customFiles as customFile (customFile.path)}
-													<ArcaneButton
-														action="base"
-														tone={selectedIncludeTab === `custom:${customFile.path}` ? 'outline-primary' : 'ghost'}
-														size="sm"
-														class="shrink-0"
-														onclick={() => {
-															selectedIncludeTab =
-																selectedIncludeTab === `custom:${customFile.path}` ? null : `custom:${customFile.path}`;
-														}}
-														icon={FilePenIcon}
-														customLabel={customFile.path}
-													/>
-												{/each}
-											{/if}
-											<ArcaneButton
-												action="base"
-												tone="ghost"
-												size="sm"
-												class="text-muted-foreground shrink-0"
-												onclick={() => (showAddCustomFileDialog = true)}
-												icon={AddIcon}
-												customLabel="Add file"
-											/>
-										</div>
+								<div class="border-border bg-card rounded-lg border">
+									<div class="flex flex-wrap gap-2 p-2">
+										{#if project?.includeFiles}
+											{#each project.includeFiles as includeFile (includeFile.relativePath)}
+												<ArcaneButton
+													action="base"
+													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
+													size="sm"
+													onclick={() => {
+														selectedIncludeTab =
+															selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
+													}}
+													icon={FileSymlinkIcon}
+													customLabel={includeFile.relativePath}
+												/>
+											{/each}
+										{/if}
+										{#if project?.customFiles}
+											{#each project.customFiles as customFile (customFile.path)}
+												<ArcaneButton
+													action="base"
+													tone={selectedIncludeTab === `custom:${customFile.path}` ? 'outline-primary' : 'ghost'}
+													size="sm"
+													onclick={() => {
+														selectedIncludeTab =
+															selectedIncludeTab === `custom:${customFile.path}` ? null : `custom:${customFile.path}`;
+													}}
+													icon={FilePenIcon}
+													customLabel={customFile.path}
+												/>
+											{/each}
+										{/if}
+										<ArcaneButton
+											action="base"
+											tone="ghost"
+											size="sm"
+											class="text-muted-foreground"
+											onclick={() => (showAddCustomFileDialog = true)}
+											icon={AddIcon}
+											customLabel={m.project_custom_file_add_button()}
+										/>
 									</div>
-								{/if}
+								</div>
 
 								{#if selectedIncludeTab}
 									{#if selectedIncludeTab.startsWith('custom:')}
 										{@const customPath = selectedIncludeTab.replace('custom:', '')}
 										{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
 										{#if customFile}
-											<div class="flex min-h-0 flex-1 flex-col">
-												<div class="mb-2 flex items-center justify-between">
-													<div class="flex items-center gap-2">
-														<FilePenIcon class="size-4 text-purple-500" />
-														<span class="text-sm font-medium">{customFile.path}</span>
-													</div>
+											<CodePanel
+												bind:open={customFilesPanelStates[customFile.path]}
+												title={customFile.path}
+												language="yaml"
+												bind:value={customFilesState[customFile.path]}
+											>
+												{#snippet headerAction()}
 													<Button
 														variant="ghost"
-														size="sm"
-														class="text-muted-foreground hover:text-foreground"
+														size="icon"
+														class="text-muted-foreground hover:text-foreground -mr-2 size-8"
 														onclick={() => handleRemoveCustomFile(customFile.path)}
+														title={m.project_custom_file_unlink()}
 													>
 														<UnlinkIcon class="size-4" />
 													</Button>
-												</div>
-												<CodePanel
-													bind:open={customFilesPanelStates[customFile.path]}
-													title={customFile.path}
-													language="yaml"
-													bind:value={customFilesState[customFile.path]}
-												/>
-											</div>
+												{/snippet}
+											</CodePanel>
 										{/if}
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
@@ -805,18 +796,17 @@
 <Dialog.Root bind:open={showAddCustomFileDialog}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>Add Custom File</Dialog.Title>
+			<Dialog.Title>{m.project_custom_file_add()}</Dialog.Title>
 			<Dialog.Description>
-				Add an existing file or create a new empty file. If the file already exists, its content will be preserved. Use relative
-				paths like "config/settings.yaml" or absolute paths if configured.
+				{m.project_custom_file_add_description()}
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid gap-4 py-4">
 			<div class="grid gap-2">
-				<label for="custom-file-name" class="text-sm font-medium">File Path</label>
+				<label for="custom-file-name" class="text-sm font-medium">{m.project_custom_file_path_label()}</label>
 				<Input
 					id="custom-file-name"
-					placeholder="config/my-file.yaml"
+					placeholder={m.project_custom_file_path_placeholder()}
 					bind:value={newCustomFileName}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {
@@ -827,8 +817,8 @@
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showAddCustomFileDialog = false)}>Cancel</Button>
-			<Button onclick={handleAddCustomFile}>Create File</Button>
+			<Button variant="outline" onclick={() => (showAddCustomFileDialog = false)}>{m.common_cancel()}</Button>
+			<Button onclick={handleAddCustomFile}>{m.project_custom_file_add_button()}</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
