@@ -5,13 +5,13 @@ go 1.25.5
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/fatih/color v1.18.0
-	github.com/getarcaneapp/arcane/types v0.0.0-20251219045603-8a9960a2bf04
+	github.com/getarcaneapp/arcane/types v0.0.0-20260110011808-8759100aa57c
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
 	go.withmatt.com/size v0.0.0-20250220224316-11aee5773e67
-	golang.org/x/term v0.38.0
+	golang.org/x/term v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -56,7 +56,7 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
