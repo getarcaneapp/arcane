@@ -12,7 +12,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
@@ -284,7 +284,7 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	memTotal := info.MemTotal
 
 	// Check for cgroup limits (LXC, Docker, etc.)
-	if cgroupLimits, err := utils.DetectCgroupLimits(); err == nil {
+	if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
 		if limit := cgroupLimits.MemoryLimit; limit > 0 {
 			limitInt := int64(limit)
 			if memTotal == 0 || limitInt < memTotal {

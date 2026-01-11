@@ -17,6 +17,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
@@ -53,8 +54,12 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
-	utils.InitEncryption(cfg)
+	crypto.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
+
+	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
+		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
+	}
 
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)

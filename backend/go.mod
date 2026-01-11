@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/backend
 
-go 1.25.4
+go 1.25.5
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -21,7 +21,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-co-op/gocron/v2 v2.19.0
 	github.com/go-git/go-git/v5 v5.16.4
-	github.com/goccy/go-yaml v1.19.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
@@ -37,11 +37,11 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.podman.io/image/v5 v5.38.0
 	golang.org/x/crypto v0.46.0
-	golang.org/x/mod v0.31.0
+	golang.org/x/mod v0.32.0
 	golang.org/x/net v0.48.0
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.19.0
-	golang.org/x/text v0.32.0
+	golang.org/x/text v0.33.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )

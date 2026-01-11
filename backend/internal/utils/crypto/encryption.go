@@ -1,4 +1,4 @@
-package utils
+package crypto
 
 import (
 	"crypto/aes"
@@ -19,6 +19,7 @@ import (
 
 var encryptionKey []byte
 
+// InitEncryption initializes the global encryption key based on configuration
 func InitEncryption(cfg *config.Config) {
 	if keyStr := strings.TrimSpace(cfg.EncryptionKey); keyStr != "" {
 		key, err := parseExplicitKey(keyStr)
@@ -155,6 +156,7 @@ func deriveDevKey() []byte {
 	return sum[:]
 }
 
+// Encrypt encrypts a plaintext string using AES-GCM
 func Encrypt(plaintext string) (string, error) {
 	if encryptionKey == nil {
 		return "", fmt.Errorf("encryption not initialized - call InitEncryption first")
@@ -183,6 +185,7 @@ func Encrypt(plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
+// Decrypt decrypts a base64 encoded ciphertext string using AES-GCM
 func Decrypt(ciphertext string) (string, error) {
 	if encryptionKey == nil {
 		return "", fmt.Errorf("encryption not initialized - call InitEncryption first")

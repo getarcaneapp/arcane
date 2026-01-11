@@ -13,8 +13,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/spf13/cobra"
 )
 
@@ -122,7 +122,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		return container.InspectResponse{}, err
 	}
 
-	selfID, _ := utils.GetCurrentContainerID()
+	selfID, _ := docker.GetCurrentContainerID()
 	slog.Info("Searching for Arcane container", "selfID", selfID, "totalContainers", len(containers))
 
 	now := time.Now()

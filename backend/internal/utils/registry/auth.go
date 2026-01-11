@@ -13,7 +13,7 @@ import (
 	ref "go.podman.io/image/v5/docker/reference"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 )
 
 type Credentials struct {
@@ -201,7 +201,7 @@ func AcquireTokenViaChallenge(
 		if normalizeHost(cr.URL) != hostNorm {
 			continue
 		}
-		dec, err := utils.Decrypt(cr.Token)
+		dec, err := crypto.Decrypt(cr.Token)
 		if err != nil {
 			continue
 		}
@@ -322,7 +322,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 			if normalizeHost(cr.URL) != h {
 				continue
 			}
-			dec, err := utils.Decrypt(cr.Token)
+			dec, err := crypto.Decrypt(cr.Token)
 			if err != nil {
 				continue
 			}

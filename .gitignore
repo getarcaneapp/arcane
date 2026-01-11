@@ -41,3 +41,4 @@ tests/package-lock.json
 .pnpm-store
 .claude/settings.local.json
 .claude/**
+.fast-check

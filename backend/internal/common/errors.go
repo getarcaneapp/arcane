@@ -674,14 +674,6 @@ func (e *ProjectIDRequiredError) Error() string {
 	return "Project ID is required"
 }
 
-type ProjectDeploymentError struct {
-	Err error
-}
-
-func (e *ProjectDeploymentError) Error() string {
-	return fmt.Sprintf("Failed to deploy project: %v", e.Err)
-}
-
 type ProjectDownError struct {
 	Err error
 }

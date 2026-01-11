@@ -1,9 +1,8 @@
-package utils
+package stringutils
 
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"regexp"
 	"strings"
 )
 
@@ -25,14 +24,8 @@ func CamelCaseToSnakeCase(str string) string {
 	return strings.ToLower(result.String())
 }
 
-var camelCaseToScreamingSnakeCaseRe = regexp.MustCompile(`([a-z0-9])([A-Z])`)
-
 func CamelCaseToScreamingSnakeCase(s string) string {
-	// Insert underscores before uppercase letters (except the first one)
-	stringValue := camelCaseToScreamingSnakeCaseRe.ReplaceAllString(s, `${1}_${2}`)
-
-	// Convert to uppercase
-	return strings.ToUpper(stringValue)
+	return strings.ToUpper(CamelCaseToSnakeCase(s))
 }
 
 func GenerateRandomString(length int) string {

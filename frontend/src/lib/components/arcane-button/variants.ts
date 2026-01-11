@@ -19,7 +19,8 @@ import {
 	TemplateIcon,
 	type IconType,
 	LoginIcon,
-	OpenIdIcon
+	OpenIdIcon,
+	RedeployIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -149,7 +150,7 @@ export const actionConfigs = {
 	},
 	redeploy: {
 		defaultLabel: m.common_redeploy(),
-		IconComponent: RestartIcon,
+		IconComponent: RedeployIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_redeploying()
 	},

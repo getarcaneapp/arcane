@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -247,7 +247,7 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, image
 
 	// Decrypt webhook URL if encrypted
 	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
 		webhookURL = decrypted
 	}
 
@@ -368,7 +368,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -460,7 +460,7 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 	}
 
 	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
 		webhookURL = decrypted
 	}
 
@@ -576,7 +576,7 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -737,7 +737,7 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}
@@ -909,7 +909,7 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 
 	// Decrypt webhook URL if encrypted
 	webhookURL := discordConfig.WebhookURL
-	if decrypted, err := utils.Decrypt(webhookURL); err == nil {
+	if decrypted, err := crypto.Decrypt(webhookURL); err == nil {
 		webhookURL = decrypted
 	}
 
@@ -1009,7 +1009,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, up
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := utils.Decrypt(emailConfig.SMTPPassword); err == nil {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
 			emailConfig.SMTPPassword = decrypted
 		}
 	}

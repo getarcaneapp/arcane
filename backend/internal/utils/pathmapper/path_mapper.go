@@ -33,7 +33,7 @@ func NewPathMapper(containerDir, hostDir string) *PathMapper {
 
 // ContainerToHost translates a container path to host path
 func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
-	if !pm.isNonMatching {
+	if !pm.IsNonMatchingMount() {
 		return containerPath, nil // No translation needed
 	}
 
@@ -64,7 +64,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 
 // TranslateVolumeSources translates all bind mount sources in a compose project
 func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) error {
-	if !pm.isNonMatching {
+	if !pm.IsNonMatchingMount() {
 		return nil // No translation needed
 	}
 

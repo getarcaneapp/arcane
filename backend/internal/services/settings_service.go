@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -22,7 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -186,7 +188,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -195,7 +197,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
 			continue
 		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
@@ -247,10 +249,10 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		}
 
 		// Check if environment variable is set
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
 		}
 	}
 }
@@ -618,12 +620,12 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
 	}
-	envVal = utils.TrimQuotes(envVal)
+	envVal = stringutils.TrimQuotes(envVal)
 
 	return s.upsertEnvSetting(ctx, tx, key, envVal)
 }
@@ -826,4 +828,60 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 	}
 
 	return key, nil
+}
+
+func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
+	if projectsDirEnv != "" {
+		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
+		return nil
+	}
+
+	var projectsDirSetting models.SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+	}
+
+	value := strings.TrimSpace(projectsDirSetting.Value)
+	// Detect mapping format (container:host), allowing Windows or Unix container paths.
+	isMapping := false
+	if strings.Contains(value, ":") {
+		// Treat as mapping if the container side looks like an absolute Unix path
+		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
+		// first colon to not break on Windows drive letters.
+		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+			isMapping = true
+		}
+	}
+
+	if !filepath.IsAbs(value) && !isMapping {
+		// Resolve relative path using current working directory for transparency.
+		// Note: In containers, WORKDIR is set to /app so "data/..." becomes "/app/data/...".
+		cwd, _ := os.Getwd()
+		absPath, absErr := filepath.Abs(value)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+		}
+		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+
+		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
+			return fmt.Errorf("failed to update projectsDirectory: %w", err)
+		}
+
+		if err := s.LoadDatabaseSettings(ctx); err != nil {
+			return fmt.Errorf("failed to reload settings after normalization: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Successfully normalized projects directory")
+	} else {
+		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
+	}
+
+	return nil
 }

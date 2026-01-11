@@ -16,7 +16,7 @@ import (
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := projectsDir
 	if projectsDirectory == "" {
-		projectsDirectory = "data/projects"
+		projectsDirectory = "/app/data/projects"
 	}
 
 	// Handle mapping format: "container_path:host_path"
@@ -24,6 +24,16 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 		if !pathmapper.IsWindowsDrivePath(projectsDirectory) && strings.HasPrefix(parts[0], "/") { // First part must be absolute container path
 			projectsDirectory = parts[0]
 		}
+	}
+
+	// Always resolve to an absolute, cleaned path so downstream code and DB
+	// store a canonical location (prevents relative paths like "data/projects").
+	absDir, err := filepath.Abs(projectsDirectory)
+	if err == nil {
+		projectsDirectory = filepath.Clean(absDir)
+	} else {
+		// If Abs fails for any reason, still clean the provided value
+		projectsDirectory = filepath.Clean(projectsDirectory)
 	}
 
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {

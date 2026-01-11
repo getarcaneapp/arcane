@@ -109,13 +109,20 @@ func WriteProjectFiles(projectsRoot, dirPath, composeContent string, envContent 
 		return err
 	}
 
-	// Always create a .env file, even if empty, to satisfy compose files that reference env_file: .env
-	envValue := ""
+	// If envContent is nil, we check if .env already exists.
+	// We only create an empty one if it doesn't exist, to satisfy
+	// compose-go from failing when the compose file references env_file: .env
 	if envContent != nil {
-		envValue = *envContent
-	}
-	if err := WriteEnvFile(projectsRoot, dirPath, envValue); err != nil {
-		return err
+		if err := WriteEnvFile(projectsRoot, dirPath, *envContent); err != nil {
+			return err
+		}
+	} else {
+		envPath := filepath.Join(dirPath, ".env")
+		if _, err := os.Stat(envPath); os.IsNotExist(err) {
+			if err := WriteEnvFile(projectsRoot, dirPath, ""); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

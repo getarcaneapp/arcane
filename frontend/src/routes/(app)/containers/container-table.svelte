@@ -81,6 +81,13 @@
 		return { repo: imageRef, tag: 'latest' };
 	}
 
+	function getContainerDisplayName(container: ContainerSummaryDto): string {
+		if (container.names && container.names.length > 0) {
+			return container.names[0].replace(/^\//, '');
+		}
+		return container.id.substring(0, 12);
+	}
+
 	function getActionStatusMessage(status: ActionStatus): string {
 		const messages: Record<ActionStatus, () => string> = {
 			starting: () => m.common_action_starting(),
@@ -154,10 +161,10 @@
 		}
 	}
 
-	async function handleRemoveContainer(id: string) {
+	async function handleRemoveContainer(id: string, name: string) {
 		openConfirmDialog({
 			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message(),
+			message: m.containers_remove_confirm_message({ resource: name }),
 			checkboxes: [
 				{
 					id: 'force',
@@ -194,7 +201,7 @@
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
-		const containerName = container.names?.[0]?.replace(/^\//, '') || container.id.substring(0, 12);
+		const containerName = getContainerDisplayName(container);
 
 		openConfirmDialog({
 			title: m.containers_update_confirm_title(),
@@ -681,7 +688,7 @@
 
 				<DropdownMenu.Item
 					variant="destructive"
-					onclick={() => handleRemoveContainer(item.id)}
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
 					disabled={status === 'removing' || isAnyLoading}
 				>
 					{#if status === 'removing'}

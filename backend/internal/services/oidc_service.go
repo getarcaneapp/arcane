@@ -21,7 +21,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/auth"
 )
 
@@ -162,9 +163,9 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		return "", "", fmt.Errorf("failed to discover provider: %w", err)
 	}
 
-	state := utils.GenerateRandomString(32)
-	nonce := utils.GenerateRandomString(32)
-	codeVerifier := utils.GenerateRandomString(128)
+	state := stringutils.GenerateRandomString(32)
+	nonce := stringutils.GenerateRandomString(32)
+	codeVerifier := stringutils.GenerateRandomString(128)
 
 	oauth2Config := s.getOauth2Config(config, provider, origin)
 
@@ -420,7 +421,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		return nil, nil, fmt.Errorf("failed to fetch user claims: %w", err)
 	}
 
-	subject := utils.GetStringClaim(claims, "sub")
+	subject := crypto.GetStringClaim(claims, "sub")
 	if subject == "" {
 		slog.Error("HandleCallback: missing required 'sub' claim")
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
@@ -428,15 +429,15 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 
 	userInfoDto := auth.OidcUserInfo{
 		Subject:           subject,
-		Name:              utils.GetStringClaim(claims, "name"),
-		Email:             utils.GetStringClaim(claims, "email"),
-		EmailVerified:     utils.GetBoolClaim(claims, "email_verified"),
-		PreferredUsername: utils.GetStringClaim(claims, "preferred_username"),
-		GivenName:         utils.GetStringClaim(claims, "given_name"),
-		FamilyName:        utils.GetStringClaim(claims, "family_name"),
-		Admin:             utils.GetBoolClaim(claims, "admin"),
-		Roles:             utils.GetStringSliceClaim(claims, "roles"),
-		Groups:            utils.GetStringSliceClaim(claims, "groups"),
+		Name:              crypto.GetStringClaim(claims, "name"),
+		Email:             crypto.GetStringClaim(claims, "email"),
+		EmailVerified:     crypto.GetBoolClaim(claims, "email_verified"),
+		PreferredUsername: crypto.GetStringClaim(claims, "preferred_username"),
+		GivenName:         crypto.GetStringClaim(claims, "given_name"),
+		FamilyName:        crypto.GetStringClaim(claims, "family_name"),
+		Admin:             crypto.GetBoolClaim(claims, "admin"),
+		Roles:             crypto.GetStringSliceClaim(claims, "roles"),
+		Groups:            crypto.GetStringSliceClaim(claims, "groups"),
 		Extra:             claims,
 	}
 
