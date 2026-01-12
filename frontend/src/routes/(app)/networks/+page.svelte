@@ -48,7 +48,9 @@
 			setLoadingState: (v) => (isLoading.create = v),
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.resource_network()} "${name}"` }));
-				networks = await networkService.getNetworks(requestOptions);
+				const data = await networkService.getNetworks(requestOptions);
+				networks = data;
+				networkUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
 				isCreateDialogOpen = false;
 			}
 		});
@@ -89,7 +91,16 @@
 
 <ResourcePageLayout title={m.networks_title()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<NetworkTable bind:networks bind:selectedIds bind:requestOptions />
+		<NetworkTable
+			bind:networks
+			bind:selectedIds
+			bind:requestOptions
+			onNetworksChange={(data) => {
+				if (data.counts) {
+					networkUsageCounts = data.counts;
+				}
+			}}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
