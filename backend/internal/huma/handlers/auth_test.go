@@ -37,7 +37,7 @@ func TestGetAutoLoginConfig_Disabled(t *testing.T) {
 	require.NoError(t, err)
 
 	userSvc := services.NewUserService(db)
-	authSvc := services.NewAuthService(cfg, db, userSvc, settingsSvc)
+	authSvc := services.NewAuthService(userSvc, settingsSvc, nil, cfg.JWTSecret, cfg)
 
 	h := &AuthHandler{
 		authService: authSvc,
@@ -69,7 +69,7 @@ func TestGetAutoLoginConfig_Enabled(t *testing.T) {
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
 
 	userSvc := services.NewUserService(db)
-	authSvc := services.NewAuthService(cfg, db, userSvc, settingsSvc)
+	authSvc := services.NewAuthService(userSvc, settingsSvc, nil, cfg.JWTSecret, cfg)
 
 	h := &AuthHandler{
 		authService: authSvc,
@@ -98,7 +98,7 @@ func TestAutoLogin_DisabledReturnsError(t *testing.T) {
 	require.NoError(t, err)
 
 	userSvc := services.NewUserService(db)
-	authSvc := services.NewAuthService(cfg, db, userSvc, settingsSvc)
+	authSvc := services.NewAuthService(userSvc, settingsSvc, nil, cfg.JWTSecret, cfg)
 
 	h := &AuthHandler{
 		authService: authSvc,
