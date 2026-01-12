@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -206,7 +207,11 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 }
 
 // Clone clones a repository to a temporary directory
-func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
+func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	// Create a temporary directory
 	workDir := c.workDir
 	if workDir == "" {
@@ -241,7 +246,7 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 		cloneOptions.SingleBranch = true
 	}
 
-	_, err = git.PlainClone(tmpDir, false, cloneOptions)
+	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
@@ -251,7 +256,10 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 }
 
 // GetCurrentCommit returns the HEAD commit hash of a cloned repository
-func (c *Client) GetCurrentCommit(repoPath string) (string, error) {
+func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open repository: %w", err)
@@ -272,7 +280,10 @@ type BranchInfo struct {
 }
 
 // ListBranches lists all branches in a remote repository
-func (c *Client) ListBranches(url string, auth AuthConfig) ([]BranchInfo, error) {
+func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	authMethod, err := c.getAuth(auth)
 	if err != nil {
 		return nil, err
@@ -289,7 +300,7 @@ func (c *Client) ListBranches(url string, auth AuthConfig) ([]BranchInfo, error)
 		listOptions.Auth = authMethod
 	}
 
-	refs, err := rem.List(listOptions)
+	refs, err := rem.ListContext(ctx, listOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
@@ -358,7 +369,10 @@ func ValidatePath(repoPath, requestedPath string) error {
 }
 
 // BrowseTree returns the file tree at the specified path
-func (c *Client) BrowseTree(repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Validate path to prevent traversal
 	if err := ValidatePath(repoPath, targetPath); err != nil {
 		return nil, err
@@ -383,6 +397,11 @@ func (c *Client) BrowseTree(repoPath, targetPath string) ([]gitops.FileTreeNode,
 
 	var nodes []gitops.FileTreeNode
 	for _, entry := range entries {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		// Skip .git directory
 		if entry.Name() == ".git" {
 			continue
@@ -426,8 +445,12 @@ type CommitInfo struct {
 }
 
 // TestConnection tests if the repository can be accessed with the given credentials
-func (c *Client) TestConnection(url, branch string, auth AuthConfig) error {
-	tmpDir, err := c.Clone(url, branch, auth)
+func (c *Client) TestConnection(ctx context.Context, url, branch string, auth AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	tmpDir, err := c.Clone(ctx, url, branch, auth)
 	if err != nil {
 		return err
 	}
@@ -438,7 +461,10 @@ func (c *Client) TestConnection(url, branch string, auth AuthConfig) error {
 }
 
 // FileExists checks if a file exists in the repository
-func (c *Client) FileExists(repoPath, filePath string) bool {
+func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool {
+	if err := ctx.Err(); err != nil {
+		return false
+	}
 	if err := ValidatePath(repoPath, filePath); err != nil {
 		return false
 	}
@@ -449,7 +475,10 @@ func (c *Client) FileExists(repoPath, filePath string) bool {
 }
 
 // ReadFile reads a file from the repository
-func (c *Client) ReadFile(repoPath, filePath string) (string, error) {
+func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := ValidatePath(repoPath, filePath); err != nil {
 		return "", err
 	}

@@ -23,6 +23,8 @@ type GitOpsSyncService struct {
 	eventService   *EventService
 }
 
+const defaultGitSyncTimeout = 5 * time.Minute
+
 func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService) *GitOpsSyncService {
 	return &GitOpsSyncService{
 		db:             db,
@@ -72,19 +74,25 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id s
 	}
 	if err := q.First(&sync).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.WarnContext(ctx, "GitOps sync not found", "syncID", id, "environmentID", environmentID)
 			return nil, fmt.Errorf("sync not found")
 		}
+		slog.ErrorContext(ctx, "Failed to get GitOps sync", "syncID", id, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to get sync: %w", err)
 	}
 	return &sync, nil
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest) (*models.GitOpsSync, error) {
+	slog.InfoContext(ctx, "Creating GitOps sync", "environmentID", environmentID, "name", req.Name, "repositoryID", req.RepositoryID)
+
 	// Validate repository exists
-	_, err := s.repoService.GetRepositoryByID(ctx, req.RepositoryID)
+	repo, err := s.repoService.GetRepositoryByID(ctx, req.RepositoryID)
 	if err != nil {
+		slog.ErrorContext(ctx, "Repository not found for GitOps sync", "repositoryID", req.RepositoryID, "error", err)
 		return nil, fmt.Errorf("repository not found: %w", err)
 	}
+	slog.InfoContext(ctx, "Found repository for GitOps sync", "repositoryID", req.RepositoryID, "repositoryName", repo.Name)
 
 	// Store the project name - use sync name if project name not provided
 	projectName := req.ProjectName
@@ -116,8 +124,10 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	}
 
 	if err := s.db.WithContext(ctx).Create(&sync).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to create GitOps sync in database", "name", req.Name, "repositoryID", req.RepositoryID, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to create sync: %w", err)
 	}
+	slog.InfoContext(ctx, "GitOps sync created successfully", "syncID", sync.ID, "name", sync.Name)
 
 	// Log event
 	resourceType := "git_sync"
@@ -227,7 +237,10 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string) (*gitops.SyncResult, error) {
-	sync, err := s.GetSyncByID(ctx, environmentID, id)
+	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
+	defer cancel()
+
+	sync, err := s.GetSyncByID(syncCtx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -240,59 +253,59 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	// Get repository and auth config
 	repository := sync.Repository
 	if repository == nil {
-		return result, s.failSync(ctx, id, result, sync, "Repository not found", "repository not found")
+		return result, s.failSync(syncCtx, id, result, sync, "Repository not found", "repository not found")
 	}
 
-	authConfig, err := s.repoService.GetAuthConfig(ctx, repository)
+	authConfig, err := s.repoService.GetAuthConfig(syncCtx, repository)
 	if err != nil {
-		return result, s.failSync(ctx, id, result, sync, "Failed to get authentication config", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, "Failed to get authentication config", err.Error())
 	}
 
 	// Clone the repository
-	repoPath, err := s.repoService.gitClient.Clone(repository.URL, sync.Branch, authConfig)
+	repoPath, err := s.repoService.gitClient.Clone(syncCtx, repository.URL, sync.Branch, authConfig)
 	if err != nil {
-		return result, s.failSync(ctx, id, result, sync, "Failed to clone repository", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, "Failed to clone repository", err.Error())
 	}
 	defer func() {
 		if cleanupErr := s.repoService.gitClient.Cleanup(repoPath); cleanupErr != nil {
-			slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", cleanupErr)
+			slog.WarnContext(syncCtx, "Failed to cleanup repository", "path", repoPath, "error", cleanupErr)
 		}
 	}()
 
 	// Get the current commit hash
-	commitHash, err := s.repoService.gitClient.GetCurrentCommit(repoPath)
+	commitHash, err := s.repoService.gitClient.GetCurrentCommit(syncCtx, repoPath)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to get commit hash", "error", err)
+		slog.WarnContext(syncCtx, "Failed to get commit hash", "error", err)
 		commitHash = ""
 	}
 
 	// Check if compose file exists
-	if !s.repoService.gitClient.FileExists(repoPath, sync.ComposePath) {
+	if !s.repoService.gitClient.FileExists(syncCtx, repoPath, sync.ComposePath) {
 		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
-		return result, s.failSync(ctx, id, result, sync, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
+		return result, s.failSync(syncCtx, id, result, sync, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
 	}
 
 	// Read compose file content
-	composeContent, err := s.repoService.gitClient.ReadFile(repoPath, sync.ComposePath)
+	composeContent, err := s.repoService.gitClient.ReadFile(syncCtx, repoPath, sync.ComposePath)
 	if err != nil {
-		return result, s.failSync(ctx, id, result, sync, "Failed to read compose file", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, "Failed to read compose file", err.Error())
 	}
 
 	// Get or create project
-	project, err := s.getOrCreateProject(ctx, sync, id, composeContent, result)
+	project, err := s.getOrCreateProject(syncCtx, sync, id, composeContent, result)
 	if err != nil {
 		return result, err
 	}
 
 	// Update sync status
-	s.updateSyncStatus(ctx, id, "success", "", commitHash)
+	s.updateSyncStatus(syncCtx, id, "success", "", commitHash)
 
 	result.Success = true
 	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
 
 	// Log success event
 	resourceType := "git_sync"
-	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
+	_, _ = s.eventService.CreateEvent(syncCtx, CreateEventRequest{
 		Type:         models.EventTypeGitSyncRun,
 		Severity:     models.EventSeveritySuccess,
 		Title:        "Git sync completed",
@@ -304,7 +317,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		Username:     &systemUser.Username,
 	})
 
-	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
+	slog.InfoContext(syncCtx, "GitOps sync completed", "syncId", id, "project", project.Name)
 
 	return result, nil
 }
@@ -407,7 +420,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 	}
 
 	// Clone the repository
-	repoPath, err := s.repoService.gitClient.Clone(repository.URL, sync.Branch, authConfig)
+	repoPath, err := s.repoService.gitClient.Clone(ctx, repository.URL, sync.Branch, authConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
@@ -418,7 +431,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 	}()
 
 	// Browse the tree
-	files, err := s.repoService.gitClient.BrowseTree(repoPath, path)
+	files, err := s.repoService.gitClient.BrowseTree(ctx, repoPath, path)
 	if err != nil {
 		return nil, err
 	}

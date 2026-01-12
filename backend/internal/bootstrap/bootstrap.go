@@ -32,7 +32,7 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
-	db, err := initializeDBAndMigrate(cfg)
+	db, err := initializeDBAndMigrate(appCtx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
