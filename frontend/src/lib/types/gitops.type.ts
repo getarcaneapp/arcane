@@ -43,7 +43,6 @@ export interface GitOpsSyncCreateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
-	enabled?: boolean;
 }
 
 export interface GitOpsSyncUpdateDto {
@@ -54,7 +53,6 @@ export interface GitOpsSyncUpdateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
-	enabled?: boolean;
 }
 
 export interface GitOpsSync {
@@ -73,7 +71,6 @@ export interface GitOpsSync {
 	lastSyncStatus?: string;
 	lastSyncError?: string;
 	lastSyncCommit?: string;
-	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -100,7 +97,6 @@ export interface BrowseResponse {
 
 export interface SyncStatus {
 	id: string;
-	enabled: boolean;
 	autoSync: boolean;
 	nextSyncAt?: string;
 	lastSyncAt?: string;
@@ -129,7 +125,6 @@ export interface ImportGitOpsSyncRequest {
 	dockerComposePath: string;
 	autoSync: boolean;
 	syncInterval: number;
-	enabled: boolean;
 }
 
 export interface ImportGitOpsSyncResponse {

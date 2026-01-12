@@ -132,11 +132,6 @@ type GitOpsSync struct {
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
-
 	// CreatedAt is the date and time at which the sync was created.
 	//
 	// Required: true
@@ -285,11 +280,6 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // UpdateSyncRequest represents the request to update a gitops sync.
@@ -328,11 +318,6 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // SyncResult represents the result of a sync operation.
@@ -516,11 +501,6 @@ type SyncStatus struct {
 	// Required: true
 	ID string `json:"id"`
 
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
-
 	// AutoSync indicates if automatic sync is enabled.
 	//
 	// Required: true
@@ -583,11 +563,6 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.
