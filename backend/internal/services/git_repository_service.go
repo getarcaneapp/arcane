@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -22,6 +23,8 @@ type GitRepositoryService struct {
 	gitClient    *git.Client
 	eventService *EventService
 }
+
+const repoConnectionTimeout = 30 * time.Second
 
 func NewGitRepositoryService(db *database.DB, workDir string, eventService *EventService) *GitRepositoryService {
 	return &GitRepositoryService{
@@ -247,8 +250,10 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string) 
 
 	return nil
 }
-
 func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string) error {
+	ctx, cancel := context.WithTimeout(ctx, repoConnectionTimeout)
+	defer cancel()
+
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return err
@@ -263,7 +268,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 		branch = "main"
 	}
 
-	err = s.gitClient.TestConnection(repository.URL, branch, authConfig)
+	err = s.gitClient.TestConnection(ctx, repository.URL, branch, authConfig)
 	if err != nil {
 		// Log error event
 		resourceType := "git_repository"
@@ -331,7 +336,7 @@ func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]g
 		return nil, err
 	}
 
-	branches, err := s.gitClient.ListBranches(repository.URL, authConfig)
+	branches, err := s.gitClient.ListBranches(ctx, repository.URL, authConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list branches: %w", err)
 	}
@@ -359,7 +364,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	}
 
 	// Clone the repository
-	repoPath, err := s.gitClient.Clone(repository.URL, branch, authConfig)
+	repoPath, err := s.gitClient.Clone(ctx, repository.URL, branch, authConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
@@ -371,7 +376,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	}()
 
 	// Browse the tree
-	files, err := s.gitClient.BrowseTree(repoPath, path)
+	files, err := s.gitClient.BrowseTree(ctx, repoPath, path)
 	if err != nil {
 		return nil, err
 	}

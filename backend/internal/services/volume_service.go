@@ -411,15 +411,15 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	volChan := make(chan volumeListResult, 1)
 	containerChan := make(chan containerMapResult, 1)
 
-	go func() {
+	go func(ctx context.Context) {
 		volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
 		volChan <- volumeListResult{volumes: volListBody.Volumes, err: err}
-	}()
+	}(ctx)
 
-	go func() {
+	go func(ctx context.Context) {
 		containerMap, err := s.buildVolumeContainerMap(ctx, dockerClient)
 		containerChan <- containerMapResult{containerMap: containerMap, err: err}
-	}()
+	}(ctx)
 
 	// Wait for both results
 	volResult := <-volChan
