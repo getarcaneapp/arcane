@@ -396,7 +396,10 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 }
 
 func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id string, path string) (*gitops.BrowseResponse, error) {
-	sync, err := s.GetSyncByID(ctx, environmentID, id)
+	browseCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
+	defer cancel()
+
+	sync, err := s.GetSyncByID(browseCtx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -406,24 +409,24 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 		return nil, fmt.Errorf("repository not found")
 	}
 
-	authConfig, err := s.repoService.GetAuthConfig(ctx, repository)
+	authConfig, err := s.repoService.GetAuthConfig(browseCtx, repository)
 	if err != nil {
 		return nil, err
 	}
 
 	// Clone the repository
-	repoPath, err := s.repoService.gitClient.Clone(ctx, repository.URL, sync.Branch, authConfig)
+	repoPath, err := s.repoService.gitClient.Clone(browseCtx, repository.URL, sync.Branch, authConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	defer func() {
 		if cleanupErr := s.repoService.gitClient.Cleanup(repoPath); cleanupErr != nil {
-			slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", cleanupErr)
+			slog.WarnContext(browseCtx, "Failed to cleanup repository", "path", repoPath, "error", cleanupErr)
 		}
 	}()
 
 	// Browse the tree
-	files, err := s.repoService.gitClient.BrowseTree(ctx, repoPath, path)
+	files, err := s.repoService.gitClient.BrowseTree(browseCtx, repoPath, path)
 	if err != nil {
 		return nil, err
 	}

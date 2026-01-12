@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -24,20 +25,25 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultProxyTimeout = 30 * time.Second
-
 type EnvironmentService struct {
-	db            *database.DB
-	httpClient    *http.Client
-	dockerService *DockerClientService
-	eventService  *EventService
+	db              *database.DB
+	httpClient      *http.Client
+	dockerService   *DockerClientService
+	eventService    *EventService
+	settingsService *SettingsService
 }
 
-func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService) *EnvironmentService {
+func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &EnvironmentService{db: db, httpClient: httpClient, dockerService: dockerService, eventService: eventService}
+	return &EnvironmentService{
+		db:              db,
+		httpClient:      httpClient,
+		dockerService:   dockerService,
+		eventService:    eventService,
+		settingsService: settingsService,
+	}
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
@@ -710,7 +716,9 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 	}
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
-	proxyCtx, cancel := context.WithTimeout(ctx, defaultProxyTimeout)
+
+	settings := s.settingsService.GetSettingsConfig()
+	proxyCtx, cancel := timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
 	defer cancel()
 
 	var bodyReader io.Reader

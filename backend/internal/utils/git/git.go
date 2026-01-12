@@ -208,6 +208,12 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 
 // Clone clones a repository to a temporary directory
 func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig) (string, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+	}
+
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -300,7 +306,10 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 		listOptions.Auth = authMethod
 	}
 
-	refs, err := rem.ListContext(ctx, listOptions)
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	refs, err := rem.ListContext(listCtx, listOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}

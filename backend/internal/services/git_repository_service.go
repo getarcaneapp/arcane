@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -14,23 +13,24 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/git"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
 
 type GitRepositoryService struct {
-	db           *database.DB
-	gitClient    *git.Client
-	eventService *EventService
+	db              *database.DB
+	gitClient       *git.Client
+	eventService    *EventService
+	settingsService *SettingsService
 }
 
-const repoConnectionTimeout = 30 * time.Second
-
-func NewGitRepositoryService(db *database.DB, workDir string, eventService *EventService) *GitRepositoryService {
+func NewGitRepositoryService(db *database.DB, workDir string, eventService *EventService, settingsService *SettingsService) *GitRepositoryService {
 	return &GitRepositoryService{
-		db:           db,
-		gitClient:    git.NewClient(workDir),
-		eventService: eventService,
+		db:              db,
+		gitClient:       git.NewClient(workDir),
+		eventService:    eventService,
+		settingsService: settingsService,
 	}
 }
 
@@ -251,7 +251,8 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string) 
 	return nil
 }
 func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string) error {
-	ctx, cancel := context.WithTimeout(ctx, repoConnectionTimeout)
+	settings := s.settingsService.GetSettingsConfig()
+	ctx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
 	defer cancel()
 
 	repository, err := s.GetRepositoryByID(ctx, id)
@@ -326,17 +327,21 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 }
 
 func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]gitops.BranchInfo, error) {
-	repository, err := s.GetRepositoryByID(ctx, id)
+	settings := s.settingsService.GetSettingsConfig()
+	listCtx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
+	defer cancel()
+
+	repository, err := s.GetRepositoryByID(listCtx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	authConfig, err := s.GetAuthConfig(ctx, repository)
+	authConfig, err := s.GetAuthConfig(listCtx, repository)
 	if err != nil {
 		return nil, err
 	}
 
-	branches, err := s.gitClient.ListBranches(ctx, repository.URL, authConfig)
+	branches, err := s.gitClient.ListBranches(listCtx, repository.URL, authConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list branches: %w", err)
 	}
@@ -353,6 +358,10 @@ func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]g
 }
 
 func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path string) (*gitops.BrowseResponse, error) {
+	settings := s.settingsService.GetSettingsConfig()
+	ctx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
+	defer cancel()
+
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return nil, err

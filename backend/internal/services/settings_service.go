@@ -125,6 +125,13 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
 
+		DockerAPITimeout:       models.SettingVariable{Value: "30"},
+		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
+		GitOperationTimeout:    models.SettingVariable{Value: "300"},
+		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
+		RegistryTimeout:        models.SettingVariable{Value: "30"},
+		ProxyRequestTimeout:    models.SettingVariable{Value: "60"},
+
 		InstanceID: models.SettingVariable{Value: ""},
 	}
 }

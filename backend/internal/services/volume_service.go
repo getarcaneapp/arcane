@@ -15,20 +15,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 )
 
 type VolumeService struct {
-	db            *database.DB
-	dockerService *DockerClientService
-	eventService  *EventService
+	db              *database.DB
+	dockerService   *DockerClientService
+	eventService    *EventService
+	settingsService *SettingsService
 }
 
-func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *VolumeService {
 	return &VolumeService{
-		db:            db,
-		dockerService: dockerService,
-		eventService:  eventService,
+		db:              db,
+		dockerService:   dockerService,
+		eventService:    eventService,
+		settingsService: settingsService,
 	}
 }
 
@@ -411,15 +414,19 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	volChan := make(chan volumeListResult, 1)
 	containerChan := make(chan containerMapResult, 1)
 
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
 	go func(ctx context.Context) {
 		volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
 		volChan <- volumeListResult{volumes: volListBody.Volumes, err: err}
-	}(ctx)
+	}(apiCtx)
 
 	go func(ctx context.Context) {
 		containerMap, err := s.buildVolumeContainerMap(ctx, dockerClient)
 		containerChan <- containerMapResult{containerMap: containerMap, err: err}
-	}(ctx)
+	}(apiCtx)
 
 	// Wait for both results
 	volResult := <-volChan
@@ -437,7 +444,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// Fetch usage data if sorting by size is requested
 	var usageVolumes []volume.Volume
 	if params.Sort == "size" {
-		if uv, err := docker.GetVolumeUsageData(ctx, dockerClient); err == nil {
+		if uv, err := docker.GetVolumeUsageData(apiCtx, dockerClient); err == nil {
 			usageVolumes = uv
 		} else {
 			slog.WarnContext(ctx, "failed to get volume usage data for sorting", "error", err.Error())
