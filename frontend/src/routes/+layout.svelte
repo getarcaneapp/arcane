@@ -14,6 +14,7 @@
 	import { browser, dev } from '$app/environment';
 	import { onMount } from 'svelte';
 	import settingsStore from '$lib/stores/config-store';
+	import { autoLoginStore } from '$lib/stores/auto-login-store';
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
@@ -65,9 +66,11 @@
 
 	let showPasswordChangeDialog = $state(false);
 
+	const autoLoginEnabled = $derived($autoLoginStore);
+
 	$effect(() => {
 		// Skip password change dialog when auto-login is enabled
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !data.autoLoginEnabled) {
+		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled) {
 			showPasswordChangeDialog = true;
 		} else {
 			showPasswordChangeDialog = false;

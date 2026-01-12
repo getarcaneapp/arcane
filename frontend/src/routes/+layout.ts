@@ -3,6 +3,7 @@ import versionService from '$lib/services/version-service';
 import { tryCatch } from '$lib/utils/try-catch';
 import userStore from '$lib/stores/user-store';
 import settingsStore from '$lib/stores/config-store';
+import { autoLoginStore } from '$lib/stores/auto-login-store';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
 import { userService } from '$lib/services/user-service';
@@ -13,58 +14,30 @@ import { browser } from '$app/environment';
 
 export const ssr = false;
 
-// Session storage key to cache when auto-login is disabled on the backend
-const AUTO_LOGIN_DISABLED_KEY = 'arcane_auto_login_disabled';
-
-/**
- * Check if auto-login is known to be disabled (cached from previous check).
- */
-function isAutoLoginKnownDisabled(): boolean {
-	if (!browser) return true;
-	try {
-		return sessionStorage.getItem(AUTO_LOGIN_DISABLED_KEY) === 'true';
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Cache that auto-login is disabled to avoid unnecessary API calls.
- */
-function cacheAutoLoginDisabled(): void {
-	if (!browser) return;
-	try {
-		sessionStorage.setItem(AUTO_LOGIN_DISABLED_KEY, 'true');
-	} catch {
-		// Ignore storage errors
-	}
-}
-
 export const load = async () => {
 	// Step 1: Check authentication first
 	let user = await userService.getCurrentUser().catch(() => null);
-	let autoLoginEnabled = false;
 
 	// Step 1.5: Attempt auto-login if not authenticated
-	if (!user && browser && !isAutoLoginKnownDisabled()) {
+	if (!user && browser && !autoLoginStore.isKnownDisabled()) {
 		// Check if auto-login is enabled
 		const autoLoginConfig = await authService.getAutoLoginConfig();
 
 		if (autoLoginConfig?.enabled) {
-			autoLoginEnabled = true;
+			autoLoginStore.setEnabled(true);
 			// Attempt auto-login using server-configured credentials
 			user = await authService.attemptAutoLogin();
 		} else {
 			// Cache that auto-login is disabled to avoid checking on every page load
-			cacheAutoLoginDisabled();
+			autoLoginStore.cacheDisabled();
 		}
-	} else if (user && browser && !isAutoLoginKnownDisabled()) {
+	} else if (user && browser && !autoLoginStore.isKnownDisabled()) {
 		// User is already logged in, check if auto-login is enabled (for password change dialog skip)
 		const autoLoginConfig = await authService.getAutoLoginConfig().catch(() => null);
 		if (autoLoginConfig?.enabled) {
-			autoLoginEnabled = true;
+			autoLoginStore.setEnabled(true);
 		} else {
-			cacheAutoLoginDisabled();
+			autoLoginStore.cacheDisabled();
 		}
 	}
 
@@ -139,7 +112,6 @@ export const load = async () => {
 	return {
 		user,
 		settings,
-		versionInformation,
-		autoLoginEnabled
+		versionInformation
 	};
 };

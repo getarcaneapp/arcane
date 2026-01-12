@@ -18,6 +18,7 @@
 		LanguageIcon,
 		ArrowRightIcon
 	} from '$lib/icons';
+	import { autoLoginStore } from '$lib/stores/auto-login-store';
 
 	type Props = {
 		user: User;
@@ -25,6 +26,12 @@
 	};
 
 	let { user, class: className = '' }: Props = $props();
+
+	let autoLoginEnabled = $state(false);
+	$effect(() => {
+		const unsub = autoLoginStore.subscribe((v) => (autoLoginEnabled = v));
+		return unsub;
+	});
 
 	let userCardExpanded = $state(false);
 	let envDialogOpen = $state(false);
@@ -68,19 +75,21 @@
 			>
 				<ArrowDownIcon class="size-8" />
 			</div>
-			<form action="/logout" method="POST">
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					type="submit"
-					title={m.common_logout()}
-					class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-10 w-10 rounded-xl transition-all duration-200 hover:scale-105"
-					onclick={(e) => e.stopPropagation()}
-				>
-					<LogoutIcon class="size-5" />
-				</ArcaneButton>
-			</form>
+			{#if !autoLoginEnabled}
+				<form action="/logout" method="POST">
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="icon"
+						type="submit"
+						title={m.common_logout()}
+						class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-10 w-10 rounded-xl transition-all duration-200 hover:scale-105"
+						onclick={(e) => e.stopPropagation()}
+					>
+						<LogoutIcon class="size-5" />
+					</ArcaneButton>
+				</form>
+			{/if}
 		</div>
 	</button>
 
