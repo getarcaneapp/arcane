@@ -72,6 +72,8 @@ abstract class BaseAPIService {
 						'/auth/oidc/login',
 						'/auth/oidc/callback',
 						'/auth/me',
+						'/auth/auto-login',
+						'/auth/auto-login-config',
 						'/settings/public'
 					];
 					const isAuthApi = skipAuthPaths.some((p) => reqUrl.startsWith(p));

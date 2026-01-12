@@ -66,7 +66,8 @@
 	let showPasswordChangeDialog = $state(false);
 
 	$effect(() => {
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage) {
+		// Skip password change dialog when auto-login is enabled
+		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !data.autoLoginEnabled) {
 			showPasswordChangeDialog = true;
 		} else {
 			showPasswordChangeDialog = false;

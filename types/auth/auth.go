@@ -37,3 +37,10 @@ type TokenRefreshResponse struct {
 	RefreshToken string    `json:"refreshToken" doc:"New refresh token"`
 	ExpiresAt    time.Time `json:"expiresAt" doc:"Expiration time of the new access token"`
 }
+
+// AutoLoginConfig represents the auto-login configuration for the frontend.
+// Password is intentionally excluded from this response.
+type AutoLoginConfig struct {
+	Enabled  bool   `json:"enabled" doc:"Whether auto-login is enabled"`
+	Username string `json:"username" doc:"Username for auto-login (only returned if enabled)"`
+}

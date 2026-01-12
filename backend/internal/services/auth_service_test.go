@@ -351,3 +351,88 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	require.NoError(t, err)
 	require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
 }
+
+func TestGetAutoLoginConfig_Disabled(t *testing.T) {
+	ctx := context.Background()
+	s := newTestAuthService("")
+	s.config = &config.Config{
+		AutoLoginEnable:   false,
+		AutoLoginUsername: "testuser",
+		AutoLoginPassword: "testpass",
+	}
+
+	result, err := s.GetAutoLoginConfig(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Enabled, "Expected auto-login to be disabled")
+	require.Empty(t, result.Username, "Expected empty username when disabled")
+}
+
+func TestGetAutoLoginConfig_Enabled(t *testing.T) {
+	ctx := context.Background()
+	db := setupAuthServiceTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+	// Ensure local auth is enabled (default)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
+
+	s := newTestAuthService("")
+	s.config = &config.Config{
+		AutoLoginEnable:   true,
+		AutoLoginUsername: "autologinuser",
+		AutoLoginPassword: "autologinpass",
+	}
+	s.settingsService = settingsSvc
+
+	result, err := s.GetAutoLoginConfig(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Enabled, "Expected auto-login to be enabled")
+	require.Equal(t, "autologinuser", result.Username)
+}
+
+func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
+	ctx := context.Background()
+	db := setupAuthServiceTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+	// Disable local auth
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", false))
+
+	s := newTestAuthService("")
+	s.config = &config.Config{
+		AutoLoginEnable:   true,
+		AutoLoginUsername: "autologinuser",
+		AutoLoginPassword: "autologinpass",
+	}
+	s.settingsService = settingsSvc
+
+	result, err := s.GetAutoLoginConfig(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Enabled, "Expected auto-login to be disabled when local auth is disabled")
+}
+
+func TestGetAutoLoginPassword(t *testing.T) {
+	s := newTestAuthService("")
+	s.config = &config.Config{
+		AutoLoginPassword: "my-secret-password",
+	}
+
+	password := s.GetAutoLoginPassword()
+	require.Equal(t, "my-secret-password", password)
+}
+
+func TestGetAutoLoginPassword_EmptyWhenNotConfigured(t *testing.T) {
+	s := newTestAuthService("")
+	s.config = &config.Config{
+		AutoLoginPassword: "",
+	}
+
+	password := s.GetAutoLoginPassword()
+	require.Empty(t, password)
+}

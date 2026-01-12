@@ -2,12 +2,10 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_LoadPermissions(t *testing.T) {
@@ -199,6 +197,50 @@ func TestConfig_OptionsToLower(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, "warn", cfg.LogLevel)
+	})
+}
+
+func TestConfig_AutoLogin(t *testing.T) {
+	// Save original env vars
+	origEnable := os.Getenv("AUTO_LOGIN_ENABLE")
+	origUsername := os.Getenv("AUTO_LOGIN_USERNAME")
+	origPassword := os.Getenv("AUTO_LOGIN_PASSWORD")
+
+	defer func() {
+		restoreEnv("AUTO_LOGIN_ENABLE", origEnable)
+		restoreEnv("AUTO_LOGIN_USERNAME", origUsername)
+		restoreEnv("AUTO_LOGIN_PASSWORD", origPassword)
+	}()
+
+	t.Run("Default auto-login values", func(t *testing.T) {
+		os.Unsetenv("AUTO_LOGIN_ENABLE")
+		os.Unsetenv("AUTO_LOGIN_USERNAME")
+		os.Unsetenv("AUTO_LOGIN_PASSWORD")
+
+		cfg := Load()
+		assert.False(t, cfg.AutoLoginEnable, "AutoLoginEnable should default to false")
+		assert.Equal(t, "arcane", cfg.AutoLoginUsername, "AutoLoginUsername should default to 'arcane'")
+		assert.Equal(t, "arcane-admin", cfg.AutoLoginPassword, "AutoLoginPassword should default to 'arcane-admin'")
+	})
+
+	t.Run("Auto-login enabled with custom credentials", func(t *testing.T) {
+		os.Setenv("AUTO_LOGIN_ENABLE", "true")
+		os.Setenv("AUTO_LOGIN_USERNAME", "testuser")
+		os.Setenv("AUTO_LOGIN_PASSWORD", "testpassword123")
+
+		cfg := Load()
+		assert.True(t, cfg.AutoLoginEnable, "AutoLoginEnable should be true")
+		assert.Equal(t, "testuser", cfg.AutoLoginUsername)
+		assert.Equal(t, "testpassword123", cfg.AutoLoginPassword)
+	})
+
+	t.Run("Auto-login disabled explicitly", func(t *testing.T) {
+		os.Setenv("AUTO_LOGIN_ENABLE", "false")
+		os.Setenv("AUTO_LOGIN_USERNAME", "someuser")
+		os.Setenv("AUTO_LOGIN_PASSWORD", "somepassword")
+
+		cfg := Load()
+		assert.False(t, cfg.AutoLoginEnable, "AutoLoginEnable should be false")
 	})
 }
 

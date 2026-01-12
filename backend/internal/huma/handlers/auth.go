@@ -61,6 +61,11 @@ type GetCurrentUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
+// GetAutoLoginConfigOutput is the response for the auto-login config endpoint.
+type GetAutoLoginConfigOutput struct {
+	Body base.ApiResponse[auth.AutoLoginConfig]
+}
+
 // RegisterAuth registers authentication routes using Huma.
 func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService) {
 	h := &AuthHandler{
@@ -121,6 +126,24 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"ApiKeyAuth": {}},
 		},
 	}, h.ChangePassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-auto-login-config",
+		Method:      http.MethodGet,
+		Path:        "/auth/auto-login-config",
+		Summary:     "Get auto-login config",
+		Description: "Get auto-login configuration (without password).",
+		Tags:        []string{"Auth"},
+	}, h.GetAutoLoginConfig)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "auto-login",
+		Method:      http.MethodPost,
+		Path:        "/auth/auto-login",
+		Summary:     "Perform auto-login",
+		Description: "Perform auto-login using server-configured credentials.",
+		Tags:        []string{"Auth"},
+	}, h.AutoLogin)
 }
 
 // Login authenticates a user and returns tokens.
@@ -281,6 +304,86 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 			Success: true,
 			Data: base.MessageResponse{
 				Message: "Password changed successfully",
+			},
+		},
+	}, nil
+}
+
+// GetAutoLoginConfig returns the auto-login configuration for the frontend.
+// The password is never returned through this endpoint.
+func (h *AuthHandler) GetAutoLoginConfig(ctx context.Context, input *struct{}) (*GetAutoLoginConfigOutput, error) {
+	if h.authService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	config, err := h.authService.GetAutoLoginConfig(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to get auto-login config")
+	}
+
+	return &GetAutoLoginConfigOutput{
+		Body: base.ApiResponse[auth.AutoLoginConfig]{
+			Success: true,
+			Data:    *config,
+		},
+	}, nil
+}
+
+// AutoLogin performs authentication using server-configured auto-login credentials.
+func (h *AuthHandler) AutoLogin(ctx context.Context, input *struct{}) (*LoginOutput, error) {
+	if h.authService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	// Check if auto-login is enabled
+	autoLoginConfig, err := h.authService.GetAutoLoginConfig(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to get auto-login config")
+	}
+
+	if !autoLoginConfig.Enabled {
+		return nil, huma.Error400BadRequest("auto-login is not enabled")
+	}
+
+	// Get the password from server config (never exposed via API)
+	password := h.authService.GetAutoLoginPassword()
+	if password == "" {
+		return nil, huma.Error500InternalServerError("auto-login password not configured")
+	}
+
+	// Perform the actual login using configured credentials
+	userModel, tokenPair, err := h.authService.Login(ctx, autoLoginConfig.Username, password)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrInvalidCredentials):
+			return nil, huma.Error401Unauthorized((&common.InvalidCredentialsError{}).Error())
+		case errors.Is(err, services.ErrLocalAuthDisabled):
+			return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
+		default:
+			return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+		}
+	}
+
+	var userResp user.User
+	if mapErr := mapper.MapStruct(userModel, &userResp); mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
+	}
+
+	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	maxAge += 60
+
+	return &LoginOutput{
+		SetCookie: cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken),
+		Body: base.ApiResponse[auth.LoginResponse]{
+			Success: true,
+			Data: auth.LoginResponse{
+				Token:        tokenPair.AccessToken,
+				RefreshToken: tokenPair.RefreshToken,
+				ExpiresAt:    tokenPair.ExpiresAt,
+				User:         userResp,
 			},
 		},
 	}, nil

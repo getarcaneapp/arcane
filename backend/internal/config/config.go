@@ -53,6 +53,12 @@ type Config struct {
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
 
+	// Auto-login configuration
+	// When enabled, the frontend will automatically authenticate using the specified credentials.
+	AutoLoginEnable   bool   `env:"AUTO_LOGIN_ENABLE" default:"false"`
+	AutoLoginUsername string `env:"AUTO_LOGIN_USERNAME" default:"arcane"`
+	AutoLoginPassword string `env:"AUTO_LOGIN_PASSWORD" default:"arcane-admin"`
+
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
 	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
