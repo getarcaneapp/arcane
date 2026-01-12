@@ -23,6 +23,9 @@ jobs:
         steps:
             - name: Checkout code
               uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  repository: ${{ github.event.pull_request.head.repo.full_name }}
 
             - name: Set up Depot CLI
               uses: depot/setup-action@v1

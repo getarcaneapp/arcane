@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NetworkSummaryDto } from '$lib/types/network.type';
+	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/network.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
@@ -23,11 +23,13 @@
 	let {
 		networks = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onNetworksChange
 	}: {
-		networks: Paginated<NetworkSummaryDto>;
+		networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onNetworksChange?: (networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>) => void;
 	} = $props();
 
 	let isLoading = $state({
@@ -54,6 +56,7 @@
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }));
 							networks = await networkService.getNetworks(requestOptions);
+							onNetworksChange?.(networks);
 						}
 					});
 				}
@@ -106,6 +109,7 @@
 
 					if (successCount > 0) {
 						networks = await networkService.getNetworks(requestOptions);
+						onNetworksChange?.(networks);
 					}
 					selectedIds = [];
 				}
