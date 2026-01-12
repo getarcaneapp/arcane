@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultProxyTimeout = 30 * time.Second
+const defaultProxyTimeout = 60 * time.Second
 
 type EnvironmentService struct {
 	db            *database.DB

@@ -24,7 +24,7 @@ type GitRepositoryService struct {
 	eventService *EventService
 }
 
-const repoConnectionTimeout = 30 * time.Second
+const repoConnectionTimeout = 60 * time.Second
 
 func NewGitRepositoryService(db *database.DB, workDir string, eventService *EventService) *GitRepositoryService {
 	return &GitRepositoryService{

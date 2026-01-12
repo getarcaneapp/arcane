@@ -17,6 +17,7 @@ import (
 	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 )
 
 var (
@@ -28,21 +29,24 @@ var (
 )
 
 type SystemUpgradeService struct {
-	upgrading      atomic.Bool
-	dockerService  *DockerClientService
-	versionService *VersionService
-	eventService   *EventService
+	upgrading       atomic.Bool
+	dockerService   *DockerClientService
+	versionService  *VersionService
+	eventService    *EventService
+	settingsService *SettingsService
 }
 
 func NewSystemUpgradeService(
 	dockerService *DockerClientService,
 	versionService *VersionService,
 	eventService *EventService,
+	settingsService *SettingsService,
 ) *SystemUpgradeService {
 	return &SystemUpgradeService{
-		dockerService:  dockerService,
-		versionService: versionService,
-		eventService:   eventService,
+		dockerService:   dockerService,
+		versionService:  versionService,
+		eventService:    eventService,
+		settingsService: settingsService,
 	}
 }
 
@@ -121,8 +125,16 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	// Pull the upgrader image first to ensure it exists
 	slog.Info("Pulling upgrader image", "image", ArcaneUpgraderImage)
-	pullReader, err := dockerClient.ImagePull(ctx, ArcaneUpgraderImage, imagetypes.PullOptions{})
+
+	settings := s.settingsService.GetSettingsConfig()
+	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	defer pullCancel()
+
+	pullReader, err := dockerClient.ImagePull(pullCtx, ArcaneUpgraderImage, imagetypes.PullOptions{})
 	if err != nil {
+		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", ArcaneUpgraderImage)
+		}
 		return fmt.Errorf("pull upgrader image: %w", err)
 	}
 	// Drain the reader to complete the pull

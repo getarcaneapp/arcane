@@ -56,6 +56,13 @@ type Config struct {
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
 	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
+
+	DockerAPITimeout       int `env:"DOCKER_API_TIMEOUT" default:"0"`
+	DockerImagePullTimeout int `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`
+	GitOperationTimeout    int `env:"GIT_OPERATION_TIMEOUT" default:"0"`
+	HTTPClientTimeout      int `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
+	RegistryTimeout        int `env:"REGISTRY_TIMEOUT" default:"0"`
+	ProxyRequestTimeout    int `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
 }
 
 func Load() *Config {
