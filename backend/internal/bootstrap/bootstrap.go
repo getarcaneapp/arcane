@@ -29,13 +29,6 @@ func Bootstrap(ctx context.Context) error {
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
-	// Warn about auto-login being enabled (security risk in production)
-	if cfg.AutoLoginEnable {
-		slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.",
-			"username", cfg.AutoLoginUsername)
-		slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
-	}
-
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
@@ -83,6 +76,10 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
+		func(ctx context.Context) error {
+			utils.InitializeAutoLogin(ctx, cfg)
+			return nil
+		},
 		appServices.Settings.MigrateOidcConfigToFields)
 
 	// Handle agent auto-pairing with API key

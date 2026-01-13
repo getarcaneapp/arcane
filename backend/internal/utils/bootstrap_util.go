@@ -55,7 +55,7 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, migrateOidcFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, autoLoginInitFunc func(context.Context) error, migrateOidcFunc func(context.Context) error) {
 	if cfg.AgentMode {
 		return
 	}
@@ -64,10 +64,21 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 		slog.WarnContext(ctx, "Failed to create default admin user", "error", err.Error())
 	}
 
+	if err := autoLoginInitFunc(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to create default admin user", "error", err.Error())
+	}
+
 	// Migrate legacy OIDC JSON config to individual fields (runs before env sync)
 	if migrateOidcFunc != nil {
 		if err := migrateOidcFunc(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to migrate OIDC config to individual fields", "error", err.Error())
 		}
+	}
+}
+
+func InitializeAutoLogin(ctx context.Context, cfg *config.Config) {
+	if cfg.AutoLoginEnable {
+		slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.AutoLoginUsername)
+		slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
 	}
 }
