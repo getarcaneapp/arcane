@@ -18,7 +18,6 @@
 		LanguageIcon,
 		ArrowRightIcon
 	} from '$lib/icons';
-	import { autoLoginStore } from '$lib/stores/auto-login-store';
 
 	type Props = {
 		user: User;
@@ -29,7 +28,7 @@
 
 	let autoLoginEnabled = $state(false);
 	$effect(() => {
-		const unsub = autoLoginStore.subscribe((v) => (autoLoginEnabled = v));
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
 		return unsub;
 	});
 

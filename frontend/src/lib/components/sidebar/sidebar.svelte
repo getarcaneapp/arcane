@@ -16,7 +16,7 @@
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
 	import userStore from '$lib/stores/user-store';
-	import { autoLoginStore } from '$lib/stores/auto-login-store';
+	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
@@ -37,7 +37,7 @@
 
 	let autoLoginEnabled = $state(false);
 	$effect(() => {
-		const unsub = autoLoginStore.subscribe((v) => (autoLoginEnabled = v));
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
 		return unsub;
 	});
 

@@ -14,7 +14,6 @@
 	import { browser, dev } from '$app/environment';
 	import { onMount } from 'svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import { autoLoginStore } from '$lib/stores/auto-login-store';
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
@@ -65,8 +64,12 @@
 	);
 
 	let showPasswordChangeDialog = $state(false);
+	let autoLoginEnabled = $state(false);
 
-	const autoLoginEnabled = $derived($autoLoginStore);
+	$effect(() => {
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
+		return unsub;
+	});
 
 	$effect(() => {
 		// Skip password change dialog when auto-login is enabled

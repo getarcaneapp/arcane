@@ -3,7 +3,6 @@ import versionService from '$lib/services/version-service';
 import { tryCatch } from '$lib/utils/try-catch';
 import userStore from '$lib/stores/user-store';
 import settingsStore from '$lib/stores/config-store';
-import { autoLoginStore } from '$lib/stores/auto-login-store';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
 import { userService } from '$lib/services/user-service';
@@ -19,25 +18,25 @@ export const load = async () => {
 	let user = await userService.getCurrentUser().catch(() => null);
 
 	// Step 1.5: Attempt auto-login if not authenticated
-	if (!user && browser && !autoLoginStore.isKnownDisabled()) {
+	if (!user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
 		// Check if auto-login is enabled
 		const autoLoginConfig = await authService.getAutoLoginConfig();
 
 		if (autoLoginConfig?.enabled) {
-			autoLoginStore.setEnabled(true);
+			settingsStore.autoLoginEnabled.set(true);
 			// Attempt auto-login using server-configured credentials
 			user = await authService.attemptAutoLogin();
 		} else {
 			// Cache that auto-login is disabled to avoid checking on every page load
-			autoLoginStore.cacheDisabled();
+			settingsStore.autoLoginEnabled.cacheDisabled();
 		}
-	} else if (user && browser && !autoLoginStore.isKnownDisabled()) {
+	} else if (user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
 		// User is already logged in, check if auto-login is enabled (for password change dialog skip)
 		const autoLoginConfig = await authService.getAutoLoginConfig().catch(() => null);
 		if (autoLoginConfig?.enabled) {
-			autoLoginStore.setEnabled(true);
+			settingsStore.autoLoginEnabled.set(true);
 		} else {
-			autoLoginStore.cacheDisabled();
+			settingsStore.autoLoginEnabled.cacheDisabled();
 		}
 	}
 
