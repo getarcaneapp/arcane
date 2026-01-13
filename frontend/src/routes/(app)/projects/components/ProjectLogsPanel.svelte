@@ -18,6 +18,7 @@
 	let tailLines = $state(100);
 	let autoStartLogs = $state(false);
 	let hasAutoStarted = $state(false);
+	let showParsedJson = $state(false);
 
 	function handleStart() {
 		isStreaming = true;
@@ -73,6 +74,7 @@
 				bind:autoScroll
 				bind:tailLines
 				bind:autoStartLogs
+				bind:showParsedJson
 				{isStreaming}
 				disabled={!projectId}
 				onStart={handleStart}
@@ -88,6 +90,7 @@
 			bind:autoScroll
 			{projectId}
 			{tailLines}
+			{showParsedJson}
 			type="project"
 			maxLines={500}
 			showTimestamps={true}
