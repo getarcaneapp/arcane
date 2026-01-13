@@ -132,4 +132,3 @@ func TestGetAutoLoginConfig_ServiceNilReturnsError(t *testing.T) {
 	require.Error(t, err, "Expected error when service is nil")
 	assert.Contains(t, err.Error(), "service not available")
 }
-
