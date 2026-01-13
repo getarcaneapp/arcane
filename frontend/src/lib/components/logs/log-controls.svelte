@@ -3,12 +3,12 @@
 	import * as Select from '$lib/components/ui/select';
 	import { m } from '$lib/paraglide/messages';
 	import { PersistedState } from 'runed';
-	import { RefreshIcon } from '$lib/icons';
 
 	let {
 		autoScroll = $bindable(),
 		tailLines = $bindable(100),
 		autoStartLogs = $bindable(false),
+		showParsedJson = $bindable(false),
 		isStreaming = false,
 		disabled = false,
 		onStart,
@@ -19,6 +19,7 @@
 		autoScroll: boolean;
 		tailLines?: number;
 		autoStartLogs?: boolean;
+		showParsedJson?: boolean;
 		isStreaming?: boolean;
 		disabled?: boolean;
 		onStart?: () => void;
@@ -38,6 +39,7 @@
 
 	const persistedTailLines = new PersistedState('arcane_log_tail_lines', '100');
 	const persistedAutoStart = new PersistedState('arcane_log_auto_start', 'false');
+	const persistedJsonParsing = new PersistedState('arcane_log_json_parsing', 'false');
 
 	let selectedTail = $state<string>(persistedTailLines.current);
 
@@ -56,6 +58,14 @@
 
 	$effect(() => {
 		persistedAutoStart.current = autoStartLogs ? 'true' : 'false';
+	});
+
+	$effect(() => {
+		showParsedJson = persistedJsonParsing.current === 'true';
+	});
+
+	$effect(() => {
+		persistedJsonParsing.current = showParsedJson ? 'true' : 'false';
 	});
 
 	const selectedLabel = $derived(tailOptions.find((o) => o.value === selectedTail)?.label ?? m.log_tail_100_lines());
@@ -106,6 +116,14 @@
 			aria-label={m.log_refresh_aria_label()}
 			title={m.common_refresh()}
 			showLabel={false}
+		/>
+		<ArcaneButton
+			action="json"
+			tone={showParsedJson ? 'outline-primary' : 'outline'}
+			size="sm"
+			class="text-xs font-medium"
+			customLabel={showParsedJson ? m.common_raw() : m.common_json()}
+			onclick={() => (showParsedJson = !showParsedJson)}
 		/>
 	</div>
 </div>
