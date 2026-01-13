@@ -91,6 +91,9 @@ type Settings struct {
 	AgentToken SettingVariable `key:"agentToken,internal,sensitive"`
 	InstanceID SettingVariable `key:"instanceId,internal"`
 
+	// Security: Lifecycle hooks setting (disabled by default for security)
+	LifecycleHooksEnabled SettingVariable `key:"lifecycleHooksEnabled,public" meta:"label=Enable Lifecycle Hooks;type=boolean;keywords=lifecycle,hooks,pre-update,post-update,security,containers,commands;category=security;description=Enable container lifecycle hooks (pre-update, post-update commands). Security note: Only enable if you trust all users who can create projects, as hooks execute shell commands inside containers."`
+
 	// Users category (admin management page - no actual settings)
 	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
 

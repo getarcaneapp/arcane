@@ -49,6 +49,16 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 	}
 }
 
+// userHasRole checks if a user has a specific role.
+func userHasRole(roles models.StringSlice, role string) bool {
+	for _, r := range roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
@@ -816,13 +826,18 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
+	// Security: Track whether project was created by an admin.
+	// This determines if lifecycle hooks can be executed for this project.
+	isAdmin := userHasRole(user.Roles, "admin")
+
 	proj := &models.Project{
-		Name:         name,
-		DirName:      &folderName,
-		Path:         projectPath,
-		Status:       models.ProjectStatusStopped,
-		ServiceCount: 0,
-		RunningCount: 0,
+		Name:           name,
+		DirName:        &folderName,
+		Path:           projectPath,
+		Status:         models.ProjectStatusStopped,
+		ServiceCount:   0,
+		RunningCount:   0,
+		CreatedByAdmin: isAdmin,
 	}
 
 	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {

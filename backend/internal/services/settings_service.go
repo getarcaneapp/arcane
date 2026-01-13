@@ -118,6 +118,9 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
 
 		InstanceID: models.SettingVariable{Value: ""},
+
+		// Security: Lifecycle hooks disabled by default (CVE mitigation)
+		LifecycleHooksEnabled: models.SettingVariable{Value: "false"},
 	}
 }
 

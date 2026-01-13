@@ -18,17 +18,40 @@ const (
 	DefaultPostUpdateTimeout = 60 * time.Second
 )
 
+// LifecycleHookSecurityContext contains security context for lifecycle hook execution.
+// This is used to determine whether lifecycle hooks should be allowed to run.
+type LifecycleHookSecurityContext struct {
+	// HooksEnabled indicates whether lifecycle hooks are globally enabled in settings.
+	HooksEnabled bool
+	// ProjectCreatedByAdmin indicates whether the project was created by an admin user.
+	// Hooks are only executed for projects created by admins.
+	ProjectCreatedByAdmin bool
+}
+
+// IsAuthorized returns true if lifecycle hooks are authorized to run.
+// Hooks require both:
+// 1. Global setting lifecycleHooksEnabled = true
+// 2. Project was created by an admin user
+func (s *LifecycleHookSecurityContext) IsAuthorized() bool {
+	if s == nil {
+		return false
+	}
+	return s.HooksEnabled && s.ProjectCreatedByAdmin
+}
+
 // LifecycleHookResult contains the result of executing a lifecycle hook
 type LifecycleHookResult struct {
-	Executed   bool
-	SkipUpdate bool // True if exit code was ExitCodeSkipUpdate (75)
-	ExitCode   int
-	Output     string
-	Error      error
+	Executed       bool
+	SkipUpdate     bool // True if exit code was ExitCodeSkipUpdate (75)
+	ExitCode       int
+	Output         string
+	Error          error
+	SecurityDenied bool // True if hook was blocked due to security policy
 }
 
 // ExecutePreUpdateCommand runs the pre-update lifecycle hook on a container
 // Returns SkipUpdate=true if the command exits with code 75 (EX_TEMPFAIL)
+// DEPRECATED: Use ExecutePreUpdateCommandSecure for security-checked execution.
 func ExecutePreUpdateCommand(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string) LifecycleHookResult {
 	cmd := GetLifecycleCommand(labels, LabelPreUpdate)
 	if len(cmd) == 0 {
@@ -45,7 +68,40 @@ func ExecutePreUpdateCommand(ctx context.Context, dcli *client.Client, container
 	return executeLifecycleCommand(ctx, dcli, containerID, cmd, timeout)
 }
 
+// ExecutePreUpdateCommandSecure runs the pre-update lifecycle hook with security checks.
+// Returns SecurityDenied=true if the hook was blocked due to security policy.
+func ExecutePreUpdateCommandSecure(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string, security *LifecycleHookSecurityContext) LifecycleHookResult {
+	cmd := GetLifecycleCommand(labels, LabelPreUpdate)
+	if len(cmd) == 0 {
+		return LifecycleHookResult{Executed: false}
+	}
+
+	// Security check: verify hooks are authorized
+	if !security.IsAuthorized() {
+		reason := "lifecycle hooks disabled"
+		if security != nil && security.HooksEnabled && !security.ProjectCreatedByAdmin {
+			reason = "project not created by admin"
+		}
+		slog.WarnContext(ctx, "ExecutePreUpdateCommandSecure: hook blocked by security policy",
+			"containerID", containerID,
+			"reason", reason,
+			"hooksEnabled", security != nil && security.HooksEnabled,
+			"projectCreatedByAdmin", security != nil && security.ProjectCreatedByAdmin)
+		return LifecycleHookResult{Executed: false, SecurityDenied: true, Error: fmt.Errorf("lifecycle hook blocked: %s", reason)}
+	}
+
+	timeout := getTimeout(labels, LabelPreUpdateTimeout, DefaultPreUpdateTimeout)
+
+	slog.InfoContext(ctx, "ExecutePreUpdateCommandSecure: running pre-update hook (authorized)",
+		"containerID", containerID,
+		"command", cmd,
+		"timeout", timeout)
+
+	return executeLifecycleCommand(ctx, dcli, containerID, cmd, timeout)
+}
+
 // ExecutePostUpdateCommand runs the post-update lifecycle hook on a container
+// DEPRECATED: Use ExecutePostUpdateCommandSecure for security-checked execution.
 func ExecutePostUpdateCommand(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string) LifecycleHookResult {
 	cmd := GetLifecycleCommand(labels, LabelPostUpdate)
 	if len(cmd) == 0 {
@@ -62,7 +118,38 @@ func ExecutePostUpdateCommand(ctx context.Context, dcli *client.Client, containe
 	return executeLifecycleCommand(ctx, dcli, containerID, cmd, timeout)
 }
 
+// ExecutePostUpdateCommandSecure runs the post-update lifecycle hook with security checks.
+// Returns SecurityDenied=true if the hook was blocked due to security policy.
+func ExecutePostUpdateCommandSecure(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string, security *LifecycleHookSecurityContext) LifecycleHookResult {
+	cmd := GetLifecycleCommand(labels, LabelPostUpdate)
+	if len(cmd) == 0 {
+		return LifecycleHookResult{Executed: false}
+	}
+
+	// Security check: verify hooks are authorized
+	if !security.IsAuthorized() {
+		reason := "lifecycle hooks disabled"
+		if security != nil && security.HooksEnabled && !security.ProjectCreatedByAdmin {
+			reason = "project not created by admin"
+		}
+		slog.WarnContext(ctx, "ExecutePostUpdateCommandSecure: hook blocked by security policy",
+			"containerID", containerID,
+			"reason", reason)
+		return LifecycleHookResult{Executed: false, SecurityDenied: true, Error: fmt.Errorf("lifecycle hook blocked: %s", reason)}
+	}
+
+	timeout := getTimeout(labels, LabelPostUpdateTimeout, DefaultPostUpdateTimeout)
+
+	slog.InfoContext(ctx, "ExecutePostUpdateCommandSecure: running post-update hook (authorized)",
+		"containerID", containerID,
+		"command", cmd,
+		"timeout", timeout)
+
+	return executeLifecycleCommand(ctx, dcli, containerID, cmd, timeout)
+}
+
 // ExecutePreCheckCommand runs the pre-check lifecycle hook on a container
+// DEPRECATED: Use ExecutePreCheckCommandSecure for security-checked execution.
 func ExecutePreCheckCommand(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string) LifecycleHookResult {
 	cmd := GetLifecycleCommand(labels, LabelPreCheck)
 	if len(cmd) == 0 {
@@ -72,12 +159,57 @@ func ExecutePreCheckCommand(ctx context.Context, dcli *client.Client, containerI
 	return executeLifecycleCommand(ctx, dcli, containerID, cmd, DefaultPreUpdateTimeout)
 }
 
+// ExecutePreCheckCommandSecure runs the pre-check lifecycle hook with security checks.
+// Returns SecurityDenied=true if the hook was blocked due to security policy.
+func ExecutePreCheckCommandSecure(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string, security *LifecycleHookSecurityContext) LifecycleHookResult {
+	cmd := GetLifecycleCommand(labels, LabelPreCheck)
+	if len(cmd) == 0 {
+		return LifecycleHookResult{Executed: false}
+	}
+
+	// Security check: verify hooks are authorized
+	if !security.IsAuthorized() {
+		slog.WarnContext(ctx, "ExecutePreCheckCommandSecure: hook blocked by security policy",
+			"containerID", containerID)
+		return LifecycleHookResult{Executed: false, SecurityDenied: true, Error: fmt.Errorf("lifecycle hook blocked by security policy")}
+	}
+
+	slog.InfoContext(ctx, "ExecutePreCheckCommandSecure: running pre-check hook (authorized)",
+		"containerID", containerID,
+		"command", cmd)
+
+	return executeLifecycleCommand(ctx, dcli, containerID, cmd, DefaultPreUpdateTimeout)
+}
+
 // ExecutePostCheckCommand runs the post-check lifecycle hook on a container
+// DEPRECATED: Use ExecutePostCheckCommandSecure for security-checked execution.
 func ExecutePostCheckCommand(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string) LifecycleHookResult {
 	cmd := GetLifecycleCommand(labels, LabelPostCheck)
 	if len(cmd) == 0 {
 		return LifecycleHookResult{Executed: false}
 	}
+
+	return executeLifecycleCommand(ctx, dcli, containerID, cmd, DefaultPostUpdateTimeout)
+}
+
+// ExecutePostCheckCommandSecure runs the post-check lifecycle hook with security checks.
+// Returns SecurityDenied=true if the hook was blocked due to security policy.
+func ExecutePostCheckCommandSecure(ctx context.Context, dcli *client.Client, containerID string, labels map[string]string, security *LifecycleHookSecurityContext) LifecycleHookResult {
+	cmd := GetLifecycleCommand(labels, LabelPostCheck)
+	if len(cmd) == 0 {
+		return LifecycleHookResult{Executed: false}
+	}
+
+	// Security check: verify hooks are authorized
+	if !security.IsAuthorized() {
+		slog.WarnContext(ctx, "ExecutePostCheckCommandSecure: hook blocked by security policy",
+			"containerID", containerID)
+		return LifecycleHookResult{Executed: false, SecurityDenied: true, Error: fmt.Errorf("lifecycle hook blocked by security policy")}
+	}
+
+	slog.InfoContext(ctx, "ExecutePostCheckCommandSecure: running post-check hook (authorized)",
+		"containerID", containerID,
+		"command", cmd)
 
 	return executeLifecycleCommand(ctx, dcli, containerID, cmd, DefaultPostUpdateTimeout)
 }

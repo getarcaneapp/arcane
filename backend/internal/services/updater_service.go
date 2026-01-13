@@ -634,6 +634,55 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 
 // --- internals ---
 
+// getLifecycleSecurityContext returns the security context for lifecycle hooks.
+// It checks the global setting and looks up whether the container belongs to an admin-created project.
+func (s *UpdaterService) getLifecycleSecurityContext(ctx context.Context, labels map[string]string) *arcaneupdater.LifecycleHookSecurityContext {
+	security := &arcaneupdater.LifecycleHookSecurityContext{
+		HooksEnabled:          false,
+		ProjectCreatedByAdmin: false,
+	}
+
+	// Check global setting
+	if s.settingsService != nil {
+		security.HooksEnabled = s.settingsService.GetBoolSetting(ctx, "lifecycleHooksEnabled", false)
+	}
+
+	if !security.HooksEnabled {
+		return security
+	}
+
+	// Look up the project by compose project name from container labels
+	if labels == nil || s.projectService == nil {
+		return security
+	}
+
+	composeProject := labels["com.docker.compose.project"]
+	if composeProject == "" {
+		// Container is not part of a compose project - hooks not allowed for standalone containers
+		slog.DebugContext(ctx, "getLifecycleSecurityContext: container not part of compose project, hooks disabled")
+		return security
+	}
+
+	// Find the project in the database
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("name = ?", composeProject).First(&project).Error; err != nil {
+		slog.DebugContext(ctx, "getLifecycleSecurityContext: could not find project in database",
+			"composeProject", composeProject, "error", err)
+		return security
+	}
+
+	security.ProjectCreatedByAdmin = project.CreatedByAdmin
+
+	slog.DebugContext(ctx, "getLifecycleSecurityContext: resolved security context",
+		"composeProject", composeProject,
+		"projectID", project.ID,
+		"hooksEnabled", security.HooksEnabled,
+		"projectCreatedByAdmin", security.ProjectCreatedByAdmin,
+		"authorized", security.IsAuthorized())
+
+	return security
+}
+
 //nolint:gocognit
 func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summary, inspect container.InspectResponse, newRef string) error {
 	dcli, err := s.dockerService.GetClient()
@@ -654,9 +703,16 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef, "isArcane", isArcane)
 
-	// Execute pre-update lifecycle hook
-	hookResult := arcaneupdater.ExecutePreUpdateCommand(ctx, dcli, cnt.ID, labels)
-	if hookResult.Executed {
+	// Get security context for lifecycle hooks
+	security := s.getLifecycleSecurityContext(ctx, labels)
+
+	// Execute pre-update lifecycle hook with security checks
+	hookResult := arcaneupdater.ExecutePreUpdateCommandSecure(ctx, dcli, cnt.ID, labels, security)
+	if hookResult.SecurityDenied {
+		slog.InfoContext(ctx, "updateContainer: pre-update hook blocked by security policy",
+			"containerId", cnt.ID, "containerName", name)
+		// Continue with update - hook was blocked but update should proceed
+	} else if hookResult.Executed {
 		if hookResult.SkipUpdate {
 			slog.InfoContext(ctx, "updateContainer: container requested skip via pre-update hook", "containerId", cnt.ID, "containerName", name)
 			return fmt.Errorf("container requested skip update via exit code %d", arcaneupdater.ExitCodeSkipUpdate)
@@ -732,9 +788,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	}
 	_ = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, resp.ID, name, systemUser.ID, systemUser.Username, "0", models.JSON{"action": "updater_start"})
 
-	// Execute post-update lifecycle hook on the new container
-	hookResult = arcaneupdater.ExecutePostUpdateCommand(ctx, dcli, resp.ID, labels)
-	if hookResult.Executed && hookResult.Error != nil {
+	// Execute post-update lifecycle hook on the new container with security checks
+	hookResult = arcaneupdater.ExecutePostUpdateCommandSecure(ctx, dcli, resp.ID, labels, security)
+	if hookResult.SecurityDenied {
+		slog.InfoContext(ctx, "updateContainer: post-update hook blocked by security policy",
+			"newContainerId", resp.ID)
+	} else if hookResult.Executed && hookResult.Error != nil {
 		slog.WarnContext(ctx, "updateContainer: post-update hook failed", "newContainerId", resp.ID, "err", hookResult.Error)
 		// Log but don't fail the update
 	}
@@ -1136,10 +1195,13 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			NewImages:    map[string]string{"main": s.normalizeRef(p.newRef)},
 		}
 
-		// Lifecycle hooks for "check" phase (best-effort)
+		// Lifecycle hooks for "check" phase (best-effort) with security checks
 		if !arcaneupdater.IsArcaneContainer(labels) {
-			pre := arcaneupdater.ExecutePreCheckCommand(ctx, dcli, p.cnt.ID, labels)
-			if pre.Executed {
+			security := s.getLifecycleSecurityContext(ctx, labels)
+			pre := arcaneupdater.ExecutePreCheckCommandSecure(ctx, dcli, p.cnt.ID, labels, security)
+			if pre.SecurityDenied {
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: pre-check hook blocked by security policy", "container", name)
+			} else if pre.Executed {
 				if pre.SkipUpdate {
 					res.Status = "skipped"
 					res.Error = fmt.Sprintf("container requested skip via pre-check hook (exit %d)", arcaneupdater.ExitCodeSkipUpdate)
@@ -1150,8 +1212,10 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 					slog.WarnContext(ctx, "restartContainersUsingOldIDs: pre-check hook failed", "container", name, "error", pre.Error.Error())
 				}
 			}
-			post := arcaneupdater.ExecutePostCheckCommand(ctx, dcli, p.cnt.ID, labels)
-			if post.Executed && post.Error != nil {
+			post := arcaneupdater.ExecutePostCheckCommandSecure(ctx, dcli, p.cnt.ID, labels, security)
+			if post.SecurityDenied {
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: post-check hook blocked by security policy", "container", name)
+			} else if post.Executed && post.Error != nil {
 				slog.WarnContext(ctx, "restartContainersUsingOldIDs: post-check hook failed", "container", name, "error", post.Error.Error())
 			}
 		}

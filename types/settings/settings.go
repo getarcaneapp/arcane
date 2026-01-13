@@ -191,4 +191,10 @@ type Update struct {
 	//
 	// Required: false
 	GlassEffectEnabled *string `json:"glassEffectEnabled,omitempty"`
+
+	// LifecycleHooksEnabled indicates if container lifecycle hooks (pre-update, post-update) are enabled.
+	// Security note: Only enable if you trust all users who can create projects.
+	//
+	// Required: false
+	LifecycleHooksEnabled *string `json:"lifecycleHooksEnabled,omitempty"`
 }

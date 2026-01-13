@@ -22,6 +22,10 @@ type Project struct {
 	RunningCount    int           `json:"running_count" sortable:"true"`
 	GitOpsManagedBy *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
 
+	// Security: Track whether project was created by an admin user.
+	// Lifecycle hooks are only executed for projects created by admins.
+	CreatedByAdmin bool `json:"created_by_admin" gorm:"column:created_by_admin;default:false"`
+
 	BaseModel
 }
 
