@@ -872,6 +872,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Auto-Login Enabled",
+	"security_auto_login_enabled_description": "Auto-login is currently enabled via environment variables. Authentication settings are disabled because users are automatically logged in with pre-configured credentials. To modify authentication settings, disable auto-login in your server configuration.",
 	"_comment_settings_jobs": "=== SETTINGS - JOBS ===",
 	"jobs_title": "Job Schedules",
 	"jobs_description": "Configure how often Arcane background jobs run. Changes apply immediately.",
