@@ -147,6 +147,8 @@
 	"common_loading_label": "Cargando - {label}",
 	"common_create": "Crear",
 	"common_logs": "Registros",
+	"common_json": "JSON",
+	"common_raw": "Rápido",
 	"common_select_locale": "Seleccionar idioma",
 	"common_show": "Mostrar",
 	"common_registry": "Registro",
