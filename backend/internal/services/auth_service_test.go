@@ -420,6 +420,7 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 func TestGetAutoLoginPassword(t *testing.T) {
 	s := newTestAuthService("")
 	s.config = &config.Config{
+		AutoLoginEnable:   true,
 		AutoLoginPassword: "my-secret-password",
 	}
 
