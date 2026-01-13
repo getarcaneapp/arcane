@@ -147,6 +147,8 @@
 	"common_loading_label": "Loading - {label}",
 	"common_create": "Create",
 	"common_logs": "Logs",
+	"common_json": "JSON",
+	"common_raw": "Grezzo",
 	"common_select_locale": "Select locale",
 	"common_show": "Show",
 	"common_registry": "Registry",
