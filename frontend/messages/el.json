@@ -147,6 +147,8 @@
 	"common_loading_label": "Εκκίνηση - {label}",
 	"common_create": "Δημιουργία",
 	"common_logs": "Αρχεία καταγραφής",
+	"common_json": "JSON",
+	"common_raw": "Ακατέργαστο",
 	"common_select_locale": "Επιλογή Γλώσσας",
 	"common_show": "Εμφάνιση",
 	"common_registry": "Μητρώο",
