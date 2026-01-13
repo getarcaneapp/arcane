@@ -57,7 +57,7 @@ type Config struct {
 	// When enabled, the frontend will automatically authenticate using the specified credentials.
 	AutoLoginEnable   bool   `env:"AUTO_LOGIN_ENABLE" default:"false"`
 	AutoLoginUsername string `env:"AUTO_LOGIN_USERNAME" default:"arcane"`
-	AutoLoginPassword string `env:"AUTO_LOGIN_PASSWORD" default:"arcane-admin"`
+	AutoLoginPassword string `env:"AUTO_LOGIN_PASSWORD" default:"arcane-admin" options:"file"`
 
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
@@ -281,9 +281,9 @@ func (c *Config) MaskSensitive() map[string]any {
 			envTag = fieldType.Name
 		}
 
-		// Fields with "file" option or containing "Password" are considered sensitive
+		// Fields with "file" option are considered sensitive
 		optionsTag := fieldType.Tag.Get("options")
-		isSensitive := strings.Contains(optionsTag, "file") || strings.Contains(fieldType.Name, "Password")
+		isSensitive := strings.Contains(optionsTag, "file")
 
 		if isSensitive {
 			// Mask sensitive values
