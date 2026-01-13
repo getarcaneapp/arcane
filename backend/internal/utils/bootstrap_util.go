@@ -65,7 +65,7 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 	}
 
 	if err := autoLoginInitFunc(ctx); err != nil {
-		slog.WarnContext(ctx, "Failed to create default admin user", "error", err.Error())
+		slog.WarnContext(ctx, "Failed to initialize auto-login", "error", err.Error())
 	}
 
 	// Migrate legacy OIDC JSON config to individual fields (runs before env sync)
