@@ -147,6 +147,8 @@
 	"common_loading_label": "Загрузка - {label}",
 	"common_create": "Создать",
 	"common_logs": "Логи",
+	"common_json": "JSON",
+	"common_raw": "Сырье",
 	"common_select_locale": "Выберите язык",
 	"common_show": "Показать",
 	"common_registry": "Реестр",
