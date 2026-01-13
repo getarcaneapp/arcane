@@ -27,6 +27,7 @@ on:
 
 jobs:
   deadcode:
+    if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
     name: Run GoLang Deadcode Analysis
     runs-on: depot-ubuntu-latest
     permissions:

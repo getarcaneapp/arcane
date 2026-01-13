@@ -31,7 +31,7 @@
 		import: false
 	});
 
-	const activeSyncs = $derived(syncs.data?.filter((s) => s.enabled && s.autoSync).length ?? 0);
+	const activeSyncs = $derived(syncs.data?.filter((s) => s.autoSync).length ?? 0);
 	const successfulSyncs = $derived(syncs.data?.filter((s) => s.lastSyncStatus === 'success').length ?? 0);
 
 	$effect(() => {

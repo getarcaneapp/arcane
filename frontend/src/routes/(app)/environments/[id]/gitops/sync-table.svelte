@@ -176,12 +176,6 @@
 			title: m.git_sync_last_sync(),
 			sortable: true,
 			cell: LastSyncCell
-		},
-		{
-			accessorKey: 'enabled',
-			title: m.common_status(),
-			sortable: true,
-			cell: EnabledCell
 		}
 	] satisfies ColumnSpec<GitOpsSync>[];
 
@@ -193,8 +187,7 @@
 		{ id: 'autoSync', label: m.git_sync_auto_sync(), defaultVisible: true },
 		{ id: 'lastSyncStatus', label: m.git_sync_status(), defaultVisible: true },
 		{ id: 'lastSyncCommit', label: 'Commit', defaultVisible: false },
-		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true },
-		{ id: 'enabled', label: m.common_status(), defaultVisible: true }
+		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true }
 	];
 </script>
 
@@ -259,10 +252,6 @@
 
 {#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
-{/snippet}
-
-{#snippet EnabledCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
-	<StatusBadge variant={value ? 'green' : 'red'} text={value ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
 {#snippet SyncMobileCardSnippet({
