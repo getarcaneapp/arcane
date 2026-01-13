@@ -147,6 +147,8 @@
 	"common_loading_label": "Đang tải - {label}",
 	"common_create": "Tạo",
 	"common_logs": "Logs",
+	"common_json": "JSON",
+	"common_raw": "Raw",
 	"common_select_locale": "Chọn ngôn ngữ",
 	"common_show": "Hiển thị",
 	"common_registry": "Registry",
