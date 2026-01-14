@@ -238,6 +238,12 @@
 			cmd: data.command.trim() ? data.command.trim().split(' ') : undefined,
 			workingDir: data.workingDir.trim() || undefined,
 			user: data.user.trim() || undefined,
+			hostname: data.hostname.trim() || undefined,
+			domainname: data.domainname.trim() || undefined,
+			attachStdout: data.attachStdout,
+			attachStderr: data.attachStderr,
+			attachStdin: data.attachStdin,
+			networkDisabled: data.networkDisabled,
 			...(data.tty && { tty: true }),
 			...(data.openStdin && { openStdin: true }),
 			...(data.stdinOnce && { stdinOnce: true }),
@@ -249,6 +255,8 @@
 				portBindings: Object.keys(dynamicPortBindings).length > 0 ? dynamicPortBindings : undefined,
 				networkMode: data.networkDisabled ? 'none' : undefined,
 				...(data.privileged && { privileged: true }),
+				...(data.readonlyRootfs && { readonlyRootfs: true }),
+				...(data.publishAllPorts && { publishAllPorts: true }),
 				...(data.autoRemove && { autoRemove: true }),
 				...(data.restartPolicy !== 'no' && {
 					restartPolicy: {
@@ -301,7 +309,9 @@
 					<Tabs.Content value="basic" class="mt-0 space-y-6">
 						<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 							<div class="space-y-3">
-								<Label for="container-name" class="text-sm font-medium">{m.container_name_label()}</Label>
+								<Label for="container-name" class="text-sm font-medium">
+									{m.container_name_label()} <span class="text-destructive">*</span>
+								</Label>
 								<Input
 									id="container-name"
 									type="text"
@@ -317,7 +327,9 @@
 							</div>
 
 							<div class="space-y-3">
-								<Label for="image" class="text-sm font-medium">{m.container_image_label()}</Label>
+								<Label for="image" class="text-sm font-medium">
+									{m.container_image_label()} <span class="text-destructive">*</span>
+								</Label>
 								<Input
 									id="image"
 									type="text"
