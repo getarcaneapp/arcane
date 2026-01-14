@@ -12,7 +12,7 @@
 	import { truncateString } from '$lib/utils/string.utils';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/volume.type';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
@@ -135,6 +135,18 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -271,7 +283,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (volumes = await volumeService.getVolumes(options))}
 	{columns}
 	{mobileFields}

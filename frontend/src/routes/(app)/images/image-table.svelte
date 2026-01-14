@@ -16,7 +16,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
 	import { format } from 'date-fns';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { DownloadIcon, TrashIcon, EllipsisIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon } from '$lib/icons';
@@ -171,6 +171,18 @@
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -361,7 +373,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (images = await imageService.getImages(options))}
 	{columns}
 	{mobileFields}

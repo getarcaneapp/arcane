@@ -10,12 +10,7 @@
 		disabled?: boolean;
 	}
 
-	let {
-		providerId,
-		eventImageUpdate = $bindable(),
-		eventContainerUpdate = $bindable(),
-		disabled = false
-	}: Props = $props();
+	let { providerId, eventImageUpdate = $bindable(), eventContainerUpdate = $bindable(), disabled = false }: Props = $props();
 </script>
 
 <div class="space-y-3 pt-2">

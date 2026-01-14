@@ -344,7 +344,7 @@
 		return colors[Math.abs(hash) % colors.length];
 	}
 
-	function tryParseJson(message: string) : {isJson: boolean; parsed?: any } {
+	function tryParseJson(message: string): { isJson: boolean; parsed?: any } {
 		const trimmed = message.trim();
 		if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
 			return { isJson: false };
@@ -353,7 +353,7 @@
 			const parsed = JSON.parse(trimmed);
 			return { isJson: true, parsed };
 		} catch {
-			return {isJson: false};
+			return { isJson: false };
 		}
 	}
 

@@ -9,7 +9,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { GitRepository } from '$lib/types/gitops.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -42,6 +42,19 @@
 		removing: false,
 		testing: false
 	});
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: Trash2Icon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
 	async function handleDeleteSelected(ids: string[]) {
@@ -273,7 +286,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (repositories = await gitRepositoryService.getRepositories(options))}
 	{columns}
 	{mobileFields}
