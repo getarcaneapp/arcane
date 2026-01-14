@@ -688,7 +688,7 @@
 	"compose_destroy_success": "Project succesvol verwijderd.",
 	"compose_destroy": "Vernietig",
 	"projects_bulk_up": "Omhoog ({count})",
-	"projects_bulk_down": "Omlaag ({count})",
+	"projects_bulk_down": "Gestopt ({count})",
 	"projects_bulk_redeploy": "Herimplementeren ({count})",
 	"projects_bulk_up_confirm_title": "{count} project(en) starten",
 	"projects_bulk_up_confirm_message": "Weet u zeker dat u {count} project(en) wilt starten?",
