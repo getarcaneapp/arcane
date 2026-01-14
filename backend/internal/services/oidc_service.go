@@ -104,7 +104,11 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 		insecureTransport = transport.Clone()
 	} else {
 		// Transport is nil or not *http.Transport - create a new default transport
-		insecureTransport = http.DefaultTransport.(*http.Transport).Clone()
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			insecureTransport = defaultTransport.Clone()
+		} else {
+			insecureTransport = &http.Transport{}
+		}
 	}
 
 	if insecureTransport.TLSClientConfig == nil {
