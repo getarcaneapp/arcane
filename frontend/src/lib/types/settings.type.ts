@@ -9,6 +9,13 @@ export type Settings = {
 	pollingInterval: number;
 	environmentHealthInterval: number;
 	dockerPruneMode: 'all' | 'dangling';
+	scheduledPruneEnabled?: boolean;
+	scheduledPruneInterval?: number;
+	scheduledPruneContainers?: boolean;
+	scheduledPruneImages?: boolean;
+	scheduledPruneVolumes?: boolean;
+	scheduledPruneNetworks?: boolean;
+	scheduledPruneBuildCache?: boolean;
 	maxImageUploadSize: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;

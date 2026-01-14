@@ -32,9 +32,10 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged func(ctx context.Context)
-	OnAutoUpdateSettingsChanged   func(ctx context.Context)
-	OnProjectsDirectoryChanged    func(ctx context.Context)
+	OnImagePollingSettingsChanged   func(ctx context.Context)
+	OnAutoUpdateSettingsChanged     func(ctx context.Context)
+	OnProjectsDirectoryChanged      func(ctx context.Context)
+	OnScheduledPruneSettingsChanged func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -91,6 +92,13 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
 		AutoInjectEnv:              models.SettingVariable{Value: "false"},
 		PruneMode:                  models.SettingVariable{Value: "dangling"},
+		ScheduledPruneEnabled:      models.SettingVariable{Value: "false"},
+		ScheduledPruneInterval:     models.SettingVariable{Value: "1440"},
+		ScheduledPruneContainers:   models.SettingVariable{Value: "true"},
+		ScheduledPruneImages:       models.SettingVariable{Value: "true"},
+		ScheduledPruneVolumes:      models.SettingVariable{Value: "false"},
+		ScheduledPruneNetworks:     models.SettingVariable{Value: "true"},
+		ScheduledPruneBuildCache:   models.SettingVariable{Value: "false"},
 		BaseServerURL:              models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:             models.SettingVariable{Value: "true"},
 		DefaultShell:               models.SettingVariable{Value: "/bin/sh"},
@@ -407,7 +415,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +443,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if changedScheduledPrune && s.OnScheduledPruneSettingsChanged != nil {
+		s.OnScheduledPruneSettingsChanged(ctx)
+	}
 	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
@@ -442,13 +453,14 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
 
 	changedPolling := false
 	changedAutoUpdate := false
+	changedScheduledPrune := false
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -462,6 +474,15 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		var value string
 		if fieldValue.Kind() == reflect.Ptr {
 			value = fieldValue.Elem().String()
+		}
+
+		// Validate scheduled prune interval bounds (60-10080 minutes)
+		if key == "scheduledPruneInterval" && value != "" {
+			if minutes, err := strconv.Atoi(value); err != nil {
+				return nil, false, false, false, fmt.Errorf("invalid scheduledPruneInterval: %w", err)
+			} else if minutes < 60 || minutes > 10080 {
+				return nil, false, false, false, fmt.Errorf("scheduledPruneInterval must be between 60 and 10080 minutes")
+			}
 		}
 
 		var valueToSave string
@@ -479,7 +500,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -492,10 +513,12 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
+		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
+			changedScheduledPrune = true
 		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {

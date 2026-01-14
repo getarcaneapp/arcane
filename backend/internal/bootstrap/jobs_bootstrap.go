@@ -45,6 +45,11 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 		slog.ErrorContext(appCtx, "Failed to register event cleanup job", "error", err)
 	}
 
+	scheduledPruneJob := job.NewScheduledPruneJob(scheduler, appServices.System, appServices.Settings)
+	if err := scheduledPruneJob.Register(appCtx); err != nil {
+		slog.ErrorContext(appCtx, "Failed to register scheduled prune job", "error", err)
+	}
+
 	fsWatcherJob, err := job.RegisterFilesystemWatcherJob(appCtx, scheduler, appServices.Project, appServices.Template, appServices.Settings)
 	if err != nil {
 		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", "error", err)
@@ -56,7 +61,7 @@ func registerJobs(appCtx context.Context, scheduler *job.Scheduler, appServices 
 	}
 
 	setupJobScheduleCallbacks(appServices, appConfig, environmentHealthJob, analyticsJob, eventCleanupJob)
-	setupSettingsCallbacks(appServices, appConfig, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob)
+	setupSettingsCallbacks(appServices, appConfig, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob)
 }
 
 func setupJobScheduleCallbacks(appServices *Services, appConfig *config.Config, environmentHealthJob *job.EnvironmentHealthJob, analyticsJob *job.AnalyticsJob, eventCleanupJob *job.EventCleanupJob) {
@@ -77,7 +82,7 @@ func setupJobScheduleCallbacks(appServices *Services, appConfig *config.Config, 
 	}
 }
 
-func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, imagePollingJob *job.ImagePollingJob, autoUpdateJob *job.AutoUpdateJob, environmentHealthJob *job.EnvironmentHealthJob, fsWatcherJob *job.FilesystemWatcherJob) {
+func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, imagePollingJob *job.ImagePollingJob, autoUpdateJob *job.AutoUpdateJob, environmentHealthJob *job.EnvironmentHealthJob, fsWatcherJob *job.FilesystemWatcherJob, scheduledPruneJob *job.ScheduledPruneJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := imagePollingJob.Reschedule(ctx); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
@@ -102,6 +107,11 @@ func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, ima
 			if err := fsWatcherJob.RestartProjectsWatcher(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to restart projects filesystem watcher", "error", err)
 			}
+		}
+	}
+	appServices.Settings.OnScheduledPruneSettingsChanged = func(ctx context.Context) {
+		if err := scheduledPruneJob.Reschedule(ctx); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule scheduled-prune job", "error", err)
 		}
 	}
 }
