@@ -33,7 +33,8 @@
 		DockerBrandIcon,
 		SettingsIcon,
 		GitBranchIcon,
-		ArrowRightIcon
+		ArrowRightIcon,
+		JobsIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -53,6 +54,11 @@
 			value: 'docker',
 			label: m.environments_docker_settings_title(),
 			icon: DockerBrandIcon
+		},
+		{
+			value: 'maintenance',
+			label: m.maintenance_title(),
+			icon: JobsIcon
 		}
 	];
 
@@ -85,6 +91,13 @@
 	let formDiskUsagePath = $state('/app/data/projects');
 	let formMaxImageUploadSize = $state(500);
 	let formBaseServerUrl = $state('http://localhost');
+	let formScheduledPruneEnabled = $state(false);
+	let formScheduledPruneInterval = $state(1440);
+	let formScheduledPruneContainers = $state(true);
+	let formScheduledPruneImages = $state(true);
+	let formScheduledPruneVolumes = $state(false);
+	let formScheduledPruneNetworks = $state(true);
+	let formScheduledPruneBuildCache = $state(false);
 
 	type PollingIntervalMode = 'hourly' | 'daily' | 'weekly' | 'custom';
 
@@ -146,6 +159,13 @@
 			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+			formScheduledPruneEnabled = settings.scheduledPruneEnabled ?? false;
+			formScheduledPruneInterval = settings.scheduledPruneInterval ?? 1440;
+			formScheduledPruneContainers = settings.scheduledPruneContainers ?? true;
+			formScheduledPruneImages = settings.scheduledPruneImages ?? true;
+			formScheduledPruneVolumes = settings.scheduledPruneVolumes ?? false;
+			formScheduledPruneNetworks = settings.scheduledPruneNetworks ?? true;
+			formScheduledPruneBuildCache = settings.scheduledPruneBuildCache ?? false;
 
 			// Initialize derived states
 			pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
@@ -201,7 +221,14 @@
 					formProjectsDirectory !== (settings.projectsDirectory || '/app/data/projects') ||
 					formDiskUsagePath !== (settings.diskUsagePath || '/app/data/projects') ||
 					formMaxImageUploadSize !== (settings.maxImageUploadSize || 500) ||
-					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost')))
+					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost') ||
+					formScheduledPruneEnabled !== (settings.scheduledPruneEnabled ?? false) ||
+					formScheduledPruneInterval !== (settings.scheduledPruneInterval ?? 1440) ||
+					formScheduledPruneContainers !== (settings.scheduledPruneContainers ?? true) ||
+					formScheduledPruneImages !== (settings.scheduledPruneImages ?? true) ||
+					formScheduledPruneVolumes !== (settings.scheduledPruneVolumes ?? false) ||
+					formScheduledPruneNetworks !== (settings.scheduledPruneNetworks ?? true) ||
+					formScheduledPruneBuildCache !== (settings.scheduledPruneBuildCache ?? false)))
 	);
 
 	async function refreshEnvironment() {
@@ -223,6 +250,17 @@
 				formAutoInjectEnv = settings.autoInjectEnv;
 				formPruneMode = settings.dockerPruneMode || 'dangling';
 				formDefaultShell = settings.defaultShell || '/bin/sh';
+				formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+				formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
+				formMaxImageUploadSize = settings.maxImageUploadSize || 500;
+				formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
+				formScheduledPruneEnabled = settings.scheduledPruneEnabled ?? false;
+				formScheduledPruneInterval = settings.scheduledPruneInterval ?? 1440;
+				formScheduledPruneContainers = settings.scheduledPruneContainers ?? true;
+				formScheduledPruneImages = settings.scheduledPruneImages ?? true;
+				formScheduledPruneVolumes = settings.scheduledPruneVolumes ?? false;
+				formScheduledPruneNetworks = settings.scheduledPruneNetworks ?? true;
+				formScheduledPruneBuildCache = settings.scheduledPruneBuildCache ?? false;
 
 				// Initialize derived states
 				pollingIntervalMode = imagePollingOptions.find((o) => o.minutes === settings.pollingInterval)?.value ?? 'custom';
@@ -288,6 +326,8 @@
 
 		try {
 			isSaving = true;
+			const sanitizedScheduledPruneInterval = Math.min(Math.max(formScheduledPruneInterval || 0, 60), 10080);
+			formScheduledPruneInterval = sanitizedScheduledPruneInterval;
 
 			// Update environment basic info
 			await environmentManagementService.update(environment.id, {
@@ -309,7 +349,14 @@
 					projectsDirectory: formProjectsDirectory,
 					diskUsagePath: formDiskUsagePath,
 					maxImageUploadSize: formMaxImageUploadSize,
-					baseServerUrl: formBaseServerUrl
+					baseServerUrl: formBaseServerUrl,
+					scheduledPruneEnabled: formScheduledPruneEnabled,
+					scheduledPruneInterval: sanitizedScheduledPruneInterval,
+					scheduledPruneContainers: formScheduledPruneContainers,
+					scheduledPruneImages: formScheduledPruneImages,
+					scheduledPruneVolumes: formScheduledPruneVolumes,
+					scheduledPruneNetworks: formScheduledPruneNetworks,
+					scheduledPruneBuildCache: formScheduledPruneBuildCache
 				});
 			}
 
@@ -807,6 +854,81 @@
 										<Switch id="auto-inject-env" bind:checked={formAutoInjectEnv} />
 									</div>
 								</div>
+							</div>
+						</Tabs.Content>
+						<Tabs.Content value="maintenance" class="space-y-6 p-4">
+							<div class="space-y-4 rounded-lg border p-4">
+								<div class="flex items-center justify-between">
+									<div class="space-y-0.5">
+										<Label class="text-sm font-medium">{m.scheduled_prune_title()}</Label>
+										<div class="text-muted-foreground text-xs">
+											{m.scheduled_prune_description()}
+										</div>
+									</div>
+									<Switch bind:checked={formScheduledPruneEnabled} />
+								</div>
+
+								{#if formScheduledPruneEnabled}
+									<div class="space-y-4 pt-2">
+										<TextInputWithLabel
+											id="scheduled-prune-interval"
+											label={m.scheduled_prune_interval_label()}
+											bind:value={formScheduledPruneInterval}
+											placeholder="1440"
+											helpText={m.scheduled_prune_interval_description()}
+											type="number"
+										/>
+
+										<div class="grid gap-3 sm:grid-cols-2">
+											<div class="flex items-start justify-between rounded-lg border p-3">
+												<div class="space-y-0.5">
+													<Label class="text-sm font-medium">{m.scheduled_prune_containers_label()}</Label>
+													<p class="text-muted-foreground text-xs">{m.scheduled_prune_containers_description()}</p>
+												</div>
+												<Switch bind:checked={formScheduledPruneContainers} />
+											</div>
+											<div class="flex items-start justify-between rounded-lg border p-3">
+												<div class="space-y-0.5">
+													<Label class="text-sm font-medium">{m.scheduled_prune_images_label()}</Label>
+													<p class="text-muted-foreground text-xs">{m.scheduled_prune_images_description()}</p>
+												</div>
+												<Switch bind:checked={formScheduledPruneImages} />
+											</div>
+											<div class="flex items-start justify-between rounded-lg border p-3">
+												<div class="space-y-0.5">
+													<Label class="text-sm font-medium">{m.scheduled_prune_volumes_label()}</Label>
+													<p class="text-muted-foreground text-xs">{m.scheduled_prune_volumes_description()}</p>
+												</div>
+												<Switch bind:checked={formScheduledPruneVolumes} />
+											</div>
+											<div class="flex items-start justify-between rounded-lg border p-3">
+												<div class="space-y-0.5">
+													<Label class="text-sm font-medium">{m.scheduled_prune_networks_label()}</Label>
+													<p class="text-muted-foreground text-xs">{m.scheduled_prune_networks_description()}</p>
+												</div>
+												<Switch bind:checked={formScheduledPruneNetworks} />
+											</div>
+											<div class="flex items-start justify-between rounded-lg border p-3">
+												<div class="space-y-0.5">
+													<Label class="text-sm font-medium">{m.scheduled_prune_build_cache_label()}</Label>
+													<p class="text-muted-foreground text-xs">{m.scheduled_prune_build_cache_description()}</p>
+												</div>
+												<Switch bind:checked={formScheduledPruneBuildCache} />
+											</div>
+										</div>
+
+										{#if formScheduledPruneVolumes}
+											<div
+												class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200"
+											>
+												<AlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+												<div class="space-y-1 text-sm">
+													<p class="font-medium">{m.scheduled_prune_volumes_warning()}</p>
+												</div>
+											</div>
+										{/if}
+									</div>
+								{/if}
 							</div>
 						</Tabs.Content>
 					</Tabs.Root>
