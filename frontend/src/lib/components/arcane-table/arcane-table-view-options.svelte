@@ -26,10 +26,9 @@
 				{...props}
 				action="base"
 				tone="ghost"
-				size="sm"
 				icon={ViewOptionsIcon}
 				customLabel={m.common_view()}
-				class="border-input hover:bg-card/60 h-8 border hover:text-inherit"
+				class="border-input hover:bg-card/60 border hover:text-inherit"
 			/>
 		{/snippet}
 	</DropdownMenu.Trigger>
