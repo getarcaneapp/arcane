@@ -12,21 +12,33 @@ type SettingsFormState = {
 	resetFunction?: () => void;
 };
 
-type Options<T> = {
-	formInputs: Readable<T>;
-	getCurrentSettings: () => Record<string, any>;
+type SettingsPayload = Partial<Settings> & Record<string, unknown>;
+
+type Options<TFormInputs, TSaveData extends SettingsPayload> = {
+	formInputs: Readable<TFormInputs>;
+	getCurrentSettings: () => TSaveData;
+	/**
+	 * Custom save handler. If provided, this will be called instead of the default
+	 * settingsService.updateSettings(). Useful for environment-specific settings.
+	 */
+	onSave?: (data: TSaveData) => Promise<void>;
 };
 
-export class UseSettingsForm<T extends Record<string, { value: any; error: string | null }>> {
+export class UseSettingsForm<
+	TFormInputs extends Record<string, { value: unknown; error: string | null }>,
+	TSaveData extends SettingsPayload
+> {
 	#isLoading = $state(false);
-	#formValues = $state<T | null>(null);
+	#formValues = $state<TFormInputs | null>(null);
 	#saveFunction: (() => Promise<void> | void) | null = null;
 	#resetFunction: (() => void) | null = null;
 	private formState: SettingsFormState | undefined;
-	private getCurrentSettings: () => Record<string, any>;
+	private getCurrentSettings: () => TSaveData;
+	private customOnSave?: (data: TSaveData) => Promise<void>;
 
-	constructor({ formInputs, getCurrentSettings }: Options<T>) {
+	constructor({ formInputs, getCurrentSettings, onSave }: Options<TFormInputs, TSaveData>) {
 		this.getCurrentSettings = getCurrentSettings;
+		this.customOnSave = onSave;
 
 		try {
 			this.formState = getContext('settingsFormState') as SettingsFormState | undefined;
@@ -55,7 +67,7 @@ export class UseSettingsForm<T extends Record<string, { value: any; error: strin
 		if (!currentFormValues) return false;
 
 		const settingsToCompare = this.getCurrentSettings();
-		const keys = Object.keys(currentFormValues) as (keyof T)[];
+		const keys = Object.keys(currentFormValues) as (keyof TFormInputs)[];
 
 		return keys.some((key) => {
 			const input = currentFormValues[key];
@@ -66,12 +78,21 @@ export class UseSettingsForm<T extends Record<string, { value: any; error: strin
 		});
 	});
 
-	async updateSettings(updatedSettings: Partial<Settings>) {
-		const result = await tryCatch(settingsService.updateSettings(updatedSettings as any));
+	async updateSettings(updatedSettings: Partial<TSaveData>) {
+		// Use custom save handler if provided
+		if (this.customOnSave) {
+			const mergedSettings = {
+				...this.getCurrentSettings(),
+				...updatedSettings
+			} as TSaveData;
+			await this.customOnSave(mergedSettings);
+		} else {
+			const result = await tryCatch(settingsService.updateSettings(updatedSettings));
 
-		if (result.error) {
-			console.error('Error updating settings:', result.error);
-			throw result.error;
+			if (result.error) {
+				console.error('Error updating settings:', result.error);
+				throw result.error;
+			}
 		}
 
 		await settingsStore.reload();
