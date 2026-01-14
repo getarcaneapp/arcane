@@ -234,7 +234,7 @@ func TestIncludeAndCustomFilesShareValidation(t *testing.T) {
 	}
 }
 
-func TestParseCustomFilesSkipsNonExistentFiles(t *testing.T) {
+func TestParseCustomFilesHandlesNonExistentFiles(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
@@ -253,18 +253,28 @@ func TestParseCustomFilesSkipsNonExistentFiles(t *testing.T) {
 		t.Fatalf("failed to create valid file: %v", err)
 	}
 
-	// ParseCustomFiles should skip non-existent files
+	// ParseCustomFiles should return both files (placeholder for non-existent)
 	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() returned error: %v", err)
 	}
 
-	// Should only contain the valid file
-	if len(files) != 1 {
-		t.Errorf("expected 1 file, got %d", len(files))
+	// Should contain both files
+	if len(files) != 2 {
+		t.Errorf("expected 2 files, got %d", len(files))
 	}
-	if len(files) > 0 && files[0].Path != "valid.txt" {
-		t.Errorf("expected valid.txt, got %s", files[0].Path)
+
+	// Check non-existent file has placeholder content
+	for _, f := range files {
+		if f.Path == "nonexistent.txt" {
+			if f.Content != PlaceholderGeneric {
+				t.Errorf("expected placeholder content for nonexistent.txt, got %q", f.Content)
+			}
+		} else if f.Path == "valid.txt" {
+			if f.Content != "valid content" {
+				t.Errorf("expected 'valid content' for valid.txt, got %q", f.Content)
+			}
+		}
 	}
 }
 
@@ -377,6 +387,44 @@ func TestRegisterCustomFileDoesNotOverwriteExisting(t *testing.T) {
 	}
 	if string(content) != existingContent {
 		t.Errorf("file content was modified: got %q, want %q", string(content), existingContent)
+	}
+}
+
+func TestRegisterCustomFileDoesNotCreateFile(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	filePath := filepath.Join(projectDir, "newfile.txt")
+
+	// Register a new file
+	if err := RegisterCustomFile(projectDir, "newfile.txt", ExternalPathsConfig{}); err != nil {
+		t.Fatalf("RegisterCustomFile() failed: %v", err)
+	}
+
+	// Verify file was NOT created on disk
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		t.Error("RegisterCustomFile() should not create file on disk")
+	}
+
+	// Verify file is in manifest
+	manifest, err := ReadManifest(projectDir)
+	if err != nil {
+		t.Fatalf("ReadManifest() failed: %v", err)
+	}
+	if len(manifest.CustomFiles) != 1 || manifest.CustomFiles[0] != "newfile.txt" {
+		t.Errorf("expected manifest to contain newfile.txt, got %v", manifest.CustomFiles)
+	}
+
+	// Verify ParseCustomFiles returns placeholder content
+	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
+	if err != nil {
+		t.Fatalf("ParseCustomFiles() failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].Content != PlaceholderGeneric {
+		t.Errorf("expected placeholder content, got %q", files[0].Content)
 	}
 }
 

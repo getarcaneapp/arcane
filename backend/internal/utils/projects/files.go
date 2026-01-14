@@ -160,6 +160,30 @@ func isReservedFileName(absPath, absProjectDir string) bool {
 	return false
 }
 
+// readFileWithPlaceholder reads a file, returning placeholder content if it doesn't exist.
+func readFileWithPlaceholder(absPath, placeholder string) (string, error) {
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return placeholder, nil
+		}
+		return "", err
+	}
+	return string(content), nil
+}
+
+// writeFileWithDir writes content to a file, creating parent directories as needed.
+func writeFileWithDir(absPath, content string) error {
+	if dir := filepath.Dir(absPath); dir != "" {
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+			if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
+		}
+	}
+	return os.WriteFile(absPath, []byte(content), common.FilePerm)
+}
+
 // ValidateFilePath validates a file path for write operations.
 // Paths are allowed if they resolve to within the project directory or any of the configured AllowedPaths.
 // Returns the validated absolute path.
@@ -243,6 +267,13 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	return includeFiles, nil
 }
 
+const (
+	// PlaceholderYAML is the placeholder content for new YAML files (compose includes)
+	PlaceholderYAML = "# This file will be created when you save changes\nservices:\n"
+	// PlaceholderGeneric is the placeholder content for new generic files
+	PlaceholderGeneric = "# This file will be created when you save changes\n"
+)
+
 func parseIncludeItem(item interface{}, baseDir string) (IncludeFile, error) {
 	var includePath string
 
@@ -267,17 +298,9 @@ func parseIncludeItem(item interface{}, baseDir string) (IncludeFile, error) {
 	}
 	fullPath = filepath.Clean(fullPath)
 
-	var content string
-	fileContent, err := os.ReadFile(fullPath)
+	content, err := readFileWithPlaceholder(fullPath, PlaceholderYAML)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// File doesn't exist yet - return empty content so it can be created
-			content = "# This file will be created when you save changes\nservices:\n"
-		} else {
-			return IncludeFile{}, fmt.Errorf("failed to read include file %s: %w", includePath, err)
-		}
-	} else {
-		content = string(fileContent)
+		return IncludeFile{}, fmt.Errorf("failed to read include file %s: %w", includePath, err)
 	}
 
 	relativePath := includePath
@@ -304,16 +327,7 @@ func WriteIncludeFile(projectDir, includePath, content string, cfg ExternalPaths
 		return err
 	}
 
-	dir := filepath.Dir(validatedPath)
-
-	// Only create directory if it doesn't exist
-	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-
-	if err := os.WriteFile(validatedPath, []byte(content), common.FilePerm); err != nil {
+	if err := writeFileWithDir(validatedPath, content); err != nil {
 		return fmt.Errorf("failed to write include file: %w", err)
 	}
 
@@ -353,6 +367,7 @@ func WriteManifest(projectDir string, m *ArcaneManifest) error {
 }
 
 // ParseCustomFiles reads all custom files for a project.
+// Security: Validates paths against allowed external paths to prevent manifest tampering attacks.
 func ParseCustomFiles(projectDir string, cfg ExternalPathsConfig) ([]CustomFile, error) {
 	manifest, err := ReadManifest(projectDir)
 	if err != nil {
@@ -364,24 +379,21 @@ func ParseCustomFiles(projectDir string, cfg ExternalPathsConfig) ([]CustomFile,
 	for _, path := range manifest.CustomFiles {
 		// Validate path using the same rules as RegisterCustomFile
 		absPath, err := ValidateFilePath(projectDir, path, cfg, PathValidationOptions{
-			CheckReservedNames: false, // Don't block reading reserved names
+			CheckReservedNames: false,
 			AllowProjectDir:    false,
 		})
 		if err != nil {
 			continue // Skip invalid paths (manifest may be tampered)
 		}
 
-		content, err := os.ReadFile(absPath)
-		if os.IsNotExist(err) {
-			continue
-		}
+		content, err := readFileWithPlaceholder(absPath, PlaceholderGeneric)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", path, err)
 		}
 
 		files = append(files, CustomFile{
 			Path:    path,
-			Content: string(content),
+			Content: content,
 		})
 	}
 	return files, nil
@@ -415,8 +427,8 @@ func addToManifest(projectDir, absPath string) error {
 	return WriteManifest(projectDir, manifest)
 }
 
-// RegisterCustomFile adds a file to the manifest. Creates empty file only if it doesn't exist.
-// Existing files are registered without modification.
+// RegisterCustomFile adds a file to the manifest without creating it on disk.
+// The file will be created when content is saved via WriteCustomFile.
 func RegisterCustomFile(projectDir, filePath string, cfg ExternalPathsConfig) error {
 	absPath, err := ValidateFilePath(projectDir, filePath, cfg, PathValidationOptions{
 		CheckReservedNames: true,
@@ -426,24 +438,11 @@ func RegisterCustomFile(projectDir, filePath string, cfg ExternalPathsConfig) er
 		return err
 	}
 
-	// Create only if file doesn't exist; existing files are registered as-is
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		if dir := filepath.Dir(absPath); dir != "" {
-			if err := os.MkdirAll(dir, common.DirPerm); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
-			}
-		}
-		if err := os.WriteFile(absPath, []byte{}, common.FilePerm); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return fmt.Errorf("failed to check file: %w", err)
-	}
-
 	return addToManifest(projectDir, absPath)
 }
 
 // WriteCustomFile writes content to a file and adds it to the manifest.
+// Security: Validates paths against allowed external paths before writing.
 func WriteCustomFile(projectDir, filePath, content string, cfg ExternalPathsConfig) error {
 	absPath, err := ValidateFilePath(projectDir, filePath, cfg, PathValidationOptions{
 		CheckReservedNames: true,
@@ -453,12 +452,7 @@ func WriteCustomFile(projectDir, filePath, content string, cfg ExternalPathsConf
 		return err
 	}
 
-	if dir := filepath.Dir(absPath); dir != "" {
-		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-	if err := os.WriteFile(absPath, []byte(content), common.FilePerm); err != nil {
+	if err := writeFileWithDir(absPath, content); err != nil {
 		return fmt.Errorf("failed to write custom file: %w", err)
 	}
 
