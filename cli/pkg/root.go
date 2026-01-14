@@ -45,6 +45,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/generate"
 	"github.com/getarcaneapp/arcane/cli/pkg/images"
 	"github.com/getarcaneapp/arcane/cli/pkg/imageupdates"
+	"github.com/getarcaneapp/arcane/cli/pkg/jobschedules"
 	"github.com/getarcaneapp/arcane/cli/pkg/networks"
 	"github.com/getarcaneapp/arcane/cli/pkg/notifications"
 	"github.com/getarcaneapp/arcane/cli/pkg/projects"
@@ -126,6 +127,7 @@ func init() {
 	rootCmd.AddCommand(registries.RegistriesCmd)
 	rootCmd.AddCommand(templates.TemplatesCmd)
 	rootCmd.AddCommand(settings.SettingsCmd)
+	rootCmd.AddCommand(jobschedules.JobSchedulesCmd)
 	rootCmd.AddCommand(notifications.NotificationsCmd)
 	rootCmd.AddCommand(imageupdates.ImageUpdatesCmd)
 	rootCmd.AddCommand(system.SystemCmd)

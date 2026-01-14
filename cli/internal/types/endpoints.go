@@ -104,6 +104,9 @@ type ArcaneApiEndpoints struct {
 	UpdaterRunEndpoint     string
 	UpdaterHistoryEndpoint string
 
+	// Job Schedules
+	JobSchedulesEndpoint string
+
 	// Settings
 	SettingsEndpoint           string
 	SettingsPublicEndpoint     string
@@ -258,6 +261,9 @@ var Endpoints = ArcaneApiEndpoints{
 	UpdaterStatusEndpoint:  "/api/environments/%s/updater/status",
 	UpdaterRunEndpoint:     "/api/environments/%s/updater/run",
 	UpdaterHistoryEndpoint: "/api/environments/%s/updater/history",
+
+	// Job Schedules
+	JobSchedulesEndpoint: "/api/job-schedules",
 
 	// Settings
 	SettingsEndpoint:           "/api/environments/%s/settings",
@@ -510,6 +516,9 @@ func (e ArcaneApiEndpoints) UpdaterRun(envID string) string {
 func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string {
 	return fmt.Sprintf(e.UpdaterHistoryEndpoint, envID)
 }
+
+// Job schedule endpoints
+func (e ArcaneApiEndpoints) JobSchedules() string { return e.JobSchedulesEndpoint }
 
 // Settings endpoints
 func (e ArcaneApiEndpoints) Settings(envID string) string {

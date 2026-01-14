@@ -27,11 +27,13 @@
 		EnvironmentsIcon,
 		AlertIcon,
 		TestIcon,
-		RegistryIcon,
+		RefreshIcon,
 		ResetIcon,
 		ApiKeyIcon,
 		DockerBrandIcon,
-		SettingsIcon
+		SettingsIcon,
+		GitBranchIcon,
+		ArrowRightIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -57,7 +59,7 @@
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
 	let isSaving = $state(false);
-	let isSyncingRegistries = $state(false);
+	let isSyncing = $state(false);
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
@@ -79,8 +81,8 @@
 	let formAutoInjectEnv = $state(false);
 	let formPruneMode = $state<'all' | 'dangling'>('dangling');
 	let formDefaultShell = $state('/bin/sh');
-	let formProjectsDirectory = $state('data/projects');
-	let formDiskUsagePath = $state('data/projects');
+	let formProjectsDirectory = $state('/app/data/projects');
+	let formDiskUsagePath = $state('/app/data/projects');
 	let formMaxImageUploadSize = $state(500);
 	let formBaseServerUrl = $state('http://localhost');
 
@@ -140,8 +142,8 @@
 			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
-			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
-			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 
@@ -196,8 +198,8 @@
 					formAutoInjectEnv !== settings.autoInjectEnv ||
 					formPruneMode !== (settings.dockerPruneMode || 'dangling') ||
 					formDefaultShell !== (settings.defaultShell || '/bin/sh') ||
-					formProjectsDirectory !== (settings.projectsDirectory || 'data/projects') ||
-					formDiskUsagePath !== (settings.diskUsagePath || 'data/projects') ||
+					formProjectsDirectory !== (settings.projectsDirectory || '/app/data/projects') ||
+					formDiskUsagePath !== (settings.diskUsagePath || '/app/data/projects') ||
 					formMaxImageUploadSize !== (settings.maxImageUploadSize || 500) ||
 					formBaseServerUrl !== (settings.baseServerUrl || 'http://localhost')))
 	);
@@ -237,17 +239,17 @@
 		}
 	}
 
-	async function syncRegistries() {
-		if (isSyncingRegistries) return;
+	async function syncEnvironment() {
+		if (isSyncing) return;
 		try {
-			isSyncingRegistries = true;
-			await environmentManagementService.syncRegistries(environment.id);
-			toast.success('Registries synced successfully');
+			isSyncing = true;
+			await environmentManagementService.sync(environment.id);
+			toast.success(m.sync_environment_success());
 		} catch (error) {
-			console.error('Failed to sync registries:', error);
-			toast.error('Failed to sync registries');
+			console.error('Failed to sync environment:', error);
+			toast.error(m.sync_environment_failed());
 		} finally {
-			isSyncingRegistries = false;
+			isSyncing = false;
 		}
 	}
 
@@ -326,7 +328,8 @@
 			}
 		} catch (error) {
 			console.error('Failed to save environment:', error);
-			toast.error(m.common_update_failed({ resource: m.resource_environment() }));
+			const message = error instanceof Error ? error.message : undefined;
+			toast.error(message ?? m.common_update_failed({ resource: m.resource_environment() }));
 		} finally {
 			isSaving = false;
 		}
@@ -345,8 +348,8 @@
 			formAutoInjectEnv = settings.autoInjectEnv;
 			formPruneMode = settings.dockerPruneMode || 'dangling';
 			formDefaultShell = settings.defaultShell || '/bin/sh';
-			formProjectsDirectory = settings.projectsDirectory || 'data/projects';
-			formDiskUsagePath = settings.diskUsagePath || 'data/projects';
+			formProjectsDirectory = settings.projectsDirectory || '/app/data/projects';
+			formDiskUsagePath = settings.diskUsagePath || '/app/data/projects';
 			formMaxImageUploadSize = settings.maxImageUploadSize || 500;
 			formBaseServerUrl = settings.baseServerUrl || 'http://localhost';
 
@@ -433,11 +436,11 @@
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						onclick={syncRegistries}
-						disabled={isSyncingRegistries}
-						loading={isSyncingRegistries}
-						icon={RegistryIcon}
-						customLabel={m.sync_registries()}
+						onclick={syncEnvironment}
+						disabled={isSyncing}
+						loading={isSyncing}
+						icon={RefreshIcon}
+						customLabel={m.sync_environment()}
 					/>
 				{/if}
 
@@ -860,6 +863,27 @@
 				</Card.Content>
 			</Card.Root>
 		{/if}
+
+		<Card.Root class="flex flex-col">
+			<Card.Header icon={GitBranchIcon}>
+				<div class="flex flex-col space-y-1.5">
+					<Card.Title>
+						<h2>{m.git_syncs_title()}</h2>
+					</Card.Title>
+					<Card.Description>{m.git_subtitle()}</Card.Description>
+				</div>
+			</Card.Header>
+			<Card.Content class="p-4">
+				<p class="text-muted-foreground mb-4 text-sm">{m.git_environment_card_description()}</p>
+				<ArcaneButton
+					action="base"
+					onclick={() => goto(`/environments/${environment.id}/gitops`)}
+					icon={ArrowRightIcon}
+					customLabel={m.git_manage_syncs()}
+					class="w-full"
+				/>
+			</Card.Content>
+		</Card.Root>
 	</div>
 
 	<AlertDialog.Root bind:open={showRegenerateDialog}>

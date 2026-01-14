@@ -17,6 +17,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
@@ -26,7 +27,7 @@ func Bootstrap(ctx context.Context) error {
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)
-	slog.InfoContext(ctx, "Arcane is starting")
+	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
@@ -53,8 +54,12 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
-	utils.InitEncryption(cfg)
+	crypto.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
+
+	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
+		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
+	}
 
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
@@ -71,7 +76,8 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
-		appServices.Settings.MigrateOidcConfigToFields)
+		appServices.Settings.MigrateOidcConfigToFields,
+		appServices.Notification.MigrateDiscordWebhookUrlToFields)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {

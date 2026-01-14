@@ -280,8 +280,24 @@ function getContext(model: Monaco.editor.ITextModel, position: Monaco.Position):
  */
 export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 	return monaco.languages.registerCompletionItemProvider('yaml', {
-		triggerCharacters: [' ', ':'],
+		// Trigger on space, colon (to clear), dash (for lists), and dot
+		triggerCharacters: [' ', ':', '-', '.'],
 		provideCompletionItems: (model, position) => {
+			const lineContent = model.getLineContent(position.lineNumber);
+			const textBeforeCursor = lineContent.substring(0, position.column - 1);
+
+			// If we just typed a colon, return empty suggestions to clear the list.
+			// This prevents the "colon + enter" issue where it auto-completes the wrong thing.
+			if (textBeforeCursor.endsWith(':')) {
+				return { suggestions: [] };
+			}
+
+			// If there's a colon followed by a space, we're definitely in a value position.
+			// We don't have value completions yet, so return empty.
+			if (/: /.test(textBeforeCursor)) {
+				return { suggestions: [] };
+			}
+
 			const word = model.getWordUntilPosition(position);
 			const range = {
 				startLineNumber: position.lineNumber,
@@ -294,6 +310,7 @@ export function registerYamlCompletionProvider(monaco: typeof Monaco) {
 			const suggestions = schemaManager.getSuggestions(context).map((s) => ({
 				...s,
 				range,
+				kind: monaco.languages.CompletionItemKind.Property,
 				insertTextRules: s.insertText.includes('$') ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined
 			}));
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 export interface UpgradeCheckResponse {
 	canUpgrade: boolean;
@@ -15,6 +16,12 @@ export interface UpgradeResponse {
 export interface HealthCheckResult {
 	healthy: boolean;
 }
+
+type ApiResponse<T> = {
+	success: boolean;
+	data: T;
+	message?: string;
+};
 
 /**
  * Check if the system can perform a self-upgrade
@@ -51,8 +58,25 @@ async function checkHealth(environmentId: string = '0'): Promise<HealthCheckResu
 	}
 }
 
+/**
+ * Fetch the running version info (including current digest) for the local system (envId=0)
+ * or a remote environment.
+ */
+async function getVersionInfo(environmentId: string = '0'): Promise<AppVersionInformation> {
+	if (environmentId === '0') {
+		const res = await axios.get<AppVersionInformation>('/api/app-version', { timeout: 5000 });
+		return res.data;
+	}
+
+	const res = await axios.get<ApiResponse<AppVersionInformation>>(`/api/environments/${environmentId}/version`, {
+		timeout: 5000
+	});
+	return res.data.data;
+}
+
 export default {
 	checkUpgradeAvailable,
 	triggerUpgrade,
-	checkHealth
+	checkHealth,
+	getVersionInfo
 };

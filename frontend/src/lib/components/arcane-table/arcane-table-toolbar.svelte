@@ -9,12 +9,13 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ResetIcon } from '$lib/icons';
+	import type { BulkAction } from './arcane-table.types.svelte';
 
 	let {
 		table,
 		selectedIds = [],
 		selectionDisabled = false,
-		onRemoveSelected,
+		bulkActions = [],
 		mobileFields = [],
 		onToggleMobileField,
 		customViewOptions,
@@ -23,7 +24,7 @@
 		table: Table<TData>;
 		selectedIds?: string[];
 		selectionDisabled?: boolean;
-		onRemoveSelected?: (ids: string[]) => void;
+		bulkActions?: BulkAction[];
 		mobileFields?: { id: string; label: string; visible: boolean }[];
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
@@ -42,6 +43,7 @@
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
+	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 </script>
 
 <div class={cn('flex flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:justify-between', className)}>
@@ -90,29 +92,39 @@
 						icon={ResetIcon}
 						customLabel={m.common_reset()}
 						onclick={() => {
-							table.resetColumnFilters();
-							table.resetGlobalFilter();
+							table.setColumnFilters([]);
+							table.setGlobalFilter('');
 						}}
 						class="h-8 px-2 lg:px-3"
 					/>
 				{/if}
 			</div>
 		</div>
+	</div>
 
-		<!-- View options - desktop only, end aligned -->
+	<!-- Bulk actions and View options -->
+	<div class="flex items-center gap-2">
+		{#if hasSelection}
+			{#if hasBulkActions}
+				<div class="flex flex-wrap items-center gap-2">
+					{#each bulkActions as bulkAction}
+						{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
+						<ArcaneButton
+							action={actionType}
+							icon={bulkAction.icon}
+							customLabel={bulkAction.label}
+							onclick={() => bulkAction.onClick(selectedIds!)}
+							disabled={bulkAction.disabled || bulkAction.loading}
+							loading={bulkAction.loading}
+						/>
+					{/each}
+				</div>
+			{/if}
+		{/if}
+
+		<!-- View options - desktop only, always on the right -->
 		<div class="hidden md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
 		</div>
 	</div>
-
-	<!-- Actions on the right (wraps on mobile) -->
-	{#if hasSelection && onRemoveSelected}
-		<ArcaneButton
-			action="remove"
-			size="sm"
-			hoverEffect="none"
-			customLabel={m.common_remove_selected_count({ count: selectedIds?.length ?? 0 })}
-			onclick={() => onRemoveSelected?.(selectedIds!)}
-		/>
-	{/if}
 </div>

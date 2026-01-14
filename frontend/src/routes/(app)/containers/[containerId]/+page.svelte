@@ -28,7 +28,6 @@
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
-		RefreshIcon,
 		VolumesIcon,
 		FileTextIcon,
 		SettingsIcon,
@@ -260,11 +259,6 @@
 		return isNaN(d.getTime()) ? null : d;
 	}
 
-	function formatDockerDate(input: string | Date | undefined | null, fmt = 'PP p'): string {
-		const d = parseDockerDate(input);
-		return d ? format(d, fmt) : 'N/A';
-	}
-
 	const backUrl = $derived.by(() => {
 		const from = page.url.searchParams.get('from');
 		const projectId = page.url.searchParams.get('projectId');
@@ -299,6 +293,7 @@
 				name={containerDisplayName}
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
+				desktopVariant="adaptive"
 				loading={{ start: starting, stop: stopping, restart: restarting, remove: removing }}
 			/>
 		{/snippet}

@@ -17,6 +17,7 @@ import (
 
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	appfs "github.com/getarcaneapp/arcane/backend/internal/utils/fs"
@@ -901,7 +902,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 }
 
 func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, error) {
-	projectsDirectory, err := appfs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "data/projects"))
+	projectsDirectory, err := appfs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
@@ -976,7 +977,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 	}
 
 	projectsDirectory := filepath.Dir(envPath)
-	if err := os.MkdirAll(projectsDirectory, 0755); err != nil {
+	if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
 		return fmt.Errorf("failed to create projects directory: %w", err)
 	}
 
@@ -1000,7 +1001,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 		builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
 	}
 
-	if err := appfs.WriteFileWithPerm(envPath, builder.String(), appfs.FilePerm); err != nil {
+	if err := appfs.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
 		return fmt.Errorf("failed to write global variables file: %w", err)
 	}
 
@@ -1027,7 +1028,7 @@ func (s *TemplateService) ParseComposeServices(ctx context.Context, composeConte
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")
-	if err := appfs.WriteFileWithPerm(envPath, "", appfs.FilePerm); err != nil {
+	if err := appfs.WriteFileWithPerm(envPath, "", common.FilePerm); err != nil {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", err)
 	}
 

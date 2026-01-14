@@ -9,8 +9,9 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { Environment } from '$lib/types/environment.type';
 	import { m } from '$lib/paraglide/messages';
@@ -161,8 +162,9 @@
 				toast.error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 		} catch (error: any) {
-			const errorMessage = error?.response?.data?.error || error?.message || 'Unknown error';
-			toast.error(m.upgrade_failed({ error: errorMessage }));
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 		} finally {
 			isLoading.upgrading = false;
 			upgradingEnvironmentId = null;
@@ -223,9 +225,23 @@
 	] satisfies ColumnSpec<Environment>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_enabled(), defaultVisible: true },
 		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -389,7 +405,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (environments = await environmentManagementService.getEnvironments(options))}
 	{columns}
 	{mobileFields}

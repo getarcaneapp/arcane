@@ -28,9 +28,11 @@
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
-		encodeMobileHidden
+		encodeMobileVisibility,
+		buildMobileVisibility,
+		type BulkAction
 	} from './arcane-table.types.svelte';
-	import { buildInitialMobileVisibility, extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
+	import { extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -51,11 +53,12 @@
 		mobileFields = [],
 		mobileFieldVisibility = $bindable<Record<string, boolean>>({}),
 		selectedIds = $bindable<string[]>([]),
-		onRemoveSelected,
+		bulkActions = [],
 		persistKey,
 		customViewOptions,
 		customTableView,
-		customSettings = $bindable<Record<string, unknown>>({})
+		customSettings = $bindable<Record<string, unknown>>({}),
+		columnVisibility = $bindable<VisibilityState>({})
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -70,15 +73,24 @@
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
 		selectedIds?: string[];
-		onRemoveSelected?: (ids: string[]) => void;
+		bulkActions?: BulkAction[];
 		persistKey?: string;
 		customViewOptions?: Snippet;
-		customTableView?: Snippet<[{ table: TableType<TData>; renderPagination: Snippet }]>;
+		customTableView?: Snippet<
+			[
+				{
+					table: TableType<TData>;
+					renderPagination: Snippet;
+					mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+					onToggleMobileField: (fieldId: string) => void;
+				}
+			]
+		>;
 		customSettings?: Record<string, unknown>;
+		columnVisibility?: VisibilityState;
 	} = $props();
 
 	let rowSelection = $state<RowSelectionState>({});
-	let columnVisibility = $state<VisibilityState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let sorting = $state<SortingState>([]);
 	let globalFilter = $state<string>('');
@@ -89,9 +101,9 @@
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
-	const currentPage = $derived(items.pagination.currentPage ?? requestOptions?.pagination?.page ?? 1);
-	const totalPages = $derived(items.pagination.totalPages ?? 1);
-	const totalItems = $derived(items.pagination.totalItems ?? 0);
+	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
+	const totalPages = $derived(items.pagination?.totalPages ?? 1);
+	const totalItems = $derived(items.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20);
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(currentPage < totalPages);
@@ -169,9 +181,8 @@
 		}
 		if (shouldRefresh) onRefresh(requestOptions);
 
-		const initialMobileVisibility = buildInitialMobileVisibility(mobileFields, mobileFieldVisibility, snapshot.mobileHidden);
-		if (initialMobileVisibility) {
-			mobileFieldVisibility = initialMobileVisibility;
+		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
+			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
 		}
 
 		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
@@ -263,6 +274,7 @@
 				id,
 				...(accessorKey ? { accessorKey } : {}),
 				...(accessorFn ? { accessorFn } : {}),
+				meta: { title: spec.title },
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
@@ -421,7 +433,7 @@
 		};
 		// Persist mobile field visibility
 		if (enablePersist && prefs) {
-			prefs.current = { ...prefs.current, m: encodeMobileHidden(mobileFieldVisibility) };
+			prefs.current = { ...prefs.current, m: encodeMobileVisibility(mobileFieldVisibility) };
 		}
 	}
 
@@ -502,7 +514,7 @@
 {/snippet}
 
 {#if customTableView}
-	{@render customTableView({ table, renderPagination: PaginationSnippet })}
+	{@render customTableView({ table, renderPagination: PaginationSnippet, mobileFieldsForOptions, onToggleMobileField })}
 {:else if unstyled}
 	<div class="flex h-full min-h-0 flex-col">
 		{#if !withoutSearch}
@@ -511,7 +523,7 @@
 					{table}
 					{selectedIds}
 					{selectionDisabled}
-					{onRemoveSelected}
+					{bulkActions}
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
@@ -545,7 +557,7 @@
 						{table}
 						{selectedIds}
 						{selectionDisabled}
-						{onRemoveSelected}
+						{bulkActions}
 						mobileFields={mobileFieldsForOptions}
 						{onToggleMobileField}
 						{customViewOptions}

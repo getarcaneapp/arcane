@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NetworkSummaryDto } from '$lib/types/network.type';
+	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/network.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
@@ -12,7 +12,7 @@
 	import { DEFAULT_NETWORK_NAMES } from '$lib/constants';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
@@ -23,11 +23,13 @@
 	let {
 		networks = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onNetworksChange
 	}: {
-		networks: Paginated<NetworkSummaryDto>;
+		networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onNetworksChange?: (networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>) => void;
 	} = $props();
 
 	let isLoading = $state({
@@ -54,6 +56,7 @@
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }));
 							networks = await networkService.getNetworks(requestOptions);
+							onNetworksChange?.(networks);
 						}
 					});
 				}
@@ -106,6 +109,7 @@
 
 					if (successCount > 0) {
 						networks = await networkService.getNetworks(requestOptions);
+						onNetworksChange?.(networks);
 					}
 					selectedIds = [];
 				}
@@ -127,43 +131,31 @@
 	}
 
 	const columns = [
-		{
-			accessorKey: 'name',
-			title: m.common_name(),
-			sortable: true,
-			cell: NameCell
-		},
-		{
-			accessorKey: 'id',
-			title: m.common_id(),
-			cell: IdCell
-		},
-		{
-			accessorKey: 'inUse',
-			title: m.common_status(),
-			sortable: true,
-			cell: StatusCell
-		},
-		{
-			accessorKey: 'driver',
-			title: m.common_driver(),
-			sortable: true,
-			cell: DriverCell
-		},
-		{
-			accessorKey: 'scope',
-			title: m.common_scope(),
-			sortable: true,
-			cell: ScopeCell
-		}
+		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'driver', title: m.common_driver(), sortable: true, cell: DriverCell },
+		{ accessorKey: 'scope', title: m.common_scope(), sortable: true, cell: ScopeCell }
 	] satisfies ColumnSpec<NetworkSummaryDto>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true },
 		{ id: 'scope', label: m.common_scope(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelectedNetworks,
+			loading: isLoading.remove,
+			disabled: isLoading.remove,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -172,8 +164,8 @@
 	<a class="font-medium hover:underline" href="/networks/{item.id}">{item.name}</a>
 {/snippet}
 
-{#snippet IdCell({ value }: { value: unknown })}
-	<span class="truncate font-mono text-sm">{String(value ?? '')}</span>
+{#snippet IdCell({ item }: { item: NetworkSummaryDto })}
+	<span class="truncate font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
 {#snippet DriverCell({ item }: { item: NetworkSummaryDto })}
@@ -224,7 +216,7 @@
 		subtitle={(item: NetworkSummaryDto) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
 		badges={[
 			(item: NetworkSummaryDto) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility.inUse ?? true)
 					? (item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)
 						? { variant: 'gray', text: m.networks_predefined() }
 						: item.inUse
@@ -293,7 +285,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelectedNetworks(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (networks = await networkService.getNetworks(options))}
 	{columns}
 	{mobileFields}

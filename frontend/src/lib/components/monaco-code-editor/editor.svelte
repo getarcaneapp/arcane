@@ -3,6 +3,7 @@
 	import { monaco, initShiki } from './monaco';
 	import { mode } from 'mode-watcher';
 	import jsyaml from 'js-yaml';
+	import { m } from '$lib/paraglide/messages';
 
 	type CodeLanguage = 'yaml' | 'env';
 
@@ -100,8 +101,18 @@
 			fontSize: parseInt(fontSize.replace('px', '')),
 			minimap: { enabled: false },
 			scrollBeyondLastLine: false,
-			fontFamily:
-				'"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+			wordWrap: 'on',
+			fixedOverflowWidgets: true,
+			dragAndDrop: false,
+			contextmenu: true,
+			quickSuggestions: {
+				other: true,
+				comments: false,
+				strings: true
+			},
+			suggestOnTriggerCharacters: true,
+			fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+			fontLigatures: false,
 			padding: { top: 10, bottom: 10 },
 			scrollbar: autoHeight
 				? {
@@ -109,6 +120,20 @@
 						handleMouseWheel: false
 					}
 				: undefined
+		});
+
+		editor.addAction({
+			id: 'arcane.selectAll',
+			label: m.common_select_all(),
+			contextMenuGroupId: '9_cutcopypaste',
+			contextMenuOrder: 4,
+			run: (ed) => {
+				ed.focus();
+				const model = ed.getModel();
+				if (model) {
+					ed.setSelection(model.getFullModelRange());
+				}
+			}
 		});
 
 		changeDisposable = model.onDidChangeContent(() => {
@@ -158,6 +183,9 @@
 				readOnly,
 				theme,
 				fontSize: parseInt(fontSize.replace('px', '')),
+				wordWrap: 'on',
+				fixedOverflowWidgets: true,
+				dragAndDrop: false,
 				scrollbar: autoHeight
 					? {
 							vertical: 'hidden',

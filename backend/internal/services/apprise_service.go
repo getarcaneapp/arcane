@@ -18,6 +18,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// AppriseService handles sending notifications through Apprise API
+//
+// Deprecated: Built-in providers (e.g., SMTP via Shoutrrr) are preferred.
 type AppriseService struct {
 	db     *database.DB
 	config *config.Config
@@ -153,8 +156,8 @@ func (s *AppriseService) SendImageUpdateNotification(ctx context.Context, imageR
 		"Image: %s\nUpdate Type: %s\nCurrent Digest: %s\nLatest Digest: %s",
 		imageRef,
 		updateInfo.UpdateType,
-		truncateDigest(updateInfo.CurrentDigest),
-		truncateDigest(updateInfo.LatestDigest),
+		updateInfo.CurrentDigest,
+		updateInfo.LatestDigest,
 	)
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
 }
@@ -165,8 +168,8 @@ func (s *AppriseService) SendContainerUpdateNotification(ctx context.Context, co
 		"Container: %s\nImage: %s\nPrevious Version: %s\nCurrent Version: %s\nStatus: Updated Successfully",
 		containerName,
 		imageRef,
-		truncateDigest(oldDigest),
-		truncateDigest(newDigest),
+		oldDigest,
+		newDigest,
 	)
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventContainerUpdate)
 }
@@ -194,8 +197,8 @@ func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, u
 		body += fmt.Sprintf("• %s\n  Type: %s\n  Current: %s\n  Latest: %s\n\n",
 			imageRef,
 			update.UpdateType,
-			truncateDigest(update.CurrentDigest),
-			truncateDigest(update.LatestDigest),
+			update.CurrentDigest,
+			update.LatestDigest,
 		)
 	}
 

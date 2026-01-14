@@ -142,6 +142,10 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
@@ -175,6 +179,10 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if input.EnvironmentID == "" {
@@ -216,6 +224,10 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	evt, err := h.eventService.CreateEventFromDto(ctx, input.Body)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EventCreationError{Err: err}).Error())
@@ -233,6 +245,10 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	if input.EventID == "" {

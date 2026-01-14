@@ -2,7 +2,7 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon } from '$lib/icons';
+	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -15,11 +15,13 @@
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { format } from 'date-fns';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon } from '$lib/icons';
+	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let {
 		projects = $bindable(),
@@ -38,7 +40,14 @@
 		remove: false,
 		destroy: false,
 		pull: false,
-		updating: false
+		updating: false,
+		syncing: false
+	});
+
+	let isBulkLoading = $state({
+		up: false,
+		down: false,
+		redeploy: false
 	});
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -79,9 +88,9 @@
 						projects = await projectService.getProjects(requestOptions);
 					}
 				});
-			} else if (action === 'pull') {
+			} else if (action === 'redeploy') {
 				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.pullProjectImages(id)),
+					result: await tryCatch(projectService.redeployProject(id)),
 					message: m.compose_pull_failed(),
 					setLoadingState: (value) => (isLoading.pull = value),
 					onSuccess: async () => {
@@ -130,29 +139,206 @@
 		}
 	}
 
-	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
+	async function handleSyncFromGit(gitOpsSyncId: string) {
+		if (!envId) return;
+		isLoading.syncing = true;
+		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.git_sync_failed(),
+			setLoadingState: (value) => (isLoading.syncing = value),
+			onSuccess: async () => {
+				toast.success(m.git_sync_success());
+				projects = await projectService.getProjects(requestOptions);
+			}
+		});
+	}
+
+	async function handleBulkUp(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_up_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_up_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_up(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.up = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.up = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_up_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_up_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_start_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkDown(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_down_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_down_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_down(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.down = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.downProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.down = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_down_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_down_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_stop_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRedeploy(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_redeploy_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_redeploy_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.compose_pull_redeploy(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.redeploy = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.redeployProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.redeploy = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_redeploy_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_redeploy_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_pull_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	const isAnyLoading = $derived(
+		Object.values(isLoading).some((loading) => loading) || Object.values(isBulkLoading).some((loading) => loading)
+	);
 
 	const columns = [
+		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'serviceCount', title: m.compose_services(), sortable: true }
 	] satisfies ColumnSpec<Project>[];
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
-		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true }
+		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'up',
+			label: m.projects_bulk_up({ count: selectedIds?.length ?? 0 }),
+			action: 'up',
+			onClick: handleBulkUp,
+			loading: isBulkLoading.up,
+			disabled: isAnyLoading,
+			icon: StartIcon
+		},
+		{
+			id: 'down',
+			label: m.projects_bulk_down({ count: selectedIds?.length ?? 0 }),
+			action: 'down',
+			onClick: handleBulkDown,
+			loading: isBulkLoading.down,
+			disabled: isAnyLoading,
+			icon: StopIcon
+		},
+		{
+			id: 'redeploy',
+			label: m.projects_bulk_redeploy({ count: selectedIds?.length ?? 0 }),
+			action: 'redeploy',
+			onClick: handleBulkRedeploy,
+			loading: isBulkLoading.redeploy,
+			disabled: isAnyLoading,
+			icon: RedeployIcon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	const envId = $derived(environmentStore.selected?.id);
 </script>
 
 {#snippet NameCell({ item }: { item: Project })}
-	<a class="font-medium hover:underline" href="/projects/{item.id}">
-		{item.name}
-	</a>
+	<div class="flex items-center gap-2">
+		<a class="font-medium hover:underline" href="/projects/{item.id}">
+			{item.name}
+		</a>
+	</div>
+{/snippet}
+
+{#snippet ProviderCell({ item }: { item: Project })}
+	<div class="flex items-center gap-2">
+		{#if item.gitOpsManagedBy}
+			<GitBranchIcon class="size-4" />
+			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
+				{m.projects_provider_git()}
+			</a>
+		{:else}
+			<ProjectsIcon class="size-4" />
+			<span>{m.projects_provider_local()}</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet ProviderField(value: { icon: any; text: string })}
+	{@const Icon = value.icon}
+	<span class="inline-flex items-center gap-2">
+		<Icon class="size-3" />
+		<span>{value.text}</span>
+	</span>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
@@ -195,6 +381,16 @@
 					: null
 		]}
 		fields={[
+			{
+				label: m.projects_col_provider(),
+				type: 'component',
+				getValue: (item: Project) => ({
+					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
+					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
+				}),
+				component: ProviderField,
+				show: mobileFieldVisibility.provider ?? true
+			},
 			{
 				label: m.compose_services(),
 				getValue: (item: Project) => {
@@ -241,6 +437,20 @@
 					{m.common_edit()}
 				</DropdownMenu.Item>
 
+				{#if item.gitOpsManagedBy}
+					<DropdownMenu.Item
+						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
+						disabled={isLoading.syncing || isAnyLoading}
+					>
+						{#if isLoading.syncing}
+							<Spinner class="size-4" />
+						{:else}
+							<RefreshIcon class="size-4" />
+						{/if}
+						{m.git_sync_from_git()}
+					</DropdownMenu.Item>
+				{/if}
+
 				{#if item.status !== 'running'}
 					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
 						{#if isLoading.start}
@@ -273,11 +483,11 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item onclick={() => performProjectAction('pull', item.id)} disabled={isLoading.pull || isAnyLoading}>
+				<DropdownMenu.Item onclick={() => performProjectAction('redeploy', item.id)} disabled={isLoading.pull || isAnyLoading}>
 					{#if isLoading.pull}
 						<Spinner class="size-4" />
 					{:else}
-						<RestartIcon class="size-4" />
+						<RedeployIcon class="size-4" />
 					{/if}
 					{m.compose_pull_redeploy()}
 				</DropdownMenu.Item>
@@ -310,6 +520,7 @@
 	onRefresh={async (options) => (projects = await projectService.getProjects(options))}
 	{columns}
 	{mobileFields}
+	{bulkActions}
 	rowActions={RowActions}
 	mobileCard={ProjectMobileCardSnippet}
 />

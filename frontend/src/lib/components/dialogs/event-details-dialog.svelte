@@ -84,7 +84,7 @@
 			{/if}
 		</div>
 		<div class="min-w-0 flex-1">
-			<h3 class="text-xl font-semibold">
+			<h3 class="truncate text-xl font-semibold" title={event?.title}>
 				{event?.title ?? m.events_details_title()}
 			</h3>
 			{#if event?.description}
@@ -147,7 +147,7 @@
 			</CopyButton>
 		</div>
 		{#if hasMetadata}
-			<pre class="bg-muted/40 max-h-[40vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{metadataJson}</code
+			<pre class="bg-muted/40 max-h-[50vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{metadataJson}</code
 				></pre>
 		{:else}
 			<div class="text-muted-foreground p-3 text-xs">{m.events_no_metadata_provided()}</div>
@@ -163,7 +163,7 @@
 				{m.common_copy_json()}
 			</CopyButton>
 		</div>
-		<pre class="bg-muted/40 max-h-[40vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{eventJson}</code
+		<pre class="bg-muted/40 max-h-[60vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{eventJson}</code
 			></pre>
 	</div>
 {/snippet}

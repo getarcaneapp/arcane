@@ -24,6 +24,7 @@ const (
 	managementEndpointTest           = "/test"
 	managementEndpointHeartbeat      = "/heartbeat"
 	managementEndpointSyncRegistries = "/sync-registries"
+	managementEndpointSync           = "/sync"
 	managementEndpointDeployment     = "/deployment"
 	managementEndpointAgentPair      = "/agent/pair"
 	managementEndpointVersion        = "/version"
@@ -137,6 +138,7 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 		managementEndpointTest,
 		managementEndpointHeartbeat,
 		managementEndpointSyncRegistries,
+		managementEndpointSync,
 		managementEndpointDeployment,
 		managementEndpointAgentPair,
 		managementEndpointVersion,

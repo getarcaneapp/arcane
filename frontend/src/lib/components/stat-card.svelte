@@ -33,7 +33,7 @@
 			<span class="text-sm leading-none font-bold tabular-nums">
 				{value}
 			</span>
-			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider uppercase">
+			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
 				{title}
 			</span>
 		</div>
@@ -48,7 +48,7 @@
 		style="--stat-hover-tint: currentColor;"
 	>
 		<div
-			class="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--stat-hover-tint)]/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+			class="pointer-events-none absolute inset-0 bg-linear-to-br from-(--stat-hover-tint)/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
 		></div>
 
 		<div class="relative flex items-start justify-between">
@@ -67,7 +67,7 @@
 			<div
 				class={cn(
 					'flex size-10 items-center justify-center rounded-full transition-colors duration-300',
-					'bg-transparent group-hover:bg-[var(--stat-hover-tint)]/10'
+					'bg-transparent group-hover:bg-(--stat-hover-tint)/10'
 				)}
 			>
 				<Icon class={cn('size-6 transition-transform duration-300 group-hover:scale-110', iconColor)} />

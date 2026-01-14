@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -145,7 +145,7 @@ func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repo
 		if reg.Username == "" || reg.Token == "" {
 			continue
 		}
-		decrypted, decErr := utils.Decrypt(reg.Token)
+		decrypted, decErr := crypto.Decrypt(reg.Token)
 		if decErr != nil {
 			lastErr = decErr
 			continue
@@ -730,7 +730,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 			if _, exists := credMap[host]; !exists {
 				credMap[host] = batchCred{username: c.Username, token: c.Token}
 			}
-			encToken, encErr := utils.Encrypt(c.Token)
+			encToken, encErr := crypto.Encrypt(c.Token)
 			if encErr != nil {
 				slog.WarnContext(ctx, "Failed to encrypt external registry token", "registryURL", c.URL, "error", encErr.Error())
 				continue
@@ -761,7 +761,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 		if host == "" {
 			continue
 		}
-		dec, decErr := utils.Decrypt(r.Token)
+		dec, decErr := crypto.Decrypt(r.Token)
 		if decErr != nil {
 			slog.DebugContext(ctx, "Decrypt registry token failed", "registryURL", r.URL, "error", decErr.Error())
 			continue

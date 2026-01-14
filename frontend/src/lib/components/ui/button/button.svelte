@@ -30,7 +30,7 @@
 		defaultVariants: {
 			variant: 'default',
 			size: 'default',
-			hoverEffect: 'lift'
+			hoverEffect: 'none'
 		}
 	});
 
@@ -64,7 +64,7 @@
 		class: className,
 		variant = 'default',
 		size = 'default',
-		hoverEffect = 'lift',
+		hoverEffect = 'none',
 		ref = $bindable(null),
 		href = undefined,
 		type = 'button',

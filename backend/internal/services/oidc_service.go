@@ -21,7 +21,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/auth"
 )
 
@@ -97,24 +98,34 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 
 	// Create insecure client
 	insecureClient := *s.httpClient
+
+	var insecureTransport *http.Transport
 	if transport, ok := insecureClient.Transport.(*http.Transport); ok {
-		insecureTransport := transport.Clone()
-		if insecureTransport.TLSClientConfig == nil {
-			// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
-			insecureTransport.TLSClientConfig = &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			}
-		}
-		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
-		// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
-		// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
-		if err := http2.ConfigureTransport(insecureTransport); err != nil {
-			slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
-		}
-		insecureClient.Transport = insecureTransport
+		insecureTransport = transport.Clone()
 	} else {
-		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
+		// Transport is nil or not *http.Transport - create a new default transport
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			insecureTransport = defaultTransport.Clone()
+		} else {
+			insecureTransport = &http.Transport{}
+		}
 	}
+
+	if insecureTransport.TLSClientConfig == nil {
+		// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
+		insecureTransport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true,
+		}
+	} else {
+		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
+	}
+	// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
+	// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
+	if err := http2.ConfigureTransport(insecureTransport); err != nil {
+		slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
+	}
+	insecureClient.Transport = insecureTransport
 	s.insecureHttpClient = &insecureClient
 	return s.insecureHttpClient
 }
@@ -162,9 +173,9 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		return "", "", fmt.Errorf("failed to discover provider: %w", err)
 	}
 
-	state := utils.GenerateRandomString(32)
-	nonce := utils.GenerateRandomString(32)
-	codeVerifier := utils.GenerateRandomString(128)
+	state := stringutils.GenerateRandomString(32)
+	nonce := stringutils.GenerateRandomString(32)
+	codeVerifier := stringutils.GenerateRandomString(128)
 
 	oauth2Config := s.getOauth2Config(config, provider, origin)
 
@@ -420,7 +431,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		return nil, nil, fmt.Errorf("failed to fetch user claims: %w", err)
 	}
 
-	subject := utils.GetStringClaim(claims, "sub")
+	subject := crypto.GetStringClaim(claims, "sub")
 	if subject == "" {
 		slog.Error("HandleCallback: missing required 'sub' claim")
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
@@ -428,15 +439,15 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 
 	userInfoDto := auth.OidcUserInfo{
 		Subject:           subject,
-		Name:              utils.GetStringClaim(claims, "name"),
-		Email:             utils.GetStringClaim(claims, "email"),
-		EmailVerified:     utils.GetBoolClaim(claims, "email_verified"),
-		PreferredUsername: utils.GetStringClaim(claims, "preferred_username"),
-		GivenName:         utils.GetStringClaim(claims, "given_name"),
-		FamilyName:        utils.GetStringClaim(claims, "family_name"),
-		Admin:             utils.GetBoolClaim(claims, "admin"),
-		Roles:             utils.GetStringSliceClaim(claims, "roles"),
-		Groups:            utils.GetStringSliceClaim(claims, "groups"),
+		Name:              crypto.GetStringClaim(claims, "name"),
+		Email:             crypto.GetStringClaim(claims, "email"),
+		EmailVerified:     crypto.GetBoolClaim(claims, "email_verified"),
+		PreferredUsername: crypto.GetStringClaim(claims, "preferred_username"),
+		GivenName:         crypto.GetStringClaim(claims, "given_name"),
+		FamilyName:        crypto.GetStringClaim(claims, "family_name"),
+		Admin:             crypto.GetBoolClaim(claims, "admin"),
+		Roles:             crypto.GetStringSliceClaim(claims, "roles"),
+		Groups:            crypto.GetStringSliceClaim(claims, "groups"),
 		Extra:             claims,
 	}
 

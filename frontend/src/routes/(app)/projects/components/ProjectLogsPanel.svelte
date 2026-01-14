@@ -18,6 +18,7 @@
 	let tailLines = $state(100);
 	let autoStartLogs = $state(false);
 	let hasAutoStarted = $state(false);
+	let showParsedJson = $state(false);
 
 	function handleStart() {
 		isStreaming = true;
@@ -58,9 +59,7 @@
 			<div class="flex flex-col gap-1.5">
 				<div class="flex items-center gap-2">
 					<Card.Title>
-						<h2>
-							{m.compose_logs_title()}
-						</h2>
+						<h2>{m.compose_logs_title()}</h2>
 					</Card.Title>
 					{#if isStreaming}
 						<div class="flex items-center gap-2">
@@ -75,6 +74,7 @@
 				bind:autoScroll
 				bind:tailLines
 				bind:autoStartLogs
+				bind:showParsedJson
 				{isStreaming}
 				disabled={!projectId}
 				onStart={handleStart}
@@ -90,6 +90,7 @@
 			bind:autoScroll
 			{projectId}
 			{tailLines}
+			{showParsedJson}
 			type="project"
 			maxLines={500}
 			showTimestamps={true}

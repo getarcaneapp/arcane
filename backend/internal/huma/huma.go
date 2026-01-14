@@ -125,6 +125,7 @@ type Services struct {
 	Version           *services.VersionService
 	Environment       *services.EnvironmentService
 	Settings          *services.SettingsService
+	JobSchedule       *services.JobService
 	SettingsSearch    *services.SettingsSearchService
 	ContainerRegistry *services.ContainerRegistryService
 	Template          *services.TemplateService
@@ -135,11 +136,13 @@ type Services struct {
 	Container         *services.ContainerService
 	Network           *services.NetworkService
 	Notification      *services.NotificationService
-	Apprise           *services.AppriseService
+	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
 	SystemUpgrade     *services.SystemUpgradeService
+	GitRepository     *services.GitRepositoryService
+	GitOpsSync        *services.GitOpsSyncService
 	Config            *config.Config
 }
 
@@ -280,6 +283,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var versionSvc *services.VersionService
 	var environmentSvc *services.EnvironmentService
 	var settingsSvc *services.SettingsService
+	var jobScheduleSvc *services.JobService
 	var settingsSearchSvc *services.SettingsSearchService
 	var containerRegistrySvc *services.ContainerRegistryService
 	var templateSvc *services.TemplateService
@@ -290,11 +294,13 @@ func registerHandlers(api huma.API, svc *Services) {
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
 	var notificationSvc *services.NotificationService
-	var appriseSvc *services.AppriseService
+	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService
 	var systemUpgradeSvc *services.SystemUpgradeService
+	var gitRepositorySvc *services.GitRepositoryService
+	var gitOpsSyncSvc *services.GitOpsSyncService
 	var cfg *config.Config
 
 	if svc != nil {
@@ -309,6 +315,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		versionSvc = svc.Version
 		environmentSvc = svc.Environment
 		settingsSvc = svc.Settings
+		jobScheduleSvc = svc.JobSchedule
 		settingsSearchSvc = svc.SettingsSearch
 		containerRegistrySvc = svc.ContainerRegistry
 		templateSvc = svc.Template
@@ -324,6 +331,8 @@ func registerHandlers(api huma.API, svc *Services) {
 		customizeSearchSvc = svc.CustomizeSearch
 		systemSvc = svc.System
 		systemUpgradeSvc = svc.SystemUpgrade
+		gitRepositorySvc = svc.GitRepository
+		gitOpsSyncSvc = svc.GitOpsSync
 		cfg = svc.Config
 	}
 	handlers.RegisterHealth(api)
@@ -342,6 +351,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
+	handlers.RegisterJobSchedules(api, jobScheduleSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
@@ -349,4 +359,6 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
+	handlers.RegisterGitRepositories(api, gitRepositorySvc)
+	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
 }

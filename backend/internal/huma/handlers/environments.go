@@ -15,9 +15,9 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/version"
@@ -121,11 +121,11 @@ type PairAgentOutput struct {
 	Body base.ApiResponse[environment.AgentPairResponse]
 }
 
-type SyncRegistriesInput struct {
+type SyncEnvironmentInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type SyncRegistriesOutput struct {
+type SyncEnvironmentOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -277,17 +277,17 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 	}, h.PairAgent)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "syncEnvironmentRegistries",
+		OperationID: "syncEnvironment",
 		Method:      "POST",
-		Path:        "/environments/{id}/sync-registries",
-		Summary:     "Sync container registries",
-		Description: "Sync container registries to a remote environment",
+		Path:        "/environments/{id}/sync",
+		Summary:     "Sync environment",
+		Description: "Sync container registries and git repositories to a remote environment",
 		Tags:        []string{"Environments"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.SyncRegistries)
+	}, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
 		OperationID:  "pairEnvironment",
@@ -376,6 +376,10 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
@@ -396,61 +400,69 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	useApiKey := input.Body.UseApiKey != nil && *input.Body.UseApiKey
 
 	if useApiKey {
-		// New API key-based pairing flow
-		env.Status = string(models.EnvironmentStatusPending)
-
-		created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
-		if err != nil {
-			return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
-		}
-
-		// Generate API key for environment
-		apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
-			return nil, huma.Error500InternalServerError("Failed to create environment API key")
-		}
-
-		// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
-		encryptedKey := apiKeyDto.Key // Store the full key
-
-		// Link API key to environment and store encrypted key for manager use
-		updates := map[string]interface{}{
-			"api_key_id":   apiKeyDto.ID,
-			"access_token": encryptedKey,
-		}
-		created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
-			return nil, huma.Error500InternalServerError("Failed to link API key")
-		}
-
-		out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
-		if mapErr != nil {
-			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
-		}
-
-		return &CreateEnvironmentOutput{
-			Body: base.ApiResponse[EnvironmentWithApiKey]{
-				Success: true,
-				Data: EnvironmentWithApiKey{
-					Environment: out,
-					ApiKey:      &apiKeyDto.Key,
-				},
-			},
-		}, nil
+		return h.createEnvironmentWithApiKey(ctx, env, user)
 	}
 
+	return h.createEnvironmentLegacy(ctx, env, user, input.Body)
+}
+
+func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, env *models.Environment, user *models.User) (*CreateEnvironmentOutput, error) {
+	// New API key-based pairing flow
+	env.Status = string(models.EnvironmentStatusPending)
+
+	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
+	}
+
+	// Generate API key for environment
+	apiKeyDto, err := h.apiKeyService.CreateEnvironmentApiKey(ctx, created.ID, user.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to create environment API key", "environmentID", created.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to create environment API key")
+	}
+
+	// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
+	encryptedKey := apiKeyDto.Key // Store the full key
+
+	// Link API key to environment and store encrypted key for manager use
+	updates := map[string]interface{}{
+		"api_key_id":   apiKeyDto.ID,
+		"access_token": encryptedKey,
+	}
+	created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to link API key to environment", "environmentID", created.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to link API key")
+	}
+
+	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
+	if mapErr != nil {
+		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+	}
+
+	return &CreateEnvironmentOutput{
+		Body: base.ApiResponse[EnvironmentWithApiKey]{
+			Success: true,
+			Data: EnvironmentWithApiKey{
+				Environment: out,
+				ApiKey:      &apiKeyDto.Key,
+			},
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
 	// Legacy pairing flows
-	if (input.Body.AccessToken == nil || *input.Body.AccessToken == "") && input.Body.BootstrapToken != nil && *input.Body.BootstrapToken != "" {
-		token, err := h.environmentService.PairAgentWithBootstrap(ctx, input.Body.ApiUrl, *input.Body.BootstrapToken)
+	if (body.AccessToken == nil || *body.AccessToken == "") && body.BootstrapToken != nil && *body.BootstrapToken != "" {
+		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken)
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", input.Body.ApiUrl, "error", err.Error())
+			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", body.ApiUrl, "error", err.Error())
 			return nil, huma.Error502BadGateway((&common.AgentPairingError{Err: err}).Error())
 		}
 		env.AccessToken = &token
-	} else if input.Body.AccessToken != nil && *input.Body.AccessToken != "" {
-		env.AccessToken = input.Body.AccessToken
+	} else if body.AccessToken != nil && *body.AccessToken != "" {
+		env.AccessToken = body.AccessToken
 	}
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
@@ -458,12 +470,19 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
 	}
 
-	// Sync registries in background (intentionally detached from request context)
+	// Sync registries and git repositories in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
 			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
 				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
+			}
+		}(created.ID, created.Name)
+		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
+			bgCtx := context.Background()
+			if err := h.environmentService.SyncRepositoriesToEnvironment(bgCtx, envID); err != nil {
+				slog.WarnContext(bgCtx, "Failed to sync git repositories to new environment",
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(created.ID, created.Name)
@@ -512,6 +531,10 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*UpdateEnvironmentOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	isLocalEnv := input.ID == localDockerEnvironmentID
@@ -601,6 +624,10 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.ID == localDockerEnvironmentID {
 		return nil, huma.Error400BadRequest((&common.LocalEnvironmentDeletionError{}).Error())
 	}
@@ -629,6 +656,10 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*TestConnectionOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	var apiUrl *string
@@ -683,13 +714,17 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.ID != localDockerEnvironmentID {
 		return nil, huma.Error404NotFound("Not found")
 	}
 
 	shouldRotate := input.Body != nil && input.Body.Rotate != nil && *input.Body.Rotate
 	if h.cfg.AgentToken == "" || shouldRotate {
-		h.cfg.AgentToken = utils.GenerateRandomString(48)
+		h.cfg.AgentToken = stringutils.GenerateRandomString(48)
 	}
 
 	if err := h.settingsService.SetStringSetting(ctx, "agentToken", h.cfg.AgentToken); err != nil {
@@ -706,21 +741,31 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 	}, nil
 }
 
-// SyncRegistries syncs container registries to an environment.
-func (h *EnvironmentHandler) SyncRegistries(ctx context.Context, input *SyncRegistriesInput) (*SyncRegistriesOutput, error) {
+// SyncEnvironment syncs container registries and git repositories to an environment.
+func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*SyncEnvironmentOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError((&common.RegistrySyncError{Err: err}).Error())
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
-	return &SyncRegistriesOutput{
+	// Sync registries
+	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
+		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
+	}
+
+	// Sync git repositories
+	if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, input.ID); err != nil {
+		slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", input.ID, "error", err.Error())
+	}
+
+	return &SyncEnvironmentOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: "Registries synced successfully",
+				Message: "Environment synced successfully",
 			},
 		},
 	}, nil
@@ -798,6 +843,13 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, update
 					"environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(environmentID, updated.Name)
+		go func(envID string, envName string) {
+			ctx := context.Background()
+			if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, envID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync git repositories after environment update",
+					"environmentID", envID, "environmentName", envName, "error", err.Error())
+			}
+		}(environmentID, updated.Name)
 	}
 }
 
@@ -858,6 +910,10 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -897,7 +953,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	}
 
 	// Make HTTP request to the environment's /api/app-version endpoint
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
@@ -906,7 +962,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("Failed to create request")
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
@@ -920,6 +976,12 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	var versionInfo version.Info
 	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to decode version response")
+	}
+
+	// Update environment status to online since we successfully contacted it
+	if updateErr := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); updateErr != nil {
+		slog.WarnContext(ctx, "Failed to update environment heartbeat", "environment_id", input.ID, "error", updateErr)
+		// Don't fail the request if heartbeat update fails
 	}
 
 	return &GetEnvironmentVersionOutput{

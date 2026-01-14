@@ -14,7 +14,7 @@ import (
 
 type NotificationHandler struct {
 	notificationService *services.NotificationService
-	appriseService      *services.AppriseService
+	appriseService      *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 }
 
 type GetAllNotificationSettingsInput struct {
@@ -88,6 +88,8 @@ type TestAppriseNotificationOutput struct {
 }
 
 // RegisterNotifications registers notification endpoints.
+//
+//nolint:staticcheck // AppriseService still functional, deprecated in favor of Shoutrrr
 func RegisterNotifications(api huma.API, notificationSvc *services.NotificationService, appriseSvc *services.AppriseService) {
 	h := &NotificationHandler{
 		notificationService: notificationSvc,
@@ -168,6 +170,9 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 }
 
 func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	settings, err := h.notificationService.GetAllSettings(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NotificationSettingsListError{Err: err}).Error())
@@ -187,6 +192,9 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
@@ -205,8 +213,17 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 }
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Body.Provider)
-	if provider != models.NotificationProviderDiscord && provider != models.NotificationProviderEmail {
+	if provider != models.NotificationProviderDiscord &&
+		provider != models.NotificationProviderEmail &&
+		provider != models.NotificationProviderTelegram &&
+		provider != models.NotificationProviderSignal &&
+		provider != models.NotificationProviderSlack &&
+		provider != models.NotificationProviderNtfy &&
+		provider != models.NotificationProviderGeneric {
 		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
 	}
 
@@ -231,6 +248,9 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 }
 
 func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*DeleteNotificationSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
@@ -246,6 +266,9 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*TestNotificationOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.TestNotification(ctx, provider, input.Type); err != nil {
@@ -261,8 +284,14 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 }
 
 func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *GetAppriseSettingsInput) (*GetAppriseSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	settings, err := h.appriseService.GetSettings(ctx)
 	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to retrieve Apprise settings", err)
+	}
+	if settings == nil {
 		return nil, huma.Error404NotFound((&common.AppriseSettingsNotFoundError{}).Error())
 	}
 
@@ -278,6 +307,9 @@ func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *Get
 }
 
 func (h *NotificationHandler) CreateOrUpdateAppriseSettings(ctx context.Context, input *CreateOrUpdateAppriseSettingsInput) (*CreateOrUpdateAppriseSettingsOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if input.Body.Enabled && input.Body.APIURL == "" {
 		return nil, huma.Error400BadRequest("API URL is required when Apprise is enabled")
 	}
@@ -305,6 +337,9 @@ func (h *NotificationHandler) CreateOrUpdateAppriseSettings(ctx context.Context,
 }
 
 func (h *NotificationHandler) TestAppriseNotification(ctx context.Context, input *TestAppriseNotificationInput) (*TestAppriseNotificationOutput, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if err := h.appriseService.TestNotification(ctx); err != nil {
 		return nil, huma.Error500InternalServerError((&common.AppriseTestError{Err: err}).Error())
 	}

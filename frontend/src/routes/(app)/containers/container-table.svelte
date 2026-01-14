@@ -13,7 +13,7 @@
 	import { format } from 'date-fns';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
@@ -27,6 +27,9 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
+	import ContainerStatsCell from './components/container-stats-cell.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import {
 		StartIcon,
 		StopIcon,
@@ -60,6 +63,15 @@
 	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 
+	let isBulkLoading = $state({
+		start: false,
+		stop: false,
+		restart: false,
+		remove: false
+	});
+
+	let statsManager = $state<ContainerStatsManager | null>(null);
+
 	// Parse image reference into repo and tag
 	function parseImageRef(imageRef: string): { repo: string; tag: string } {
 		// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
@@ -74,6 +86,13 @@
 			};
 		}
 		return { repo: imageRef, tag: 'latest' };
+	}
+
+	function getContainerDisplayName(container: ContainerSummaryDto): string {
+		if (container.names && container.names.length > 0) {
+			return container.names[0].replace(/^\//, '');
+		}
+		return container.id.substring(0, 12);
 	}
 
 	function getActionStatusMessage(status: ActionStatus): string {
@@ -149,10 +168,10 @@
 		}
 	}
 
-	async function handleRemoveContainer(id: string) {
+	async function handleRemoveContainer(id: string, name: string) {
 		openConfirmDialog({
 			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message(),
+			message: m.containers_remove_confirm_message({ resource: name }),
 			checkboxes: [
 				{
 					id: 'force',
@@ -189,13 +208,14 @@
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
-		const containerName = container.names?.[0]?.replace(/^\//, '') || container.id.substring(0, 12);
+		const containerName = getContainerDisplayName(container);
 
 		openConfirmDialog({
 			title: m.containers_update_confirm_title(),
 			message: m.containers_update_confirm_message({ name: containerName }),
 			confirm: {
 				label: m.containers_update_container(),
+				destructive: false,
 				action: async () => {
 					actionStatus[container.id] = 'updating';
 					try {
@@ -228,15 +248,217 @@
 		});
 	}
 
-	const isAnyLoading = $derived(Object.values(actionStatus).some((status) => status !== ''));
+	async function handleBulkStart(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_start_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_start_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_start(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.start = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.startContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.start = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_start_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_start_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_start_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkStop(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_stop_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_stop_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_stop(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.stop = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.stopContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.stop = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_stop_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_stop_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_stop_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRestart(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_restart_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_restart_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_restart(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.restart = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.restartContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.restart = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_restart_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_restart_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_restart_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRemove(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_remove_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_remove_confirm_message({ count: ids.length }),
+			checkboxes: [
+				{
+					id: 'force',
+					label: m.containers_remove_force_label(),
+					initialState: false
+				},
+				{
+					id: 'volumes',
+					label: m.containers_remove_volumes_label(),
+					initialState: false
+				}
+			],
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates.force;
+					const volumes = !!checkboxStates.volumes;
+					isBulkLoading.remove = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.remove = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_remove_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_remove_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	const isAnyLoading = $derived(
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
+	);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
+	let columnVisibility = $state<Record<string, boolean>>({});
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
+
+		statsManager = new ContainerStatsManager();
+
+		// Derive which containers should be connected based on current state
+		const shouldConnect = $derived.by(() => {
+			const cpuVisible = columnVisibility.cpuUsage !== false;
+			const memoryVisible = columnVisibility.memoryUsage !== false;
+			const statsVisible = cpuVisible || memoryVisible;
+
+			if (!statsVisible) {
+				return new Set<string>();
+			}
+
+			const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
+			return new Set(runningContainers.map((c) => c.id));
+		});
+
+		const currentEnvId = $derived(environmentStore.selected?.id || '0');
+
+		// Effect ONLY for side effects - connecting/disconnecting websockets
+		const unsubscribe = $effect.root(() => {
+			$effect(() => {
+				if (!statsManager) return;
+
+				const targetIds = shouldConnect;
+				const connectedIds = new Set(statsManager.getConnectedIds());
+
+				// Connect new containers
+				for (const id of targetIds) {
+					if (!connectedIds.has(id)) {
+						statsManager.connect(id, currentEnvId);
+					}
+				}
+
+				// Disconnect removed containers
+				for (const id of connectedIds) {
+					if (!targetIds.has(id)) {
+						statsManager.disconnect(id);
+					}
+				}
+			});
+
+			return () => {};
+		});
+
+		return () => {
+			unsubscribe();
+			statsManager?.destroy();
+		};
 	});
 
 	let groupByProject = $derived.by(() => {
@@ -266,40 +488,81 @@
 	}
 
 	const columns = $derived([
+		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'id', title: m.common_id(), cell: IdCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
-		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
+		{
+			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
+			id: 'cpuUsage',
+			title: m.containers_cpu_usage(),
+			sortable: false,
+			cell: CPUCell
+		},
+		{
+			accessorFn: (row) => statsManager?.getMemoryPercent(row.id) ?? -1,
+			id: 'memoryUsage',
+			title: m.containers_memory_usage(),
+			sortable: false,
+			cell: MemoryCell
+		},
 		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [
-		{ id: 'id', label: m.common_id(), defaultVisible: true },
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
-		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
+		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'image', label: m.common_image(), defaultVisible: true },
+		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
 
-	function onToggleMobileField(fieldId: string) {
-		mobileFieldVisibility = {
-			...mobileFieldVisibility,
-			[fieldId]: !mobileFieldVisibility[fieldId]
-		};
-	}
-
-	const mobileFieldsForOptions = $derived(
-		mobileFields.map((field) => ({
-			id: field.id,
-			label: field.label,
-			visible: mobileFieldVisibility[field.id] ?? true
-		}))
-	);
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'start',
+			label: m.containers_bulk_start({ count: selectedIds?.length ?? 0 }),
+			action: 'start',
+			onClick: handleBulkStart,
+			loading: isBulkLoading.start,
+			disabled: isAnyLoading,
+			icon: StartIcon
+		},
+		{
+			id: 'stop',
+			label: m.containers_bulk_stop({ count: selectedIds?.length ?? 0 }),
+			action: 'stop',
+			onClick: handleBulkStop,
+			loading: isBulkLoading.stop,
+			disabled: isAnyLoading,
+			icon: StopIcon
+		},
+		{
+			id: 'restart',
+			label: m.containers_bulk_restart({ count: selectedIds?.length ?? 0 }),
+			action: 'restart',
+			onClick: handleBulkRestart,
+			loading: isBulkLoading.restart,
+			disabled: isAnyLoading,
+			icon: RefreshIcon
+		},
+		{
+			id: 'remove',
+			label: m.containers_bulk_remove({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleBulkRemove,
+			loading: isBulkLoading.remove,
+			disabled: isAnyLoading,
+			icon: TrashIcon
+		}
+	]);
 
 	function getProjectName(container: ContainerSummaryDto): string {
 		const projectLabel = container.labels?.['com.docker.compose.project'];
@@ -334,6 +597,20 @@
 	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
 {/snippet}
 
+{#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
+	<ContainerStatsCell
+		value={statsManager?.getCPUPercent(item.id)}
+		loading={statsManager?.isLoading(item.id) ?? false}
+		stopped={item.state !== 'running'}
+		type="cpu"
+	/>
+{/snippet}
+
+{#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
+	{@const memoryData = statsManager?.getMemoryUsage(item.id)}
+	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
+{/snippet}
+
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
 	<PortBadge ports={item.ports ?? []} />
 {/snippet}
@@ -349,7 +626,7 @@
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
-	<span class="font-mono text-sm">{String(item.id).substring(0, 12)}</span>
+	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
@@ -408,7 +685,7 @@
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
-			<span class="block max-w-[200px] cursor-default truncate text-left lg:max-w-[300px]">
+			<span class="block w-full cursor-default truncate text-left">
 				{item.image}
 			</span>
 		</ArcaneTooltip.Trigger>
@@ -482,6 +759,14 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+			},
+			{
+				label: m.containers_ip_address(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				icon: NetworksIcon,
+				iconVariant: 'sky' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility.ipAddress ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
@@ -585,7 +870,7 @@
 
 				<DropdownMenu.Item
 					variant="destructive"
-					onclick={() => handleRemoveContainer(item.id)}
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
 					disabled={status === 'removing' || isAnyLoading}
 				>
 					{#if status === 'removing'}
@@ -607,12 +892,13 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
+	bind:columnVisibility
 	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
 	{columns}
 	{mobileFields}
+	{bulkActions}
 	rowActions={RowActions}
 	mobileCard={ContainerMobileCardSnippet}
-	selectionDisabled
 	customViewOptions={CustomViewOptions}
 	customTableView={groupByProject && groupedContainers() ? GroupedTableView : undefined}
 />
@@ -625,17 +911,21 @@
 
 {#snippet GroupedTableView({
 	table,
-	renderPagination
+	renderPagination,
+	mobileFieldsForOptions,
+	onToggleMobileField
 }: {
 	table: TableType<ContainerSummaryDto>;
 	renderPagination: import('svelte').Snippet;
+	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
+	onToggleMobileField: (fieldId: string) => void;
 })}
 	<div class="flex h-full flex-col">
 		<div class="shrink-0 border-b">
 			<DataTableToolbar
 				{table}
 				{selectedIds}
-				selectionDisabled={true}
+				{bulkActions}
 				mobileFields={mobileFieldsForOptions}
 				{onToggleMobileField}
 				customViewOptions={CustomViewOptions}
@@ -703,7 +993,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-4 px-6 py-2 md:hidden">
+		<div class="space-y-4 py-2 md:hidden">
 			{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
 				{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
 				{@const projectRows = table
@@ -716,15 +1006,13 @@
 					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
 					icon={ProjectsIcon}
 				>
-					<div class="space-y-3">
-						{#each projectRows as row (row.id)}
-							{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
-						{:else}
-							<div class="h-24 flex items-center justify-center text-center text-muted-foreground">
-								{m.common_no_results_found()}
-							</div>
-						{/each}
-					</div>
+					{#each projectRows as row (row.id)}
+						{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
+					{:else}
+						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
+							{m.common_no_results_found()}
+						</div>
+					{/each}
 				</DropdownCard>
 			{/each}
 		</div>

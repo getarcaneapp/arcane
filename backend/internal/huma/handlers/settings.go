@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,8 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
@@ -63,6 +66,32 @@ type SearchSettingsOutput struct {
 
 type GetCategoriesOutput struct {
 	Body []category.Category
+}
+
+// validateProjectsDirectoryValue validates a projects directory value allowing:
+// - Unix absolute paths (/...)
+// - Windows drive paths (C:/..., C:\...)
+// - Mapping format "container:host" where container is absolute Unix or Windows path
+func validateProjectsDirectoryValue(path string) error {
+	switch {
+	case pathmapper.IsWindowsDrivePath(path):
+		return nil
+	case strings.Contains(path, ":"):
+		parts := strings.SplitN(path, ":", 2)
+		if len(parts) != 2 {
+			return errors.New("projectsDirectory must be an absolute path or valid mapping format")
+		}
+		container := parts[0]
+		if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
+			return errors.New("projectsDirectory mapping format: container path must be absolute")
+		}
+		return nil
+	default:
+		if !strings.HasPrefix(path, "/") {
+			return errors.New("projectsDirectory must be an absolute path starting with '/'")
+		}
+		return nil
+	}
 }
 
 // RegisterSettings registers settings management routes using Huma.
@@ -189,6 +218,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	isAdmin := humamw.IsAdminFromContext(ctx)
+
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
@@ -207,7 +238,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return &GetSettingsOutput{Body: settingsDto}, nil
 	}
 
-	showAll := input.EnvironmentID == "0"
+	showAll := isAdmin
 	settingsList := h.settingsService.ListSettings(showAll)
 
 	var settingsDto []settings.PublicSetting
@@ -233,6 +264,17 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	// Validate projects directory if provided
+	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
+		if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 	}
 
 	if input.EnvironmentID != "0" {
@@ -303,6 +345,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
@@ -315,6 +361,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	if h.settingsSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	categories := h.settingsSearchService.GetSettingsCategories()

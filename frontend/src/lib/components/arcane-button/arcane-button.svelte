@@ -14,7 +14,7 @@
 		showLabel?: boolean;
 		customLabel?: string;
 		loadingLabel?: string;
-		icon?: IconType;
+		icon?: IconType | null;
 		onClickPromise?: (
 			e: MouseEvent & {
 				currentTarget: EventTarget & HTMLButtonElement;
@@ -72,7 +72,7 @@
 	let displayLoadingLabel = $derived(loadingLabel ?? config.loadingLabel ?? m.common_processing());
 	let isIconOnlyButton = $derived(size === 'icon' || !showLabel);
 
-	let IconComponent = $derived(icon ?? config.IconComponent);
+	let IconComponent = $derived(icon === null ? null : (icon ?? config.IconComponent));
 
 	let hasChildren = $derived(!!children);
 </script>

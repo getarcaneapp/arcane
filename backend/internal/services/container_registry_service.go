@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
@@ -73,23 +74,8 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 		)
 	}
 
-	if enabled := params.Filters["enabled"]; enabled != "" {
-		switch enabled {
-		case "true", "1":
-			q = q.Where("enabled = ?", true)
-		case "false", "0":
-			q = q.Where("enabled = ?", false)
-		}
-	}
-
-	if insecure := params.Filters["insecure"]; insecure != "" {
-		switch insecure {
-		case "true", "1":
-			q = q.Where("insecure = ?", true)
-		case "false", "0":
-			q = q.Where("insecure = ?", false)
-		}
-	}
+	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
+	q = pagination.ApplyBooleanFilter(q, "insecure", params.Filters["insecure"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &registries)
 	if err != nil {
@@ -114,7 +100,7 @@ func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id strin
 
 func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req models.CreateContainerRegistryRequest) (*models.ContainerRegistry, error) {
 	// Encrypt the token before storing
-	encryptedToken, err := utils.Encrypt(req.Token)
+	encryptedToken, err := crypto.Encrypt(req.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt token: %w", err)
 	}
@@ -149,7 +135,7 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 
 	if req.Token != nil && *req.Token != "" {
 		// Encrypt the new token
-		encryptedToken, err := utils.Encrypt(*req.Token)
+		encryptedToken, err := crypto.Encrypt(*req.Token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt token: %w", err)
 		}
@@ -183,7 +169,7 @@ func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id str
 		return "", err
 	}
 
-	decryptedToken, err := utils.Decrypt(registry.Token)
+	decryptedToken, err := crypto.Decrypt(registry.Token)
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt token: %w", err)
 	}
@@ -300,7 +286,7 @@ func (s *ContainerRegistryService) findCredentialsForRegistry(ctx context.Contex
 		regURL = strings.TrimPrefix(regURL, "http://")
 
 		if strings.Contains(normalizedURL, regURL) || strings.Contains(regURL, normalizedURL) {
-			token, err := utils.Decrypt(reg.Token)
+			token, err := crypto.Decrypt(reg.Token)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to decrypt registry token", "registry", reg.URL, "error", err)
 				continue
@@ -460,7 +446,7 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
 
 	// Always update token as it comes decrypted from manager
-	encryptedToken, err := utils.Encrypt(item.Token)
+	encryptedToken, err := crypto.Encrypt(item.Token)
 	if err == nil {
 		needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
 	}
@@ -473,7 +459,7 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 }
 
 func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context, item containerregistry.Sync) error {
-	encryptedToken, err := utils.Encrypt(item.Token)
+	encryptedToken, err := crypto.Encrypt(item.Token)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt token for new registry %s: %w", item.ID, err)
 	}
