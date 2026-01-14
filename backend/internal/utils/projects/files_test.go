@@ -266,11 +266,12 @@ func TestParseCustomFilesHandlesNonExistentFiles(t *testing.T) {
 
 	// Check non-existent file has placeholder content
 	for _, f := range files {
-		if f.Path == "nonexistent.txt" {
+		switch f.Path {
+		case "nonexistent.txt":
 			if f.Content != PlaceholderGeneric {
 				t.Errorf("expected placeholder content for nonexistent.txt, got %q", f.Content)
 			}
-		} else if f.Path == "valid.txt" {
+		case "valid.txt":
 			if f.Content != "valid content" {
 				t.Errorf("expected 'valid content' for valid.txt, got %q", f.Content)
 			}
