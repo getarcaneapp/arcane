@@ -37,7 +37,7 @@
     "prettier-plugin-svelte": "^3.4.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "shiki": "^3.21.0",
-    "svelte": "^5.46.1"
+    "svelte": "^5.46.3"
   },
   "devDependencies": {
     "@iconify/json": "^2.2.424",
