@@ -1,4 +1,4 @@
-export type NotificationProvider = 'discord' | 'email';
+export type NotificationProvider = 'discord' | 'email' | 'telegram' | 'signal' | 'slack' | 'ntfy' | 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 
 export interface NotificationSettings {

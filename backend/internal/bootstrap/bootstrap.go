@@ -80,7 +80,8 @@ func Bootstrap(ctx context.Context) error {
 			utils.InitializeAutoLogin(ctx, cfg)
 			return nil
 		},
-		appServices.Settings.MigrateOidcConfigToFields)
+		appServices.Settings.MigrateOidcConfigToFields,
+    appServices.Notification.MigrateDiscordWebhookUrlToFields)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
