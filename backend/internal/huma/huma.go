@@ -136,7 +136,7 @@ type Services struct {
 	Container         *services.ContainerService
 	Network           *services.NetworkService
 	Notification      *services.NotificationService
-	Apprise           *services.AppriseService
+	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
@@ -294,7 +294,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
 	var notificationSvc *services.NotificationService
-	var appriseSvc *services.AppriseService
+	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService

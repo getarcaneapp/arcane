@@ -12,8 +12,6 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
-	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
-	github.com/emersion/go-smtp v0.24.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/types v0.0.0-20260107215709-10ac44bcce4a
 	github.com/gin-contrib/cors v1.7.6
@@ -31,6 +29,7 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lmittmann/tint v1.1.2
+	github.com/nicholas-fedor/shoutrrr v0.13.1
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/samber/slog-gin v1.19.1
 	github.com/shirou/gopsutil/v4 v4.25.12
@@ -132,6 +131,7 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/lufia/plan9stats v0.0.0-20250827001030-24949be3fa54 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect

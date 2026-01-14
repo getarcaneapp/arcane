@@ -10,7 +10,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { GitOpsSync } from '$lib/types/gitops.type';
 	import type { Row } from '@tanstack/table-core';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -176,12 +176,6 @@
 			title: m.git_sync_last_sync(),
 			sortable: true,
 			cell: LastSyncCell
-		},
-		{
-			accessorKey: 'enabled',
-			title: m.common_status(),
-			sortable: true,
-			cell: EnabledCell
 		}
 	] satisfies ColumnSpec<GitOpsSync>[];
 
@@ -193,9 +187,20 @@
 		{ id: 'autoSync', label: m.git_sync_auto_sync(), defaultVisible: true },
 		{ id: 'lastSyncStatus', label: m.git_sync_status(), defaultVisible: true },
 		{ id: 'lastSyncCommit', label: 'Commit', defaultVisible: false },
-		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true },
-		{ id: 'enabled', label: m.common_status(), defaultVisible: true }
+		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: Trash2Icon
+		}
+	]);
 </script>
 
 {#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: Row<GitOpsSync> })}
@@ -259,10 +264,6 @@
 
 {#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
-{/snippet}
-
-{#snippet EnabledCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
-	<StatusBadge variant={value ? 'green' : 'red'} text={value ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
 {#snippet SyncMobileCardSnippet({
@@ -339,7 +340,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (syncs = await gitOpsSyncService.getSyncs(environmentId, options))}
 	{columns}
 	{mobileFields}

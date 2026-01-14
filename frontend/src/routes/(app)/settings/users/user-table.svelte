@@ -9,7 +9,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { User } from '$lib/types/user.type';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
@@ -129,6 +129,18 @@
 		{ id: 'roles', label: m.common_role(), defaultVisible: true }
 	];
 
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
@@ -215,7 +227,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected()}
+	{bulkActions}
 	onRefresh={async (options) => {
 		requestOptions = options;
 		await onUsersChanged();

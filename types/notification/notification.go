@@ -11,6 +11,21 @@ const (
 
 	// NotificationProviderEmail is the builtin Email notification provider.
 	NotificationProviderEmail Provider = "email"
+
+	// NotificationProviderTelegram is the builtin Telegram notification provider.
+	NotificationProviderTelegram Provider = "telegram"
+
+	// NotificationProviderSignal is the builtin Signal notification provider.
+	NotificationProviderSignal Provider = "signal"
+
+	// NotificationProviderSlack is the builtin Slack notification provider.
+	NotificationProviderSlack Provider = "slack"
+
+	// NotificationProviderNtfy is the builtin Ntfy notification provider.
+	NotificationProviderNtfy Provider = "ntfy"
+
+	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
+	NotificationProviderGeneric Provider = "generic"
 )
 
 type Update struct {

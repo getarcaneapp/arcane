@@ -45,7 +45,6 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		)
 	}
 
-	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyBooleanFilter(q, "auto_sync", params.Filters["autoSync"])
 
 	q = pagination.ApplyFilter(q, "repository_id", params.Filters["repositoryId"])
@@ -102,7 +101,6 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		ProjectID:     nil, // Will be set during first sync
 		AutoSync:      false,
 		SyncInterval:  60,
-		Enabled:       true,
 	}
 
 	if req.AutoSync != nil {
@@ -110,9 +108,6 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	}
 	if req.SyncInterval != nil {
 		sync.SyncInterval = *req.SyncInterval
-	}
-	if req.Enabled != nil {
-		sync.Enabled = *req.Enabled
 	}
 
 	if err := s.db.WithContext(ctx).Create(&sync).Error; err != nil {
@@ -174,9 +169,6 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	if req.SyncInterval != nil {
 		updates["sync_interval"] = *req.SyncInterval
-	}
-	if req.Enabled != nil {
-		updates["enabled"] = *req.Enabled
 	}
 
 	if len(updates) > 0 {
@@ -339,7 +331,6 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 
 	status := &gitops.SyncStatus{
 		ID:             sync.ID,
-		Enabled:        sync.Enabled,
 		AutoSync:       sync.AutoSync,
 		LastSyncAt:     sync.LastSyncAt,
 		LastSyncStatus: sync.LastSyncStatus,
@@ -348,7 +339,7 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 	}
 
 	// Calculate next sync time
-	if sync.AutoSync && sync.Enabled && sync.LastSyncAt != nil {
+	if sync.AutoSync && sync.LastSyncAt != nil {
 		nextSync := sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute)
 		status.NextSyncAt = &nextSync
 	}
@@ -361,16 +352,17 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).
 		Preload("Repository").
 		Preload("Project").
-		Where("enabled = ? AND auto_sync = ?", true, true).
+		Where("auto_sync = ?", true).
 		Find(&syncs).Error; err != nil {
-		return fmt.Errorf("failed to get enabled syncs: %w", err)
+		return fmt.Errorf("failed to get auto-sync enabled syncs: %w", err)
 	}
 
 	for _, sync := range syncs {
 		// Check if sync is due
 		if sync.LastSyncAt != nil {
 			nextSync := sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute)
-			if time.Now().Before(nextSync) {
+			// Use a 30-second buffer to account for execution time drift
+			if time.Now().Add(30 * time.Second).Before(nextSync) {
 				continue
 			}
 		}
@@ -453,7 +445,6 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 			ProjectName:  importItem.SyncName,
 			AutoSync:     &importItem.AutoSync,
 			SyncInterval: &importItem.SyncInterval,
-			Enabled:      &importItem.Enabled,
 		}
 
 		_, err = s.CreateSync(ctx, environmentID, createReq)

@@ -36,8 +36,7 @@
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
 		autoSync: z.boolean().default(true),
-		syncInterval: z.number().min(1).default(5),
-		enabled: z.boolean().default(true)
+		syncInterval: z.number().min(1).default(5)
 	});
 
 	let formData = $derived({
@@ -46,8 +45,7 @@
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
-		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
-		enabled: open && syncToEdit ? (syncToEdit.enabled ?? true) : true
+		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -123,8 +121,7 @@
 			composePath: data.composePath,
 			projectName: data.name,
 			autoSync: data.autoSync,
-			syncInterval: data.syncInterval,
-			enabled: data.enabled
+			syncInterval: data.syncInterval
 		};
 
 		onSubmit({ sync: payload, isEditMode });
@@ -249,14 +246,6 @@
 				/>
 
 				<FormInput label={m.git_sync_sync_interval()} type="number" placeholder="5" bind:input={$inputs.syncInterval} />
-
-				<SwitchWithLabel
-					id="isEnabledSwitch"
-					label={m.common_enabled()}
-					description={m.common_enabled_description()}
-					error={$inputs.enabled.error}
-					bind:checked={$inputs.enabled.value}
-				/>
 			</form>
 		{/if}
 	{/snippet}

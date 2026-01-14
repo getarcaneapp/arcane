@@ -15,7 +15,7 @@
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { format } from 'date-fns';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
@@ -42,6 +42,12 @@
 		pull: false,
 		updating: false,
 		syncing: false
+	});
+
+	let isBulkLoading = $state({
+		up: false,
+		down: false,
+		redeploy: false
 	});
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -148,7 +154,111 @@
 		});
 	}
 
-	const isAnyLoading = $derived(Object.values(isLoading).some((loading) => loading));
+	async function handleBulkUp(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_up_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_up_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_up(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.up = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.up = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_up_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_up_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_start_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkDown(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_down_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_down_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_down(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.down = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.downProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.down = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_down_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_down_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_stop_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRedeploy(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.projects_bulk_redeploy_confirm_title({ count: ids.length }),
+			message: m.projects_bulk_redeploy_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.compose_pull_redeploy(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.redeploy = true;
+
+					const results = await Promise.allSettled(ids.map((id) => projectService.redeployProject(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.redeploy = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.projects_bulk_redeploy_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.projects_bulk_redeploy_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.compose_pull_failed());
+					}
+
+					projects = await projectService.getProjects(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	const isAnyLoading = $derived(
+		Object.values(isLoading).some((loading) => loading) || Object.values(isBulkLoading).some((loading) => loading)
+	);
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
@@ -166,6 +276,36 @@
 		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'up',
+			label: m.projects_bulk_up({ count: selectedIds?.length ?? 0 }),
+			action: 'up',
+			onClick: handleBulkUp,
+			loading: isBulkLoading.up,
+			disabled: isAnyLoading,
+			icon: StartIcon
+		},
+		{
+			id: 'down',
+			label: m.projects_bulk_down({ count: selectedIds?.length ?? 0 }),
+			action: 'down',
+			onClick: handleBulkDown,
+			loading: isBulkLoading.down,
+			disabled: isAnyLoading,
+			icon: StopIcon
+		},
+		{
+			id: 'redeploy',
+			label: m.projects_bulk_redeploy({ count: selectedIds?.length ?? 0 }),
+			action: 'redeploy',
+			onClick: handleBulkRedeploy,
+			loading: isBulkLoading.redeploy,
+			disabled: isAnyLoading,
+			icon: RedeployIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	const envId = $derived(environmentStore.selected?.id);
@@ -380,6 +520,7 @@
 	onRefresh={async (options) => (projects = await projectService.getProjects(options))}
 	{columns}
 	{mobileFields}
+	{bulkActions}
 	rowActions={RowActions}
 	mobileCard={ProjectMobileCardSnippet}
 />
