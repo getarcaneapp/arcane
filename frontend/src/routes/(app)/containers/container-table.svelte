@@ -13,7 +13,7 @@
 	import { format } from 'date-fns';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
@@ -62,6 +62,13 @@
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
 	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
+
+	let isBulkLoading = $state({
+		start: false,
+		stop: false,
+		restart: false,
+		remove: false
+	});
 
 	let statsManager = $state<ContainerStatsManager | null>(null);
 
@@ -241,7 +248,159 @@
 		});
 	}
 
-	const isAnyLoading = $derived(Object.values(actionStatus).some((status) => status !== ''));
+	async function handleBulkStart(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_start_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_start_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_start(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.start = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.startContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.start = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_start_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_start_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_start_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkStop(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_stop_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_stop_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_stop(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.stop = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.stopContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.stop = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_stop_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_stop_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_stop_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRestart(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_restart_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_restart_confirm_message({ count: ids.length }),
+			confirm: {
+				label: m.common_restart(),
+				destructive: false,
+				action: async () => {
+					isBulkLoading.restart = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.restartContainer(id)));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.restart = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_restart_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_restart_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_restart_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	async function handleBulkRemove(ids: string[]) {
+		if (!ids || ids.length === 0) return;
+
+		openConfirmDialog({
+			title: m.containers_bulk_remove_confirm_title({ count: ids.length }),
+			message: m.containers_bulk_remove_confirm_message({ count: ids.length }),
+			checkboxes: [
+				{
+					id: 'force',
+					label: m.containers_remove_force_label(),
+					initialState: false
+				},
+				{
+					id: 'volumes',
+					label: m.containers_remove_volumes_label(),
+					initialState: false
+				}
+			],
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates.force;
+					const volumes = !!checkboxStates.volumes;
+					isBulkLoading.remove = true;
+
+					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));
+
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+					const failureCount = results.length - successCount;
+
+					isBulkLoading.remove = false;
+
+					if (successCount === ids.length) {
+						toast.success(m.containers_bulk_remove_success({ count: successCount }));
+					} else if (successCount > 0) {
+						toast.warning(m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount }));
+					} else {
+						toast.error(m.containers_remove_failed());
+					}
+
+					containers = await containerService.getContainers(requestOptions);
+					selectedIds = [];
+				}
+			}
+		});
+	}
+
+	const isAnyLoading = $derived(
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
+	);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
@@ -254,59 +413,43 @@
 
 		statsManager = new ContainerStatsManager();
 
-		// Check if stats columns are visible
-		const areStatsColumnsVisible = () => {
+		// Derive which containers should be connected based on current state
+		const shouldConnect = $derived.by(() => {
 			const cpuVisible = columnVisibility.cpuUsage !== false;
 			const memoryVisible = columnVisibility.memoryUsage !== false;
-			return cpuVisible || memoryVisible;
-		};
+			const statsVisible = cpuVisible || memoryVisible;
 
-		// Function to sync connections with running containers
-		const syncConnections = () => {
-			if (!statsManager) return;
-
-			// Only connect if stats columns are visible
-			if (!areStatsColumnsVisible()) {
-				// Disconnect all if columns are hidden
-				const connectedIds = statsManager.getConnectedIds();
-				for (const id of connectedIds) {
-					statsManager.disconnect(id);
-				}
-				return;
+			if (!statsVisible) {
+				return new Set<string>();
 			}
 
 			const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
-			const runningIds = new Set(runningContainers.map((c) => c.id));
+			return new Set(runningContainers.map((c) => c.id));
+		});
 
-			const envId = environmentStore.selected?.id || '0';
+		const currentEnvId = $derived(environmentStore.selected?.id || '0');
 
-			// Connect new running containers
-			for (const container of runningContainers) {
-				if (!statsManager.hasConnection(container.id)) {
-					statsManager.connect(container.id, envId);
-				}
-			}
-
-			// Disconnect stopped containers
-			const connectedIds = statsManager.getConnectedIds();
-			for (const id of connectedIds) {
-				if (!runningIds.has(id)) {
-					statsManager.disconnect(id);
-				}
-			}
-		};
-
-		// Sync connections when containers or column visibility changes
+		// Effect ONLY for side effects - connecting/disconnecting websockets
 		const unsubscribe = $effect.root(() => {
 			$effect(() => {
-				// Track containers.data changes
-				containers.data;
-				// Track environment changes
-				environmentStore.selected?.id;
-				// Track column visibility changes
-				columnVisibility;
+				if (!statsManager) return;
 
-				syncConnections();
+				const targetIds = shouldConnect;
+				const connectedIds = new Set(statsManager.getConnectedIds());
+
+				// Connect new containers
+				for (const id of targetIds) {
+					if (!connectedIds.has(id)) {
+						statsManager.connect(id, currentEnvId);
+					}
+				}
+
+				// Disconnect removed containers
+				for (const id of connectedIds) {
+					if (!targetIds.has(id)) {
+						statsManager.disconnect(id);
+					}
+				}
 			});
 
 			return () => {};
@@ -381,6 +524,45 @@
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'start',
+			label: m.containers_bulk_start({ count: selectedIds?.length ?? 0 }),
+			action: 'start',
+			onClick: handleBulkStart,
+			loading: isBulkLoading.start,
+			disabled: isAnyLoading,
+			icon: StartIcon
+		},
+		{
+			id: 'stop',
+			label: m.containers_bulk_stop({ count: selectedIds?.length ?? 0 }),
+			action: 'stop',
+			onClick: handleBulkStop,
+			loading: isBulkLoading.stop,
+			disabled: isAnyLoading,
+			icon: StopIcon
+		},
+		{
+			id: 'restart',
+			label: m.containers_bulk_restart({ count: selectedIds?.length ?? 0 }),
+			action: 'restart',
+			onClick: handleBulkRestart,
+			loading: isBulkLoading.restart,
+			disabled: isAnyLoading,
+			icon: RefreshIcon
+		},
+		{
+			id: 'remove',
+			label: m.containers_bulk_remove({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleBulkRemove,
+			loading: isBulkLoading.remove,
+			disabled: isAnyLoading,
+			icon: TrashIcon
+		}
+	]);
 
 	function getProjectName(container: ContainerSummaryDto): string {
 		const projectLabel = container.labels?.['com.docker.compose.project'];
@@ -714,9 +896,9 @@
 	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
 	{columns}
 	{mobileFields}
+	{bulkActions}
 	rowActions={RowActions}
 	mobileCard={ContainerMobileCardSnippet}
-	selectionDisabled
 	customViewOptions={CustomViewOptions}
 	customTableView={groupByProject && groupedContainers() ? GroupedTableView : undefined}
 />
@@ -743,7 +925,7 @@
 			<DataTableToolbar
 				{table}
 				{selectedIds}
-				selectionDisabled={true}
+				{bulkActions}
 				mobileFields={mobileFieldsForOptions}
 				{onToggleMobileField}
 				customViewOptions={CustomViewOptions}

@@ -21,7 +21,7 @@
 	const TARGET_KEYS = ['target', 'logger', 'name', 'source', 'component', 'module', 'log.logger', 'logger_name', 'category'];
 	const ERROR_KEYS = ['error', 'err', 'exception', 'stack', 'stacktrace', 'error.message'];
 	const TRACE_KEYS = ['trace_id', 'traceId', 'correlation_id', 'correlationId', 'request_id', 'requestId', 'spanId', 'span_id'];
-	
+
 	// Nested message location (e.g., tracing-subscriber in Rust uses fields.message)
 	const NESTED_MESSAGE_PATHS = [
 		['fields', 'message'],
@@ -128,7 +128,8 @@
 	function getLevelColor(level: string | undefined): string {
 		if (!level) return 'text-gray-400';
 		const l = level.toLowerCase();
-		if (l === 'error' || l === 'err' || l === 'fatal' || l === 'critical' || l === 'panic' || l === 'emergency') return 'text-red-400';
+		if (l === 'error' || l === 'err' || l === 'fatal' || l === 'critical' || l === 'panic' || l === 'emergency')
+			return 'text-red-400';
 		if (l === 'warn' || l === 'warning' || l === 'alert') return 'text-yellow-400';
 		if (l === 'info' || l === 'information' || l === 'notice') return 'text-green-400';
 		if (l === 'debug' || l === 'dbg') return 'text-blue-400';
@@ -139,7 +140,8 @@
 	function getLevelBgColor(level: string | undefined): string {
 		if (!level) return 'bg-gray-800';
 		const l = level.toLowerCase();
-		if (l === 'error' || l === 'err' || l === 'fatal' || l === 'critical' || l === 'panic' || l === 'emergency') return 'bg-red-900/30';
+		if (l === 'error' || l === 'err' || l === 'fatal' || l === 'critical' || l === 'panic' || l === 'emergency')
+			return 'bg-red-900/30';
 		if (l === 'warn' || l === 'warning' || l === 'alert') return 'bg-yellow-900/30';
 		if (l === 'info' || l === 'information' || l === 'notice') return 'bg-green-900/30';
 		if (l === 'debug' || l === 'dbg') return 'bg-blue-900/30';
@@ -168,7 +170,7 @@
 	const formattedTime = $derived(formatTimestamp(extracted.timestamp));
 	const levelDisplay = $derived(extracted.level?.toUpperCase() ?? 'LOG');
 	const jsonString = $derived(rawJson ?? JSON.stringify(data, null, 2));
-	
+
 	// For unstructured JSON, create a compact string representation
 	const compactJson = $derived(JSON.stringify(data));
 
@@ -190,7 +192,9 @@
 	<div class="flex items-start gap-2">
 		<!-- Level badge -->
 		<span
-			class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold {getLevelColor(extracted.level)} {getLevelBgColor(extracted.level)}"
+			class="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold {getLevelColor(extracted.level)} {getLevelBgColor(
+				extracted.level
+			)}"
 		>
 			{levelDisplay}
 		</span>
@@ -204,7 +208,7 @@
 
 		<!-- Target/Logger name -->
 		{#if extracted.target}
-			<span class="shrink-0 text-xs text-cyan-400 font-medium" title={extracted.target}>
+			<span class="shrink-0 text-xs font-medium text-cyan-400" title={extracted.target}>
 				[{extracted.target}]
 			</span>
 		{/if}
@@ -225,7 +229,7 @@
 		<button
 			type="button"
 			onclick={copyToClipboard}
-			class="shrink-0 rounded p-1 text-gray-500 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+			class="shrink-0 rounded p-1 text-gray-500 transition-colors hover:bg-gray-700 hover:text-gray-200"
 			title={copied ? 'Copied!' : 'Copy JSON'}
 		>
 			{#if copied}
@@ -239,7 +243,7 @@
 		<button
 			type="button"
 			onclick={() => (showDetails = !showDetails)}
-			class="shrink-0 rounded px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+			class="shrink-0 rounded px-1.5 py-0.5 text-xs text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
 			title={showDetails ? 'Hide JSON' : 'Show full JSON'}
 		>
 			{showDetails ? '▼' : '▶'}
@@ -248,8 +252,8 @@
 
 	<!-- Collapsible full JSON section -->
 	{#if showDetails}
-		<div class="mt-1 ml-4 pl-2 border-l border-gray-700">
-			<pre class="text-xs text-gray-300 whitespace-pre-wrap break-all">{JSON.stringify(data, null, 2)}</pre>
+		<div class="mt-1 ml-4 border-l border-gray-700 pl-2">
+			<pre class="text-xs break-all whitespace-pre-wrap text-gray-300">{JSON.stringify(data, null, 2)}</pre>
 		</div>
 	{/if}
 </div>

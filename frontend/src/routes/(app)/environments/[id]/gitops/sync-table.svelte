@@ -10,7 +10,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { GitOpsSync } from '$lib/types/gitops.type';
 	import type { Row } from '@tanstack/table-core';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -189,6 +189,18 @@
 		{ id: 'lastSyncCommit', label: 'Commit', defaultVisible: false },
 		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: Trash2Icon
+		}
+	]);
 </script>
 
 {#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: Row<GitOpsSync> })}
@@ -328,7 +340,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (syncs = await gitOpsSyncService.getSyncs(environmentId, options))}
 	{columns}
 	{mobileFields}

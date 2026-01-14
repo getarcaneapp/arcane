@@ -78,9 +78,7 @@
 	}
 
 	const pageTitle = $derived(
-		environmentStore.selected
-			? `${m.layout_title()} | ${environmentStore.selected.name}`
-			: m.layout_title()
+		environmentStore.selected ? `${m.layout_title()} | ${environmentStore.selected.name}` : m.layout_title()
 	);
 </script>
 

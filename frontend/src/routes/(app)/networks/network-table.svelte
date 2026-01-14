@@ -12,7 +12,7 @@
 	import { DEFAULT_NETWORK_NAMES } from '$lib/constants';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
@@ -145,6 +145,18 @@
 		{ id: 'scope', label: m.common_scope(), defaultVisible: true }
 	];
 
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelectedNetworks,
+			loading: isLoading.remove,
+			disabled: isLoading.remove,
+			icon: TrashIcon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
@@ -273,7 +285,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelectedNetworks(ids)}
+	{bulkActions}
 	onRefresh={async (options) => (networks = await networkService.getNetworks(options))}
 	{columns}
 	{mobileFields}

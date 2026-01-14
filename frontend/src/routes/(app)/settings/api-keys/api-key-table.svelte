@@ -10,7 +10,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ApiKey } from '$lib/types/api-key.type';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import * as m from '$lib/paraglide/messages.js';
@@ -140,6 +140,18 @@
 		{ id: 'lastUsedAt', label: m.api_key_last_used(), defaultVisible: true }
 	];
 
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
@@ -255,7 +267,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRemoveSelected={(ids) => handleDeleteSelected()}
+	{bulkActions}
 	onRefresh={async (options) => {
 		requestOptions = options;
 		await onApiKeysChanged();
