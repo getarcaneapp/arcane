@@ -26,7 +26,7 @@ func setupNotificationHandlerTestService(t *testing.T) (*database.DB, *services.
 	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}, &models.AppriseSettings{}))
 
 	databaseDB := &database.DB{DB: db}
-	envSvc := services.NewEnvironmentService(databaseDB, nil, nil, nil, nil)
+	envSvc := services.NewEnvironmentService(databaseDB, nil, nil, nil, nil, nil)
 
 	return databaseDB, services.NewNotificationService(databaseDB, &config.Config{}, envSvc)
 }

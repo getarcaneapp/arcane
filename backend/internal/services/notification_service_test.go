@@ -51,7 +51,7 @@ func setupNotificationTestServiceInternal(t *testing.T) (*database.DB, *Environm
 	t.Helper()
 
 	db := setupNotificationTestDB(t)
-	envSvc := NewEnvironmentService(db, nil, nil, nil, nil)
+	envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	cfg := &config.Config{
 		AppUrl: "http://localhost:3552",
@@ -463,7 +463,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToManager(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)
-	envSvc := NewEnvironmentService(db, nil, nil, nil, nil)
+	envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	var calls atomic.Int32
 	var dispatched notificationdto.DispatchRequest
@@ -495,7 +495,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdateInfo(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)
-	envSvc := NewEnvironmentService(db, nil, nil, nil, nil)
+	envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:    "http://localhost:3552",
@@ -510,7 +510,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOpDispatchInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)
-	envSvc := NewEnvironmentService(db, nil, nil, nil, nil)
+	envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

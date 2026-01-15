@@ -981,7 +981,7 @@ func (s *GitOpsSyncService) writeSyncFilesToProject(ctx context.Context, sync *m
 // updateSyncStatusWithFiles updates sync status including the list of synced files
 func (s *GitOpsSyncService) updateSyncStatusWithFiles(ctx context.Context, id, status, errorMsg, commitHash string, syncedFiles []string) {
 	now := time.Now()
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"last_sync_at":     now,
 		"last_sync_status": status,
 		"synced_files":     marshalSyncedFiles(syncedFiles),

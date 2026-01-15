@@ -187,14 +187,13 @@ func TestStreamMultiplexedLogs_ContextCancelDoesNotDeadlock(t *testing.T) {
 	writeDockerLogFrameInternal(t, &stream, 1, "line 2\n")
 	writeDockerLogFrameInternal(t, &stream, 1, "line 3\n")
 
-	service := &ContainerService{}
 	logsChan := make(chan string, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
-		done <- service.streamMultiplexedLogs(ctx, io.NopCloser(bytes.NewReader(stream.Bytes())), logsChan)
+		done <- streamMultiplexedLogs(ctx, io.NopCloser(bytes.NewReader(stream.Bytes())), logsChan)
 	}()
 
 	require.Eventually(t, func() bool {
