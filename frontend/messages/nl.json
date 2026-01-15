@@ -666,6 +666,7 @@
 	"projects_col_provider": "Provider",
 	"projects_provider_local": "lokaal",
 	"projects_provider_git": "Git",
+	"projects_status_partial": "Gedeeltelijk actief",
 	"compose_subtitle": "Bekijk en beheer Compose Projecten",
 	"compose_services": "Voorzieningen",
 	"compose_services_description": "Docker Compose services en hun huidige status",
