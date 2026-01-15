@@ -666,6 +666,7 @@
 	"projects_col_provider": "プロバイダー",
 	"projects_provider_local": "ローカル",
 	"projects_provider_git": "Git",
+	"projects_status_partial": "部分的に実行",
 	"compose_subtitle": "View and Manage Compose Projects",
 	"compose_services": "Services",
 	"compose_services_description": "Docker Compose services and their current status",
