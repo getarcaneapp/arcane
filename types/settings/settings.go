@@ -37,6 +37,12 @@ type Update struct {
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
 
+	// SecretsDirectory is the directory path where encrypted secrets are stored.
+	// Must be an absolute path.
+	//
+	// Required: false
+	SecretsDirectory *string `json:"secretsDirectory,omitempty"`
+
 	// DiskUsagePath is the path to monitor for disk usage.
 	//
 	// Required: false

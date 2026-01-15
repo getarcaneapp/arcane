@@ -1121,6 +1121,62 @@ func (e *VolumeCountsError) Error() string {
 	return fmt.Sprintf("Failed to get volume counts: %v", e.Err)
 }
 
+type SecretListError struct {
+	Err error
+}
+
+func (e *SecretListError) Error() string {
+	return fmt.Sprintf("Failed to list secrets: %v", e.Err)
+}
+
+type SecretRetrievalError struct {
+	Err error
+}
+
+func (e *SecretRetrievalError) Error() string {
+	return fmt.Sprintf("Failed to retrieve secret: %v", e.Err)
+}
+
+type SecretContentError struct {
+	Err error
+}
+
+func (e *SecretContentError) Error() string {
+	return fmt.Sprintf("Failed to retrieve secret content: %v", e.Err)
+}
+
+type SecretCreationError struct {
+	Err error
+}
+
+func (e *SecretCreationError) Error() string {
+	return fmt.Sprintf("Failed to create secret: %v", e.Err)
+}
+
+type SecretUpdateError struct {
+	Err error
+}
+
+func (e *SecretUpdateError) Error() string {
+	return fmt.Sprintf("Failed to update secret: %v", e.Err)
+}
+
+type SecretDeletionError struct {
+	Err error
+}
+
+func (e *SecretDeletionError) Error() string {
+	return fmt.Sprintf("Failed to delete secret: %v", e.Err)
+}
+
+type SecretMountError struct {
+	Err error
+}
+
+func (e *SecretMountError) Error() string {
+	return fmt.Sprintf("Failed to mount secret: %v", e.Err)
+}
+
 type ApiKeyListError struct {
 	Err error
 }

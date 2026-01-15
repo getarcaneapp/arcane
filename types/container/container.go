@@ -8,6 +8,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	secrettypes "github.com/getarcaneapp/arcane/types/secret"
 )
 
 // RestartPolicyCreate represents restart policy options for container creation.
@@ -236,6 +237,11 @@ type Create struct {
 	//
 	// Required: false
 	Volumes []string `json:"volumes,omitempty"`
+
+	// Secrets is a list of secret mount requests.
+	//
+	// Required: false
+	Secrets []secrettypes.Mount `json:"secrets,omitempty"`
 
 	// Networks is a list of networks to connect to.
 	//

@@ -24,6 +24,7 @@ type Services struct {
 	Image             *services.ImageService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
+	Secret            *services.SecretService
 	ImageUpdate       *services.ImageUpdateService
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
@@ -66,7 +67,8 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Event)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings)
-	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings)
+	svcs.Secret = services.NewSecretService(db, svcs.Settings, svcs.Event)
+	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings, svcs.Secret)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)
 	svcs.Network = services.NewNetworkService(db, svcs.Docker, svcs.Event)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)

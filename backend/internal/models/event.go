@@ -62,6 +62,11 @@ const (
 	EventTypeNetworkDelete EventType = "network.delete"
 	EventTypeNetworkError  EventType = "network.error"
 
+	EventTypeSecretCreate EventType = "secret.create"
+	EventTypeSecretUpdate EventType = "secret.update"
+	EventTypeSecretDelete EventType = "secret.delete"
+	EventTypeSecretError  EventType = "secret.error"
+
 	EventTypeSystemPrune      EventType = "system.prune"
 	EventTypeUserLogin        EventType = "user.login"
 	EventTypeUserLogout       EventType = "user.logout"

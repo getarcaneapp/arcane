@@ -133,6 +133,7 @@ type Services struct {
 	Image             *services.ImageService
 	ImageUpdate       *services.ImageUpdateService
 	Volume            *services.VolumeService
+	Secret            *services.SecretService
 	Container         *services.ContainerService
 	Network           *services.NetworkService
 	Notification      *services.NotificationService
@@ -291,6 +292,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var imageSvc *services.ImageService
 	var imageUpdateSvc *services.ImageUpdateService
 	var volumeSvc *services.VolumeService
+	var secretSvc *services.SecretService
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
 	var notificationSvc *services.NotificationService
@@ -323,6 +325,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		imageSvc = svc.Image
 		imageUpdateSvc = svc.ImageUpdate
 		volumeSvc = svc.Volume
+		secretSvc = svc.Secret
 		containerSvc = svc.Container
 		networkSvc = svc.Network
 		notificationSvc = svc.Notification
@@ -353,7 +356,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc)
+	handlers.RegisterSecrets(api, secretSvc)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, secretSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
 	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
 	handlers.RegisterUpdater(api, updaterSvc)

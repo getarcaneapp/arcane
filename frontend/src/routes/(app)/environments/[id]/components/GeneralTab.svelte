@@ -29,6 +29,15 @@
 			</div>
 			<div class="space-y-2">
 				<TextInputWithLabel
+					id="secrets-directory"
+					label={m.general_secrets_directory_label()}
+					bind:value={$formInputs.secretsDirectory.value}
+					error={$formInputs.secretsDirectory.error}
+					helpText={m.general_secrets_directory_help()}
+				/>
+			</div>
+			<div class="space-y-2">
+				<TextInputWithLabel
 					id="disk-usage-path"
 					label={m.disk_usage_settings()}
 					bind:value={$formInputs.diskUsagePath.value}

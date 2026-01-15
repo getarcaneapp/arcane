@@ -21,6 +21,7 @@ import (
 type ContainerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
+	secretService    *services.SecretService
 }
 
 // Paginated response
@@ -118,10 +119,11 @@ type DeleteContainerOutput struct {
 }
 
 // RegisterContainers registers container endpoints.
-func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService) {
+func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, secretSvc *services.SecretService) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
+		secretService:    secretSvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -514,11 +516,27 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}
 	applyLegacyResourceLimits(input.Body, hostConfig)
 
+	var secretTempPaths []string
+	if h.secretService != nil && len(input.Body.Secrets) > 0 {
+		secretBinds, tempPaths, err := h.secretService.PrepareSecretMounts(ctx, input.EnvironmentID, input.Body.Name, input.Body.Secrets)
+		if err != nil {
+			return nil, huma.Error500InternalServerError((&common.SecretMountError{Err: err}).Error())
+		}
+		hostConfig.Binds = append(hostConfig.Binds, secretBinds...)
+		secretTempPaths = tempPaths
+	}
+
 	networkingConfig := buildNetworkingConfig(input.Body)
 
 	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {
+		if h.secretService != nil && len(secretTempPaths) > 0 {
+			h.secretService.CleanupTempFiles(secretTempPaths)
+		}
 		return nil, huma.Error500InternalServerError((&common.ContainerCreationError{Err: err}).Error())
+	}
+	if h.secretService != nil && len(secretTempPaths) > 0 {
+		h.secretService.TrackTempFiles(containerJSON.ID, secretTempPaths)
 	}
 
 	out := containertypes.Created{

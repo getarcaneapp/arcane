@@ -300,6 +300,28 @@ func (s *EventService) LogVolumeEvent(ctx context.Context, eventType models.Even
 	return err
 }
 
+func (s *EventService) LogSecretEvent(ctx context.Context, eventType models.EventType, secretID, secretName, userID, username, environmentID string, metadata models.JSON) error {
+	title := s.generateEventTitle(eventType, secretName)
+	description := s.generateEventDescription(eventType, "secret", secretName)
+	severity := s.getEventSeverity(eventType)
+
+	resourceType := "secret"
+	_, err := s.CreateEvent(ctx, CreateEventRequest{
+		Type:          eventType,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		ResourceType:  &resourceType,
+		ResourceID:    &secretID,
+		ResourceName:  &secretName,
+		UserID:        &userID,
+		Username:      &username,
+		EnvironmentID: &environmentID,
+		Metadata:      metadata,
+	})
+	return err
+}
+
 func (s *EventService) LogNetworkEvent(ctx context.Context, eventType models.EventType, networkID, networkName, userID, username, environmentID string, metadata models.JSON) error {
 	title := s.generateEventTitle(eventType, networkName)
 	description := s.generateEventDescription(eventType, "network", networkName)
@@ -406,6 +428,11 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", models.EventSeverityInfo},
+
+	models.EventTypeSecretCreate: {"Secret created: %s", "Secret '%s' has been created", models.EventSeveritySuccess},
+	models.EventTypeSecretUpdate: {"Secret updated: %s", "Secret '%s' has been updated", models.EventSeverityInfo},
+	models.EventTypeSecretDelete: {"Secret deleted: %s", "Secret '%s' has been deleted", models.EventSeverityWarning},
+	models.EventTypeSecretError:  {"Secret error: %s", "An error occurred with secret '%s'", models.EventSeverityError},
 
 	models.EventTypeNetworkCreate: {"Network created: %s", "Network '%s' has been created", models.EventSeveritySuccess},
 	models.EventTypeNetworkDelete: {"Network deleted: %s", "Network '%s' has been deleted", models.EventSeverityWarning},

@@ -13,6 +13,7 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	SecretsIcon,
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon
@@ -39,14 +40,15 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
 		{ title: m.images_title(), url: '/images', icon: ImagesIcon, shortcut: ['mod', '6'] },
 		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon, shortcut: ['mod', '7'] },
-		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
+		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] },
+		{ title: m.secrets_title(), url: '/secrets', icon: SecretsIcon, shortcut: ['mod', '9'] }
 	],
 	settingsItems: [
 		{
 			title: m.events_title(),
 			url: '/events',
 			icon: EventsIcon,
-			shortcut: ['mod', '9']
+			shortcut: ['mod', 'shift', "e"]
 		},
 		{
 			title: m.settings_title(),
