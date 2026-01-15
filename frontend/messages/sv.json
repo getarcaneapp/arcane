@@ -1044,7 +1044,7 @@
 	"registry_timeout": "Registrets Timeout",
 	"registry_timeout_description": "Timeout för behållarregistret operationer i sekunder (standard: 30)",
 	"proxy_request_timeout": "Tidsgräns för proxybegäran",
-	"proxy_request_timeout_description": "Timeout for proxied requests in seconds (default: 60)",
+	"proxy_request_timeout_description": "Timeout för proxierade förfrågningar i sekunder (standard: 60)",
 	"_comment_customize_overview": "=== CUSTOMIZATION - OVERVIEW ===",
 	"customize_title": "Customization",
 	"customize_subtitle": "Customize templates, registries, and configuration defaults",
