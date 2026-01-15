@@ -53,10 +53,17 @@ type Config struct {
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
 
-	FilePerm             os.FileMode `env:"FILE_PERM" default:"0644"`
-	DirPerm              os.FileMode `env:"DIR_PERM" default:"0755"`
-	AllowedExternalPaths string      `env:"ALLOWED_EXTERNAL_PATHS" default:""`
-	GitWorkDir           string      `env:"GIT_WORK_DIR" default:"data/git"`
+	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
+	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
+  AllowedExternalPaths string      `env:"ALLOWED_EXTERNAL_PATHS" default:""`
+	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
+
+	DockerAPITimeout       int `env:"DOCKER_API_TIMEOUT" default:"0"`
+	DockerImagePullTimeout int `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`
+	GitOperationTimeout    int `env:"GIT_OPERATION_TIMEOUT" default:"0"`
+	HTTPClientTimeout      int `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
+	RegistryTimeout        int `env:"REGISTRY_TIMEOUT" default:"0"`
+	ProxyRequestTimeout    int `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
 }
 
 func Load() *Config {
@@ -198,6 +205,11 @@ func setFieldValue(field reflect.Value, value string) {
 		// Handle os.FileMode (which is uint32)
 		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
 			field.SetUint(i)
+		}
+
+	case reflect.Int:
+		if i, err := strconv.Atoi(value); err == nil {
+			field.SetInt(int64(i))
 		}
 
 	default:

@@ -45,6 +45,13 @@ export type Settings = {
 
 	glassEffectEnabled: boolean;
 
+	dockerApiTimeout: number;
+	dockerImagePullTimeout: number;
+	gitOperationTimeout: number;
+	httpClientTimeout: number;
+	registryTimeout: number;
+	proxyRequestTimeout: number;
+
 	registryCredentials: RegistryCredential[];
 	templateRegistries: TemplateRegistryConfig[];
 };

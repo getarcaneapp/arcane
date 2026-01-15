@@ -25,7 +25,7 @@ import (
 const (
 	versionTTL            = 3 * time.Hour
 	versionCheckURL       = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
-	defaultRequestTimeout = 5 * time.Second
+	defaultRequestTimeout = 15 * time.Second
 )
 
 type VersionService struct {
