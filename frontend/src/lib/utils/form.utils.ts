@@ -77,9 +77,11 @@ export function createForm<T extends z.ZodType<any, any>>(schema: T, initialValu
 				// Trim values for submission, but don't mutate the store value in-place.
 				return [key, trimValue(input.value)];
 			})
-		) as z.infer<T>;
+		);
 
-		return values;
+		// Parse through schema to apply coercion (e.g., z.coerce.number())
+		const result = schema.safeParse(values);
+		return (result.success ? result.data : values) as z.infer<T>;
 	}
 
 	function reset() {

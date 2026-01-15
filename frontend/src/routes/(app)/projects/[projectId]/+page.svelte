@@ -175,14 +175,17 @@
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
 
-		const validated = form.validate();
+		const formValues = form.data();
+		const validated = isGitOpsManaged ? formValues : form.validate();
 		if (!validated) return;
 
 		const { name, composeContent, envContent } = validated;
+		const namePayload = isGitOpsManaged ? undefined : name;
+		const composePayload = isGitOpsManaged ? undefined : composeContent;
 
 		// First update the main project files
 		handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.updateProject(projectId, name, composeContent, envContent)),
+			result: await tryCatch(projectService.updateProject(projectId, namePayload, composePayload, envContent)),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
 			onSuccess: async (updatedStack: Project) => {

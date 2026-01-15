@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -35,10 +36,14 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
-func Initialize(databaseURL string) (*DB, error) {
-	db, err := connectDatabase(databaseURL)
+func Initialize(ctx context.Context, databaseURL string) (*DB, error) {
+	db, err := connectDatabase(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// Get underlying sql.DB for migrations
@@ -86,7 +91,7 @@ func Initialize(databaseURL string) (*DB, error) {
 	return db, nil
 }
 
-func connectDatabase(databaseURL string) (*DB, error) {
+func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
 	var dialector gorm.Dialector
 
 	switch {
@@ -109,6 +114,9 @@ func connectDatabase(databaseURL string) (*DB, error) {
 	var db *gorm.DB
 	var err error
 	for i := 1; i <= 3; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		db, err = gorm.Open(dialector, &gorm.Config{
 			Logger: customGormLogger,
 			NowFunc: func() time.Time {
@@ -123,7 +131,11 @@ func connectDatabase(databaseURL string) (*DB, error) {
 
 		slog.Info("Failed to initialize database", "attempt", i)
 		if i < 3 {
-			time.Sleep(3 * time.Second)
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 	}
 

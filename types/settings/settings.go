@@ -77,6 +77,41 @@ type Update struct {
 	// Required: false
 	PruneMode *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
 
+	// ScheduledPruneEnabled indicates if scheduled pruning is enabled.
+	//
+	// Required: false
+	ScheduledPruneEnabled *string `json:"scheduledPruneEnabled,omitempty"`
+
+	// ScheduledPruneInterval is the interval in minutes between prune operations.
+	//
+	// Required: false
+	ScheduledPruneInterval *string `json:"scheduledPruneInterval,omitempty"`
+
+	// ScheduledPruneContainers indicates if stopped containers should be pruned.
+	//
+	// Required: false
+	ScheduledPruneContainers *string `json:"scheduledPruneContainers,omitempty"`
+
+	// ScheduledPruneImages indicates if unused images should be pruned.
+	//
+	// Required: false
+	ScheduledPruneImages *string `json:"scheduledPruneImages,omitempty"`
+
+	// ScheduledPruneVolumes indicates if unused volumes should be pruned.
+	//
+	// Required: false
+	ScheduledPruneVolumes *string `json:"scheduledPruneVolumes,omitempty"`
+
+	// ScheduledPruneNetworks indicates if unused networks should be pruned.
+	//
+	// Required: false
+	ScheduledPruneNetworks *string `json:"scheduledPruneNetworks,omitempty"`
+
+	// ScheduledPruneBuildCache indicates if build cache should be pruned.
+	//
+	// Required: false
+	ScheduledPruneBuildCache *string `json:"scheduledPruneBuildCache,omitempty"`
+
 	// MaxImageUploadSize is the maximum size for image uploads.
 	//
 	// Required: false

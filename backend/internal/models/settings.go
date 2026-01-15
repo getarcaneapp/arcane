@@ -61,6 +61,13 @@ type Settings struct {
 	AnalyticsHeartbeatInterval SettingVariable `key:"analyticsHeartbeatInterval" meta:"label=Analytics Heartbeat Interval;type=number;keywords=analytics,heartbeat,interval,frequency,schedule,telemetry,jobs;category=jobschedule;description=How often to send the anonymous analytics heartbeat in minutes"`
 	AutoInjectEnv              SettingVariable `key:"autoInjectEnv" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers (default: false)"`
 	PruneMode                  SettingVariable `key:"dockerPruneMode" meta:"label=Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk;category=internal;description=Configure how unused Docker images are cleaned up"`
+	ScheduledPruneEnabled      SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
+	ScheduledPruneInterval     SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=number;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=Minutes between scheduled prune runs"`
+	ScheduledPruneContainers   SettingVariable `key:"scheduledPruneContainers" meta:"label=Scheduled Prune Containers;type=boolean;keywords=prune,containers,cleanup,maintenance;category=internal;description=Remove stopped containers during scheduled prune"`
+	ScheduledPruneImages       SettingVariable `key:"scheduledPruneImages" meta:"label=Scheduled Prune Images;type=boolean;keywords=prune,images,cleanup,maintenance;category=internal;description=Remove unused images during scheduled prune"`
+	ScheduledPruneVolumes      SettingVariable `key:"scheduledPruneVolumes" meta:"label=Scheduled Prune Volumes;type=boolean;keywords=prune,volumes,cleanup,maintenance;category=internal;description=Remove unused volumes during scheduled prune"`
+	ScheduledPruneNetworks     SettingVariable `key:"scheduledPruneNetworks" meta:"label=Scheduled Prune Networks;type=boolean;keywords=prune,networks,cleanup,maintenance;category=internal;description=Remove unused networks during scheduled prune"`
+	ScheduledPruneBuildCache   SettingVariable `key:"scheduledPruneBuildCache" meta:"label=Scheduled Prune Build Cache;type=boolean;keywords=prune,build cache,cleanup,maintenance;category=internal;description=Remove Docker build cache during scheduled prune"`
 	MaxImageUploadSize         SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
 	DockerHost                 SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
 
@@ -96,6 +103,14 @@ type Settings struct {
 
 	// API Keys category (admin management page - no actual settings)
 	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
+
+	// Timeout category
+	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,envOverride" meta:"label=Docker API Timeout;type=number;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds (default: 30)" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
+	DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,envOverride" meta:"label=Docker Image Pull Timeout;type=number;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds (default: 600 = 10 minutes)"`
+	GitOperationTimeout    SettingVariable `key:"gitOperationTimeout,envOverride" meta:"label=Git Operation Timeout;type=number;keywords=git,clone,timeout,seconds,repository;category=timeouts;description=Timeout for Git clone/fetch operations in seconds (default: 300 = 5 minutes)"`
+	HTTPClientTimeout      SettingVariable `key:"httpClientTimeout,envOverride" meta:"label=HTTP Client Timeout;type=number;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds (default: 30)"`
+	RegistryTimeout        SettingVariable `key:"registryTimeout,envOverride" meta:"label=Registry Timeout;type=number;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds (default: 30)"`
+	ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout,envOverride" meta:"label=Proxy Request Timeout;type=number;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds (default: 60)"`
 }
 
 func (SettingVariable) TableName() string {

@@ -65,7 +65,7 @@
 			<div class="hidden shrink items-center justify-center md:flex">
 				<div class="border-border/50 bg-muted/30 relative overflow-hidden rounded-xl border backdrop-blur-sm">
 					<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
-						{#each statCards as card, i}
+						{#each statCards as card, i (card.title ?? i)}
 							<StatCard
 								variant="mini"
 								title={card.title}
@@ -83,9 +83,11 @@
 		<ActionButtonGroup buttons={actionButtons} />
 	</header>
 
-	{@render mainContent()}
+	<div class="md:-mx-5 md:-mb-5 md:px-2 md:pb-2">
+		{@render mainContent()}
 
-	{#if additionalContent}
-		{@render additionalContent()}
-	{/if}
+		{#if additionalContent}
+			{@render additionalContent()}
+		{/if}
+	</div>
 </div>
