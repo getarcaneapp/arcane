@@ -666,6 +666,7 @@
 	"projects_col_provider": "提供者",
 	"projects_provider_local": "本機",
 	"projects_provider_git": "Git",
+	"projects_status_partial": "Partially Running",
 	"compose_subtitle": "檢視並管理 Compose 專案",
 	"compose_services": "服務",
 	"compose_services_description": "Docker Compose 服務以及目前狀態",
