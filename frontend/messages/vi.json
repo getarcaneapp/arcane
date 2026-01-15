@@ -666,6 +666,7 @@
 	"projects_col_provider": "Provider",
 	"projects_provider_local": "Local",
 	"projects_provider_git": "Git",
+	"projects_status_partial": "Partially Running",
 	"compose_subtitle": "Xem và Quản lý các Compose Projects",
 	"compose_services": "Services",
 	"compose_services_description": "Các Docker Compose Services và trạng thái hiện tại",
