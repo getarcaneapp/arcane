@@ -666,6 +666,7 @@
 	"projects_col_provider": "来源",
 	"projects_provider_local": "本地",
 	"projects_provider_git": "Git",
+	"projects_status_partial": "部分运行",
 	"compose_subtitle": "查看和管理Compose项目",
 	"compose_services": "服务",
 	"compose_services_description": "Docker Compose 服务及其当前状态",
