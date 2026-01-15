@@ -1226,6 +1226,114 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
 	var projectsArray []models.Project
 	query := s.db.WithContext(ctx).Model(&models.Project{})
+	statusFilter := ""
+	if params.Filters != nil {
+		statusFilter = strings.TrimSpace(params.Filters["status"])
+	}
+	if statusFilter != "" {
+		if term := strings.TrimSpace(params.Search); term != "" {
+			searchPattern := "%" + term + "%"
+			query = query.Where(
+				"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
+				searchPattern, searchPattern, searchPattern, searchPattern,
+			)
+		}
+		if err := query.Find(&projectsArray).Error; err != nil {
+			return nil, pagination.Response{}, fmt.Errorf("failed to list projects: %w", err)
+		}
+
+		items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+
+		limit := params.Limit
+		if limit <= 0 {
+			limit = 20
+		} else if limit > 100 {
+			limit = 100
+		}
+		params.Limit = limit
+
+		config := pagination.Config[project.Details]{
+			SearchAccessors: []pagination.SearchAccessor[project.Details]{
+				func(p project.Details) (string, error) { return p.Name, nil },
+				func(p project.Details) (string, error) { return p.Path, nil },
+				func(p project.Details) (string, error) { return p.Status, nil },
+				func(p project.Details) (string, error) { return p.DirName, nil },
+			},
+			SortBindings: []pagination.SortBinding[project.Details]{
+				{
+					Key: "name",
+					Fn: func(a, b project.Details) int {
+						return strings.Compare(a.Name, b.Name)
+					},
+				},
+				{
+					Key: "status",
+					Fn: func(a, b project.Details) int {
+						return strings.Compare(a.Status, b.Status)
+					},
+				},
+				{
+					Key: "serviceCount",
+					Fn: func(a, b project.Details) int {
+						if a.ServiceCount < b.ServiceCount {
+							return -1
+						}
+						if a.ServiceCount > b.ServiceCount {
+							return 1
+						}
+						return 0
+					},
+				},
+				{
+					Key: "createdAt",
+					Fn: func(a, b project.Details) int {
+						at, aerr := time.Parse(time.RFC3339, a.CreatedAt)
+						bt, berr := time.Parse(time.RFC3339, b.CreatedAt)
+						if aerr != nil || berr != nil {
+							return strings.Compare(a.CreatedAt, b.CreatedAt)
+						}
+						if at.Before(bt) {
+							return -1
+						}
+						if at.After(bt) {
+							return 1
+						}
+						return 0
+					},
+				},
+			},
+			FilterAccessors: []pagination.FilterAccessor[project.Details]{
+				{
+					Key: "status",
+					Fn: func(p project.Details, filterValue string) bool {
+						return strings.EqualFold(strings.TrimSpace(p.Status), strings.TrimSpace(filterValue))
+					},
+				},
+			},
+		}
+
+		result := pagination.SearchOrderAndPaginate(items, params, config)
+
+		totalPages := int64(0)
+		if params.Limit > 0 {
+			totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
+		}
+
+		page := 1
+		if params.Limit > 0 {
+			page = (params.Start / params.Limit) + 1
+		}
+
+		paginationResp := pagination.Response{
+			TotalPages:      totalPages,
+			TotalItems:      int64(result.TotalCount),
+			CurrentPage:     page,
+			ItemsPerPage:    params.Limit,
+			GrandTotalItems: int64(result.TotalAvailable),
+		}
+
+		return result.Items, paginationResp, nil
+	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -1234,6 +1342,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 			searchPattern, searchPattern, searchPattern, searchPattern,
 		)
 	}
+
+	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
 	if err != nil {

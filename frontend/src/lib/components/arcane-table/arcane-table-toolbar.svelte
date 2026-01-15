@@ -2,7 +2,7 @@
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters } from './data.js';
+	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters, projectStatusFilters } from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
@@ -38,6 +38,10 @@
 	);
 	const severityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
+	);
+	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
+	const serviceCountColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 
@@ -83,6 +87,9 @@
 				{#if severityColumn}
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 				{/if}
+				{#if statusColumn && serviceCountColumn}
+					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
+				{/if}
 
 				{#if isFiltered}
 					<ArcaneButton
@@ -107,7 +114,7 @@
 		{#if hasSelection}
 			{#if hasBulkActions}
 				<div class="flex flex-wrap items-center gap-2">
-					{#each bulkActions as bulkAction}
+					{#each bulkActions as bulkAction (bulkAction.id)}
 						{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
 						<ArcaneButton
 							action={actionType}
