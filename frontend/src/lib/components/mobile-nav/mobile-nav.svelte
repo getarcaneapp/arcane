@@ -8,23 +8,28 @@
 	import MobileNavSheet from './mobile-nav-sheet.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
+	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import './styles.css';
 
 	let {
 		navigationSettings,
 		user = null,
 		versionInformation = null,
+		dockerInfo = null,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
 		user?: any;
 		versionInformation?: any;
+		dockerInfo?: DockerInfo | null;
 		class?: string;
 	} = $props();
 
+	const swarmEnabled = $derived(dockerInfo?.Swarm?.LocalNodeState === 'active');
+
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];
-		const availableItems = getAvailableMobileNavItems();
+		const availableItems = getAvailableMobileNavItems({ includeSwarm: swarmEnabled });
 		return navigationSettings.pinnedItems
 			.map((url) => availableItems.find((item) => item.url === url))
 			.filter((item) => item !== undefined);
@@ -183,4 +188,4 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} navigationMode={mode} />
+<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmEnabled} navigationMode={mode} />

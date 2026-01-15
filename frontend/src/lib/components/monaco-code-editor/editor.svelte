@@ -5,7 +5,7 @@
 	import jsyaml from 'js-yaml';
 	import { m } from '$lib/paraglide/messages';
 
-	type CodeLanguage = 'yaml' | 'env';
+	type CodeLanguage = 'yaml' | 'env' | 'json';
 
 	let {
 		value = $bindable(''),
@@ -34,42 +34,83 @@
 	const theme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
 
 	const markers = $derived.by(() => {
-		if (!model || language !== 'yaml' || readOnly) return [];
+		if (!model || readOnly) return [];
 
-		try {
-			jsyaml.load(value);
-			return [];
-		} catch (e: unknown) {
-			const err = e as { mark?: { line: number; column: number }; reason?: string; message?: string };
-			const mark = err.mark;
+		// YAML validation
+		if (language === 'yaml') {
+			try {
+				jsyaml.load(value);
+				return [];
+			} catch (e: unknown) {
+				const err = e as { mark?: { line: number; column: number }; reason?: string; message?: string };
+				const mark = err.mark;
 
-			if (mark) {
-				const lineCount = model.getLineCount();
-				const lineNumber = Math.min(Math.max(1, mark.line + 1), lineCount);
-				const maxColumn = model.getLineMaxColumn(lineNumber);
+				if (mark) {
+					const lineCount = model.getLineCount();
+					const lineNumber = Math.min(Math.max(1, mark.line + 1), lineCount);
+					const maxColumn = model.getLineMaxColumn(lineNumber);
 
+					return [
+						{
+							severity: monaco.MarkerSeverity.Error,
+							message: err.reason || err.message || 'YAML error',
+							startLineNumber: lineNumber,
+							startColumn: Math.min(mark.column + 1, maxColumn),
+							endLineNumber: lineNumber,
+							endColumn: maxColumn
+						}
+					];
+				}
 				return [
 					{
 						severity: monaco.MarkerSeverity.Error,
-						message: err.reason || err.message || 'YAML error',
-						startLineNumber: lineNumber,
-						startColumn: Math.min(mark.column + 1, maxColumn),
-						endLineNumber: lineNumber,
-						endColumn: maxColumn
+						message: err.message || 'YAML error',
+						startLineNumber: 1,
+						startColumn: 1,
+						endLineNumber: 1,
+						endColumn: 1
 					}
 				];
 			}
-			return [
-				{
-					severity: monaco.MarkerSeverity.Error,
-					message: err.message || 'YAML error',
-					startLineNumber: 1,
-					startColumn: 1,
-					endLineNumber: 1,
-					endColumn: 1
-				}
-			];
 		}
+
+		// JSON validation
+		if (language === 'json') {
+			try {
+				JSON.parse(value);
+				return [];
+			} catch (e: unknown) {
+				const err = e as { message?: string };
+				// Try to extract line/column from error message like "Unexpected token at position X"
+				const posMatch = err.message?.match(/position (\d+)/);
+				if (posMatch && model) {
+					const position = parseInt(posMatch[1]);
+					const pos = model.getPositionAt(position);
+					return [
+						{
+							severity: monaco.MarkerSeverity.Error,
+							message: err.message || 'JSON error',
+							startLineNumber: pos.lineNumber,
+							startColumn: pos.column,
+							endLineNumber: pos.lineNumber,
+							endColumn: pos.column + 1
+						}
+					];
+				}
+				return [
+					{
+						severity: monaco.MarkerSeverity.Error,
+						message: err.message || 'JSON error',
+						startLineNumber: 1,
+						startColumn: 1,
+						endLineNumber: 1,
+						endColumn: 1
+					}
+				];
+			}
+		}
+
+		return [];
 	});
 
 	function updateHeight() {
@@ -172,7 +213,8 @@
 	// Sync markers
 	$effect(() => {
 		if (model) {
-			monaco.editor.setModelMarkers(model, 'yaml-linter', markers);
+			const owner = language === 'yaml' ? 'yaml-linter' : language === 'json' ? 'json-linter' : 'linter';
+			monaco.editor.setModelMarkers(model, owner, markers);
 		}
 	});
 
