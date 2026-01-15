@@ -1,7 +1,6 @@
 import {
 	ApiKeyIcon,
 	ApperanceIcon,
-	JobsIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -13,11 +12,15 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	DockIcon,
+	JobsIcon,
+	LayersIcon,
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon,
 	ShieldAlertIcon,
-	HammerIcon
+	HammerIcon,
+	TemplateIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -44,6 +47,15 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
+	swarmItems: [
+		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
+		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
+		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon },
+		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon },
+		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon },
+		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
+		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
+	],
 	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
@@ -94,7 +106,7 @@ export type MobileNavigationSettings = {
 	scrollToHide: boolean;
 };
 
-export function getAvailableMobileNavItems(): NavigationItem[] {
+export function getAvailableMobileNavItems(options?: { includeSwarm?: boolean }): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
 
 	if (navigationItems.managementItems) {
@@ -107,6 +119,10 @@ export function getAvailableMobileNavItems(): NavigationItem[] {
 
 	if (navigationItems.deploymentItems) {
 		flatItems.push(...navigationItems.deploymentItems);
+	}
+
+	if (options?.includeSwarm && navigationItems.swarmItems) {
+		flatItems.push(...navigationItems.swarmItems);
 	}
 
 	if (navigationItems.securityItems) {

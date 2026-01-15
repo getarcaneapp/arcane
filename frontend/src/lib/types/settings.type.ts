@@ -3,6 +3,7 @@ import type { TemplateRegistryConfig } from './template.type';
 export type Settings = {
 	projectsDirectory: string;
 	followProjectSymlinks: boolean;
+	swarmStackSourcesDirectory: string;
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;

@@ -355,6 +355,11 @@ function buildSecretDiagnostics(source: string): Diagnostic[] {
 	let offset = 0;
 	const keyStack: Array<{ key: string; indent: number }> = [];
 
+	function containsInterpolatedVariable(value: string): boolean {
+		VARIABLE_TOKEN_REGEX.lastIndex = 0;
+		return VARIABLE_TOKEN_REGEX.test(value);
+	}
+
 	for (const rawLine of lines) {
 		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
 		const match = /^(\s*)([A-Za-z0-9_.-]+)\s*:\s*(.*)$/.exec(line);
@@ -376,7 +381,8 @@ function buildSecretDiagnostics(source: string): Diagnostic[] {
 		const isArcaneExtensionKey = lowerKey.startsWith('x-arcane');
 		const inArcaneExtensionBlock = keyStack.some((entry) => NON_SECRET_VALUE_PARENT_KEYS.has(entry.key.toLowerCase()));
 		const shouldCheckValue = !NON_SECRET_VALUE_KEYS.has(lowerKey) && !isArcaneExtensionKey && !inArcaneExtensionBlock;
-		const isSecretValue = shouldCheckValue && SECRET_VALUE_REGEX.test(value);
+		const hasInterpolatedValue = shouldCheckValue && containsInterpolatedVariable(value);
+		const isSecretValue = shouldCheckValue && !hasInterpolatedValue && SECRET_VALUE_REGEX.test(value);
 
 		if (!isSecretKey && !isSecretValue) {
 			if (isBlockKey) {
