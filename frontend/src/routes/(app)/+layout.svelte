@@ -27,6 +27,7 @@
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
 	const settings = $derived(data.settings);
+	const dockerInfo = $derived(data.dockerInfo);
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
@@ -102,10 +103,10 @@
 			{@render children()}
 		</section>
 	</main>
-	<MobileNav {navigationSettings} {user} {versionInformation} />
+	<MobileNav {navigationSettings} {user} {versionInformation} {dockerInfo} />
 {:else}
 	<Sidebar.Provider>
-		<AppSidebar {versionInformation} {user} />
+		<AppSidebar {versionInformation} {user} {dockerInfo} />
 		<main class="h-dvh flex-1">
 			<section class="h-full p-3 sm:p-5">
 				{@render children()}

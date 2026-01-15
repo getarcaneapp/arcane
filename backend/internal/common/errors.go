@@ -1316,3 +1316,103 @@ type VulnerabilityScanRetrievalError struct {
 func (e *VulnerabilityScanRetrievalError) Error() string {
 	return fmt.Sprintf("Failed to retrieve vulnerability scan: %v", e.Err)
 }
+
+type SwarmNotEnabledError struct{}
+
+func (e *SwarmNotEnabledError) Error() string {
+	return "Swarm mode is not enabled"
+}
+
+type SwarmManagerRequiredError struct{}
+
+func (e *SwarmManagerRequiredError) Error() string {
+	return "Swarm manager access required"
+}
+
+type SwarmServiceListError struct {
+	Err error
+}
+
+func (e *SwarmServiceListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm services: %v", e.Err)
+}
+
+type SwarmServiceNotFoundError struct {
+	Err error
+}
+
+func (e *SwarmServiceNotFoundError) Error() string {
+	return fmt.Sprintf("Swarm service not found: %v", e.Err)
+}
+
+type SwarmServiceCreateError struct {
+	Err error
+}
+
+func (e *SwarmServiceCreateError) Error() string {
+	return fmt.Sprintf("Failed to create swarm service: %v", e.Err)
+}
+
+type SwarmServiceUpdateError struct {
+	Err error
+}
+
+func (e *SwarmServiceUpdateError) Error() string {
+	return fmt.Sprintf("Failed to update swarm service: %v", e.Err)
+}
+
+type SwarmServiceRemoveError struct {
+	Err error
+}
+
+func (e *SwarmServiceRemoveError) Error() string {
+	return fmt.Sprintf("Failed to remove swarm service: %v", e.Err)
+}
+
+type SwarmNodeListError struct {
+	Err error
+}
+
+func (e *SwarmNodeListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm nodes: %v", e.Err)
+}
+
+type SwarmNodeNotFoundError struct {
+	Err error
+}
+
+func (e *SwarmNodeNotFoundError) Error() string {
+	return fmt.Sprintf("Swarm node not found: %v", e.Err)
+}
+
+type SwarmTaskListError struct {
+	Err error
+}
+
+func (e *SwarmTaskListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm tasks: %v", e.Err)
+}
+
+type SwarmStackListError struct {
+	Err error
+}
+
+func (e *SwarmStackListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm stacks: %v", e.Err)
+}
+
+type SwarmStackDeployError struct {
+	Err error
+}
+
+func (e *SwarmStackDeployError) Error() string {
+	return fmt.Sprintf("Failed to deploy swarm stack: %v", e.Err)
+}
+
+type SwarmInspectError struct {
+	Err error
+}
+
+func (e *SwarmInspectError) Error() string {
+	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
+}

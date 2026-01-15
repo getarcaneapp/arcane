@@ -24,6 +24,7 @@ type Services struct {
 	Image             *services.ImageService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
+	Swarm             *services.SwarmService
 	ImageUpdate       *services.ImageUpdateService
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
@@ -71,6 +72,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)
 	svcs.Network = services.NewNetworkService(db, svcs.Docker, svcs.Event)
+	svcs.Swarm = services.NewSwarmService(svcs.Docker)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
