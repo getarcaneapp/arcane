@@ -4,7 +4,7 @@
 	import { CodeIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 
-	type CodeLanguage = 'yaml' | 'env';
+	type CodeLanguage = 'yaml' | 'env' | 'json';
 
 	let {
 		title,

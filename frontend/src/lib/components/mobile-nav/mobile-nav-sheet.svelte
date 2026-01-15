@@ -21,11 +21,13 @@
 		open = $bindable(false),
 		user = null,
 		versionInformation,
+		swarmEnabled = false,
 		debug = false
 	}: {
 		open: boolean;
 		user?: any;
 		versionInformation?: AppVersionInformation;
+		swarmEnabled?: boolean;
 		debug?: boolean;
 	} = $props();
 
@@ -218,6 +220,34 @@
 						{/each}
 					</div>
 				</section>
+
+				{#if swarmEnabled}
+					<section>
+						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+							{m.swarm_title()}
+						</h4>
+						<div class="space-y-2">
+							{#each navigationItems.swarmItems as item}
+								{@const IconComponent = item.icon}
+								<a
+									href={item.url}
+									onclick={handleItemClick}
+									class={cn(
+										'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+										'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+										isActiveItem(item)
+											? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+											: 'text-foreground hover:bg-muted/50'
+									)}
+									aria-current={isActiveItem(item) ? 'page' : undefined}
+								>
+									<IconComponent size={20} />
+									<span>{item.title}</span>
+								</a>
+							{/each}
+						</div>
+					</section>
+				{/if}
 
 				{#if isAdmin}
 					{#if navigationItems.settingsItems}
