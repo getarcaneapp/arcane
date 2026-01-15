@@ -14,19 +14,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 )
 
 type DockerClientService struct {
-	db     *database.DB
-	config *config.Config
-	client *client.Client
-	mu     sync.Mutex
+	db              *database.DB
+	config          *config.Config
+	settingsService *SettingsService
+	client          *client.Client
+	mu              sync.Mutex
 }
 
-func NewDockerClientService(db *database.DB, cfg *config.Config) *DockerClientService {
+func NewDockerClientService(db *database.DB, cfg *config.Config, settingsService *SettingsService) *DockerClientService {
 	return &DockerClientService{
-		db:     db,
-		config: cfg,
+		db:              db,
+		config:          cfg,
+		settingsService: settingsService,
 	}
 }
 
@@ -63,7 +66,11 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
@@ -87,7 +94,11 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	images, err := dockerClient.ImageList(ctx, image.ListOptions{All: true})
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	images, err := dockerClient.ImageList(apiCtx, image.ListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
@@ -111,7 +122,11 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
@@ -129,7 +144,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 		}
 	}
 
-	networks, err := dockerClient.NetworkList(ctx, network.ListOptions{})
+	networks, err := dockerClient.NetworkList(apiCtx, network.ListOptions{})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
@@ -159,7 +174,11 @@ func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volu
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
@@ -172,7 +191,7 @@ func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volu
 		}
 	}
 
-	volResp, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
+	volResp, err := dockerClient.VolumeList(apiCtx, volume.ListOptions{})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}

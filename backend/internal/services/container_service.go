@@ -17,20 +17,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 )
 
 type ContainerService struct {
-	db            *database.DB
-	dockerService *DockerClientService
-	eventService  *EventService
-	imageService  *ImageService
+	db              *database.DB
+	dockerService   *DockerClientService
+	eventService    *EventService
+	imageService    *ImageService
+	settingsService *SettingsService
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService) *ContainerService {
-	return &ContainerService{db: db, eventService: eventService, dockerService: dockerService, imageService: imageService}
+func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService) *ContainerService {
+	return &ContainerService{
+		db:              db,
+		eventService:    eventService,
+		dockerService:   dockerService,
+		imageService:    imageService,
+		settingsService: settingsService,
+	}
 }
 
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
@@ -193,8 +201,16 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 			pullOptions = image.PullOptions{}
 		}
 
-		reader, pullErr := dockerClient.ImagePull(ctx, config.Image, pullOptions)
+		settings := s.settingsService.GetSettingsConfig()
+		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+		defer pullCancel()
+
+		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
 		if pullErr != nil {
+			if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image_timeout"})
+				return nil, fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", config.Image)
+			}
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
 			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)
 		}

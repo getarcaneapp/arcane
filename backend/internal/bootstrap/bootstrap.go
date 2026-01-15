@@ -32,7 +32,7 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
-	db, err := initializeDBAndMigrate(cfg)
+	db, err := initializeDBAndMigrate(appCtx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
@@ -46,6 +46,9 @@ func Bootstrap(ctx context.Context) error {
 	}(appCtx)
 
 	httpClient := httputils.NewHTTPClient()
+	if cfg.HTTPClientTimeout > 0 {
+		httpClient = httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+	}
 
 	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
 	if err != nil {

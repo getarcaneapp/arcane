@@ -180,11 +180,15 @@
 	}
 </script>
 
-<div class="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
+<div class="flex h-full min-h-full flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
 	<aside
-		class={cn('hidden w-64 shrink-0 border-r md:block', isGlassEnabled ? 'bg-background/50 backdrop-blur-sm' : 'bg-transparent')}
+		class={cn(
+			'relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full',
+			isGlassEnabled ? 'backdrop-blur-sm' : 'bg-transparent'
+		)}
 	>
+		<div aria-hidden="true" class="bg-border/60 pointer-events-none absolute top-4 right-0 bottom-4 w-px"></div>
 		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
 			<nav class="space-y-1">

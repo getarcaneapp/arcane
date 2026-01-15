@@ -9,6 +9,13 @@ export type Settings = {
 	pollingInterval: number;
 	environmentHealthInterval: number;
 	dockerPruneMode: 'all' | 'dangling';
+	scheduledPruneEnabled?: boolean;
+	scheduledPruneInterval?: number;
+	scheduledPruneContainers?: boolean;
+	scheduledPruneImages?: boolean;
+	scheduledPruneVolumes?: boolean;
+	scheduledPruneNetworks?: boolean;
+	scheduledPruneBuildCache?: boolean;
 	maxImageUploadSize: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
@@ -36,6 +43,13 @@ export type Settings = {
 	sidebarHoverExpansion: boolean;
 
 	glassEffectEnabled: boolean;
+
+	dockerApiTimeout: number;
+	dockerImagePullTimeout: number;
+	gitOperationTimeout: number;
+	httpClientTimeout: number;
+	registryTimeout: number;
+	proxyRequestTimeout: number;
 
 	registryCredentials: RegistryCredential[];
 	templateRegistries: TemplateRegistryConfig[];

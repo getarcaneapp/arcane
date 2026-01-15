@@ -182,6 +182,9 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 	}
 
 	hub := h.startProjectLogHub(projectID, format, batched, follow, tail, since, timestamps)
+	// WebSocket connections use context.Background() because they are long-lived and should not
+	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
+	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
@@ -202,10 +205,10 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 	go ls.hub.Run(ctx)
 
 	lines := make(chan string, 256)
-	go func() {
+	go func(ctx context.Context) {
 		defer close(lines)
 		_ = h.projectService.StreamProjectLogs(ctx, projectID, lines, follow, tail, since, timestamps)
-	}()
+	}(ctx)
 
 	if format == "json" {
 		msgs := make(chan ws.LogMessage, 256)
@@ -291,6 +294,9 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 	}
 
 	hub := h.startContainerLogHub(containerID, format, batched, follow, tail, since, timestamps)
+	// WebSocket connections use context.Background() because they are long-lived and should not
+	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
+	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
@@ -311,10 +317,10 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 	go ls.hub.Run(ctx)
 
 	lines := make(chan string, 256)
-	go func() {
+	go func(ctx context.Context) {
 		defer close(lines)
 		_ = h.containerService.StreamLogs(ctx, containerID, lines, follow, tail, since, timestamps)
-	}()
+	}(ctx)
 
 	if format == "json" {
 		msgs := make(chan ws.LogMessage, 256)
@@ -368,6 +374,9 @@ func (h *WebSocketHandler) ContainerStats(c *gin.Context) {
 	}
 
 	hub := h.startContainerStatsHub(containerID)
+	// WebSocket connections use context.Background() because they are long-lived and should not
+	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
+	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
@@ -384,10 +393,10 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string) *ws.Hub {
 	go hub.Run(ctx)
 
 	statsChan := make(chan interface{}, 64)
-	go func() {
+	go func(ctx context.Context) {
 		defer close(statsChan)
 		_ = h.containerService.StreamStats(ctx, containerID, statsChan)
-	}()
+	}(ctx)
 
 	go func() {
 		for {
@@ -457,6 +466,12 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 		defer close(done)
 		buf := make([]byte, 4096)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			n, err := stdout.Read(buf)
 			if err != nil {
 				return
@@ -472,6 +487,12 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	// Read from websocket, write to container
 	go func() {
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			_, data, err := conn.ReadMessage()
 			if err != nil {
 				cancel()
