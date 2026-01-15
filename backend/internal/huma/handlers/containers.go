@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	dockercontainer "github.com/docker/docker/api/types/container"
@@ -253,6 +254,210 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	}, nil
 }
 
+func parsePortSpec(spec string) (nat.Port, error) {
+	proto := "tcp"
+	port := spec
+	if strings.Contains(spec, "/") {
+		parts := strings.SplitN(spec, "/", 2)
+		port = parts[0]
+		if parts[1] != "" {
+			proto = parts[1]
+		}
+	}
+
+	return nat.NewPort(proto, port)
+}
+
+func resolveCreateCommand(body containertypes.Create) []string {
+	if len(body.Command) > 0 {
+		return body.Command
+	}
+
+	return body.Cmd
+}
+
+func resolveCreateEnv(body containertypes.Create) []string {
+	if len(body.Environment) > 0 {
+		return body.Environment
+	}
+
+	return body.Env
+}
+
+func buildCreateLabels(body containertypes.Create) map[string]string {
+	labels := map[string]string{
+		"com.arcane.created": "true",
+	}
+	for key, value := range body.Labels {
+		labels[key] = value
+	}
+
+	return labels
+}
+
+func buildContainerConfig(body containertypes.Create) *dockercontainer.Config {
+	return &dockercontainer.Config{
+		Image:           body.Image,
+		Cmd:             resolveCreateCommand(body),
+		Entrypoint:      body.Entrypoint,
+		WorkingDir:      body.WorkingDir,
+		User:            body.User,
+		Env:             resolveCreateEnv(body),
+		ExposedPorts:    nat.PortSet{},
+		Labels:          buildCreateLabels(body),
+		Hostname:        body.Hostname,
+		Domainname:      body.Domainname,
+		AttachStdout:    body.AttachStdout,
+		AttachStderr:    body.AttachStderr,
+		AttachStdin:     body.AttachStdin,
+		Tty:             body.Tty,
+		OpenStdin:       body.OpenStdin,
+		StdinOnce:       body.StdinOnce,
+		NetworkDisabled: body.NetworkDisabled,
+	}
+}
+
+func applyLegacyPortBindings(body containertypes.Create, config *dockercontainer.Config, portBindings nat.PortMap) error {
+	for containerPort, hostPort := range body.Ports {
+		port, err := nat.NewPort("tcp", containerPort)
+		if err != nil {
+			return err
+		}
+		config.ExposedPorts[port] = struct{}{}
+		portBindings[port] = []nat.PortBinding{{HostPort: hostPort}}
+	}
+
+	return nil
+}
+
+func applyExposedPorts(exposedPorts map[string]struct{}, config *dockercontainer.Config) error {
+	for portSpec := range exposedPorts {
+		port, err := parsePortSpec(portSpec)
+		if err != nil {
+			return err
+		}
+		config.ExposedPorts[port] = struct{}{}
+	}
+
+	return nil
+}
+
+func buildHostConfigBase(body containertypes.Create, portBindings nat.PortMap) *dockercontainer.HostConfig {
+	return &dockercontainer.HostConfig{
+		Binds:         body.Volumes,
+		PortBindings:  portBindings,
+		Privileged:    body.Privileged,
+		AutoRemove:    body.AutoRemove,
+		RestartPolicy: dockercontainer.RestartPolicy{Name: dockercontainer.RestartPolicyMode(body.RestartPolicy)},
+	}
+}
+
+func applyHostConfigPortBindings(config *dockercontainer.Config, portBindings nat.PortMap, bindings map[string][]containertypes.PortBindingCreate) error {
+	for portSpec, bindingList := range bindings {
+		port, err := parsePortSpec(portSpec)
+		if err != nil {
+			return err
+		}
+		config.ExposedPorts[port] = struct{}{}
+		for _, binding := range bindingList {
+			portBindings[port] = append(portBindings[port], nat.PortBinding{
+				HostPort: binding.HostPort,
+				HostIP:   binding.HostIP,
+			})
+		}
+	}
+
+	return nil
+}
+
+func applyHostConfigSettings(hostConfig *dockercontainer.HostConfig, input *containertypes.HostConfigCreate) {
+	if input == nil {
+		return
+	}
+
+	if input.NetworkMode != "" {
+		hostConfig.NetworkMode = dockercontainer.NetworkMode(input.NetworkMode)
+	}
+	if input.Privileged != nil {
+		hostConfig.Privileged = *input.Privileged
+	}
+	if input.AutoRemove != nil {
+		hostConfig.AutoRemove = *input.AutoRemove
+	}
+	if input.ReadonlyRootfs != nil {
+		hostConfig.ReadonlyRootfs = *input.ReadonlyRootfs
+	}
+	if input.PublishAllPorts != nil {
+		hostConfig.PublishAllPorts = *input.PublishAllPorts
+	}
+	if input.RestartPolicy != nil {
+		hostConfig.RestartPolicy = dockercontainer.RestartPolicy{
+			Name:              dockercontainer.RestartPolicyMode(input.RestartPolicy.Name),
+			MaximumRetryCount: input.RestartPolicy.MaximumRetryCount,
+		}
+	}
+	if input.Memory > 0 {
+		hostConfig.Memory = input.Memory
+	}
+	if input.MemorySwap > 0 {
+		hostConfig.MemorySwap = input.MemorySwap
+	}
+	if input.NanoCPUs > 0 {
+		hostConfig.NanoCPUs = input.NanoCPUs
+	}
+	if input.CPUShares > 0 {
+		hostConfig.CPUShares = input.CPUShares
+	}
+}
+
+func applyHostConfigOverrides(body containertypes.Create, config *dockercontainer.Config, hostConfig *dockercontainer.HostConfig, portBindings nat.PortMap) error {
+	if body.HostConfig == nil {
+		return nil
+	}
+
+	if len(body.HostConfig.Binds) > 0 {
+		hostConfig.Binds = body.HostConfig.Binds
+	}
+
+	if len(body.HostConfig.PortBindings) > 0 {
+		if err := applyHostConfigPortBindings(config, portBindings, body.HostConfig.PortBindings); err != nil {
+			return err
+		}
+	}
+
+	applyHostConfigSettings(hostConfig, body.HostConfig)
+	return nil
+}
+
+func applyLegacyResourceLimits(body containertypes.Create, hostConfig *dockercontainer.HostConfig) {
+	if body.Memory > 0 {
+		hostConfig.Memory = body.Memory
+	}
+	if body.CPUs > 0 {
+		hostConfig.NanoCPUs = int64(body.CPUs * 1e9)
+	}
+}
+
+func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig {
+	if body.NetworkingConfig != nil && len(body.NetworkingConfig.EndpointsConfig) > 0 {
+		networkingConfig := &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
+		for name, endpoint := range body.NetworkingConfig.EndpointsConfig {
+			networkingConfig.EndpointsConfig[name] = &network.EndpointSettings{Aliases: endpoint.Aliases}
+		}
+		return networkingConfig
+	}
+
+	if len(body.Networks) > 0 {
+		networkingConfig := &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
+		for _, net := range body.Networks {
+			networkingConfig.EndpointsConfig[net] = &network.EndpointSettings{}
+		}
+		return networkingConfig
+	}
+
+	return nil
+}
+
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
@@ -263,54 +468,22 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	// Build Docker config from input
-	config := &dockercontainer.Config{
-		Image:        input.Body.Image,
-		Cmd:          input.Body.Command,
-		Entrypoint:   input.Body.Entrypoint,
-		WorkingDir:   input.Body.WorkingDir,
-		User:         input.Body.User,
-		Env:          input.Body.Environment,
-		ExposedPorts: nat.PortSet{},
-		Labels: map[string]string{
-			"com.arcane.created": "true",
-		},
-	}
-
+	config := buildContainerConfig(input.Body)
 	portBindings := nat.PortMap{}
-	for containerPort, hostPort := range input.Body.Ports {
-		port, err := nat.NewPort("tcp", containerPort)
-		if err != nil {
-			return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
-		}
-		config.ExposedPorts[port] = struct{}{}
-		portBindings[port] = []nat.PortBinding{{HostPort: hostPort}}
+	if err := applyLegacyPortBindings(input.Body, config, portBindings); err != nil {
+		return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
+	}
+	if err := applyExposedPorts(input.Body.ExposedPorts, config); err != nil {
+		return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
 	}
 
-	hostConfig := &dockercontainer.HostConfig{
-		Binds:         input.Body.Volumes,
-		PortBindings:  portBindings,
-		Privileged:    input.Body.Privileged,
-		AutoRemove:    input.Body.AutoRemove,
-		RestartPolicy: dockercontainer.RestartPolicy{Name: dockercontainer.RestartPolicyMode(input.Body.RestartPolicy)},
+	hostConfig := buildHostConfigBase(input.Body, portBindings)
+	if err := applyHostConfigOverrides(input.Body, config, hostConfig, portBindings); err != nil {
+		return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
 	}
+	applyLegacyResourceLimits(input.Body, hostConfig)
 
-	if input.Body.Memory > 0 {
-		hostConfig.Memory = input.Body.Memory
-	}
-	if input.Body.CPUs > 0 {
-		hostConfig.NanoCPUs = int64(input.Body.CPUs * 1e9)
-	}
-
-	var networkingConfig *network.NetworkingConfig
-	if len(input.Body.Networks) > 0 {
-		networkingConfig = &network.NetworkingConfig{
-			EndpointsConfig: make(map[string]*network.EndpointSettings),
-		}
-		for _, net := range input.Body.Networks {
-			networkingConfig.EndpointsConfig[net] = &network.EndpointSettings{}
-		}
-	}
+	networkingConfig := buildNetworkingConfig(input.Body)
 
 	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {

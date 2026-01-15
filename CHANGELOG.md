@@ -1,3 +1,49 @@
+## v1.13.0
+
+### Backend - New features
+
+* allow sensitive env variables to be read from _FILE ([#1423](https://github.com/getarcaneapp/arcane/pull/1423) by @kmendell)
+* add JSON parsing and structured log display functionality ([#1463](https://github.com/getarcaneapp/arcane/pull/1463) by @FusionStreak)
+* use shoutrrr for notifications (apprise deprecated) ([#1424](https://github.com/getarcaneapp/arcane/pull/1424) by @kmendell)
+* bulk actions for containers and projects ([#1466](https://github.com/getarcaneapp/arcane/pull/1466) by @kmendell)
+* auto-prune/prune scheduler job ([#1467](https://github.com/getarcaneapp/arcane/pull/1467) by @kmendell)
+* project status filter selector ([#1484](https://github.com/getarcaneapp/arcane/pull/1484) by @kmendell)
+
+### Backend - Bug fixes
+
+* add option for ssh host key verification and known hosts ([#1443](https://github.com/getarcaneapp/arcane/pull/1443) by @kmendell)
+* network overview not reload with new data([c6bbbc7](https://github.com/getarcaneapp/arcane/commit/c6bbbc781e297bdb0711d2042263f1c59ec18526) by @kmendell)
+* git sync interval incorrect ([#1446](https://github.com/getarcaneapp/arcane/pull/1446) by @kmendell)
+* oidc insecure tls not working for self signed CA ([#1448](https://github.com/getarcaneapp/arcane/pull/1448) by @kmendell)
+* remove updater lifecycle hooks ([#1468](https://github.com/getarcaneapp/arcane/pull/1468) by @kmendell)
+* margin not being applied on resource pages([dc10a3c](https://github.com/getarcaneapp/arcane/commit/dc10a3c3fd9d7fbfd5e317025afd3c18d50a48de) by @kmendell)
+* unable to save env in git synced project ([#1471](https://github.com/getarcaneapp/arcane/pull/1471) by @kmendell)
+* invalid api input for container creation ([#1483](https://github.com/getarcaneapp/arcane/pull/1483) by @kmendell)
+
+### Dependencies
+
+* bump @shikijs/monaco from 3.20.0 to 3.21.0 ([#1432](https://github.com/getarcaneapp/arcane/pull/1432) by @dependabot[bot])
+* bump @react-email/components from 1.0.3 to 1.0.4 ([#1431](https://github.com/getarcaneapp/arcane/pull/1431) by @dependabot[bot])
+* bump golang.org/x/term from 0.38.0 to 0.39.0 in /cli ([#1425](https://github.com/getarcaneapp/arcane/pull/1425) by @dependabot[bot])
+* bump golang.org/x/text from 0.32.0 to 0.33.0 in /backend ([#1426](https://github.com/getarcaneapp/arcane/pull/1426) by @dependabot[bot])
+* bump golang.org/x/mod from 0.31.0 to 0.32.0 in /backend ([#1429](https://github.com/getarcaneapp/arcane/pull/1429) by @dependabot[bot])
+* bump github.com/goccy/go-yaml from 1.19.1 to 1.19.2 in /backend ([#1428](https://github.com/getarcaneapp/arcane/pull/1428) by @dependabot[bot])
+* bump @sveltejs/kit from 2.49.3 to 2.49.4 ([#1479](https://github.com/getarcaneapp/arcane/pull/1479) by @dependabot[bot])
+* bump golang.org/x/net from 0.48.0 to 0.49.0 in /backend ([#1475](https://github.com/getarcaneapp/arcane/pull/1475) by @dependabot[bot])
+* bump svelte from 5.46.1 to 5.46.3 ([#1478](https://github.com/getarcaneapp/arcane/pull/1478) by @dependabot[bot])
+* upgrade pnpm to 10.28.0([9804c5c](https://github.com/getarcaneapp/arcane/commit/9804c5c8fad49c25ba732b9bda0cc6a9495ad342) by @kmendell)
+
+### Other
+
+* consolidate and cleanup backend utils ([#1419](https://github.com/getarcaneapp/arcane/pull/1419) by @kmendell)
+* remove enabled field from git syncs ([#1457](https://github.com/getarcaneapp/arcane/pull/1457) by @kmendell)
+* only run deadcode wf on org branches([aac9ba3](https://github.com/getarcaneapp/arcane/commit/aac9ba3f90823f97f36d1db217f74426a0f88549) by @kmendell)
+* update environment page to use settings form util ([#1469](https://github.com/getarcaneapp/arcane/pull/1469) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.12.2...v1.13.0
+
 ## v1.12.2
 
 ### Backend - Bug fixes

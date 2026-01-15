@@ -32,6 +32,8 @@ export interface HostConfigCreate {
 	networkMode?: string;
 	privileged?: boolean;
 	autoRemove?: boolean;
+	readonlyRootfs?: boolean;
+	publishAllPorts?: boolean;
 	memory?: number;
 	memorySwap?: number;
 	nanoCpus?: number;
@@ -43,7 +45,7 @@ export interface NetworkingConfig {
 }
 
 export interface ContainerCreateRequest {
-	name?: string;
+	name: string;
 	image: string;
 	cmd?: string[];
 	entrypoint?: string[];
@@ -54,6 +56,12 @@ export interface ContainerCreateRequest {
 	labels?: Record<string, string>;
 	workingDir?: string;
 	user?: string;
+	hostname?: string;
+	domainname?: string;
+	attachStdout?: boolean;
+	attachStderr?: boolean;
+	attachStdin?: boolean;
+	networkDisabled?: boolean;
 	tty?: boolean;
 	openStdin?: boolean;
 	stdinOnce?: boolean;

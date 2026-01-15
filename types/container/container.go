@@ -10,6 +10,111 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 )
 
+// RestartPolicyCreate represents restart policy options for container creation.
+type RestartPolicyCreate struct {
+	// Name of the restart policy.
+	//
+	// Required: false
+	Name string `json:"name,omitempty"`
+
+	// MaximumRetryCount is only used when name is on-failure.
+	//
+	// Required: false
+	MaximumRetryCount int `json:"maximumRetryCount,omitempty"`
+}
+
+// PortBindingCreate represents host port bindings for container creation.
+type PortBindingCreate struct {
+	// HostIP is the IP address to bind to on the host.
+	//
+	// Required: false
+	HostIP string `json:"hostIp,omitempty"`
+
+	// HostPort is the port on the host.
+	//
+	// Required: false
+	HostPort string `json:"hostPort,omitempty"`
+}
+
+// HostConfigCreate represents host configuration for container creation.
+type HostConfigCreate struct {
+	// Binds is a list of volume bindings.
+	//
+	// Required: false
+	Binds []string `json:"binds,omitempty"`
+
+	// PortBindings maps container ports to host bindings.
+	//
+	// Required: false
+	PortBindings map[string][]PortBindingCreate `json:"portBindings,omitempty"`
+
+	// RestartPolicy for the container.
+	//
+	// Required: false
+	RestartPolicy *RestartPolicyCreate `json:"restartPolicy,omitempty"`
+
+	// NetworkMode for the container.
+	//
+	// Required: false
+	NetworkMode string `json:"networkMode,omitempty"`
+
+	// Privileged indicates if the container runs in privileged mode.
+	//
+	// Required: false
+	Privileged *bool `json:"privileged,omitempty"`
+
+	// AutoRemove indicates if the container is removed when stopped.
+	//
+	// Required: false
+	AutoRemove *bool `json:"autoRemove,omitempty"`
+
+	// Memory limit in bytes.
+	//
+	// Required: false
+	Memory int64 `json:"memory,omitempty"`
+
+	// MemorySwap limits total memory usage (memory + swap) in bytes.
+	//
+	// Required: false
+	MemorySwap int64 `json:"memorySwap,omitempty"`
+
+	// NanoCPUs is CPU allocation in nano CPUs.
+	//
+	// Required: false
+	NanoCPUs int64 `json:"nanoCpus,omitempty"`
+
+	// CPUShares is the relative CPU share weight.
+	//
+	// Required: false
+	CPUShares int64 `json:"cpuShares,omitempty"`
+
+	// ReadonlyRootfs makes the root filesystem read-only.
+	//
+	// Required: false
+	ReadonlyRootfs *bool `json:"readonlyRootfs,omitempty"`
+
+	// PublishAllPorts publishes all exposed ports to random host ports.
+	//
+	// Required: false
+	PublishAllPorts *bool `json:"publishAllPorts,omitempty"`
+}
+
+// EndpointSettingsCreate represents network endpoint settings for container creation.
+type EndpointSettingsCreate struct {
+	// Aliases for the container on this network.
+	//
+	// Required: false
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+// NetworkingConfigCreate represents network configuration for container creation.
+type NetworkingConfigCreate struct {
+	// EndpointsConfig maps network names to endpoint settings.
+	//
+	// Required: false
+	EndpointsConfig map[string]EndpointSettingsCreate `json:"endpointsConfig,omitempty"`
+}
+
 // Create is used to create a new container.
 type Create struct {
 	// Name of the container.
@@ -26,6 +131,11 @@ type Create struct {
 	//
 	// Required: false
 	Command []string `json:"command,omitempty"`
+
+	// Cmd is an alias for Command.
+	//
+	// Required: false
+	Cmd []string `json:"cmd,omitempty"`
 
 	// Entrypoint for the container.
 	//
@@ -46,6 +156,76 @@ type Create struct {
 	//
 	// Required: false
 	Environment []string `json:"environment,omitempty"`
+
+	// Env is an alias for Environment.
+	//
+	// Required: false
+	Env []string `json:"env,omitempty"`
+
+	// Labels to set on the container.
+	//
+	// Required: false
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// ExposedPorts are ports exposed by the container.
+	//
+	// Required: false
+	ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
+
+	// HostConfig holds advanced host-level settings.
+	//
+	// Required: false
+	HostConfig *HostConfigCreate `json:"hostConfig,omitempty"`
+
+	// NetworkingConfig defines network endpoints.
+	//
+	// Required: false
+	NetworkingConfig *NetworkingConfigCreate `json:"networkingConfig,omitempty"`
+
+	// Hostname for the container.
+	//
+	// Required: false
+	Hostname string `json:"hostname,omitempty"`
+
+	// Domainname for the container.
+	//
+	// Required: false
+	Domainname string `json:"domainname,omitempty"`
+
+	// AttachStdout attaches stdout.
+	//
+	// Required: false
+	AttachStdout bool `json:"attachStdout,omitempty"`
+
+	// AttachStderr attaches stderr.
+	//
+	// Required: false
+	AttachStderr bool `json:"attachStderr,omitempty"`
+
+	// AttachStdin attaches stdin.
+	//
+	// Required: false
+	AttachStdin bool `json:"attachStdin,omitempty"`
+
+	// Tty allocates a pseudo-TTY.
+	//
+	// Required: false
+	Tty bool `json:"tty,omitempty"`
+
+	// OpenStdin keeps stdin open.
+	//
+	// Required: false
+	OpenStdin bool `json:"openStdin,omitempty"`
+
+	// StdinOnce closes stdin after first attach.
+	//
+	// Required: false
+	StdinOnce bool `json:"stdinOnce,omitempty"`
+
+	// NetworkDisabled disables networking.
+	//
+	// Required: false
+	NetworkDisabled bool `json:"networkDisabled,omitempty"`
 
 	// Ports is a map of port bindings.
 	//

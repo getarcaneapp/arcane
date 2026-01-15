@@ -88,13 +88,18 @@ export class ProjectService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async updateProject(projectId: string, name: string, composeContent: string, envContent?: string): Promise<Project> {
+	async updateProject(projectId: string, name?: string, composeContent?: string, envContent?: string): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload = {
-			name,
-			composeContent,
-			envContent
-		};
+		const payload: Record<string, string> = {};
+		if (name !== undefined) {
+			payload.name = name;
+		}
+		if (composeContent !== undefined) {
+			payload.composeContent = composeContent;
+		}
+		if (envContent !== undefined) {
+			payload.envContent = envContent;
+		}
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}
 
