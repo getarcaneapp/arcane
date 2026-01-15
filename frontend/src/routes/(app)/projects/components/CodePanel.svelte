@@ -6,7 +6,7 @@
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import type { DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
 
-	type CodeLanguage = 'yaml' | 'env';
+	type CodeLanguage = 'yaml' | 'env' | 'json';
 
 	let {
 		title,

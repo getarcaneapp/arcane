@@ -1,7 +1,6 @@
 import {
 	ApiKeyIcon,
 	ApperanceIcon,
-	JobsIcon,
 	UsersIcon,
 	SecurityIcon,
 	NotificationsIcon,
@@ -13,6 +12,9 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	DockIcon,
+	JobsIcon,
+	LayersIcon,
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon,
@@ -44,6 +46,12 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
+	swarmItems: [
+		{ title: m.swarm_services_title(), url: '/swarm/services', icon: DockIcon },
+		{ title: m.swarm_nodes_title(), url: '/swarm/nodes', icon: UsersIcon },
+		{ title: m.swarm_tasks_title(), url: '/swarm/tasks', icon: JobsIcon },
+		{ title: m.swarm_stacks_title(), url: '/swarm/stacks', icon: LayersIcon }
+	],
 	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
@@ -89,7 +97,7 @@ export type MobileNavigationSettings = {
 	scrollToHide: boolean;
 };
 
-export function getAvailableMobileNavItems(): NavigationItem[] {
+export function getAvailableMobileNavItems(options?: { includeSwarm?: boolean }): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
 
 	if (navigationItems.managementItems) {
@@ -102,6 +110,10 @@ export function getAvailableMobileNavItems(): NavigationItem[] {
 
 	if (navigationItems.deploymentItems) {
 		flatItems.push(...navigationItems.deploymentItems);
+	}
+
+	if (options?.includeSwarm && navigationItems.swarmItems) {
+		flatItems.push(...navigationItems.swarmItems);
 	}
 
 	if (navigationItems.securityItems) {

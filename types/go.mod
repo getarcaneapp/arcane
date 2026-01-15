@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/compose-spec/compose-go/v2 v2.10.1
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/moby/moby/api v1.53.0
 	github.com/moby/moby/client v0.2.2
 )
