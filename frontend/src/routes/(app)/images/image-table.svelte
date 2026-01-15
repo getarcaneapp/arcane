@@ -25,6 +25,7 @@
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/vulnerability-scan.util';
+
 	import {
 		DownloadIcon,
 		TrashIcon,

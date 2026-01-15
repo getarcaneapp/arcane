@@ -38,6 +38,15 @@
 			</div>
 			<div class="space-y-2">
 				<TextInputWithLabel
+					id="swarm-stack-sources-directory"
+					label="Swarm Stack Sources Directory"
+					bind:value={$formInputs.swarmStackSourcesDirectory.value}
+					error={$formInputs.swarmStackSourcesDirectory.error}
+					helpText="Directory where original compose/env sources for Swarm stack deploys are stored. Must be an absolute path on this environment."
+				/>
+			</div>
+			<div class="space-y-2">
+				<TextInputWithLabel
 					id="base-server-url"
 					label={m.general_base_url_label()}
 					bind:value={$formInputs.baseServerUrl.value}
