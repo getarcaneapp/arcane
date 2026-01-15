@@ -13,6 +13,7 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	SecretsIcon,
 	EventsIcon,
 	SettingsIcon,
 	JobsIcon,
@@ -38,7 +39,8 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon },
 		{ title: m.images_title(), url: '/images', icon: ImagesIcon },
 		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon },
-		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon }
+		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon },
+		{ title: m.secrets_title(), url: '/secrets', icon: SecretsIcon }
 	],
 	settingsItems: [
 		{

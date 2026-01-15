@@ -2,6 +2,7 @@ import type { TemplateRegistryConfig } from './template.type';
 
 export type Settings = {
 	projectsDirectory: string;
+	secretsDirectory: string;
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;

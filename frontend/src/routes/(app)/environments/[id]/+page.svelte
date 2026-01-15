@@ -98,6 +98,7 @@
 		dockerPruneMode: z.enum(['all', 'dangling']),
 		defaultShell: z.string(),
 		projectsDirectory: z.string(),
+		secretsDirectory: z.string(),
 		diskUsagePath: z.string(),
 		maxImageUploadSize: z.coerce.number(),
 		baseServerUrl: z.string(),
@@ -123,6 +124,7 @@
 		dockerPruneMode: (settings?.dockerPruneMode as 'all' | 'dangling') || 'dangling',
 		defaultShell: settings?.defaultShell || '/bin/sh',
 		projectsDirectory: settings?.projectsDirectory || '/app/data/projects',
+		secretsDirectory: settings?.secretsDirectory || '/app/data/secrets',
 		diskUsagePath: settings?.diskUsagePath || '/app/data/projects',
 		maxImageUploadSize: settings?.maxImageUploadSize || 500,
 		baseServerUrl: settings?.baseServerUrl || 'http://localhost',
@@ -157,6 +159,7 @@
 				dockerPruneMode: formData.dockerPruneMode,
 				defaultShell: formData.defaultShell,
 				projectsDirectory: formData.projectsDirectory,
+				secretsDirectory: formData.secretsDirectory,
 				diskUsagePath: formData.diskUsagePath,
 				maxImageUploadSize: formData.maxImageUploadSize,
 				baseServerUrl: formData.baseServerUrl,
@@ -625,6 +628,15 @@
 										bind:value={$formInputs.projectsDirectory.value}
 										error={$formInputs.projectsDirectory.error}
 										helpText={m.general_projects_directory_help()}
+									/>
+								</div>
+								<div class="space-y-2">
+									<TextInputWithLabel
+										id="secrets-directory"
+										label={m.general_secrets_directory_label()}
+										bind:value={$formInputs.secretsDirectory.value}
+										error={$formInputs.secretsDirectory.error}
+										helpText={m.general_secrets_directory_help()}
 									/>
 								</div>
 								<div class="space-y-2">
