@@ -29,22 +29,24 @@ func (js *JobScheduler) RegisterJob(job schedulertypes.Job) {
 func (js *JobScheduler) StartScheduler() {
 	for _, job := range js.jobs {
 		currentJob := job
-		schedule := currentJob.Schedule()
+		schedule := currentJob.Schedule(js.context)
+
+		slog.InfoContext(js.context, "Starting Job", "name", currentJob.Name(), "schedule", schedule)
+
 		if _, err := js.cron.AddFunc(schedule, func() {
-			ctx := js.context
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			slog.InfoContext(ctx, "Job starting", "name", currentJob.Name())
-			currentJob.Run(ctx)
-			slog.InfoContext(ctx, "Job finished", "name", currentJob.Name())
+			slog.InfoContext(js.context, "Job starting", "name", currentJob.Name())
+			currentJob.Run(js.context)
+			slog.InfoContext(js.context, "Job finished", "name", currentJob.Name())
 		}); err != nil {
-			ctx := js.context
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			slog.ErrorContext(ctx, "Failed to schedule job", "name", currentJob.Name(), "error", err)
+			slog.ErrorContext(js.context, "Failed to schedule job", "name", currentJob.Name(), "error", err)
 		}
 	}
 	js.cron.Start()
+}
+
+func (js *JobScheduler) Run(ctx context.Context) error {
+	js.StartScheduler()
+	<-ctx.Done()
+	js.cron.Stop()
+	return nil
 }
