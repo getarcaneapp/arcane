@@ -24,6 +24,7 @@
 	import ServicesGrid from '../components/ServicesGrid.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
+	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
@@ -96,6 +97,12 @@
 	let selectedFile = $state<'compose' | 'env' | string>('compose');
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedIncludeTab = $state<string | null>(null);
+	let treePaneWidth = $state(320);
+	let composeSplitWidth = $state<number | null>(null);
+	const minTreePaneWidth = 200;
+	const minEditorPaneWidth = 360;
+	const minComposePaneWidth = 360;
+	const minEnvPaneWidth = 280;
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -438,15 +445,15 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col gap-4 lg:flex-row">
-								<Card.Root class="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
+							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
+								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 										<Card.Title>
 											<h2>{m.project_files()}</h2>
 										</Card.Title>
 									</Card.Header>
-									<Card.Content class="min-h-0 flex-1 overflow-y-auto p-2">
-										<TreeView.Root class="p-2">
+									<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
+										<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
 											<TreeView.File
 												name="compose.yaml"
 												onclick={() => (selectedFile = 'compose')}
@@ -486,7 +493,7 @@
 									</Card.Content>
 								</Card.Root>
 
-								<div class="flex h-full min-h-0 flex-1 flex-col">
+								<div class="flex min-h-0 flex-1 flex-col">
 									{#if selectedFile === 'compose'}
 										<CodePanel
 											bind:open={composeOpen}
@@ -517,6 +524,101 @@
 									{/if}
 								</div>
 							</div>
+
+							<ResizableSplit
+								class="hidden h-full min-h-0 lg:flex lg:gap-2"
+								firstClass="flex min-h-0 flex-col"
+								secondClass="flex min-h-0 flex-col"
+								bind:size={treePaneWidth}
+								minSize={minTreePaneWidth}
+								minSecondSize={minEditorPaneWidth}
+								defaultRatio={0.3}
+								ariaLabel="Resize project files panel"
+								persistKey={`arcane.compose.split:${project.id}:tree`}
+								onResizeEnd={persistPrefs}
+							>
+								{#snippet first()}
+									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+											<Card.Title>
+												<h2>{m.project_files()}</h2>
+											</Card.Title>
+										</Card.Header>
+										<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
+											<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
+												<TreeView.File
+													name="compose.yaml"
+													onclick={() => (selectedFile = 'compose')}
+													class={selectedFile === 'compose' ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FileTextIcon class="size-4 text-blue-500" />
+													{/snippet}
+												</TreeView.File>
+
+												<TreeView.File
+													name=".env"
+													onclick={() => (selectedFile = 'env')}
+													class={selectedFile === 'env' ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FileTextIcon class="size-4 text-green-500" />
+													{/snippet}
+												</TreeView.File>
+
+												{#if project?.includeFiles && project.includeFiles.length > 0}
+													<TreeView.Folder name={m.project_includes()}>
+														{#each project.includeFiles as includeFile (includeFile.relativePath)}
+															<TreeView.File
+																name={includeFile.relativePath}
+																onclick={() => (selectedFile = includeFile.relativePath)}
+																class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
+															>
+																{#snippet icon()}
+																	<FileTextIcon class="size-4 text-amber-500" />
+																{/snippet}
+															</TreeView.File>
+														{/each}
+													</TreeView.Folder>
+												{/if}
+											</TreeView.Root>
+										</Card.Content>
+									</Card.Root>
+								{/snippet}
+
+								{#snippet second()}
+									<div class="flex h-full min-h-0 flex-1 flex-col">
+										{#if selectedFile === 'compose'}
+											<CodePanel
+												bind:open={composeOpen}
+												title="compose.yaml"
+												language="yaml"
+												bind:value={$inputs.composeContent.value}
+												error={$inputs.composeContent.error ?? undefined}
+												readOnly={!canEditCompose}
+											/>
+										{:else if selectedFile === 'env'}
+											<CodePanel
+												bind:open={envOpen}
+												title=".env"
+												language="env"
+												bind:value={$inputs.envContent.value}
+												error={$inputs.envContent.error ?? undefined}
+											/>
+										{:else}
+											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+											{#if includeFile}
+												<CodePanel
+													bind:open={includeFilesPanelStates[includeFile.relativePath]}
+													title={includeFile.relativePath}
+													language="yaml"
+													bind:value={includeFilesState[includeFile.relativePath]}
+												/>
+											{/if}
+										{/if}
+									</div>
+								{/snippet}
+							</ResizableSplit>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if project?.includeFiles && project.includeFiles.length > 0}
@@ -551,28 +653,61 @@
 										/>
 									{/if}
 								{:else}
-									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1">
-										<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
-											<CodePanel
-												bind:open={composeOpen}
-												title="compose.yaml"
-												language="yaml"
-												bind:value={$inputs.composeContent.value}
-												error={$inputs.composeContent.error ?? undefined}
-												readOnly={!canEditCompose}
-											/>
-										</div>
-
-										<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
-											<CodePanel
-												bind:open={envOpen}
-												title=".env"
-												language="env"
-												bind:value={$inputs.envContent.value}
-												error={$inputs.envContent.error ?? undefined}
-											/>
-										</div>
+									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
+										<CodePanel
+											bind:open={composeOpen}
+											title="compose.yaml"
+											language="yaml"
+											bind:value={$inputs.composeContent.value}
+											error={$inputs.composeContent.error ?? undefined}
+											readOnly={!canEditCompose}
+										/>
+										<CodePanel
+											bind:open={envOpen}
+											title=".env"
+											language="env"
+											bind:value={$inputs.envContent.value}
+											error={$inputs.envContent.error ?? undefined}
+										/>
 									</div>
+
+									<ResizableSplit
+										class="hidden min-h-0 flex-1 lg:flex lg:gap-2"
+										firstClass="flex min-h-0 flex-col"
+										secondClass="flex min-h-0 flex-col"
+										bind:size={composeSplitWidth}
+										minSize={minComposePaneWidth}
+										minSecondSize={minEnvPaneWidth}
+										defaultRatio={0.6}
+										ariaLabel="Resize compose and env editors"
+										persistKey={`arcane.compose.split:${project.id}:classic`}
+										onResizeEnd={persistPrefs}
+									>
+										{#snippet first()}
+											<div class="flex min-h-0 flex-1 flex-col">
+												<CodePanel
+													bind:open={composeOpen}
+													title="compose.yaml"
+													language="yaml"
+													bind:value={$inputs.composeContent.value}
+													error={$inputs.composeContent.error ?? undefined}
+													readOnly={!canEditCompose}
+												/>
+											</div>
+										{/snippet}
+
+										{#snippet second()}
+											<div class="flex min-h-0 flex-1 flex-col">
+												<CodePanel
+													bind:open={envOpen}
+													title=".env"
+													language="env"
+													bind:value={$inputs.envContent.value}
+													error={$inputs.envContent.error ?? undefined}
+												/>
+											</div>
+										{/snippet}
+									</ResizableSplit>
 								{/if}
 							</div>
 						{/if}
