@@ -304,9 +304,6 @@ func (s *OidcService) discoverProvider(ctx context.Context, issuer string) (*oid
 	if altIssuer == issuer {
 		altIssuer = issuer + "/"
 	}
-	if altIssuer == issuer {
-		return nil, issuer, err
-	}
 
 	slog.WarnContext(ctx, "getOrDiscoverProvider: retrying discovery with alternate issuer", "configured", issuer, "alternate", altIssuer)
 	provider, altErr := oidc.NewProvider(ctx, altIssuer)
