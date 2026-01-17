@@ -13,6 +13,14 @@
 	let isProcessing = $state(true);
 	let error = $state('');
 
+	const buildLoginRedirect = (errorCode: string, message?: string) => {
+		const params = new URLSearchParams({ error: errorCode });
+		if (message) {
+			params.set('message', message);
+		}
+		return `/login?${params.toString()}`;
+	};
+
 	onMount(async () => {
 		try {
 			const code = page.url.searchParams.get('code');
@@ -32,14 +40,14 @@
 				}
 
 				error = errorDescription || userMessage;
-				setTimeout(() => goto('/login?error=oidc_provider_error'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_provider_error', error)), 3000);
 				isProcessing = false;
 				return;
 			}
 
 			if (!code || !stateFromUrl) {
 				error = m.auth_oidc_invalid_response();
-				setTimeout(() => goto('/login?error=oidc_invalid_response'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_invalid_response', error)), 3000);
 				isProcessing = false;
 				return;
 			}
@@ -54,8 +62,8 @@
 					userMessage = m.auth_oidc_session_expired();
 				}
 
-				error = userMessage;
-				setTimeout(() => goto('/login?error=oidc_auth_failed'), 3000);
+				error = authResult.error || userMessage;
+				setTimeout(() => goto(buildLoginRedirect('oidc_auth_failed', error)), 3000);
 				isProcessing = false;
 				return;
 			}
@@ -89,7 +97,7 @@
 				finalizeLogin();
 			} else {
 				error = m.auth_oidc_user_info_missing();
-				setTimeout(() => goto('/login?error=oidc_user_info_missing'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_user_info_missing', error)), 3000);
 				isProcessing = false;
 			}
 		} catch (err: any) {
@@ -100,8 +108,9 @@
 				userMessage = m.auth_oidc_network_error();
 			}
 
-			error = userMessage;
-			setTimeout(() => goto('/login?error=oidc_callback_error'), 3000);
+			const serverMessage = err?.message && !err.message.includes('Request failed') ? err.message : '';
+			error = serverMessage || userMessage;
+			setTimeout(() => goto(buildLoginRedirect('oidc_callback_error', error)), 3000);
 			isProcessing = false;
 		}
 	});

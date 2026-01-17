@@ -86,13 +86,17 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	if authSettings.OidcEnabled {
 		oidcConfig := &models.OidcConfig{
-			ClientID:      settings.OidcClientId.Value,
-			ClientSecret:  settings.OidcClientSecret.Value,
-			IssuerURL:     settings.OidcIssuerUrl.Value,
-			Scopes:        settings.OidcScopes.Value,
-			AdminClaim:    settings.OidcAdminClaim.Value,
-			AdminValue:    settings.OidcAdminValue.Value,
-			SkipTlsVerify: settings.OidcSkipTlsVerify.IsTrue(),
+			ClientID:              settings.OidcClientId.Value,
+			ClientSecret:          settings.OidcClientSecret.Value,
+			IssuerURL:             settings.OidcIssuerUrl.Value,
+			AuthorizationEndpoint: settings.OidcAuthorizationEndpoint.Value,
+			TokenEndpoint:         settings.OidcTokenEndpoint.Value,
+			UserinfoEndpoint:      settings.OidcUserinfoEndpoint.Value,
+			JwksURI:               settings.OidcJwksEndpoint.Value,
+			Scopes:                settings.OidcScopes.Value,
+			AdminClaim:            settings.OidcAdminClaim.Value,
+			AdminValue:            settings.OidcAdminValue.Value,
+			SkipTlsVerify:         settings.OidcSkipTlsVerify.IsTrue(),
 		}
 
 		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {
@@ -279,43 +283,78 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.Oi
 		return nil, false, err
 	}
 
-	if user == nil {
-		// Check if merge accounts is enabled in settings
-		settings, settingsErr := s.settingsService.GetSettings(ctx)
-		mergeEnabled := settingsErr == nil && settings.OidcMergeAccounts.IsTrue()
-
-		// If merge accounts is enabled, try to find existing user by email
-		if mergeEnabled && userInfo.Email != "" {
-			existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
-			if emailErr == nil && existingUser != nil {
-				// Only require email verification when we are actually merging into an existing account.
-				// Some providers omit `email_verified` for first-time users; that should not prevent user creation.
-				if !userInfo.EmailVerified {
-					return nil, false, errors.New("email not verified by OIDC provider; cannot merge accounts")
-				}
-
-				// Found existing user with matching email - merge the accounts
-				slog.Info("Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
-				if mergeErr := s.mergeOidcWithExistingUser(ctx, existingUser, userInfo, tokenResp); mergeErr != nil {
-					return nil, false, mergeErr
-				}
-				return existingUser, false, nil
-			}
-		}
-
-		// No existing user found, create new OIDC user
-		created, err := s.createOidcUser(ctx, userInfo, tokenResp)
-		if err != nil {
-			return nil, false, err
-		}
-		return created, true, nil
+	if user != nil {
+		return s.updateExistingOidcUser(ctx, user, userInfo, tokenResp)
 	}
 
+	mergedUser, merged, err := s.tryMergeOidcUser(ctx, userInfo, tokenResp)
+	if err != nil {
+		return nil, false, err
+	}
+	if merged {
+		return mergedUser, false, nil
+	}
+
+	created, err := s.createOidcUser(ctx, userInfo, tokenResp)
+	if err != nil {
+		return nil, false, err
+	}
+	return created, true, nil
+}
+
+func (s *AuthService) updateExistingOidcUser(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, bool, error) {
 	if err := s.updateOidcUser(ctx, user, userInfo, tokenResp); err != nil {
 		return nil, false, err
 	}
-
 	return user, false, nil
+}
+
+func (s *AuthService) tryMergeOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, bool, error) {
+	if userInfo.Email == "" || !s.isOidcMergeEnabled(ctx) {
+		return nil, false, nil
+	}
+
+	existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
+	if emailErr != nil {
+		if errors.Is(emailErr, ErrUserNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, emailErr
+	}
+	if existingUser == nil {
+		return nil, false, nil
+	}
+
+	if err := s.validateMergeEmailVerification(userInfo); err != nil {
+		return nil, false, err
+	}
+
+	slog.Info("Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
+	if mergeErr := s.mergeOidcWithExistingUser(ctx, existingUser, userInfo, tokenResp); mergeErr != nil {
+		return nil, false, mergeErr
+	}
+	return existingUser, true, nil
+}
+
+func (s *AuthService) isOidcMergeEnabled(ctx context.Context) bool {
+	settings, settingsErr := s.settingsService.GetSettings(ctx)
+	return settingsErr == nil && settings.OidcMergeAccounts.IsTrue()
+}
+
+func (s *AuthService) validateMergeEmailVerification(userInfo auth.OidcUserInfo) error {
+	emailVerifiedPresent := false
+	if userInfo.Extra != nil {
+		if _, ok := userInfo.Extra["email_verified"]; ok {
+			emailVerifiedPresent = true
+		}
+	}
+	if emailVerifiedPresent && !userInfo.EmailVerified {
+		return errors.New("email not verified by OIDC provider; cannot merge accounts")
+	}
+	if !emailVerifiedPresent {
+		slog.Warn("OIDC email_verified claim missing; allowing merge", "email", userInfo.Email, "subject", userInfo.Subject)
+	}
+	return nil
 }
 
 func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, error) {

@@ -151,10 +151,20 @@
 										{m.auth_oidc_token_error()}
 									{:else if data.error === 'user_processing_failed'}
 										{m.auth_user_processing_failed()}
+									{:else if data.errorMessage}
+										{data.errorMessage}
 									{:else}
 										{m.auth_unexpected_error()}
 									{/if}
 								</Alert.Description>
+							</Alert.Root>
+						{/if}
+
+						{#if data.errorMessage && !data.error}
+							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
+								<AlertIcon class="size-4" />
+								<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+								<Alert.Description>{data.errorMessage}</Alert.Description>
 							</Alert.Root>
 						{/if}
 
