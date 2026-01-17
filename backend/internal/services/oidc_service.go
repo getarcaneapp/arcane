@@ -348,7 +348,8 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 	}
 
 	var userInfoClaims map[string]any
-	if provider != nil {
+	switch {
+	case provider != nil:
 		userInfo, err := provider.UserInfo(providerCtx, oauth2.StaticTokenSource(token))
 		if err != nil {
 			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
@@ -365,7 +366,7 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 			return nil, fmt.Errorf("failed to decode userinfo claims: %w", err)
 		}
 		slog.Debug("fetchClaims: fetched userinfo claims successfully")
-	} else if cfg.UserinfoEndpoint != "" {
+	case cfg.UserinfoEndpoint != "":
 		manualClaims, err := s.fetchUserInfoClaims(providerCtx, cfg, token)
 		if err != nil {
 			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
@@ -376,9 +377,9 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 		}
 		userInfoClaims = manualClaims
 		slog.Debug("fetchClaims: fetched userinfo claims successfully")
-	} else if claims != nil {
+	case claims != nil:
 		return claims, nil
-	} else {
+	default:
 		return nil, errors.New("userinfo endpoint not configured")
 	}
 

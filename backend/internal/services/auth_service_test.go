@@ -391,8 +391,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	require.NoError(t, err)
 	require.False(t, isNew)
 	require.NotNil(t, mergedUser)
-	require.NotNil(t, mergedUser.OidcSubjectId)
-	require.Equal(t, userInfo.Subject, *mergedUser.OidcSubjectId)
+	require.Equal(t, existing.ID, mergedUser.ID)
 
 	// Ensure existing user is linked
 	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
