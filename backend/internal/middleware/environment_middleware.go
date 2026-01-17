@@ -34,6 +34,7 @@ const (
 	errEnvironmentDisabled      = "Environment is disabled"
 	errFailedCreateProxyRequest = "Failed to create proxy request"
 	errProxyRequestFailedPrefix = "Proxy request failed:"
+	errUnauthorized             = "Authentication required to access remote environments"
 
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
@@ -44,13 +45,18 @@ const (
 // Returns: apiURL, accessToken, enabled, error
 type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
 
+// AuthValidator validates authentication for a request.
+// Returns true if the request is authenticated, false otherwise.
+type AuthValidator func(c *gin.Context) bool
+
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
-	localID    string
-	paramName  string
-	resolver   EnvResolver
-	envService *services.EnvironmentService
-	httpClient *http.Client
+	localID       string
+	paramName     string
+	resolver      EnvResolver
+	authValidator AuthValidator
+	envService    *services.EnvironmentService
+	httpClient    *http.Client
 }
 
 // NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
@@ -58,13 +64,15 @@ type EnvironmentMiddleware struct {
 // - paramName: the URL parameter name containing the environment ID (e.g., "id")
 // - resolver: function to resolve environment ID to connection details
 // - envService: environment service for additional lookups
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService) gin.HandlerFunc {
+// - authValidator: function to validate authentication before proxying (required for security)
+func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService, authValidator AuthValidator) gin.HandlerFunc {
 	m := &EnvironmentMiddleware{
-		localID:    localID,
-		paramName:  paramName,
-		resolver:   resolver,
-		envService: envService,
-		httpClient: &http.Client{Timeout: proxyTimeout},
+		localID:       localID,
+		paramName:     paramName,
+		resolver:      resolver,
+		authValidator: authValidator,
+		envService:    envService,
+		httpClient:    &http.Client{Timeout: proxyTimeout},
 	}
 	return m.Handle
 }
@@ -84,6 +92,19 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	// Not proxied: /api/environments/{id} (management operations)
 	if !m.hasResourcePath(c, envID) {
 		c.Next()
+		return
+	}
+
+	// SECURITY: Validate authentication BEFORE proxying to remote environments.
+	// The proxy attaches the agent token to forwarded requests, which grants full access
+	// on the remote agent. Without this check, unauthenticated users could access
+	// remote environment resources.
+	if m.authValidator != nil && !m.authValidator(c) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"data":    gin.H{"error": errUnauthorized},
+		})
+		c.Abort()
 		return
 	}
 

@@ -76,6 +76,31 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 
 	apiGroup := router.Group("/api")
 
+	// Create auth validator for the environment proxy middleware.
+	// This ensures requests to remote environments are authenticated before proxying.
+	authValidator := func(c *gin.Context) bool {
+		// Check for API key authentication
+		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
+			user, err := appServices.ApiKey.ValidateApiKey(c.Request.Context(), apiKey)
+			return err == nil && user != nil
+		}
+
+		// Check for Bearer token authentication
+		token := ""
+		if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		} else if cookieToken, err := c.Cookie("token"); err == nil && cookieToken != "" {
+			token = cookieToken
+		}
+
+		if token == "" {
+			return false
+		}
+
+		user, err := appServices.Auth.VerifyToken(c.Request.Context(), token)
+		return err == nil && user != nil
+	}
+
 	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
@@ -87,6 +112,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 			return env.ApiUrl, env.AccessToken, env.Enabled, nil
 		},
 		appServices.Environment,
+		authValidator,
 	)
 	apiGroup.Use(envMiddleware)
 
