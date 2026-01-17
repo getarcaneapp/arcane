@@ -15,9 +15,10 @@
 		error,
 		autoHeight = false,
 		readOnly = false,
-		headerAction
+		headerAction,
+		headerTitle
 	}: {
-		title: string;
+		title?: string;
 		open: boolean;
 		language: CodeLanguage;
 		value: string;
@@ -25,6 +26,7 @@
 		autoHeight?: boolean;
 		readOnly?: boolean;
 		headerAction?: Snippet;
+		headerTitle?: Snippet;
 	} = $props();
 
 	const isMobile = new IsMobile();
@@ -33,9 +35,15 @@
 
 <Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden">
 	<Card.Header icon={CodeIcon}>
-		<div class="flex flex-1 items-center justify-between">
-			<Card.Title>
-				<h2>{title}</h2>
+		<div class="flex min-w-0 flex-1 items-center justify-between gap-2">
+			<Card.Title class="min-w-0 flex-1">
+				<h2 class="truncate">
+					{#if headerTitle}
+						{@render headerTitle()}
+					{:else}
+						{title}
+					{/if}
+				</h2>
 			</Card.Title>
 			{#if headerAction}
 				{@render headerAction()}

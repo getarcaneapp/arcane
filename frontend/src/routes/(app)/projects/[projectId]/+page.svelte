@@ -18,8 +18,12 @@
 		FilePenIcon,
 		AddIcon,
 		UnlinkIcon,
-		AlertIcon
+		AlertIcon,
+		FolderOpenIcon,
+		CloseIcon
 	} from '$lib/icons';
+	import * as ContextMenu from '$lib/components/ui/context-menu/index.js';
+	import ResponsiveDialog from '$lib/components/ui/responsive-dialog/responsive-dialog.svelte';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -38,9 +42,8 @@
 	import ServicesGrid from '../components/ServicesGrid.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { untrack } from 'svelte';
+	import { Resizable } from '$lib/components/resizable';
+	import { untrack, onMount } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -73,7 +76,6 @@
 	let originalIncludeFiles = $state<Record<string, string>>({});
 	let customFilesState = $state<Record<string, string>>({});
 	let originalCustomFiles = $state<Record<string, string>>({});
-	let customFilesPanelStates = $state<Record<string, boolean>>({});
 	let showAddCustomFileDialog = $state(false);
 	let newCustomFileName = $state('');
 
@@ -111,18 +113,76 @@
 	let autoScrollStackLogs = $state(true);
 
 	let selectedTab = $state<'services' | 'compose' | 'logs'>('compose');
-	let composeOpen = $state(true);
-	let envOpen = $state(true);
-	let includeFilesPanelStates = $state<Record<string, boolean>>({});
-	let selectedFile = $state<'compose' | 'env' | string>('compose');
-	let layoutMode = $state<'classic' | 'tree'>('classic');
-	let selectedIncludeTab = $state<string | null>(null);
-	let treePaneWidth = $state(320);
-	let composeSplitWidth = $state<number | null>(null);
-	const minTreePaneWidth = 200;
-	const minEditorPaneWidth = 360;
-	const minComposePaneWidth = 360;
-	const minEnvPaneWidth = 280;
+	let mobileFileDrawerOpen = $state(false);
+	const minTreePaneWidth = 180;
+	const minEditorPaneWidth = 280;
+	const minEditorSplitSize = 280;
+
+	// Split view: left and right pane files (desktop)
+	let leftPaneFile = $state<string>('compose');
+	let rightPaneFile = $state<string | null>('env');
+
+	// Mobile: single file selector (shows compose+env stacked if compose or env selected)
+	let mobileSelectedFile = $state<string>('compose');
+
+	// Check if mobile should show the stacked compose/env view
+	let mobileShowsMainFiles = $derived(mobileSelectedFile === 'compose' || mobileSelectedFile === 'env');
+
+	// Determine if we're in split view mode (desktop)
+	let isSplitView = $derived(rightPaneFile !== null);
+	let hasExtraFiles = $derived(
+		(project?.includeFiles && project.includeFiles.length > 0) || (project?.customFiles && project.customFiles.length > 0)
+	);
+
+	// Check if a file is currently in split view (desktop)
+	function isFileInSplitView(file: string): boolean {
+		return file === leftPaneFile || file === rightPaneFile;
+	}
+
+	// Check if a file is selected on mobile
+	function isMobileFileSelected(file: string): boolean {
+		// compose and env are both "selected" when either is the active file
+		if (mobileShowsMainFiles && (file === 'compose' || file === 'env')) {
+			return true;
+		}
+		return file === mobileSelectedFile;
+	}
+
+	// Add file to split view (right pane)
+	function addToSplitView(file: string) {
+		// Don't allow same file in both panes
+		if (file === leftPaneFile) return;
+		rightPaneFile = file;
+		persistPrefs();
+	}
+
+	// Remove right pane from split view
+	function removeFromSplitView() {
+		rightPaneFile = null;
+		persistPrefs();
+	}
+
+	// Select file (opens in left pane on desktop, or sets mobile selection)
+	function selectFile(file: string) {
+		// Desktop: manage split view
+		// If file is already in right pane, swap panes
+		if (file === rightPaneFile) {
+			const temp = leftPaneFile;
+			leftPaneFile = file;
+			rightPaneFile = temp;
+		} else {
+			leftPaneFile = file;
+			// If the new left pane file is the same as right, close split
+			if (rightPaneFile === file) {
+				rightPaneFile = null;
+			}
+		}
+
+		// Mobile: update selected file
+		mobileSelectedFile = file;
+
+		persistPrefs();
+	}
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -148,51 +208,70 @@
 
 	type ComposeUIPrefs = {
 		tab: 'services' | 'compose' | 'logs';
-		composeOpen: boolean;
-		envOpen: boolean;
 		autoScroll: boolean;
-		layoutMode: 'classic' | 'tree';
+		leftPaneFile: string;
+		rightPaneFile: string | null;
+		mobileSelectedFile: string;
 	};
 
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
 		tab: 'compose',
-		composeOpen: true,
-		envOpen: true,
 		autoScroll: true,
-		layoutMode: 'classic'
+		leftPaneFile: 'compose',
+		rightPaneFile: 'env',
+		mobileSelectedFile: 'compose'
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
+	let initializedProjectId: string | null = null;
 
 	$effect(() => {
 		project = data.project;
 	});
 
+	// Initialize prefs on mount and when project ID changes
+	onMount(() => {
+		initializePrefs();
+	});
+
+	// Also initialize if project changes after mount
 	$effect(() => {
-		if (!project?.id) return;
-		prefs = new PersistedState<ComposeUIPrefs>(`arcane.compose.ui:${project.id}`, defaultComposeUIPrefs, {
+		const currentProjectId = project?.id;
+		if (currentProjectId && currentProjectId !== initializedProjectId) {
+			initializePrefs();
+		}
+	});
+
+	function initializePrefs() {
+		const currentProjectId = project?.id;
+		if (!currentProjectId) return;
+		if (currentProjectId === initializedProjectId) return;
+
+		initializedProjectId = currentProjectId;
+
+		// Create new PersistedState for this project
+		prefs = new PersistedState<ComposeUIPrefs>(`arcane.compose.ui:${currentProjectId}`, defaultComposeUIPrefs, {
 			storage: 'session',
 			syncTabs: false
 		});
+
+		// Read persisted values - use explicit undefined checks since null is a valid value for rightPaneFile
 		const cur = prefs.current ?? {};
 		selectedTab = cur.tab ?? defaultComposeUIPrefs.tab;
-		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
-		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
+		leftPaneFile = cur.leftPaneFile ?? defaultComposeUIPrefs.leftPaneFile;
+		// rightPaneFile can be null (meaning no split view), so only use default if undefined
+		rightPaneFile = 'rightPaneFile' in cur ? cur.rightPaneFile : defaultComposeUIPrefs.rightPaneFile;
+		mobileSelectedFile = cur.mobileSelectedFile ?? defaultComposeUIPrefs.mobileSelectedFile;
+	}
 
-		// Auto-detect layout mode based on includeFiles
-		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
-		const defaultMode = hasIncludes ? 'tree' : 'classic';
-		layoutMode = cur.layoutMode ?? defaultMode;
-
+	// Initialize file states when project data changes
+	$effect(() => {
 		// Initialize include file states
 		if (project?.includeFiles) {
 			const newIncludeState: Record<string, string> = {};
 			project.includeFiles.forEach((file) => {
 				newIncludeState[file.relativePath] = file.content;
-				if (!(file.relativePath in includeFilesPanelStates)) {
-					includeFilesPanelStates[file.relativePath] = true;
-				}
 			});
 			includeFilesState = newIncludeState;
 			originalIncludeFiles = { ...newIncludeState };
@@ -203,9 +282,6 @@
 			const newCustomState: Record<string, string> = {};
 			project.customFiles.forEach((file) => {
 				newCustomState[file.path] = file.content;
-				if (!(file.path in customFilesPanelStates)) {
-					customFilesPanelStates[file.path] = true;
-				}
 			});
 			customFilesState = newCustomState;
 			originalCustomFiles = { ...newCustomState };
@@ -298,14 +374,14 @@
 		// Remove from local state
 		delete customFilesState[filePath];
 		delete originalCustomFiles[filePath];
-		delete customFilesPanelStates[filePath];
 
-		// Reset to default view if the removed file was active
-		if (selectedFile === `custom:${filePath}`) {
-			selectedFile = 'compose';
+		// Reset panes if the removed file was active
+		const customFileKey = `custom:${filePath}`;
+		if (leftPaneFile === customFileKey) {
+			leftPaneFile = 'compose';
 		}
-		if (selectedIncludeTab === `custom:${filePath}`) {
-			selectedIncludeTab = null;
+		if (rightPaneFile === customFileKey) {
+			rightPaneFile = null;
 		}
 
 		toast.success(`Removed ${filePath}`);
@@ -323,10 +399,10 @@
 		if (!prefs) return;
 		prefs.current = {
 			tab: selectedTab,
-			composeOpen,
-			envOpen,
 			autoScroll: autoScrollStackLogs,
-			layoutMode
+			leftPaneFile,
+			rightPaneFile,
+			mobileSelectedFile
 		};
 	}
 
@@ -355,6 +431,131 @@
 		});
 	}
 </script>
+
+{#snippet fileEditor(file: string, isRightPane: boolean = false)}
+	{#snippet closeButton()}
+		{#if isRightPane}
+			<Button
+				variant="ghost"
+				size="icon"
+				class="text-muted-foreground hover:text-foreground size-7"
+				onclick={() => removeFromSplitView()}
+				title="Close split pane"
+			>
+				<CloseIcon class="size-4" />
+			</Button>
+		{/if}
+	{/snippet}
+
+	{#if file === 'compose'}
+		<CodePanel
+			open={true}
+			title="compose.yaml"
+			language="yaml"
+			bind:value={$inputs.composeContent.value}
+			error={$inputs.composeContent.error ?? undefined}
+			readOnly={!canEditCompose}
+		>
+			{#snippet headerAction()}
+				{@render closeButton()}
+			{/snippet}
+		</CodePanel>
+	{:else if file === 'env'}
+		<CodePanel
+			open={true}
+			title=".env"
+			language="env"
+			bind:value={$inputs.envContent.value}
+			error={$inputs.envContent.error ?? undefined}
+		>
+			{#snippet headerAction()}
+				{@render closeButton()}
+			{/snippet}
+		</CodePanel>
+	{:else if file.startsWith('custom:')}
+		{@const customPath = file.replace('custom:', '')}
+		{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
+		{#if customFile && customFile.path in customFilesState}
+			<CodePanel open={true} language="yaml" bind:value={customFilesState[customFile.path]}>
+				{#snippet headerTitle()}
+					<span class="truncate" title={customFile.path}>{customFile.path}</span>
+				{/snippet}
+				{#snippet headerAction()}
+					<div class="flex shrink-0 items-center gap-1">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="text-muted-foreground hover:text-foreground size-7"
+							onclick={() => handleRemoveCustomFile(customFile.path)}
+							title={m.project_custom_file_unlink()}
+						>
+							<UnlinkIcon class="size-4" />
+						</Button>
+						{@render closeButton()}
+					</div>
+				{/snippet}
+			</CodePanel>
+		{/if}
+	{:else}
+		{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === file)}
+		{#if includeFile && includeFile.relativePath in includeFilesState}
+			<CodePanel open={true} language="yaml" bind:value={includeFilesState[includeFile.relativePath]}>
+				{#snippet headerTitle()}
+					<span class="truncate" title={includeFile.relativePath}>{includeFile.relativePath}</span>
+				{/snippet}
+				{#snippet headerAction()}
+					<div class="flex shrink-0 items-center gap-1">
+						{@render closeButton()}
+					</div>
+				{/snippet}
+			</CodePanel>
+		{/if}
+	{/if}
+{/snippet}
+
+{#snippet editorPane()}
+	<div class="flex h-full min-h-0 flex-1 flex-col">
+		{#if isSplitView && rightPaneFile}
+			<Resizable.PaneGroup
+				orientation="horizontal"
+				persistKey={`arcane.compose.resizable:${project?.id}:editors`}
+				onLayoutChange={persistPrefs}
+				class="flex h-full min-h-0 flex-1"
+			>
+				<Resizable.Pane id="left-editor" minSize={minEditorSplitSize} defaultSize={400} class="flex min-h-0 flex-col">
+					{@render fileEditor(leftPaneFile, false)}
+				</Resizable.Pane>
+
+				<Resizable.Handle index={0} collapsible="after" />
+
+				<Resizable.Pane id="right-editor" minSize={minEditorSplitSize} flex collapsible class="flex min-h-0 flex-col">
+					{#if rightPaneFile}
+						{@render fileEditor(rightPaneFile, true)}
+					{/if}
+				</Resizable.Pane>
+			</Resizable.PaneGroup>
+		{:else}
+			{@render fileEditor(leftPaneFile, false)}
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet mobileEditorPane()}
+	<div class="flex h-full min-h-0 flex-1 flex-col gap-4">
+		{#if mobileShowsMainFiles}
+			<!-- Show both compose and env stacked when either main file is selected -->
+			<div class="flex min-h-0 flex-1 flex-col">
+				{@render fileEditor('compose', false)}
+			</div>
+			<div class="flex min-h-0 flex-1 flex-col">
+				{@render fileEditor('env', false)}
+			</div>
+		{:else}
+			<!-- Show single editor for custom/include files -->
+			{@render fileEditor(mobileSelectedFile, false)}
+		{/if}
+	</div>
+{/snippet}
 
 {#if project}
 	<TabbedPageLayout
@@ -518,66 +719,215 @@
 							</div>
 						</Alert.Root>
 					{/if}
-					<div class="mb-4 shrink-0">
-						<SwitchWithLabel
-							id="layout-mode-toggle"
-							checked={layoutMode === 'tree'}
-							label={layoutMode === 'tree' ? m.tree_view() : m.classic()}
-							description={m.project_view_description()}
-							onCheckedChange={(checked) => {
-								layoutMode = checked ? 'tree' : 'classic';
-								if (checked) {
-									selectedFile = 'compose';
-									selectedIncludeTab = null;
-								}
-								persistPrefs();
-							}}
-						/>
-					</div>
+					<!-- Mobile: Responsive dialog for file tree -->
+					<ResponsiveDialog bind:open={mobileFileDrawerOpen} title={m.project_files()} variant="sheet">
+						{#snippet trigger()}
+							<Button variant="outline" size="sm" class="mb-4 gap-2 lg:hidden">
+								<FolderOpenIcon class="size-4" />
+								<span>{m.project_files()}</span>
+								{#if hasExtraFiles}
+									<span class="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-xs">
+										{(project?.includeFiles?.length ?? 0) + (project?.customFiles?.length ?? 0)}
+									</span>
+								{/if}
+							</Button>
+						{/snippet}
+						<TreeView.Root class="space-y-1 p-1">
+							<TreeView.Folder name={m.project_main_files()} open class="[&>div]:space-y-1">
+								<TreeView.File
+									name="compose.yaml"
+									onclick={() => {
+										selectFile('compose');
+										mobileFileDrawerOpen = false;
+									}}
+									class="hover:bg-accent min-h-[44px] w-full rounded-lg px-3 py-2.5 text-base transition-colors {isMobileFileSelected(
+										'compose'
+									)
+										? 'bg-accent'
+										: ''}"
+								>
+									{#snippet icon()}
+										<FileTextIcon class="size-5 text-blue-500" />
+									{/snippet}
+								</TreeView.File>
+								<TreeView.File
+									name=".env"
+									onclick={() => {
+										selectFile('env');
+										mobileFileDrawerOpen = false;
+									}}
+									class="hover:bg-accent min-h-[44px] w-full rounded-lg px-3 py-2.5 text-base transition-colors {isMobileFileSelected(
+										'env'
+									)
+										? 'bg-accent'
+										: ''}"
+								>
+									{#snippet icon()}
+										<FileTextIcon class="size-5 text-green-500" />
+									{/snippet}
+								</TreeView.File>
+							</TreeView.Folder>
 
-					<div class="min-h-0 flex-1">
-						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
-								<Card.Root class="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
+							{#if project?.includeFiles && project.includeFiles.length > 0}
+								<TreeView.Folder name={m.project_includes()} class="[&>div]:space-y-1">
+									{#each project.includeFiles as includeFile (includeFile.relativePath)}
+										<TreeView.File
+											name={includeFile.relativePath}
+											onclick={() => {
+												selectFile(includeFile.relativePath);
+												mobileFileDrawerOpen = false;
+											}}
+											class="hover:bg-accent min-h-[44px] w-full rounded-lg px-3 py-2.5 text-base transition-colors {isMobileFileSelected(
+												includeFile.relativePath
+											)
+												? 'bg-accent'
+												: ''}"
+										>
+											{#snippet icon()}
+												<FileSymlinkIcon class="size-5 text-amber-500" />
+											{/snippet}
+										</TreeView.File>
+									{/each}
+								</TreeView.Folder>
+							{/if}
+
+							<TreeView.Folder name={m.project_custom_files()} class="[&>div]:space-y-1">
+								{#if project?.customFiles && project.customFiles.length > 0}
+									{#each project.customFiles as customFile (customFile.path)}
+										<TreeView.File
+											name={customFile.path}
+											onclick={() => {
+												selectFile(`custom:${customFile.path}`);
+												mobileFileDrawerOpen = false;
+											}}
+											class="hover:bg-accent min-h-[44px] w-full rounded-lg px-3 py-2.5 text-base transition-colors {isMobileFileSelected(
+												`custom:${customFile.path}`
+											)
+												? 'bg-accent'
+												: ''}"
+										>
+											{#snippet icon()}
+												<FilePenIcon class="size-5 text-purple-500" />
+											{/snippet}
+										</TreeView.File>
+									{/each}
+								{/if}
+								<button
+									class="hover:bg-accent text-muted-foreground hover:text-foreground flex min-h-[44px] w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-base transition-colors"
+									onclick={() => {
+										mobileFileDrawerOpen = false;
+										showAddCustomFileDialog = true;
+									}}
+								>
+									<AddIcon class="size-5" />
+									<span>{m.project_custom_file_add_button()}...</span>
+								</button>
+							</TreeView.Folder>
+						</TreeView.Root>
+					</ResponsiveDialog>
+
+					<div class="hidden min-h-0 flex-1 lg:flex">
+						<Resizable.PaneGroup
+							orientation="horizontal"
+							persistKey={`arcane.compose.resizable:${project.id}:unified`}
+							onLayoutChange={persistPrefs}
+							class="flex min-h-0 flex-1"
+						>
+							<Resizable.Pane
+								id="file-tree"
+								minSize={minTreePaneWidth}
+								defaultSize={240}
+								collapsible
+								class="flex min-h-0 flex-col"
+							>
+								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 									<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 										<Card.Title>
-											<h2>{m.project_files()}</h2>
+											<h2 class="truncate">{m.project_files()}</h2>
 										</Card.Title>
 									</Card.Header>
 									<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
 										<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-											<TreeView.File
-												name="compose.yaml"
-												onclick={() => (selectedFile = 'compose')}
-												class={selectedFile === 'compose' ? 'bg-accent' : ''}
-											>
-												{#snippet icon()}
-													<FileTextIcon class="size-4 text-blue-500" />
-												{/snippet}
-											</TreeView.File>
-
-											<TreeView.File
-												name=".env"
-												onclick={() => (selectedFile = 'env')}
-												class={selectedFile === 'env' ? 'bg-accent' : ''}
-											>
-												{#snippet icon()}
-													<FileTextIcon class="size-4 text-green-500" />
-												{/snippet}
-											</TreeView.File>
+											<TreeView.Folder name={m.project_main_files()} open>
+												<ContextMenu.Root>
+													<ContextMenu.Trigger class="w-full">
+														<TreeView.File
+															name="compose.yaml"
+															onclick={() => selectFile('compose')}
+															class={isFileInSplitView('compose') ? 'bg-accent' : ''}
+														>
+															{#snippet icon()}
+																<FileTextIcon class="size-4 text-blue-500" />
+															{/snippet}
+														</TreeView.File>
+													</ContextMenu.Trigger>
+													<ContextMenu.Content class="min-w-[160px]">
+														<ContextMenu.Item onclick={() => selectFile('compose')}>
+															{m.common_open()}
+														</ContextMenu.Item>
+														{#if leftPaneFile !== 'compose'}
+															<ContextMenu.Item onclick={() => addToSplitView('compose')}>Open in split view</ContextMenu.Item>
+														{/if}
+														{#if rightPaneFile === 'compose'}
+															<ContextMenu.Item onclick={removeFromSplitView}>Close split pane</ContextMenu.Item>
+														{/if}
+													</ContextMenu.Content>
+												</ContextMenu.Root>
+												<ContextMenu.Root>
+													<ContextMenu.Trigger class="w-full">
+														<TreeView.File
+															name=".env"
+															onclick={() => selectFile('env')}
+															class={isFileInSplitView('env') ? 'bg-accent' : ''}
+														>
+															{#snippet icon()}
+																<FileTextIcon class="size-4 text-green-500" />
+															{/snippet}
+														</TreeView.File>
+													</ContextMenu.Trigger>
+													<ContextMenu.Content class="min-w-[160px]">
+														<ContextMenu.Item onclick={() => selectFile('env')}>
+															{m.common_open()}
+														</ContextMenu.Item>
+														{#if leftPaneFile !== 'env'}
+															<ContextMenu.Item onclick={() => addToSplitView('env')}>Open in split view</ContextMenu.Item>
+														{/if}
+														{#if rightPaneFile === 'env'}
+															<ContextMenu.Item onclick={removeFromSplitView}>Close split pane</ContextMenu.Item>
+														{/if}
+													</ContextMenu.Content>
+												</ContextMenu.Root>
+											</TreeView.Folder>
 
 											{#if project?.includeFiles && project.includeFiles.length > 0}
 												<TreeView.Folder name={m.project_includes()}>
 													{#each project.includeFiles as includeFile (includeFile.relativePath)}
-														<TreeView.File
-															name={includeFile.relativePath}
-															onclick={() => (selectedFile = includeFile.relativePath)}
-															class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-														>
-															{#snippet icon()}
-																<FileSymlinkIcon class="size-4 text-amber-500" />
-															{/snippet}
-														</TreeView.File>
+														<ContextMenu.Root>
+															<ContextMenu.Trigger class="w-full">
+																<TreeView.File
+																	name={includeFile.relativePath}
+																	onclick={() => selectFile(includeFile.relativePath)}
+																	class={isFileInSplitView(includeFile.relativePath) ? 'bg-accent' : ''}
+																>
+																	{#snippet icon()}
+																		<FileSymlinkIcon class="size-4 text-amber-500" />
+																	{/snippet}
+																</TreeView.File>
+															</ContextMenu.Trigger>
+															<ContextMenu.Content class="min-w-[160px]">
+																<ContextMenu.Item onclick={() => selectFile(includeFile.relativePath)}>
+																	{m.common_open()}
+																</ContextMenu.Item>
+																{#if leftPaneFile !== includeFile.relativePath}
+																	<ContextMenu.Item onclick={() => addToSplitView(includeFile.relativePath)}>
+																		Open in split view
+																	</ContextMenu.Item>
+																{/if}
+																{#if rightPaneFile === includeFile.relativePath}
+																	<ContextMenu.Item onclick={removeFromSplitView}>Close split pane</ContextMenu.Item>
+																{/if}
+															</ContextMenu.Content>
+														</ContextMenu.Root>
 													{/each}
 												</TreeView.Folder>
 											{/if}
@@ -585,15 +935,37 @@
 											<TreeView.Folder name={m.project_custom_files()}>
 												{#if project?.customFiles && project.customFiles.length > 0}
 													{#each project.customFiles as customFile (customFile.path)}
-														<TreeView.File
-															name={customFile.path}
-															onclick={() => (selectedFile = `custom:${customFile.path}`)}
-															class={selectedFile === `custom:${customFile.path}` ? 'bg-accent' : ''}
-														>
-															{#snippet icon()}
-																<FilePenIcon class="size-4 text-purple-500" />
-															{/snippet}
-														</TreeView.File>
+														{@const customFileKey = `custom:${customFile.path}`}
+														<ContextMenu.Root>
+															<ContextMenu.Trigger class="w-full">
+																<TreeView.File
+																	name={customFile.path}
+																	onclick={() => selectFile(customFileKey)}
+																	class={isFileInSplitView(customFileKey) ? 'bg-accent' : ''}
+																>
+																	{#snippet icon()}
+																		<FilePenIcon class="size-4 text-purple-500" />
+																	{/snippet}
+																</TreeView.File>
+															</ContextMenu.Trigger>
+															<ContextMenu.Content class="min-w-[160px]">
+																<ContextMenu.Item onclick={() => selectFile(customFileKey)}>
+																	{m.common_open()}
+																</ContextMenu.Item>
+																{#if leftPaneFile !== customFileKey}
+																	<ContextMenu.Item onclick={() => addToSplitView(customFileKey)}>
+																		Open in split view
+																	</ContextMenu.Item>
+																{/if}
+																{#if rightPaneFile === customFileKey}
+																	<ContextMenu.Item onclick={removeFromSplitView}>Close split pane</ContextMenu.Item>
+																{/if}
+																<ContextMenu.Separator />
+																<ContextMenu.Item onclick={() => handleRemoveCustomFile(customFile.path)} variant="destructive">
+																	{m.project_custom_file_unlink()}
+																</ContextMenu.Item>
+															</ContextMenu.Content>
+														</ContextMenu.Root>
 													{/each}
 												{/if}
 												<button
@@ -607,296 +979,19 @@
 										</TreeView.Root>
 									</Card.Content>
 								</Card.Root>
+							</Resizable.Pane>
 
-								<div class="flex min-h-0 flex-1 flex-col">
-									{#if selectedFile === 'compose'}
-										<CodePanel
-											bind:open={composeOpen}
-											title="compose.yaml"
-											language="yaml"
-											bind:value={$inputs.composeContent.value}
-											error={$inputs.composeContent.error ?? undefined}
-											readOnly={!canEditCompose}
-										/>
-									{:else if selectedFile === 'env'}
-										<CodePanel
-											bind:open={envOpen}
-											title=".env"
-											language="env"
-											bind:value={$inputs.envContent.value}
-											error={$inputs.envContent.error ?? undefined}
-										/>
-									{:else if selectedFile.startsWith('custom:')}
-										{@const customPath = selectedFile.replace('custom:', '')}
-										{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
-										{#if customFile}
-											<CodePanel
-												bind:open={customFilesPanelStates[customFile.path]}
-												title={customFile.path}
-												language="yaml"
-												bind:value={customFilesState[customFile.path]}
-											>
-												{#snippet headerAction()}
-													<Button
-														variant="ghost"
-														size="icon"
-														class="text-muted-foreground hover:text-foreground -mr-2 size-8"
-														onclick={() => handleRemoveCustomFile(customFile.path)}
-														title={m.project_custom_file_unlink()}
-													>
-														<UnlinkIcon class="size-4" />
-													</Button>
-												{/snippet}
-											</CodePanel>
-										{/if}
-									{:else}
-										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-										{#if includeFile}
-											<CodePanel
-												bind:open={includeFilesPanelStates[includeFile.relativePath]}
-												title={includeFile.relativePath}
-												language="yaml"
-												bind:value={includeFilesState[includeFile.relativePath]}
-											/>
-										{/if}
-									{/if}
-								</div>
-							</div>
+							<Resizable.Handle index={0} collapsible="before" />
 
-							<ResizableSplit
-								class="hidden h-full min-h-0 lg:flex lg:gap-2"
-								firstClass="flex min-h-0 flex-col"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={treePaneWidth}
-								minSize={minTreePaneWidth}
-								minSecondSize={minEditorPaneWidth}
-								defaultRatio={0.3}
-								ariaLabel="Resize project files panel"
-								persistKey={`arcane.compose.split:${project.id}:tree`}
-								onResizeEnd={persistPrefs}
-							>
-								{#snippet first()}
-									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
-											<Card.Title>
-												<h2>{m.project_files()}</h2>
-											</Card.Title>
-										</Card.Header>
-										<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
-											<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-												<TreeView.File
-													name="compose.yaml"
-													onclick={() => (selectedFile = 'compose')}
-													class={selectedFile === 'compose' ? 'bg-accent' : ''}
-												>
-													{#snippet icon()}
-														<FileTextIcon class="size-4 text-blue-500" />
-													{/snippet}
-												</TreeView.File>
+							<Resizable.Pane id="editor" minSize={minEditorPaneWidth} flex collapsible class="flex min-h-0 flex-col">
+								{@render editorPane()}
+							</Resizable.Pane>
+						</Resizable.PaneGroup>
+					</div>
 
-												<TreeView.File
-													name=".env"
-													onclick={() => (selectedFile = 'env')}
-													class={selectedFile === 'env' ? 'bg-accent' : ''}
-												>
-													{#snippet icon()}
-														<FileTextIcon class="size-4 text-green-500" />
-													{/snippet}
-												</TreeView.File>
-
-												{#if project?.includeFiles && project.includeFiles.length > 0}
-													<TreeView.Folder name={m.project_includes()}>
-														{#each project.includeFiles as includeFile (includeFile.relativePath)}
-															<TreeView.File
-																name={includeFile.relativePath}
-																onclick={() => (selectedFile = includeFile.relativePath)}
-																class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-															>
-																{#snippet icon()}
-																	<FileTextIcon class="size-4 text-amber-500" />
-																{/snippet}
-															</TreeView.File>
-														{/each}
-													</TreeView.Folder>
-												{/if}
-											</TreeView.Root>
-										</Card.Content>
-									</Card.Root>
-								{/snippet}
-
-								{#snippet second()}
-									<div class="flex h-full min-h-0 flex-1 flex-col">
-										{#if selectedFile === 'compose'}
-											<CodePanel
-												bind:open={composeOpen}
-												title="compose.yaml"
-												language="yaml"
-												bind:value={$inputs.composeContent.value}
-												error={$inputs.composeContent.error ?? undefined}
-												readOnly={!canEditCompose}
-											/>
-										{:else if selectedFile === 'env'}
-											<CodePanel
-												bind:open={envOpen}
-												title=".env"
-												language="env"
-												bind:value={$inputs.envContent.value}
-												error={$inputs.envContent.error ?? undefined}
-											/>
-										{:else}
-											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-											{#if includeFile}
-												<CodePanel
-													bind:open={includeFilesPanelStates[includeFile.relativePath]}
-													title={includeFile.relativePath}
-													language="yaml"
-													bind:value={includeFilesState[includeFile.relativePath]}
-												/>
-											{/if}
-										{/if}
-									</div>
-								{/snippet}
-							</ResizableSplit>
-						{:else}
-							<div class="flex h-full min-h-0 flex-col gap-4">
-								<div class="border-border bg-card rounded-lg border">
-									<div class="flex flex-wrap gap-2 p-2">
-										{#if project?.includeFiles}
-											{#each project.includeFiles as includeFile (includeFile.relativePath)}
-												<ArcaneButton
-													action="base"
-													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
-													size="sm"
-													onclick={() => {
-														selectedIncludeTab =
-															selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
-													}}
-													icon={FileSymlinkIcon}
-													customLabel={includeFile.relativePath}
-												/>
-											{/each}
-										{/if}
-										{#if project?.customFiles}
-											{#each project.customFiles as customFile (customFile.path)}
-												<ArcaneButton
-													action="base"
-													tone={selectedIncludeTab === `custom:${customFile.path}` ? 'outline-primary' : 'ghost'}
-													size="sm"
-													onclick={() => {
-														selectedIncludeTab =
-															selectedIncludeTab === `custom:${customFile.path}` ? null : `custom:${customFile.path}`;
-													}}
-													icon={FilePenIcon}
-													customLabel={customFile.path}
-												/>
-											{/each}
-										{/if}
-										<ArcaneButton
-											action="base"
-											tone="ghost"
-											size="sm"
-											class="text-muted-foreground"
-											onclick={() => (showAddCustomFileDialog = true)}
-											icon={AddIcon}
-											customLabel={m.project_custom_file_add_button()}
-										/>
-									</div>
-								</div>
-
-								{#if selectedIncludeTab}
-									{#if selectedIncludeTab.startsWith('custom:')}
-										{@const customPath = selectedIncludeTab.replace('custom:', '')}
-										{@const customFile = project?.customFiles?.find((f) => f.path === customPath)}
-										{#if customFile}
-											<CodePanel
-												bind:open={customFilesPanelStates[customFile.path]}
-												title={customFile.path}
-												language="yaml"
-												bind:value={customFilesState[customFile.path]}
-											>
-												{#snippet headerAction()}
-													<Button
-														variant="ghost"
-														size="icon"
-														class="text-muted-foreground hover:text-foreground -mr-2 size-8"
-														onclick={() => handleRemoveCustomFile(customFile.path)}
-														title={m.project_custom_file_unlink()}
-													>
-														<UnlinkIcon class="size-4" />
-													</Button>
-												{/snippet}
-											</CodePanel>
-										{/if}
-									{:else}
-										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
-										{#if includeFile}
-											<CodePanel
-												bind:open={includeFilesPanelStates[includeFile.relativePath]}
-												title={includeFile.relativePath}
-												language="yaml"
-												bind:value={includeFilesState[includeFile.relativePath]}
-											/>
-										{/if}
-									{/if}
-								{:else}
-									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
-										<CodePanel
-											bind:open={composeOpen}
-											title="compose.yaml"
-											language="yaml"
-											bind:value={$inputs.composeContent.value}
-											error={$inputs.composeContent.error ?? undefined}
-											readOnly={!canEditCompose}
-										/>
-										<CodePanel
-											bind:open={envOpen}
-											title=".env"
-											language="env"
-											bind:value={$inputs.envContent.value}
-											error={$inputs.envContent.error ?? undefined}
-										/>
-									</div>
-
-									<ResizableSplit
-										class="hidden min-h-0 flex-1 lg:flex lg:gap-2"
-										firstClass="flex min-h-0 flex-col"
-										secondClass="flex min-h-0 flex-col"
-										bind:size={composeSplitWidth}
-										minSize={minComposePaneWidth}
-										minSecondSize={minEnvPaneWidth}
-										defaultRatio={0.6}
-										ariaLabel="Resize compose and env editors"
-										persistKey={`arcane.compose.split:${project.id}:classic`}
-										onResizeEnd={persistPrefs}
-									>
-										{#snippet first()}
-											<div class="flex min-h-0 flex-1 flex-col">
-												<CodePanel
-													bind:open={composeOpen}
-													title="compose.yaml"
-													language="yaml"
-													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
-													readOnly={!canEditCompose}
-												/>
-											</div>
-										{/snippet}
-
-										{#snippet second()}
-											<div class="flex min-h-0 flex-1 flex-col">
-												<CodePanel
-													bind:open={envOpen}
-													title=".env"
-													language="env"
-													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
-												/>
-											</div>
-										{/snippet}
-									</ResizableSplit>
-								{/if}
-							</div>
-						{/if}
+					<!-- Mobile: Stacked compose/env or single editor view -->
+					<div class="flex min-h-0 flex-1 flex-col lg:hidden">
+						{@render mobileEditorPane()}
 					</div>
 				</div>
 			</Tabs.Content>
