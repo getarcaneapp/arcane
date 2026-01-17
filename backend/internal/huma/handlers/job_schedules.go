@@ -30,7 +30,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService) {
 		Method:      http.MethodGet,
 		Path:        "/job-schedules",
 		Summary:     "Get job schedules",
-		Description: "Get configured intervals (in minutes) for background jobs",
+		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -43,7 +43,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService) {
 		Method:      http.MethodPut,
 		Path:        "/job-schedules",
 		Summary:     "Update job schedules",
-		Description: "Update background job intervals and reschedule running jobs",
+		Description: "Update background job cron schedules and reschedule running jobs",
 		Tags:        []string{"JobSchedules"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},

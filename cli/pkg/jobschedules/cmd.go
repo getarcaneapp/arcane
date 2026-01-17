@@ -52,17 +52,17 @@ var getCmd = &cobra.Command{
 		}
 
 		output.Header("Job Schedules")
-		output.KeyValue("Environment health interval (min)", cfg.EnvironmentHealthInterval)
-		output.KeyValue("Event cleanup interval (min)", cfg.EventCleanupInterval)
-		output.KeyValue("Analytics heartbeat interval (min)", cfg.AnalyticsHeartbeatInterval)
+		output.KeyValue("Environment health interval", cfg.EnvironmentHealthInterval)
+		output.KeyValue("Event cleanup interval", cfg.EventCleanupInterval)
+		output.KeyValue("Analytics heartbeat interval", cfg.AnalyticsHeartbeatInterval)
 		return nil
 	},
 }
 
 var (
-	environmentHealthInterval  int
-	eventCleanupInterval       int
-	analyticsHeartbeatInterval int
+	environmentHealthInterval  string
+	eventCleanupInterval       string
+	analyticsHeartbeatInterval string
 )
 
 var updateCmd = &cobra.Command{
@@ -111,9 +111,9 @@ var updateCmd = &cobra.Command{
 		}
 
 		output.Success("Job schedules updated")
-		output.KeyValue("Environment health interval (min)", result.Data.EnvironmentHealthInterval)
-		output.KeyValue("Event cleanup interval (min)", result.Data.EventCleanupInterval)
-		output.KeyValue("Analytics heartbeat interval (min)", result.Data.AnalyticsHeartbeatInterval)
+		output.KeyValue("Environment health interval", result.Data.EnvironmentHealthInterval)
+		output.KeyValue("Event cleanup interval", result.Data.EventCleanupInterval)
+		output.KeyValue("Analytics heartbeat interval", result.Data.AnalyticsHeartbeatInterval)
 		return nil
 	},
 }
@@ -125,7 +125,7 @@ func init() {
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
-	updateCmd.Flags().IntVar(&environmentHealthInterval, "environment-health-interval", 0, "Environment health job interval in minutes (1-60)")
-	updateCmd.Flags().IntVar(&eventCleanupInterval, "event-cleanup-interval", 0, "Event cleanup job interval in minutes (5-10080)")
-	updateCmd.Flags().IntVar(&analyticsHeartbeatInterval, "analytics-heartbeat-interval", 0, "Analytics heartbeat job interval in minutes (60-43200)")
+	updateCmd.Flags().StringVar(&environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")
+	updateCmd.Flags().StringVar(&eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")
+	updateCmd.Flags().StringVar(&analyticsHeartbeatInterval, "analytics-heartbeat-interval", "", "Analytics heartbeat job interval (cron expression)")
 }
