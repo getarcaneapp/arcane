@@ -53,10 +53,10 @@ type Config struct {
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
 
-	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
-	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
-  AllowedExternalPaths string      `env:"ALLOWED_EXTERNAL_PATHS" default:""`
-	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
+	FilePerm             os.FileMode `env:"FILE_PERM" default:"0644"`
+	DirPerm              os.FileMode `env:"DIR_PERM" default:"0755"`
+	AllowedExternalPaths string      `env:"ALLOWED_EXTERNAL_PATHS" default:""`
+	GitWorkDir           string      `env:"GIT_WORK_DIR" default:"data/git"`
 
 	DockerAPITimeout       int `env:"DOCKER_API_TIMEOUT" default:"0"`
 	DockerImagePullTimeout int `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`

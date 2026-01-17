@@ -537,7 +537,7 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col gap-4 lg:flex-row">
+							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
 								<Card.Root class="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
 									<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 										<Card.Title>
