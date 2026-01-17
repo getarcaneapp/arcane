@@ -30,6 +30,28 @@ func TestBuildGenericURL(t *testing.T) {
 			wantURL: "generic://webhook.example.com/notify?disabletls=yes&template=json",
 		},
 		{
+			name: "webhook without scheme defaults to HTTPS",
+			config: models.GenericConfig{
+				WebhookURL: "webhook.example.com/notify",
+			},
+			wantURL: "generic://webhook.example.com/notify?disabletls=no&template=json",
+		},
+		{
+			name: "webhook without scheme with port",
+			config: models.GenericConfig{
+				WebhookURL: "webhook.example.com:8080/notify",
+			},
+			wantURL: "generic://webhook.example.com:8080/notify?disabletls=no&template=json",
+		},
+		{
+			name: "webhook without scheme with DisableTLS",
+			config: models.GenericConfig{
+				WebhookURL: "webhook.example.com/notify",
+				DisableTLS: true,
+			},
+			wantURL: "generic://webhook.example.com/notify?disabletls=yes&template=json",
+		},
+		{
 			name: "webhook with port",
 			config: models.GenericConfig{
 				WebhookURL: "https://webhook.example.com:8443/api/notify",
@@ -62,12 +84,12 @@ func TestBuildGenericURL(t *testing.T) {
 			wantURL: "generic://webhook.example.com/notify?disabletls=no&messagekey=body&template=json&titlekey=subject",
 		},
 		{
-			name: "webhook with DisableTLS",
+			name: "webhook with DisableTLS ignored for HTTPS",
 			config: models.GenericConfig{
 				WebhookURL: "https://webhook.example.com/notify",
 				DisableTLS: true,
 			},
-			wantURL: "generic://webhook.example.com/notify?disabletls=yes&template=json",
+			wantURL: "generic://webhook.example.com/notify?disabletls=no&template=json",
 		},
 		{
 			name: "webhook with single custom header",
@@ -227,7 +249,7 @@ func TestBuildGenericURL_DisableTLSFlag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := models.GenericConfig{
-				WebhookURL: "https://webhook.example.com/notify",
+				WebhookURL: "webhook.example.com/notify",
 				DisableTLS: tt.disableTLS,
 			}
 
