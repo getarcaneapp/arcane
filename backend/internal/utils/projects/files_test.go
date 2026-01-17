@@ -10,7 +10,6 @@ import (
 )
 
 func TestWriteIncludeFilePermissions(t *testing.T) {
-	// Save original perms
 	origFilePerm := common.FilePerm
 	origDirPerm := common.DirPerm
 	defer func() {
@@ -26,7 +25,7 @@ func TestWriteIncludeFilePermissions(t *testing.T) {
 		common.FilePerm = 0600
 		common.DirPerm = 0700
 
-		if err := WriteIncludeFile(projectDir, includePath, content, ExternalPathsConfig{}); err != nil {
+		if err := WriteIncludeFile(projectDir, includePath, content, nil); err != nil {
 			t.Fatalf("WriteIncludeFile() returned error: %v", err)
 		}
 
@@ -36,7 +35,6 @@ func TestWriteIncludeFilePermissions(t *testing.T) {
 			t.Fatalf("failed to stat include file: %v", err)
 		}
 
-		// On Linux/macOS, we can check permissions. On Windows, it's more limited.
 		if runtime.GOOS != "windows" {
 			if info.Mode().Perm() != 0600 {
 				t.Errorf("unexpected file permissions: got %o, want %o", info.Mode().Perm(), 0600)
@@ -60,7 +58,7 @@ func TestWriteIncludeFileCreatesSafeDirectory(t *testing.T) {
 	includePath := filepath.Join("includes", "config.yaml")
 	content := "services: {}\n"
 
-	if err := WriteIncludeFile(projectDir, includePath, content, ExternalPathsConfig{}); err != nil {
+	if err := WriteIncludeFile(projectDir, includePath, content, nil); err != nil {
 		t.Fatalf("WriteIncludeFile() returned error: %v", err)
 	}
 
@@ -90,13 +88,13 @@ func TestWriteIncludeFileRejectsSymlinkEscape(t *testing.T) {
 	}
 
 	includePath := filepath.Join("link", "escape.yaml")
-	err := WriteIncludeFile(projectDir, includePath, "malicious: true\n", ExternalPathsConfig{})
+	err := WriteIncludeFile(projectDir, includePath, "malicious: true\n", nil)
 	if err == nil {
 		t.Fatalf("WriteIncludeFile() succeeded but expected rejection for symlink escape")
 	}
 }
 
-func TestValidateFilePathWithinProject(t *testing.T) {
+func TestValidatePathWithinProject(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
@@ -115,23 +113,21 @@ func TestValidateFilePathWithinProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ValidateFilePath(projectDir, tt.filePath, ExternalPathsConfig{}, PathValidationOptions{})
+			_, err := validatePath(projectDir, tt.filePath, nil, false)
 			if (err != nil) != tt.wantError {
-				t.Errorf("ValidateFilePath() error = %v, wantError %v", err, tt.wantError)
+				t.Errorf("validatePath() error = %v, wantError %v", err, tt.wantError)
 			}
 		})
 	}
 }
 
-func TestValidateFilePathWithAllowedExternalPaths(t *testing.T) {
+func TestValidatePathWithAllowedExternalPaths(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
 	allowedDir := t.TempDir()
 
-	cfg := ExternalPathsConfig{
-		AllowedPaths: []string{allowedDir},
-	}
+	allowedPaths := []string{allowedDir}
 
 	tests := []struct {
 		name      string
@@ -145,24 +141,24 @@ func TestValidateFilePathWithAllowedExternalPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ValidateFilePath(projectDir, tt.filePath, cfg, PathValidationOptions{})
+			_, err := validatePath(projectDir, tt.filePath, allowedPaths, false)
 			if (err != nil) != tt.wantError {
-				t.Errorf("ValidateFilePath() error = %v, wantError %v", err, tt.wantError)
+				t.Errorf("validatePath() error = %v, wantError %v", err, tt.wantError)
 			}
 		})
 	}
 }
 
-func TestValidateFilePathReservedNames(t *testing.T) {
+func TestValidatePathReservedNames(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
 
 	tests := []struct {
-		name               string
-		filePath           string
-		checkReservedNames bool
-		wantError          bool
+		name          string
+		filePath      string
+		checkReserved bool
+		wantError     bool
 	}{
 		{"compose.yaml at root with check", "compose.yaml", true, true},
 		{"compose.yaml at root without check", "compose.yaml", false, false},
@@ -173,10 +169,9 @@ func TestValidateFilePathReservedNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := PathValidationOptions{CheckReservedNames: tt.checkReservedNames}
-			_, err := ValidateFilePath(projectDir, tt.filePath, ExternalPathsConfig{}, opts)
+			_, err := validatePath(projectDir, tt.filePath, nil, tt.checkReserved)
 			if (err != nil) != tt.wantError {
-				t.Errorf("ValidateFilePath() error = %v, wantError %v", err, tt.wantError)
+				t.Errorf("validatePath() error = %v, wantError %v", err, tt.wantError)
 			}
 		})
 	}
@@ -188,13 +183,13 @@ func TestWriteCustomFileValidation(t *testing.T) {
 	projectDir := t.TempDir()
 
 	// Writing to a path outside project should fail without allowed paths
-	err := WriteCustomFile(projectDir, "/tmp/outside.txt", "content", ExternalPathsConfig{})
+	err := WriteCustomFile(projectDir, "/tmp/outside.txt", "content", nil)
 	if err == nil {
 		t.Error("WriteCustomFile() should reject path outside project")
 	}
 
 	// Writing to project directory should work
-	err = WriteCustomFile(projectDir, "subdir/file.txt", "content", ExternalPathsConfig{})
+	err = WriteCustomFile(projectDir, "subdir/file.txt", "content", nil)
 	if err != nil {
 		t.Errorf("WriteCustomFile() failed for valid path: %v", err)
 	}
@@ -205,17 +200,17 @@ func TestIncludeAndCustomFilesShareValidation(t *testing.T) {
 
 	projectDir := t.TempDir()
 	allowedDir := t.TempDir()
-	cfg := ExternalPathsConfig{AllowedPaths: []string{allowedDir}}
+	allowedPaths := []string{allowedDir}
 
 	// Both include and custom files should allow writing to allowed external paths
 	externalFile := filepath.Join(allowedDir, "shared.yaml")
 
-	err := WriteIncludeFile(projectDir, externalFile, "services: {}\n", cfg)
+	err := WriteIncludeFile(projectDir, externalFile, "services: {}\n", allowedPaths)
 	if err != nil {
 		t.Errorf("WriteIncludeFile() should allow writing to allowed external path: %v", err)
 	}
 
-	err = WriteCustomFile(projectDir, externalFile, "updated content", cfg)
+	err = WriteCustomFile(projectDir, externalFile, "updated content", allowedPaths)
 	if err != nil {
 		t.Errorf("WriteCustomFile() should allow writing to allowed external path: %v", err)
 	}
@@ -223,12 +218,12 @@ func TestIncludeAndCustomFilesShareValidation(t *testing.T) {
 	// Both should reject paths outside project and allowed paths
 	outsideFile := "/tmp/not-allowed/file.yaml"
 
-	err = WriteIncludeFile(projectDir, outsideFile, "content", cfg)
+	err = WriteIncludeFile(projectDir, outsideFile, "content", allowedPaths)
 	if err == nil {
 		t.Error("WriteIncludeFile() should reject path outside project and allowed paths")
 	}
 
-	err = WriteCustomFile(projectDir, outsideFile, "content", cfg)
+	err = WriteCustomFile(projectDir, outsideFile, "content", allowedPaths)
 	if err == nil {
 		t.Error("WriteCustomFile() should reject path outside project and allowed paths")
 	}
@@ -254,17 +249,15 @@ func TestParseCustomFilesHandlesNonExistentFiles(t *testing.T) {
 	}
 
 	// ParseCustomFiles should return both files (placeholder for non-existent)
-	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
+	files, err := ParseCustomFiles(projectDir, nil)
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() returned error: %v", err)
 	}
 
-	// Should contain both files
 	if len(files) != 2 {
 		t.Errorf("expected 2 files, got %d", len(files))
 	}
 
-	// Check non-existent file has placeholder content
 	for _, f := range files {
 		switch f.Path {
 		case "nonexistent.txt":
@@ -299,12 +292,11 @@ func TestParseCustomFilesRejectsPathTraversal(t *testing.T) {
 	}
 
 	// ParseCustomFiles should skip the malicious path
-	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
+	files, err := ParseCustomFiles(projectDir, nil)
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() returned error: %v", err)
 	}
 
-	// Should only contain the valid file, not the traversal path
 	if len(files) != 1 {
 		t.Errorf("expected 1 file, got %d", len(files))
 	}
@@ -334,7 +326,7 @@ func TestParseCustomFilesAllowsExternalPaths(t *testing.T) {
 	}
 
 	// Without allowed paths, should be rejected
-	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
+	files, err := ParseCustomFiles(projectDir, nil)
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() returned error: %v", err)
 	}
@@ -343,7 +335,7 @@ func TestParseCustomFilesAllowsExternalPaths(t *testing.T) {
 	}
 
 	// With allowed paths, should be included
-	files, err = ParseCustomFiles(projectDir, ExternalPathsConfig{AllowedPaths: []string{externalDir}})
+	files, err = ParseCustomFiles(projectDir, []string{externalDir})
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() returned error: %v", err)
 	}
@@ -357,8 +349,7 @@ func TestRegisterCustomFileRejectsPathTraversal(t *testing.T) {
 
 	projectDir := t.TempDir()
 
-	// Path traversal should be rejected at registration time
-	err := RegisterCustomFile(projectDir, "../../../etc/passwd", ExternalPathsConfig{})
+	err := RegisterCustomFile(projectDir, "../../../etc/passwd", nil)
 	if err == nil {
 		t.Error("RegisterCustomFile() should reject path traversal")
 	}
@@ -371,17 +362,14 @@ func TestRegisterCustomFileDoesNotOverwriteExisting(t *testing.T) {
 	existingContent := "existing content that should not be overwritten"
 	filePath := filepath.Join(projectDir, "existing.txt")
 
-	// Create an existing file with content
 	if err := os.WriteFile(filePath, []byte(existingContent), common.FilePerm); err != nil {
 		t.Fatalf("failed to create existing file: %v", err)
 	}
 
-	// Register the existing file
-	if err := RegisterCustomFile(projectDir, "existing.txt", ExternalPathsConfig{}); err != nil {
+	if err := RegisterCustomFile(projectDir, "existing.txt", nil); err != nil {
 		t.Fatalf("RegisterCustomFile() failed: %v", err)
 	}
 
-	// Verify content was not overwritten
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
@@ -397,17 +385,14 @@ func TestRegisterCustomFileDoesNotCreateFile(t *testing.T) {
 	projectDir := t.TempDir()
 	filePath := filepath.Join(projectDir, "newfile.txt")
 
-	// Register a new file
-	if err := RegisterCustomFile(projectDir, "newfile.txt", ExternalPathsConfig{}); err != nil {
+	if err := RegisterCustomFile(projectDir, "newfile.txt", nil); err != nil {
 		t.Fatalf("RegisterCustomFile() failed: %v", err)
 	}
 
-	// Verify file was NOT created on disk
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		t.Error("RegisterCustomFile() should not create file on disk")
 	}
 
-	// Verify file is in manifest
 	manifest, err := ReadManifest(projectDir)
 	if err != nil {
 		t.Fatalf("ReadManifest() failed: %v", err)
@@ -416,8 +401,7 @@ func TestRegisterCustomFileDoesNotCreateFile(t *testing.T) {
 		t.Errorf("expected manifest to contain newfile.txt, got %v", manifest.CustomFiles)
 	}
 
-	// Verify ParseCustomFiles returns placeholder content
-	files, err := ParseCustomFiles(projectDir, ExternalPathsConfig{})
+	files, err := ParseCustomFiles(projectDir, nil)
 	if err != nil {
 		t.Fatalf("ParseCustomFiles() failed: %v", err)
 	}
@@ -434,17 +418,14 @@ func TestIsWithinDirectoryEqualityCase(t *testing.T) {
 
 	dir := "/project"
 
-	// Equal paths should return false (not "within")
 	if isWithinDirectory(dir, dir) {
 		t.Error("isWithinDirectory() should return false for equal paths")
 	}
 
-	// Subdirectory should return true
 	if !isWithinDirectory("/project/subdir", dir) {
 		t.Error("isWithinDirectory() should return true for subdirectory")
 	}
 
-	// Sibling directory should return false
 	if isWithinDirectory("/project2", dir) {
 		t.Error("isWithinDirectory() should return false for sibling directory")
 	}
