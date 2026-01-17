@@ -1,7 +1,7 @@
 export type JobSchedules = {
-	environmentHealthInterval: number;
-	eventCleanupInterval: number;
-	analyticsHeartbeatInterval: number;
+	environmentHealthInterval: string;
+	eventCleanupInterval: string;
+	analyticsHeartbeatInterval: string;
 };
 
 export type JobSchedulesUpdate = Partial<JobSchedules>;
