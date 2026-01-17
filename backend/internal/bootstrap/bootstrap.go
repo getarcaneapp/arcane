@@ -150,9 +150,10 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, schedulers ...interface{ Run(context.Context) error }) error {
 	for _, s := range schedulers {
+		scheduler := s
 		go func() {
 			slog.InfoContext(appCtx, "Starting scheduler")
-			if err := s.Run(appCtx); err != nil {
+			if err := scheduler.Run(appCtx); err != nil {
 				if !errors.Is(err, context.Canceled) {
 					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
 				}
