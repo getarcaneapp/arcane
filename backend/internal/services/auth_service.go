@@ -86,13 +86,17 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	if authSettings.OidcEnabled {
 		oidcConfig := &models.OidcConfig{
-			ClientID:      settings.OidcClientId.Value,
-			ClientSecret:  settings.OidcClientSecret.Value,
-			IssuerURL:     settings.OidcIssuerUrl.Value,
-			Scopes:        settings.OidcScopes.Value,
-			AdminClaim:    settings.OidcAdminClaim.Value,
-			AdminValue:    settings.OidcAdminValue.Value,
-			SkipTlsVerify: settings.OidcSkipTlsVerify.IsTrue(),
+			ClientID:              settings.OidcClientId.Value,
+			ClientSecret:          settings.OidcClientSecret.Value,
+			IssuerURL:             settings.OidcIssuerUrl.Value,
+			AuthorizationEndpoint: settings.OidcAuthorizationEndpoint.Value,
+			TokenEndpoint:         settings.OidcTokenEndpoint.Value,
+			UserinfoEndpoint:      settings.OidcUserinfoEndpoint.Value,
+			JwksURI:               settings.OidcJwksEndpoint.Value,
+			Scopes:                settings.OidcScopes.Value,
+			AdminClaim:            settings.OidcAdminClaim.Value,
+			AdminValue:            settings.OidcAdminValue.Value,
+			SkipTlsVerify:         settings.OidcSkipTlsVerify.IsTrue(),
 		}
 
 		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {
@@ -289,9 +293,18 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.Oi
 			existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
 			if emailErr == nil && existingUser != nil {
 				// Only require email verification when we are actually merging into an existing account.
-				// Some providers omit `email_verified` for first-time users; that should not prevent user creation.
-				if !userInfo.EmailVerified {
+				// Some providers omit `email_verified`; treat missing as unknown and allow merge.
+				emailVerifiedPresent := false
+				if userInfo.Extra != nil {
+					if _, ok := userInfo.Extra["email_verified"]; ok {
+						emailVerifiedPresent = true
+					}
+				}
+				if emailVerifiedPresent && !userInfo.EmailVerified {
 					return nil, false, errors.New("email not verified by OIDC provider; cannot merge accounts")
+				}
+				if !emailVerifiedPresent {
+					slog.Warn("OIDC email_verified claim missing; allowing merge", "email", userInfo.Email, "subject", userInfo.Subject)
 				}
 
 				// Found existing user with matching email - merge the accounts
