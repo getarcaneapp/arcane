@@ -17,6 +17,7 @@
 		type SignalFormValues,
 		type SlackFormValues,
 		type NtfyFormValues,
+		type PushoverFormValues,
 		type GenericFormValues,
 		type AppriseFormValues,
 		type NotificationProviderKey,
@@ -27,6 +28,7 @@
 		signalSettingsToFormValues,
 		slackSettingsToFormValues,
 		ntfySettingsToFormValues,
+		pushoverSettingsToFormValues,
 		genericSettingsToFormValues,
 		appriseSettingsToFormValues,
 		discordFormValuesToSettings,
@@ -35,6 +37,7 @@
 		signalFormValuesToSettings,
 		slackFormValuesToSettings,
 		ntfyFormValuesToSettings,
+		pushoverFormValuesToSettings,
 		genericFormValuesToSettings,
 		appriseFormValuesToSettings
 	} from '$lib/types/notification-providers';
@@ -46,6 +49,7 @@
 		SignalProviderForm,
 		SlackProviderForm,
 		NtfyProviderForm,
+		PushoverProviderForm,
 		GenericProviderForm,
 		AppriseProviderForm
 	} from './providers';
@@ -77,6 +81,7 @@
 	let signalFormRef: SignalProviderForm;
 	let slackFormRef: SlackProviderForm;
 	let ntfyFormRef: NtfyProviderForm;
+	let pushoverFormRef: PushoverProviderForm;
 	let genericFormRef: GenericProviderForm;
 
 	// Saved settings from server (used to detect if settings exist)
@@ -87,6 +92,7 @@
 		signal: null,
 		slack: null,
 		ntfy: null,
+		pushover: null,
 		generic: null
 	});
 
@@ -97,6 +103,7 @@
 	let signalValues = $state<SignalFormValues>(signalSettingsToFormValues());
 	let slackValues = $state<SlackFormValues>(slackSettingsToFormValues());
 	let ntfyValues = $state<NtfyFormValues>(ntfySettingsToFormValues());
+	let pushoverValues = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseValues = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -107,6 +114,7 @@
 	let signalBaseline = $state<SignalFormValues>(signalSettingsToFormValues());
 	let slackBaseline = $state<SlackFormValues>(slackSettingsToFormValues());
 	let ntfyBaseline = $state<NtfyFormValues>(ntfySettingsToFormValues());
+	let pushoverBaseline = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseBaseline = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -117,6 +125,7 @@
 	const signalHasChanges = $derived(JSON.stringify(signalValues) !== JSON.stringify(signalBaseline));
 	const slackHasChanges = $derived(JSON.stringify(slackValues) !== JSON.stringify(slackBaseline));
 	const ntfyHasChanges = $derived(JSON.stringify(ntfyValues) !== JSON.stringify(ntfyBaseline));
+	const pushoverHasChanges = $derived(JSON.stringify(pushoverValues) !== JSON.stringify(pushoverBaseline));
 	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
 	const appriseHasChanges = $derived(JSON.stringify(appriseValues) !== JSON.stringify(appriseBaseline));
 	const hasChanges = $derived(
@@ -126,6 +135,7 @@
 			signalHasChanges ||
 			slackHasChanges ||
 			ntfyHasChanges ||
+			pushoverHasChanges ||
 			genericHasChanges ||
 			appriseHasChanges
 	);
@@ -167,6 +177,9 @@
 		ntfyValues = ntfySettingsToFormValues(savedSettings.ntfy ?? undefined);
 		ntfyBaseline = { ...ntfyValues };
 
+		pushoverValues = pushoverSettingsToFormValues(savedSettings.pushover ?? undefined);
+		pushoverBaseline = { ...pushoverValues };
+
 		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
 		genericBaseline = { ...genericValues };
 
@@ -188,9 +201,12 @@
 		const signalValid = signalFormRef?.isValid() ?? true;
 		const slackValid = slackFormRef?.isValid() ?? true;
 		const ntfyValid = ntfyFormRef?.isValid() ?? true;
+		const pushoverValid = pushoverFormRef?.isValid() ?? true;
 		const genericValid = genericFormRef?.isValid() ?? true;
 
-		if (!(emailValid && discordValid && telegramValid && signalValid && slackValid && ntfyValid && genericValid)) {
+		if (
+			!(emailValid && discordValid && telegramValid && signalValid && slackValid && ntfyValid && pushoverValid && genericValid)
+		) {
 			toast.error('Please check the form for errors');
 			return;
 		}
@@ -278,6 +294,19 @@
 				}
 			}
 
+			// Save Pushover settings if changed
+			if (pushoverHasChanges) {
+				try {
+					const settings = pushoverFormValuesToSettings(pushoverValues);
+					await notificationService.updateSettings('pushover', settings);
+					savedSettings.pushover = settings;
+					pushoverBaseline = { ...pushoverValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Pushover', error: errorMsg }));
+				}
+			}
+
 			// Save Generic settings if changed
 			if (genericHasChanges) {
 				try {
@@ -323,6 +352,7 @@
 		signalValues = { ...signalBaseline };
 		slackValues = { ...slackBaseline };
 		ntfyValues = { ...ntfyBaseline };
+		pushoverValues = { ...pushoverBaseline };
 		genericValues = { ...genericBaseline };
 		appriseValues = { ...appriseBaseline };
 	}
@@ -407,7 +437,7 @@
 					<div class="space-y-8">
 						<Tabs.Root bind:value={providerTab}>
 							<Tabs.List class="inline-flex w-auto">
-								{#each NOTIFICATION_PROVIDER_KEYS as provider}
+								{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
 									<Tabs.Trigger value={provider}>{provider.charAt(0).toUpperCase() + provider.slice(1)}</Tabs.Trigger>
 								{/each}
 							</Tabs.List>
@@ -469,6 +499,16 @@
 									disabled={isReadOnly}
 									{isTesting}
 									onTest={() => testNotification('ntfy')}
+								/>
+							</Tabs.Content>
+
+							<Tabs.Content value="pushover" class="mt-4 space-y-4">
+								<PushoverProviderForm
+									bind:this={pushoverFormRef}
+									bind:values={pushoverValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('pushover')}
 								/>
 							</Tabs.Content>
 

@@ -1,7 +1,16 @@
 import type { NotificationSettings, AppriseSettings, EmailTLSMode } from './notification.type';
 
 // Provider keys - this is the source of truth for all providers (alphabetically sorted)
-export const NOTIFICATION_PROVIDER_KEYS = ['discord', 'email', 'generic', 'ntfy', 'signal', 'slack', 'telegram'] as const;
+export const NOTIFICATION_PROVIDER_KEYS = [
+	'discord',
+	'email',
+	'generic',
+	'ntfy',
+	'pushover',
+	'signal',
+	'slack',
+	'telegram'
+] as const;
 export type NotificationProviderKey = (typeof NOTIFICATION_PROVIDER_KEYS)[number];
 
 // Base form values that all providers share
@@ -72,6 +81,14 @@ export interface NtfyFormValues extends BaseProviderFormValues {
 	disableTlsVerification: boolean;
 }
 
+export interface PushoverFormValues extends BaseProviderFormValues {
+	token: string;
+	user: string;
+	devices: string;
+	priority: number;
+	title: string;
+}
+
 export interface GenericFormValues extends BaseProviderFormValues {
 	webhookUrl: string;
 	method: string;
@@ -96,6 +113,7 @@ export type ProviderFormValues =
 	| SignalFormValues
 	| SlackFormValues
 	| NtfyFormValues
+	| PushoverFormValues
 	| GenericFormValues;
 
 // Map provider keys to their form value types
@@ -106,6 +124,7 @@ export type ProviderFormValuesMap = {
 	signal: SignalFormValues;
 	slack: SlackFormValues;
 	ntfy: NtfyFormValues;
+	pushover: PushoverFormValues;
 	generic: GenericFormValues;
 };
 
@@ -336,6 +355,21 @@ export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyF
 	};
 }
 
+export function pushoverSettingsToFormValues(settings?: NotificationSettings): PushoverFormValues {
+	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
+	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	return {
+		enabled: settings?.enabled ?? false,
+		token: (cfg?.token as string) || '',
+		user: (cfg?.user as string) || '',
+		devices: Array.isArray(cfg?.devices) ? (cfg.devices as string[]).join(', ') : '',
+		priority: Number(cfg?.priority ?? 0),
+		title: (cfg?.title as string) || '',
+		eventImageUpdate: events?.image_update ?? true,
+		eventContainerUpdate: events?.container_update ?? true
+	};
+}
+
 export function genericSettingsToFormValues(settings?: NotificationSettings): GenericFormValues {
 	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
 	const events = (cfg?.events ?? {}) as Record<string, boolean>;
@@ -378,6 +412,27 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 			cache: values.cache,
 			firebase: values.firebase,
 			disableTlsVerification: values.disableTlsVerification,
+			events: {
+				image_update: values.eventImageUpdate,
+				container_update: values.eventContainerUpdate
+			}
+		}
+	};
+}
+
+export function pushoverFormValuesToSettings(values: PushoverFormValues): NotificationSettings {
+	return {
+		provider: 'pushover',
+		enabled: values.enabled,
+		config: {
+			token: values.token,
+			user: values.user,
+			devices: values.devices
+				.split(',')
+				.map((device) => device.trim())
+				.filter((device) => device.length > 0),
+			priority: values.priority,
+			title: values.title,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate

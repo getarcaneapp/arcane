@@ -7,4 +7,5 @@ export { default as AppriseProviderForm } from './AppriseProviderForm.svelte';
 export { default as ProviderFormWrapper } from './ProviderFormWrapper.svelte';
 export { default as EventSubscriptions } from './EventSubscriptions.svelte';
 export { default as NtfyProviderForm } from './NtfyProviderForm.svelte';
+export { default as PushoverProviderForm } from './PushoverProviderForm.svelte';
 export { default as GenericProviderForm } from './GenericProviderForm.svelte';
