@@ -84,7 +84,8 @@ func Bootstrap(ctx context.Context) error {
 			return nil
 		},
 		appServices.Settings.MigrateOidcConfigToFields,
-    appServices.Notification.MigrateDiscordWebhookUrlToFields)
+		appServices.Notification.MigrateDiscordWebhookUrlToFields)
+	utils.CleanupUnknownSettings(appCtx, appServices.Settings)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
