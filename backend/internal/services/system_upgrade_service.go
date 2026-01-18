@@ -94,6 +94,14 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
 
+	// Determine binary path based on container type (agent vs main)
+	binaryPath := "/app/arcane"
+	if currentContainer.Config != nil && currentContainer.Config.Labels != nil {
+		if _, isAgent := currentContainer.Config.Labels["com.getarcaneapp.arcane.agent"]; isAgent {
+			binaryPath = "/app/arcane-agent"
+		}
+	}
+
 	// Log upgrade event
 	metadata := models.JSON{
 		"action":        "system_upgrade_cli",
@@ -153,7 +161,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	// Create the upgrader container config
 	config := &containertypes.Config{
 		Image: ArcaneUpgraderImage,
-		Cmd:   []string{"/app/arcane", "upgrade", "--container", containerName},
+		Cmd:   []string{binaryPath, "upgrade", "--container", containerName},
 		Labels: map[string]string{
 			"com.getarcaneapp.arcane.upgrader": "true",
 			"com.getarcaneapp.arcane":          "true",

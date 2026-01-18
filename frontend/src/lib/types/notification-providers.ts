@@ -79,7 +79,6 @@ export interface GenericFormValues extends BaseProviderFormValues {
 	titleKey: string;
 	messageKey: string;
 	customHeaders: string;
-	disableTls: boolean;
 }
 
 export interface AppriseFormValues {
@@ -355,7 +354,6 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 		titleKey: (cfg?.titleKey as string) || 'title',
 		messageKey: (cfg?.messageKey as string) || 'message',
 		customHeaders: customHeadersStr,
-		disableTls: (cfg?.disableTls as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true
 	};
@@ -414,7 +412,6 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 			titleKey: values.titleKey,
 			messageKey: values.messageKey,
 			customHeaders: customHeaders,
-			disableTls: values.disableTls,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate
