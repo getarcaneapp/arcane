@@ -64,9 +64,16 @@
 	);
 
 	let showPasswordChangeDialog = $state(false);
+	let autoLoginEnabled = $state(false);
 
 	$effect(() => {
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage) {
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
+		return unsub;
+	});
+
+	$effect(() => {
+		// Skip password change dialog when auto-login is enabled
+		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled) {
 			showPasswordChangeDialog = true;
 		} else {
 			showPasswordChangeDialog = false;

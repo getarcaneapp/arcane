@@ -79,6 +79,10 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
+		func(ctx context.Context) error {
+			utils.InitializeAutoLogin(ctx, cfg)
+			return nil
+		},
 		appServices.Settings.MigrateOidcConfigToFields,
 		appServices.Notification.MigrateDiscordWebhookUrlToFields)
 	utils.CleanupUnknownSettings(appCtx, appServices.Settings)

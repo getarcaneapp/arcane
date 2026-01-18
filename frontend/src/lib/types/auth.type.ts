@@ -24,3 +24,12 @@ export type LoginResponseData = {
 	user: User;
 	requirePasswordChange?: boolean;
 };
+
+/**
+ * Auto-login configuration returned by the backend.
+ * Password is never included in this response.
+ */
+export interface AutoLoginConfig {
+	enabled: boolean;
+	username: string;
+}
