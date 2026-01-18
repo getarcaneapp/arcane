@@ -1,4 +1,4 @@
-package job
+package scheduler
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func NewFilesystemWatcherJob(
 	}
 }
 
-func RegisterFilesystemWatcherJob(ctx context.Context, scheduler *Scheduler, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService) (*FilesystemWatcherJob, error) {
+func RegisterFilesystemWatcherJob(ctx context.Context, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService) (*FilesystemWatcherJob, error) {
 	job := NewFilesystemWatcherJob(projectService, templateService, settingsService)
 
 	go func() {
@@ -43,7 +43,6 @@ func RegisterFilesystemWatcherJob(ctx context.Context, scheduler *Scheduler, pro
 }
 
 func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
-
 	settings, err := j.settingsService.GetSettings(ctx)
 	if err != nil {
 		return err

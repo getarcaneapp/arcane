@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -59,6 +60,19 @@ func Bootstrap(ctx context.Context) error {
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
 	crypto.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
+	utils.MigrateSchedulerCronValues(
+		appCtx,
+		appServices.Settings.GetStringSetting,
+		appServices.Settings.UpdateSetting,
+		appServices.Settings.LoadDatabaseSettings,
+	)
+	if appServices.GitOpsSync != nil {
+		utils.MigrateGitOpsSyncIntervals(
+			appCtx,
+			appServices.GitOpsSync.ListSyncIntervalsRaw,
+			appServices.GitOpsSync.UpdateSyncIntervalMinutes,
+		)
+	}
 
 	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
@@ -90,10 +104,7 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}
 
-	scheduler, err := initializeScheduler()
-	if err != nil {
-		return fmt.Errorf("failed to create job scheduler: %w", err)
-	}
+	scheduler := scheduler.NewJobScheduler(appCtx)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
 	router := setupRouter(cfg, appServices) //nolint:contextcheck
@@ -138,16 +149,19 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	return nil
 }
 
-func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }) error {
-	go func() {
-		slog.InfoContext(appCtx, "Starting scheduler")
-		if err := scheduler.Run(appCtx); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
+func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, schedulers ...interface{ Run(context.Context) error }) error {
+	for _, s := range schedulers {
+		scheduler := s
+		go func() {
+			slog.InfoContext(appCtx, "Starting scheduler")
+			if err := scheduler.Run(appCtx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
+				}
 			}
-		}
-		slog.InfoContext(appCtx, "Scheduler stopped")
-	}()
+			slog.InfoContext(appCtx, "Scheduler stopped")
+		}()
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

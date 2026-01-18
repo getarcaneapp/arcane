@@ -23,9 +23,9 @@
 	let savedSchedules = $state<JobSchedules>(untrack(() => data.jobSchedules));
 
 	const formSchema = z.object({
-		environmentHealthInterval: z.coerce.number().int().min(1).max(60),
-		eventCleanupInterval: z.coerce.number().int().min(5).max(10080),
-		analyticsHeartbeatInterval: z.coerce.number().int().min(60).max(43200)
+		environmentHealthInterval: z.string().min(1),
+		eventCleanupInterval: z.string().min(1),
+		analyticsHeartbeatInterval: z.string().min(1)
 	});
 
 	const form = createForm(
@@ -128,9 +128,9 @@
 									bind:value={$formInputs.environmentHealthInterval.value}
 									error={$formInputs.environmentHealthInterval.error}
 									label={m.environments_health_check_interval_label()}
-									placeholder="2"
+									placeholder="0 */2 * * * *"
 									helpText={m.environments_health_check_interval_description()}
-									type="number"
+									type="text"
 								/>
 							</div>
 						</div>
@@ -153,9 +153,9 @@
 									bind:value={$formInputs.eventCleanupInterval.value}
 									error={$formInputs.eventCleanupInterval.error}
 									label={m.jobs_event_cleanup_interval_label()}
-									placeholder="360"
+									placeholder="0 0 */6 * * *"
 									helpText={m.jobs_event_cleanup_interval_help()}
-									type="number"
+									type="text"
 								/>
 							</div>
 						</div>
@@ -178,9 +178,9 @@
 									bind:value={$formInputs.analyticsHeartbeatInterval.value}
 									error={$formInputs.analyticsHeartbeatInterval.error}
 									label={m.jobs_analytics_interval_label()}
-									placeholder="1440"
+									placeholder="0 0 0 * * *"
 									helpText={m.jobs_analytics_interval_help()}
-									type="number"
+									type="text"
 								/>
 							</div>
 						</div>

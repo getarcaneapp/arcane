@@ -10,6 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	bootstraputils "github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -32,6 +33,42 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 		projectService: projectService,
 		eventService:   eventService,
 	}
+}
+
+func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]bootstraputils.IntervalMigrationItem, error) {
+	rows, err := s.db.WithContext(ctx).Raw("SELECT id, sync_interval FROM gitops_syncs").Rows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load git sync intervals: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]bootstraputils.IntervalMigrationItem, 0)
+	for rows.Next() {
+		var id string
+		var raw any
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, fmt.Errorf("failed to scan git sync interval: %w", err)
+		}
+		items = append(items, bootstraputils.IntervalMigrationItem{
+			ID:       id,
+			RawValue: strings.TrimSpace(fmt.Sprint(raw)),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read git sync intervals: %w", err)
+	}
+
+	return items, nil
+}
+
+func (s *GitOpsSyncService) UpdateSyncIntervalMinutes(ctx context.Context, id string, minutes int) error {
+	if minutes <= 0 {
+		return fmt.Errorf("sync interval must be positive")
+	}
+	return s.db.WithContext(ctx).
+		Model(&models.GitOpsSync{}).
+		Where("id = ?", id).
+		Update("sync_interval", minutes).Error
 }
 
 func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, error) {

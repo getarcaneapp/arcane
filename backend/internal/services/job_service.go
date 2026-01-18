@@ -3,12 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/jobschedule"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
 
@@ -35,9 +35,9 @@ func NewJobService(db *database.DB, settings *SettingsService, cfg *config.Confi
 func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 	// Use SettingsService cache for fast reads.
 	return jobschedule.Config{
-		EnvironmentHealthInterval:  s.settings.GetIntSetting(ctx, "environmentHealthInterval", 2),
-		EventCleanupInterval:       s.settings.GetIntSetting(ctx, "eventCleanupInterval", 360),
-		AnalyticsHeartbeatInterval: s.settings.GetIntSetting(ctx, "analyticsHeartbeatInterval", 1440),
+		EnvironmentHealthInterval:  s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
+		EventCleanupInterval:       s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
+		AnalyticsHeartbeatInterval: s.settings.GetStringSetting(ctx, "analyticsHeartbeatInterval", "0 0 0 * * *"),
 	}
 }
 
@@ -51,30 +51,29 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 
 	current := s.GetJobSchedules(ctx)
 
-	// Validate inputs (minutes)
-	validate := func(name string, v *int, min, max int) error {
-		if v == nil {
+	// Validate inputs (cron expressions)
+	validate := func(name string, v *string) error {
+		if v == nil || *v == "" {
 			return nil
 		}
-		if *v < min || *v > max {
-			return fmt.Errorf("%s must be between %d and %d minutes", name, min, max)
+		if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(*v); err != nil {
+			return fmt.Errorf("invalid cron expression for %s: %w", name, err)
 		}
 		return nil
 	}
 
-	// Keep bounds aligned with job-level guardrails.
-	if err := validate("environmentHealthInterval", updates.EnvironmentHealthInterval, 1, 60); err != nil {
+	if err := validate("environmentHealthInterval", updates.EnvironmentHealthInterval); err != nil {
 		return jobschedule.Config{}, err
 	}
-	if err := validate("eventCleanupInterval", updates.EventCleanupInterval, 5, 10080); err != nil {
+	if err := validate("eventCleanupInterval", updates.EventCleanupInterval); err != nil {
 		return jobschedule.Config{}, err
 	}
-	if err := validate("analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval, 60, 43200); err != nil {
+	if err := validate("analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval); err != nil {
 		return jobschedule.Config{}, err
 	}
 
 	changed := false
-	upsert := func(tx *gorm.DB, key string, v *int, currentVal int) error {
+	upsert := func(tx *gorm.DB, key string, v *string, currentVal string) error {
 		if v == nil {
 			return nil
 		}
@@ -82,7 +81,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 			return nil
 		}
 		changed = true
-		return tx.Save(&models.SettingVariable{Key: key, Value: strconv.Itoa(*v)}).Error
+		return tx.Save(&models.SettingVariable{Key: key, Value: *v}).Error
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
