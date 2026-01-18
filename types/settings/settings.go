@@ -221,9 +221,4 @@ type Update struct {
 	//
 	// Required: false
 	SidebarHoverExpansion *string `json:"sidebarHoverExpansion,omitempty"`
-
-	// GlassEffectEnabled indicates if glass morphism effect is enabled in the UI.
-	//
-	// Required: false
-	GlassEffectEnabled *string `json:"glassEffectEnabled,omitempty"`
 }

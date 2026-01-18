@@ -42,8 +42,6 @@ export type Settings = {
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
 
-	glassEffectEnabled: boolean;
-
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;
 	gitOperationTimeout: number;

@@ -3,7 +3,6 @@
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import settingsStore from '$lib/stores/config-store';
 	import { cn } from '$lib/utils';
 
 	interface Props {
@@ -17,7 +16,6 @@
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
-	const isGlassEnabled = $derived.by(() => $settingsStore?.glassEffectEnabled ?? false);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
@@ -105,7 +103,7 @@
 				size="lg"
 				onclick={onReset}
 				disabled={isLoading}
-				class={cn('size-14 rounded-full border-2 shadow-lg', isGlassEnabled ? 'bg-background/80 backdrop-blur-md' : 'bg-card')}
+				class={cn('size-14 rounded-full border-2 shadow-lg', 'bg-background/80 backdrop-blur-md')}
 				showLabel={false}
 			/>
 		{/if}
