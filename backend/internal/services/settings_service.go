@@ -625,6 +625,29 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	return nil
 }
 
+func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
+	allowedKeys := allowedSettingKeys()
+	if len(allowedKeys) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(allowedKeys))
+	for key := range allowedKeys {
+		keys = append(keys, key)
+	}
+
+	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to prune unknown settings: %w", result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.InfoContext(ctx, "Pruned unknown settings", "count", result.RowsAffected)
+	}
+
+	return nil
+}
+
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
 	appCfg := config.Load()
@@ -644,6 +667,23 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 
 	// Reload settings after persisting env vars
 	return s.LoadDatabaseSettings(ctx)
+}
+
+func allowedSettingKeys() map[string]struct{} {
+	allowed := make(map[string]struct{})
+
+	settingsType := reflect.TypeOf(models.Settings{})
+	for i := 0; i < settingsType.NumField(); i++ {
+		key, _, _ := strings.Cut(settingsType.Field(i).Tag.Get("key"), ",")
+		if key == "" {
+			continue
+		}
+		allowed[key] = struct{}{}
+	}
+
+	allowed["encryptionKey"] = struct{}{}
+
+	return allowed
 }
 
 func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, field reflect.StructField, isEnvOnlyMode bool) error {
