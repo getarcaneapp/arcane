@@ -8,7 +8,7 @@ require (
 	github.com/getarcaneapp/arcane/types v0.0.0-20260110011808-8759100aa57c
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/schollz/progressbar/v3 v3.19.0
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	go.withmatt.com/size v0.0.0-20250220224316-11aee5773e67
 	golang.org/x/term v0.39.0

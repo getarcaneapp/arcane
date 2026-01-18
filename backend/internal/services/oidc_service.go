@@ -144,20 +144,37 @@ func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
 	return scopes
 }
 
-func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider, origin string) oauth2.Config {
+func (s *OidcService) hasManualEndpoints(cfg *models.OidcConfig) bool {
+	return cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != ""
+}
+
+func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider, origin string) (oauth2.Config, error) {
 	scopes := strings.Fields(cfg.Scopes)
 	if len(scopes) == 0 {
 		scopes = []string{"email", "profile"}
 	}
 	scopes = s.ensureOpenIDScope(scopes)
 
+	var endpoint oauth2.Endpoint
+	if provider != nil {
+		endpoint = provider.Endpoint()
+	} else {
+		endpoint = oauth2.Endpoint{
+			AuthURL:  cfg.AuthorizationEndpoint,
+			TokenURL: cfg.TokenEndpoint,
+		}
+	}
+	if endpoint.AuthURL == "" || endpoint.TokenURL == "" {
+		return oauth2.Config{}, errors.New("authorization and token endpoints must be configured")
+	}
+
 	return oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
-		Endpoint:     provider.Endpoint(),
+		Endpoint:     endpoint,
 		RedirectURL:  s.GetOidcRedirectURL(origin),
 		Scopes:       scopes,
-	}
+	}, nil
 }
 
 func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, origin string) (string, string, error) {
@@ -167,17 +184,25 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		return "", "", err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, config)
-	if err != nil {
-		slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
-		return "", "", fmt.Errorf("failed to discover provider: %w", err)
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(config) {
+		var err error
+		provider, err = s.getOrDiscoverProvider(ctx, config)
+		if err != nil {
+			slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
+			return "", "", fmt.Errorf("failed to discover provider: %w", err)
+		}
 	}
 
 	state := stringutils.GenerateRandomString(32)
 	nonce := stringutils.GenerateRandomString(32)
 	codeVerifier := stringutils.GenerateRandomString(128)
 
-	oauth2Config := s.getOauth2Config(config, provider, origin)
+	oauth2Config, err := s.getOauth2Config(config, provider, origin)
+	if err != nil {
+		slog.Error("GenerateAuthURL: invalid OIDC endpoints", "error", err)
+		return "", "", err
+	}
 
 	authURL := oauth2Config.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
@@ -244,7 +269,7 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 
 		// Use the custom HTTP client with the new context
 		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClient(skipTls))
-		provider, err := oidc.NewProvider(providerCtx, issuer)
+		provider, discoveredIssuer, err := s.discoverProvider(providerCtx, issuer)
 		if err != nil {
 			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "skipTls", skipTls, "error", err)
 			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
@@ -252,11 +277,13 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 
 		s.providerMutex.Lock()
 		s.providerCache = provider
+		// Cache based on the configured issuer to avoid repeated discovery on
+		// trailing-slash-only mismatches.
 		s.cachedIssuer = issuer
 		s.cachedSkipTls = skipTls
 		s.providerMutex.Unlock()
 
-		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "skipTls", skipTls)
+		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "effectiveIssuer", discoveredIssuer, "skipTls", skipTls)
 		return provider, nil
 	})
 
@@ -267,8 +294,32 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 	return v.(*oidc.Provider), nil
 }
 
+func (s *OidcService) discoverProvider(ctx context.Context, issuer string) (*oidc.Provider, string, error) {
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err == nil {
+		return provider, issuer, nil
+	}
+
+	altIssuer := strings.TrimRight(issuer, "/")
+	if altIssuer == issuer {
+		altIssuer = issuer + "/"
+	}
+
+	slog.WarnContext(ctx, "getOrDiscoverProvider: retrying discovery with alternate issuer", "configured", issuer, "alternate", altIssuer)
+	provider, altErr := oidc.NewProvider(ctx, altIssuer)
+	if altErr == nil {
+		return provider, altIssuer, nil
+	}
+
+	slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed with alternate issuer", "issuer", altIssuer, "error", altErr)
+	return nil, issuer, err
+}
+
 func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string) (*oauth2.Token, error) {
-	oauth2Config := s.getOauth2Config(cfg, provider, origin)
+	oauth2Config, err := s.getOauth2Config(cfg, provider, origin)
+	if err != nil {
+		return nil, err
+	}
 
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
 	token, err := oauth2Config.Exchange(providerCtx, code, oauth2.VerifierOption(verifier))
@@ -293,25 +344,41 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 		}
 	}
 
-	userInfo, err := provider.UserInfo(providerCtx, oauth2.StaticTokenSource(token))
-	if err != nil {
-		slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
-		if claims != nil {
-			return claims, nil
-		}
-		return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
-	}
-
 	var userInfoClaims map[string]any
-	if err := userInfo.Claims(&userInfoClaims); err != nil {
-		slog.Warn("fetchClaims: failed to decode userinfo claims", "error", err)
-		if claims != nil {
-			return claims, nil
+	switch {
+	case provider != nil:
+		userInfo, err := provider.UserInfo(providerCtx, oauth2.StaticTokenSource(token))
+		if err != nil {
+			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
 		}
-		return nil, fmt.Errorf("failed to decode userinfo claims: %w", err)
+		if err := userInfo.Claims(&userInfoClaims); err != nil {
+			slog.Warn("fetchClaims: failed to decode userinfo claims", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to decode userinfo claims: %w", err)
+		}
+		slog.Debug("fetchClaims: fetched userinfo claims successfully")
+	case cfg.UserinfoEndpoint != "":
+		manualClaims, err := s.fetchUserInfoClaims(providerCtx, cfg, token)
+		if err != nil {
+			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
+		}
+		userInfoClaims = manualClaims
+		slog.Debug("fetchClaims: fetched userinfo claims successfully")
+	case claims != nil:
+		return claims, nil
+	default:
+		return nil, errors.New("userinfo endpoint not configured")
 	}
-
-	slog.Debug("fetchClaims: fetched userinfo claims successfully")
 
 	if claims == nil {
 		claims = make(map[string]any)
@@ -320,6 +387,46 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 		if _, exists := claims[k]; !exists {
 			claims[k] = v
 		}
+	}
+
+	return claims, nil
+}
+
+func (s *OidcService) fetchUserInfoClaims(ctx context.Context, cfg *models.OidcConfig, token *oauth2.Token) (map[string]any, error) {
+	if cfg.UserinfoEndpoint == "" {
+		return nil, errors.New("userinfo endpoint not configured")
+	}
+	if token == nil || token.AccessToken == "" {
+		return nil, errors.New("missing access token for userinfo request")
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.UserinfoEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType := token.TokenType
+	if tokenType == "" {
+		tokenType = "Bearer"
+	}
+	request.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, token.AccessToken))
+	request.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(cfg.SkipTlsVerify)
+	resp, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("userinfo endpoint returned status %d", resp.StatusCode)
+	}
+
+	var claims map[string]any
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&claims); err != nil {
+		return nil, err
 	}
 
 	return claims, nil
@@ -339,9 +446,12 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, cfg)
-	if err != nil {
-		return nil, nil, err
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(cfg) {
+		provider, err = s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	token, err := s.exchangeToken(ctx, cfg, provider, code, stateData.CodeVerifier, origin)
@@ -397,8 +507,17 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		verifierConfig.Now = time.Now
 	}
 
-	verifier := provider.Verifier(verifierConfig)
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
+	var verifier *oidc.IDTokenVerifier
+	if provider != nil {
+		verifier = provider.Verifier(verifierConfig)
+	} else {
+		if cfg.JwksURI == "" {
+			return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
+		}
+		keySet := oidc.NewRemoteKeySet(providerCtx, cfg.JwksURI)
+		verifier = oidc.NewVerifier(cfg.IssuerURL, keySet, verifierConfig)
+	}
 
 	idToken, err := verifier.Verify(providerCtx, rawIDToken)
 	if err != nil {

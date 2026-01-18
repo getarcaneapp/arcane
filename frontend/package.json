@@ -33,7 +33,7 @@
 		"date-fns": "^4.1.0",
 		"js-yaml": "^4.1.1",
 		"monaco-editor": "^0.55.1",
-		"prettier": "^3.7.4",
+		"prettier": "^3.8.0",
 		"prettier-plugin-svelte": "^3.4.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",
 		"shiki": "^3.21.0",
@@ -42,20 +42,20 @@
 	},
 	"devDependencies": {
 		"@iconify/json": "^2.2.424",
-		"@inlang/paraglide-js": "2.8.0",
+		"@inlang/paraglide-js": "2.9.0",
 		"@internationalized/date": "^3.10.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tailwindcss/vite": "^4.1.18",
 		"@types/bytes": "^3.1.5",
 		"@types/js-yaml": "^4.0.9",
-		"@types/node": "^25.0.3",
+		"@types/node": "^25.0.9",
 		"bits-ui": "^2.15.4",
 		"bytes": "^3.1.2",
 		"clsx": "^2.1.1",
 		"formsnap": "^2.0.1",
 		"i18n-unused": "^0.19.0",
 		"isomorphic-dompurify": "^2.35.0",
-		"knip": "^5.80.2",
+		"knip": "^5.81.0",
 		"mode-watcher": "^1.1.0",
 		"paneforge": "^1.0.2",
 		"runed": "^0.37.0",
@@ -74,6 +74,6 @@
 		"vaul-svelte": "1.0.0-next.7",
 		"vite": "^7.3.1",
 		"vite-plugin-devtools-json": "^1.0.0",
-		"zod": "^4.3.4"
+		"zod": "^4.3.5"
 	}
 }

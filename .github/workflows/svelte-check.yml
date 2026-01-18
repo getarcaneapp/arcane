@@ -12,7 +12,7 @@ on:
       - "tsconfig.json"
       - "svelte.config.js"
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
     paths:
       - "frontend/src/**"
       - ".github/workflows/svelte-check.yml"

@@ -23,6 +23,23 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 		return "", fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
+	hasScheme := strings.Contains(config.WebhookURL, "://")
+	if webhookURL.Host == "" && !hasScheme {
+		fallbackScheme := "https"
+		if config.DisableTLS {
+			fallbackScheme = "http"
+		}
+		normalized := strings.TrimPrefix(config.WebhookURL, "//")
+		webhookURL, err = url.Parse(fmt.Sprintf("%s://%s", fallbackScheme, normalized))
+		if err != nil {
+			return "", fmt.Errorf("invalid webhook URL: %w", err)
+		}
+	}
+
+	if webhookURL.Host == "" {
+		return "", fmt.Errorf("invalid webhook URL: missing host")
+	}
+
 	// Build generic service URL
 	// Format: generic://host[:port]/path?params
 	// Shoutrrr's generic service uses HTTP or HTTPS based on the DisableTLS setting
@@ -59,14 +76,15 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 		query.Set("messagekey", config.MessageKey)
 	}
 
-	// Determine TLS setting: respect both the original URL scheme and explicit config
-	// If original URL was http:// OR DisableTLS is true → use HTTP (disabletls=yes)
-	// Otherwise → use HTTPS (disabletls=no)
-	disableTLS := config.DisableTLS || strings.ToLower(webhookURL.Scheme) == "http"
-	if disableTLS {
+	// Determine TLS setting from the webhook URL scheme (http/https)
+	// If scheme is missing, DisableTLS is only used to infer the default scheme above.
+	switch strings.ToLower(webhookURL.Scheme) {
+	case "http":
 		query.Set("disabletls", "yes")
-	} else {
+	case "https":
 		query.Set("disabletls", "no")
+	default:
+		return "", fmt.Errorf("invalid webhook URL scheme: %s", webhookURL.Scheme)
 	}
 
 	// Add custom headers as query parameters with @ prefix

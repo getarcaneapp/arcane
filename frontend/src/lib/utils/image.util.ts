@@ -1,21 +1,38 @@
-import settingsStore from '$lib/stores/config-store';
-import { get } from 'svelte/store';
-
 type SkipCacheUntil = {
 	[key: string]: number;
 };
 
-export function getApplicationLogo(full = false): string {
-	const settings = get(settingsStore);
-	const accentColor = settings?.accentColor || 'default';
-
-	// Add accent color as query param to bust cache when color changes
+export function getApplicationLogo(full = false, colorOverride?: string): string {
+	// Build base URL - don't include color param for normal requests
+	// The backend reads the saved color from settings automatically
+	// Only include color param when explicitly previewing a different color
 	const baseUrl = full ? '/api/app-images/logo?full=true' : '/api/app-images/logo';
-	const separator = full ? '&' : '?';
-	const urlWithColor = `${baseUrl}${separator}color=${encodeURIComponent(accentColor)}`;
 
-	return getCachedImageUrl(urlWithColor);
+	if (colorOverride) {
+		const separator = full ? '&' : '?';
+		return `${baseUrl}${separator}color=${encodeURIComponent(colorOverride)}`;
+	}
+
+	return getCachedImageUrl(baseUrl);
 }
+
+export function bustLogoCache(): void {
+	// Set skip cache for all logo URL patterns to force refetch
+	const skipCacheUntil = Date.now() + 60000; // Skip cache for 1 minute
+	const skipCacheUntilMap: SkipCacheUntil = JSON.parse(localStorage.getItem('skip-cache-until') ?? '{}');
+
+	// Clear all existing logo cache entries and set new ones
+	for (const key of Object.keys(skipCacheUntilMap)) {
+		delete skipCacheUntilMap[key];
+	}
+
+	// Add cache bust timestamp for base logo URLs
+	skipCacheUntilMap[hashKey('/api/app-images/logo')] = skipCacheUntil;
+	skipCacheUntilMap[hashKey('/api/app-images/logo?full=true')] = skipCacheUntil;
+
+	localStorage.setItem('skip-cache-until', JSON.stringify(skipCacheUntilMap));
+}
+
 export function getDefaultProfilePicture(): string {
 	return getCachedImageUrl('/api/app-images/profile');
 }

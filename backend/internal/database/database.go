@@ -159,7 +159,12 @@ func migrateDatabase(driver database.Driver, dbProvider string) error {
 	}
 
 	if errors.Is(err, migrate.ErrNoChange) {
-		slog.Info("Database schema is up to date")
+		version, dirty, versionErr := m.Version()
+		if versionErr != nil {
+			slog.Info("Database schema is up to date")
+		} else {
+			slog.Info("Database schema is up to date", "migrationVersion", version, "dirty", dirty)
+		}
 	} else {
 		slog.Info("Database migrations completed successfully")
 	}

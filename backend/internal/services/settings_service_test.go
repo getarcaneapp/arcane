@@ -63,6 +63,31 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "/tmp/projects"))
+	require.NoError(t, svc.UpdateSetting(ctx, "encryptionKey", "test-encryption-key"))
+	require.NoError(t, svc.UpdateSetting(ctx, "unknownKey", "value"))
+
+	require.NoError(t, svc.PruneUnknownSettings(ctx))
+
+	var sv models.SettingVariable
+	err = svc.db.WithContext(ctx).Where("key = ?", "unknownKey").First(&sv).Error
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	var sv2 models.SettingVariable
+	err = svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&sv2).Error
+	require.NoError(t, err)
+
+	var sv3 models.SettingVariable
+	err = svc.db.WithContext(ctx).Where("key = ?", "encryptionKey").First(&sv3).Error
+	require.NoError(t, err)
+}
+
 func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
