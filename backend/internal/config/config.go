@@ -31,14 +31,15 @@ type Config struct {
 	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
 	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 
-	OidcEnabled       bool   `env:"OIDC_ENABLED" default:"false"`
-	OidcClientID      string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
-	OidcClientSecret  string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
-	OidcIssuerURL     string `env:"OIDC_ISSUER_URL" default:""`
-	OidcScopes        string `env:"OIDC_SCOPES" default:"openid email profile"`
-	OidcAdminClaim    string `env:"OIDC_ADMIN_CLAIM" default:""`
-	OidcAdminValue    string `env:"OIDC_ADMIN_VALUE" default:""`
-	OidcSkipTlsVerify bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
+	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
+	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
+	OidcClientSecret           string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
+	OidcIssuerURL              string `env:"OIDC_ISSUER_URL" default:""`
+	OidcScopes                 string `env:"OIDC_SCOPES" default:"openid email profile"`
+	OidcAdminClaim             string `env:"OIDC_ADMIN_CLAIM" default:""`
+	OidcAdminValue             string `env:"OIDC_ADMIN_VALUE" default:""`
+	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
+	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
 
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`

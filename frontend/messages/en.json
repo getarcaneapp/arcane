@@ -1439,6 +1439,8 @@
 	"oidc_admin_value_help": "Leave empty for boolean claims (admin=true).",
 	"oidc_skip_tls_verify_label": "Skip TLS Verification",
 	"oidc_skip_tls_verify_description": "Disable TLS certificate verification for OIDC endpoints. Proceed with CAUTION.",
+	"oidc_auto_redirect_label": "Auto Redirect to Provider",
+	"oidc_auto_redirect_description": "Automatically redirect to OIDC provider on login page when enabled.",
 	"oidc_redirect_uri_title": "Redirect URI Configuration",
 	"oidc_redirect_uri_description": "Configure this redirect URI in your OIDC provider:",
 	"_comment_prune": "=== PRUNE ===",

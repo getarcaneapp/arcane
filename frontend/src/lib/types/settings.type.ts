@@ -36,6 +36,7 @@ export type Settings = {
 	oidcAdminClaim: string;
 	oidcAdminValue: string;
 	oidcSkipTlsVerify: boolean;
+	oidcAutoRedirectToProvider: boolean;
 	oidcMergeAccounts: boolean;
 
 	mobileNavigationMode: 'floating' | 'docked';

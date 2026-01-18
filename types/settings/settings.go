@@ -207,6 +207,11 @@ type Update struct {
 	// Required: false
 	OidcSkipTlsVerify *string `json:"oidcSkipTlsVerify,omitempty"`
 
+	// OidcAutoRedirectToProvider indicates if the login page should automatically redirect to OIDC provider.
+	//
+	// Required: false
+	OidcAutoRedirectToProvider *string `json:"oidcAutoRedirectToProvider,omitempty"`
+
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false

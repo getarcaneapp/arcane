@@ -35,6 +35,7 @@
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
+			oidcAutoRedirectToProvider: z.boolean(),
 			oidcClientId: z.string(),
 			oidcClientSecret: z.string(),
 			oidcIssuerUrl: z.string(),
@@ -62,6 +63,7 @@
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
+		oidcAutoRedirectToProvider: currentSettings.oidcAutoRedirectToProvider,
 		oidcClientId: currentSettings.oidcClientId,
 		oidcClientSecret: '',
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
@@ -82,6 +84,7 @@
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
+				oidcAutoRedirectToProvider: ($settingsStore || data.settings!).oidcAutoRedirectToProvider,
 				oidcClientId: ($settingsStore || data.settings!).oidcClientId,
 				oidcClientSecret: '',
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
@@ -101,6 +104,7 @@
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
+			$formInputs.oidcAutoRedirectToProvider.value !== currentSettings.oidcAutoRedirectToProvider ||
 			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
 			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
 			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
@@ -398,6 +402,24 @@
 													</Label>
 													<p class="text-muted-foreground text-xs">
 														{m.oidc_skip_tls_verify_description()}
+													</p>
+												</div>
+											</div>
+										</div>
+
+										<div class="border-t pt-4">
+											<div class="flex items-center gap-2">
+												<Switch
+													id="oidcAutoRedirectSwitch"
+													disabled={isOidcEnvForced}
+													bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
+												/>
+												<div class="grid gap-1.5 leading-none">
+													<Label for="oidcAutoRedirectSwitch" class="font-normal">
+														{m.oidc_auto_redirect_label()}
+													</Label>
+													<p class="text-muted-foreground text-xs">
+														{m.oidc_auto_redirect_description()}
 													</p>
 												</div>
 											</div>
