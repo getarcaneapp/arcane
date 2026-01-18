@@ -112,6 +112,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		Volume:            appServices.Volume,
 		Container:         appServices.Container,
 		Network:           appServices.Network,
+		Swarm:             appServices.Swarm,
 		Notification:      appServices.Notification,
 		Apprise:           appServices.Apprise,
 		Updater:           appServices.Updater,
