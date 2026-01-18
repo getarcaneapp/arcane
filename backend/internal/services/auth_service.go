@@ -86,17 +86,18 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 	if authSettings.OidcEnabled {
 		oidcConfig := &models.OidcConfig{
-			ClientID:              settings.OidcClientId.Value,
-			ClientSecret:          settings.OidcClientSecret.Value,
-			IssuerURL:             settings.OidcIssuerUrl.Value,
-			AuthorizationEndpoint: settings.OidcAuthorizationEndpoint.Value,
-			TokenEndpoint:         settings.OidcTokenEndpoint.Value,
-			UserinfoEndpoint:      settings.OidcUserinfoEndpoint.Value,
-			JwksURI:               settings.OidcJwksEndpoint.Value,
-			Scopes:                settings.OidcScopes.Value,
-			AdminClaim:            settings.OidcAdminClaim.Value,
-			AdminValue:            settings.OidcAdminValue.Value,
-			SkipTlsVerify:         settings.OidcSkipTlsVerify.IsTrue(),
+			ClientID:                    settings.OidcClientId.Value,
+			ClientSecret:                settings.OidcClientSecret.Value,
+			IssuerURL:                   settings.OidcIssuerUrl.Value,
+			AuthorizationEndpoint:       settings.OidcAuthorizationEndpoint.Value,
+			TokenEndpoint:               settings.OidcTokenEndpoint.Value,
+			UserinfoEndpoint:            settings.OidcUserinfoEndpoint.Value,
+			JwksURI:                     settings.OidcJwksEndpoint.Value,
+			DeviceAuthorizationEndpoint: settings.OidcDeviceAuthorizationEndpoint.Value,
+			Scopes:                      settings.OidcScopes.Value,
+			AdminClaim:                  settings.OidcAdminClaim.Value,
+			AdminValue:                  settings.OidcAdminValue.Value,
+			SkipTlsVerify:               settings.OidcSkipTlsVerify.IsTrue(),
 		}
 
 		if oidcConfig.ClientID != "" || oidcConfig.IssuerURL != "" {

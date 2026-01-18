@@ -13,7 +13,6 @@
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { browser, dev } from '$app/environment';
 	import { onMount } from 'svelte';
-	import settingsStore from '$lib/stores/config-store';
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { cn } from '$lib/utils';
@@ -35,23 +34,6 @@
 	});
 
 	const settings = $derived(data.settings);
-	let isGlassEnabled = $state(false);
-
-	$effect(() => {
-		isGlassEnabled = settings?.glassEffectEnabled ?? false;
-	});
-
-	$effect(() => {
-		if (browser && settings) {
-			const enabled = $settingsStore?.glassEffectEnabled ?? settings.glassEffectEnabled ?? false;
-			isGlassEnabled = enabled;
-			if (enabled) {
-				document.body.classList.add('glass-enabled');
-			} else {
-				document.body.classList.remove('glass-enabled');
-			}
-		}
-	});
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
@@ -84,7 +66,7 @@
 
 <svelte:head><title>{pageTitle}</title></svelte:head>
 
-<div class={cn('flex min-h-dvh flex-col', isGlassEnabled ? 'bg-transparent' : 'bg-background')}>
+<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
 	{#if !settings && data.user}
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}

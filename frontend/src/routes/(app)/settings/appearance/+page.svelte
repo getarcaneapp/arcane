@@ -25,7 +25,6 @@
 		mobileNavigationShowLabels: z.boolean(),
 		sidebarHoverExpansion: z.boolean(),
 		accentColor: z.string(),
-		glassEffectEnabled: z.boolean(),
 		enableGravatar: z.boolean()
 	});
 
@@ -135,31 +134,6 @@
 								/>
 							</div>
 						</div>
-
-						<Separator />
-
-						<!-- Glass Effect -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.glass_effect_title()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.glass_effect_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="glassEffectEnabled"
-									bind:checked={$formInputs.glassEffectEnabled.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.glassEffectEnabled.value = checked;
-									}}
-								/>
-								<Label for="glassEffectEnabled" class="font-normal">
-									{$formInputs.glassEffectEnabled.value ? m.glass_effect_enabled() : m.glass_effect_disabled()}
-								</Label>
-							</div>
-						</div>
-
-						<Separator />
 
 						<!-- User Avatars -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">

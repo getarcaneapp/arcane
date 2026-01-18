@@ -3,15 +3,13 @@ export type LocalSettings = {
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
-	glassEffectEnabled: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
 	'accentColor',
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
-	'sidebarHoverExpansion',
-	'glassEffectEnabled'
+	'sidebarHoverExpansion'
 ]);
 
 export function isLocalSetting(key: string): boolean {

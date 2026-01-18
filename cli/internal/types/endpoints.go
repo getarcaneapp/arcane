@@ -18,10 +18,12 @@ type ArcaneApiEndpoints struct {
 	AuthRefreshEndpoint  string
 
 	// OIDC
-	OIDCStatusEndpoint   string
-	OIDCConfigEndpoint   string
-	OIDCUrlEndpoint      string
-	OIDCCallbackEndpoint string
+	OIDCStatusEndpoint      string
+	OIDCConfigEndpoint      string
+	OIDCUrlEndpoint         string
+	OIDCCallbackEndpoint    string
+	OIDCDeviceCodeEndpoint  string
+	OIDCDeviceTokenEndpoint string
 
 	// API Keys
 	ApiKeysEndpoint string
@@ -176,10 +178,12 @@ var Endpoints = ArcaneApiEndpoints{
 	AuthRefreshEndpoint:  "/api/auth/refresh",
 
 	// OIDC
-	OIDCStatusEndpoint:   "/api/oidc/status",
-	OIDCConfigEndpoint:   "/api/oidc/config",
-	OIDCUrlEndpoint:      "/api/oidc/url",
-	OIDCCallbackEndpoint: "/api/oidc/callback",
+	OIDCStatusEndpoint:      "/api/oidc/status",
+	OIDCConfigEndpoint:      "/api/oidc/config",
+	OIDCUrlEndpoint:         "/api/oidc/url",
+	OIDCCallbackEndpoint:    "/api/oidc/callback",
+	OIDCDeviceCodeEndpoint:  "/api/oidc/device/code",
+	OIDCDeviceTokenEndpoint: "/api/oidc/device/token",
 
 	// API Keys
 	ApiKeysEndpoint: "/api/api-keys",
@@ -327,10 +331,12 @@ func (e ArcaneApiEndpoints) AuthPassword() string { return e.AuthPasswordEndpoin
 func (e ArcaneApiEndpoints) AuthRefresh() string  { return e.AuthRefreshEndpoint }
 
 // OIDC endpoints
-func (e ArcaneApiEndpoints) OIDCStatus() string   { return e.OIDCStatusEndpoint }
-func (e ArcaneApiEndpoints) OIDCConfig() string   { return e.OIDCConfigEndpoint }
-func (e ArcaneApiEndpoints) OIDCUrl() string      { return e.OIDCUrlEndpoint }
-func (e ArcaneApiEndpoints) OIDCCallback() string { return e.OIDCCallbackEndpoint }
+func (e ArcaneApiEndpoints) OIDCStatus() string      { return e.OIDCStatusEndpoint }
+func (e ArcaneApiEndpoints) OIDCConfig() string      { return e.OIDCConfigEndpoint }
+func (e ArcaneApiEndpoints) OIDCUrl() string         { return e.OIDCUrlEndpoint }
+func (e ArcaneApiEndpoints) OIDCCallback() string    { return e.OIDCCallbackEndpoint }
+func (e ArcaneApiEndpoints) OIDCDeviceCode() string  { return e.OIDCDeviceCodeEndpoint }
+func (e ArcaneApiEndpoints) OIDCDeviceToken() string { return e.OIDCDeviceTokenEndpoint }
 
 // API Key endpoints
 func (e ArcaneApiEndpoints) ApiKeys() string         { return e.ApiKeysEndpoint }

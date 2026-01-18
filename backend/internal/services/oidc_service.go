@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -607,4 +608,252 @@ func (s *OidcService) decodeState(encodedState string) (*OidcState, error) {
 	}
 
 	return &stateData, nil
+}
+
+// InitiateDeviceAuth initiates the OIDC device authorization flow.
+func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (*auth.OidcDeviceAuthResponse, error) {
+	cfg, err := s.getEffectiveConfig(ctx)
+	if err != nil {
+		slog.Error("InitiateDeviceAuth: failed to get OIDC config", "error", err)
+		return nil, err
+	}
+
+	deviceEndpoint, err := s.getDeviceAuthorizationEndpoint(ctx, cfg)
+	if err != nil {
+		slog.Error("InitiateDeviceAuth: failed to get device endpoint", "error", err)
+		return nil, err
+	}
+
+	scopes := strings.Fields(cfg.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{"email", "profile"}
+	}
+	scopes = s.ensureOpenIDScope(scopes)
+
+	values := url.Values{}
+	values.Set("client_id", cfg.ClientID)
+	values.Set("scope", strings.Join(scopes, " "))
+	if cfg.ClientSecret != "" {
+		values.Set("client_secret", cfg.ClientSecret)
+	}
+
+	respData, err := s.makeDeviceAuthRequest(ctx, deviceEndpoint, values, cfg.SkipTlsVerify)
+	if err != nil {
+		return nil, err
+	}
+
+	deviceCode, ok := respData["device_code"].(string)
+	if !ok || deviceCode == "" {
+		return nil, errors.New("invalid device_code in response")
+	}
+	userCode, ok := respData["user_code"].(string)
+	if !ok || userCode == "" {
+		return nil, errors.New("invalid user_code in response")
+	}
+	verificationUri, ok := respData["verification_uri"].(string)
+	if !ok || verificationUri == "" {
+		return nil, errors.New("invalid verification_uri in response")
+	}
+	expiresIn, ok := respData["expires_in"].(float64)
+	if !ok {
+		return nil, errors.New("invalid expires_in in response")
+	}
+
+	response := &auth.OidcDeviceAuthResponse{
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		VerificationUri: verificationUri,
+		ExpiresIn:       int(expiresIn),
+	}
+
+	if uri, ok := respData["verification_uri_complete"].(string); ok {
+		response.VerificationUriComplete = uri
+	}
+	if interval, ok := respData["interval"].(float64); ok {
+		response.Interval = int(interval)
+	} else {
+		response.Interval = 5
+	}
+
+	slog.Debug("InitiateDeviceAuth: device authorization initiated", "user_code", response.UserCode, "expires_in", response.ExpiresIn)
+	return response, nil
+}
+
+// getDeviceAuthorizationEndpoint discovers or returns the configured device authorization endpoint.
+func (s *OidcService) getDeviceAuthorizationEndpoint(ctx context.Context, cfg *models.OidcConfig) (string, error) {
+	if cfg.DeviceAuthorizationEndpoint != "" {
+		return cfg.DeviceAuthorizationEndpoint, nil
+	}
+
+	provider, err := s.getOrDiscoverProvider(ctx, cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to discover provider: %w", err)
+	}
+
+	var claims struct {
+		DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
+	}
+	if err := provider.Claims(&claims); err != nil {
+		return "", fmt.Errorf("failed to get device authorization endpoint from provider: %w", err)
+	}
+
+	if claims.DeviceAuthorizationEndpoint == "" {
+		return "", errors.New("device authorization endpoint not found in provider configuration")
+	}
+
+	return claims.DeviceAuthorizationEndpoint, nil
+}
+
+// makeDeviceAuthRequest makes a device authorization request.
+func (s *OidcService) makeDeviceAuthRequest(ctx context.Context, endpoint string, params url.Values, skipTls bool) (map[string]any, error) {
+	body := params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(skipTls)
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("makeDeviceAuthRequest: request failed", "error", err)
+		return nil, fmt.Errorf("device authorization request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errorResp map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+			if errMsg, ok := errorResp["error"].(string); ok {
+				return nil, fmt.Errorf("device authorization failed: %s", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("device authorization endpoint returned status %d", resp.StatusCode)
+	}
+
+	var respData map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
+	}
+
+	return respData, nil
+}
+
+// ExchangeDeviceToken exchanges a device code for tokens.
+func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
+	cfg, err := s.getEffectiveConfig(ctx)
+	if err != nil {
+		slog.Error("ExchangeDeviceToken: failed to get OIDC config", "error", err)
+		return nil, nil, err
+	}
+
+	var tokenEndpoint string
+	if cfg.TokenEndpoint != "" {
+		tokenEndpoint = cfg.TokenEndpoint
+	} else {
+		provider, err := s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		tokenEndpoint = provider.Endpoint().TokenURL
+	}
+
+	params := map[string]string{
+		"grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+		"device_code": deviceCode,
+		"client_id":   cfg.ClientID,
+	}
+	if cfg.ClientSecret != "" {
+		params["client_secret"] = cfg.ClientSecret
+	}
+
+	tokenResp, err := s.makeTokenRequest(ctx, tokenEndpoint, params, cfg.SkipTlsVerify)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(cfg) {
+		provider, err = s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	accessToken, ok := tokenResp["access_token"].(string)
+	if !ok || accessToken == "" {
+		return nil, nil, errors.New("invalid access_token in response")
+	}
+
+	token := &oauth2.Token{
+		AccessToken: accessToken,
+		TokenType:   stringutils.GetStringOrDefault(tokenResp, "token_type", "Bearer"),
+	}
+	if refreshToken, ok := tokenResp["refresh_token"].(string); ok {
+		token.RefreshToken = refreshToken
+	}
+	if expiresIn, ok := tokenResp["expires_in"].(float64); ok {
+		token.Expiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	}
+	if idToken, ok := tokenResp["id_token"].(string); ok {
+		token = token.WithExtra(map[string]any{"id_token": idToken})
+	}
+
+	idToken, rawIDToken, err := s.verifyIDToken(ctx, provider, cfg, token, "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return s.buildUserInfo(ctx, provider, cfg, token, idToken, rawIDToken)
+}
+
+// makeTokenRequest makes a token exchange request.
+func (s *OidcService) makeTokenRequest(ctx context.Context, endpoint string, params map[string]string, skipTls bool) (map[string]any, error) {
+	values := url.Values{}
+	for k, v := range params {
+		values.Set(k, v)
+	}
+	body := values.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(skipTls)
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("makeTokenRequest: request failed", "error", err)
+		return nil, fmt.Errorf("token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errMsg, ok := tokenResp["error"].(string); ok {
+			switch errMsg {
+			case "authorization_pending":
+				return nil, errors.New("authorization_pending")
+			case "slow_down":
+				return nil, errors.New("slow_down")
+			case "expired_token":
+				return nil, errors.New("expired_token")
+			case "access_denied":
+				return nil, errors.New("access_denied")
+			default:
+				return nil, fmt.Errorf("token exchange failed: %s", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("token endpoint returned status %d", resp.StatusCode)
+	}
+
+	return tokenResp, nil
 }
