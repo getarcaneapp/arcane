@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	arcaneTypes "github.com/getarcaneapp/arcane/types"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -29,15 +30,17 @@ type ContainerService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	settingsService *SettingsService
+	secretService   *SecretService
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService) *ContainerService {
+func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, secretService *SecretService) *ContainerService {
 	return &ContainerService{
 		db:              db,
 		eventService:    eventService,
 		dockerService:   dockerService,
 		imageService:    imageService,
 		settingsService: settingsService,
+		secretService:   secretService,
 	}
 }
 
@@ -46,6 +49,16 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	if s.secretService != nil {
+		inspect, inspectErr := dockerClient.ContainerInspect(ctx, containerID)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "failed to inspect container for secrets", "containerId", containerID, "error", inspectErr.Error())
+		} else if err := s.secretService.EnsureSecretMountsFromContainer(ctx, arcaneTypes.LOCAL_DOCKER_ENVIRONMENT_ID, inspect.Mounts); err != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeSecretError, "secret", "", "", user.ID, user.Username, "0", err, models.JSON{"action": "mount", "containerId": containerID})
+			return err
+		}
 	}
 
 	metadata := models.JSON{
@@ -73,6 +86,15 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	var mounts []container.MountPoint
+	if s.secretService != nil {
+		if inspect, inspectErr := dockerClient.ContainerInspect(ctx, containerID); inspectErr == nil {
+			mounts = inspect.Mounts
+		} else {
+			slog.WarnContext(ctx, "failed to inspect container for secret cleanup", "containerId", containerID, "error", inspectErr.Error())
+		}
+	}
+
 	metadata := models.JSON{
 		"action":      "stop",
 		"containerId": containerID,
@@ -87,8 +109,17 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 	err = dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
+		return err
 	}
-	return err
+
+	if s.secretService != nil {
+		paths := s.secretService.ConsumeTempFiles(containerID)
+		if len(paths) == 0 && len(mounts) > 0 {
+			paths = s.secretService.ExtractSecretMountPaths(ctx, mounts)
+		}
+		s.secretService.CleanupTempFiles(paths)
+	}
+	return nil
 }
 
 func (s *ContainerService) RestartContainer(ctx context.Context, containerID string, user models.User) error {
@@ -96,6 +127,16 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	if s.secretService != nil {
+		inspect, inspectErr := dockerClient.ContainerInspect(ctx, containerID)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "failed to inspect container for secrets", "containerId", containerID, "error", inspectErr.Error())
+		} else if err := s.secretService.EnsureSecretMountsFromContainer(ctx, arcaneTypes.LOCAL_DOCKER_ENVIRONMENT_ID, inspect.Mounts); err != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeSecretError, "secret", "", "", user.ID, user.Username, "0", err, models.JSON{"action": "mount", "containerId": containerID})
+			return err
+		}
 	}
 
 	metadata := models.JSON{
@@ -136,6 +177,15 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	var mounts []container.MountPoint
+	if s.secretService != nil {
+		if inspect, inspectErr := dockerClient.ContainerInspect(ctx, containerID); inspectErr == nil {
+			mounts = inspect.Mounts
+		} else {
+			slog.WarnContext(ctx, "failed to inspect container for secret cleanup", "containerId", containerID, "error", inspectErr.Error())
+		}
+	}
+
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
@@ -158,6 +208,14 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
 		return fmt.Errorf("failed to delete container: %w", err)
+	}
+
+	if s.secretService != nil {
+		paths := s.secretService.ConsumeTempFiles(containerID)
+		if len(paths) == 0 && len(mounts) > 0 {
+			paths = s.secretService.ExtractSecretMountPaths(ctx, mounts)
+		}
+		s.secretService.CleanupTempFiles(paths)
 	}
 
 	// Remove named volumes if requested
