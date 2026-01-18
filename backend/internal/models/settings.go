@@ -72,30 +72,30 @@ type Settings struct {
 	DockerHost                 SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
 
 	// Security category
-	AuthLocalEnabled           SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=security;description=Enable local username/password authentication" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Manage authentication and security settings"`
-	AuthSessionTimeout         SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=security;description=How long user sessions remain active"`
-	AuthPasswordPolicy         SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=security;description=Set password strength requirements"`
-	AuthOidcConfig             SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=security;description=OIDC provider configuration (deprecated - use individual fields)"`
-	OidcEnabled                SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=security;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId               SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=security;description=OIDC provider client ID"`
-	OidcClientSecret           SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=security;description=OIDC provider client secret"`
-	OidcIssuerUrl              SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=security;description=OIDC provider issuer URL"`
-	OidcAuthorizationEndpoint  SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=security;description=Override OIDC authorization endpoint"`
-	OidcTokenEndpoint          SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=security;description=Override OIDC token endpoint"`
-	OidcUserinfoEndpoint       SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=security;description=Override OIDC userinfo endpoint"`
-	OidcJwksEndpoint           SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=security;description=Override OIDC JWKS endpoint"`
-	OidcScopes                 SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
-	OidcAdminClaim             SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
-	OidcAdminValue             SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
-	OidcSkipTlsVerify          SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=security;description=Skip TLS verification for OIDC provider"`
-	OidcAutoRedirectToProvider SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=security;description=Automatically redirect to OIDC provider on login page"`
-	OidcMergeAccounts          SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
+	AuthLocalEnabled                SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=security;description=Enable local username/password authentication" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Manage authentication and security settings"`
+	AuthSessionTimeout              SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=security;description=How long user sessions remain active"`
+	AuthPasswordPolicy              SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=security;description=Set password strength requirements"`
+	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=security;description=OIDC provider configuration (deprecated - use individual fields)"`
+	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=security;description=Enable OpenID Connect (OIDC) authentication"`
+	OidcClientId                    SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=security;description=OIDC provider client ID"`
+	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=security;description=OIDC provider client secret"`
+	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=security;description=OIDC provider issuer URL"`
+	OidcAuthorizationEndpoint       SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=security;description=Override OIDC authorization endpoint"`
+	OidcTokenEndpoint               SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=security;description=Override OIDC token endpoint"`
+	OidcUserinfoEndpoint            SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=security;description=Override OIDC userinfo endpoint"`
+	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=security;description=Override OIDC JWKS endpoint"`
+	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=security;description=Override OIDC device authorization endpoint for CLI authentication"`
+	OidcScopes                      SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
+	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
+	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=security;description=Skip TLS verification for OIDC provider"`
+	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=security;description=Automatically redirect to OIDC provider on login page"`
+  OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
 
 	// Appearance category
 	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,public,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
 	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,public,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
 	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,public,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
-	GlassEffectEnabled         SettingVariable `key:"glassEffectEnabled,public,local" meta:"label=Glass Effect;type=boolean;keywords=glass,glassmorphism,blur,backdrop,frosted,effect,gradient,ambient,design,ui,appearance,modern,visual,style,theme,transparency,translucent;category=appearance;description=Enable modern glassmorphism design with blur, gradients, and ambient effects"`
 
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
@@ -269,10 +269,11 @@ type OidcConfig struct {
 	IssuerURL    string `json:"issuerUrl"`
 	Scopes       string `json:"scopes"`
 
-	AuthorizationEndpoint string `json:"authorizationEndpoint,omitempty"`
-	TokenEndpoint         string `json:"tokenEndpoint,omitempty"`
-	UserinfoEndpoint      string `json:"userinfoEndpoint,omitempty"`
-	JwksURI               string `json:"jwksUri,omitempty"`
+	AuthorizationEndpoint       string `json:"authorizationEndpoint,omitempty"`
+	TokenEndpoint               string `json:"tokenEndpoint,omitempty"`
+	UserinfoEndpoint            string `json:"userinfoEndpoint,omitempty"`
+	JwksURI                     string `json:"jwksUri,omitempty"`
+	DeviceAuthorizationEndpoint string `json:"deviceAuthorizationEndpoint,omitempty"`
 
 	// Admin mapping: evaluate this claim to grant admin.
 	// Examples:

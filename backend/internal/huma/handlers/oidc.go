@@ -69,6 +69,21 @@ type GetOidcConfigOutput struct {
 	Body auth.OidcConfigResponse
 }
 
+type InitiateDeviceAuthInput struct{}
+
+type InitiateDeviceAuthOutput struct {
+	Body auth.OidcDeviceAuthResponse
+}
+
+type ExchangeDeviceTokenInput struct {
+	Body auth.OidcDeviceTokenRequest
+}
+
+type ExchangeDeviceTokenOutput struct {
+	SetCookie []string `header:"Set-Cookie" doc:"Session token cookie"`
+	Body      auth.OidcDeviceTokenResponse
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -112,6 +127,24 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Description: "Process the OIDC callback and complete authentication",
 		Tags:        []string{"OIDC"},
 	}, h.HandleOidcCallback)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "initiate-oidc-device-auth",
+		Method:      http.MethodPost,
+		Path:        "/oidc/device/code",
+		Summary:     "Initiate OIDC device authorization",
+		Description: "Start the device authorization flow for CLI authentication",
+		Tags:        []string{"OIDC"},
+	}, h.InitiateDeviceAuth)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "exchange-oidc-device-token",
+		Method:      http.MethodPost,
+		Path:        "/oidc/device/token",
+		Summary:     "Exchange device code for tokens",
+		Description: "Exchange a device code for authentication tokens",
+		Tags:        []string{"OIDC"},
+	}, h.ExchangeDeviceToken)
 }
 
 // ============================================================================
@@ -153,13 +186,14 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 
 	return &GetOidcConfigOutput{
 		Body: auth.OidcConfigResponse{
-			ClientID:              config.ClientID,
-			RedirectUri:           h.oidcService.GetOidcRedirectURL(origin),
-			IssuerUrl:             config.IssuerURL,
-			AuthorizationEndpoint: config.AuthorizationEndpoint,
-			TokenEndpoint:         config.TokenEndpoint,
-			UserinfoEndpoint:      config.UserinfoEndpoint,
-			Scopes:                config.Scopes,
+			ClientID:                    config.ClientID,
+			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
+			IssuerUrl:                   config.IssuerURL,
+			AuthorizationEndpoint:       config.AuthorizationEndpoint,
+			TokenEndpoint:               config.TokenEndpoint,
+			UserinfoEndpoint:            config.UserinfoEndpoint,
+			DeviceAuthorizationEndpoint: config.DeviceAuthorizationEndpoint,
+			Scopes:                      config.Scopes,
 		},
 	}, nil
 }
@@ -243,6 +277,91 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	return &HandleOidcCallbackOutput{
 		SetCookie: []string{tokenCookie, clearStateCookie},
 		Body: auth.OidcCallbackResponse{
+			Success:      true,
+			Token:        tokenPair.AccessToken,
+			RefreshToken: tokenPair.RefreshToken,
+			ExpiresAt:    tokenPair.ExpiresAt,
+			User: user.User{
+				ID:            userModel.ID,
+				Username:      userModel.Username,
+				DisplayName:   userModel.DisplayName,
+				Email:         userModel.Email,
+				Roles:         userModel.Roles,
+				OidcSubjectId: userModel.OidcSubjectId,
+			},
+		},
+	}, nil
+}
+
+// InitiateDeviceAuth initiates the OIDC device authorization flow.
+func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceAuthInput) (*InitiateDeviceAuthOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	enabled, err := h.authService.IsOidcEnabled(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
+	}
+	if !enabled {
+		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
+	}
+
+	response, err := h.oidcService.InitiateDeviceAuth(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Device authorization initiation failed", "error", err)
+		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
+	}
+
+	return &InitiateDeviceAuthOutput{
+		Body: *response,
+	}, nil
+}
+
+// ExchangeDeviceToken exchanges a device code for authentication tokens.
+func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDeviceTokenInput) (*ExchangeDeviceTokenOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.Body.DeviceCode == "" {
+		return nil, huma.Error400BadRequest("device code is required")
+	}
+
+	userInfo, tokenResp, err := h.oidcService.ExchangeDeviceToken(ctx, input.Body.DeviceCode)
+	if err != nil {
+		errMsg := err.Error()
+		switch errMsg {
+		case "authorization_pending":
+			return nil, huma.Error400BadRequest("authorization_pending")
+		case "slow_down":
+			return nil, huma.Error400BadRequest("slow_down")
+		case "expired_token":
+			return nil, huma.Error400BadRequest("expired_token")
+		case "access_denied":
+			return nil, huma.Error403Forbidden("access_denied")
+		default:
+			slog.WarnContext(ctx, "Device token exchange failed", "error", err)
+			return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
+		}
+	}
+
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+	}
+
+	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	maxAge += 60
+
+	tokenCookie := cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken)
+
+	return &ExchangeDeviceTokenOutput{
+		SetCookie: []string{tokenCookie},
+		Body: auth.OidcDeviceTokenResponse{
 			Success:      true,
 			Token:        tokenPair.AccessToken,
 			RefreshToken: tokenPair.RefreshToken,

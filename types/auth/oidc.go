@@ -159,6 +159,11 @@ type OidcConfigResponse struct {
 	// Required: true
 	UserinfoEndpoint string `json:"userinfoEndpoint"`
 
+	// DeviceAuthorizationEndpoint is the URL of the device authorization endpoint.
+	//
+	// Required: false
+	DeviceAuthorizationEndpoint string `json:"deviceAuthorizationEndpoint,omitempty"`
+
 	// Scopes is the space-separated list of OAuth scopes requested.
 	//
 	// Required: true
@@ -180,6 +185,83 @@ type OidcCallbackRequest struct {
 
 // OidcCallbackResponse contains the response from OIDC callback processing.
 type OidcCallbackResponse struct {
+	// Success indicates if the authentication was successful.
+	//
+	// Required: true
+	Success bool `json:"success"`
+
+	// Token is the JWT access token.
+	//
+	// Required: true
+	Token string `json:"token"`
+
+	// RefreshToken is the refresh token for obtaining new access tokens.
+	//
+	// Required: true
+	RefreshToken string `json:"refreshToken"`
+
+	// ExpiresAt is the expiration time of the access token.
+	//
+	// Required: true
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	// User contains the authenticated user information.
+	//
+	// Required: true
+	User user.User `json:"user"`
+}
+
+// OidcDeviceAuthRequest is used to request a device authorization code.
+type OidcDeviceAuthRequest struct {
+	// RedirectUri is optional and kept for consistency with other auth flows.
+	//
+	// Required: false
+	RedirectUri string `json:"redirectUri,omitempty"`
+}
+
+// OidcDeviceAuthResponse contains the device authorization response.
+type OidcDeviceAuthResponse struct {
+	// DeviceCode is the device verification code.
+	//
+	// Required: true
+	DeviceCode string `json:"deviceCode"`
+
+	// UserCode is the end-user verification code.
+	//
+	// Required: true
+	UserCode string `json:"userCode"`
+
+	// VerificationUri is the end-user verification URI.
+	//
+	// Required: true
+	VerificationUri string `json:"verificationUri"`
+
+	// VerificationUriComplete is the end-user verification URI with user code included.
+	//
+	// Required: false
+	VerificationUriComplete string `json:"verificationUriComplete,omitempty"`
+
+	// ExpiresIn is the lifetime of the device_code and user_code in seconds.
+	//
+	// Required: true
+	ExpiresIn int `json:"expiresIn"`
+
+	// Interval is the minimum polling interval in seconds.
+	//
+	// Required: false
+	Interval int `json:"interval,omitempty"`
+}
+
+// OidcDeviceTokenRequest is used to exchange a device code for tokens.
+type OidcDeviceTokenRequest struct {
+	// DeviceCode is the device verification code from the authorization response.
+	//
+	// Required: true
+	DeviceCode string `json:"deviceCode"`
+}
+
+// OidcDeviceTokenResponse contains the response from device token exchange.
+type OidcDeviceTokenResponse struct {
 	// Success indicates if the authentication was successful.
 	//
 	// Required: true
