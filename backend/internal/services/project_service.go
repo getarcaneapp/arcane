@@ -49,6 +49,10 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 	}
 }
 
+func (s *ProjectService) getAllowedExternalPaths(ctx context.Context) []string {
+	return projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", ""))
+}
+
 func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
@@ -303,6 +307,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	// Enrich with details
 	s.enrichWithIncludeFiles(ctx, proj.Path, &resp)
+	s.enrichWithCustomFiles(ctx, proj.Path, &resp)
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Load compose project for service definitions
@@ -339,23 +344,25 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath string, resp *project.Details) {
-	composeFile, detectErr := projects.DetectComposeFile(projectPath)
-	if detectErr == nil {
-		includes, parseErr := projects.ParseIncludes(composeFile)
-		if parseErr == nil {
-			var includeFiles []project.IncludeFile
-			for _, inc := range includes {
-				includeFiles = append(includeFiles, project.IncludeFile{
-					Path:         inc.Path,
-					RelativePath: inc.RelativePath,
-					Content:      inc.Content,
-				})
-			}
-			resp.IncludeFiles = includeFiles
-		} else {
-			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", projectPath)
-		}
+	composeFile, err := projects.DetectComposeFile(projectPath)
+	if err != nil {
+		return
 	}
+	includes, err := projects.ParseIncludes(composeFile)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to parse includes", "error", err, "path", projectPath)
+		return
+	}
+	resp.IncludeFiles = includes
+}
+
+func (s *ProjectService) enrichWithCustomFiles(ctx context.Context, projectPath string, resp *project.Details) {
+	files, err := projects.ParseCustomFiles(projectPath, s.getAllowedExternalPaths(ctx))
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to parse custom files", "error", err, "path", projectPath)
+		return
+	}
+	resp.CustomFiles = files
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
@@ -1126,11 +1133,57 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		return err
 	}
 
-	if err := projects.WriteIncludeFile(proj.Path, relativePath, content); err != nil {
+	if err := projects.WriteIncludeFile(proj.Path, relativePath, content, s.getAllowedExternalPaths(ctx)); err != nil {
 		return fmt.Errorf("failed to update include file: %w", err)
 	}
 
 	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)
+	return nil
+}
+
+// CreateProjectCustomFile registers an existing file or creates a new empty file within a project.
+// If the file already exists, it will be registered without modifying its content.
+func (s *ProjectService) CreateProjectCustomFile(ctx context.Context, projectID, filePath string) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	if err := projects.RegisterCustomFile(proj.Path, filePath, s.getAllowedExternalPaths(ctx)); err != nil {
+		return fmt.Errorf("failed to register custom file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "project custom file registered", "projectID", proj.ID, "file", filePath)
+	return nil
+}
+
+// UpdateProjectCustomFile updates a custom file within a project.
+func (s *ProjectService) UpdateProjectCustomFile(ctx context.Context, projectID, filePath, content string) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	if err := projects.WriteCustomFile(proj.Path, filePath, content, s.getAllowedExternalPaths(ctx)); err != nil {
+		return fmt.Errorf("failed to update custom file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "project custom file updated", "projectID", proj.ID, "file", filePath)
+	return nil
+}
+
+// RemoveProjectCustomFile removes a custom file from a project's manifest (does not delete from disk).
+func (s *ProjectService) RemoveProjectCustomFile(ctx context.Context, projectID, filePath string) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	if err := projects.RemoveCustomFile(proj.Path, filePath, s.getAllowedExternalPaths(ctx)); err != nil {
+		return fmt.Errorf("failed to remove custom file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "project custom file removed", "projectID", proj.ID, "file", filePath)
 	return nil
 }
 
