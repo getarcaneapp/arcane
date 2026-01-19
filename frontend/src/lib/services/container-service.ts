@@ -4,7 +4,9 @@ import type {
 	ContainerStatusCounts,
 	ContainerSummaryDto,
 	ContainerStats,
-	ContainerCreateRequest
+	ContainerCreateRequest,
+	BrowseFilesResponse,
+	FileContentResponse
 } from '$lib/types/container.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -63,6 +65,24 @@ export class ContainerService extends BaseAPIService {
 	async updateContainer(containerId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
+	}
+
+	async browseFiles(containerId: string, path: string = '/'): Promise<BrowseFilesResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(
+			this.api.get(`/environments/${envId}/containers/${containerId}/files`, {
+				params: { path }
+			})
+		);
+	}
+
+	async getFileContent(containerId: string, path: string): Promise<FileContentResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(
+			this.api.get(`/environments/${envId}/containers/${containerId}/files/content`, {
+				params: { path }
+			})
+		);
 	}
 }
 

@@ -293,3 +293,30 @@ export interface ContainerStats {
 	networks: Record<string, NetworkStats>;
 	storage_stats: StorageStats;
 }
+
+// File Browser Types
+
+export type FileEntryType = 'file' | 'directory' | 'symlink';
+
+export interface FileEntry {
+	name: string;
+	path: string;
+	type: FileEntryType;
+	size?: number;
+	mode?: string;
+	modTime?: string;
+	linkTarget?: string;
+}
+
+export interface BrowseFilesResponse {
+	path: string;
+	files: FileEntry[];
+}
+
+export interface FileContentResponse {
+	path: string;
+	content: string;
+	size: number;
+	isBinary: boolean;
+	truncated: boolean;
+}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -603,4 +604,239 @@ func (s *ContainerService) AttachExec(ctx context.Context, execID string) (io.Wr
 	}
 
 	return execAttach.Conn, execAttach.Reader, nil
+}
+
+// BrowseContainerFiles lists files and directories at the given path inside a container.
+func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID, path string) (*containertypes.BrowseFilesResponse, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	// Validate and sanitize path
+	if path == "" {
+		path = "/"
+	}
+
+	// Use ls command with specific format to get file information
+	// -l for long format, -a for all files, -L to follow symlinks for type detection
+	// Using a custom format to make parsing easier
+	cmd := []string{"ls", "-la", "--time-style=+%Y-%m-%dT%H:%M:%S", path}
+
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	execResp, err := dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	execAttach, err := dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer execAttach.Close()
+
+	// Read output
+	var stdout, stderr strings.Builder
+	_, err = stdcopy.StdCopy(&stdout, &stderr, execAttach.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read exec output: %w", err)
+	}
+
+	// Check for errors
+	if stderr.Len() > 0 {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg != "" && !strings.Contains(errMsg, "cannot access") {
+			return nil, fmt.Errorf("failed to list directory: %s", errMsg)
+		}
+	}
+
+	// Parse ls output
+	files := parseLsOutput(stdout.String(), path)
+
+	return &containertypes.BrowseFilesResponse{
+		Path:  path,
+		Files: files,
+	}, nil
+}
+
+// parseLsOutput parses the output of ls -la command
+func parseLsOutput(output, basePath string) []containertypes.FileEntry {
+	var files []containertypes.FileEntry
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "total") {
+			continue
+		}
+
+		entry := parseLsLine(line, basePath)
+		if entry != nil && entry.Name != "." && entry.Name != ".." {
+			files = append(files, *entry)
+		}
+	}
+
+	return files
+}
+
+// parseLsLine parses a single line from ls -la output
+func parseLsLine(line, basePath string) *containertypes.FileEntry {
+	// Format: -rw-r--r-- 1 root root 1234 2024-01-15T10:30:00 filename
+	// Or with symlink: lrwxrwxrwx 1 root root 12 2024-01-15T10:30:00 link -> target
+
+	fields := strings.Fields(line)
+	if len(fields) < 6 {
+		return nil
+	}
+
+	mode := fields[0]
+	// Size is at index 4 (after permissions, links, user, group)
+	sizeStr := fields[4]
+	// Date is at index 5
+	modTime := fields[5]
+
+	// Name starts at index 6, but may contain spaces
+	nameIdx := 6
+	if len(fields) <= nameIdx {
+		return nil
+	}
+
+	name := strings.Join(fields[nameIdx:], " ")
+	linkTarget := ""
+
+	// Check for symlink arrow
+	if arrowIdx := strings.Index(name, " -> "); arrowIdx != -1 {
+		linkTarget = name[arrowIdx+4:]
+		name = name[:arrowIdx]
+	}
+
+	// Determine file type from mode
+	var fileType containertypes.FileEntryType
+	switch mode[0] {
+	case 'd':
+		fileType = containertypes.FileEntryTypeDirectory
+	case 'l':
+		fileType = containertypes.FileEntryTypeSymlink
+	default:
+		fileType = containertypes.FileEntryTypeFile
+	}
+
+	// Parse size
+	size, _ := strconv.ParseInt(sizeStr, 10, 64)
+
+	// Build full path
+	fullPath := basePath
+	if !strings.HasSuffix(basePath, "/") {
+		fullPath += "/"
+	}
+	fullPath += name
+
+	return &containertypes.FileEntry{
+		Name:       name,
+		Path:       fullPath,
+		Type:       fileType,
+		Size:       size,
+		Mode:       mode,
+		ModTime:    modTime,
+		LinkTarget: linkTarget,
+	}
+}
+
+// GetContainerFileContent reads the content of a file inside a container.
+func (s *ContainerService) GetContainerFileContent(ctx context.Context, containerID, filePath string) (*containertypes.FileContentResponse, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	// Maximum file size to read (1MB)
+	const maxFileSize = 1024 * 1024
+
+	// First, check file size
+	statCmd := []string{"stat", "-c", "%s", filePath}
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          statCmd,
+	}
+
+	execResp, err := dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	execAttach, err := dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+
+	var statOut, statErr strings.Builder
+	_, _ = stdcopy.StdCopy(&statOut, &statErr, execAttach.Reader)
+	execAttach.Close()
+
+	if statErr.Len() > 0 {
+		return nil, fmt.Errorf("file not found or not accessible: %s", strings.TrimSpace(statErr.String()))
+	}
+
+	fileSize, _ := strconv.ParseInt(strings.TrimSpace(statOut.String()), 10, 64)
+	truncated := fileSize > maxFileSize
+
+	// Read file content using cat (with head for large files)
+	var readCmd []string
+	if truncated {
+		readCmd = []string{"head", "-c", strconv.FormatInt(maxFileSize, 10), filePath}
+	} else {
+		readCmd = []string{"cat", filePath}
+	}
+
+	execConfig = container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          readCmd,
+	}
+
+	execResp, err = dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	execAttach, err = dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer execAttach.Close()
+
+	var contentOut, contentErr strings.Builder
+	_, err = stdcopy.StdCopy(&contentOut, &contentErr, execAttach.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	if contentErr.Len() > 0 {
+		return nil, fmt.Errorf("failed to read file: %s", strings.TrimSpace(contentErr.String()))
+	}
+
+	content := contentOut.String()
+
+	// Check if content is binary (contains null bytes or non-printable characters)
+	isBinary := false
+	for _, b := range []byte(content) {
+		if b == 0 || (b < 32 && b != '\n' && b != '\r' && b != '\t') {
+			isBinary = true
+			break
+		}
+	}
+
+	return &containertypes.FileContentResponse{
+		Path:      filePath,
+		Content:   content,
+		Size:      fileSize,
+		IsBinary:  isBinary,
+		Truncated: truncated,
+	}, nil
 }
