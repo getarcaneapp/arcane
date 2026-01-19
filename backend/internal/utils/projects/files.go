@@ -182,16 +182,6 @@ func validatePath(projectDir, filePath string, allowedPaths []string, checkReser
 	return absPath, nil
 }
 
-// validateIncludePath validates an include file path (no reserved name checking).
-func validateIncludePath(projectDir, filePath string, allowedPaths []string) (string, error) {
-	return validatePath(projectDir, filePath, allowedPaths, false)
-}
-
-// validateCustomFilePath validates a custom file path (with reserved name checking).
-func validateCustomFilePath(projectDir, filePath string, allowedPaths []string) (string, error) {
-	return validatePath(projectDir, filePath, allowedPaths, true)
-}
-
 // Security Model for Include Files:
 // - READ: Docker Compose allows include files from anywhere (parent dirs, absolute paths, etc.)
 //         We allow reading from any path to maintain compatibility with standard Docker Compose behavior
@@ -281,7 +271,7 @@ func parseIncludeItem(item interface{}, baseDir string) (project.IncludeFile, er
 
 // WriteIncludeFile writes content to an include file path.
 func WriteIncludeFile(projectDir, includePath, content string, allowedPaths []string) error {
-	absPath, err := validateIncludePath(projectDir, includePath, allowedPaths)
+	absPath, err := validatePath(projectDir, includePath, allowedPaths, false)
 	if err != nil {
 		return err
 	}
@@ -377,7 +367,7 @@ func ParseCustomFiles(projectDir string, allowedPaths []string) ([]project.Custo
 
 // RegisterCustomFile adds a file to the manifest without creating it on disk.
 func RegisterCustomFile(projectDir, filePath string, allowedPaths []string) error {
-	absPath, err := validateCustomFilePath(projectDir, filePath, allowedPaths)
+	absPath, err := validatePath(projectDir, filePath, allowedPaths, true)
 	if err != nil {
 		return err
 	}
@@ -386,7 +376,7 @@ func RegisterCustomFile(projectDir, filePath string, allowedPaths []string) erro
 
 // WriteCustomFile writes content to a file and adds it to the manifest.
 func WriteCustomFile(projectDir, filePath, content string, allowedPaths []string) error {
-	absPath, err := validateCustomFilePath(projectDir, filePath, allowedPaths)
+	absPath, err := validatePath(projectDir, filePath, allowedPaths, true)
 	if err != nil {
 		return err
 	}

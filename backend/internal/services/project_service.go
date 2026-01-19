@@ -50,10 +50,6 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 	}
 }
 
-func (s *ProjectService) getAllowedExternalPaths(ctx context.Context) []string {
-	return projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", ""))
-}
-
 func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
@@ -358,7 +354,7 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 }
 
 func (s *ProjectService) enrichWithCustomFiles(ctx context.Context, projectPath string, resp *project.Details) {
-	files, err := projects.ParseCustomFiles(projectPath, s.getAllowedExternalPaths(ctx))
+	files, err := projects.ParseCustomFiles(projectPath, projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", "")))
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to parse custom files", "error", err, "path", projectPath)
 		return
@@ -1160,7 +1156,7 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		return err
 	}
 
-	if err := projects.WriteIncludeFile(proj.Path, relativePath, content, s.getAllowedExternalPaths(ctx)); err != nil {
+	if err := projects.WriteIncludeFile(proj.Path, relativePath, content, projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", ""))); err != nil {
 		return fmt.Errorf("failed to update include file: %w", err)
 	}
 
@@ -1176,7 +1172,7 @@ func (s *ProjectService) CreateProjectCustomFile(ctx context.Context, projectID,
 		return err
 	}
 
-	if err := projects.RegisterCustomFile(proj.Path, filePath, s.getAllowedExternalPaths(ctx)); err != nil {
+	if err := projects.RegisterCustomFile(proj.Path, filePath, projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", ""))); err != nil {
 		return fmt.Errorf("failed to register custom file: %w", err)
 	}
 
@@ -1191,7 +1187,7 @@ func (s *ProjectService) UpdateProjectCustomFile(ctx context.Context, projectID,
 		return err
 	}
 
-	if err := projects.WriteCustomFile(proj.Path, filePath, content, s.getAllowedExternalPaths(ctx)); err != nil {
+	if err := projects.WriteCustomFile(proj.Path, filePath, content, projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", ""))); err != nil {
 		return fmt.Errorf("failed to update custom file: %w", err)
 	}
 
@@ -1206,7 +1202,7 @@ func (s *ProjectService) RemoveProjectCustomFile(ctx context.Context, projectID,
 		return err
 	}
 
-	if err := projects.RemoveCustomFile(proj.Path, filePath, s.getAllowedExternalPaths(ctx), deleteFromDisk); err != nil {
+	if err := projects.RemoveCustomFile(proj.Path, filePath, projects.ParseAllowedPaths(s.settingsService.GetStringSetting(ctx, "allowedExternalPaths", "")), deleteFromDisk); err != nil {
 		return fmt.Errorf("failed to remove custom file: %w", err)
 	}
 
