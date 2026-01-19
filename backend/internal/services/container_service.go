@@ -1,6 +1,7 @@
 package services
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -8,12 +9,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strconv"
+	"path"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -607,21 +609,37 @@ func (s *ContainerService) AttachExec(ctx context.Context, execID string) (io.Wr
 }
 
 // BrowseContainerFiles lists files and directories at the given path inside a container.
-func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID, path string) (*containertypes.BrowseFilesResponse, error) {
+func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Validate and sanitize path
-	if path == "" {
-		path = "/"
+	if dirPath == "" {
+		dirPath = "/"
 	}
 
+	// Check if container is running
+	inspect, err := dockerClient.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	if inspect.State != nil && inspect.State.Running {
+		// Container is running - use fast exec-based listing
+		return s.browseContainerFilesExec(ctx, dockerClient, containerID, dirPath)
+	}
+
+	// Container is stopped - use CopyFromContainer (slower but works)
+	return s.browseContainerFilesTar(ctx, dockerClient, containerID, dirPath)
+}
+
+// browseContainerFilesExec lists files using exec (fast, requires running container).
+func (s *ContainerService) browseContainerFilesExec(ctx context.Context, dockerClient *dockerclient.Client, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
 	// Use ls command with specific format to get file information
-	// -l for long format, -a for all files, -L to follow symlinks for type detection
-	// Using a custom format to make parsing easier
-	cmd := []string{"ls", "-la", "--time-style=+%Y-%m-%dT%H:%M:%S", path}
+	// -l for long format, -a for all files, --time-style for consistent date format
+	cmd := []string{"ls", "-la", "--time-style=+%Y-%m-%dT%H:%M:%S", dirPath}
 
 	execConfig := container.ExecOptions{
 		AttachStdout: true,
@@ -656,15 +674,40 @@ func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID
 	}
 
 	// Parse ls output
-	files := parseLsOutput(stdout.String(), path)
+	files := parseLsOutput(stdout.String(), dirPath)
 
 	return &containertypes.BrowseFilesResponse{
-		Path:  path,
+		Path:  dirPath,
 		Files: files,
 	}, nil
 }
 
-// parseLsOutput parses the output of ls -la command
+// browseContainerFilesTar lists files using CopyFromContainer (works on stopped containers).
+func (s *ContainerService) browseContainerFilesTar(ctx context.Context, dockerClient *dockerclient.Client, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
+	// Ensure path ends with / for directory listing
+	if !strings.HasSuffix(dirPath, "/") {
+		dirPath += "/"
+	}
+
+	// Use CopyFromContainer to get directory contents as a TAR stream
+	tarStream, _, err := dockerClient.CopyFromContainer(ctx, containerID, dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read container path: %w", err)
+	}
+	defer tarStream.Close()
+
+	files, err := parseTarDirectory(tarStream, dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse directory contents: %w", err)
+	}
+
+	return &containertypes.BrowseFilesResponse{
+		Path:  strings.TrimSuffix(dirPath, "/"),
+		Files: files,
+	}, nil
+}
+
+// parseLsOutput parses the output of ls -la command.
 func parseLsOutput(output, basePath string) []containertypes.FileEntry {
 	var files []containertypes.FileEntry
 	lines := strings.Split(output, "\n")
@@ -684,7 +727,7 @@ func parseLsOutput(output, basePath string) []containertypes.FileEntry {
 	return files
 }
 
-// parseLsLine parses a single line from ls -la output
+// parseLsLine parses a single line from ls -la output.
 func parseLsLine(line, basePath string) *containertypes.FileEntry {
 	// Format: -rw-r--r-- 1 root root 1234 2024-01-15T10:30:00 filename
 	// Or with symlink: lrwxrwxrwx 1 root root 12 2024-01-15T10:30:00 link -> target
@@ -727,7 +770,7 @@ func parseLsLine(line, basePath string) *containertypes.FileEntry {
 	}
 
 	// Parse size
-	size, _ := strconv.ParseInt(sizeStr, 10, 64)
+	size, _ := parseInt64(sizeStr)
 
 	// Build full path
 	fullPath := basePath
@@ -747,7 +790,122 @@ func parseLsLine(line, basePath string) *containertypes.FileEntry {
 	}
 }
 
+// parseInt64 parses a string to int64, returning 0 on error.
+func parseInt64(s string) (int64, error) {
+	var result int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid number: %s", s)
+		}
+		result = result*10 + int64(c-'0')
+	}
+	return result, nil
+}
+
+// parseTarDirectory reads a TAR stream and extracts only the immediate children of the directory.
+func parseTarDirectory(tarStream io.Reader, basePath string) ([]containertypes.FileEntry, error) {
+	tr := tar.NewReader(tarStream)
+	filesMap := make(map[string]containertypes.FileEntry)
+
+	// Normalize base path
+	basePath = path.Clean(basePath)
+	if basePath == "." {
+		basePath = ""
+	}
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		// The TAR from Docker includes the directory name as the root
+		// e.g., for /etc/, entries are like "etc/passwd", "etc/hosts"
+		entryPath := header.Name
+
+		// Remove trailing slash for directories
+		entryPath = strings.TrimSuffix(entryPath, "/")
+
+		// Skip the root directory itself
+		if entryPath == "" || entryPath == "." {
+			continue
+		}
+
+		// Count path depth - we only want immediate children (depth 1)
+		parts := strings.Split(entryPath, "/")
+
+		// Skip if this is a nested file (depth > 1)
+		// The first part is the directory name itself
+		if len(parts) > 2 {
+			continue
+		}
+
+		// Get the actual file/directory name
+		var name string
+		if len(parts) == 1 {
+			name = parts[0]
+		} else {
+			name = parts[1]
+		}
+
+		// Skip . and ..
+		if name == "." || name == ".." || name == "" {
+			continue
+		}
+
+		// Skip if we've already seen this entry (can happen with directory entries)
+		if _, exists := filesMap[name]; exists {
+			continue
+		}
+
+		// Determine file type
+		var fileType containertypes.FileEntryType
+		switch header.Typeflag {
+		case tar.TypeDir:
+			fileType = containertypes.FileEntryTypeDirectory
+		case tar.TypeSymlink:
+			fileType = containertypes.FileEntryTypeSymlink
+		default:
+			fileType = containertypes.FileEntryTypeFile
+		}
+
+		// Build the full path
+		fullPath := basePath
+		if fullPath != "/" && fullPath != "" {
+			fullPath += "/"
+		} else if fullPath == "" {
+			fullPath = "/"
+		}
+		fullPath += name
+
+		// Convert file mode to string
+		mode := header.FileInfo().Mode().String()
+
+		filesMap[name] = containertypes.FileEntry{
+			Name:       name,
+			Path:       fullPath,
+			Type:       fileType,
+			Size:       header.Size,
+			Mode:       mode,
+			ModTime:    header.ModTime.Format("2006-01-02T15:04:05"),
+			LinkTarget: header.Linkname,
+		}
+	}
+
+	// Convert map to slice
+	files := make([]containertypes.FileEntry, 0, len(filesMap))
+	for _, entry := range filesMap {
+		files = append(files, entry)
+	}
+
+	return files, nil
+}
+
 // GetContainerFileContent reads the content of a file inside a container.
+// Uses Docker's CopyFromContainer API which works on both running and stopped containers.
 func (s *ContainerService) GetContainerFileContent(ctx context.Context, containerID, filePath string) (*containertypes.FileContentResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
@@ -757,84 +915,66 @@ func (s *ContainerService) GetContainerFileContent(ctx context.Context, containe
 	// Maximum file size to read (1MB)
 	const maxFileSize = 1024 * 1024
 
-	// First, check file size
-	statCmd := []string{"stat", "-c", "%s", filePath}
-	execConfig := container.ExecOptions{
-		AttachStdout: true,
-		AttachStderr: true,
-		Cmd:          statCmd,
-	}
-
-	execResp, err := dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	// Use CopyFromContainer to get the file as a TAR stream
+	tarStream, stat, err := dockerClient.CopyFromContainer(ctx, containerID, filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create exec: %w", err)
+		return nil, fmt.Errorf("file not found or not accessible: %w", err)
+	}
+	defer tarStream.Close()
+
+	// Check if this is a directory
+	if stat.Mode.IsDir() {
+		return nil, fmt.Errorf("path is a directory, not a file")
 	}
 
-	execAttach, err := dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attach to exec: %w", err)
-	}
-
-	var statOut, statErr strings.Builder
-	_, _ = stdcopy.StdCopy(&statOut, &statErr, execAttach.Reader)
-	execAttach.Close()
-
-	if statErr.Len() > 0 {
-		return nil, fmt.Errorf("file not found or not accessible: %s", strings.TrimSpace(statErr.String()))
-	}
-
-	fileSize, _ := strconv.ParseInt(strings.TrimSpace(statOut.String()), 10, 64)
+	fileSize := stat.Size
 	truncated := fileSize > maxFileSize
 
-	// Read file content using cat (with head for large files)
-	var readCmd []string
+	// Read the TAR to get file content
+	tr := tar.NewReader(tarStream)
+	header, err := tr.Next()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file from archive: %w", err)
+	}
+
+	// Determine how much to read
+	readSize := fileSize
 	if truncated {
-		readCmd = []string{"head", "-c", strconv.FormatInt(maxFileSize, 10), filePath}
-	} else {
-		readCmd = []string{"cat", filePath}
+		readSize = maxFileSize
 	}
 
-	execConfig = container.ExecOptions{
-		AttachStdout: true,
-		AttachStderr: true,
-		Cmd:          readCmd,
+	// Read file content
+	content := make([]byte, readSize)
+	n, err := io.ReadFull(tr, content)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, fmt.Errorf("failed to read file content: %w", err)
 	}
-
-	execResp, err = dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create exec: %w", err)
-	}
-
-	execAttach, err = dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attach to exec: %w", err)
-	}
-	defer execAttach.Close()
-
-	var contentOut, contentErr strings.Builder
-	_, err = stdcopy.StdCopy(&contentOut, &contentErr, execAttach.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	if contentErr.Len() > 0 {
-		return nil, fmt.Errorf("failed to read file: %s", strings.TrimSpace(contentErr.String()))
-	}
-
-	content := contentOut.String()
+	content = content[:n]
 
 	// Check if content is binary (contains null bytes or non-printable characters)
 	isBinary := false
-	for _, b := range []byte(content) {
+	for _, b := range content {
 		if b == 0 || (b < 32 && b != '\n' && b != '\r' && b != '\t') {
 			isBinary = true
 			break
 		}
 	}
 
+	// Handle symlinks - the header contains the actual file content
+	if header.Typeflag == tar.TypeSymlink {
+		// For symlinks, return the link target as content
+		return &containertypes.FileContentResponse{
+			Path:      filePath,
+			Content:   header.Linkname,
+			Size:      int64(len(header.Linkname)),
+			IsBinary:  false,
+			Truncated: false,
+		}, nil
+	}
+
 	return &containertypes.FileContentResponse{
 		Path:      filePath,
-		Content:   content,
+		Content:   string(content),
 		Size:      fileSize,
 		IsBinary:  isBinary,
 		Truncated: truncated,

@@ -24,37 +24,15 @@
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import ContainerFileBrowserDialog from '$lib/components/dialogs/container-file-browser-dialog.svelte';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { Button } from '$lib/components/ui/button';
+	import VolumeFileBrowserDialog from '$lib/components/dialogs/volume-file-browser-dialog.svelte';
 	import type { VolumeContainerInfo } from './+page';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
 	let containersDetailed = $state<VolumeContainerInfo[]>(untrack(() => data.containersDetailed ?? []));
 	let fileBrowserOpen = $state(false);
-	let containerSelectOpen = $state(false);
-	let selectedContainer = $state<VolumeContainerInfo | null>(null);
-
-	const runnableContainers = $derived(containersDetailed.filter((c) => c.isRunning));
 
 	function handleBrowseFiles() {
-		if (runnableContainers.length === 0) {
-			toast.error(m.volume_browse_no_running_containers());
-			return;
-		}
-
-		if (runnableContainers.length === 1) {
-			selectedContainer = runnableContainers[0];
-			fileBrowserOpen = true;
-		} else {
-			containerSelectOpen = true;
-		}
-	}
-
-	function selectContainerForBrowse(container: VolumeContainerInfo) {
-		selectedContainer = container;
-		containerSelectOpen = false;
 		fileBrowserOpen = true;
 	}
 
@@ -89,17 +67,13 @@
 	}
 
 	const actions: DetailAction[] = $derived([
-		...(runnableContainers.length > 0
-			? [
-					{
-						id: 'browse',
-						action: 'base' as const,
-						label: m.volume_browse_files(),
-						icon: FolderOpenIcon,
-						onclick: handleBrowseFiles
-					}
-				]
-			: []),
+		{
+			id: 'browse',
+			action: 'base' as const,
+			label: m.volume_browse_files(),
+			icon: FolderOpenIcon,
+			onclick: handleBrowseFiles
+		},
 		{
 			id: 'remove',
 			action: 'remove',
@@ -352,37 +326,8 @@
 	{/if}
 </ResourceDetailLayout>
 
-<ResponsiveDialog
-	bind:open={containerSelectOpen}
-	title={m.volume_select_container_title()}
-	description={m.volume_select_container_description()}
->
-	{#snippet children()}
-		<div class="flex flex-col gap-2 py-4">
-			{#each runnableContainers as container (container.id)}
-				<Button variant="outline" class="h-auto justify-start gap-3 py-3" onclick={() => selectContainerForBrowse(container)}>
-					<ContainersIcon class="size-4 shrink-0" />
-					<div class="flex flex-col items-start text-left">
-						<span class="font-medium">{container.name}</span>
-						<span class="text-muted-foreground text-xs">{m.volume_mount_path()}: {container.mountPath}</span>
-					</div>
-				</Button>
-			{/each}
-		</div>
-	{/snippet}
-
-	{#snippet footer()}
-		<Button variant="outline" onclick={() => (containerSelectOpen = false)}>
-			{m.common_cancel()}
-		</Button>
-	{/snippet}
-</ResponsiveDialog>
-
-{#if selectedContainer}
-	<ContainerFileBrowserDialog
-		bind:open={fileBrowserOpen}
-		containerId={selectedContainer.id}
-		initialPath={selectedContainer.mountPath}
-		title={m.volume_browse_title({ name: volume.name })}
-	/>
-{/if}
+<VolumeFileBrowserDialog
+	bind:open={fileBrowserOpen}
+	volumeName={volume.name}
+	title={m.volume_browse_title({ name: volume.name })}
+/>
