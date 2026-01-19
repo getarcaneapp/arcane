@@ -133,8 +133,6 @@ upx:
       - "7"
     goamd64:
       - v1
-    go386:
-      - sse2
     compress: best
     lzma: true
     brute: true
