@@ -1867,5 +1867,11 @@
 	"file_browser_select_file": "Select a file to preview",
 	"file_browser_binary_file": "Binary file cannot be displayed",
 	"file_browser_content_truncated": "File content was truncated due to size limits",
-	"file_browser_show_preview": "Show preview"
+	"file_browser_show_preview": "Show preview",
+	"volume_browse_files": "Browse Files",
+	"volume_browse_title": "Browse Volume: {name}",
+	"volume_browse_no_running_containers": "No running containers are using this volume",
+	"volume_select_container_title": "Select Container",
+	"volume_select_container_description": "Choose which container to browse this volume through",
+	"volume_mount_path": "Mount path"
 }

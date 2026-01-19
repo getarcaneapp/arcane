@@ -1,10 +1,9 @@
-<script lang="ts">
+<script lang="ts" generics="T extends FileBrowserFile">
 	import { cn } from '$lib/utils.js';
-	import type { FileBrowserListProps } from './types.js';
-	import type { FileEntry } from '$lib/types/container.type';
+	import type { FileBrowserListProps, FileBrowserFile } from './types.js';
 	import FileBrowserItem from './file-browser-item.svelte';
 
-	let { class: className, files, selectedPath = null, onSelect, onOpen, icon, ...restProps }: FileBrowserListProps = $props();
+	let { class: className, files, selectedPath = null, onSelect, onOpen, icon, ...restProps }: FileBrowserListProps<T> = $props();
 
 	// Sort files: directories first, then by name
 	const sortedFiles = $derived(() => {
@@ -17,7 +16,7 @@
 		});
 	});
 
-	function handleItemClick(file: FileEntry) {
+	function handleItemClick(file: T) {
 		// Directories navigate on single click
 		if (file.type === 'directory') {
 			onOpen?.(file);

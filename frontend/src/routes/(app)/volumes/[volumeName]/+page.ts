@@ -3,13 +3,20 @@ import { error } from '@sveltejs/kit';
 import { volumeService } from '$lib/services/volume-service';
 import { containerService } from '$lib/services/container-service';
 
+export interface VolumeContainerInfo {
+	id: string;
+	name: string;
+	mountPath: string;
+	isRunning: boolean;
+}
+
 export const load: PageLoad = async ({ params }) => {
 	const { volumeName } = params;
 
 	try {
 		const volume = await volumeService.getVolume(volumeName);
 
-		let containersDetailed: { id: string; name: string }[] = [];
+		let containersDetailed: VolumeContainerInfo[] = [];
 		if (volume.containers && volume.containers.length > 0) {
 			containersDetailed = await Promise.all(
 				volume.containers.map(async (id: string) => {
@@ -20,9 +27,22 @@ export const load: PageLoad = async ({ params }) => {
 							c?.Name ||
 							(c?.Names && c?.Names[0]?.replace?.(/^\//, '')) ||
 							idVal?.substring(0, 12)) as string;
-						return { id: idVal, name: nameVal };
+						const isRunning = c?.state?.running === true;
+						
+						// Find the mount path for this volume
+						let mountPath = '/';
+						if (c?.mounts) {
+							const mount = c.mounts.find(
+								(m: any) => m.name === volumeName || m.source?.includes(volumeName)
+							);
+							if (mount?.destination) {
+								mountPath = mount.destination;
+							}
+						}
+						
+						return { id: idVal, name: nameVal, mountPath, isRunning };
 					} catch {
-						return { id, name: id.substring(0, 12) };
+						return { id, name: id.substring(0, 12), mountPath: '/', isRunning: false };
 					}
 				})
 			);

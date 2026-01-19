@@ -1,6 +1,12 @@
 import type { Snippet } from 'svelte';
 import type { HTMLAttributes } from 'svelte/elements';
-import type { FileEntry, FileEntryType } from '$lib/types/container.type';
+
+export interface FileBrowserFile {
+	name: string;
+	path: string;
+	type: string;
+	size?: number;
+}
 
 export type FileBrowserRootProps = HTMLAttributes<HTMLDivElement> & {
 	path?: string;
@@ -13,18 +19,18 @@ export type FileBrowserBreadcrumbProps = HTMLAttributes<HTMLDivElement> & {
 	onNavigate?: (path: string) => void;
 };
 
-export type FileBrowserListProps = HTMLAttributes<HTMLDivElement> & {
-	files: FileEntry[];
+export type FileBrowserListProps<T extends FileBrowserFile = FileBrowserFile> = HTMLAttributes<HTMLDivElement> & {
+	files: T[];
 	selectedPath?: string | null;
-	onSelect?: (file: FileEntry) => void;
-	onOpen?: (file: FileEntry) => void;
-	icon?: Snippet<[{ file: FileEntry }]>;
+	onSelect?: (file: T) => void;
+	onOpen?: (file: T) => void;
+	icon?: Snippet<[{ file: T }]>;
 };
 
-export type FileBrowserItemProps = HTMLAttributes<HTMLButtonElement> & {
-	file: FileEntry;
+export type FileBrowserItemProps<T extends FileBrowserFile = FileBrowserFile> = HTMLAttributes<HTMLButtonElement> & {
+	file: T;
 	selected?: boolean;
-	icon?: Snippet<[{ file: FileEntry }]>;
+	icon?: Snippet<[{ file: T }]>;
 };
 
 export type FileBrowserEmptyProps = HTMLAttributes<HTMLDivElement> & {
@@ -40,8 +46,8 @@ export type FileBrowserErrorProps = HTMLAttributes<HTMLDivElement> & {
 	onRetry?: () => void;
 };
 
-export type FileBrowserPreviewProps = HTMLAttributes<HTMLDivElement> & {
-	file: FileEntry | null;
+export type FileBrowserPreviewProps<T extends FileBrowserFile = FileBrowserFile> = HTMLAttributes<HTMLDivElement> & {
+	file: T | null;
 	content?: string;
 	loading?: boolean;
 	isBinary?: boolean;

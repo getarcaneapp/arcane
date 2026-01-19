@@ -1,20 +1,18 @@
-<script lang="ts">
+<script lang="ts" generics="T extends FileBrowserFile">
 	import { cn } from '$lib/utils.js';
 	import { FolderOpenIcon, FileTextIcon } from '$lib/icons';
-	import type { FileBrowserItemProps } from './types.js';
+	import type { FileBrowserItemProps, FileBrowserFile } from './types.js';
 	import bytes from 'bytes';
 
-	let { class: className, file, selected = false, icon, ...restProps }: FileBrowserItemProps = $props();
+	let { class: className, file, selected = false, icon, ...restProps }: FileBrowserItemProps<T> = $props();
 
 	const formattedSize = $derived(() => {
 		if (file.type === 'directory') return '';
 		return file.size != null ? bytes(file.size) || '0 B' : '';
 	});
 
-	const displayMode = $derived(() => {
-		if (!file.mode) return '';
-		return file.mode;
-	});
+	const fileMode = $derived('mode' in file && typeof file.mode === 'string' ? file.mode : '');
+	const linkTarget = $derived('linkTarget' in file && typeof file.linkTarget === 'string' ? file.linkTarget : '');
 </script>
 
 <button
@@ -42,15 +40,15 @@
 	<div class="min-w-0 flex-1">
 		<div class="flex items-center gap-2">
 			<span class="truncate font-medium">{file.name}</span>
-			{#if file.type === 'symlink' && file.linkTarget}
-				<span class="text-muted-foreground truncate text-xs">→ {file.linkTarget}</span>
+			{#if file.type === 'symlink' && linkTarget}
+				<span class="text-muted-foreground truncate text-xs">→ {linkTarget}</span>
 			{/if}
 		</div>
 	</div>
 
 	<div class="text-muted-foreground flex shrink-0 items-center gap-4 text-xs">
-		{#if displayMode()}
-			<span class="hidden font-mono sm:inline">{displayMode()}</span>
+		{#if fileMode}
+			<span class="hidden font-mono sm:inline">{fileMode}</span>
 		{/if}
 		{#if formattedSize()}
 			<span class="w-16 text-right">{formattedSize()}</span>

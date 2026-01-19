@@ -1,7 +1,7 @@
-<script lang="ts">
+<script lang="ts" generics="T extends FileBrowserFile">
 	import { cn } from '$lib/utils.js';
 	import { FileTextIcon, LoadingSpinnerIcon, AlertIcon } from '$lib/icons';
-	import type { FileBrowserPreviewProps } from './types.js';
+	import type { FileBrowserPreviewProps, FileBrowserFile } from './types.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import bytes from 'bytes';
 
@@ -14,7 +14,7 @@
 		truncated = false,
 		error = null,
 		...restProps
-	}: FileBrowserPreviewProps = $props();
+	}: FileBrowserPreviewProps<T> = $props();
 </script>
 
 <div data-slot="file-browser-preview" class={cn('flex flex-col overflow-hidden border-l', className)} {...restProps}>
