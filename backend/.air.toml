@@ -1,20 +1,27 @@
+#:schema https://json.schemastore.org/any.json
 root = "."
 tmp_dir = ".bin"
+env_files = [".env"]
 
 [build]
+  cmd = "CGO_ENABLED=1 go build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
   bin = "./.bin/arcane"
-  cmd = "PROJECTS_DIRECTORY=data/projects CGO_ENABLED=1 go build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
-  exclude_dir = [".bin", "data", "node_modules", ".git"]
-  stop_on_error = true
-  delay = 500
-  exclude_regex = ["_test.go", "_mock.go", ".*_test\\.go$"]
-  exclude_unchanged = true
-  follow_symlink = false
+  entrypoint = ["./.bin/arcane"]
   include_ext = ["go", "tpl", "tmpl", "html"]
+  exclude_dir = [".bin", "data", "node_modules", ".git"]
+  include_dir = []
+  include_file = []
+  exclude_file = []
+  exclude_regex = [".*_test\\.go$", ".*_mock\\.go$"]
+  exclude_unchanged = true
+  ignore_dangerous_root_dir = false
+  follow_symlink = false
   kill_delay = "2s"
   log = "build-errors.log"
   poll = false
-  poll_interval = 0
+  poll_interval = 500
+  delay = 500
+  stop_on_error = true
   rerun = false
   rerun_delay = 300
   send_interrupt = true

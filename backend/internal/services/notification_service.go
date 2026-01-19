@@ -127,6 +127,8 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 			sendErr = s.sendSlackNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderNtfy:
 			sendErr = s.sendNtfyNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericNotification(ctx, imageRef, updateInfo, setting.Config)
 		default:
@@ -220,6 +222,8 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 			sendErr = s.sendSlackContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderNtfy:
 			sendErr = s.sendNtfyContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		default:
@@ -707,6 +711,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		return s.sendSlackNotification(ctx, "nginx:latest", testUpdate, setting.Config)
 	case models.NotificationProviderNtfy:
 		return s.sendNtfyNotification(ctx, "test/image:latest", testUpdate, setting.Config)
+	case models.NotificationProviderPushover:
+		return s.sendPushoverNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	case models.NotificationProviderGeneric:
 		return s.sendGenericNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	default:
@@ -865,6 +871,8 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 			sendErr = s.sendBatchSlackNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderNtfy:
 			sendErr = s.sendBatchNtfyNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendBatchPushoverNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendBatchGenericNotification(ctx, updatesWithChanges, setting.Config)
 		default:
@@ -1566,6 +1574,146 @@ func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, upd
 
 	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
 		return fmt.Errorf("failed to send batch Ntfy notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendPushoverNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Pushover config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &pushoverConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Pushover config: %w", err)
+	}
+
+	if pushoverConfig.Token == "" {
+		return fmt.Errorf("pushover API token not configured")
+	}
+	if pushoverConfig.User == "" {
+		return fmt.Errorf("pushover user key not configured")
+	}
+
+	if pushoverConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
+			pushoverConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Pushover token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	message := fmt.Sprintf("🔔 Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
+	}
+
+	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+		return fmt.Errorf("failed to send Pushover notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Pushover config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &pushoverConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Pushover config: %w", err)
+	}
+
+	if pushoverConfig.Token == "" {
+		return fmt.Errorf("pushover API token not configured")
+	}
+	if pushoverConfig.User == "" {
+		return fmt.Errorf("pushover user key not configured")
+	}
+
+	if pushoverConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
+			pushoverConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Pushover token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+		return fmt.Errorf("failed to send Pushover notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pushover config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &pushoverConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal pushover config: %w", err)
+	}
+
+	if pushoverConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
+			pushoverConfig.Token = decrypted
+		}
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Pushover notification: %w", err)
 	}
 
 	return nil
