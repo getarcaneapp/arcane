@@ -45,10 +45,14 @@ type ContainerRegistryService struct {
 }
 
 func NewContainerRegistryService(db *database.DB) *ContainerRegistryService {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyFromEnvironment
+
 	return &ContainerRegistryService{
 		db: db,
 		httpClient: &http.Client{
-			Timeout: registryCheckTimeout,
+			Timeout:   registryCheckTimeout,
+			Transport: transport,
 		},
 		cache: make(map[string]*cache.Cache[string]),
 	}
