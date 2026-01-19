@@ -28,7 +28,6 @@
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const isGlassEnabled = $derived.by(() => $settingsStore?.glassEffectEnabled ?? false);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
@@ -182,12 +181,7 @@
 
 <div class="flex h-full min-h-full flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
-	<aside
-		class={cn(
-			'relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full',
-			isGlassEnabled ? 'backdrop-blur-sm' : 'bg-transparent'
-		)}
-	>
+	<aside class={cn('relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full', 'backdrop-blur-sm')}>
 		<div aria-hidden="true" class="bg-border/60 pointer-events-none absolute top-4 right-0 bottom-4 w-px"></div>
 		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
@@ -215,7 +209,7 @@
 			<div
 				class={cn(
 					'sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg transition-all duration-200 md:hidden',
-					isGlassEnabled ? 'bg-background/95 backdrop-blur-md' : 'bg-card'
+					'bg-background/95 backdrop-blur-md'
 				)}
 			>
 				<div class="px-4 py-3">

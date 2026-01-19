@@ -9,7 +9,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
-	import type { Settings } from '$lib/types/settings.type';
+	import type { Settings } from '$lib/types/settings. type';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon } from '$lib/icons';
@@ -17,13 +17,13 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { createSettingsForm } from '$lib/utils/settings-form.util';
+	import { createSettingsForm } from '$lib/utils/settings-form. util';
 	import * as Alert from '$lib/components/ui/alert';
 
 	let { data }: { data: PageData } = $props();
-	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
+	const currentSettings = $derived<Settings>($settingsStore || data.settings! );
+	const isReadOnly = $derived. by(() => $settingsStore.uiConfigDisabled);
+	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled. isEnabled());
 
 	const formSchema = z
 		.object({
@@ -35,18 +35,19 @@
 				.max(1440, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			oidcEnabled: z.boolean(),
-			oidcMergeAccounts: z.boolean(),
+			oidcMergeAccounts:  z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
+			oidcAutoRedirectToProvider:  z.boolean(),
 			oidcClientId: z.string(),
-			oidcClientSecret: z.string(),
+			oidcClientSecret: z. string(),
 			oidcIssuerUrl: z.string(),
 			oidcScopes: z.string(),
 			oidcAdminClaim: z.string(),
-			oidcAdminValue: z.string()
+			oidcAdminValue:  z.string()
 		})
 		.superRefine((formData, ctx) => {
-			if (data.oidcStatus.envForced || formData.oidcEnabled) return;
-			if (!formData.authLocalEnabled) {
+			if (data. oidcStatus. envForced || formData.oidcEnabled) return;
+			if (! formData.authLocalEnabled) {
 				ctx.addIssue({
 					code: 'custom',
 					message: m.security_enable_one_provider(),
@@ -60,16 +61,17 @@
 	const formDefaults = $derived({
 		authLocalEnabled: currentSettings.authLocalEnabled,
 		authSessionTimeout: currentSettings.authSessionTimeout,
-		authPasswordPolicy: currentSettings.authPasswordPolicy,
+		authPasswordPolicy:  currentSettings.authPasswordPolicy,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
+		oidcAutoRedirectToProvider: currentSettings.oidcAutoRedirectToProvider,
 		oidcClientId: currentSettings.oidcClientId,
-		oidcClientSecret: '',
+		oidcClientSecret:  '',
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
-		oidcScopes: currentSettings.oidcScopes,
-		oidcAdminClaim: currentSettings.oidcAdminClaim,
-		oidcAdminValue: currentSettings.oidcAdminValue
+		oidcScopes: currentSettings. oidcScopes,
+		oidcAdminClaim:  currentSettings.oidcAdminClaim,
+		oidcAdminValue: currentSettings. oidcAdminValue
 	});
 
 	// Security page needs custom submit logic for OIDC client secret handling
@@ -79,17 +81,18 @@
 			currentSettings: formDefaults,
 			getCurrentSettings: () => ({
 				authLocalEnabled: ($settingsStore || data.settings!).authLocalEnabled,
-				authSessionTimeout: ($settingsStore || data.settings!).authSessionTimeout,
+				authSessionTimeout: ($settingsStore || data.settings! ).authSessionTimeout,
 				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
-				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
+				oidcEnabled:  ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
+				oidcAutoRedirectToProvider: ($settingsStore || data.settings!).oidcAutoRedirectToProvider,
 				oidcClientId: ($settingsStore || data.settings!).oidcClientId,
 				oidcClientSecret: '',
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
 				oidcScopes: ($settingsStore || data.settings!).oidcScopes,
 				oidcAdminClaim: ($settingsStore || data.settings!).oidcAdminClaim,
-				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue
+				oidcAdminValue: ($settingsStore || data. settings!).oidcAdminValue
 			}),
 			successMessage: m.security_settings_saved()
 		})
@@ -97,32 +100,33 @@
 
 	// Override the default hasChanges since we need special handling for oidcClientSecret
 	const hasSecurityChanges = $derived(
-		$formInputs.authLocalEnabled.value !== currentSettings.authLocalEnabled ||
+		$formInputs.authLocalEnabled. value !== currentSettings.authLocalEnabled ||
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
-			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
+			$formInputs.oidcEnabled.value !== currentSettings. oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
+			$formInputs.oidcAutoRedirectToProvider.value !== currentSettings.oidcAutoRedirectToProvider ||
 			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
 			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
-			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
-			$formInputs.oidcAdminClaim.value !== currentSettings.oidcAdminClaim ||
-			$formInputs.oidcAdminValue.value !== currentSettings.oidcAdminValue ||
-			$formInputs.oidcClientSecret.value !== ''
+			$formInputs. oidcScopes.value !== currentSettings.oidcScopes ||
+			$formInputs. oidcAdminClaim. value !== currentSettings.oidcAdminClaim ||
+			$formInputs.oidcAdminValue.value !== currentSettings. oidcAdminValue ||
+			$formInputs. oidcClientSecret.value !== ''
 	);
 
-	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
+	const redirectUri = $derived(`${globalThis?. location?.origin ??  ''}/auth/oidc/callback`);
 	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
 
 	async function customSubmit() {
 		const formData = form.validate();
 		if (!formData) {
-			toast.error(m.security_form_validation_error());
+			toast. error(m.security_form_validation_error());
 			return;
 		}
 
 		if (formData.oidcEnabled && !isOidcEnvForced) {
-			if (!formData.oidcClientId || !formData.oidcIssuerUrl) {
+			if (!formData. oidcClientId || !formData.oidcIssuerUrl) {
 				toast.error(m.security_oidc_required_fields());
 				return;
 			}
@@ -132,22 +136,22 @@
 
 		try {
 			await settingsForm.updateSettings({
-				authLocalEnabled: formData.authLocalEnabled,
-				authSessionTimeout: formData.authSessionTimeout,
+				authLocalEnabled:  formData.authLocalEnabled,
+				authSessionTimeout: formData. authSessionTimeout,
 				authPasswordPolicy: formData.authPasswordPolicy,
-				oidcEnabled: formData.oidcEnabled,
+				oidcEnabled:  formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
-				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
+				oidcSkipTlsVerify: formData. oidcSkipTlsVerify,
 				oidcClientId: formData.oidcClientId,
-				oidcIssuerUrl: formData.oidcIssuerUrl,
+				oidcIssuerUrl: formData. oidcIssuerUrl,
 				oidcScopes: formData.oidcScopes,
 				oidcAdminClaim: formData.oidcAdminClaim,
 				oidcAdminValue: formData.oidcAdminValue,
-				...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
+				.. .(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
 			});
 			$formInputs.oidcClientSecret.value = '';
 			toast.success(m.security_settings_saved());
-		} catch (error: any) {
+		} catch (error:  any) {
 			console.error('Failed to save settings:', error);
 			toast.error(m.security_settings_save_failed());
 		} finally {
@@ -161,23 +165,23 @@
 	}
 
 	function handleLocalSwitchChange(checked: boolean) {
-		if (!checked && !$formInputs.oidcEnabled.value && !data.oidcStatus.envForced) {
+		if (! checked && ! $formInputs.oidcEnabled.value && !data.oidcStatus.envForced) {
 			$formInputs.authLocalEnabled.value = true;
 			toast.error(m.security_enable_one_provider_error());
 			return;
 		}
-		$formInputs.authLocalEnabled.value = checked;
+		$formInputs.authLocalEnabled. value = checked;
 	}
 
 	function handleOidcEnabledChange(checked: boolean) {
-		if (!checked && !$formInputs.authLocalEnabled.value && !data.oidcStatus.envForced) {
+		if (!checked && ! $formInputs.authLocalEnabled.value && !data.oidcStatus. envForced) {
 			$formInputs.authLocalEnabled.value = true;
 			toast.info(m.security_local_enabled_info());
 		}
-		$formInputs.oidcEnabled.value = checked;
+		$formInputs. oidcEnabled.value = checked;
 	}
 
-	function handleMergeAccountsChange(checked: boolean) {
+	function handleMergeAccountsChange(checked:  boolean) {
 		if (checked && !currentSettings.oidcMergeAccounts) {
 			showMergeAccountsAlert = true;
 		} else {
@@ -228,7 +232,7 @@
 							{m.security_auto_login_enabled_description()}
 						</Alert.Description>
 					</Alert.Root>
-				{:else}
+				{: else}
 					<!-- Authentication Cards (only shown when auto-login is disabled) -->
 					<div class="bg-card rounded-lg border shadow-sm">
 						<div class="space-y-6 p-6">
@@ -241,11 +245,11 @@
 								<div class="flex items-center gap-2">
 									<Switch
 										id="localAuthSwitch"
-										bind:checked={$formInputs.authLocalEnabled.value}
+										bind:checked={$formInputs.authLocalEnabled. value}
 										onCheckedChange={handleLocalSwitchChange}
 									/>
 									<Label for="localAuthSwitch" class="font-normal">
-										{$formInputs.authLocalEnabled.value ? m.common_enabled() : m.common_disabled()}
+										{$formInputs.authLocalEnabled. value ? m.common_enabled() : m.common_disabled()}
 									</Label>
 								</div>
 							</div>
@@ -272,7 +276,7 @@
 										<Switch
 											id="oidcEnabledSwitch"
 											disabled={isOidcEnvForced}
-											bind:checked={$formInputs.oidcEnabled.value}
+											bind:checked={$formInputs.oidcEnabled. value}
 											onCheckedChange={handleOidcEnabledChange}
 										/>
 										<Label for="oidcEnabledSwitch" class="font-normal">
@@ -283,7 +287,7 @@
 									{#if $formInputs.oidcEnabled.value || isOidcEnvForced}
 										<div class="space-y-4 pt-2">
 											<div class="space-y-2">
-												<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>
+												<Label for="oidcClientId" class="text-sm font-medium">{m. oidc_client_id_label()}</Label>
 												<Input
 													id="oidcClientId"
 													type="text"
@@ -308,7 +312,7 @@
 													class="font-mono text-sm"
 												/>
 												<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
-												{#if $formInputs.oidcClientSecret.error}
+												{#if $formInputs. oidcClientSecret.error}
 													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
 												{/if}
 											</div>
@@ -318,19 +322,19 @@
 												<Input
 													id="oidcIssuerUrl"
 													type="text"
-													placeholder={m.oidc_issuer_url_placeholder()}
+													placeholder={m. oidc_issuer_url_placeholder()}
 													disabled={isOidcEnvForced}
 													bind:value={$formInputs.oidcIssuerUrl.value}
 													class="font-mono text-sm"
 												/>
-												<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
+												<p class="text-muted-foreground text-xs">{m. oidc_issuer_url_description()}</p>
 												{#if $formInputs.oidcIssuerUrl.error}
 													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
 												{/if}
 											</div>
 
 											<div class="space-y-2">
-												<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
+												<Label for="oidcScopes" class="text-sm font-medium">{m. oidc_scopes_label()}</Label>
 												<Input
 													id="oidcScopes"
 													type="text"
@@ -339,17 +343,17 @@
 													bind:value={$formInputs.oidcScopes.value}
 													class="font-mono text-sm"
 												/>
-												{#if $formInputs.oidcScopes.error}
+												{#if $formInputs. oidcScopes.error}
 													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
 												{/if}
 											</div>
 
 											<div class="border-t pt-4">
-												<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
+												<h4 class="text-sm font-semibold">{m. oidc_admin_role_mapping_title()}</h4>
 												<p class="text-muted-foreground mb-3 text-xs">{m.oidc_admin_role_mapping_description()}</p>
 												<div class="grid gap-3 sm:grid-cols-2">
 													<div class="space-y-2">
-														<Label for="oidcAdminClaim" class="text-sm font-medium">{m.oidc_admin_claim_label()}</Label>
+														<Label for="oidcAdminClaim" class="text-sm font-medium">{m. oidc_admin_claim_label()}</Label>
 														<Input
 															id="oidcAdminClaim"
 															type="text"
@@ -363,11 +367,11 @@
 														{/if}
 													</div>
 													<div class="space-y-2">
-														<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
+														<Label for="oidcAdminValue" class="text-sm font-medium">{m. oidc_admin_value_label()}</Label>
 														<Input
 															id="oidcAdminValue"
 															type="text"
-															placeholder={m.oidc_admin_value_placeholder()}
+															placeholder={m. oidc_admin_value_placeholder()}
 															disabled={isOidcEnvForced}
 															bind:value={$formInputs.oidcAdminValue.value}
 															class="font-mono text-sm"
@@ -408,10 +412,28 @@
 													/>
 													<div class="grid gap-1.5 leading-none">
 														<Label for="oidcSkipTlsVerifySwitch" class="font-normal">
-															{m.oidc_skip_tls_verify_label()}
+															{m. oidc_skip_tls_verify_label()}
 														</Label>
 														<p class="text-muted-foreground text-xs">
-															{m.oidc_skip_tls_verify_description()}
+															{m. oidc_skip_tls_verify_description()}
+														</p>
+													</div>
+												</div>
+											</div>
+
+											<div class="border-t pt-4">
+												<div class="flex items-center gap-2">
+													<Switch
+														id="oidcAutoRedirectSwitch"
+														disabled={isOidcEnvForced}
+														bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
+													/>
+													<div class="grid gap-1.5 leading-none">
+														<Label for="oidcAutoRedirectSwitch" class="font-normal">
+															{m.oidc_auto_redirect_label()}
+														</Label>
+														<p class="text-muted-foreground text-xs">
+															{m.oidc_auto_redirect_description()}
 														</p>
 													</div>
 												</div>
@@ -444,12 +466,12 @@
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
-								<Label class="text-base">{m.security_session_timeout_label()}</Label>
+								<Label class="text-base">{m. security_session_timeout_label()}</Label>
 								<p class="text-muted-foreground mt-1 text-sm">{m.security_session_timeout_description()}</p>
 							</div>
 							<div class="max-w-xs">
 								<TextInputWithLabel
-									bind:value={$formInputs.authSessionTimeout.value}
+									bind:value={$formInputs. authSessionTimeout.value}
 									error={$formInputs.authSessionTimeout.error}
 									label={m.security_session_timeout_label()}
 									placeholder={m.security_session_timeout_placeholder()}
@@ -464,26 +486,26 @@
 
 			<!-- Password Policy Section -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.security_password_policy_label()}</h3>
+				<h3 class="text-lg font-medium">{m. security_password_policy_label()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
-								<Label class="text-base">{m.security_password_policy_label()}</Label>
+								<Label class="text-base">{m. security_password_policy_label()}</Label>
 								<p class="text-muted-foreground mt-1 text-sm">{m.security_password_policy_description()}</p>
 							</div>
 							<div>
 								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-									<ArcaneTooltip.Root>
+									<ArcaneTooltip. Root>
 										<ArcaneTooltip.Trigger>
 											<ArcaneButton
 												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
+												tone={$formInputs.authPasswordPolicy. value === 'basic' ? 'outline-primary' : 'outline'}
 												class="h-12 w-full text-xs sm:text-sm"
-												onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
+												onclick={() => ($formInputs.authPasswordPolicy. value = 'basic')}
 												customLabel={m.common_basic()}
 											/>
-										</ArcaneTooltip.Trigger>
+										</ArcaneTooltip. Trigger>
 										<ArcaneTooltip.Content side="top">
 											{m.security_password_policy_basic_tooltip()}
 										</ArcaneTooltip.Content>
@@ -508,12 +530,12 @@
 										<ArcaneTooltip.Trigger>
 											<ArcaneButton
 												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
+												tone={$formInputs.authPasswordPolicy. value === 'strong' ? 'outline-primary' : 'outline'}
 												class="h-12 w-full text-xs sm:text-sm"
 												onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
 												customLabel={m.security_password_policy_strong()}
 											/>
-										</ArcaneTooltip.Trigger>
+										</ArcaneTooltip. Trigger>
 										<ArcaneTooltip.Content side="top">
 											{m.security_password_policy_strong_tooltip()}
 										</ArcaneTooltip.Content>
@@ -527,7 +549,7 @@
 		</fieldset>
 	{/snippet}
 	{#snippet additionalContent()}
-		<AlertDialog.Root bind:open={showMergeAccountsAlert}>
+		<AlertDialog. Root bind:open={showMergeAccountsAlert}>
 			<AlertDialog.Content>
 				<AlertDialog.Header>
 					<AlertDialog.Title>{m.security_oidc_merge_accounts_alert_title()}</AlertDialog.Title>
