@@ -18,6 +18,7 @@
 	import { cn } from '$lib/utils';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import settingsStore from '$lib/stores/config-store';
 
 	let {
 		data,
