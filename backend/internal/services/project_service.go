@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/project"
 	"gorm.io/gorm"
@@ -963,9 +964,22 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		images[img] = struct{}{}
 	}
 
+	settings := s.settingsService.GetSettingsConfig()
+
 	for img := range images {
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
-			return fmt.Errorf("failed to pull image %s: %w", img, err)
+		err := func() error {
+			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+			defer pullCancel()
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
+				}
+				return fmt.Errorf("failed to pull image %s: %w", img, err)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1007,6 +1021,8 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		images[img] = struct{}{}
 	}
 
+	settings := s.settingsService.GetSettingsConfig()
+
 	for img := range images {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
 		if ierr != nil {
@@ -1017,8 +1033,19 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
-			return fmt.Errorf("failed to pull missing image %s: %w", img, err)
+		err := func() error {
+			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+			defer pullCancel()
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
+				}
+				return fmt.Errorf("failed to pull missing image %s: %w", img, err)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
 	}
 	return nil
