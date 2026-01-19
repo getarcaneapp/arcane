@@ -12,6 +12,7 @@
 	import { getApplicationLogo } from '$lib/utils/image.util';
 	import { Motion } from 'svelte-motion';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { onMount } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -30,6 +31,14 @@
 
 	const localAuthEnabledBySettings = $derived(data.settings?.authLocalEnabled !== false);
 	const showLocalLoginForm = $derived(localAuthEnabledBySettings);
+
+	const oidcAutoRedirect = $derived(data.settings?.oidcAutoRedirectToProvider === true);
+
+	onMount(() => {
+		if (oidcAutoRedirect && oidcEnabledBySettings && !data.error) {
+			handleOidcLogin();
+		}
+	});
 
 	async function handleOidcLogin() {
 		isLoading.oidc = true;

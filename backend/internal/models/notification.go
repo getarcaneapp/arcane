@@ -13,8 +13,25 @@ const (
 	NotificationProviderSignal   NotificationProvider = "signal"
 	NotificationProviderSlack    NotificationProvider = "slack"
 	NotificationProviderNtfy     NotificationProvider = "ntfy"
+	NotificationProviderPushover NotificationProvider = "pushover"
 	NotificationProviderGeneric  NotificationProvider = "generic"
 )
+
+var validNotificationProviders = map[NotificationProvider]struct{}{
+	NotificationProviderDiscord:  {},
+	NotificationProviderEmail:    {},
+	NotificationProviderTelegram: {},
+	NotificationProviderSignal:   {},
+	NotificationProviderSlack:    {},
+	NotificationProviderNtfy:     {},
+	NotificationProviderPushover: {},
+	NotificationProviderGeneric:  {},
+}
+
+func IsValidNotificationProvider(provider NotificationProvider) bool {
+	_, ok := validNotificationProviders[provider]
+	return ok
+}
 
 type NotificationEventType string
 
@@ -125,6 +142,15 @@ type NtfyConfig struct {
 	Firebase               bool                           `json:"firebase"`
 	DisableTLSVerification bool                           `json:"disableTlsVerification"`
 	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type PushoverConfig struct {
+	Token    string                         `json:"token"`
+	User     string                         `json:"user"`
+	Devices  []string                       `json:"devices,omitempty"`
+	Priority int8                           `json:"priority"`
+	Title    string                         `json:"title,omitempty"`
+	Events   map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GenericConfig struct {

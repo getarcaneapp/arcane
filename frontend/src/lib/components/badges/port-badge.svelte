@@ -85,7 +85,7 @@
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
 					<a
-						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-1 text-[11px] shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+						class="ring-offset-background focus-visible:ring-ring bg-background/70 dark:bg-sky-500/20 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 dark:border-sky-400/40 px-2 py-1 text-[11px] dark:text-sky-100 shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 						href={toHref(p.hostPort!)}
 						target="_blank"
 						rel="noopener noreferrer"
@@ -107,7 +107,7 @@
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span
-						class="bg-background/50 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 shadow-sm"
+						class="bg-background/50 dark:bg-slate-500/20 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 dark:border-slate-400/40 px-2 py-1 text-[11px] text-gray-400 dark:text-slate-200 shadow-sm"
 					>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}

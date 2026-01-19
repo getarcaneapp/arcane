@@ -24,6 +24,9 @@ const (
 	// NotificationProviderNtfy is the builtin Ntfy notification provider.
 	NotificationProviderNtfy Provider = "ntfy"
 
+	// NotificationProviderPushover is the builtin Pushover notification provider.
+	NotificationProviderPushover Provider = "pushover"
+
 	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
 	NotificationProviderGeneric Provider = "generic"
 )

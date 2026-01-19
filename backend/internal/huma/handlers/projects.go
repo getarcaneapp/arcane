@@ -700,10 +700,16 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 			if err := h.projectService.PullProjectImages(humaCtx.Context(), input.ProjectID, writer, nil); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
 				return
 			}
 
 			_, _ = writer.Write([]byte(`{"status":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
 		},
 	}, nil
 }

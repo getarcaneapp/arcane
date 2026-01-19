@@ -10,5 +10,8 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return &Client{http: &http.Client{}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyFromEnvironment
+
+	return &Client{http: &http.Client{Transport: transport}}
 }

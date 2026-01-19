@@ -207,6 +207,11 @@ type Update struct {
 	// Required: false
 	OidcSkipTlsVerify *string `json:"oidcSkipTlsVerify,omitempty"`
 
+	// OidcAutoRedirectToProvider indicates if the login page should automatically redirect to OIDC provider.
+	//
+	// Required: false
+	OidcAutoRedirectToProvider *string `json:"oidcAutoRedirectToProvider,omitempty"`
+
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false
@@ -221,9 +226,4 @@ type Update struct {
 	//
 	// Required: false
 	SidebarHoverExpansion *string `json:"sidebarHoverExpansion,omitempty"`
-
-	// GlassEffectEnabled indicates if glass morphism effect is enabled in the UI.
-	//
-	// Required: false
-	GlassEffectEnabled *string `json:"glassEffectEnabled,omitempty"`
 }
