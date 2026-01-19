@@ -128,14 +128,27 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
+		return nil
+	case http.StatusBadRequest:
+		// Environment is not in pending status - already paired, this is fine
+		if strings.Contains(string(body), "not in pending status") {
+			slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
+			return nil
+		}
+		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+	case http.StatusUnauthorized:
+		// Invalid API key - could be already paired with a different key, or key was deleted
+		// This is not fatal; the agent can still function if it has a valid token configured
+		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
+		return nil
+	default:
 		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
-
-	slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
-
-	return nil
 }
 
 func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }) error {

@@ -54,11 +54,12 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
-          distribution: goreleaser
+          distribution: goreleaser-pro
           version: "~> v2"
           args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 
       # Docker Images
       - name: Set up Depot CLI

@@ -14,13 +14,75 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/getarcaneapp/arcane/types"
 )
 
 var registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)
 
-func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
+var loggerSkipPatterns = []string{
+	"GET /api/environments/*/ws/containers/*/logs",
+	"GET /api/environments/*/ws/containers/*/stats",
+	"GET /api/environments/*/ws/containers/*/terminal",
+	"GET /api/environments/*/ws/projects/*/logs",
+	"GET /api/environments/*/ws/system/stats",
+	"GET /_app/*",
+	"GET /img",
+	"GET /api/fonts/sans",
+	"GET /api/fonts/mono",
+	"GET /api/fonts/serif",
+	"GET /api/health",
+	"HEAD /api/health",
+}
 
+func shouldLogRequest(c *gin.Context) bool {
+	mp := c.Request.Method + " " + c.Request.URL.Path
+	for _, pat := range loggerSkipPatterns {
+		if pat == mp {
+			return false
+		}
+		if strings.HasSuffix(pat, "/*") {
+			prefix := strings.TrimSuffix(pat, "/*")
+			if strings.HasPrefix(mp, prefix) {
+				return false
+			}
+		}
+		if ok, _ := path.Match(pat, mp); ok {
+			return false
+		}
+		if strings.HasSuffix(pat, "/") && strings.HasPrefix(mp, pat) {
+			return false
+		}
+	}
+	return true
+}
+
+func createAuthValidator(appServices *Services) middleware.AuthValidator {
+	return func(c *gin.Context) bool {
+		// Check for API key authentication
+		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
+			user, err := appServices.ApiKey.ValidateApiKey(c.Request.Context(), apiKey)
+			return err == nil && user != nil
+		}
+
+		// Check for Bearer token authentication
+		token := ""
+		if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		} else if cookieToken, err := cookie.GetTokenCookie(c); err == nil && cookieToken != "" {
+			token = cookieToken
+		}
+
+		if token == "" {
+			return false
+		}
+
+		user, err := appServices.Auth.VerifyToken(c.Request.Context(), token)
+		return err == nil && user != nil
+	}
+}
+
+func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -29,45 +91,8 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	loggerSkipPatterns := []string{
-		"GET /api/environments/*/ws/containers/*/logs",
-		"GET /api/environments/*/ws/containers/*/stats",
-		"GET /api/environments/*/ws/containers/*/terminal",
-		"GET /api/environments/*/ws/projects/*/logs",
-		"GET /api/environments/*/ws/system/stats",
-		"GET /_app/*",
-		"GET /img",
-		"GET /api/fonts/sans",
-		"GET /api/fonts/mono",
-		"GET /api/fonts/serif",
-		"GET /api/health",
-		"HEAD /api/health",
-	}
-
 	router.Use(sloggin.NewWithConfig(slog.Default(), sloggin.Config{
-		Filters: []sloggin.Filter{
-			func(c *gin.Context) bool {
-				mp := c.Request.Method + " " + c.Request.URL.Path
-				for _, pat := range loggerSkipPatterns {
-					if pat == mp {
-						return false
-					}
-					if strings.HasSuffix(pat, "/*") {
-						prefix := strings.TrimSuffix(pat, "/*")
-						if strings.HasPrefix(mp, prefix) {
-							return false
-						}
-					}
-					if ok, _ := path.Match(pat, mp); ok {
-						return false
-					}
-					if strings.HasSuffix(pat, "/") && strings.HasPrefix(mp, pat) {
-						return false
-					}
-				}
-				return true
-			},
-		},
+		Filters: []sloggin.Filter{shouldLogRequest},
 	}))
 
 	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
@@ -87,6 +112,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 			return env.ApiUrl, env.AccessToken, env.Enabled, nil
 		},
 		appServices.Environment,
+		createAuthValidator(appServices),
 	)
 	apiGroup.Use(envMiddleware)
 

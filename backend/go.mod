@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/backend
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
