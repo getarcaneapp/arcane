@@ -6,6 +6,7 @@ export type Environment = {
 	apiUrl: string;
 	status: EnvironmentStatus;
 	enabled: boolean;
+	isEdge: boolean;
 	lastSeen?: string;
 	apiKey?: string;
 };
@@ -15,12 +16,14 @@ export interface CreateEnvironmentDTO {
 	name: string;
 	bootstrapToken?: string;
 	useApiKey?: boolean;
+	isEdge?: boolean;
 }
 
 export interface UpdateEnvironmentDTO {
 	apiUrl?: string;
 	name?: string;
 	enabled?: boolean;
+	isEdge?: boolean;
 	bootstrapToken?: string;
 	regenerateApiKey?: boolean;
 }
