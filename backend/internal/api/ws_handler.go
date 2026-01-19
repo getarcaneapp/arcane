@@ -32,7 +32,8 @@ import (
 )
 
 const (
-	gpuCacheDuration = 30 * time.Second
+	gpuCacheDuration      = 30 * time.Second
+	hostInfoCacheDuration = 5 * time.Minute
 )
 
 // GPUStats represents statistics for a single GPU
@@ -73,12 +74,20 @@ type WebSocketHandler struct {
 	projectService    *services.ProjectService
 	containerService  *services.ContainerService
 	systemService     *services.SystemService
+	dockerService     *services.DockerClientService
 	wsUpgrader        websocket.Upgrader
 	activeConnections sync.Map
 	cpuCache          struct {
 		sync.RWMutex
 		value     float64
 		timestamp time.Time
+	}
+	hostInfoCache struct {
+		sync.RWMutex
+		cpuCount  int
+		memTotal  int64
+		timestamp time.Time
+		valid     bool
 	}
 	diskUsagePathCache struct {
 		sync.RWMutex
@@ -110,6 +119,7 @@ func NewWebSocketHandler(
 	projectService *services.ProjectService,
 	containerService *services.ContainerService,
 	systemService *services.SystemService,
+	dockerService *services.DockerClientService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
@@ -117,6 +127,7 @@ func NewWebSocketHandler(
 		projectService:       projectService,
 		containerService:     containerService,
 		systemService:        systemService,
+		dockerService:        dockerService,
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
 		wsUpgrader: websocket.Upgrader{
@@ -552,15 +563,63 @@ func (h *WebSocketHandler) startCPUSampler(ctx context.Context, ticker *time.Tic
 	}(ctx)
 }
 
+// getHostInfo returns host CPU count and memory total from Docker API.
+// Returns valid=false if Docker API is unavailable (e.g., running in LXC).
+func (h *WebSocketHandler) getHostInfo(ctx context.Context) (cpuCount int, memTotal int64, valid bool) {
+	h.hostInfoCache.RLock()
+	if time.Since(h.hostInfoCache.timestamp) < hostInfoCacheDuration {
+		cpuCount = h.hostInfoCache.cpuCount
+		memTotal = h.hostInfoCache.memTotal
+		valid = h.hostInfoCache.valid
+		h.hostInfoCache.RUnlock()
+		return
+	}
+	h.hostInfoCache.RUnlock()
+
+	if client, err := h.dockerService.GetClient(); err == nil {
+		if info, err := client.Info(ctx); err == nil {
+			h.hostInfoCache.Lock()
+			h.hostInfoCache.cpuCount = info.NCPU
+			h.hostInfoCache.memTotal = info.MemTotal
+			h.hostInfoCache.timestamp = time.Now()
+			h.hostInfoCache.valid = true
+			h.hostInfoCache.Unlock()
+			return info.NCPU, info.MemTotal, true
+		}
+	}
+
+	h.hostInfoCache.Lock()
+	h.hostInfoCache.timestamp = time.Now()
+	h.hostInfoCache.valid = false
+	h.hostInfoCache.Unlock()
+	return 0, 0, false
+}
+
 // collectSystemStats gathers all system statistics.
 func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
 	h.cpuCache.RLock()
 	cpuUsage := h.cpuCache.value
 	h.cpuCache.RUnlock()
 
-	cpuCount := h.getCPUCount()
 	memUsed, memTotal := h.getMemoryInfo()
-	cpuCount, memUsed, memTotal = h.applyCgroupLimits(cpuCount, memUsed, memTotal)
+	memTotalFromGopsutil := memTotal
+	cpuCount := h.getCPUCount()
+
+	if dockerCPU, dockerMem, valid := h.getHostInfo(ctx); valid {
+		cpuCount = dockerCPU
+		if dockerMem > 0 {
+			dockerMemTotal := uint64(dockerMem)
+			if memTotalFromGopsutil > 0 && dockerMemTotal < memTotalFromGopsutil {
+				memUsed = uint64(memUsed * dockerMemTotal / memTotalFromGopsutil)
+			}
+			memTotal = dockerMemTotal
+			if memUsed > memTotal {
+				memUsed = memTotal
+			}
+		}
+	} else {
+		cpuCount, memUsed, memTotal = h.applyCgroupLimits(cpuCount, memUsed, memTotal)
+	}
 	diskUsed, diskTotal := h.getDiskInfo(ctx)
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)

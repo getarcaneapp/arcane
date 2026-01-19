@@ -124,7 +124,7 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	})
 
 	// Remaining Gin handlers (WebSocket/streaming)
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
+	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, appServices.Docker, authMiddleware, cfg)
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {

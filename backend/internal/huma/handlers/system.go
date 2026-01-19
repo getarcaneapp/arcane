@@ -12,7 +12,6 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
@@ -279,25 +278,6 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.DockerInfoError{Err: err}).Error())
 	}
-
-	cpuCount := info.NCPU
-	memTotal := info.MemTotal
-
-	// Check for cgroup limits (LXC, Docker, etc.)
-	if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
-		if limit := cgroupLimits.MemoryLimit; limit > 0 {
-			limitInt := int64(limit)
-			if memTotal == 0 || limitInt < memTotal {
-				memTotal = limitInt
-			}
-		}
-		if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
-			cpuCount = cgroupLimits.CPUCount
-		}
-	}
-
-	info.NCPU = cpuCount
-	info.MemTotal = memTotal
 
 	return &GetDockerInfoOutput{
 		Body: dockerinfo.Info{
