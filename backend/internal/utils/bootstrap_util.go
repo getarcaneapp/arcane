@@ -33,6 +33,10 @@ type SettingsManager interface {
 	EnsureDefaultSettings(ctx context.Context) error
 }
 
+type SettingsPruner interface {
+	PruneUnknownSettings(ctx context.Context) error
+}
+
 func InitializeDefaultSettings(ctx context.Context, cfg *config.Config, settingsMgr SettingsManager) {
 	slog.InfoContext(ctx, "Ensuring default settings are initialized")
 
@@ -46,6 +50,12 @@ func InitializeDefaultSettings(ctx context.Context, cfg *config.Config, settings
 		slog.WarnContext(ctx, "Failed to persist env-driven settings", "error", err.Error())
 	} else {
 		slog.DebugContext(ctx, "Persisted env-driven settings")
+	}
+}
+
+func CleanupUnknownSettings(ctx context.Context, settingsMgr SettingsPruner) {
+	if err := settingsMgr.PruneUnknownSettings(ctx); err != nil {
+		slog.ErrorContext(ctx, "Failed to prune unknown settings", "error", err.Error())
 	}
 }
 

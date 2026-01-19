@@ -3,6 +3,7 @@ on:
     pull_request:
         branches:
             - main
+            - "release/**"
         types: [opened, synchronize, reopened]
         paths:
             - backend/go.mod

@@ -17,7 +17,8 @@ type AppImagesHandler struct {
 // --- Huma Input/Output Wrappers ---
 
 type GetLogoInput struct {
-	Full bool `query:"full" default:"false" doc:"Return full logo instead of icon"`
+	Full  bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
+	Color string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
 }
 
 type GetAppImageOutput struct {
@@ -80,7 +81,7 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 		name = "logo-full"
 	}
 
-	return h.getImage(name)
+	return h.getImageWithColor(name, input.Color)
 }
 
 // GetLogoEmail returns the application logo image for emails (PNG).
@@ -111,13 +112,21 @@ func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{
 }
 
 func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
-	imageData, mimeType, err := h.appImagesService.GetImage(name)
+	return h.getImageWithColor(name, "")
+}
+
+func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) (*GetAppImageOutput, error) {
+	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageRetrievalError{Err: err}).Error())
 	}
 
-	// Cache for 15 minutes, stale-while-revalidate for 24 hours
+	// If color override is provided, don't cache (for preview purposes)
+	// Otherwise cache for 15 minutes with stale-while-revalidate for 24 hours
 	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
+	if colorOverride != "" {
+		cacheControl = "no-cache, no-store, must-revalidate"
+	}
 
 	return &GetAppImageOutput{
 		ContentType:  mimeType,

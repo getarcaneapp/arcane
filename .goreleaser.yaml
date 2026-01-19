@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
 version: 2
@@ -25,10 +25,10 @@ builds:
     goarch:
       - amd64
       - arm64
-      - '386'
+      - "386"
       - arm
     goarm:
-      - '7'
+      - "7"
     goamd64:
       - v1
     go386:
@@ -41,7 +41,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime={{ .Date }}
     flags:
       - -trimpath
-    mod_timestamp: '{{ .CommitTimestamp }}'
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
   - id: arcane-agent
     main: ./cmd/main.go
@@ -58,7 +58,7 @@ builds:
       - arm64
       - arm
     goarm:
-      - '7'
+      - "7"
     goamd64:
       - v1
     ldflags:
@@ -69,7 +69,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime={{ .Date }}
     flags:
       - -trimpath
-    mod_timestamp: '{{ .CommitTimestamp }}'
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
   - id: arcane-cli
     main: .
@@ -83,10 +83,10 @@ builds:
     goarch:
       - amd64
       - arm64
-      - '386'
+      - "386"
       - arm
     goarm:
-      - '7'
+      - "7"
     goamd64:
       - v1
     go386:
@@ -98,7 +98,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/cli/internal/config.Revision={{ .ShortCommit }}
     flags:
       - -trimpath
-    mod_timestamp: '{{ .CommitTimestamp }}'
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
   - id: arcane-cli
@@ -106,19 +106,41 @@ archives:
       - arcane-cli
     formats:
       - tar.gz
-    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
   - id: default
     ids:
       - arcane
       - arcane-agent
     formats:
       - binary
-    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+
+upx:
+  - enabled: true
+    ids:
+      - arcane
+      - arcane-agent
+      - arcane-cli
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - "386"
+    goarm:
+      - "7"
+    goamd64:
+      - v1
+    compress: best
+    lzma: true
+    brute: true
 
 nfpms:
   - id: arcane-cli
     package_name: arcane-cli
-    file_name_template: '{{ .ConventionalFileName }}'
+    file_name_template: "{{ .ConventionalFileName }}"
     ids:
       - arcane-cli
     vendor: getarcaneapp
@@ -146,12 +168,12 @@ homebrew_casks:
       - arcane-cli
     binaries:
       - arcane-cli
-    description: 'Arcane CLI - Modern Docker Management, Designed for Everyone.'
-    homepage: 'https://getarcane.app'
+    description: "Arcane CLI - Modern Docker Management, Designed for Everyone."
+    homepage: "https://getarcane.app"
     repository:
       owner: getarcaneapp
       name: homebrew-tap
-    commit_msg_template: 'chore(brew): update {{ .ProjectName }} to {{ .Tag }}'
+    commit_msg_template: "chore(brew): update {{ .ProjectName }} to {{ .Tag }}"
 
 dockers_v2:
   - id: arcane-next
@@ -159,25 +181,25 @@ dockers_v2:
       - arcane
     dockerfile: docker/next-builds/Dockerfile-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane'
+      - "ghcr.io/getarcaneapp/arcane"
     tags:
-      - 'next'
-      - '{{.Tag}}'
+      - "next"
+      - "{{.Tag}}"
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
     labels:
-      'org.opencontainers.image.authors': 'OFKM Technologies'
-      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
-      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
-      'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
-      'org.opencontainers.image.title': 'Arcane'
-      'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
-      'com.getarcaneapp.arcane': 'true'
+      "org.opencontainers.image.authors": "OFKM Technologies"
+      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
+      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.licenses": "BSD-3-Clause"
+      "org.opencontainers.image.title": "Arcane"
+      "org.opencontainers.image.description": "Modern Docker Management, Made for Everyone"
+      "com.getarcaneapp.arcane": "true"
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -186,25 +208,25 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/next-builds/Dockerfile-agent-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane-headless'
+      - "ghcr.io/getarcaneapp/arcane-headless"
     tags:
-      - 'next'
-      - '{{.Tag}}'
+      - "next"
+      - "{{.Tag}}"
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
     labels:
-      'org.opencontainers.image.authors': 'OFKM Technologies'
-      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
-      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
-      'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
-      'org.opencontainers.image.title': 'Arcane Agent'
-      'org.opencontainers.image.description': 'Arcane Agent'
-      'com.getarcaneapp.arcane.agent': 'true'
+      "org.opencontainers.image.authors": "OFKM Technologies"
+      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
+      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.licenses": "BSD-3-Clause"
+      "org.opencontainers.image.title": "Arcane Agent"
+      "org.opencontainers.image.description": "Arcane Agent"
+      "com.getarcaneapp.arcane.agent": "true"
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -213,25 +235,25 @@ dockers_v2:
       - arcane
     dockerfile: docker/next-builds/Dockerfile-next-distroless
     images:
-      - 'ghcr.io/getarcaneapp/arcane'
+      - "ghcr.io/getarcaneapp/arcane"
     tags:
-      - 'next-distroless'
-      - '{{.Tag}}-distroless'
+      - "next-distroless"
+      - "{{.Tag}}-distroless"
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
     labels:
-      'org.opencontainers.image.authors': 'OFKM Technologies'
-      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
-      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
-      'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
-      'org.opencontainers.image.title': 'Arcane'
-      'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
-      'com.getarcaneapp.arcane': 'true'
+      "org.opencontainers.image.authors": "OFKM Technologies"
+      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
+      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.licenses": "BSD-3-Clause"
+      "org.opencontainers.image.title": "Arcane"
+      "org.opencontainers.image.description": "Modern Docker Management, Made for Everyone"
+      "com.getarcaneapp.arcane": "true"
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -240,25 +262,25 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/next-builds/Dockerfile-agent-distroless
     images:
-      - 'ghcr.io/getarcaneapp/arcane-headless'
+      - "ghcr.io/getarcaneapp/arcane-headless"
     tags:
-      - 'next-distroless'
-      - '{{.Tag}}-distroless'
+      - "next-distroless"
+      - "{{.Tag}}-distroless"
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
     labels:
-      'org.opencontainers.image.authors': 'OFKM Technologies'
-      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
-      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
-      'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
-      'org.opencontainers.image.title': 'Arcane Agent'
-      'org.opencontainers.image.description': 'Arcane Agent'
-      'com.getarcaneapp.arcane.agent': 'true'
+      "org.opencontainers.image.authors": "OFKM Technologies"
+      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
+      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.licenses": "BSD-3-Clause"
+      "org.opencontainers.image.title": "Arcane Agent"
+      "org.opencontainers.image.description": "Arcane Agent"
+      "com.getarcaneapp.arcane.agent": "true"
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -277,7 +299,7 @@ release:
   prerelease: auto
   make_latest: true
   mode: keep-existing
-  name_template: '{{.Tag}}'
+  name_template: "{{.Tag}}"
   footer: |
     ---
 

@@ -7,8 +7,6 @@
 	import type { GenericFormValues } from '$lib/types/notification-providers';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
 
 	interface Props {
 		values: GenericFormValues;
@@ -28,7 +26,6 @@
 			titleKey: z.string(),
 			messageKey: z.string(),
 			customHeaders: z.string(),
-			disableTls: z.boolean(),
 			eventImageUpdate: z.boolean(),
 			eventContainerUpdate: z.boolean()
 		})
@@ -131,17 +128,6 @@
 		autocomplete="off"
 		helpText={m.notifications_generic_custom_headers_help()}
 	/>
-
-	<div class="flex items-center space-x-2">
-		<Checkbox id="generic-disable-tls" bind:checked={values.disableTls} {disabled} />
-		<Label
-			for="generic-disable-tls"
-			class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-		>
-			{m.notifications_generic_disable_tls_label()}
-		</Label>
-	</div>
-	<p class="text-muted-foreground -mt-1 text-xs">{m.notifications_generic_disable_tls_help()}</p>
 
 	<EventSubscriptions
 		providerId="generic"
