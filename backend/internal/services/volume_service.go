@@ -3,6 +3,7 @@ package services
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -506,10 +507,10 @@ func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPa
 
 	// Ensure cleanup
 	defer func() {
-		removeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		removeCtx, cancel := timeouts.WithTimeout(ctx, 30, timeouts.DefaultDockerAPI)
 		defer cancel()
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
-			slog.Warn("failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
+			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}
 	}()
 
@@ -563,10 +564,10 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 
 	// Ensure cleanup
 	defer func() {
-		removeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		removeCtx, cancel := timeouts.WithTimeout(ctx, 30, timeouts.DefaultDockerAPI)
 		defer cancel()
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
-			slog.Warn("failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
+			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}
 	}()
 
@@ -604,7 +605,7 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 	// Read file content
 	content := make([]byte, readSize)
 	n, err := io.ReadFull(tr, content)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil, fmt.Errorf("failed to read file content: %w", err)
 	}
 	content = content[:n]

@@ -946,7 +946,7 @@ func (s *ContainerService) GetContainerFileContent(ctx context.Context, containe
 	// Read file content
 	content := make([]byte, readSize)
 	n, err := io.ReadFull(tr, content)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil, fmt.Errorf("failed to read file content: %w", err)
 	}
 	content = content[:n]
