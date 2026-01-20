@@ -20,8 +20,9 @@
 
 	// Check if the last column is the actions column
 	const isActionsColumn = (columnId: string) => columnId === 'actions';
-	const stickyActionsClass =
-		'sticky right-0 w-fit bg-background/90 backdrop-blur-lg border-l-2 border-border/50 group-hover/row:bg-muted/90 group-data-[state=selected]/row:bg-primary/10';
+	const stickyActionsHeaderClass = 'sticky right-0 w-px whitespace-nowrap bg-muted/30 backdrop-blur-sm border-l border-border';
+	const stickyActionsCellClass =
+		'sticky right-0 w-px whitespace-nowrap bg-background border-l border-border backdrop-blur-lg transition-colors group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
@@ -43,14 +44,14 @@
 	// Get header classes based on column metadata
 	function getHeaderClasses(header: Header<any, unknown>): string {
 		const meta = header.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign } | undefined;
-		return cn(isActionsColumn(header.id) && stickyActionsClass, getWidthClass(meta?.width), getAlignClass(meta?.align));
+		return cn(isActionsColumn(header.id) && stickyActionsHeaderClass, getWidthClass(meta?.width), getAlignClass(meta?.align));
 	}
 
 	// Get cell classes based on column metadata
 	function getCellClasses(cell: Cell<any, unknown>): string {
 		const meta = cell.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign; truncate?: boolean } | undefined;
 		return cn(
-			isActionsColumn(cell.column.id) && stickyActionsClass,
+			isActionsColumn(cell.column.id) && stickyActionsCellClass,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
 			meta?.truncate && 'max-w-0 truncate'
@@ -67,7 +68,7 @@
 						<Table.Head colspan={header.colSpan} class={getHeaderClasses(header)}>
 							{#if !header.isPlaceholder}
 								{#if isActionsColumn(header.id)}
-									<span class="sr-only">{m.common_open_menu()}</span>
+									{m.common_actions()}
 								{:else}
 									<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
 								{/if}

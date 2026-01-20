@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -14,7 +13,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import * as m from '$lib/paraglide/messages.js';
-	import { ApiKeyIcon, TrashIcon, EllipsisIcon, EditIcon } from '$lib/icons';
+	import { ApiKeyIcon, TrashIcon, EditIcon } from '$lib/icons';
 
 	let {
 		apiKeys = $bindable(),
@@ -231,34 +230,29 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ApiKey })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => onEditApiKey(item)}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => onEditApiKey(item)}
+			title={m.common_edit()}
+		>
+			<EditIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => handleDeleteApiKey(item.id, item.name)}
+			title={m.common_delete()}
+		>
+			<TrashIcon class="size-4" />
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

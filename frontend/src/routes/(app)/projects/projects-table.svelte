@@ -2,11 +2,10 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
+	import { EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -415,100 +414,121 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Project })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => goto(`/projects/${item.id}`)}
+			disabled={isAnyLoading}
+			title={m.common_edit()}
+		>
+			<EditIcon class="size-4" />
+		</ArcaneButton>
 
-				{#if item.gitOpsManagedBy}
-					<DropdownMenu.Item
-						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
-						disabled={isLoading.syncing || isAnyLoading}
-					>
-						{#if isLoading.syncing}
-							<Spinner class="size-4" />
-						{:else}
-							<RefreshIcon class="size-4" />
-						{/if}
-						{m.git_sync_from_git()}
-					</DropdownMenu.Item>
-				{/if}
-
-				{#if item.status !== 'running'}
-					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
-						{#if isLoading.start}
-							<Spinner class="size-4" />
-						{:else}
-							<StartIcon class="size-4" />
-						{/if}
-						{m.common_up()}
-					</DropdownMenu.Item>
+		{#if item.gitOpsManagedBy}
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="icon"
+				class="size-8"
+				onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
+				disabled={isLoading.syncing || isAnyLoading}
+				title={m.git_sync_from_git()}
+			>
+				{#if isLoading.syncing}
+					<Spinner class="size-4" />
 				{:else}
-					<DropdownMenu.Item
-						onclick={() => performProjectAction('restart', item.id)}
-						disabled={isLoading.restart || isAnyLoading}
-					>
-						{#if isLoading.restart}
-							<Spinner class="size-4" />
-						{:else}
-							<RestartIcon class="size-4" />
-						{/if}
-						{m.common_restart()}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Item onclick={() => performProjectAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
-						{#if isLoading.stop}
-							<Spinner class="size-4" />
-						{:else}
-							<StopIcon class="size-4" />
-						{/if}
-						{m.common_down()}
-					</DropdownMenu.Item>
+					<RefreshIcon class="size-4" />
 				{/if}
+			</ArcaneButton>
+		{/if}
 
-				<DropdownMenu.Item onclick={() => performProjectAction('redeploy', item.id)} disabled={isLoading.pull || isAnyLoading}>
-					{#if isLoading.pull}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.compose_pull_redeploy()}
-				</DropdownMenu.Item>
+		{#if item.status !== 'running'}
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="icon"
+				class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
+				onclick={() => performProjectAction('start', item.id)}
+				disabled={isLoading.start || isAnyLoading}
+				title={m.common_up()}
+			>
+				{#if isLoading.start}
+					<Spinner class="size-4" />
+				{:else}
+					<StartIcon class="size-4" />
+				{/if}
+			</ArcaneButton>
+		{:else}
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="icon"
+				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+				onclick={() => performProjectAction('stop', item.id)}
+				disabled={isLoading.stop || isAnyLoading}
+				title={m.common_down()}
+			>
+				{#if isLoading.stop}
+					<Spinner class="size-4" />
+				{:else}
+					<StopIcon class="size-4" />
+				{/if}
+			</ArcaneButton>
+		{/if}
 
-				<DropdownMenu.Separator />
+		{#if item.status === 'running'}
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="icon"
+				class="size-8"
+				onclick={() => performProjectAction('restart', item.id)}
+				disabled={isLoading.restart || isAnyLoading}
+				title={m.common_restart()}
+			>
+				{#if isLoading.restart}
+					<Spinner class="size-4" />
+				{:else}
+					<RestartIcon class="size-4" />
+				{/if}
+			</ArcaneButton>
+		{/if}
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => performProjectAction('destroy', item.id)}
-					disabled={isLoading.remove || isAnyLoading}
-				>
-					{#if isLoading.remove}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.compose_destroy()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => performProjectAction('redeploy', item.id)}
+			disabled={isLoading.pull || isAnyLoading}
+			title={m.compose_pull_redeploy()}
+		>
+			{#if isLoading.pull}
+				<Spinner class="size-4" />
+			{:else}
+				<RedeployIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => performProjectAction('destroy', item.id)}
+			disabled={isLoading.remove || isAnyLoading}
+			title={m.compose_destroy()}
+		>
+			{#if isLoading.remove}
+				<Spinner class="size-4" />
+			{:else}
+				<TrashIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

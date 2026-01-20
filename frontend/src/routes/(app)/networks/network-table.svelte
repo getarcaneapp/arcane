@@ -4,7 +4,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -16,7 +15,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import { NetworksIcon, GlobeIcon, EllipsisIcon, InspectIcon, TrashIcon } from '$lib/icons';
+	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -250,33 +249,31 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: NetworkSummaryDto })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/networks/${item.id}`)} disabled={isAnyLoading}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteNetwork(item.id, item.name)}
-					disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => goto(`/networks/${item.id}`)}
+			disabled={isAnyLoading}
+			title={m.common_inspect()}
+		>
+			<InspectIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => handleDeleteNetwork(item.id, item.name)}
+			disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
+			title={m.common_delete()}
+		>
+			<TrashIcon class="size-4" />
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

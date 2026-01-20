@@ -27,14 +27,24 @@ export const usageFilters = [
 
 export const imageUpdateFilters = [
 	{
-		value: true,
+		value: 'has_update',
 		label: m.images_has_updates(),
 		icon: UpdateIcon
 	},
 	{
-		value: false,
+		value: 'up_to_date',
 		label: m.images_no_updates(),
 		icon: VerifiedCheckIcon
+	},
+	{
+		value: 'error',
+		label: m.common_error(),
+		icon: CloseIcon
+	},
+	{
+		value: 'unknown',
+		label: m.common_unknown(),
+		icon: InfoIcon
 	}
 ];
 

@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -17,7 +16,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import bytes from 'bytes';
-	import { TrashIcon, EllipsisIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
+	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 
 	let {
@@ -247,34 +246,30 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: VolumeSummaryDto })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/volumes/${item.id}`)}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item variant="destructive" onclick={() => handleRemoveVolumeConfirm(item.name)} disabled={item.inUse}>
-					<TrashIcon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => goto(`/volumes/${item.id}`)}
+			title={m.common_inspect()}
+		>
+			<InspectIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => handleRemoveVolumeConfirm(item.name)}
+			disabled={item.inUse}
+			title={m.common_remove()}
+		>
+			<TrashIcon class="size-4" />
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

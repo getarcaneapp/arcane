@@ -493,6 +493,18 @@
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{
+			id: 'updates',
+			accessorFn: (row) => {
+				if (row.updateInfo?.hasUpdate) return 'has_update';
+				if (row.updateInfo?.error) return 'error';
+				if (row.updateInfo) return 'up_to_date';
+				return 'unknown';
+			},
+			title: m.containers_update_column(),
+			sortable: false,
+			cell: UpdatesCell
+		},
+		{
 			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
 			title: m.containers_cpu_usage(),
@@ -515,6 +527,7 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
+		{ id: 'updates', label: m.containers_update_column(), defaultVisible: false },
 		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
 		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
@@ -639,6 +652,18 @@
 		</div>
 	{:else}
 		<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+	{/if}
+{/snippet}
+
+{#snippet UpdatesCell({ item }: { item: ContainerSummaryDto })}
+	{#if item.updateInfo?.hasUpdate}
+		<StatusBadge text={m.images_has_updates()} variant="blue" />
+	{:else if item.updateInfo?.error}
+		<StatusBadge text={m.common_error()} variant="red" />
+	{:else if item.updateInfo}
+		<StatusBadge text={m.images_no_updates()} variant="green" />
+	{:else}
+		<StatusBadge text={m.common_unknown()} variant="gray" />
 	{/if}
 {/snippet}
 

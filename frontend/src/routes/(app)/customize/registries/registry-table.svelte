@@ -3,7 +3,6 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -15,7 +14,7 @@
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EllipsisIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
 
 	let {
 		registries = $bindable(),
@@ -239,45 +238,50 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerRegistry })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
-					{#if testingId === item.id}
-						<Spinner class="size-4" />
-					{:else}
-						<TestIcon class="size-4" />
-					{/if}
-					{m.registries_test_connection()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteOne(item.id, item.url)}
-					disabled={removingId === item.id}
-				>
-					{#if removingId === item.id}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => handleTest(item.id, item.url)}
+			disabled={testingId === item.id}
+			title={m.registries_test_connection()}
+		>
+			{#if testingId === item.id}
+				<Spinner class="size-4" />
+			{:else}
+				<TestIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => onEditRegistry(item)}
+			title={m.common_edit()}
+		>
+			<EditIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => handleDeleteOne(item.id, item.url)}
+			disabled={removingId === item.id}
+			title={m.common_remove()}
+		>
+			{#if removingId === item.id}
+				<Spinner class="size-4" />
+			{:else}
+				<TrashIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <div>

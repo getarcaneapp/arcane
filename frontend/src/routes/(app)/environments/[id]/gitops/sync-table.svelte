@@ -1,8 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -16,7 +15,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import {
-		EllipsisIcon,
 		EditIcon as PencilIcon,
 		StartIcon as PlayIcon,
 		TrashIcon as Trash2Icon,
@@ -25,8 +23,6 @@
 		ProjectsIcon as FolderIcon,
 		HashIcon
 	} from '$lib/icons';
-	import { goto } from '$app/navigation';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -302,36 +298,35 @@
 {/snippet}
 
 {#snippet RowActions({ item, row }: { item: GitOpsSync; row?: Row<GitOpsSync> })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handlePerformSync(item.id, item.name)} disabled={isLoading.syncing}>
-					<PlayIcon class="size-4" />
-					{m.git_sync_perform()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => onEditSync(item)}>
-					<PencilIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteOne(item.id, item.name)}
-					disabled={isLoading.removing}
-				>
-					<Trash2Icon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
+			onclick={() => handlePerformSync(item.id, item.name)}
+			disabled={isLoading.syncing}
+			title={m.git_sync_perform()}
+		>
+			<PlayIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" onclick={() => onEditSync(item)} title={m.common_edit()}>
+			<PencilIcon class="size-4" />
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => handleDeleteOne(item.id, item.name)}
+			disabled={isLoading.removing}
+			title={m.common_remove()}
+		>
+			<Trash2Icon class="size-4" />
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

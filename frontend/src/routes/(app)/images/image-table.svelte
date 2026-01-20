@@ -5,7 +5,6 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import bytes from 'bytes';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -19,7 +18,7 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
-	import { DownloadIcon, TrashIcon, EllipsisIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon } from '$lib/icons';
+	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -155,7 +154,12 @@
 		},
 		{
 			id: 'updates',
-			accessorFn: (row) => row.updateInfo?.hasUpdate ?? false,
+			accessorFn: (row) => {
+				if (row.updateInfo?.hasUpdate) return 'has_update';
+				if (row.updateInfo?.error) return 'error';
+				if (row.updateInfo) return 'up_to_date';
+				return 'unknown';
+			},
 			title: m.images_updates(),
 			cell: UpdatesCell
 		},
@@ -167,7 +171,6 @@
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
-		{ id: 'updates', label: m.images_updates(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
@@ -230,13 +233,15 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ImageSummaryDto })}
-	<ImageUpdateItem
-		updateInfo={item.updateInfo}
-		imageId={item.id}
-		repo={item.repo}
-		tag={item.tag}
-		onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
-	/>
+	{#if item.updateInfo?.hasUpdate}
+		<StatusBadge text={m.images_has_updates()} variant="blue" />
+	{:else if item.updateInfo?.error}
+		<StatusBadge text={m.common_error()} variant="red" />
+	{:else if item.updateInfo}
+		<StatusBadge text={m.images_no_updates()} variant="green" />
+	{:else}
+		<StatusBadge text={m.common_unknown()} variant="gray" />
+	{/if}
 {/snippet}
 
 {#snippet ImageMobileCardSnippet({
@@ -320,51 +325,58 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageSummaryDto })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item
-					onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-					disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-				>
-					{#if isPullingInline[item.id]}
-						<Spinner class="size-4" />
-						{m.common_action_pulling()}
-					{:else}
-						<DownloadIcon class="size-4" />
-						{m.images_pull()}
-					{/if}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
-					{#if isLoading.removing}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<div class="flex items-center gap-0.5">
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => goto(`/images/${item.id}`)}
+			title={m.common_inspect()}
+		>
+			<InspectIcon class="size-4" />
+		</ArcaneButton>
+
+		<ImageUpdateItem
+			updateInfo={item.updateInfo}
+			imageId={item.id}
+			repo={item.repo}
+			tag={item.tag}
+			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
+		/>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8"
+			onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
+			disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
+			title={m.images_pull()}
+		>
+			{#if isPullingInline[item.id]}
+				<Spinner class="size-4" />
+			{:else}
+				<DownloadIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
+			onclick={() => deleteImage(item.id)}
+			disabled={isLoading.removing}
+			title={m.common_remove()}
+		>
+			{#if isLoading.removing}
+				<Spinner class="size-4" />
+			{:else}
+				<TrashIcon class="size-4" />
+			{/if}
+		</ArcaneButton>
+	</div>
 {/snippet}
 
 <ArcaneTable

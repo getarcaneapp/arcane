@@ -528,6 +528,25 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 				},
 			},
 		},
+		FilterAccessors: []pagination.FilterAccessor[containertypes.Summary]{
+			{
+				Key: "updates",
+				Fn: func(c containertypes.Summary, filterValue string) bool {
+					switch filterValue {
+					case "has_update":
+						return c.UpdateInfo != nil && c.UpdateInfo.HasUpdate
+					case "up_to_date":
+						return c.UpdateInfo != nil && !c.UpdateInfo.HasUpdate && c.UpdateInfo.Error == ""
+					case "error":
+						return c.UpdateInfo != nil && c.UpdateInfo.Error != ""
+					case "unknown":
+						return c.UpdateInfo == nil
+					default:
+						return true
+					}
+				},
+			},
+		},
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)

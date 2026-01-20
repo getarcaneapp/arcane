@@ -720,14 +720,23 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			{
 				Key: "updates",
 				Fn: func(i imagetypes.Summary, filterValue string) bool {
-					hasUpdate := i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
-					if filterValue == "true" {
-						return hasUpdate
+					switch filterValue {
+					case "has_update":
+						return i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
+					case "up_to_date":
+						return i.UpdateInfo != nil && !i.UpdateInfo.HasUpdate && i.UpdateInfo.Error == ""
+					case "error":
+						return i.UpdateInfo != nil && i.UpdateInfo.Error != ""
+					case "unknown":
+						return i.UpdateInfo == nil
+					// Legacy boolean support
+					case "true":
+						return i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
+					case "false":
+						return i.UpdateInfo == nil || !i.UpdateInfo.HasUpdate
+					default:
+						return true
 					}
-					if filterValue == "false" {
-						return !hasUpdate
-					}
-					return true
 				},
 			},
 		},
