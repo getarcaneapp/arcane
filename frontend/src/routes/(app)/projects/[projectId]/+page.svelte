@@ -21,7 +21,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
-	import ServicesGrid from '../components/ServicesGrid.svelte';
+	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
@@ -376,7 +376,7 @@
 
 		{#snippet tabContent()}
 			<Tabs.Content value="services" class="h-full">
-				<ServicesGrid services={project.runtimeServices} {projectId} />
+				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={refreshProjectDetails} />
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
