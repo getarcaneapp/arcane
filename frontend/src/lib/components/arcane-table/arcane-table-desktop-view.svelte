@@ -109,10 +109,14 @@
 					{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
 					{@const groupRows = getRowsForGroup(group.items)}
 					{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
+					{@const hasSelection = selectionState !== 'none'}
 					{@const IconComponent = groupIcon?.(group.groupName)}
 
 					<Table.Row
-						class="bg-muted/50 hover:bg-muted/70 cursor-pointer transition-colors"
+						class={cn(
+							'cursor-pointer transition-colors',
+							hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70'
+						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
 						{#if !selectionDisabled}
