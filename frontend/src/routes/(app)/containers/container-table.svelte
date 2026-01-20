@@ -18,11 +18,6 @@
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { containerService } from '$lib/services/container-service';
-	import DropdownCard from '$lib/components/dropdown-card.svelte';
-	import type { Table as TableType } from '@tanstack/table-core';
-	import * as Table from '$lib/components/ui/table/index.js';
-	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
-	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
@@ -36,15 +31,12 @@
 		RefreshIcon,
 		TrashIcon,
 		EllipsisIcon,
-		ArrowDownIcon,
-		ArrowRightIcon,
 		BoxIcon,
 		ClockIcon,
 		ImagesIcon,
 		NetworksIcon,
 		ProjectsIcon,
-		InspectIcon,
-		UpdateIcon
+		InspectIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -581,27 +573,15 @@
 		return projectLabel || 'No Project';
 	}
 
-	const groupedContainers = $derived(() => {
-		if (!groupByProject) return null;
+	// Group by function for containers
+	function groupContainerByProject(container: ContainerSummaryDto): string {
+		return getProjectName(container);
+	}
 
-		const groups = new Map<string, ContainerSummaryDto[]>();
-
-		for (const container of containers.data ?? []) {
-			const projectName = getProjectName(container);
-			if (!groups.has(projectName)) {
-				groups.set(projectName, []);
-			}
-			groups.get(projectName)!.push(container);
-		}
-
-		const sortedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
-			if (a === 'No Project') return 1;
-			if (b === 'No Project') return -1;
-			return a.localeCompare(b);
-		});
-
-		return sortedGroups.length > 0 ? sortedGroups : null;
-	});
+	// Icon for each group
+	function getGroupIcon(_groupName: string) {
+		return ProjectsIcon;
+	}
 </script>
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
@@ -1012,125 +992,14 @@
 	rowActions={RowActions}
 	mobileCard={ContainerMobileCardSnippet}
 	customViewOptions={CustomViewOptions}
-	customTableView={groupByProject && groupedContainers() ? GroupedTableView : undefined}
+	groupBy={groupByProject ? groupContainerByProject : undefined}
+	groupIcon={groupByProject ? getGroupIcon : undefined}
+	groupCollapsedState={collapsedGroups}
+	onGroupToggle={toggleGroup}
 />
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem bind:checked={() => groupByProject, (v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
 	</DropdownMenu.CheckboxItem>
-{/snippet}
-
-{#snippet GroupedTableView({
-	table,
-	renderPagination,
-	mobileFieldsForOptions,
-	onToggleMobileField
-}: {
-	table: TableType<ContainerSummaryDto>;
-	renderPagination: import('svelte').Snippet;
-	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
-	onToggleMobileField: (fieldId: string) => void;
-})}
-	<div class="flex h-full flex-col">
-		<div class="shrink-0 border-b">
-			<DataTableToolbar
-				{table}
-				{selectedIds}
-				{bulkActions}
-				mobileFields={mobileFieldsForOptions}
-				{onToggleMobileField}
-				customViewOptions={CustomViewOptions}
-			/>
-		</div>
-
-		<div class="hidden flex-1 overflow-auto px-6 py-8 md:block">
-			<div class="overflow-x-auto rounded-md border">
-				<Table.Root>
-					<Table.Header>
-						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-							<Table.Row>
-								{#each headerGroup.headers as header (header.id)}
-									<Table.Head colspan={header.colSpan}>
-										{#if !header.isPlaceholder}
-											<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-										{/if}
-									</Table.Head>
-								{/each}
-							</Table.Row>
-						{/each}
-					</Table.Header>
-					<Table.Body>
-						{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
-							<Table.Row
-								class="bg-muted/50 hover:bg-muted/60 cursor-pointer transition-colors"
-								onclick={() => toggleGroup(projectName)}
-							>
-								<Table.Cell colspan={table.getAllColumns().length} class="py-3 font-medium">
-									<div class="flex items-center gap-2">
-										{#if collapsedGroups[projectName]}
-											<ArrowRightIcon class="text-muted-foreground size-4" />
-										{:else}
-											<ArrowDownIcon class="text-muted-foreground size-4" />
-										{/if}
-										<ProjectsIcon class="text-muted-foreground size-4" />
-										<span>{projectName}</span>
-										<span class="text-muted-foreground text-xs font-normal">({projectContainers.length})</span>
-									</div>
-								</Table.Cell>
-							</Table.Row>
-
-							{#if !collapsedGroups[projectName]}
-								{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
-								{@const projectRows = table
-									.getRowModel()
-									.rows.filter((row) => projectContainerIds.has((row.original as ContainerSummaryDto).id))}
-
-								{#each projectRows as row (row.id)}
-									<Table.Row
-										data-state={(selectedIds ?? []).includes((row.original as ContainerSummaryDto).id) && 'selected'}
-										class="hover:bg-primary/5 transition-colors"
-									>
-										{#each row.getVisibleCells() as cell, i (cell.id)}
-											<Table.Cell class={i === 0 ? 'pl-12' : ''}>
-												<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-											</Table.Cell>
-										{/each}
-									</Table.Row>
-								{/each}
-							{/if}
-						{/each}
-					</Table.Body>
-				</Table.Root>
-			</div>
-		</div>
-
-		<div class="space-y-4 py-2 md:hidden">
-			{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
-				{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
-				{@const projectRows = table
-					.getRowModel()
-					.rows.filter((row) => projectContainerIds.has((row.original as ContainerSummaryDto).id))}
-
-				<DropdownCard
-					id={`container-project-${projectName}`}
-					title={projectName}
-					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
-					icon={ProjectsIcon}
-				>
-					{#each projectRows as row (row.id)}
-						{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
-					{:else}
-						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
-							{m.common_no_results_found()}
-						</div>
-					{/each}
-				</DropdownCard>
-			{/each}
-		</div>
-
-		<div class="shrink-0 border-t px-2 py-4">
-			{@render renderPagination()}
-		</div>
-	</div>
 {/snippet}

@@ -22,6 +22,8 @@
 	import {
 		type CompactTablePrefs,
 		type FieldSpec,
+		type GroupedData,
+		type GroupSelectionState,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -29,6 +31,7 @@
 		buildMobileVisibility,
 		type BulkAction
 	} from './arcane-table.types.svelte';
+	import type { Component } from 'svelte';
 	import { extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
@@ -55,7 +58,12 @@
 		customViewOptions,
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
-		columnVisibility = $bindable<VisibilityState>({})
+		columnVisibility = $bindable<VisibilityState>({}),
+		// Grouping props
+		groupBy,
+		groupIcon,
+		groupCollapsedState = $bindable<Record<string, boolean>>({}),
+		onGroupToggle
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -85,6 +93,11 @@
 		>;
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: VisibilityState;
+		// Grouping props
+		groupBy?: (item: TData) => string;
+		groupIcon?: (groupName: string) => Component;
+		groupCollapsedState?: Record<string, boolean>;
+		onGroupToggle?: (groupName: string) => void;
 	} = $props();
 
 	// Default page size constant
@@ -468,6 +481,65 @@
 		}))
 	);
 
+	// Compute grouped rows when groupBy is provided
+	const groupedRows = $derived.by((): GroupedData<TData>[] | null => {
+		if (!groupBy) return null;
+
+		const groups = new Map<string, TData[]>();
+		for (const item of items.data ?? []) {
+			const groupName = groupBy(item);
+			if (!groups.has(groupName)) {
+				groups.set(groupName, []);
+			}
+			groups.get(groupName)!.push(item);
+		}
+
+		return Array.from(groups.entries()).map(([groupName, groupItems]) => ({
+			groupName,
+			items: groupItems
+		}));
+	});
+
+	// Get selection state for a group
+	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
+		const groupIds = groupItems.map((item) => item.id);
+		const selectedSet = new Set(selectedIds ?? []);
+		const selectedCount = groupIds.filter((id) => selectedSet.has(id)).length;
+
+		if (selectedCount === 0) return 'none';
+		if (selectedCount === groupIds.length) return 'all';
+		return 'some';
+	}
+
+	// Toggle selection for all items in a group
+	function onToggleGroupSelection(groupItems: TData[]) {
+		const groupIds = groupItems.map((item) => item.id);
+		const state = getGroupSelectionState(groupItems);
+
+		if (state === 'all') {
+			// Deselect all in group
+			const groupSet = new Set(groupIds);
+			selectedIds = (selectedIds ?? []).filter((id) => !groupSet.has(id));
+		} else {
+			// Select all in group
+			const set = new Set([...(selectedIds ?? []), ...groupIds]);
+			selectedIds = Array.from(set);
+		}
+	}
+
+	// Handle group collapse toggle
+	function handleGroupToggle(groupName: string) {
+		if (onGroupToggle) {
+			onGroupToggle(groupName);
+		} else {
+			// Default behavior: toggle collapsed state
+			groupCollapsedState = {
+				...groupCollapsedState,
+				[groupName]: !groupCollapsedState[groupName]
+			};
+		}
+	}
+
 	$effect(() => {
 		const s = requestOptions?.sort;
 		const currentSort = untrack(() => sorting[0]);
@@ -555,12 +627,31 @@
 		{/if}
 
 		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
-			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
+			<ArcaneTableDesktopView
+				{table}
+				{selectedIds}
+				columnsCount={columnsDef.length}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				{selectionDisabled}
+				onGroupToggle={handleGroupToggle}
+				{getGroupSelectionState}
+				{onToggleGroupSelection}
+			/>
 		</div>
 
 		<div class="block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
-				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
+				<ArcaneTableMobileView
+					{table}
+					{mobileCard}
+					{mobileFieldVisibility}
+					{groupedRows}
+					{groupIcon}
+					{groupCollapsedState}
+					onGroupToggle={handleGroupToggle}
+				/>
 			</div>
 		</div>
 
@@ -587,11 +678,30 @@
 		{/if}
 
 		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
-			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
+			<ArcaneTableDesktopView
+				{table}
+				{selectedIds}
+				columnsCount={columnsDef.length}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				{selectionDisabled}
+				onGroupToggle={handleGroupToggle}
+				{getGroupSelectionState}
+				{onToggleGroupSelection}
+			/>
 		</div>
 
 		<div class="block flex-1 overflow-auto md:hidden">
-			<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
+			<ArcaneTableMobileView
+				{table}
+				{mobileCard}
+				{mobileFieldVisibility}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				onGroupToggle={handleGroupToggle}
+			/>
 		</div>
 
 		{#if !withoutPagination}

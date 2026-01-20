@@ -109,3 +109,11 @@ export type BulkAction = {
 	loading?: boolean;
 	icon?: any;
 };
+
+// Grouping types
+export type GroupedData<T> = {
+	groupName: string;
+	items: T[];
+};
+
+export type GroupSelectionState = 'none' | 'some' | 'all';
