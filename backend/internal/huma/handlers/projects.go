@@ -327,7 +327,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-project-custom-file",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Path:        "/environments/{id}/projects/{projectId}/files",
 		Summary:     "Create project custom file",
 		Description: "Create a custom file within a Docker Compose project",
 		Tags:        []string{"Projects"},
@@ -340,7 +340,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "update-project-custom-file",
 		Method:      http.MethodPut,
-		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Path:        "/environments/{id}/projects/{projectId}/files",
 		Summary:     "Update project custom file",
 		Description: "Update a custom file within a Docker Compose project",
 		Tags:        []string{"Projects"},
@@ -353,7 +353,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "remove-project-custom-file",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/projects/{projectId}/custom-files",
+		Path:        "/environments/{id}/projects/{projectId}/files",
 		Summary:     "Remove project custom file",
 		Description: "Remove a custom file from a project. Optionally delete the file from disk.",
 		Tags:        []string{"Projects"},

@@ -115,20 +115,20 @@ export class ProjectService extends BaseAPIService {
 	async createProjectCustomFile(projectId: string, path: string): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload = { path };
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/custom-files`, payload));
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/files`, payload));
 	}
 
 	async updateProjectCustomFile(projectId: string, path: string, content: string): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload = { path, content };
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/custom-files`, payload));
+		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/files`, payload));
 	}
 
 	async removeProjectCustomFile(projectId: string, path: string, deleteFromDisk = false): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload = { path, deleteFromDisk };
 		await this.handleResponse(
-			this.api.delete(`/environments/${envId}/projects/${projectId}/custom-files`, { data: payload })
+			this.api.delete(`/environments/${envId}/projects/${projectId}/files`, { data: payload })
 		);
 	}
 
