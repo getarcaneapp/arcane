@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
     go-tests:
-        name: Go Tests (${{ matrix.module }})
+        name: Go Tests (${{ matrix.module.name }})
         runs-on: depot-ubuntu-24.04-16
         timeout-minutes: 30
         strategy:
