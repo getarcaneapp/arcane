@@ -506,7 +506,7 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 	dockerRun := fmt.Sprintf(`docker run -d \
   --name arcane-edge-agent \
   --restart unless-stopped \
-	-e EDGE_AGENT=true \
+  -e EDGE_AGENT=true \
   -e AGENT_TOKEN=%s \
   -e MANAGER_API_URL=%s \
   -v /var/run/docker.sock:/var/run/docker.sock \
