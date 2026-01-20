@@ -144,10 +144,12 @@ jobs:
             - name: Run deadcode analysis
               id: deadcode
               working-directory: backend
+              continue-on-error: true
               run: |
                   OUTPUT=$(deadcode ./... 2>&1 || true)
                   echo "$OUTPUT"
-                  COUNT=$(echo "$OUTPUT" | grep -c "unreachable func" || echo "0")
+                  COUNT=$(echo "$OUTPUT" | grep -c "unreachable func" || true)
+                  if [ -z "$COUNT" ]; then COUNT=0; fi
                   echo "count=$COUNT" >> $GITHUB_OUTPUT
                   echo "output<<EOF" >> $GITHUB_OUTPUT
                   echo "$OUTPUT" >> $GITHUB_OUTPUT
