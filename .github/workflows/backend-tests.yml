@@ -22,7 +22,7 @@ permissions:
 jobs:
   test-backend:
     name: Backend Tests
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: depot-ubuntu-24.04-16
     timeout-minutes: 30
     defaults:
       run:
@@ -53,14 +53,19 @@ jobs:
       - name: Run unit tests
         env:
           CGO_ENABLED: "1"
-        run: go test -tags=exclude_frontend ./... -race -coverprofile=coverage.out -covermode=atomic -v
+        run: go test -tags=exclude_frontend ./... -race -coverprofile=coverage.txt -covermode=atomic -v
 
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: backend-coverage
-          path: backend/coverage.out
+          path: backend/coverage.txt
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-cli:
     name: CLI Tests
@@ -85,11 +90,16 @@ jobs:
         run: go mod download
 
       - name: Run unit tests
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -v
+        run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
 
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: cli-coverage
-          path: cli/coverage.out
+          path: cli/coverage.txt
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
