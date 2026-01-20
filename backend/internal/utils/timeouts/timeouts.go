@@ -12,6 +12,9 @@ const (
 	DefaultHTTPClient      = 30 * time.Second
 	DefaultRegistry        = 30 * time.Second
 	DefaultProxyRequest    = 60 * time.Second
+	DefaultFileBrowse      = 15 * time.Second
+	DefaultFileContentRead = 10 * time.Second
+	DefaultContainerExec   = 10 * time.Second
 )
 
 func GetDuration(settingSeconds int, defaultDuration time.Duration) time.Duration {

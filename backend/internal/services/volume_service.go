@@ -1,7 +1,6 @@
 package services
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/browser"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
@@ -488,9 +488,16 @@ func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPa
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	// Apply timeout for the entire browse operation
+	browseCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileBrowse)
+	defer cancel()
+
 	// Verify volume exists
-	_, err = dockerClient.VolumeInspect(ctx, volumeName)
+	_, err = dockerClient.VolumeInspect(browseCtx, volumeName)
 	if err != nil {
+		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while inspecting volume")
+		}
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
 
@@ -500,15 +507,18 @@ func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPa
 	}
 
 	// Create a temporary container with the volume mounted
-	containerID, err := s.createTempVolumeContainer(ctx, dockerClient, volumeName)
+	containerID, err := s.createTempVolumeContainer(browseCtx, dockerClient, volumeName)
 	if err != nil {
+		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while creating temporary container")
+		}
 		return nil, fmt.Errorf("failed to create temporary container: %w", err)
 	}
 
-	// Ensure cleanup
+	// Ensure cleanup (use background context to ensure cleanup happens even if browse timed out)
 	defer func() {
-		removeCtx, cancel := timeouts.WithTimeout(ctx, 30, timeouts.DefaultDockerAPI)
-		defer cancel()
+		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
+		defer removeCancel()
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}
@@ -523,14 +533,20 @@ func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPa
 	}
 
 	// Use CopyFromContainer to get directory contents as a TAR stream
-	tarStream, _, err := dockerClient.CopyFromContainer(ctx, containerID, containerPath)
+	tarStream, _, err := dockerClient.CopyFromContainer(browseCtx, containerID, containerPath)
 	if err != nil {
+		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while reading volume path")
+		}
 		return nil, fmt.Errorf("failed to read volume path: %w", err)
 	}
 	defer tarStream.Close()
 
-	files, err := s.parseTarDirectory(tarStream, dirPath)
+	files, err := browser.ParseTarDirectory(tarStream, dirPath, browser.MaxFilesPerDirectory)
 	if err != nil {
+		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while parsing directory contents")
+		}
 		return nil, fmt.Errorf("failed to parse directory contents: %w", err)
 	}
 
@@ -547,25 +563,32 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	// Apply timeout for the file read operation
+	readCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileContentRead)
+	defer cancel()
+
 	// Verify volume exists
-	_, err = dockerClient.VolumeInspect(ctx, volumeName)
+	_, err = dockerClient.VolumeInspect(readCtx, volumeName)
 	if err != nil {
+		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while inspecting volume")
+		}
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	// Maximum file size to read (1MB)
-	const maxFileSize = 1024 * 1024
-
 	// Create a temporary container with the volume mounted
-	containerID, err := s.createTempVolumeContainer(ctx, dockerClient, volumeName)
+	containerID, err := s.createTempVolumeContainer(readCtx, dockerClient, volumeName)
 	if err != nil {
+		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while creating temporary container")
+		}
 		return nil, fmt.Errorf("failed to create temporary container: %w", err)
 	}
 
-	// Ensure cleanup
+	// Ensure cleanup (use background context to ensure cleanup happens even if read timed out)
 	defer func() {
-		removeCtx, cancel := timeouts.WithTimeout(ctx, 30, timeouts.DefaultDockerAPI)
-		defer cancel()
+		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
+		defer removeCancel()
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}
@@ -575,8 +598,11 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 	containerPath := path.Join("/volume", filePath)
 
 	// Use CopyFromContainer to get the file as a TAR stream
-	tarStream, stat, err := dockerClient.CopyFromContainer(ctx, containerID, containerPath)
+	tarStream, stat, err := dockerClient.CopyFromContainer(readCtx, containerID, containerPath)
 	if err != nil {
+		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while accessing file")
+		}
 		return nil, fmt.Errorf("file not found or not accessible: %w", err)
 	}
 	defer tarStream.Close()
@@ -586,54 +612,15 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 		return nil, fmt.Errorf("path is a directory, not a file")
 	}
 
-	fileSize := stat.Size
-	truncated := fileSize > maxFileSize
-
-	// Read the TAR to get file content
-	tr := tar.NewReader(tarStream)
-	header, err := tr.Next()
+	content, isBinary, truncated, err := browser.ReadFileContentFromTar(tarStream, stat.Size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file from archive: %w", err)
-	}
-
-	// Determine how much to read
-	readSize := fileSize
-	if truncated {
-		readSize = maxFileSize
-	}
-
-	// Read file content
-	content := make([]byte, readSize)
-	n, err := io.ReadFull(tr, content)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil, fmt.Errorf("failed to read file content: %w", err)
-	}
-	content = content[:n]
-
-	// Check if content is binary
-	isBinary := false
-	for _, b := range content {
-		if b == 0 || (b < 32 && b != '\n' && b != '\r' && b != '\t') {
-			isBinary = true
-			break
-		}
-	}
-
-	// Handle symlinks
-	if header.Typeflag == tar.TypeSymlink {
-		return &containertypes.FileContentResponse{
-			Path:      filePath,
-			Content:   header.Linkname,
-			Size:      int64(len(header.Linkname)),
-			IsBinary:  false,
-			Truncated: false,
-		}, nil
+		return nil, err
 	}
 
 	return &containertypes.FileContentResponse{
 		Path:      filePath,
-		Content:   string(content),
-		Size:      fileSize,
+		Content:   content,
+		Size:      stat.Size,
 		IsBinary:  isBinary,
 		Truncated: truncated,
 	}, nil
@@ -685,104 +672,4 @@ func (s *VolumeService) createTempVolumeContainer(ctx context.Context, dockerCli
 	}
 
 	return resp.ID, nil
-}
-
-// parseTarDirectory reads a TAR stream and extracts only the immediate children of the directory.
-func (s *VolumeService) parseTarDirectory(tarStream io.Reader, basePath string) ([]containertypes.FileEntry, error) {
-	tr := tar.NewReader(tarStream)
-	filesMap := make(map[string]containertypes.FileEntry)
-
-	// Normalize base path
-	basePath = path.Clean(basePath)
-	if basePath == "." {
-		basePath = ""
-	}
-
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		// The TAR from Docker includes the directory name as the root
-		entryPath := header.Name
-
-		// Remove trailing slash for directories
-		entryPath = strings.TrimSuffix(entryPath, "/")
-
-		// Skip the root directory itself
-		if entryPath == "" || entryPath == "." {
-			continue
-		}
-
-		// Count path depth - we only want immediate children (depth 1)
-		parts := strings.Split(entryPath, "/")
-
-		// Skip if this is a nested file (depth > 1)
-		if len(parts) > 2 {
-			continue
-		}
-
-		// Get the actual file/directory name
-		var name string
-		if len(parts) == 1 {
-			name = parts[0]
-		} else {
-			name = parts[1]
-		}
-
-		// Skip . and ..
-		if name == "." || name == ".." || name == "" {
-			continue
-		}
-
-		// Skip if we've already seen this entry
-		if _, exists := filesMap[name]; exists {
-			continue
-		}
-
-		// Determine file type
-		var fileType containertypes.FileEntryType
-		switch header.Typeflag {
-		case tar.TypeDir:
-			fileType = containertypes.FileEntryTypeDirectory
-		case tar.TypeSymlink:
-			fileType = containertypes.FileEntryTypeSymlink
-		default:
-			fileType = containertypes.FileEntryTypeFile
-		}
-
-		// Build the full path
-		fullPath := basePath
-		if fullPath != "/" && fullPath != "" {
-			fullPath += "/"
-		} else if fullPath == "" {
-			fullPath = "/"
-		}
-		fullPath += name
-
-		// Convert file mode to string
-		mode := header.FileInfo().Mode().String()
-
-		filesMap[name] = containertypes.FileEntry{
-			Name:       name,
-			Path:       fullPath,
-			Type:       fileType,
-			Size:       header.Size,
-			Mode:       mode,
-			ModTime:    header.ModTime.Format("2006-01-02T15:04:05"),
-			LinkTarget: header.Linkname,
-		}
-	}
-
-	// Convert map to slice
-	files := make([]containertypes.FileEntry, 0, len(filesMap))
-	for _, entry := range filesMap {
-		files = append(files, entry)
-	}
-
-	return files, nil
 }
