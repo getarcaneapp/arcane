@@ -44,7 +44,7 @@
 				value={`${pageSize}`}
 				onValueChange={(value) => setPageSize(Number(value))}
 			>
-				<Select.Trigger class="h-8 w-[70px]">
+				<Select.Trigger class="h-11 w-[70px] sm:h-8">
 					{String(pageSize)}
 				</Select.Trigger>
 				<Select.Content side="top">
@@ -76,7 +76,7 @@
 					tone="outline"
 					size="icon"
 					icon={ArrowLeftIcon}
-					class="size-8"
+					class="size-11 sm:size-8"
 					onclick={() => setPage(currentPage - 1)}
 					disabled={!canPrev}
 					aria-label={m.common_go_prev_page()}
@@ -86,7 +86,7 @@
 					tone="outline"
 					size="icon"
 					icon={ArrowRightIcon}
-					class="size-8"
+					class="size-11 sm:size-8"
 					onclick={() => setPage(currentPage + 1)}
 					disabled={!canNext}
 					aria-label={m.common_go_next_page()}

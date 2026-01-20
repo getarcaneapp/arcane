@@ -14,7 +14,7 @@
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Snippet } from 'svelte';
@@ -90,13 +90,16 @@
 		columnVisibility?: VisibilityState;
 	} = $props();
 
+	// Default page size constant
+	const DEFAULT_LIMIT = 20;
+
 	let rowSelection = $state<RowSelectionState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let sorting = $state<SortingState>([]);
 	let globalFilter = $state<string>('');
 
 	const enablePersist = $derived(!!persistKey);
-	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
+	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
@@ -104,24 +107,23 @@
 	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
 	const totalPages = $derived(items.pagination?.totalPages ?? 1);
 	const totalItems = $derived(items.pagination?.totalItems ?? 0);
-	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20);
+	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT);
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(currentPage < totalPages);
 
-	import { onMount } from 'svelte';
 	onMount(() => {
 		// Initialize prefs first
 		if (persistKey && !prefs) {
 			prefs = new PersistedState<CompactTablePrefs>(
 				persistKey,
-				{ v: [], f: [], g: '', l: getDefaultLimit() },
+				{ v: [], f: [], g: '', l: getEffectiveLimit() },
 				{ syncTabs: false }
 			);
 		}
 
 		// Then restore preferences
 		if (!enablePersist) return;
-		const snapshot = extractPersistedPreferences(prefs?.current, getDefaultLimit());
+		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
 
 		const patchedVisibility = { ...columnVisibility };
 		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
@@ -137,7 +139,7 @@
 				requestOptions = {
 					...requestOptions,
 					filters: filtersMap,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
@@ -145,7 +147,7 @@
 			requestOptions = {
 				...requestOptions,
 				filters: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
 		}
@@ -160,7 +162,7 @@
 				requestOptions = {
 					...requestOptions,
 					search: persistedSearch,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
@@ -168,13 +170,13 @@
 			requestOptions = {
 				...requestOptions,
 				search: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
 		}
 
-		const persistedLimit = snapshot.limit ?? getDefaultLimit();
-		const currentLimit = requestOptions?.pagination?.limit ?? getDefaultLimit();
+		const persistedLimit = snapshot.limit ?? getEffectiveLimit();
+		const currentLimit = requestOptions?.pagination?.limit ?? getEffectiveLimit();
 		if (persistedLimit !== currentLimit) {
 			requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
 			shouldRefresh = true;
@@ -274,7 +276,12 @@
 				id,
 				...(accessorKey ? { accessorKey } : {}),
 				...(accessorFn ? { accessorFn } : {}),
-				meta: { title: spec.title },
+				meta: {
+					title: spec.title,
+					width: spec.width,
+					align: spec.align,
+					truncate: spec.truncate
+				},
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
@@ -329,7 +336,26 @@
 		}
 	});
 
-	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
+	// Memoize column definitions - only rebuild when structure changes
+	// Generate a key based on column structure, not data
+	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
+		const colIds = specs.map((s, i) => s.id ?? s.accessorKey ?? `col_${i}`).join(',');
+		return `${colIds}:${hasRowActions}:${isSelectionDisabled}`;
+	}
+
+	let cachedColumnsDef = $state<ColumnDef<TData>[]>([]);
+	let lastColumnsKey = '';
+
+	// Use $effect to rebuild columns only when structure changes
+	$effect(() => {
+		const key = getColumnsKey(columns, !!rowActions, selectionDisabled);
+		if (key !== lastColumnsKey) {
+			cachedColumnsDef = buildColumns(columns, selectionDisabled);
+			lastColumnsKey = key;
+		}
+	});
+
+	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
 
 	const table = createSvelteTable({
 		get data() {
