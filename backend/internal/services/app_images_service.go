@@ -58,10 +58,6 @@ func NewApplicationImagesService(embeddedFS embed.FS, settingsService *SettingsS
 	return service
 }
 
-func (s *ApplicationImagesService) GetImage(name string) ([]byte, string, error) {
-	return s.GetImageWithColor(name, "")
-}
-
 func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride string) ([]byte, string, error) {
 	s.mu.RLock()
 	data, ok := s.imageData[name]
