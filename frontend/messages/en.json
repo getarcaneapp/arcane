@@ -1684,6 +1684,7 @@
 	"first_login_error_failed": "Failed to change password",
 	"first_login_success": "Password changed successfully",
 	"upgrade_to_version": "Update to {version}",
+	"upgrade_update_tag": "Update {tag}",
 	"upgrade_confirm_title": "Confirm System Upgrade",
 	"upgrade_confirm_description": "You are about to upgrade Arcane to version {version}.",
 	"upgrade_confirm_what_happens": "This upgrade will:",
