@@ -59,15 +59,16 @@ func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
 
 func (m *AuthMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		reqCtx := c.Request.Context()
 		if m.cfg != nil && m.cfg.AgentMode {
-			m.agentAuth(c)
+			m.agentAuth(reqCtx, c)
 			return
 		}
-		m.managerAuth(c)
+		m.managerAuth(reqCtx, c)
 	}
 }
 
-func (m *AuthMiddleware) agentAuth(c *gin.Context) {
+func (m *AuthMiddleware) agentAuth(ctx context.Context, c *gin.Context) {
 	if isPreflight(c) {
 		c.Next()
 		return
@@ -76,7 +77,7 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 	if strings.HasPrefix(c.Request.URL.Path, agentPairingPrefix) &&
 		m.cfg.AgentToken != "" &&
 		c.GetHeader(headerAgentBootstrap) == m.cfg.AgentToken {
-		slog.Info("Agent auth: bootstrap pairing accepted", "path", c.Request.URL.Path, "method", c.Request.Method)
+		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", c.Request.URL.Path, "method", c.Request.Method)
 		agentSudo(c)
 		return
 	}
@@ -92,7 +93,7 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 		return
 	}
 
-	slog.Warn("Agent auth forbidden",
+	slog.WarnContext(ctx, "Agent auth forbidden",
 		"path", c.Request.URL.Path,
 		"method", c.Request.Method,
 		"has_agent_token_hdr", c.GetHeader(headerAgentToken) != "",
@@ -105,10 +106,10 @@ func (m *AuthMiddleware) agentAuth(c *gin.Context) {
 	c.Abort()
 }
 
-func (m *AuthMiddleware) managerAuth(c *gin.Context) {
+func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
 	// First, check for API key in X-API-Key header
 	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
-		user, err := m.apiKeyValidator.ValidateApiKey(c.Request.Context(), apiKey)
+		user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
 		if err == nil && user != nil {
 			isAdmin := userHasRole(user, "admin")
 			if m.options.AdminRequired && !isAdmin {
@@ -149,7 +150,7 @@ func (m *AuthMiddleware) managerAuth(c *gin.Context) {
 		return
 	}
 
-	user, err := m.authService.VerifyToken(c.Request.Context(), token)
+	user, err := m.authService.VerifyToken(ctx, token)
 	if err != nil {
 		if errors.Is(err, services.ErrTokenVersionMismatch) {
 			cookie.ClearTokenCookie(c)

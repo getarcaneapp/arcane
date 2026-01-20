@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 )
 
@@ -96,9 +97,25 @@ func Bootstrap(ctx context.Context) error {
 	}
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
-	router := setupRouter(cfg, appServices) //nolint:contextcheck
+	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
 
-	err = runServices(appCtx, cfg, router, scheduler)
+	// Start edge tunnel client if running as an edge agent
+	if cfg.EdgeAgent && cfg.ManagerApiUrl != "" && cfg.AgentToken != "" {
+		slog.InfoContext(appCtx, "Starting edge tunnel client", "manager_url", cfg.ManagerApiUrl)
+		errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)
+		if err != nil {
+			slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
+		} else {
+			slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
+			go func() {
+				for err := range errCh {
+					slog.ErrorContext(appCtx, "Edge tunnel client error", "error", err)
+				}
+			}()
+		}
+	}
+
+	err = runServices(appCtx, cfg, router, scheduler, tunnelServer)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -151,7 +168,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 }
 
-func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }) error {
+func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }, tunnelServer *edge.TunnelServer) error {
 	go func() {
 		slog.InfoContext(appCtx, "Starting scheduler")
 		if err := scheduler.Run(appCtx); err != nil {
@@ -192,6 +209,11 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
 		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", "error", err) //nolint:contextcheck
 		return err
+	}
+
+	// Wait for tunnel cleanup loop to finish
+	if tunnelServer != nil {
+		tunnelServer.WaitForCleanupDone()
 	}
 
 	slog.InfoContext(shutdownCtx, "Server stopped gracefully") //nolint:contextcheck
