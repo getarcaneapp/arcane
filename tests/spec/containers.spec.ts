@@ -50,8 +50,7 @@ test.describe('Containers Page', () => {
     await navigateToContainers(page);
 
     const firstRow = page.locator('tbody tr').first();
-    await firstRow.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
+    await firstRow.getByRole('button', { name: 'Inspect' }).click();
 
     await expect(page).toHaveURL(/\/containers\/.+/);
     await expect(page.getByRole('heading', { name: 'Container Details', level: 2 }).first()).toBeVisible();
@@ -65,19 +64,15 @@ test.describe('Containers Page', () => {
 
     if (running) {
       const row = page.locator(`tr:has(a[href="/containers/${running.id}"])`);
-      await row.getByRole('button', { name: 'Open menu' }).click();
-      await expect(page.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
-      await expect(page.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
-      await page.keyboard.press('Escape');
+      await expect(row.getByRole('button', { name: 'Restart' })).toBeVisible();
+      await expect(row.getByRole('button', { name: 'Stop' })).toBeVisible();
     } else {
       test.info().annotations.push({ type: 'note', description: 'No running container to validate actions' });
     }
 
     if (stopped) {
       const row = page.locator(`tr:has(a[href="/containers/${stopped.id}"])`);
-      await row.getByRole('button', { name: 'Open menu' }).click();
-      await expect(page.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
-      await page.keyboard.press('Escape');
+      await expect(row.getByRole('button', { name: 'Start' })).toBeVisible();
     } else {
       test.info().annotations.push({ type: 'note', description: 'No stopped container to validate actions' });
     }
@@ -90,8 +85,7 @@ test.describe('Containers Page', () => {
     await navigateToContainers(page);
 
     const row = page.locator(`tr:has(a[href="/containers/${any.id}"])`);
-    await row.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+    await row.getByRole('button', { name: 'Remove' }).click();
 
     const dialog = page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Confirm Container Removal")');
     await expect(dialog).toBeVisible();

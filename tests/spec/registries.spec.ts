@@ -64,8 +64,7 @@ test.describe('Container Registries', () => {
     await expect(row).toBeVisible();
 
     // Test Connection (accept either success or failure toast)
-    await row.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('menuitem', { name: 'Test Connection' }).click();
+    await row.getByRole('button', { name: 'Test Connection' }).click();
   });
 
   test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {

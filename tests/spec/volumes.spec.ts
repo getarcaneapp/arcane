@@ -71,8 +71,7 @@ test.describe('Volumes Page', () => {
     await page.waitForLoadState('networkidle');
 
     const firstRow = page.locator('tbody tr').first();
-    await firstRow.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('menuitem', { name: 'Inspect' }).click();
+    await firstRow.getByRole('button', { name: 'Inspect' }).click();
 
     await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
   });
@@ -93,9 +92,7 @@ test.describe('Volumes Page', () => {
     await page.waitForLoadState('networkidle');
 
     const row = await page.getByRole('row', { name: volumeName });
-    await row.getByRole('button', { name: 'Open menu' }).click();
-
-    await page.getByRole('menuitem', { name: 'Remove' }).click();
+    await row.getByRole('button', { name: 'Remove' }).click();
 
     await expect(page.getByRole('heading', { name: 'Remove Volume' })).toBeVisible();
 
