@@ -114,7 +114,6 @@
 		onclick={onclick ? () => onclick(item) : undefined}
 	>
 		<Card.Content class={cn('flex flex-col text-left', compact ? 'gap-2.5 p-3' : 'gap-3 p-3.5')}>
-			<!-- Header Row: Icon + Title/Subtitle + Actions -->
 			<div class={cn('flex gap-3', hasSubtitle ? 'items-start' : 'items-center')}>
 				{#if resolvedIcon}
 					{@const IconComponent = resolvedIcon.component}
@@ -131,7 +130,7 @@
 				{/if}
 				<div class="min-w-0 flex-1">
 					<h3
-						class={cn('line-clamp-2 leading-tight font-semibold break-all', compact ? 'text-sm' : 'text-base')}
+						class={cn('line-clamp-2 leading-tight font-semibold wrap-break-word', compact ? 'text-sm' : 'text-base')}
 						title={title(item)}
 					>
 						{title(item)}
@@ -142,17 +141,9 @@
 						</p>
 					{/if}
 				</div>
-				{#if rowActions}
-					<div class="-mr-1 shrink-0">
-						<div class="flex min-h-[44px] min-w-[44px] items-center justify-center">
-							{@render rowActions({ item })}
-						</div>
-					</div>
-				{/if}
 			</div>
 
-			<!-- Badges + Quick Actions Row -->
-			{#if resolvedBadges.length > 0 || quickActions}
+			{#if resolvedBadges.length > 0 || quickActions || rowActions}
 				<div class="flex items-center gap-2">
 					{#if resolvedBadges.length > 0}
 						<div class="flex flex-wrap items-center gap-1">
@@ -161,11 +152,14 @@
 							{/each}
 						</div>
 					{/if}
-					{#if quickActions}
-						<div class="ml-auto flex items-center gap-0.5">
+					<div class="ml-auto flex items-center gap-0.5">
+						{#if quickActions}
 							{@render quickActions({ item })}
-						</div>
-					{/if}
+						{/if}
+						{#if rowActions}
+							{@render rowActions({ item })}
+						{/if}
+					</div>
 				</div>
 			{/if}
 

@@ -141,12 +141,12 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
-	<Card.Root class="flex h-full min-h-0 flex-col">
-		<Card.Header icon={ContainersIcon} class="shrink-0">
+	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
+		<Card.Header icon={ContainersIcon} class="shrink-0 border-b">
 			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1.5">
+				<div class="flex flex-col space-y-1">
 					<Card.Title>
-						<h2>{m.containers_title()}</h2>
+						<a href="/containers" class="hover:underline">{m.containers_title()}</a>
 					</Card.Title>
 					<Card.Description>{m.containers_recent()}</Card.Description>
 				</div>
@@ -156,7 +156,7 @@
 				</ArcaneButton>
 			</div>
 		</Card.Header>
-		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
+		<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
 			<ArcaneTable
 				items={{ ...containers, data: containers.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
@@ -171,7 +171,7 @@
 			/>
 		</Card.Content>
 		{#if containers.data.length >= calculatedLimit && containers.pagination.totalItems > calculatedLimit}
-			<Card.Footer class="border-t px-6 py-3">
+			<Card.Footer class="bg-muted/30 border-t px-6 py-2.5">
 				<span class="text-muted-foreground text-xs">
 					{m.containers_showing_of_total({ shown: calculatedLimit, total: containers.pagination.totalItems })}
 				</span>

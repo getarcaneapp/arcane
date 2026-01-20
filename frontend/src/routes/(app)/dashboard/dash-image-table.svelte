@@ -155,12 +155,12 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
-	<Card.Root class="flex h-full min-h-0 flex-col">
-		<Card.Header icon={ImagesIcon} class="shrink-0">
+	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
+		<Card.Header icon={ImagesIcon} class="shrink-0 border-b">
 			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1.5">
+				<div class="flex flex-col space-y-1">
 					<Card.Title>
-						<h2><a class="hover:underline" href="/images">{m.images_title()}</a></h2>
+						<a class="hover:underline" href="/images">{m.images_title()}</a>
 					</Card.Title>
 					<Card.Description>{m.images_top_largest()}</Card.Description>
 				</div>
@@ -170,7 +170,7 @@
 				</ArcaneButton>
 			</div>
 		</Card.Header>
-		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
+		<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
 			<ArcaneTable
 				items={{ ...images, data: images.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
@@ -185,7 +185,7 @@
 			/>
 		</Card.Content>
 		{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}
-			<Card.Footer class="border-t px-6 py-3">
+			<Card.Footer class="bg-muted/30 border-t px-6 py-2.5">
 				<span class="text-muted-foreground text-xs">
 					{m.images_showing_of_total({ shown: calculatedLimit, total: images.pagination.totalItems })}
 				</span>

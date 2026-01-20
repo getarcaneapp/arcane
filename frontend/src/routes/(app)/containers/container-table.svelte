@@ -810,7 +810,14 @@
 							variant: item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber',
 							text: capitalizeFirstLetter(item.state)
 						}
-					: null
+					: null,
+			(item) => {
+				if (!(mobileFieldVisibility.updates ?? false)) return null;
+				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
+				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
+				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
+				return { variant: 'gray' as const, text: m.common_unknown() };
+			}
 		]}
 		fields={[
 			{
@@ -826,6 +833,30 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+			},
+			{
+				label: m.containers_cpu_usage(),
+				getValue: (item: ContainerSummaryDto) => {
+					const cpu = statsManager?.getCPUPercent(item.id);
+					if (item.state !== 'running') return m.common_na();
+					if (cpu === undefined) return '...';
+					return `${cpu.toFixed(1)}%`;
+				},
+				icon: ClockIcon,
+				iconVariant: 'orange' as const,
+				show: mobileFieldVisibility.cpuUsage ?? false
+			},
+			{
+				label: m.containers_memory_usage(),
+				getValue: (item: ContainerSummaryDto) => {
+					const memData = statsManager?.getMemoryUsage(item.id);
+					if (item.state !== 'running') return m.common_na();
+					if (!memData?.usage) return '...';
+					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
+				},
+				icon: ClockIcon,
+				iconVariant: 'purple' as const,
+				show: mobileFieldVisibility.memoryUsage ?? false
 			},
 			{
 				label: m.containers_ip_address(),

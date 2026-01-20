@@ -171,6 +171,7 @@
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
+		{ id: 'updates', label: m.images_updates(), defaultVisible: false },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
@@ -270,7 +271,14 @@
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }
-					: null
+					: null,
+			(item: ImageSummaryDto) => {
+				if (!(mobileFieldVisibility.updates ?? false)) return null;
+				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
+				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
+				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
+				return { variant: 'gray' as const, text: m.common_unknown() };
+			}
 		]}
 		fields={[
 			{
@@ -302,26 +310,7 @@
 			: undefined}
 		rowActions={RowActions}
 		onclick={(item: ImageSummaryDto) => goto(`/images/${item.id}`)}
-	>
-		{#if mobileFieldVisibility.updates ?? true}
-			<div class="flex items-center gap-x-2 gap-y-2 border-t pt-2">
-				<div class="flex min-w-0 shrink flex-col">
-					<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-						{m.images_updates()}
-					</div>
-					<div class="mt-0.5">
-						<ImageUpdateItem
-							updateInfo={item.updateInfo}
-							imageId={item.id}
-							repo={item.repo}
-							tag={item.tag}
-							onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
-						/>
-					</div>
-				</div>
-			</div>
-		{/if}
-	</UniversalMobileCard>
+	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageSummaryDto })}
