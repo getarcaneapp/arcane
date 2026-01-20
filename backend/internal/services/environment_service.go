@@ -520,7 +520,7 @@ services:
     container_name: arcane-edge-agent
     restart: unless-stopped
     environment:
-			- EDGE_AGENT=true
+      - EDGE_AGENT=true
       - AGENT_TOKEN=%s
       - MANAGER_API_URL=%s
     volumes:

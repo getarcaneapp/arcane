@@ -102,7 +102,17 @@ func Bootstrap(ctx context.Context) error {
 	// Start edge tunnel client if running as an edge agent
 	if cfg.EdgeAgent && cfg.ManagerApiUrl != "" && cfg.AgentToken != "" {
 		slog.InfoContext(appCtx, "Starting edge tunnel client", "manager_url", cfg.ManagerApiUrl)
-		edge.StartTunnelClient(appCtx, cfg, router)
+		errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)
+		if err != nil {
+			slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
+		} else {
+			slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
+			go func() {
+				for err := range errCh {
+					slog.ErrorContext(appCtx, "Edge tunnel client error", "error", err)
+				}
+			}()
+		}
 	}
 
 	err = runServices(appCtx, cfg, router, scheduler, tunnelServer)

@@ -31,6 +31,8 @@ type activeWSStream struct {
 	ws     *websocket.Conn
 	cancel context.CancelFunc
 	dataCh chan wsPayload
+	mu     sync.Mutex
+	closed bool
 }
 
 type wsPayload struct {
@@ -83,7 +85,15 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 
 // Start begins the tunnel client, attempting to connect and reconnect as needed
 func (c *TunnelClient) Start(ctx context.Context) {
+	c.StartWithErrorChan(ctx, nil)
+}
+
+// StartWithErrorChan runs the tunnel client and optionally emits connection errors.
+func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
 	slog.InfoContext(ctx, "Starting edge tunnel client", "manager_url", c.managerURL)
+	if errCh != nil {
+		defer close(errCh)
+	}
 
 	for {
 		select {
@@ -95,7 +105,14 @@ func (c *TunnelClient) Start(ctx context.Context) {
 			return
 		default:
 			if err := c.connectAndServe(ctx); err != nil {
-				slog.WarnContext(ctx, "Edge tunnel disconnected", "error", err)
+				if errCh != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+				} else {
+					slog.WarnContext(ctx, "Edge tunnel disconnected", "error", err)
+				}
 			}
 
 			// Wait before reconnecting
@@ -298,7 +315,7 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, msg *TunnelMess
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream := c.registerStream(streamID, ws, cancel)
 
-	go c.startLocalWebSocketReadLoop(ctx, streamCtx, streamID, ws, cancel)
+	go c.startLocalWebSocketReadLoop(ctx, streamCtx, streamID, ws, stream)
 	go c.startLocalWebSocketWriteLoop(ctx, streamCtx, ws, stream, cancel)
 }
 
@@ -351,11 +368,24 @@ func (c *TunnelClient) registerStream(streamID string, ws *websocket.Conn, cance
 	return stream
 }
 
-func (c *TunnelClient) startLocalWebSocketReadLoop(ctx context.Context, streamCtx context.Context, streamID string, ws *websocket.Conn, cancel context.CancelFunc) {
+func (c *TunnelClient) closeWebSocketStream(streamID string, stream *activeWSStream) {
+	stream.mu.Lock()
+	if stream.closed {
+		stream.mu.Unlock()
+		return
+	}
+	stream.closed = true
+	close(stream.dataCh)
+	stream.mu.Unlock()
+
+	stream.cancel()
+	_ = stream.ws.Close()
+	c.activeStreams.Delete(streamID)
+}
+
+func (c *TunnelClient) startLocalWebSocketReadLoop(ctx context.Context, streamCtx context.Context, streamID string, ws *websocket.Conn, stream *activeWSStream) {
 	defer func() {
-		ws.Close()
-		c.activeStreams.Delete(streamID)
-		cancel()
+		c.closeWebSocketStream(streamID, stream)
 	}()
 
 	for {
@@ -424,6 +454,7 @@ func (c *TunnelClient) sendWebSocketClose(streamID string) {
 }
 
 // handleWebSocketData handles incoming WebSocket data from the manager
+
 func (c *TunnelClient) handleWebSocketData(ctx context.Context, msg *TunnelMessage) {
 	streamRaw, ok := c.activeStreams.Load(msg.ID)
 	if !ok {
@@ -431,9 +462,16 @@ func (c *TunnelClient) handleWebSocketData(ctx context.Context, msg *TunnelMessa
 		return
 	}
 	stream := streamRaw.(*activeWSStream)
+	stream.mu.Lock()
+	if stream.closed {
+		stream.mu.Unlock()
+		return
+	}
 	select {
 	case stream.dataCh <- wsPayload{messageType: msg.WSMessageType, data: msg.Body}:
+		stream.mu.Unlock()
 	default:
+		stream.mu.Unlock()
 		// Drop if channel is full (backpressure)
 		slog.DebugContext(ctx, "Dropping WebSocket data due to backpressure", "stream_id", msg.ID)
 	}
@@ -446,8 +484,7 @@ func (c *TunnelClient) handleWebSocketClose(ctx context.Context, msg *TunnelMess
 		return
 	}
 	stream := streamRaw.(*activeWSStream)
-	stream.cancel()
-	c.activeStreams.Delete(msg.ID)
+	c.closeWebSocketStream(msg.ID, stream)
 	slog.DebugContext(ctx, "Closed WebSocket stream", "stream_id", msg.ID)
 }
 
@@ -502,4 +539,24 @@ func StartTunnelClient(ctx context.Context, cfg *config.Config, handler http.Han
 	client := NewTunnelClient(cfg, handler)
 	// Run in background - this will auto-reconnect
 	go client.Start(ctx)
+}
+
+// StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.
+func StartTunnelClientWithErrors(ctx context.Context, cfg *config.Config, handler http.Handler) (<-chan error, error) {
+	if !cfg.EdgeAgent {
+		return nil, fmt.Errorf("edge tunnel disabled")
+	}
+
+	if cfg.ManagerApiUrl == "" {
+		return nil, fmt.Errorf("MANAGER_API_URL is required")
+	}
+
+	if cfg.AgentToken == "" {
+		return nil, fmt.Errorf("AGENT_TOKEN is required")
+	}
+
+	client := NewTunnelClient(cfg, handler)
+	errCh := make(chan error, 1)
+	go client.StartWithErrorChan(ctx, errCh)
+	return errCh, nil
 }

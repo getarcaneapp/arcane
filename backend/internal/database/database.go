@@ -224,6 +224,9 @@ func (db *DB) FindEnvironmentIDByApiKey(ctx context.Context, apiKey string) (str
 	if err != nil {
 		return "", err
 	}
+	if envID == "" {
+		return "", gorm.ErrRecordNotFound
+	}
 	return envID, nil
 }
 
