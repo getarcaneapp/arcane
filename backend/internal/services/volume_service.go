@@ -515,10 +515,11 @@ func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPa
 		return nil, fmt.Errorf("failed to create temporary container: %w", err)
 	}
 
-	// Ensure cleanup (use background context to ensure cleanup happens even if browse timed out)
+	// Ensure cleanup
 	defer func() {
 		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
 		defer removeCancel()
+		//nolint:contextcheck // intentionally using background context so cleanup happens even if parent context is cancelled
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}
@@ -585,10 +586,11 @@ func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, fi
 		return nil, fmt.Errorf("failed to create temporary container: %w", err)
 	}
 
-	// Ensure cleanup (use background context to ensure cleanup happens even if read timed out)
+	// Ensure cleanup
 	defer func() {
 		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
 		defer removeCancel()
+		//nolint:contextcheck // intentionally using background context so cleanup happens even if parent context is cancelled
 		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
 		}

@@ -132,12 +132,7 @@ func ParseTarDirectory(tarStream io.Reader, basePath string, limit int) ([]conta
 		basePath = ""
 	}
 
-	for {
-		// Check limit before reading more entries
-		if limit > 0 && len(filesMap) >= limit {
-			break
-		}
-
+	for limit <= 0 || len(filesMap) < limit {
 		header, err := tr.Next()
 		if err == io.EOF {
 			break
