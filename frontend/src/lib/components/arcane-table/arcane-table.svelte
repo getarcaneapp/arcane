@@ -1,6 +1,5 @@
 <script lang="ts" generics="TData extends {id: string}">
 	import {
-		type Column,
 		type ColumnDef,
 		type ColumnFiltersState,
 		type Row,
@@ -12,10 +11,8 @@
 	} from '@tanstack/table-core';
 	import { createSvelteTable } from '$lib/components/ui/data-table/data-table.svelte.js';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { onMount, untrack } from 'svelte';
-
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
@@ -544,7 +541,7 @@
 {:else if unstyled}
 	<div class="flex h-full min-h-0 flex-col">
 		{#if !withoutSearch}
-			<div class="shrink-0 border-b">
+			<div class="w-full shrink-0 border-b">
 				<DataTableToolbar
 					{table}
 					{selectedIds}
@@ -561,7 +558,6 @@
 			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
 		</div>
 
-		<!-- Mobile Card View -->
 		<div class="block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
 				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
@@ -575,36 +571,33 @@
 		{/if}
 	</div>
 {:else}
-	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
-		{#snippet children()}
-			{#if !withoutSearch}
-				<Card.Header class="border-b px-2 py-2">
-					<DataTableToolbar
-						{table}
-						{selectedIds}
-						{selectionDisabled}
-						{bulkActions}
-						mobileFields={mobileFieldsForOptions}
-						{onToggleMobileField}
-						{customViewOptions}
-					/>
-				</Card.Header>
-			{/if}
+	<div class="bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur-sm">
+		{#if !withoutSearch}
+			<div class="border-border/50 w-full shrink-0 border-b">
+				<DataTableToolbar
+					{table}
+					{selectedIds}
+					{selectionDisabled}
+					{bulkActions}
+					mobileFields={mobileFieldsForOptions}
+					{onToggleMobileField}
+					{customViewOptions}
+				/>
+			</div>
+		{/if}
 
-			<Card.Content class="hidden h-full min-h-0 flex-1 overflow-auto p-0 md:block">
-				<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
-			</Card.Content>
+		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
+			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
+		</div>
 
-			<!-- Mobile Card View -->
-			<Card.Content class="block flex-1 overflow-auto p-0 md:hidden">
-				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
-			</Card.Content>
+		<div class="block flex-1 overflow-auto md:hidden">
+			<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
+		</div>
 
-			{#if !withoutPagination}
-				<Card.Footer class="shrink-0 border-t px-2 py-4">
-					{@render PaginationSnippet()}
-				</Card.Footer>
-			{/if}
-		{/snippet}
-	</Card.Root>
+		{#if !withoutPagination}
+			<div class="border-border/50 shrink-0 border-t px-2 py-4">
+				{@render PaginationSnippet()}
+			</div>
+		{/if}
+	</div>
 {/if}

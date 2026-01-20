@@ -4,7 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
-	import { ViewOptionsIcon } from '$lib/icons';
+	import { EyeOnIcon } from '$lib/icons';
 
 	let {
 		table,
@@ -26,7 +26,7 @@
 				{...props}
 				action="base"
 				tone="ghost"
-				icon={ViewOptionsIcon}
+				icon={EyeOnIcon}
 				customLabel={m.common_view()}
 				class="border-input hover:bg-card/60 border hover:text-inherit"
 			/>
