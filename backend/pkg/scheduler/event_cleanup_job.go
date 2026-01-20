@@ -10,7 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 )
 
-const EventCleanupJobName = "EventCleanup"
+const EventCleanupJobName = "event-cleanup"
 
 type EventCleanupJob struct {
 	eventService    *services.EventService

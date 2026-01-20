@@ -83,11 +83,6 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 	}
 }
 
-// Start begins the tunnel client, attempting to connect and reconnect as needed
-func (c *TunnelClient) Start(ctx context.Context) {
-	c.StartWithErrorChan(ctx, nil)
-}
-
 // StartWithErrorChan runs the tunnel client and optionally emits connection errors.
 func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
 	slog.InfoContext(ctx, "Starting edge tunnel client", "manager_url", c.managerURL)
@@ -516,29 +511,6 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 
 func (r *responseRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
-}
-
-// StartTunnelClient starts the edge tunnel client in a goroutine
-// This is called from bootstrap when in edge mode
-func StartTunnelClient(ctx context.Context, cfg *config.Config, handler http.Handler) {
-	if !cfg.EdgeAgent {
-		slog.WarnContext(ctx, "StartTunnelClient called but EDGE_AGENT is disabled")
-		return
-	}
-
-	if cfg.ManagerApiUrl == "" {
-		slog.ErrorContext(ctx, "Cannot start edge tunnel: MANAGER_API_URL is required")
-		return
-	}
-
-	if cfg.AgentToken == "" {
-		slog.ErrorContext(ctx, "Cannot start edge tunnel: AGENT_TOKEN is required")
-		return
-	}
-
-	client := NewTunnelClient(cfg, handler)
-	// Run in background - this will auto-reconnect
-	go client.Start(ctx)
 }
 
 // StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.

@@ -106,6 +106,7 @@ func Bootstrap(ctx context.Context) error {
 	}
 
 	scheduler := scheduler.NewJobScheduler(appCtx)
+	appServices.JobSchedule.SetScheduler(scheduler)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
 	router, tunnelServer := setupRouter(appCtx, cfg, appServices)

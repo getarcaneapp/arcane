@@ -9,21 +9,31 @@ import (
 )
 
 type JobScheduler struct {
-	cron    *cron.Cron
-	jobs    []schedulertypes.Job
-	context context.Context
+	cron     *cron.Cron
+	jobs     []schedulertypes.Job
+	jobsByID map[string]schedulertypes.Job
+	entryIDs map[string]cron.EntryID
+	context  context.Context
 }
 
 func NewJobScheduler(ctx context.Context) *JobScheduler {
 	return &JobScheduler{
-		cron:    cron.New(cron.WithSeconds()),
-		jobs:    []schedulertypes.Job{},
-		context: ctx,
+		cron:     cron.New(cron.WithSeconds()),
+		jobs:     []schedulertypes.Job{},
+		jobsByID: make(map[string]schedulertypes.Job),
+		entryIDs: make(map[string]cron.EntryID),
+		context:  ctx,
 	}
 }
 
 func (js *JobScheduler) RegisterJob(job schedulertypes.Job) {
 	js.jobs = append(js.jobs, job)
+	js.jobsByID[job.Name()] = job
+}
+
+func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
+	job, ok := js.jobsByID[jobID]
+	return job, ok
 }
 
 func (js *JobScheduler) StartScheduler() {
@@ -33,15 +43,39 @@ func (js *JobScheduler) StartScheduler() {
 
 		slog.InfoContext(js.context, "Starting Job", "name", currentJob.Name(), "schedule", schedule)
 
-		if _, err := js.cron.AddFunc(schedule, func() {
-			slog.InfoContext(js.context, "Job starting", "name", currentJob.Name())
+		entryID, err := js.cron.AddFunc(schedule, func() {
+			slog.InfoContext(js.context, "Job starting", "name", currentJob.Name(), "schedule", schedule)
 			currentJob.Run(js.context)
 			slog.InfoContext(js.context, "Job finished", "name", currentJob.Name())
-		}); err != nil {
+		})
+		if err != nil {
 			slog.ErrorContext(js.context, "Failed to schedule job", "name", currentJob.Name(), "error", err)
+			continue
 		}
+
+		js.entryIDs[currentJob.Name()] = entryID
 	}
 	js.cron.Start()
+}
+
+func (js *JobScheduler) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
+	schedule := job.Schedule(ctx)
+
+	if entryID, ok := js.entryIDs[job.Name()]; ok {
+		js.cron.Remove(entryID)
+	}
+
+	entryID, err := js.cron.AddFunc(schedule, func() {
+		slog.InfoContext(ctx, "Job starting", "name", job.Name(), "schedule", schedule)
+		job.Run(ctx)
+		slog.InfoContext(ctx, "Job finished", "name", job.Name())
+	})
+	if err != nil {
+		return err
+	}
+
+	js.entryIDs[job.Name()] = entryID
+	return nil
 }
 
 func (js *JobScheduler) Run(ctx context.Context) error {

@@ -19,7 +19,6 @@ import (
 const (
 	AnalyticsJobName         = "analytics-heartbeat"
 	defaultHeartbeatEndpoint = "https://checkin.getarcane.app/heartbeat"
-	defaultAnalyticsInterval = 24 * time.Hour
 )
 
 type AnalyticsJob struct {
