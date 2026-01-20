@@ -53,6 +53,8 @@ type Config struct {
 	AnalyticsDisabled       bool   `env:"ANALYTICS_DISABLED" default:"false"`
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
+	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
+	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
 
 	// Auto-login configuration
 	// When enabled, the frontend will automatically authenticate using the specified credentials.
@@ -76,12 +78,19 @@ func Load() *Config {
 	cfg := &Config{}
 	loadFromEnv(cfg)
 	applyOptions(cfg)
+	applyAgentModeDefaults(cfg)
 
 	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
 	common.DirPerm = cfg.DirPerm
 
 	return cfg
+}
+
+func applyAgentModeDefaults(cfg *Config) {
+	if cfg.EdgeAgent {
+		cfg.AgentMode = true
+	}
 }
 
 // loadFromEnv uses reflection to load configuration from environment variables.

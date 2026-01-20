@@ -112,7 +112,6 @@
 		<SidebarUpdatebanner
 			{isCollapsed}
 			{versionInformation}
-			updateAvailable={versionInformation.updateAvailable}
 			user={effectiveUser}
 			debug={false}
 		/>

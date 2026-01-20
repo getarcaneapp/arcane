@@ -108,3 +108,4 @@ export { default as AutomationIcon } from 'virtual:icons/tabler/automation';
 export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';
 export { default as UploadIcon } from 'virtual:icons/solar/upload-minimalistic-linear';
 export { default as RedeployIcon } from 'virtual:icons/solar/refresh-circle-linear';
+export { default as EdgeConnectionIcon } from 'virtual:icons/solar/cloud-upload-linear';

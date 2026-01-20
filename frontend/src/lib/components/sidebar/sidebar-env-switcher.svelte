@@ -3,7 +3,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon, ArrowsUpDownIcon } from '$lib/icons';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, EdgeConnectionIcon, ArrowsUpDownIcon } from '$lib/icons';
 
 	type Props = {
 		onOpenDialog?: () => void;
@@ -15,6 +15,8 @@
 		if (!environmentStore.selected) return '';
 		if (environmentStore.selected.id === '0') {
 			return $settingsStore.dockerHost || 'unix:///var/run/docker.sock';
+		} else if (environmentStore.selected.isEdge) {
+			return 'Edge connection';
 		} else {
 			return environmentStore.selected.apiUrl;
 		}
@@ -33,6 +35,8 @@
 				<div class="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
 					{#if environmentStore.selected.id === '0'}
 						<EnvironmentsIcon class="size-4" />
+					{:else if environmentStore.selected.isEdge}
+						<EdgeConnectionIcon class="size-4" />
 					{:else}
 						<RemoteEnvironmentIcon class="size-4" />
 					{/if}

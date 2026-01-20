@@ -1,0 +1,294 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main, "release/**"]
+
+permissions:
+    contents: read
+    actions: read
+    checks: write
+    pull-requests: write
+    id-token: write
+
+concurrency:
+    group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+    cancel-in-progress: true
+
+jobs:
+    go-tests:
+        name: Go Tests (${{ matrix.module.name }})
+        runs-on: depot-ubuntu-24.04-16
+        timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            matrix:
+                module:
+                    - name: backend
+                      path: backend
+                      timeout: 30
+                      gcc: true
+                      cgo_enabled: "1"
+                      coverage_name: backend-coverage
+                    - name: cli
+                      path: cli
+                      timeout: 10
+                      gcc: false
+                      cgo_enabled: "1"
+                      coverage_name: cli-coverage
+        defaults:
+            run:
+                working-directory: ${{ matrix.module.path }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Set up Depot CLI
+              if: matrix.module.gcc
+              uses: depot/setup-action@v1
+
+            - name: Setup Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: ${{ matrix.module.path }}/go.mod
+                  cache: true
+                  cache-dependency-path: ${{ matrix.module.path }}/go.sum
+
+            - name: Install GCC
+              if: matrix.module.gcc
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y gcc
+
+            - name: Download modules
+              run: go mod download
+
+            - name: Run unit tests
+              env:
+                  CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
+              run: |
+                  if [ "${{ matrix.module.name }}" = "backend" ]; then
+                    go test -tags=exclude_frontend ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+                  else
+                    go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+                  fi
+
+            - name: Upload coverage artifact
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: ${{ matrix.module.coverage_name }}
+                  path: ${{ matrix.module.path }}/coverage.txt
+
+            - name: Upload coverage reports to Codecov
+              uses: codecov/codecov-action@v5
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+
+    go-linter:
+        name: Go Linter (${{ matrix.module.name }})
+        runs-on: depot-ubuntu-24.04-16
+        strategy:
+            fail-fast: false
+            matrix:
+                module:
+                    - name: backend
+                      path: backend
+                      args: --build-tags=exclude_frontend --config=.golangci.yml
+                    - name: cli
+                      path: cli
+                      args: --config=../backend/.golangci.yml
+                    - name: types
+                      path: types
+                      args: --config=../backend/.golangci.yml
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: ${{ matrix.module.path }}/go.mod
+                  cache-dependency-path: ${{ matrix.module.path }}/go.sum
+
+            - name: Run Golangci-lint
+              uses: golangci/golangci-lint-action@v9
+              with:
+                  version: v2.7.2
+                  args: ${{ matrix.module.args }}
+                  working-directory: ${{ matrix.module.path }}
+                  only-new-issues: true
+
+    deadcode:
+        name: Go Deadcode Analysis
+        if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
+        runs-on: depot-ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Setup Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: backend/go.mod
+                  cache-dependency-path: backend/go.sum
+
+            - name: Install deadcode
+              run: go install golang.org/x/tools/cmd/deadcode@latest
+
+            - name: Add deadcode problem matcher
+              run: echo "::add-matcher::.github/matchers/deadcode-matcher.json"
+
+            - name: Run deadcode analysis
+              id: deadcode
+              working-directory: backend
+              continue-on-error: true
+              run: |
+                  OUTPUT=$(deadcode ./... 2>&1 || true)
+                  echo "$OUTPUT"
+                  COUNT=$(echo "$OUTPUT" | grep -c "unreachable func" || true)
+                  if [ -z "$COUNT" ]; then COUNT=0; fi
+                  echo "count=$COUNT" >> $GITHUB_OUTPUT
+                  echo "output<<EOF" >> $GITHUB_OUTPUT
+                  echo "$OUTPUT" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Find Comment
+              uses: peter-evans/find-comment@v4
+              id: fc
+              with:
+                  issue-number: ${{ github.event.pull_request.number }}
+                  comment-author: "github-actions[bot]"
+                  body-includes: "## 🔍 Deadcode Analysis"
+
+            - name: Comment deadcode results
+              uses: peter-evans/create-or-update-comment@v5
+              with:
+                  comment-id: ${{ steps.fc.outputs.comment-id }}
+                  issue-number: ${{ github.event.pull_request.number }}
+                  body: |
+                      ## 🔍 Deadcode Analysis
+
+                      Found **${{ steps.deadcode.outputs.count }}** unreachable functions in the backend.
+
+                      <details>
+                      <summary>View details</summary>
+
+                      ```
+                      ${{ steps.deadcode.outputs.output }}
+                      ```
+
+                      Only remove deadcode that you know is 100% no longer used. 
+
+                      </details>
+
+                      > Analysis from commit ${{ github.sha }}
+                  edit-mode: replace
+
+    svelte-check:
+        name: Svelte Type Check
+        runs-on: depot-ubuntu-24.04-8
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 25
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm --filter arcane-frontend install --frozen-lockfile
+
+            - name: Add svelte-check problem matcher
+              run: echo "::add-matcher::.github/matchers/svelte-check-matcher.json"
+
+            - name: Build frontend
+              run: pnpm --filter arcane-frontend build
+
+            - name: Run svelte-check
+              run: pnpm --filter arcane-frontend check:ci
+
+    e2e-tests:
+        name: E2E Tests (${{ matrix.database.name }})
+        if: ${{ github.head_ref != 'l10n_crowdin' }}
+        runs-on: depot-ubuntu-24.04-16
+        permissions:
+            contents: read
+            actions: write
+            id-token: write
+        strategy:
+            fail-fast: false
+            matrix:
+                database:
+                    - name: sqlite
+                      compose_file: setup/compose.yaml
+                      port: 3000
+                    - name: postgres
+                      compose_file: setup/compose-postgres.yaml
+                      port: 3001
+                    - name: proxy
+                      compose_file: setup/compose-proxy.yaml
+                      port: 3002
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 25
+                  cache: pnpm
+
+            - name: Set up Depot CLI
+              uses: depot/setup-action@v1
+
+            - name: Setup depot buildx driver
+              run: depot configure-docker
+
+            - name: Cache Playwright Browsers
+              uses: actions/cache@v5
+              id: playwright-cache
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: ${{ runner.os }}-playwright-${{ hashFiles('tests/pnpm-lock.yaml', 'tests/package.json') }}
+                  restore-keys: |
+                      ${{ runner.os }}-playwright-
+
+            - name: Pull and save test images
+              run: |
+                  docker pull ghcr.io/linuxserver/nginx:latest
+                  docker pull ghcr.io/linuxserver/radarr:nightly
+                  docker save ghcr.io/linuxserver/nginx:latest ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
+
+            - name: Install test dependencies
+              run: pnpm --filter arcane-tests install
+
+            - name: Install Playwright Browsers
+              working-directory: ./tests
+              run: pnpm exec playwright install --with-deps chromium
+
+            - name: Run Playwright E2E tests
+              run: pnpm --filter arcane-tests test
+              env:
+                  COMPOSE_FILE: ${{ matrix.database.compose_file }}
+                  BASE_URL: http://localhost:${{ matrix.database.port }}
+
+            - name: Upload Playwright HTML report
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: playwright-report-${{ matrix.database.name }}
+                  path: tests/.report
+                  include-hidden-files: true
+                  retention-days: 15

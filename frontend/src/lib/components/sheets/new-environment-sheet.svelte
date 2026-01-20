@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
@@ -11,6 +12,7 @@
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { RemoteEnvironmentIcon, EdgeConnectionIcon } from '$lib/icons';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
@@ -19,11 +21,15 @@
 
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
 
+	type ConnectionMode = 'direct' | 'edge';
+	let connectionMode = $state<ConnectionMode>('direct');
+
 	let createdEnvironment = $state<{
 		id: string;
 		apiKey: string;
 		name: string;
 		apiUrl: string;
+		isEdge: boolean;
 		dockerRun?: string;
 		dockerCompose?: string;
 	} | null>(null);
@@ -34,34 +40,46 @@
 	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
 	let newAgentUrlHost = $state('');
 
-	const newAgentFormSchema = z.object({
+	// Direct mode form schema requires URL
+	const directFormSchema = z.object({
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long()),
 		apiUrl: z.string().min(1, m.environments_server_url_required())
 	});
 
-	const { inputs: newAgentInputs, ...newAgentForm } = createForm<typeof newAgentFormSchema>(newAgentFormSchema, {
+	// Edge mode form schema only requires name
+	const edgeFormSchema = z.object({
+		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
+	});
+
+	const { inputs: directInputs, ...directForm } = createForm<typeof directFormSchema>(directFormSchema, {
 		name: '',
 		apiUrl: ''
+	});
+
+	const { inputs: edgeInputs, ...edgeForm } = createForm<typeof edgeFormSchema>(edgeFormSchema, {
+		name: ''
 	});
 
 	// Reset on open/close
 	$effect(() => {
 		if (open) {
 			createdEnvironment = null;
+			connectionMode = 'direct';
 			newAgentUrlProtocol = 'http';
 			newAgentUrlHost = '';
-			$newAgentInputs.name.value = '';
-			$newAgentInputs.apiUrl.value = '';
+			$directInputs.name.value = '';
+			$directInputs.apiUrl.value = '';
+			$edgeInputs.name.value = '';
 		}
 	});
 
-	// Sync UrlInput value with form validation
+	// Sync UrlInput value with form validation for direct mode
 	$effect(() => {
-		$newAgentInputs.apiUrl.value = newAgentUrlHost;
+		$directInputs.apiUrl.value = newAgentUrlHost;
 	});
 
-	async function handleNewAgentSubmit() {
-		const data = newAgentForm.validate();
+	async function handleDirectSubmit() {
+		const data = directForm.validate();
 		if (!data) return;
 
 		try {
@@ -71,40 +89,77 @@
 			const dto: CreateEnvironmentDTO = {
 				name: data.name,
 				apiUrl: fullUrl,
-				useApiKey: true
+				useApiKey: true,
+				isEdge: false
 			};
 
-			const created = await environmentManagementService.create(dto);
-
-			if (created.apiKey) {
-				createdEnvironment = {
-					id: created.id,
-					apiKey: created.apiKey,
-					name: created.name,
-					apiUrl: fullUrl
-				};
-
-				// Fetch deployment snippets from backend
-				isLoadingSnippets = true;
-				try {
-					const snippets = await environmentManagementService.getDeploymentSnippets(created.id);
-					createdEnvironment.dockerRun = snippets.dockerRun;
-					createdEnvironment.dockerCompose = snippets.dockerCompose;
-				} catch (err) {
-					console.error('Failed to fetch deployment snippets:', err);
-				} finally {
-					isLoadingSnippets = false;
-				}
-
-				toast.success(m.environments_created_success());
-			} else {
-				toast.error('Failed to generate API key');
-			}
+			await createEnvironmentAndFetchSnippets(dto, fullUrl, false);
 		} catch (error) {
 			toast.error(m.environments_create_failed());
 			console.error(error);
 		} finally {
 			isSubmittingNewAgent = false;
+		}
+	}
+
+	async function handleEdgeSubmit() {
+		const data = edgeForm.validate();
+		if (!data) return;
+
+		try {
+			isSubmittingNewAgent = true;
+			const edgeApiHost = data.name
+				.trim()
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, '-')
+				.replace(/(^-|-$)+/g, '');
+			const edgeApiUrl = `edge://${edgeApiHost}`;
+
+			// Edge agents don't need a URL - they connect outbound
+			// We use a placeholder URL that indicates edge mode
+			const dto: CreateEnvironmentDTO = {
+				name: data.name,
+				apiUrl: edgeApiUrl,
+				useApiKey: true,
+				isEdge: true
+			};
+
+			await createEnvironmentAndFetchSnippets(dto, '', true);
+		} catch (error) {
+			toast.error(m.environments_create_failed());
+			console.error(error);
+		} finally {
+			isSubmittingNewAgent = false;
+		}
+	}
+
+	async function createEnvironmentAndFetchSnippets(dto: CreateEnvironmentDTO, apiUrl: string, isEdge: boolean) {
+		const created = await environmentManagementService.create(dto);
+
+		if (created.apiKey) {
+			createdEnvironment = {
+				id: created.id,
+				apiKey: created.apiKey,
+				name: created.name,
+				apiUrl: apiUrl,
+				isEdge: isEdge
+			};
+
+			// Fetch deployment snippets from backend
+			isLoadingSnippets = true;
+			try {
+				const snippets = await environmentManagementService.getDeploymentSnippets(created.id);
+				createdEnvironment.dockerRun = snippets.dockerRun;
+				createdEnvironment.dockerCompose = snippets.dockerCompose;
+			} catch (err) {
+				console.error('Failed to fetch deployment snippets:', err);
+			} finally {
+				isLoadingSnippets = false;
+			}
+
+			toast.success(m.environments_created_success());
+		} else {
+			toast.error('Failed to generate API key');
 		}
 	}
 
@@ -125,6 +180,13 @@
 		<div class="space-y-6 px-6 py-6">
 			{#if createdEnvironment}
 				<div class="space-y-4">
+					{#if createdEnvironment.isEdge}
+						<div class="bg-primary/10 text-primary flex items-center gap-2 rounded-lg p-3 text-sm">
+							<EdgeConnectionIcon class="size-5" />
+							<span>Edge agent - connects outbound to manager</span>
+						</div>
+					{/if}
+
 					<div class="space-y-2">
 						<div class="text-sm font-medium">{m.environments_api_key()}</div>
 						<div class="flex items-center gap-2">
@@ -167,30 +229,70 @@
 					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
 				</div>
 			{:else}
-				<form onsubmit={preventDefault(handleNewAgentSubmit)} class="space-y-4">
-					<FormInput label={m.common_name()} placeholder={m.environments_production_docker()} bind:input={$newAgentInputs.name} />
+				<Tabs.Root bind:value={connectionMode} class="w-full">
+					<Tabs.List class="grid w-full grid-cols-2">
+						<Tabs.Trigger value="direct" class="flex items-center gap-2">
+							<RemoteEnvironmentIcon class="size-4" />
+							Direct
+						</Tabs.Trigger>
+						<Tabs.Trigger value="edge" class="flex items-center gap-2">
+							<EdgeConnectionIcon class="size-4" />
+							Edge
+						</Tabs.Trigger>
+					</Tabs.List>
 
-					<UrlInput
-						id="new-agent-api-url"
-						label={m.environments_agent_address()}
-						placeholder={m.environments_agent_address_placeholder()}
-						description={m.environments_agent_address_description()}
-						bind:value={newAgentUrlHost}
-						bind:protocol={newAgentUrlProtocol}
-						disabled={isSubmittingNewAgent}
-						required
-						error={$newAgentInputs.apiUrl.error ?? undefined}
-					/>
+					<Tabs.Content value="direct" class="mt-4">
+						<p class="text-muted-foreground mb-4 text-sm">
+							Manager connects directly to the agent. Requires the agent port to be accessible.
+						</p>
+						<form onsubmit={preventDefault(handleDirectSubmit)} class="space-y-4">
+							<FormInput
+								label={m.common_name()}
+								placeholder={m.environments_production_docker()}
+								bind:input={$directInputs.name}
+							/>
 
-					<ArcaneButton
-						action="confirm"
-						type="submit"
-						class="w-full"
-						disabled={isSubmittingNewAgent}
-						loading={isSubmittingNewAgent}
-						customLabel={m.environments_generate_config()}
-					/>
-				</form>
+							<UrlInput
+								id="new-agent-api-url"
+								label={m.environments_agent_address()}
+								placeholder={m.environments_agent_address_placeholder()}
+								description={m.environments_agent_address_description()}
+								bind:value={newAgentUrlHost}
+								bind:protocol={newAgentUrlProtocol}
+								disabled={isSubmittingNewAgent}
+								required
+								error={$directInputs.apiUrl.error ?? undefined}
+							/>
+
+							<ArcaneButton
+								action="confirm"
+								type="submit"
+								class="w-full"
+								disabled={isSubmittingNewAgent}
+								loading={isSubmittingNewAgent}
+								customLabel={m.environments_generate_config()}
+							/>
+						</form>
+					</Tabs.Content>
+
+					<Tabs.Content value="edge" class="mt-4">
+						<p class="text-muted-foreground mb-4 text-sm">
+							Agent connects outbound to the manager. No exposed ports required - ideal for firewalled environments.
+						</p>
+						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
+							<FormInput label={m.common_name()} placeholder="Remote Docker Host" bind:input={$edgeInputs.name} />
+
+							<ArcaneButton
+								action="confirm"
+								type="submit"
+								class="w-full"
+								disabled={isSubmittingNewAgent}
+								loading={isSubmittingNewAgent}
+								customLabel={m.environments_generate_config()}
+							/>
+						</form>
+					</Tabs.Content>
+				</Tabs.Root>
 			{/if}
 		</div>
 	{/snippet}
