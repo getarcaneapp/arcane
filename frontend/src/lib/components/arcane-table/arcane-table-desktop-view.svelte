@@ -38,7 +38,7 @@
 	const isActionsColumn = (columnId: string) => columnId === 'actions';
 	const stickyActionsHeaderClass = 'sticky right-0 w-px whitespace-nowrap bg-muted/30 backdrop-blur-sm border-l border-border';
 	const stickyActionsCellClass =
-		'sticky right-0 w-px whitespace-nowrap bg-background border-l border-border backdrop-blur-lg transition-colors group-hover/row:bg-muted';
+		'sticky right-0 w-px whitespace-nowrap bg-background border-l border-border backdrop-blur-lg transition-colors group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
@@ -82,7 +82,6 @@
 	}
 
 	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
-	const hasSelection = $derived(selectedIds.length > 0);
 </script>
 
 <div class="h-full w-full">
@@ -91,17 +90,15 @@
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<Table.Row>
 					{#each headerGroup.headers as header (header.id)}
-						{#if !(isActionsColumn(header.id) && hasSelection)}
-							<Table.Head colspan={header.colSpan} class={getHeaderClasses(header)}>
-								{#if !header.isPlaceholder}
-									{#if isActionsColumn(header.id)}
-										{m.common_actions()}
-									{:else}
-										<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-									{/if}
+						<Table.Head colspan={header.colSpan} class={getHeaderClasses(header)}>
+							{#if !header.isPlaceholder}
+								{#if isActionsColumn(header.id)}
+									{m.common_actions()}
+								{:else}
+									<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
 								{/if}
-							</Table.Head>
-						{/if}
+							{/if}
+						</Table.Head>
 					{/each}
 				</Table.Row>
 			{/each}
@@ -112,13 +109,13 @@
 					{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
 					{@const groupRows = getRowsForGroup(group.items)}
 					{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
-					{@const groupHasSelection = selectionState !== 'none'}
+					{@const hasSelection = selectionState !== 'none'}
 					{@const IconComponent = groupIcon?.(group.groupName)}
 
 					<Table.Row
 						class={cn(
 							'cursor-pointer transition-colors',
-							groupHasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70'
+							hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70'
 						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
@@ -154,12 +151,10 @@
 						{#each groupRows as row (row.id)}
 							<Table.Row data-state={(selectedIds ?? []).includes((row.original as any).id) && 'selected'}>
 								{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
-									{#if !(isActionsColumn(cell.column.id) && hasSelection)}
-										{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
-										<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
-											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-										</Table.Cell>
-									{/if}
+									{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
+									<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
+										<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+									</Table.Cell>
 								{/each}
 							</Table.Row>
 						{/each}
@@ -184,11 +179,9 @@
 				{#each table.getRowModel().rows as row (row.id)}
 					<Table.Row data-state={(selectedIds ?? []).includes((row.original as any).id) && 'selected'}>
 						{#each row.getVisibleCells() as cell (cell.id)}
-							{#if !(isActionsColumn(cell.column.id) && hasSelection)}
-								<Table.Cell class={getCellClasses(cell, false, false)}>
-									<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-								</Table.Cell>
-							{/if}
+							<Table.Cell class={getCellClasses(cell, false, false)}>
+								<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+							</Table.Cell>
 						{/each}
 					</Table.Row>
 				{:else}
