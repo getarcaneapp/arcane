@@ -44,3 +44,12 @@ func TrimQuotes(s string) string {
 	}
 	return s
 }
+
+func GetStringOrDefault(m map[string]any, key, defaultValue string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return defaultValue
+}

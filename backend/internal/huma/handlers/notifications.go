@@ -217,13 +217,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		return nil, err
 	}
 	provider := models.NotificationProvider(input.Body.Provider)
-	if provider != models.NotificationProviderDiscord &&
-		provider != models.NotificationProviderEmail &&
-		provider != models.NotificationProviderTelegram &&
-		provider != models.NotificationProviderSignal &&
-		provider != models.NotificationProviderSlack &&
-		provider != models.NotificationProviderNtfy &&
-		provider != models.NotificationProviderGeneric {
+	if !models.IsValidNotificationProvider(provider) {
 		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
 	}
 
