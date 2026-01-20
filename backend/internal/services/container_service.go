@@ -435,42 +435,57 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
-	// Collect unique image IDs for update info lookup
-	imageIDSet := make(map[string]struct{}, len(dockerContainers))
-	for _, dc := range dockerContainers {
+	updateInfoMap := s.fetchContainerUpdateInfo(ctx, dockerContainers)
+	items := s.buildContainerSummaries(dockerContainers, updateInfoMap)
+
+	config := s.buildContainerPaginationConfig()
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+	counts := s.calculateContainerStatusCounts(items)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+
+	return result.Items, paginationResp, counts, nil
+}
+
+func (s *ContainerService) fetchContainerUpdateInfo(ctx context.Context, containers []container.Summary) map[string]*imagetypes.UpdateInfo {
+	imageIDSet := make(map[string]struct{}, len(containers))
+	for _, dc := range containers {
 		if dc.ImageID != "" {
 			imageIDSet[dc.ImageID] = struct{}{}
 		}
 	}
+
 	imageIDs := make([]string, 0, len(imageIDSet))
 	for id := range imageIDSet {
 		imageIDs = append(imageIDs, id)
 	}
 
-	// Fetch update info for all images used by containers
-	var updateInfoMap map[string]*imagetypes.UpdateInfo
-	if s.imageService != nil && len(imageIDs) > 0 {
-		updateInfoMap, err = s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
-		if err != nil {
-			// Log error but continue - update info is optional
-			slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
-			updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
-		}
-	} else {
-		updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
+	if s.imageService == nil || len(imageIDs) == 0 {
+		return make(map[string]*imagetypes.UpdateInfo)
 	}
 
-	items := make([]containertypes.Summary, 0, len(dockerContainers))
-	for _, dc := range dockerContainers {
+	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
+		return make(map[string]*imagetypes.UpdateInfo)
+	}
+
+	return updateInfoMap
+}
+
+func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo) []containertypes.Summary {
+	items := make([]containertypes.Summary, 0, len(containers))
+	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
-		// Attach update info if available
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
 		items = append(items, summary)
 	}
+	return items
+}
 
-	config := pagination.Config[containertypes.Summary]{
+func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {
+	return pagination.Config[containertypes.Summary]{
 		SearchAccessors: []pagination.SearchAccessor[containertypes.Summary]{
 			func(c containertypes.Summary) (string, error) {
 				if len(c.Names) > 0 {
@@ -482,76 +497,82 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 			func(c containertypes.Summary) (string, error) { return c.State, nil },
 			func(c containertypes.Summary) (string, error) { return c.Status, nil },
 		},
-		SortBindings: []pagination.SortBinding[containertypes.Summary]{
-			{
-				Key: "name",
-				Fn: func(a, b containertypes.Summary) int {
-					nameA := ""
-					if len(a.Names) > 0 {
-						nameA = a.Names[0]
-					}
-					nameB := ""
-					if len(b.Names) > 0 {
-						nameB = b.Names[0]
-					}
-					return strings.Compare(nameA, nameB)
-				},
-			},
-			{
-				Key: "image",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.Image, b.Image)
-				},
-			},
-			{
-				Key: "state",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.State, b.State)
-				},
-			},
-			{
-				Key: "status",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.Status, b.Status)
-				},
-			},
-			{
-				Key: "created",
-				Fn: func(a, b containertypes.Summary) int {
-					if a.Created < b.Created {
-						return -1
-					}
-					if a.Created > b.Created {
-						return 1
-					}
-					return 0
-				},
+		SortBindings:    s.buildContainerSortBindings(),
+		FilterAccessors: s.buildContainerFilterAccessors(),
+	}
+}
+
+func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding[containertypes.Summary] {
+	return []pagination.SortBinding[containertypes.Summary]{
+		{
+			Key: "name",
+			Fn: func(a, b containertypes.Summary) int {
+				nameA, nameB := "", ""
+				if len(a.Names) > 0 {
+					nameA = a.Names[0]
+				}
+				if len(b.Names) > 0 {
+					nameB = b.Names[0]
+				}
+				return strings.Compare(nameA, nameB)
 			},
 		},
-		FilterAccessors: []pagination.FilterAccessor[containertypes.Summary]{
-			{
-				Key: "updates",
-				Fn: func(c containertypes.Summary, filterValue string) bool {
-					switch filterValue {
-					case "has_update":
-						return c.UpdateInfo != nil && c.UpdateInfo.HasUpdate
-					case "up_to_date":
-						return c.UpdateInfo != nil && !c.UpdateInfo.HasUpdate && c.UpdateInfo.Error == ""
-					case "error":
-						return c.UpdateInfo != nil && c.UpdateInfo.Error != ""
-					case "unknown":
-						return c.UpdateInfo == nil
-					default:
-						return true
-					}
-				},
+		{
+			Key: "image",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.Image, b.Image)
+			},
+		},
+		{
+			Key: "state",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.State, b.State)
+			},
+		},
+		{
+			Key: "status",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.Status, b.Status)
+			},
+		},
+		{
+			Key: "created",
+			Fn: func(a, b containertypes.Summary) int {
+				if a.Created < b.Created {
+					return -1
+				}
+				if a.Created > b.Created {
+					return 1
+				}
+				return 0
 			},
 		},
 	}
+}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAccessor[containertypes.Summary] {
+	return []pagination.FilterAccessor[containertypes.Summary]{
+		{
+			Key: "updates",
+			Fn: func(c containertypes.Summary, filterValue string) bool {
+				switch filterValue {
+				case "has_update":
+					return c.UpdateInfo != nil && c.UpdateInfo.HasUpdate
+				case "up_to_date":
+					return c.UpdateInfo != nil && !c.UpdateInfo.HasUpdate && c.UpdateInfo.Error == ""
+				case "error":
+					return c.UpdateInfo != nil && c.UpdateInfo.Error != ""
+				case "unknown":
+					return c.UpdateInfo == nil
+				default:
+					return true
+				}
+			},
+		},
+	}
+}
 
-	// Calculate status counts from items (before pagination)
+func (s *ContainerService) calculateContainerStatusCounts(items []containertypes.Summary) containertypes.StatusCounts {
 	counts := containertypes.StatusCounts{
 		TotalContainers: len(items),
 	}
@@ -562,10 +583,7 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 			counts.StoppedContainers++
 		}
 	}
-
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
-
-	return result.Items, paginationResp, counts, nil
+	return counts
 }
 
 // CreateExec creates an exec instance in the container

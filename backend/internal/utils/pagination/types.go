@@ -18,16 +18,17 @@ func BuildResponseFromFilterResult[T any](result FilterResult[T], params QueryPa
 	var page int
 	var itemsPerPage int
 
-	if limit == -1 {
+	switch {
+	case limit == -1:
 		// "Show all" mode: single page with all items
 		totalPages = 1
 		page = 1
 		itemsPerPage = int(totalCount)
-	} else if limit > 0 {
+	case limit > 0:
 		totalPages = (totalCount + int64(limit) - 1) / int64(limit)
 		page = (params.Start / limit) + 1
 		itemsPerPage = limit
-	} else {
+	default:
 		// Fallback for invalid limit values
 		totalPages = 1
 		page = 1
