@@ -136,6 +136,7 @@
 	"common_select_row": "Select row",
 	"common_showing_of_total": "Showing {shown} of {total} item(s).",
 	"common_rows_per_page": "Rows per page",
+	"common_all": "All",
 	"common_go_first_page": "Go to first page",
 	"common_go_prev_page": "Go to previous page",
 	"common_go_next_page": "Go to next page",
