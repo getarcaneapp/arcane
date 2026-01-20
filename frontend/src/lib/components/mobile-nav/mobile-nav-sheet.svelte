@@ -7,17 +7,25 @@
 	import { m } from '$lib/paraglide/messages';
 	import MobileUserCard from './mobile-user-card.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
+	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
+	import { toast } from 'svelte-sonner';
+	import { onMount } from 'svelte';
+	import { DownloadIcon } from '$lib/icons';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 	let {
 		open = $bindable(false),
 		user = null,
-		versionInformation = null,
-		navigationMode = 'floating'
+		versionInformation,
+		debug = false
 	}: {
 		open: boolean;
 		user?: any;
-		versionInformation?: any;
-		navigationMode?: 'floating' | 'docked';
+		versionInformation?: AppVersionInformation;
+		debug?: boolean;
 	} = $props();
 
 	let storeUser: any = $state(null);
@@ -29,10 +37,100 @@
 
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
-	const memoizedIsAdmin = $derived.by(() => !!memoizedUser?.roles?.includes('admin'));
 
-	function handleItemClick(item: NavigationItem, event?: MouseEvent) {
-		// Don't prevent default - let the navigation happen
+	let canUpgrade = $state(false);
+	let checkingUpgrade = $state(false);
+	let upgrading = $state(false);
+	let showConfirmDialog = $state(false);
+
+	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+
+	// Determine update type and display text
+	const updateType = $derived.by(() => {
+		if (!versionInformation) return 'none';
+		if (versionInformation.isSemverVersion) return 'semver';
+		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
+		return 'none';
+	});
+
+	const updateDisplayText = $derived.by(() => {
+		if (!versionInformation) return '';
+		if (updateType === 'semver') {
+			return versionInformation.newestVersion ?? '';
+		}
+		if (updateType === 'digest' && versionInformation.newestDigest) {
+			// Show shortened digest for non-semver tags
+			const digest = versionInformation.newestDigest;
+			return digest.length > 12 ? digest.substring(0, 12) : digest;
+		}
+		return '';
+	});
+
+	const upgradeButtonText = $derived.by(() => {
+		if (upgrading) return m.upgrade_in_progress();
+		if (checkingUpgrade) return m.upgrade_checking();
+		if (updateType === 'digest') {
+			const tag = versionInformation?.currentTag ?? m.common_image();
+			return m.upgrade_update_tag({ tag });
+		}
+		// For semver updates, use newestVersion or fallback to updateDisplayText
+		const version = versionInformation?.newestVersion || updateDisplayText;
+		if (version) {
+			return m.upgrade_to_version({ version });
+		}
+		// Fallback if no version info is available (shouldn't happen in prod, but safe fallback)
+		return m.upgrade_now();
+	});
+
+	// Debug mode: force show upgrade button
+	$effect(() => {
+		if (debug) {
+			canUpgrade = true;
+		}
+	});
+
+	// Check if self-upgrade is available
+	onMount(() => {
+		if (versionInformation?.updateAvailable && isAdmin && !debug) {
+			checkUpgradeAvailability();
+		}
+	});
+
+	// Show banner for both semver and digest-based updates
+	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
+
+	async function checkUpgradeAvailability() {
+		if (checkingUpgrade) return;
+
+		checkingUpgrade = true;
+		try {
+			const result = await systemUpgradeService.checkUpgradeAvailable();
+			canUpgrade = result.canUpgrade && !result.error;
+		} catch (error) {
+			canUpgrade = false;
+		} finally {
+			checkingUpgrade = false;
+		}
+	}
+
+	function handleUpgradeClick() {
+		showConfirmDialog = true;
+	}
+
+	async function handleConfirmUpgrade() {
+		try {
+			await systemUpgradeService.triggerUpgrade();
+			// Dialog will handle countdown and reload
+		} catch (error: any) {
+			const errorMessage = extractApiErrorMessage(error);
+			const wrappedPrefix = m.upgrade_failed({ error: '' });
+			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
+			upgrading = false;
+		}
+	}
+
+	function handleItemClick() {
 		open = false;
 	}
 
@@ -64,7 +162,7 @@
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}
-								onclick={() => handleItemClick(item)}
+								onclick={handleItemClick}
 								class={cn(
 									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
 									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
@@ -90,7 +188,7 @@
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}
-								onclick={() => handleItemClick(item)}
+								onclick={handleItemClick}
 								class={cn(
 									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
 									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
@@ -107,7 +205,7 @@
 					</div>
 				</section>
 
-				{#if memoizedIsAdmin}
+				{#if isAdmin}
 					{#if navigationItems.settingsItems}
 						<section>
 							<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
@@ -120,7 +218,7 @@
 										<div class="space-y-2">
 											<a
 												href={item.url}
-												onclick={() => handleItemClick(item)}
+												onclick={handleItemClick}
 												class={cn(
 													'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
 													isActiveItem(item)
@@ -136,7 +234,7 @@
 													{@const SubIconComponent = subItem.icon}
 													<a
 														href={subItem.url}
-														onclick={() => handleItemClick(subItem)}
+														onclick={handleItemClick}
 														class={cn(
 															'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
 															'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
@@ -156,7 +254,7 @@
 										{@const IconComponent = item.icon}
 										<a
 											href={item.url}
-											onclick={() => handleItemClick(item)}
+											onclick={handleItemClick}
 											class={cn(
 												'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
 												isActiveItem(item)
@@ -179,15 +277,39 @@
 		<div class="border-border/30 border-t px-6 pt-4 pb-4">
 			{#if versionInformation}
 				<div class="text-muted-foreground/60 text-center text-xs">
-					<p class="font-medium">Arcane v{versionInformation.currentVersion}</p>
-					{#if versionInformation.updateAvailable}
+					<p class="font-medium">
+						Arcane {versionInformation.displayVersion ?? versionInformation.currentVersion}
+					</p>
+					{#if shouldShowBanner}
 						<p class="text-primary/80 mt-1 font-medium">Update available</p>
 					{/if}
 				</div>
+				{#if shouldShowUpgrade}
+					<div class="mt-3">
+						<ArcaneButton
+							action="update"
+							size="sm"
+							class="h-9 w-full gap-2 rounded-xl shadow-sm transition-colors"
+							onclick={handleUpgradeClick}
+							disabled={upgrading || checkingUpgrade}
+							customLabel={upgradeButtonText}
+							icon={DownloadIcon}
+						/>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	</Drawer.Content>
 </Drawer.Root>
+
+<UpgradeConfirmationDialog
+	bind:open={showConfirmDialog}
+	bind:upgrading
+	version={versionInformation?.newestVersion ?? ''}
+	expectedVersion={versionInformation?.newestVersion}
+	expectedDigest={versionInformation?.newestDigest}
+	onConfirm={handleConfirmUpgrade}
+/>
 
 <style>
 	:global(.scrollbar-hide) {
