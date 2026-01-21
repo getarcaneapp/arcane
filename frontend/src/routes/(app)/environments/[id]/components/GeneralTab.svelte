@@ -55,6 +55,15 @@
 					helpText={m.docker_max_upload_size_description()}
 				/>
 			</div>
+			<div class="space-y-2 sm:col-span-2">
+				<TextInputWithLabel
+					id="allowed-external-paths"
+					label={m.general_allowed_external_paths_label()}
+					bind:value={$formInputs.allowedExternalPaths.value}
+					placeholder={m.general_allowed_external_paths_placeholder()}
+					helpText={m.general_allowed_external_paths_help()}
+				/>
+			</div>
 		</div>
 	</Card.Content>
 </Card.Root>
