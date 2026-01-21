@@ -8,8 +8,7 @@
 		InfoIcon,
 		GlobeIcon,
 		ContainersIcon,
-		BoxIcon,
-		FolderOpenIcon
+		BoxIcon
 	} from '$lib/icons';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -24,17 +23,11 @@
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import VolumeFileBrowserDialog from '$lib/components/dialogs/volume-file-browser-dialog.svelte';
 	import type { VolumeContainerInfo } from './+page';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
 	let containersDetailed = $state<VolumeContainerInfo[]>(untrack(() => data.containersDetailed ?? []));
-	let fileBrowserOpen = $state(false);
-
-	function handleBrowseFiles() {
-		fileBrowserOpen = true;
-	}
 
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());
@@ -67,13 +60,6 @@
 	}
 
 	const actions: DetailAction[] = $derived([
-		{
-			id: 'browse',
-			action: 'base' as const,
-			label: m.volume_browse_files(),
-			icon: FolderOpenIcon,
-			onclick: handleBrowseFiles
-		},
 		{
 			id: 'remove',
 			action: 'remove',
@@ -325,9 +311,3 @@
 		</div>
 	{/if}
 </ResourceDetailLayout>
-
-<VolumeFileBrowserDialog
-	bind:open={fileBrowserOpen}
-	volumeName={volume.name}
-	title={m.volume_browse_title({ name: volume.name })}
-/>

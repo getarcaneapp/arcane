@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
-	containertypes "github.com/getarcaneapp/arcane/types/container"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 )
 
@@ -134,40 +133,6 @@ type GetVolumeSizesOutput struct {
 	Body base.ApiResponse[[]VolumeSizeInfo]
 }
 
-// BrowseVolumeFilesInput is the input for browsing volume files.
-type BrowseVolumeFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" doc:"Path to browse (defaults to root)"`
-}
-
-// VolumeBrowseFilesResponse is the API response for browsing volume files.
-type VolumeBrowseFilesResponse struct {
-	Success bool                               `json:"success"`
-	Data    containertypes.BrowseFilesResponse `json:"data"`
-}
-
-type BrowseVolumeFilesOutput struct {
-	Body VolumeBrowseFilesResponse
-}
-
-// GetVolumeFileContentInput is the input for getting volume file content.
-type GetVolumeFileContentInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Path          string `query:"path" required:"true" doc:"Path to the file"`
-}
-
-// VolumeFileContentResponse is the API response for getting volume file content.
-type VolumeFileContentResponse struct {
-	Success bool                               `json:"success"`
-	Data    containertypes.FileContentResponse `json:"data"`
-}
-
-type GetVolumeFileContentOutput struct {
-	Body VolumeFileContentResponse
-}
-
 // RegisterVolumes registers volume management routes using Huma.
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService) {
 	h := &VolumeHandler{
@@ -278,32 +243,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetVolumeSizes)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "browse-volume-files",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse",
-		Summary:     "Browse volume files",
-		Description: "List files and directories at a path inside a volume. Works for all volumes, including those not mounted to any container.",
-		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, h.BrowseVolumeFiles)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-volume-file-content",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/file",
-		Summary:     "Get volume file content",
-		Description: "Read the content of a file inside a volume. Works for all volumes, including those not mounted to any container.",
-		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, h.GetVolumeFileContent)
 }
 
 // ListVolumes returns a paginated list of volumes.
@@ -532,44 +471,6 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 		Body: base.ApiResponse[[]VolumeSizeInfo]{
 			Success: true,
 			Data:    result,
-		},
-	}, nil
-}
-
-// BrowseVolumeFiles lists files and directories at a path inside a volume.
-func (h *VolumeHandler) BrowseVolumeFiles(ctx context.Context, input *BrowseVolumeFilesInput) (*BrowseVolumeFilesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	result, err := h.volumeService.BrowseVolumeFiles(ctx, input.VolumeName, input.Path)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-
-	return &BrowseVolumeFilesOutput{
-		Body: VolumeBrowseFilesResponse{
-			Success: true,
-			Data:    *result,
-		},
-	}, nil
-}
-
-// GetVolumeFileContent reads the content of a file inside a volume.
-func (h *VolumeHandler) GetVolumeFileContent(ctx context.Context, input *GetVolumeFileContentInput) (*GetVolumeFileContentOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	result, err := h.volumeService.GetVolumeFileContent(ctx, input.VolumeName, input.Path)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-
-	return &GetVolumeFileContentOutput{
-		Body: VolumeFileContentResponse{
-			Success: true,
-			Data:    *result,
 		},
 	}, nil
 }

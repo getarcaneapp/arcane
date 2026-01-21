@@ -8,7 +8,6 @@ import type {
 	VolumeCreateRequest,
 	VolumeSizeInfo
 } from '$lib/types/volume.type';
-import type { BrowseFilesResponse, FileContentResponse } from '$lib/types/container.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
@@ -52,20 +51,6 @@ export class VolumeService extends BaseAPIService {
 	async deleteVolume(volumeName: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/${volumeName}`));
-	}
-
-	async browseFiles(volumeName: string, path: string = '/'): Promise<BrowseFilesResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.get(`/environments/${envId}/volumes/${volumeName}/browse`, { params: { path } })
-		) as Promise<BrowseFilesResponse>;
-	}
-
-	async getFileContent(volumeName: string, path: string): Promise<FileContentResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.get(`/environments/${envId}/volumes/${volumeName}/file`, { params: { path } })
-		) as Promise<FileContentResponse>;
 	}
 }
 

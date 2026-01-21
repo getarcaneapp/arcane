@@ -2,27 +2,20 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"path"
 	"strings"
-	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/browser"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
-	containertypes "github.com/getarcaneapp/arcane/types/container"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 )
 
@@ -478,200 +471,4 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	paginationResp := s.buildPaginationResponse(result, params)
 
 	return result.Items, paginationResp, counts, nil
-}
-
-// BrowseVolumeFiles lists files and directories at the given path inside a volume.
-// Uses a temporary container to access the volume files via Docker's CopyFromContainer API.
-func (s *VolumeService) BrowseVolumeFiles(ctx context.Context, volumeName, dirPath string) (*containertypes.BrowseFilesResponse, error) {
-	dockerClient, err := s.dockerService.GetClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	// Apply timeout for the entire browse operation
-	browseCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileBrowse)
-	defer cancel()
-
-	// Verify volume exists
-	_, err = dockerClient.VolumeInspect(browseCtx, volumeName)
-	if err != nil {
-		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while inspecting volume")
-		}
-		return nil, fmt.Errorf("volume not found: %w", err)
-	}
-
-	// Validate and sanitize path
-	if dirPath == "" {
-		dirPath = "/"
-	}
-
-	// Create a temporary container with the volume mounted
-	containerID, err := s.createTempVolumeContainer(browseCtx, dockerClient, volumeName)
-	if err != nil {
-		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while creating temporary container")
-		}
-		return nil, fmt.Errorf("failed to create temporary container: %w", err)
-	}
-
-	// Ensure cleanup
-	defer func() {
-		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
-		defer removeCancel()
-		//nolint:contextcheck // intentionally using background context so cleanup happens even if parent context is cancelled
-		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
-			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
-		}
-	}()
-
-	// The volume is mounted at /volume in the temp container
-	containerPath := path.Join("/volume", dirPath)
-
-	// Ensure path ends with / for directory listing
-	if !strings.HasSuffix(containerPath, "/") {
-		containerPath += "/"
-	}
-
-	// Use CopyFromContainer to get directory contents as a TAR stream
-	tarStream, _, err := dockerClient.CopyFromContainer(browseCtx, containerID, containerPath)
-	if err != nil {
-		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while reading volume path")
-		}
-		return nil, fmt.Errorf("failed to read volume path: %w", err)
-	}
-	defer tarStream.Close()
-
-	files, err := browser.ParseTarDirectory(tarStream, dirPath, browser.MaxFilesPerDirectory)
-	if err != nil {
-		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while parsing directory contents")
-		}
-		return nil, fmt.Errorf("failed to parse directory contents: %w", err)
-	}
-
-	return &containertypes.BrowseFilesResponse{
-		Path:  strings.TrimSuffix(dirPath, "/"),
-		Files: files,
-	}, nil
-}
-
-// GetVolumeFileContent reads the content of a file inside a volume.
-func (s *VolumeService) GetVolumeFileContent(ctx context.Context, volumeName, filePath string) (*containertypes.FileContentResponse, error) {
-	dockerClient, err := s.dockerService.GetClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	// Apply timeout for the file read operation
-	readCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileContentRead)
-	defer cancel()
-
-	// Verify volume exists
-	_, err = dockerClient.VolumeInspect(readCtx, volumeName)
-	if err != nil {
-		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while inspecting volume")
-		}
-		return nil, fmt.Errorf("volume not found: %w", err)
-	}
-
-	// Create a temporary container with the volume mounted
-	containerID, err := s.createTempVolumeContainer(readCtx, dockerClient, volumeName)
-	if err != nil {
-		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while creating temporary container")
-		}
-		return nil, fmt.Errorf("failed to create temporary container: %w", err)
-	}
-
-	// Ensure cleanup
-	defer func() {
-		removeCtx, removeCancel := context.WithTimeout(context.Background(), timeouts.DefaultDockerAPI)
-		defer removeCancel()
-		//nolint:contextcheck // intentionally using background context so cleanup happens even if parent context is cancelled
-		if removeErr := dockerClient.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); removeErr != nil {
-			slog.WarnContext(ctx, "failed to remove temporary container", "containerID", containerID, "error", removeErr.Error())
-		}
-	}()
-
-	// The volume is mounted at /volume in the temp container
-	containerPath := path.Join("/volume", filePath)
-
-	// Use CopyFromContainer to get the file as a TAR stream
-	tarStream, stat, err := dockerClient.CopyFromContainer(readCtx, containerID, containerPath)
-	if err != nil {
-		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("timeout while accessing file")
-		}
-		return nil, fmt.Errorf("file not found or not accessible: %w", err)
-	}
-	defer tarStream.Close()
-
-	// Check if this is a directory
-	if stat.Mode.IsDir() {
-		return nil, fmt.Errorf("path is a directory, not a file")
-	}
-
-	content, isBinary, truncated, err := browser.ReadFileContentFromTar(tarStream, stat.Size)
-	if err != nil {
-		return nil, err
-	}
-
-	return &containertypes.FileContentResponse{
-		Path:      filePath,
-		Content:   content,
-		Size:      stat.Size,
-		IsBinary:  isBinary,
-		Truncated: truncated,
-	}, nil
-}
-
-// createTempVolumeContainer creates a temporary stopped container with the volume mounted.
-// Uses busybox as it's a minimal image (~1MB) that's commonly available.
-func (s *VolumeService) createTempVolumeContainer(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
-	// Use busybox as it's tiny and commonly cached
-	imageName := "busybox:latest"
-
-	// Pull the image if not present (this should be quick as busybox is tiny)
-	_, err := dockerClient.ImageInspect(ctx, imageName)
-	if err != nil {
-		slog.Info("pulling busybox image for volume browsing")
-		pullReader, pullErr := dockerClient.ImagePull(ctx, imageName, image.PullOptions{})
-		if pullErr != nil {
-			return "", fmt.Errorf("failed to pull busybox image: %w", pullErr)
-		}
-		// Consume the reader to complete the pull
-		_, _ = io.Copy(io.Discard, pullReader)
-		pullReader.Close()
-	}
-
-	// Create a container with the volume mounted at /volume
-	// Use "true" as the command - container doesn't need to run, we just need its filesystem
-	containerConfig := &container.Config{
-		Image: imageName,
-		Cmd:   []string{"true"},
-	}
-
-	hostConfig := &container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:     mount.TypeVolume,
-				Source:   volumeName,
-				Target:   "/volume",
-				ReadOnly: true, // Read-only for safety
-			},
-		},
-	}
-
-	// Generate a unique container name
-	containerName := fmt.Sprintf("arcane-volume-browser-%s-%d", volumeName, time.Now().UnixNano())
-
-	resp, err := dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
-	if err != nil {
-		return "", fmt.Errorf("failed to create container: %w", err)
-	}
-
-	return resp.ID, nil
 }
