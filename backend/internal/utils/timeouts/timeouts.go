@@ -12,7 +12,7 @@ const (
 	DefaultHTTPClient      = 30 * time.Second
 	DefaultRegistry        = 30 * time.Second
 	DefaultProxyRequest    = 60 * time.Second
-	DefaultFileBrowse      = 15 * time.Second
+	DefaultFileBrowse      = 30 * time.Second
 	DefaultFileContentRead = 10 * time.Second
 	DefaultContainerExec   = 10 * time.Second
 )

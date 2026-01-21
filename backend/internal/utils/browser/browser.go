@@ -47,23 +47,31 @@ func ParseLsOutput(output, basePath string, limit int) []containertypes.FileEntr
 }
 
 // parseLsLine parses a single line from ls -la output.
+// Supports both GNU and BusyBox ls output formats:
+//   - Standard: -rw-r--r-- 1 root root 1234 Jan 15 10:30 filename
+//   - Older files: -rw-r--r-- 1 root root 1234 Jan 15  2024 filename
+//   - Symlinks: lrwxrwxrwx 1 root root 12 Jan 15 10:30 link -> target
 func parseLsLine(line, basePath string) *containertypes.FileEntry {
-	// Format: -rw-r--r-- 1 root root 1234 2024-01-15T10:30:00 filename
-	// Or with symlink: lrwxrwxrwx 1 root root 12 2024-01-15T10:30:00 link -> target
-
 	fields := strings.Fields(line)
-	if len(fields) < 6 {
+	// Minimum fields: mode, links, user, group, size, month, day, time/year, name
+	if len(fields) < 9 {
 		return nil
 	}
 
 	mode := fields[0]
+	if len(mode) < 1 {
+		return nil
+	}
+
 	// Size is at index 4 (after permissions, links, user, group)
 	sizeStr := fields[4]
-	// Date is at index 5
-	modTime := fields[5]
 
-	// Name starts at index 6, but may contain spaces
-	nameIdx := 6
+	// Date is spread across 3 fields: month (5), day (6), time or year (7)
+	// Examples: "Jan 15 10:30" or "Jan 15  2024"
+	modTime := fields[5] + " " + fields[6] + " " + fields[7]
+
+	// Name starts at index 8, but may contain spaces
+	nameIdx := 8
 	if len(fields) <= nameIdx {
 		return nil
 	}
@@ -162,13 +170,14 @@ func ParseTarDirectory(tarStream io.Reader, basePath string, limit int) ([]conta
 			continue
 		}
 
-		// Get the actual file/directory name
-		var name string
+		// Skip if this is just the root directory entry itself
+		// We only want children of the directory, not the directory itself
 		if len(parts) == 1 {
-			name = parts[0]
-		} else {
-			name = parts[1]
+			continue
 		}
+
+		// Get the actual file/directory name (the second part after the root dir)
+		name := parts[1]
 
 		// Skip . and ..
 		if name == "." || name == ".." || name == "" {

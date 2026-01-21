@@ -633,19 +633,19 @@ func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID
 	}
 
 	if inspect.State != nil && inspect.State.Running {
-		// Container is running - use fast exec-based listing
-		return s.browseContainerFilesExec(browseCtx, dockerClient, containerID, dirPath)
+		result, err := s.browseContainerFilesExec(browseCtx, dockerClient, containerID, dirPath)
+		if err == nil {
+			return result, nil
+		}
+		slog.DebugContext(ctx, "ls exec failed, falling back to TAR", "error", err, "containerID", containerID, "path", dirPath)
 	}
 
-	// Container is stopped - use CopyFromContainer (slower but works)
 	return s.browseContainerFilesTar(browseCtx, dockerClient, containerID, dirPath)
 }
 
 // browseContainerFilesExec lists files using exec (fast, requires running container).
 func (s *ContainerService) browseContainerFilesExec(ctx context.Context, dockerClient *dockerclient.Client, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
-	// Use ls command with specific format to get file information
-	// -l for long format, -a for all files, --time-style for consistent date format
-	cmd := []string{"ls", "-la", "--time-style=+%Y-%m-%dT%H:%M:%S", dirPath}
+	cmd := []string{"ls", "-la", dirPath}
 
 	execConfig := container.ExecOptions{
 		AttachStdout: true,
