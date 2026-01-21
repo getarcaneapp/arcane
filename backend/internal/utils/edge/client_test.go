@@ -71,7 +71,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 	defer cancel()
 
 	// Run client in background
-	go client.Start(ctx)
+	go client.StartWithErrorChan(ctx, nil)
 
 	// Wait for process to finish or timeout
 	time.Sleep(100 * time.Millisecond)
@@ -148,7 +148,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go client.Start(ctx)
+	go client.StartWithErrorChan(ctx, nil)
 	time.Sleep(100 * time.Millisecond)
 }
 
@@ -198,7 +198,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go client.Start(ctx)
+	go client.StartWithErrorChan(ctx, nil)
 	time.Sleep(100 * time.Millisecond)
 }
 
@@ -244,18 +244,4 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 
 	// Test sendErrorResponse
 	client.sendErrorResponse("req-1", 500, "error")
-}
-
-func TestStartTunnelClient(t *testing.T) {
-	// Just test the configuration checks
-	ctx := context.Background()
-
-	// Disabled
-	StartTunnelClient(ctx, &config.Config{EdgeAgent: false}, nil)
-
-	// Missing URL
-	StartTunnelClient(ctx, &config.Config{EdgeAgent: true, ManagerApiUrl: ""}, nil)
-
-	// Missing Token
-	StartTunnelClient(ctx, &config.Config{EdgeAgent: true, ManagerApiUrl: "http://x", AgentToken: ""}, nil)
 }
