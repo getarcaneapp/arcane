@@ -23,18 +23,18 @@ type Update struct {
 
 // JobStatus represents the current status and metadata for a background job.
 type JobStatus struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	Category      string            `json:"category"`
-	Schedule      string            `json:"schedule"`
-	NextRun       *time.Time        `json:"nextRun,omitempty"`
-	Enabled       bool              `json:"enabled"`
-	ManagerOnly   bool              `json:"managerOnly"`
-	IsContinuous  bool              `json:"isContinuous"`
-	CanRunManually bool             `json:"canRunManually"`
-	Prerequisites []JobPrerequisite `json:"prerequisites"`
-	SettingsKey   string            `json:"settingsKey,omitempty"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Category       string            `json:"category"`
+	Schedule       string            `json:"schedule"`
+	NextRun        *time.Time        `json:"nextRun,omitempty"`
+	Enabled        bool              `json:"enabled"`
+	ManagerOnly    bool              `json:"managerOnly"`
+	IsContinuous   bool              `json:"isContinuous"`
+	CanRunManually bool              `json:"canRunManually"`
+	Prerequisites  []JobPrerequisite `json:"prerequisites"`
+	SettingsKey    string            `json:"settingsKey,omitempty"`
 }
 
 // JobPrerequisite represents a requirement that must be met for a job to run.

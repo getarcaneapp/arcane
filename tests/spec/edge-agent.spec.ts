@@ -4,14 +4,6 @@ const ROUTES = {
   environments: "/environments",
 };
 
-function slugifyEdgeName(name: string) {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
-}
-
 async function openNewEnvironmentSheet(page: Page) {
   await page.goto(ROUTES.environments);
   await page.waitForLoadState("networkidle");
@@ -36,7 +28,6 @@ test.describe("Edge Agent Environment", () => {
 
   test("should create an edge agent environment and show deployment snippets", async ({ page }) => {
     const environmentName = `edge-agent-${Date.now().toString().slice(-6)}`;
-    const expectedApiUrl = `edge://${slugifyEdgeName(environmentName)}`;
     let createdEnvironmentId: string | null = null;
 
     await page.route("**/api/environments", async (route) => {
