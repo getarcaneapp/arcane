@@ -189,31 +189,33 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: User })}
-	<div class="flex items-center gap-0.5">
-		{#if !item.oidcSubjectId}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={() => onEditUser(item)}
-				title={m.common_edit()}
-			>
-				<EditIcon class="size-4" />
-			</ArcaneButton>
-		{/if}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				{#if !item.oidcSubjectId}
+					<DropdownMenu.Item onclick={() => onEditUser(item)}>
+						<EditIcon class="size-4" />
+						{m.common_edit()}
+					</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={() => handleDeleteUser(item.id, item.username)}
-			title={m.common_delete()}
-		>
-			<TrashIcon class="size-4" />
-		</ArcaneButton>
-	</div>
+					<DropdownMenu.Separator />
+				{/if}
+
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteUser(item.id, item.username)}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

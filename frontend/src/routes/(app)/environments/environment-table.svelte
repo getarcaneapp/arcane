@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
@@ -27,7 +28,8 @@
 		UpdateIcon,
 		StatsIcon,
 		EyeOffIcon,
-		TestIcon
+		TestIcon,
+		EllipsisIcon
 	} from '$lib/icons';
 
 	let {
@@ -318,97 +320,83 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={async () => {
-				if (!item.enabled) {
-					toast.error(m.environments_cannot_switch_disabled());
-					return;
-				}
-				try {
-					await environmentStore.setEnvironment(item);
-					toast.success(m.environments_switched_to({ name: item.name }));
-				} catch (error) {
-					console.error('Failed to set environment:', error);
-				}
-			}}
-			disabled={!item.enabled || environmentStore.selected?.id === item.id}
-			title={environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
-		>
-			<EnvironmentsIcon class="size-4" />
-		</ArcaneButton>
-
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => goto(`/environments/${item.id}`)}
-			title={m.common_view_details()}
-		>
-			<InspectIcon class="size-4" />
-		</ArcaneButton>
-
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => handleTest(item.id)}
-			disabled={isLoading.testing}
-			title={m.environments_test_connection()}
-		>
-			<TestIcon class="size-4" />
-		</ArcaneButton>
-
-		{#if item.id !== '0'}
-			{#if item.status === 'online'}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="size-8 text-blue-600 hover:bg-blue-600/10 hover:text-blue-500"
-					onclick={() => handleUpgradeClick(item)}
-					disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
-					title={upgradingEnvironmentId === item.id ? m.upgrade_in_progress() : m.upgrade_to_version({ version: 'Latest' })}
-				>
-					<UpdateIcon class="size-4" />
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
 				</ArcaneButton>
-			{/if}
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item
+					onclick={async () => {
+						if (!item.enabled) {
+							toast.error(m.environments_cannot_switch_disabled());
+							return;
+						}
+						try {
+							await environmentStore.setEnvironment(item);
+							toast.success(m.environments_switched_to({ name: item.name }));
+						} catch (error) {
+							console.error('Failed to set environment:', error);
+						}
+					}}
+					disabled={!item.enabled || environmentStore.selected?.id === item.id}
+				>
+					<EnvironmentsIcon class="size-4" />
+					{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
+				</DropdownMenu.Item>
 
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={() => handleToggleEnabled(item)}
-				disabled={isLoading.toggling}
-				title={item.enabled ? m.common_disable() : m.common_enable()}
-			>
-				{#if item.enabled}
-					<EyeOffIcon class="size-4" />
-				{:else}
-					<EyeOnIcon class="size-4" />
+				<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
+					<InspectIcon class="size-4" />
+					{m.common_view_details()}
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
+					<TestIcon class="size-4" />
+					{m.environments_test_connection()}
+				</DropdownMenu.Item>
+
+				{#if item.id !== '0'}
+					<DropdownMenu.Separator />
+
+					{#if item.status === 'online'}
+						<DropdownMenu.Item
+							onclick={() => handleUpgradeClick(item)}
+							disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
+						>
+							<UpdateIcon class="size-4" />
+							{upgradingEnvironmentId === item.id ? m.upgrade_in_progress() : m.upgrade_to_version({ version: 'Latest' })}
+						</DropdownMenu.Item>
+					{/if}
+
+					<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
+						{#if item.enabled}
+							<EyeOffIcon class="size-4" />
+							{m.common_disable()}
+						{:else}
+							<EyeOnIcon class="size-4" />
+							{m.common_enable()}
+						{/if}
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Separator />
+
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteOne(item.id, item.name)}
+						disabled={isLoading.removing}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
 				{/if}
-			</ArcaneButton>
-
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-				onclick={() => handleDeleteOne(item.id, item.name)}
-				disabled={isLoading.removing}
-				title={m.common_delete()}
-			>
-				<TrashIcon class="size-4" />
-			</ArcaneButton>
-		{/if}
-	</div>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

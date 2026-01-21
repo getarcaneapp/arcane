@@ -34,11 +34,9 @@
 		onToggleGroupSelection?: (groupItems: any[]) => void;
 	} = $props();
 
-	// Check if the last column is the actions column
 	const isActionsColumn = (columnId: string) => columnId === 'actions';
-	const stickyActionsHeaderClass = 'sticky right-0 w-px whitespace-nowrap bg-muted/30 backdrop-blur-sm border-l border-border';
 	const stickyActionsCellClass =
-		'sticky right-0 w-px whitespace-nowrap bg-background border-l border-border backdrop-blur-lg transition-colors group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
+		'sticky right-0 whitespace-nowrap bg-background group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
@@ -55,12 +53,6 @@
 		if (align === 'center') return 'text-center';
 		if (align === 'right') return 'text-right';
 		return '';
-	}
-
-	// Get header classes based on column metadata
-	function getHeaderClasses(header: Header<any, unknown>): string {
-		const meta = header.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign } | undefined;
-		return cn(isActionsColumn(header.id) && stickyActionsHeaderClass, getWidthClass(meta?.width), getAlignClass(meta?.align));
 	}
 
 	// Get cell classes based on column metadata
@@ -90,13 +82,9 @@
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<Table.Row>
 					{#each headerGroup.headers as header (header.id)}
-						<Table.Head colspan={header.colSpan} class={getHeaderClasses(header)}>
+						<Table.Head colspan={header.colSpan}>
 							{#if !header.isPlaceholder}
-								{#if isActionsColumn(header.id)}
-									{m.common_actions()}
-								{:else}
-									<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-								{/if}
+								<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
 							{/if}
 						</Table.Head>
 					{/each}

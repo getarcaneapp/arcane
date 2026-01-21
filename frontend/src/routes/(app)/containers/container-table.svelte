@@ -482,8 +482,8 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
+		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',
 			accessorFn: (row) => {
@@ -519,7 +519,7 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
-		{ id: 'updates', label: m.containers_update_column(), defaultVisible: false },
+		{ id: 'updates', label: m.containers_update_column(), defaultVisible: true },
 		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
 		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
@@ -636,15 +636,15 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ContainerSummaryDto })}
-	{#if item.updateInfo?.hasUpdate}
-		<StatusBadge text={m.images_has_updates()} variant="blue" />
-	{:else if item.updateInfo?.error}
-		<StatusBadge text={m.common_error()} variant="red" />
-	{:else if item.updateInfo}
-		<StatusBadge text={m.images_no_updates()} variant="green" />
-	{:else}
-		<StatusBadge text={m.common_unknown()} variant="gray" />
-	{/if}
+	{@const imageRef = parseImageRef(item.image)}
+	<ImageUpdateItem
+		updateInfo={item.updateInfo}
+		imageId={item.imageId}
+		repo={imageRef.repo}
+		tag={imageRef.tag}
+		onUpdateContainer={() => handleUpdateContainer(item)}
+		debugHasUpdate={false}
+	/>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
@@ -664,65 +664,6 @@
 	<span class="text-sm">
 		{item.created ? format(new Date(item.created * 1000), 'PP p') : m.common_na()}
 	</span>
-{/snippet}
-
-{#snippet MobileQuickActions({ item }: { item: ContainerSummaryDto })}
-	{@const status = actionStatus[item.id]}
-	{#if status}
-		<Spinner class="size-4" />
-	{:else}
-		{@const imageRef = parseImageRef(item.image)}
-		<ImageUpdateItem
-			updateInfo={item.updateInfo}
-			imageId={item.imageId}
-			repo={imageRef.repo}
-			tag={imageRef.tag}
-			onUpdateContainer={() => handleUpdateContainer(item)}
-			debugHasUpdate={false}
-		/>
-		{#if item.state !== 'running'}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
-				onclick={(e: Event) => {
-					e.stopPropagation();
-					performContainerAction('start', item.id);
-				}}
-				disabled={isAnyLoading}
-				icon={StartIcon}
-				title={m.common_start()}
-			/>
-		{:else}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-				onclick={(e: Event) => {
-					e.stopPropagation();
-					performContainerAction('stop', item.id);
-				}}
-				disabled={isAnyLoading}
-				icon={StopIcon}
-				title={m.common_stop()}
-			/>
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={(e: Event) => {
-					e.stopPropagation();
-					performContainerAction('restart', item.id);
-				}}
-				disabled={isAnyLoading}
-				icon={RefreshIcon}
-				title={m.common_restart()}
-			/>
-		{/if}
-	{/if}
 {/snippet}
 
 {#snippet MobileRowActions({ item }: { item: ContainerSummaryDto })}
@@ -790,14 +731,7 @@
 							variant: item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber',
 							text: capitalizeFirstLetter(item.state)
 						}
-					: null,
-			(item) => {
-				if (!(mobileFieldVisibility.updates ?? false)) return null;
-				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
-				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
-				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
-				return { variant: 'gray' as const, text: m.common_unknown() };
-			}
+					: null
 		]}
 		fields={[
 			{
@@ -813,6 +747,14 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+			},
+			{
+				label: m.containers_ip_address(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				icon: NetworksIcon,
+				iconVariant: 'sky' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility.ipAddress ?? false
 			},
 			{
 				label: m.containers_cpu_usage(),
@@ -837,14 +779,6 @@
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility.memoryUsage ?? false
-			},
-			{
-				label: m.containers_ip_address(),
-				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
-				icon: NetworksIcon,
-				iconVariant: 'sky' as const,
-				type: 'mono' as const,
-				show: mobileFieldVisibility.ipAddress ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
@@ -855,23 +789,46 @@
 				}
 			: undefined}
 		rowActions={MobileRowActions}
-		quickActions={MobileQuickActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
 		{#snippet children()}
-			{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
-				<div class="flex items-start gap-2.5 border-t pt-3">
-					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
-						<NetworksIcon class="size-3.5 text-sky-500" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-							{m.common_ports()}
+			{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
+				<div class="flex flex-row gap-4 border-t pt-3">
+					{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
+						<div class="flex min-w-0 flex-1 items-start gap-2.5">
+							<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
+								<NetworksIcon class="size-3.5 text-sky-500" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+									{m.common_ports()}
+								</div>
+								<div class="mt-1">
+									<PortBadge ports={item.ports} />
+								</div>
+							</div>
 						</div>
-						<div class="mt-1">
-							<PortBadge ports={item.ports} />
+					{/if}
+					{#if mobileFieldVisibility.updates ?? true}
+						{@const imageRef = parseImageRef(item.image)}
+						<div class="flex min-w-0 flex-1 items-start gap-2.5">
+							<div class="flex min-w-0 flex-col">
+								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+									{m.images_updates()}
+								</div>
+								<div class="mt-1">
+									<ImageUpdateItem
+										updateInfo={item.updateInfo}
+										imageId={item.id}
+										repo={imageRef.repo}
+										tag={imageRef.tag}
+										onUpdateContainer={() => handleUpdateContainer(item)}
+										debugHasUpdate={false}
+									/>
+								</div>
+							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 			{/if}
 		{/snippet}
@@ -880,101 +837,79 @@
 
 {#snippet RowActions({ item }: { item: ContainerSummaryDto })}
 	{@const status = actionStatus[item.id]}
-	{@const imageRef = parseImageRef(item.image)}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => goto(`/containers/${item.id}`)}
-			disabled={isAnyLoading}
-			title={m.common_inspect()}
-		>
-			{#if status}
-				<Spinner class="size-4" />
-			{:else}
-				<InspectIcon class="size-4" />
-			{/if}
-		</ArcaneButton>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
+					<InspectIcon class="size-4" />
+					{m.common_inspect()}
+				</DropdownMenu.Item>
 
-		{#if item.state !== 'running'}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
-				onclick={() => performContainerAction('start', item.id)}
-				disabled={status === 'starting' || isAnyLoading}
-				title={m.common_start()}
-			>
-				{#if status === 'starting'}
-					<Spinner class="size-4" />
+				<DropdownMenu.Separator />
+
+				{#if item.state !== 'running'}
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('start', item.id)}
+						disabled={status === 'starting' || isAnyLoading}
+					>
+						{#if status === 'starting'}
+							<Spinner class="size-4" />
+						{:else}
+							<StartIcon class="size-4" />
+						{/if}
+						{m.common_start()}
+					</DropdownMenu.Item>
 				{:else}
-					<StartIcon class="size-4" />
-				{/if}
-			</ArcaneButton>
-		{:else}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-				onclick={() => performContainerAction('stop', item.id)}
-				disabled={status === 'stopping' || isAnyLoading}
-				title={m.common_stop()}
-			>
-				{#if status === 'stopping'}
-					<Spinner class="size-4" />
-				{:else}
-					<StopIcon class="size-4" />
-				{/if}
-			</ArcaneButton>
-		{/if}
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('stop', item.id)}
+						disabled={status === 'stopping' || isAnyLoading}
+					>
+						{#if status === 'stopping'}
+							<Spinner class="size-4" />
+						{:else}
+							<StopIcon class="size-4" />
+						{/if}
+						{m.common_stop()}
+					</DropdownMenu.Item>
 
-		{#if item.state === 'running'}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={() => performContainerAction('restart', item.id)}
-				disabled={status === 'restarting' || isAnyLoading}
-				title={m.common_restart()}
-			>
-				{#if status === 'restarting'}
-					<Spinner class="size-4" />
-				{:else}
-					<RefreshIcon class="size-4" />
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('restart', item.id)}
+						disabled={status === 'restarting' || isAnyLoading}
+					>
+						{#if status === 'restarting'}
+							<Spinner class="size-4" />
+						{:else}
+							<RefreshIcon class="size-4" />
+						{/if}
+						{m.common_restart()}
+					</DropdownMenu.Item>
 				{/if}
-			</ArcaneButton>
-		{/if}
 
-		<ImageUpdateItem
-			updateInfo={item.updateInfo}
-			imageId={item.imageId}
-			repo={imageRef.repo}
-			tag={imageRef.tag}
-			onUpdateContainer={() => handleUpdateContainer(item)}
-			debugHasUpdate={false}
-		/>
+				<DropdownMenu.Separator />
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
-			disabled={status === 'removing' || isAnyLoading}
-			title={m.common_remove()}
-		>
-			{#if status === 'removing'}
-				<Spinner class="size-4" />
-			{:else}
-				<TrashIcon class="size-4" />
-			{/if}
-		</ArcaneButton>
-	</div>
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
+					disabled={status === 'removing' || isAnyLoading}
+				>
+					{#if status === 'removing'}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
+					{m.common_remove()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

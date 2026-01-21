@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -18,7 +19,7 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
-	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon } from '$lib/icons';
+	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -234,15 +235,13 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ImageSummaryDto })}
-	{#if item.updateInfo?.hasUpdate}
-		<StatusBadge text={m.images_has_updates()} variant="blue" />
-	{:else if item.updateInfo?.error}
-		<StatusBadge text={m.common_error()} variant="red" />
-	{:else if item.updateInfo}
-		<StatusBadge text={m.images_no_updates()} variant="green" />
-	{:else}
-		<StatusBadge text={m.common_unknown()} variant="gray" />
-	{/if}
+	<ImageUpdateItem
+		updateInfo={item.updateInfo}
+		imageId={item.id}
+		repo={item.repo}
+		tag={item.tag}
+		onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
+	/>
 {/snippet}
 
 {#snippet ImageMobileCardSnippet({
@@ -314,58 +313,47 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageSummaryDto })}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => goto(`/images/${item.id}`)}
-			title={m.common_inspect()}
-		>
-			<InspectIcon class="size-4" />
-		</ArcaneButton>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
+					<InspectIcon class="size-4" />
+					{m.common_inspect()}
+				</DropdownMenu.Item>
 
-		<ImageUpdateItem
-			updateInfo={item.updateInfo}
-			imageId={item.id}
-			repo={item.repo}
-			tag={item.tag}
-			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
-		/>
+				<DropdownMenu.Item
+					onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
+					disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
+				>
+					{#if isPullingInline[item.id]}
+						<Spinner class="size-4" />
+					{:else}
+						<DownloadIcon class="size-4" />
+					{/if}
+					{m.images_pull()}
+				</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-			disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-			title={m.images_pull()}
-		>
-			{#if isPullingInline[item.id]}
-				<Spinner class="size-4" />
-			{:else}
-				<DownloadIcon class="size-4" />
-			{/if}
-		</ArcaneButton>
+				<DropdownMenu.Separator />
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={() => deleteImage(item.id)}
-			disabled={isLoading.removing}
-			title={m.common_remove()}
-		>
-			{#if isLoading.removing}
-				<Spinner class="size-4" />
-			{:else}
-				<TrashIcon class="size-4" />
-			{/if}
-		</ArcaneButton>
-	</div>
+				<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
+					{#if isLoading.removing}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
+					{m.common_remove()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

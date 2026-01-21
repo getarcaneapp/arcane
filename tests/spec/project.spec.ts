@@ -44,22 +44,19 @@ test.describe('Projects Page', () => {
     await expect(page.locator('table')).toBeVisible();
   });
 
-  test('should show project actions buttons', async ({ page }) => {
-    test.skip(!realProjects.length, 'No projects available for actions test');
+  test('should show project actions menu', async ({ page }) => {
+    test.skip(!realProjects.length, 'No projects available for actions menu test');
 
     await page.waitForLoadState('networkidle');
     const firstRow = page.locator('tbody tr').first();
+    const menuButton = firstRow.getByRole('button', { name: 'Open menu' });
+    await expect(menuButton).toBeVisible();
+    await menuButton.click();
 
-    await expect(firstRow.getByRole('button', { name: 'Edit' })).toBeVisible();
-
-    const upButton = firstRow.getByRole('button', { name: 'Up' });
-    const downButton = firstRow.getByRole('button', { name: 'Down' });
-    const hasUpOrDown = (await upButton.count()) > 0 || (await downButton.count()) > 0;
-    expect(hasUpOrDown).toBe(true);
-
-    await expect(firstRow.getByRole('button', { name: 'Pull & Redeploy' })).toBeVisible();
-
-    await expect(firstRow.getByRole('button', { name: 'Destroy' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Up|Down|Restart/ })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
   });
 
   test('should navigate to project details when project name is clicked', async ({ page }) => {

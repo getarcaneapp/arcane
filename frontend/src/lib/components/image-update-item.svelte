@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
@@ -382,69 +381,75 @@
 	</div>
 {/snippet}
 
-{#snippet triggerIcon()}
-	{#if isLoadingInBackground || isChecking}
-		<Spinner class="size-4" />
-	{:else if effectiveUpdateInfo}
-		{#if hasError}
-			<AlertIcon class="size-4 text-red-500" />
-		{:else if !effectiveUpdateInfo?.hasUpdate}
-			<VerifiedCheckIcon class="size-4 text-green-500" />
-		{:else if effectiveUpdateInfo?.updateType === 'digest'}
-			<CircleArrowUpIcon class="size-4 text-blue-500" />
-		{:else}
-			<CircleArrowUpIcon class="size-4 text-yellow-500" />
-		{/if}
-	{:else if canCheckUpdate}
-		<div
-			class="flex size-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors group-hover:border-blue-400"
-		>
-			<div class="size-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
-		</div>
-	{:else}
-		<div class="flex size-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
-			<div class="size-1.5 rounded-full bg-gray-400"></div>
-		</div>
-	{/if}
-{/snippet}
-
-{#snippet tooltipContent()}
-	<div class="overflow-hidden rounded-xl">
-		{#if isLoadingInBackground || isChecking}
-			{@render loadingState()}
-		{:else if effectiveUpdateInfo}
-			{#if hasError}
-				{@render errorState()}
-			{:else if !effectiveUpdateInfo?.hasUpdate}
-				{@render successState()}
-			{:else if effectiveUpdateInfo?.updateType === 'digest'}
-				{@render digestUpdateState()}
-			{:else}
-				{@render versionUpdateState()}
-			{/if}
-		{:else}
-			{@render unknownState()}
-		{/if}
-	</div>
-{/snippet}
-
-<ArcaneTooltip.Root bind:open={isOpen} interactive={!effectiveUpdateInfo && canCheckUpdate}>
-	<ArcaneTooltip.Trigger>
-		{#snippet child({ props })}
-			<ArcaneButton
-				{...props}
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="group size-8"
-				onclick={!effectiveUpdateInfo && canCheckUpdate ? checkImageUpdate : undefined}
-				disabled={isChecking}
-			>
-				{@render triggerIcon()}
-			</ArcaneButton>
-		{/snippet}
-	</ArcaneTooltip.Trigger>
-	<ArcaneTooltip.Content side="right" class="max-w-[280px] p-0">
-		{@render tooltipContent()}
-	</ArcaneTooltip.Content>
-</ArcaneTooltip.Root>
+{#if effectiveUpdateInfo}
+	<ArcaneTooltip.Root bind:open={isOpen}>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
+				{#if hasError}
+					<AlertIcon class="size-4 text-red-500" />
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					<VerifiedCheckIcon class="size-4 text-green-500" />
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					<CircleArrowUpIcon class="size-4 text-blue-500" />
+				{:else}
+					<CircleArrowUpIcon class="size-4 text-yellow-500" />
+				{/if}
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[280px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{#if hasError}
+					{@render errorState()}
+				{:else if !effectiveUpdateInfo?.hasUpdate}
+					{@render successState()}
+				{:else if effectiveUpdateInfo?.updateType === 'digest'}
+					{@render digestUpdateState()}
+				{:else}
+					{@render versionUpdateState()}
+				{/if}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{:else if isLoadingInBackground || isChecking}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				<Spinner class="size-4 text-blue-400" />
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[220px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{@render loadingState()}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{:else}
+	<ArcaneTooltip.Root interactive>
+		<ArcaneTooltip.Trigger>
+			<span class="mr-2 inline-flex size-4 items-center justify-center">
+				{#if canCheckUpdate}
+					<button
+						onclick={checkImageUpdate}
+						disabled={isChecking}
+						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
+					>
+						{#if isChecking}
+							<Spinner class="h-2 w-2 text-blue-400" />
+						{:else}
+							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+						{/if}
+					</button>
+				{:else}
+					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
+						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+					</div>
+				{/if}
+			</span>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" class="max-w-[240px] p-0">
+			<div class="overflow-hidden rounded-xl">
+				{@render unknownState()}
+			</div>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{/if}

@@ -2,6 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -19,7 +20,8 @@
 		TrashIcon as Trash2Icon,
 		GitBranchIcon,
 		ApiKeyIcon as KeyIcon,
-		ExternalLinkIcon as LinkIcon
+		ExternalLinkIcon as LinkIcon,
+		EllipsisIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -246,42 +248,40 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: GitRepository })}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => handleTest(item.id, item.name)}
-			disabled={isLoading.testing}
-			title={m.git_repository_test_connection()}
-		>
-			<TestTubeIcon class="size-4" />
-		</ArcaneButton>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
+					<TestTubeIcon class="size-4" />
+					{m.git_repository_test_connection()}
+				</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => onEditRepository(item)}
-			title={m.common_edit()}
-		>
-			<PencilIcon class="size-4" />
-		</ArcaneButton>
+				<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+					<PencilIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={() => handleDeleteOne(item.id, item.name)}
-			disabled={isLoading.removing}
-			title={m.common_remove()}
-		>
-			<Trash2Icon class="size-4" />
-		</ArcaneButton>
-	</div>
+				<DropdownMenu.Separator />
+
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteOne(item.id, item.name)}
+					disabled={isLoading.removing}
+				>
+					<Trash2Icon class="size-4" />
+					{m.common_remove()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

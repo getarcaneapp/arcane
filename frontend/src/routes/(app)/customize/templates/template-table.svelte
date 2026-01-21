@@ -26,7 +26,8 @@
 		DownloadIcon,
 		TagIcon,
 		MoveToFolderIcon,
-		RegistryIcon
+		RegistryIcon,
+		EllipsisIcon
 	} from '$lib/icons';
 
 	let {
@@ -252,63 +253,55 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Template })}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => goto(`/customize/templates/${item.id}`)}
-			title={m.common_view_details()}
-		>
-			<InspectIcon class="size-4" />
-		</ArcaneButton>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)}>
+					<InspectIcon class="size-4" />
+					{m.common_view_details()}
+				</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => goto(`/projects/new?templateId=${item.id}`)}
-			title={m.compose_create_project()}
-		>
-			<MoveToFolderIcon class="size-4" />
-		</ArcaneButton>
+				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+					<MoveToFolderIcon class="size-4" />
+					{m.compose_create_project()}
+				</DropdownMenu.Item>
 
-		{#if item.isRemote}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={() => handleDownloadTemplate(item.id, item.name)}
-				disabled={downloadingId === item.id}
-				title={m.templates_download()}
-			>
-				{#if downloadingId === item.id}
-					<Spinner class="size-4" />
+				<DropdownMenu.Separator />
+
+				{#if item.isRemote}
+					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
+						{#if downloadingId === item.id}
+							<Spinner class="size-4" />
+						{:else}
+							<DownloadIcon class="size-4" />
+						{/if}
+						{m.templates_download()}
+					</DropdownMenu.Item>
 				{:else}
-					<DownloadIcon class="size-4" />
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteTemplate(item.id, item.name)}
+						disabled={deletingId === item.id}
+					>
+						{#if deletingId === item.id}
+							<Spinner class="size-4" />
+						{:else}
+							<TrashIcon class="size-4" />
+						{/if}
+						{m.templates_delete_template()}
+					</DropdownMenu.Item>
 				{/if}
-			</ArcaneButton>
-		{:else}
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-				onclick={() => handleDeleteTemplate(item.id, item.name)}
-				disabled={deletingId === item.id}
-				title={m.templates_delete_template()}
-			>
-				{#if deletingId === item.id}
-					<Spinner class="size-4" />
-				{:else}
-					<TrashIcon class="size-4" />
-				{/if}
-			</ArcaneButton>
-		{/if}
-	</div>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

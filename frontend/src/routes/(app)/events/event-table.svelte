@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -15,7 +16,7 @@
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
-	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
+	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		events = $bindable(),
@@ -214,30 +215,35 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}
-	<div class="flex items-center gap-0.5">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={() => openDetails(item)}
-			title={m.common_view_details()}
-		>
-			<InfoIcon class="size-4" />
-		</ArcaneButton>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => openDetails(item)}>
+					<InfoIcon class="size-4" />
+					{m.common_view_details()}
+				</DropdownMenu.Item>
 
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={() => handleDeleteEvent(item.id, item.title)}
-			disabled={isLoading.removing}
-			title={m.common_delete()}
-		>
-			<TrashIcon class="size-4" />
-		</ArcaneButton>
-	</div>
+				<DropdownMenu.Separator />
+
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteEvent(item.id, item.title)}
+					disabled={isLoading.removing}
+				>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 <ArcaneTable

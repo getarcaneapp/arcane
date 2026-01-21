@@ -45,7 +45,6 @@
 		fields = [],
 		footer,
 		rowActions,
-		quickActions,
 		children,
 		compact = false,
 		class: className = '',
@@ -59,7 +58,6 @@
 		fields?: FieldDefinition<T>[];
 		footer?: FooterConfig<T>;
 		rowActions?: Snippet<[{ item: T }]>;
-		quickActions?: Snippet<[{ item: T }]>;
 		children?: Snippet;
 		compact?: boolean;
 		class?: string;
@@ -141,25 +139,16 @@
 						</p>
 					{/if}
 				</div>
+				{#if rowActions}
+					{@render rowActions({ item })}
+				{/if}
 			</div>
 
-			{#if resolvedBadges.length > 0 || quickActions || rowActions}
-				<div class="flex items-center gap-2">
-					{#if resolvedBadges.length > 0}
-						<div class="flex flex-wrap items-center gap-1">
-							{#each resolvedBadges as badge}
-								<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
-							{/each}
-						</div>
-					{/if}
-					<div class="ml-auto flex items-center gap-0.5">
-						{#if quickActions}
-							{@render quickActions({ item })}
-						{/if}
-						{#if rowActions}
-							{@render rowActions({ item })}
-						{/if}
-					</div>
+			{#if resolvedBadges.length > 0}
+				<div class="flex flex-wrap items-center gap-1">
+					{#each resolvedBadges as badge}
+						<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
+					{/each}
 				</div>
 			{/if}
 

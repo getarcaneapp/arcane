@@ -18,6 +18,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { containerService } from '$lib/services/container-service';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import {
 		StartIcon,
 		StopIcon,
@@ -393,63 +394,23 @@
 			}
 		]}
 		rowActions={MobileRowActions}
-		quickActions={MobileQuickActions}
 		onclick={(item: ServiceWithId) => item.containerId && goto(getContainerUrl(item))}
 	/>
 {/snippet}
 
-{#snippet MobileQuickActions({ item }: { item: ServiceWithId })}
-	{@const status = actionStatus[item.id]}
-	{#if !item.containerId}
-		<span class="text-muted-foreground text-xs">{m.compose_service_not_created()}</span>
-	{:else if status}
-		<Spinner class="size-4" />
-	{:else if item.status !== 'running'}
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
-			onclick={(e: Event) => {
-				e.stopPropagation();
-				performContainerAction('start', item.containerId!);
-			}}
-			disabled={isAnyLoading}
-			icon={StartIcon}
-			title={m.common_start()}
-		/>
-	{:else}
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-			onclick={(e: Event) => {
-				e.stopPropagation();
-				performContainerAction('stop', item.containerId!);
-			}}
-			disabled={isAnyLoading}
-			icon={StopIcon}
-			title={m.common_stop()}
-		/>
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			size="icon"
-			class="size-8"
-			onclick={(e: Event) => {
-				e.stopPropagation();
-				performContainerAction('restart', item.containerId!);
-			}}
-			disabled={isAnyLoading}
-			icon={RefreshIcon}
-			title={m.common_restart()}
-		/>
-	{/if}
-{/snippet}
-
 {#snippet MobileRowActions({ item }: { item: ServiceWithId })}
-	{#if item.containerId}
+	{#if !item.containerId}
+		<ArcaneTooltip.Root>
+			<ArcaneTooltip.Trigger>
+				<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content>
+				<p>{m.compose_service_not_created()}</p>
+			</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
+	{:else}
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
@@ -488,93 +449,94 @@
 	{@const status = actionStatus[item.id]}
 
 	{#if !item.containerId}
-		<span class="text-muted-foreground text-xs">{m.compose_service_not_created()}</span>
+		<ArcaneTooltip.Root>
+			<ArcaneTooltip.Trigger>
+				<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content>
+				<p>{m.compose_service_not_created()}</p>
+			</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
 	{:else}
-		<div class="flex items-center gap-0.5">
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8"
-				onclick={() => goto(getContainerUrl(item))}
-				disabled={isAnyLoading}
-				title={m.common_inspect()}
-			>
-				{#if status}
-					<Spinner class="size-4" />
-				{:else}
-					<InspectIcon class="size-4" />
-				{/if}
-			</ArcaneButton>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+						<span class="sr-only">{m.common_open_menu()}</span>
+						{#if status}
+							<Spinner class="size-4" />
+						{:else}
+							<EllipsisIcon class="size-4" />
+						{/if}
+					</ArcaneButton>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end">
+				<DropdownMenu.Group>
+					<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
+						<InspectIcon class="size-4" />
+						{m.common_inspect()}
+					</DropdownMenu.Item>
 
-			{#if item.status !== 'running'}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="size-8 text-green-600 hover:bg-green-600/10 hover:text-green-500"
-					onclick={() => performContainerAction('start', item.containerId!)}
-					disabled={status === 'starting' || isAnyLoading}
-					title={m.common_start()}
-				>
-					{#if status === 'starting'}
-						<Spinner class="size-4" />
-					{:else}
-						<StartIcon class="size-4" />
-					{/if}
-				</ArcaneButton>
-			{:else}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-					onclick={() => performContainerAction('stop', item.containerId!)}
-					disabled={status === 'stopping' || isAnyLoading}
-					title={m.common_stop()}
-				>
-					{#if status === 'stopping'}
-						<Spinner class="size-4" />
-					{:else}
-						<StopIcon class="size-4" />
-					{/if}
-				</ArcaneButton>
-			{/if}
+					<DropdownMenu.Separator />
 
-			{#if item.status === 'running'}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="size-8"
-					onclick={() => performContainerAction('restart', item.containerId!)}
-					disabled={status === 'restarting' || isAnyLoading}
-					title={m.common_restart()}
-				>
-					{#if status === 'restarting'}
-						<Spinner class="size-4" />
+					{#if item.status !== 'running'}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('start', item.containerId!)}
+							disabled={status === 'starting' || isAnyLoading}
+						>
+							{#if status === 'starting'}
+								<Spinner class="size-4" />
+							{:else}
+								<StartIcon class="size-4" />
+							{/if}
+							{m.common_start()}
+						</DropdownMenu.Item>
 					{:else}
-						<RefreshIcon class="size-4" />
-					{/if}
-				</ArcaneButton>
-			{/if}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('stop', item.containerId!)}
+							disabled={status === 'stopping' || isAnyLoading}
+						>
+							{#if status === 'stopping'}
+								<Spinner class="size-4" />
+							{:else}
+								<StopIcon class="size-4" />
+							{/if}
+							{m.common_stop()}
+						</DropdownMenu.Item>
 
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				class="size-8 text-red-600 hover:bg-red-600/10 hover:text-red-500"
-				onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-				disabled={status === 'removing' || isAnyLoading}
-				title={m.common_remove()}
-			>
-				{#if status === 'removing'}
-					<Spinner class="size-4" />
-				{:else}
-					<TrashIcon class="size-4" />
-				{/if}
-			</ArcaneButton>
-		</div>
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('restart', item.containerId!)}
+							disabled={status === 'restarting' || isAnyLoading}
+						>
+							{#if status === 'restarting'}
+								<Spinner class="size-4" />
+							{:else}
+								<RefreshIcon class="size-4" />
+							{/if}
+							{m.common_restart()}
+						</DropdownMenu.Item>
+					{/if}
+
+					<DropdownMenu.Separator />
+
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+						disabled={status === 'removing' || isAnyLoading}
+					>
+						{#if status === 'removing'}
+							<Spinner class="size-4" />
+						{:else}
+							<TrashIcon class="size-4" />
+						{/if}
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				</DropdownMenu.Group>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 	{/if}
 {/snippet}
 
