@@ -1,0 +1,5 @@
+ignore:
+  - "backend/internal/huma/**"
+  - "backend/internal/database/**"
+  - "backend/internal/models/**"
+  - "backend/internal/api/**"

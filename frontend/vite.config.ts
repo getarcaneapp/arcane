@@ -24,7 +24,9 @@ export default defineConfig({
 		codecovSvelteKitPlugin({
 			enableBundleAnalysis: true,
 			bundleName: 'arcane-frontend',
-			uploadToken: process.env.CODECOV_TOKEN
+			oidc: {
+				useGitHubOIDC: true
+			}
 		})
 	],
 	build: {

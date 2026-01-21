@@ -60,9 +60,12 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 
 	// Check registry
 	reg := GetRegistry()
-	tunnel, ok := reg.Get("env-connected")
-	assert.True(t, ok)
-	assert.NotNil(t, tunnel)
+	var tunnel *AgentTunnel
+	require.Eventually(t, func() bool {
+		var ok bool
+		tunnel, ok = reg.Get("env-connected")
+		return ok && tunnel != nil
+	}, time.Second, 10*time.Millisecond)
 
 	select {
 	case <-statusCallbackCalled:

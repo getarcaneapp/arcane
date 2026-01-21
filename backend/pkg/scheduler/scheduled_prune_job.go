@@ -1,13 +1,13 @@
-package job
+package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"time"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/system"
-	"github.com/go-co-op/gocron/v2"
 )
 
 const ScheduledPruneJobName = "scheduled-prune"
@@ -15,50 +15,47 @@ const ScheduledPruneJobName = "scheduled-prune"
 type ScheduledPruneJob struct {
 	systemService   *services.SystemService
 	settingsService *services.SettingsService
-	scheduler       *Scheduler
 }
 
-func NewScheduledPruneJob(scheduler *Scheduler, systemService *services.SystemService, settingsService *services.SettingsService) *ScheduledPruneJob {
+func NewScheduledPruneJob(systemService *services.SystemService, settingsService *services.SettingsService) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
 		systemService:   systemService,
 		settingsService: settingsService,
-		scheduler:       scheduler,
 	}
 }
 
-func (j *ScheduledPruneJob) Register(ctx context.Context) error {
-	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
-	intervalMinutes := j.settingsService.GetIntSetting(ctx, "scheduledPruneInterval", 1440)
-
-	if !enabled {
-		j.scheduler.RemoveJobByName(ScheduledPruneJobName)
-		slog.InfoContext(ctx, "scheduled prune disabled; job not registered", "enabled", enabled)
-		return nil
-	}
-
-	interval := time.Duration(intervalMinutes) * time.Minute
-	if interval < 60*time.Minute {
-		slog.WarnContext(ctx, "scheduled prune interval too low; using minimum", "requested_minutes", intervalMinutes, "effective_interval", "60m")
-		interval = 60 * time.Minute
-	}
-
-	j.scheduler.RemoveJobByName(ScheduledPruneJobName)
-
-	jobDefinition := gocron.DurationJob(interval)
-	return j.scheduler.RegisterJob(
-		ctx,
-		ScheduledPruneJobName,
-		jobDefinition,
-		j.Execute,
-		false,
-	)
+func (j *ScheduledPruneJob) Name() string {
+	return ScheduledPruneJobName
 }
 
-func (j *ScheduledPruneJob) Execute(ctx context.Context) error {
+func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
+	s := j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *")
+	if s == "" {
+		return "0 0 0 * * *"
+	}
+
+	// Handle legacy straight int if it somehow didn't get migrated
+	if i, err := strconv.Atoi(s); err == nil {
+		if i <= 0 {
+			i = 1440
+		}
+		if i%1440 == 0 {
+			return fmt.Sprintf("0 0 0 */%d * *", i/1440)
+		}
+		if i%60 == 0 {
+			return fmt.Sprintf("0 0 */%d * * *", i/60)
+		}
+		return fmt.Sprintf("0 */%d * * * *", i)
+	}
+
+	return s
+}
+
+func (j *ScheduledPruneJob) Run(ctx context.Context) {
 	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
 	if !enabled {
-		slog.InfoContext(ctx, "scheduled prune disabled; skipping run")
-		return nil
+		slog.DebugContext(ctx, "scheduled prune disabled; skipping run")
+		return
 	}
 
 	pruneMode := j.settingsService.GetStringSetting(ctx, "dockerPruneMode", "dangling")
@@ -75,7 +72,7 @@ func (j *ScheduledPruneJob) Execute(ctx context.Context) error {
 
 	if !req.Containers && !req.Images && !req.Volumes && !req.Networks && !req.BuildCache {
 		slog.InfoContext(ctx, "scheduled prune run skipped; no resource types selected")
-		return nil
+		return
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run started",
@@ -90,7 +87,7 @@ func (j *ScheduledPruneJob) Execute(ctx context.Context) error {
 	result, err := j.systemService.PruneAll(ctx, req)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
-		return err
+		return
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run completed",
@@ -102,26 +99,9 @@ func (j *ScheduledPruneJob) Execute(ctx context.Context) error {
 		"networks_deleted", len(result.NetworksDeleted),
 		"errors", len(result.Errors),
 	)
-
-	return nil
 }
 
 func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
-	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
-	intervalMinutes := j.settingsService.GetIntSetting(ctx, "scheduledPruneInterval", 1440)
-
-	if !enabled {
-		j.scheduler.RemoveJobByName(ScheduledPruneJobName)
-		slog.InfoContext(ctx, "scheduled prune disabled; removed job if present")
-		return nil
-	}
-
-	interval := time.Duration(intervalMinutes) * time.Minute
-	if interval < 60*time.Minute {
-		interval = 60 * time.Minute
-	}
-
-	slog.InfoContext(ctx, "scheduled prune settings changed; rescheduling", "interval", interval.String())
-
-	return j.scheduler.RescheduleDurationJobByName(ctx, ScheduledPruneJobName, interval, j.Execute, false)
+	slog.InfoContext(ctx, "rescheduling scheduled prune job in new scheduler; currently requires restart")
+	return nil
 }
