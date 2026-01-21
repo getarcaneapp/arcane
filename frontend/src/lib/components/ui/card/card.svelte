@@ -28,13 +28,13 @@
 	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined') {
 		switch (variant) {
 			case 'default':
-				return 'backdrop-blur-sm bg-card/90 shadow-sm';
+				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
 			case 'subtle':
-				return 'backdrop-blur-sm bg-card/60';
+				return 'backdrop-blur-sm bg-surface/40';
 			case 'outlined':
-				return 'backdrop-blur-lg bg-card/60 border-border/50';
+				return 'backdrop-blur-lg bg-surface/40 border-border/50';
 			default:
-				return 'backdrop-blur-sm bg-card/90 shadow-sm';
+				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
 		}
 	}
 </script>
