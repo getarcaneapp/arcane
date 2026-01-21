@@ -142,7 +142,7 @@
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
 	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
-		<Card.Header icon={ContainersIcon} class="bg-background/50 shrink-0 border-b">
+		<Card.Header icon={ContainersIcon} class="bg-background shrink-0 border-b">
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1">
 					<Card.Title>
@@ -171,7 +171,7 @@
 			/>
 		</Card.Content>
 		{#if containers.data.length >= calculatedLimit && containers.pagination.totalItems > calculatedLimit}
-			<Card.Footer class="bg-background/50 border-t px-6 py-2.5">
+			<Card.Footer class="bg-background border-t px-6 py-2.5">
 				<span class="text-foreground text-xs">
 					{m.containers_showing_of_total({ shown: calculatedLimit, total: containers.pagination.totalItems })}
 				</span>
