@@ -36,7 +36,7 @@
 
 	const isActionsColumn = (columnId: string) => columnId === 'actions';
 	const stickyActionsCellClass =
-		'sticky right-0 whitespace-nowrap bg-background group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
+		'sticky right-0 w-px whitespace-nowrap bg-background group-hover/row:bg-muted group-data-[state=selected]/row:bg-primary/10';
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
