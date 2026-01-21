@@ -13,7 +13,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/getarcaneapp/arcane/types v0.0.0-20260107215709-10ac44bcce4a
+	github.com/getarcaneapp/arcane/types v0.0.0-20260121184840-c717f1ffa993
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
