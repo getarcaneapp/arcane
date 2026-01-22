@@ -1727,7 +1727,7 @@
 	"first_login_error_failed": "Impossible de changer le mot de passe",
 	"first_login_success": "Mot de passe modifié avec succès",
 	"upgrade_to_version": "Mettre à jour vers {version}",
-	"upgrade_update_tag": "Mettre à jour {tag}",
+	"upgrade_update_tag": "Mettre à jour le tag {tag}",
 	"upgrade_confirm_title": "Confirmer la mise à jour du système",
 	"upgrade_confirm_description": "Vous êtes sur le point de mettre à jour Arcane vers la version {version}.",
 	"upgrade_confirm_what_happens": "Cette amélioration sera:",
