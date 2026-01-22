@@ -1,66 +1,51 @@
-package job
+package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"time"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/go-co-op/gocron/v2"
 )
 
 type EnvironmentHealthJob struct {
 	environmentService *services.EnvironmentService
 	settingsService    *services.SettingsService
-	scheduler          *Scheduler
 }
 
-func NewEnvironmentHealthJob(scheduler *Scheduler, environmentService *services.EnvironmentService, settingsService *services.SettingsService) *EnvironmentHealthJob {
+func NewEnvironmentHealthJob(environmentService *services.EnvironmentService, settingsService *services.SettingsService) *EnvironmentHealthJob {
 	return &EnvironmentHealthJob{
 		environmentService: environmentService,
 		settingsService:    settingsService,
-		scheduler:          scheduler,
 	}
 }
 
-func (j *EnvironmentHealthJob) Register(ctx context.Context) error {
-	healthCheckInterval := j.settingsService.GetIntSetting(ctx, "environmentHealthInterval", 2)
-	interval := time.Duration(healthCheckInterval) * time.Minute
-
-	// Ensure minimum interval of 1 minute
-	if interval < 1*time.Minute {
-		slog.WarnContext(ctx, "environment health check interval too low; using minimum", "requested_minutes", healthCheckInterval, "effective_interval", "1m")
-		interval = 1 * time.Minute
-	}
-
-	slog.InfoContext(ctx, "registering environment health check job", "interval", interval.String())
-
-	j.scheduler.RemoveJobByName("environment-health")
-
-	jobDefinition := gocron.DurationJob(interval)
-	return j.scheduler.RegisterJob(
-		ctx,
-		"environment-health",
-		jobDefinition,
-		j.Execute,
-		true, // Run immediately on startup
-	)
+func (j *EnvironmentHealthJob) Name() string {
+	return "environment-health"
 }
 
-func (j *EnvironmentHealthJob) Reschedule(ctx context.Context) error {
-	healthCheckInterval := j.settingsService.GetIntSetting(ctx, "environmentHealthInterval", 2)
-	interval := time.Duration(healthCheckInterval) * time.Minute
-
-	if interval < 1*time.Minute {
-		interval = 1 * time.Minute
+func (j *EnvironmentHealthJob) Schedule(ctx context.Context) string {
+	s := j.settingsService.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *")
+	if s == "" {
+		return "0 */2 * * * *"
 	}
 
-	slog.InfoContext(ctx, "environment health check settings changed; rescheduling", "interval", interval.String())
+	// Handle legacy straight int if it somehow didn't get migrated
+	if i, err := strconv.Atoi(s); err == nil {
+		if i <= 0 {
+			i = 2
+		}
+		if i%60 == 0 {
+			return fmt.Sprintf("0 0 */%d * * *", i/60)
+		}
+		return fmt.Sprintf("0 */%d * * * *", i)
+	}
 
-	return j.scheduler.RescheduleDurationJobByName(ctx, "environment-health", interval, j.Execute, false)
+	return s
 }
 
-func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
+func (j *EnvironmentHealthJob) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "environment health check started")
 
 	// Get all environments using the DB directly
@@ -81,7 +66,7 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 		Where("enabled = ?", true).
 		Find(&environments).Error; err != nil {
 		slog.ErrorContext(ctx, "failed to list environments for health check", "error", err)
-		return err
+		return
 	}
 
 	checkedCount := 0
@@ -134,6 +119,9 @@ func (j *EnvironmentHealthJob) Execute(ctx context.Context) error {
 	}
 
 	slog.InfoContext(ctx, "environment health check completed", "checked", checkedCount, "online", onlineCount, "offline", offlineCount)
+}
 
+func (j *EnvironmentHealthJob) Reschedule(ctx context.Context) error {
+	slog.InfoContext(ctx, "rescheduling environment health job in new scheduler; currently requires restart")
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
@@ -47,7 +48,7 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 
 // AuthValidator validates authentication for a request.
 // Returns true if the request is authenticated, false otherwise.
-type AuthValidator func(c *gin.Context) bool
+type AuthValidator func(ctx context.Context, c *gin.Context) bool
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -99,7 +100,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	// The proxy attaches the agent token to forwarded requests, which grants full access
 	// on the remote agent. Without this check, unauthenticated users could access
 	// remote environment resources.
-	if m.authValidator != nil && !m.authValidator(c) {
+	if m.authValidator != nil && !m.authValidator(c.Request.Context(), c) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"data":    gin.H{"error": errUnauthorized},
@@ -130,6 +131,20 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 
 	// Build target URL and proxy the request
 	target := m.buildTargetURL(c, envID, apiURL)
+
+	// Check if this environment has an active edge tunnel
+	if tunnel, ok := edge.GetRegistry().Get(envID); ok && !tunnel.Conn.IsClosed() {
+		slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
+		proxyPath := m.buildProxyPath(c, envID)
+		if m.isWebSocketUpgrade(c) {
+			// Route WebSocket through the edge tunnel
+			edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+		} else {
+			edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+		}
+		c.Abort()
+		return
+	}
 
 	if m.isWebSocketUpgrade(c) {
 		m.proxyWebSocket(c, target, accessToken, envID)
@@ -220,6 +235,18 @@ func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL str
 	}
 
 	return target
+}
+
+// buildProxyPath constructs the path to send through the edge tunnel.
+// This includes the /api/environments/{localID} prefix so the agent can route it properly.
+func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) string {
+	prefix := apiEnvironmentsPrefix + envID
+	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
+	if suffix != "" && !strings.HasPrefix(suffix, "/") {
+		suffix = "/" + suffix
+	}
+	// Build path: /api/environments/{localID} + suffix
+	return path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.

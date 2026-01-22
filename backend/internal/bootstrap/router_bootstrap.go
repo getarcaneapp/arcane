@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/types"
 )
 
@@ -58,10 +59,10 @@ func shouldLogRequest(c *gin.Context) bool {
 }
 
 func createAuthValidator(appServices *Services) middleware.AuthValidator {
-	return func(c *gin.Context) bool {
+	return func(ctx context.Context, c *gin.Context) bool {
 		// Check for API key authentication
 		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
-			user, err := appServices.ApiKey.ValidateApiKey(c.Request.Context(), apiKey)
+			user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey)
 			return err == nil && user != nil
 		}
 
@@ -77,12 +78,12 @@ func createAuthValidator(appServices *Services) middleware.AuthValidator {
 			return false
 		}
 
-		user, err := appServices.Auth.VerifyToken(c.Request.Context(), token)
+		user, err := appServices.Auth.VerifyToken(ctx, token)
 		return err == nil && user != nil
 	}
 }
 
-func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
+func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services) (*gin.Engine, *edge.TunnelServer) {
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -150,7 +151,14 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 	})
 
 	// Remaining Gin handlers (WebSocket/streaming)
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg)
+	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg) //nolint:contextcheck
+
+	// Register edge tunnel endpoint for manager to accept agent connections
+	// This is only registered when NOT in agent mode (i.e., running as manager)
+	var tunnelServer *edge.TunnelServer
+	if !cfg.AgentMode {
+		tunnelServer = registerEdgeTunnelRoutes(ctx, apiGroup, appServices)
+	}
 
 	if cfg.Environment != "production" {
 		for _, registerFunc := range registerPlaywrightRoutes {
@@ -162,5 +170,5 @@ func setupRouter(cfg *config.Config, appServices *Services) *gin.Engine {
 		_, _ = gin.DefaultErrorWriter.Write([]byte("Failed to register frontend: " + err.Error() + "\n"))
 	}
 
-	return router
+	return router, tunnelServer
 }

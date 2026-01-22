@@ -9,6 +9,7 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';
 	import { authService } from '$lib/services/auth-service';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	let isProcessing = $state(true);
 	let error = $state('');
@@ -116,13 +117,11 @@
 	});
 </script>
 
-<svelte:head><title>{m.layout_title()}</title></svelte:head>
-
 <div class="bg-background flex min-h-screen items-center justify-center">
 	<div class="w-full max-w-md space-y-8">
 		<div class="text-center">
 			{#if isProcessing}
-				<div class="border-primary mx-auto h-12 w-12 animate-spin rounded-full border-b-2"></div>
+				<Spinner />
 				<h2 class="mt-6 text-2xl font-bold">{m.auth_processing_login()}</h2>
 				<p class="text-muted-foreground mt-2 text-sm">{m.auth_processing_login_description()}</p>
 			{:else if error}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-uuid"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -85,15 +86,15 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		ProjectsDirectory:          models.SettingVariable{Value: "/app/data/projects"},
 		DiskUsagePath:              models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                 models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
+		AutoUpdateInterval:         models.SettingVariable{Value: "0 0 0 * * *"},
 		PollingEnabled:             models.SettingVariable{Value: "true"},
-		PollingInterval:            models.SettingVariable{Value: "60"},
-		EventCleanupInterval:       models.SettingVariable{Value: "360"},
-		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
+		PollingInterval:            models.SettingVariable{Value: "0 0 * * * *"},
+		EventCleanupInterval:       models.SettingVariable{Value: "0 0 */6 * * *"},
+		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "0 0 0 * * *"},
 		AutoInjectEnv:              models.SettingVariable{Value: "false"},
 		PruneMode:                  models.SettingVariable{Value: "dangling"},
 		ScheduledPruneEnabled:      models.SettingVariable{Value: "false"},
-		ScheduledPruneInterval:     models.SettingVariable{Value: "1440"},
+		ScheduledPruneInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
 		ScheduledPruneContainers:   models.SettingVariable{Value: "true"},
 		ScheduledPruneImages:       models.SettingVariable{Value: "true"},
 		ScheduledPruneVolumes:      models.SettingVariable{Value: "false"},
@@ -120,14 +121,14 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
 		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider: models.SettingVariable{Value: "false"},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
-		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
+		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
@@ -487,12 +488,11 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			value = fieldValue.Elem().String()
 		}
 
-		// Validate scheduled prune interval bounds (60-10080 minutes)
-		if key == "scheduledPruneInterval" && value != "" {
-			if minutes, err := strconv.Atoi(value); err != nil {
-				return nil, false, false, false, fmt.Errorf("invalid scheduledPruneInterval: %w", err)
-			} else if minutes < 60 || minutes > 10080 {
-				return nil, false, false, false, fmt.Errorf("scheduledPruneInterval must be between 60 and 10080 minutes")
+		// Validate cron settings
+		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval"}
+		if slices.Contains(cronFields, key) && value != "" {
+			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
+				return nil, false, false, false, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 			}
 		}
 

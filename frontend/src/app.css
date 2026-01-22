@@ -64,8 +64,8 @@
 	--sidebar-accent-foreground: oklch(0.21 0.006 285.885);
 	--sidebar-border: oklch(0.92 0.004 286.32);
 	--sidebar-ring: oklch(0.606 0.25 292.717);
+	--surface: oklch(0.21 0.006 285.885);
 
-	--bg-surface: oklch(1 0 0);
 	--glass-base: var(--bg-surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.12);
@@ -145,6 +145,7 @@
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
+	--color-surface: var(--surface);
 
 	--font-sans: 'Geist', system-ui, sans-serif;
 	--font-mono: 'Geist Mono', monospace;
@@ -169,101 +170,6 @@
 		font-feature-settings:
 			'liga' 0,
 			'clig' 0;
-	}
-}
-
-body:not(.glass-enabled) {
-	--card: var(--bg-surface);
-	--card-foreground: var(--foreground);
-	--sidebar: var(--bg-surface);
-	--popover: var(--bg-surface);
-
-	&:where(.dark, .dark *) {
-		--input: oklch(0.25 0.006 285.885);
-	}
-
-	&::before {
-		display: none;
-	}
-
-	&::after {
-		opacity: 0.015;
-	}
-
-	.bubble {
-		background: var(--bg-surface) !important;
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
-	}
-
-	.bubble-shadow,
-	.bubble-shadow-lg {
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
-	}
-
-	.hover-lift:hover {
-		transform: none !important;
-	}
-
-	.bubble-outline {
-		background: var(--bg-surface) !important;
-		border: 1px solid var(--border) !important;
-	}
-
-	.blob-floating::before {
-		display: none;
-	}
-
-	input[data-slot='input'],
-	textarea[data-slot='textarea'],
-	[data-slot='select-trigger'] {
-		background: var(--input) !important;
-		border: 1px solid var(--border) !important;
-	}
-
-	input[data-slot='input']:focus-visible,
-	textarea[data-slot='textarea']:focus-visible,
-	[data-slot='select-trigger']:focus-visible {
-		background: var(--background) !important;
-		border-color: var(--ring) !important;
-		box-shadow: 0 0 0 3px hsl(var(--ring) / 0.2) !important;
-		outline: none !important;
-	}
-
-	[data-sidebar='sidebar'] {
-		background: var(--bg-surface) !important;
-		backdrop-filter: none !important;
-	}
-
-	[class*='backdrop-blur'] {
-		-webkit-backdrop-filter: none !important;
-		backdrop-filter: none !important;
-	}
-
-	[data-slot='dialog-content'],
-	[data-slot='sheet-content'],
-	[data-slot='popover-content'],
-	[data-slot='dropdown-menu-content'],
-	[data-slot='select-content'] {
-		background: var(--bg-surface) !important;
-		border: 1px solid var(--border) !important;
-	}
-
-	[data-slot='card'] {
-		background: var(--bg-surface) !important;
-		border: 1px solid var(--border) !important;
-	}
-
-	[class*='bg-background/'],
-	[class*='bg-card/'],
-	[class*='bg-popover/'],
-	[class*='bg-muted/'],
-	[class*='bg-secondary/'],
-	[class*='bg-accent/'] {
-		background-color: var(--bg-surface) !important;
-	}
-
-	[class*='bg-input/'] {
-		background-color: var(--input) !important;
 	}
 }
 

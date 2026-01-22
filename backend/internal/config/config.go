@@ -31,14 +31,15 @@ type Config struct {
 	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
 	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 
-	OidcEnabled       bool   `env:"OIDC_ENABLED" default:"false"`
-	OidcClientID      string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
-	OidcClientSecret  string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
-	OidcIssuerURL     string `env:"OIDC_ISSUER_URL" default:""`
-	OidcScopes        string `env:"OIDC_SCOPES" default:"openid email profile"`
-	OidcAdminClaim    string `env:"OIDC_ADMIN_CLAIM" default:""`
-	OidcAdminValue    string `env:"OIDC_ADMIN_VALUE" default:""`
-	OidcSkipTlsVerify bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
+	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
+	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
+	OidcClientSecret           string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
+	OidcIssuerURL              string `env:"OIDC_ISSUER_URL" default:""`
+	OidcScopes                 string `env:"OIDC_SCOPES" default:"openid email profile"`
+	OidcAdminClaim             string `env:"OIDC_ADMIN_CLAIM" default:""`
+	OidcAdminValue             string `env:"OIDC_ADMIN_VALUE" default:""`
+	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
+	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
 
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
@@ -52,6 +53,8 @@ type Config struct {
 	AnalyticsDisabled       bool   `env:"ANALYTICS_DISABLED" default:"false"`
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
+	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
+	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
 
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
@@ -69,12 +72,19 @@ func Load() *Config {
 	cfg := &Config{}
 	loadFromEnv(cfg)
 	applyOptions(cfg)
+	applyAgentModeDefaults(cfg)
 
 	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
 	common.DirPerm = cfg.DirPerm
 
 	return cfg
+}
+
+func applyAgentModeDefaults(cfg *Config) {
+	if cfg.EdgeAgent {
+		cfg.AgentMode = true
+	}
 }
 
 // loadFromEnv uses reflection to load configuration from environment variables.

@@ -1,0 +1,19 @@
+services:
+  arcane-edge-agent:
+    image: ghcr.io/getarcaneapp/arcane-headless:latest
+    container_name: arcane-edge-agent
+    # No ports exposed - agent connects outbound to manager via WebSocket tunnel
+    environment:
+      - EDGE_AGENT=true
+      - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      - MANAGER_API_URL=https://your-manager.example.com
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - agent-data:/app/data
+    # Use host cgroup namespace for better container self-detection
+    # This allows Arcane to detect its own container ID more reliably
+    cgroup: host
+    restart: unless-stopped
+
+volumes:
+  agent-data:
