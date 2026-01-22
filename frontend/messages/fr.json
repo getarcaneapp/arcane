@@ -1412,7 +1412,7 @@
 	"oidc_skip_tls_verify_label": "Ignorer la vérification TLS",
 	"oidc_skip_tls_verify_description": "Désactiver la vérification du certificat TLS pour les points de terminaison OIDC. À utiliser avec PRUDENCE.",
 	"oidc_auto_redirect_label": "Redirection automatique vers le fournisseur",
-	"oidc_auto_redirect_description": "Rediriger automatiquement vers le fournisseur OIDC sur la page de connexion quand activé.",
+	"oidc_auto_redirect_description": "Redirige automatiquement vers le fournisseur OIDC sur la page de connexion lorsqu'activé.",
 	"oidc_redirect_uri_title": "Redirect URI Configuration",
 	"oidc_redirect_uri_description": "Configure this redirect URI in your OIDC provider:",
 	"_comment_prune": "=== PURGE ===",
