@@ -10,6 +10,8 @@
 	interface IconConfig {
 		component: Component<any>;
 		variant: IconVariant;
+		imageUrl?: string;
+		alt?: string;
 	}
 
 	interface BadgeConfig {
@@ -69,6 +71,11 @@
 		badges.map((b) => (typeof b === 'function' ? b(item) : b)).filter((b): b is BadgeConfig => b !== null)
 	);
 
+	let errorImageUrl = $state<string | undefined>(undefined);
+	const validImageUrl = $derived(
+		resolvedIcon?.imageUrl && resolvedIcon.imageUrl !== errorImageUrl ? resolvedIcon.imageUrl : null
+	);
+
 	const visibleFields = $derived(fields.filter((f) => f.show !== false));
 	const subtitleValue = $derived(subtitle?.(item));
 	const hasSubtitle = $derived(!!subtitleValue);
@@ -124,7 +131,19 @@
 							'ring-white/5'
 						)}
 					>
-						<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), compact ? 'size-3.5' : 'size-4')} />
+						{#if validImageUrl}
+							<img
+								src={validImageUrl}
+								alt={resolvedIcon.alt ?? ''}
+								loading="lazy"
+								decoding="async"
+								referrerpolicy="no-referrer"
+								class={cn('object-contain', compact ? 'size-5' : 'size-6')}
+								onerror={() => (errorImageUrl = resolvedIcon?.imageUrl)}
+							/>
+						{:else}
+							<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), compact ? 'size-3.5' : 'size-4')} />
+						{/if}
 					</div>
 				{/if}
 				<div class="min-w-0 flex-1">

@@ -22,6 +22,7 @@
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
 
 	let {
 		projects = $bindable(),
@@ -313,9 +314,8 @@
 
 {#snippet NameCell({ item }: { item: Project })}
 	<div class="flex items-center gap-2">
-		<a class="font-medium hover:underline" href="/projects/{item.id}">
-			{item.name}
-		</a>
+		<IconImage src={item.iconUrl} alt={item.name} fallback={FolderOpenIcon} class="size-8" containerClass="size-10" />
+		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 	</div>
 {/snippet}
 
@@ -366,7 +366,9 @@
 		{item}
 		icon={(item: Project) => ({
 			component: FolderOpenIcon,
-			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber'
+			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
+			imageUrl: item.iconUrl,
+			alt: item.name
 		})}
 		title={(item: Project) => item.name}
 		subtitle={(item: Project) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}

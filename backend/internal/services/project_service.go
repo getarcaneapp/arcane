@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	libproject "github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/project"
 	"gorm.io/gorm"
@@ -110,6 +111,7 @@ type ProjectServiceInfo struct {
 	ContainerName string                      `json:"container_name"`
 	Ports         []string                    `json:"ports"`
 	Health        *string                     `json:"health,omitempty"`
+	IconURL       string                      `json:"icon_url,omitempty"`
 	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
 }
 
@@ -214,6 +216,11 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
+	meta, metaErr := libproject.ParseArcaneComposeMetadata(composeFileFullPath)
+	if metaErr != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
+	}
+
 	containers, err := projects.ComposePs(ctx, project, nil, true)
 	if err != nil {
 		slog.Error("compose ps error", "projectName", project.Name, "error", err)
@@ -248,6 +255,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			ContainerName: c.Name,
 			Ports:         formatPorts(c.Publishers),
 			Health:        health,
+			IconURL:       meta.ServiceIcons[c.Service],
 			ServiceConfig: svcConfig,
 		})
 		have[c.Service] = true
@@ -261,6 +269,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 				Image:         svc.Image,
 				Status:        "stopped",
 				Ports:         []string{},
+				IconURL:       meta.ServiceIcons[svc.Name],
 				ServiceConfig: &svcCopy,
 			})
 		}
@@ -296,6 +305,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.EnvContent = envContent
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
+	meta := s.getProjectMetadataFromComposeContent(ctx, composeContent)
+	resp.IconURL = meta.ProjectIconURL
+	resp.URLs = meta.ProjectURLS
 
 	// Default counts/status from DB (will be overridden if runtime check succeeds)
 	resp.ServiceCount = proj.ServiceCount
@@ -330,6 +342,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 				ContainerName: svc.ContainerName,
 				Ports:         svc.Ports,
 				Health:        svc.Health,
+				IconURL:       svc.IconURL,
 				ServiceConfig: svc.ServiceConfig,
 			}
 		}
@@ -1440,6 +1453,9 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.DirName = utils.DerefString(p.DirName)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
+	meta := s.getProjectMetadataFromPath(ctx, p.Path)
+	resp.IconURL = meta.ProjectIconURL
+	resp.URLs = meta.ProjectURLS
 
 	// Find containers for this project
 	normName := normalizeComposeProjectName(p.Name)
@@ -1534,6 +1550,35 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	}
 
 	return resp
+}
+
+func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, projectPath string) libproject.ArcaneComposeMetadata {
+	composeFile, err := projects.DetectComposeFile(projectPath)
+	if err != nil {
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	meta, err := libproject.ParseArcaneComposeMetadata(composeFile)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	return meta
+}
+
+func (s *ProjectService) getProjectMetadataFromComposeContent(ctx context.Context, composeContent string) libproject.ArcaneComposeMetadata {
+	if composeContent == "" {
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	meta, err := libproject.ParseArcaneComposeMetadataFromContent([]byte(composeContent))
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "error", err)
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	return meta
 }
 
 // End Table Functions

@@ -25,6 +25,8 @@
 	import ContainerShell from '../components/ContainerShell.svelte';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -62,6 +64,7 @@
 	};
 
 	const containerDisplayName = $derived(cleanContainerName(container?.name));
+	const containerIconUrl = $derived(getArcaneIconUrlFromLabels(container?.labels));
 
 	async function startStatsStream() {
 		if (isConnecting || statsWebSocket || !container?.id || !container.state?.running) {
@@ -275,6 +278,13 @@
 	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex items-center gap-2">
+				<IconImage
+					src={containerIconUrl}
+					alt={containerDisplayName}
+					fallback={ContainersIcon}
+					class="size-5"
+					containerClass="size-9"
+				/>
 				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={containerDisplayName}>
 					{containerDisplayName}
 				</h1>
