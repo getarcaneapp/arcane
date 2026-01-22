@@ -3,3 +3,11 @@ ignore:
   - "backend/internal/database/**"
   - "backend/internal/models/**"
   - "backend/internal/api/**"
+  - "backend/internal/bootstrap/**"
+  - "backend/internal/bootstrap/**"
+  - "backend/internal/common/**"
+  - "backend/internal/middleware/**"
+  - "cli/**
+  - "backend/resources/**"
+  - "backend/cli/**"
+  - "backend/frontend/**"
