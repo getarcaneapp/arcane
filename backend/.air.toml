@@ -4,10 +4,10 @@ tmp_dir = ".bin"
 env_files = [".env"]
 
 [build]
-  cmd = "CGO_ENABLED=1 go build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
+  cmd = "CGO_ENABLED=1 go1.26rc1 build -tags 'exclude_frontend' -ldflags='-buildid=' -o ./.bin/arcane ./cmd"
   bin = "./.bin/arcane"
   entrypoint = ["./.bin/arcane"]
-  include_ext = ["go", "tpl", "tmpl", "html"]
+  include_ext = ["go", "tpl", "tmpl"]
   exclude_dir = [".bin", "data", "node_modules", ".git"]
   include_dir = []
   include_file = []

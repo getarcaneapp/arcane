@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,17 +49,61 @@ type GPUStats struct {
 
 // SystemStats represents system resource statistics for WebSocket streaming.
 type SystemStats struct {
-	CPUUsage     float64    `json:"cpuUsage"`
-	MemoryUsage  uint64     `json:"memoryUsage"`
-	MemoryTotal  uint64     `json:"memoryTotal"`
-	DiskUsage    uint64     `json:"diskUsage,omitempty"`
-	DiskTotal    uint64     `json:"diskTotal,omitempty"`
-	CPUCount     int        `json:"cpuCount"`
-	Architecture string     `json:"architecture"`
-	Platform     string     `json:"platform"`
-	Hostname     string     `json:"hostname,omitempty"`
-	GPUCount     int        `json:"gpuCount"`
-	GPUs         []GPUStats `json:"gpus,omitempty"`
+	CPUUsage       float64         `json:"cpuUsage"`
+	MemoryUsage    uint64          `json:"memoryUsage"`
+	MemoryTotal    uint64          `json:"memoryTotal"`
+	DiskUsage      uint64          `json:"diskUsage,omitempty"`
+	DiskTotal      uint64          `json:"diskTotal,omitempty"`
+	CPUCount       int             `json:"cpuCount"`
+	Architecture   string          `json:"architecture"`
+	Platform       string          `json:"platform"`
+	Hostname       string          `json:"hostname,omitempty"`
+	GPUCount       int             `json:"gpuCount"`
+	GPUs           []GPUStats      `json:"gpus,omitempty"`
+	Goroutines     GoroutineStats  `json:"goroutines"`
+	Threads        uint64          `json:"threads"`
+	Runtime        RuntimeStats    `json:"runtime"`
+	RuntimeMetrics []RuntimeMetric `json:"runtimeMetrics,omitempty"`
+}
+
+// GoroutineStats represents Go scheduler statistics.
+type GoroutineStats struct {
+	Idle     uint64 `json:"idle"`
+	Runnable uint64 `json:"runnable"`
+	Running  uint64 `json:"running"`
+	Syscall  uint64 `json:"syscall"`
+	Waiting  uint64 `json:"waiting"`
+	Total    uint64 `json:"total"`
+	Created  uint64 `json:"created"`
+}
+
+// RuntimeStats represents detailed Go runtime metrics.
+type RuntimeStats struct {
+	HeapAlloc     uint64  `json:"heapAlloc"`
+	HeapSys       uint64  `json:"heapSys"`
+	HeapIdle      uint64  `json:"heapIdle"`
+	HeapInuse     uint64  `json:"heapInuse"`
+	StackInuse    uint64  `json:"stackInuse"`
+	StackSys      uint64  `json:"stackSys"`
+	MSpanInuse    uint64  `json:"mSpanInuse"`
+	MSpanSys      uint64  `json:"mSpanSys"`
+	MCacheInuse   uint64  `json:"mCacheInuse"`
+	MCacheSys     uint64  `json:"mCacheSys"`
+	GCSys         uint64  `json:"gcSys"`
+	NextGC        uint64  `json:"nextGC"`
+	LastGC        uint64  `json:"lastGC"`
+	NumGC         uint32  `json:"numGC"`
+	NumForcedGC   uint32  `json:"numForcedGC"`
+	GCCPUFraction float64 `json:"gcCPUFraction"`
+}
+
+// RuntimeMetric represents a single runtime/metrics sample with metadata.
+type RuntimeMetric struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Unit        string `json:"unit"`
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
 }
 
 // amdGPUSysfsPath is the base path for AMD GPU sysfs entries
@@ -583,7 +629,7 @@ func (h *WebSocketHandler) startCPUSampler(ctx context.Context, ticker *time.Tic
 }
 
 // collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context, includeRuntimeMetrics bool) SystemStats {
 	h.cpuCache.RLock()
 	cpuUsage := h.cpuCache.value
 	h.cpuCache.RUnlock()
@@ -594,19 +640,222 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
 	diskUsed, diskTotal := h.getDiskInfo(ctx)
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)
+	goroutineStats, threadCount := h.getSchedulerStats()
+	runtimeStats := h.getRuntimeStats()
+	var runtimeMetrics []RuntimeMetric
+	if includeRuntimeMetrics {
+		runtimeMetrics = h.getRuntimeMetrics()
+	}
 
 	return SystemStats{
-		CPUUsage:     cpuUsage,
-		MemoryUsage:  memUsed,
-		MemoryTotal:  memTotal,
-		DiskUsage:    diskUsed,
-		DiskTotal:    diskTotal,
-		CPUCount:     cpuCount,
-		Architecture: runtime.GOARCH,
-		Platform:     runtime.GOOS,
-		Hostname:     hostname,
-		GPUCount:     gpuCount,
-		GPUs:         gpuStats,
+		CPUUsage:       cpuUsage,
+		MemoryUsage:    memUsed,
+		MemoryTotal:    memTotal,
+		DiskUsage:      diskUsed,
+		DiskTotal:      diskTotal,
+		CPUCount:       cpuCount,
+		Architecture:   runtime.GOARCH,
+		Platform:       runtime.GOOS,
+		Hostname:       hostname,
+		GPUCount:       gpuCount,
+		GPUs:           gpuStats,
+		Goroutines:     goroutineStats,
+		Threads:        threadCount,
+		Runtime:        runtimeStats,
+		RuntimeMetrics: runtimeMetrics,
+	}
+}
+
+// getSchedulerStats collects Go scheduler metrics using runtime/metrics.
+func (h *WebSocketHandler) getSchedulerStats() (GoroutineStats, uint64) {
+	// Define the metrics we want to collect
+	const (
+		mIdle     = "/sched/goroutines/idle:goroutines"
+		mRunnable = "/sched/goroutines/runnable:goroutines"
+		mRunning  = "/sched/goroutines/running:goroutines"
+		mSyscall  = "/sched/goroutines/syscall:goroutines"
+		mWaiting  = "/sched/goroutines/waiting:goroutines"
+		mTotal    = "/sched/goroutines:goroutines"
+		mCreated  = "/sched/goroutines-created:goroutines"
+		mThreads  = "/sched/threads:threads"
+	)
+
+	sample := make([]metrics.Sample, 8)
+	sample[0].Name = mIdle
+	sample[1].Name = mRunnable
+	sample[2].Name = mRunning
+	sample[3].Name = mSyscall
+	sample[4].Name = mWaiting
+	sample[5].Name = mTotal
+	sample[6].Name = mCreated
+	sample[7].Name = mThreads
+
+	// Read the metrics
+	metrics.Read(sample)
+
+	var stats GoroutineStats
+	var threads uint64
+
+	// Extract values safely
+	for _, s := range sample {
+		val, ok := readUintSample(s)
+		if !ok {
+			continue
+		}
+		switch s.Name {
+		case mIdle:
+			stats.Idle = val
+		case mRunnable:
+			stats.Runnable = val
+		case mRunning:
+			stats.Running = val
+		case mSyscall:
+			stats.Syscall = val
+		case mWaiting:
+			stats.Waiting = val
+		case mTotal:
+			stats.Total = val
+		case mCreated:
+			stats.Created = val
+		case mThreads:
+			threads = val
+		}
+	}
+
+	if stats.Total == 0 {
+		stats.Total = uint64(runtime.NumGoroutine()) //nolint:gosec
+	}
+	if threads == 0 {
+		threads = uint64(runtime.GOMAXPROCS(0)) //nolint:gosec
+	}
+
+	return stats, threads
+}
+
+func readUintSample(sample metrics.Sample) (uint64, bool) {
+	const maxUint64 = ^uint64(0)
+	const maxSafeJS = 9007199254740991
+
+	switch sample.Value.Kind() {
+	case metrics.KindBad:
+		return 0, false
+	case metrics.KindUint64:
+		val := sample.Value.Uint64()
+		if val == maxUint64 || val > maxSafeJS {
+			return 0, false
+		}
+		return val, true
+	case metrics.KindFloat64:
+		val := sample.Value.Float64()
+		if math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
+			return 0, false
+		}
+		if val > float64(maxSafeJS) {
+			return 0, false
+		}
+		return uint64(val), true
+	case metrics.KindFloat64Histogram:
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+// getRuntimeStats collects Go runtime memory and GC metrics.
+func (h *WebSocketHandler) getRuntimeStats() RuntimeStats {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	return RuntimeStats{
+		HeapAlloc:     m.HeapAlloc,
+		HeapSys:       m.HeapSys,
+		HeapIdle:      m.HeapIdle,
+		HeapInuse:     m.HeapInuse,
+		StackInuse:    m.StackInuse,
+		StackSys:      m.StackSys,
+		MSpanInuse:    m.MSpanInuse,
+		MSpanSys:      m.MSpanSys,
+		MCacheInuse:   m.MCacheInuse,
+		MCacheSys:     m.MCacheSys,
+		GCSys:         m.GCSys,
+		NextGC:        m.NextGC,
+		LastGC:        m.LastGC,
+		NumGC:         m.NumGC,
+		NumForcedGC:   m.NumForcedGC,
+		GCCPUFraction: m.GCCPUFraction,
+	}
+}
+
+func (h *WebSocketHandler) getRuntimeMetrics() []RuntimeMetric {
+	descriptions := metrics.All()
+	samples := make([]metrics.Sample, len(descriptions))
+	for i, desc := range descriptions {
+		samples[i].Name = desc.Name
+	}
+
+	metrics.Read(samples)
+	metricsList := make([]RuntimeMetric, 0, len(samples))
+
+	for i, sample := range samples {
+		desc := descriptions[i]
+		metricName := sample.Name
+		metricUnit := ""
+		if parts := strings.SplitN(sample.Name, ":", 2); len(parts) == 2 {
+			metricName = parts[0]
+			metricUnit = parts[1]
+		}
+		metric := RuntimeMetric{
+			Name:        metricName,
+			Description: desc.Description,
+			Unit:        metricUnit,
+			Kind:        metricKindString(sample.Value.Kind()),
+			Value:       formatMetricValue(sample),
+		}
+		metricsList = append(metricsList, metric)
+	}
+
+	return metricsList
+}
+
+func metricKindString(kind metrics.ValueKind) string {
+	switch kind {
+	case metrics.KindBad:
+		return "bad"
+	case metrics.KindUint64:
+		return "uint64"
+	case metrics.KindFloat64:
+		return "float64"
+	case metrics.KindFloat64Histogram:
+		return "float64-histogram"
+	default:
+		return "bad"
+	}
+}
+
+func formatMetricValue(sample metrics.Sample) string {
+	switch sample.Value.Kind() {
+	case metrics.KindBad:
+		return ""
+	case metrics.KindUint64:
+		return strconv.FormatUint(sample.Value.Uint64(), 10)
+	case metrics.KindFloat64:
+		val := sample.Value.Float64()
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return ""
+		}
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case metrics.KindFloat64Histogram:
+		hist := sample.Value.Float64Histogram()
+		if hist == nil {
+			return ""
+		}
+		var total uint64
+		for _, count := range hist.Counts {
+			total += count
+		}
+		return fmt.Sprintf("buckets=%d samples=%d", len(hist.Counts), total)
+	default:
+		return ""
 	}
 }
 
@@ -727,6 +976,12 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 		interval = 2
 	}
 
+	includeRuntimeMetrics := false
+	if runtimeMetricsParam, _ := httputil.GetQueryParam(c, "runtimeMetrics", false); runtimeMetricsParam != "" {
+		param := strings.ToLower(runtimeMetricsParam)
+		includeRuntimeMetrics = param == "1" || param == "true" || param == "yes"
+	}
+
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
@@ -739,7 +994,7 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	h.startCPUSampler(ctx, cpuUpdateTicker)
 
 	send := func() error {
-		stats := h.collectSystemStats(ctx)
+		stats := h.collectSystemStats(ctx, includeRuntimeMetrics)
 		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		return conn.WriteJSON(stats)
 	}

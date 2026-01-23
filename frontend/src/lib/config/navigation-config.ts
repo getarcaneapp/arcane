@@ -1,6 +1,7 @@
 import {
 	ApiKeyIcon,
 	ApperanceIcon,
+	SystemIcon,
 	JobsIcon,
 	UsersIcon,
 	SecurityIcon,
@@ -65,8 +66,9 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 					shortcut: ['mod', 'shift', '3']
 				},
 				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon, shortcut: ['mod', 'shift', '4'] },
-				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '5'] },
-				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '6'] }
+				{ title: 'System Details', url: '/settings/system', icon: SystemIcon, shortcut: ['mod', 'shift', '5'] },
+				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '6'] },
+				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '7'] }
 			]
 		}
 	]

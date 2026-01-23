@@ -209,11 +209,17 @@ export function createStatsWebSocket(opts: {
 	onClose?: () => void;
 	onError?: (err: Event | Error) => void;
 	maxBackoff?: number;
+	includeRuntimeMetrics?: boolean;
 }) {
 	const buildUrl = () => {
 		const envId = opts.getEnvId() || '0';
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats`;
+		const params = new URLSearchParams();
+		if (opts.includeRuntimeMetrics) {
+			params.set('runtimeMetrics', '1');
+		}
+		const query = params.toString();
+		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats${query ? `?${query}` : ''}`;
 	};
 
 	return new ReconnectingWebSocket<SystemStats>({
