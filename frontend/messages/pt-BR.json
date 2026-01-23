@@ -427,7 +427,7 @@
 	"containers_stats_packets": "pacotes",
 	"containers_stats_network_interfaces": "Interfaces de Rede",
 	"containers_stats_errors": "Erros",
-	"containers_stats_dropped": "Dropped",
+	"containers_stats_dropped": "Lançado",
 	"containers_stats_memory_details": "Detalhes da memória",
 	"containers_stats_memory_rss": "RSS",
 	"containers_stats_memory_active_file": "Arquivo ativo",
