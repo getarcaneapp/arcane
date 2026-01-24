@@ -2,9 +2,9 @@
 	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/network.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -16,7 +16,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import { NetworksIcon, GlobeIcon, EllipsisIcon, InspectIcon, TrashIcon } from '$lib/icons';
+	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -253,9 +253,9 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
+					<EllipsisIcon class="size-4" />
 				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
@@ -265,7 +265,9 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleDeleteNetwork(item.id, item.name)}

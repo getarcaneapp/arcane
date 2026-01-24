@@ -37,6 +37,7 @@ type ListContainersInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction"`
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 }
 
 type ListContainersOutput struct {
@@ -199,6 +200,11 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	filters := make(map[string]string)
+	if input.Updates != "" {
+		filters["updates"] = input.Updates
+	}
+
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{Search: input.Search},
 		SortParams: pagination.SortParams{
@@ -209,6 +215,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 			Start: input.Start,
 			Limit: input.Limit,
 		},
+		Filters: filters,
 	}
 
 	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true)

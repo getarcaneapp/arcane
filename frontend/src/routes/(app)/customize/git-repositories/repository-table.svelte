@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
@@ -15,13 +15,13 @@
 	import { m } from '$lib/paraglide/messages';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import {
-		EllipsisIcon,
 		EditIcon as PencilIcon,
 		TestIcon as TestTubeIcon,
 		TrashIcon as Trash2Icon,
 		GitBranchIcon,
 		ApiKeyIcon as KeyIcon,
-		ExternalLinkIcon as LinkIcon
+		ExternalLinkIcon as LinkIcon,
+		EllipsisIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -251,10 +251,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -263,10 +263,14 @@
 					<TestTubeIcon class="size-4" />
 					{m.git_repository_test_connection()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Item onclick={() => onEditRepository(item)}>
 					<PencilIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleDeleteOne(item.id, item.name)}

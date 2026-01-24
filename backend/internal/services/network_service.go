@@ -145,7 +145,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	config := s.buildNetworkPaginationConfig()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 	counts := s.calculateNetworkUsageCounts(items)
-	paginationResp := s.buildPaginationResponse(result, params)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, counts, nil
 }
@@ -271,24 +271,4 @@ func (s *NetworkService) calculateNetworkUsageCounts(items []networktypes.Summar
 		}
 	}
 	return counts
-}
-
-func (s *NetworkService) buildPaginationResponse(result pagination.FilterResult[networktypes.Summary], params pagination.QueryParams) pagination.Response {
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
 }

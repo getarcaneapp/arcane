@@ -18,11 +18,6 @@
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { containerService } from '$lib/services/container-service';
-	import DropdownCard from '$lib/components/dropdown-card.svelte';
-	import type { Table as TableType } from '@tanstack/table-core';
-	import * as Table from '$lib/components/ui/table/index.js';
-	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
-	import DataTableToolbar from '$lib/components/arcane-table/arcane-table-toolbar.svelte';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
@@ -36,15 +31,12 @@
 		RefreshIcon,
 		TrashIcon,
 		EllipsisIcon,
-		ArrowDownIcon,
-		ArrowRightIcon,
 		BoxIcon,
 		ClockIcon,
 		ImagesIcon,
 		NetworksIcon,
 		ProjectsIcon,
-		InspectIcon,
-		UpdateIcon
+		InspectIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -490,8 +482,20 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
+		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
+		{
+			id: 'updates',
+			accessorFn: (row) => {
+				if (row.updateInfo?.hasUpdate) return 'has_update';
+				if (row.updateInfo?.error) return 'error';
+				if (row.updateInfo) return 'up_to_date';
+				return 'unknown';
+			},
+			title: m.containers_update_column(),
+			sortable: false,
+			cell: UpdatesCell
+		},
 		{
 			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
@@ -507,7 +511,6 @@
 			cell: MemoryCell
 		},
 		{ accessorKey: 'status', title: m.common_status() },
-		{ accessorKey: 'imageId', id: 'update', title: m.containers_update_column(), cell: UpdateCell },
 		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell }
@@ -516,6 +519,7 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
+		{ id: 'updates', label: m.containers_update_column(), defaultVisible: true },
 		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
 		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
@@ -569,27 +573,15 @@
 		return projectLabel || 'No Project';
 	}
 
-	const groupedContainers = $derived(() => {
-		if (!groupByProject) return null;
+	// Group by function for containers
+	function groupContainerByProject(container: ContainerSummaryDto): string {
+		return getProjectName(container);
+	}
 
-		const groups = new Map<string, ContainerSummaryDto[]>();
-
-		for (const container of containers.data ?? []) {
-			const projectName = getProjectName(container);
-			if (!groups.has(projectName)) {
-				groups.set(projectName, []);
-			}
-			groups.get(projectName)!.push(container);
-		}
-
-		const sortedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
-			if (a === 'No Project') return 1;
-			if (b === 'No Project') return -1;
-			return a.localeCompare(b);
-		});
-
-		return sortedGroups.length > 0 ? sortedGroups : null;
-	});
+	// Icon for each group
+	function getGroupIcon(_groupName: string) {
+		return ProjectsIcon;
+	}
 </script>
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
@@ -631,55 +623,28 @@
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
 	{@const status = actionStatus[item.id]}
-	<div class="flex items-center gap-2">
-		{#if status}
-			<div class="flex items-center gap-1.5">
-				<Spinner class="size-3.5" />
-				<span class="text-muted-foreground text-xs font-medium">
-					{getActionStatusMessage(status)}
-				</span>
-			</div>
-		{:else}
-			<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
-		{/if}
-		<div class="flex items-center gap-1">
-			{#if !status && item.state !== 'running'}
-				<ArcaneButton
-					action="base"
-					tone="outline"
-					size="sm"
-					class="size-7 border-transparent bg-transparent p-0 text-green-600 shadow-none hover:bg-green-600/10 hover:text-green-500"
-					onclick={() => performContainerAction('start', item.id)}
-					disabled={isAnyLoading}
-					icon={StartIcon}
-					title={m.common_start()}
-				/>
-			{:else if !status && item.state === 'running'}
-				<ArcaneButton
-					action="base"
-					tone="outline"
-					size="sm"
-					class="size-7 border-transparent bg-transparent p-0 text-red-600 shadow-none hover:bg-red-600/10 hover:text-red-500"
-					onclick={() => performContainerAction('stop', item.id)}
-					disabled={isAnyLoading}
-					title={m.common_stop()}
-					icon={StopIcon}
-				/>
-			{/if}
-			{#if !status && item.updateInfo?.hasUpdate}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0"
-					onclick={() => handleUpdateContainer(item)}
-					disabled={isAnyLoading}
-					title={m.containers_update_container()}
-					icon={UpdateIcon}
-				/>
-			{/if}
+	{#if status}
+		<div class="flex items-center gap-1.5">
+			<Spinner class="size-3.5" />
+			<span class="text-muted-foreground text-xs font-medium">
+				{getActionStatusMessage(status)}
+			</span>
 		</div>
-	</div>
+	{:else}
+		<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+	{/if}
+{/snippet}
+
+{#snippet UpdatesCell({ item }: { item: ContainerSummaryDto })}
+	{@const imageRef = parseImageRef(item.image)}
+	<ImageUpdateItem
+		updateInfo={item.updateInfo}
+		imageId={item.imageId}
+		repo={imageRef.repo}
+		tag={imageRef.tag}
+		onUpdateContainer={() => handleUpdateContainer(item)}
+		debugHasUpdate={false}
+	/>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
@@ -701,16 +666,39 @@
 	</span>
 {/snippet}
 
-{#snippet UpdateCell({ item }: { item: ContainerSummaryDto })}
-	{@const imageRef = parseImageRef(item.image)}
-	<ImageUpdateItem
-		updateInfo={item.updateInfo}
-		imageId={item.imageId}
-		repo={imageRef.repo}
-		tag={imageRef.tag}
-		onUpdateContainer={() => handleUpdateContainer(item)}
-		debugHasUpdate={false}
-	/>
+{#snippet MobileRowActions({ item }: { item: ContainerSummaryDto })}
+	{@const status = actionStatus[item.id]}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon />
+				</ArcaneButton>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
+					<InspectIcon class="size-4" />
+					{m.common_inspect()}
+				</DropdownMenu.Item>
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
+					disabled={status === 'removing' || isAnyLoading}
+				>
+					{#if status === 'removing'}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
+					{m.common_remove()}
+				</DropdownMenu.Item>
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 {/snippet}
 
 {#snippet ContainerMobileCardSnippet({
@@ -767,6 +755,30 @@
 				iconVariant: 'sky' as const,
 				type: 'mono' as const,
 				show: mobileFieldVisibility.ipAddress ?? false
+			},
+			{
+				label: m.containers_cpu_usage(),
+				getValue: (item: ContainerSummaryDto) => {
+					const cpu = statsManager?.getCPUPercent(item.id);
+					if (item.state !== 'running') return m.common_na();
+					if (cpu === undefined) return '...';
+					return `${cpu.toFixed(1)}%`;
+				},
+				icon: ClockIcon,
+				iconVariant: 'orange' as const,
+				show: mobileFieldVisibility.cpuUsage ?? false
+			},
+			{
+				label: m.containers_memory_usage(),
+				getValue: (item: ContainerSummaryDto) => {
+					const memData = statsManager?.getMemoryUsage(item.id);
+					if (item.state !== 'running') return m.common_na();
+					if (!memData?.usage) return '...';
+					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
+				},
+				icon: ClockIcon,
+				iconVariant: 'purple' as const,
+				show: mobileFieldVisibility.memoryUsage ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
@@ -776,23 +788,47 @@
 					icon: ClockIcon
 				}
 			: undefined}
-		rowActions={RowActions}
+		rowActions={MobileRowActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
 		{#snippet children()}
-			{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
-				<div class="flex items-start gap-2.5 border-t pt-3">
-					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
-						<NetworksIcon class="size-3.5 text-sky-500" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-							{m.common_ports()}
+			{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
+				<div class="flex flex-row gap-4 border-t pt-3">
+					{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
+						<div class="flex min-w-0 flex-1 items-start gap-2.5">
+							<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
+								<NetworksIcon class="size-3.5 text-sky-500" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+									{m.common_ports()}
+								</div>
+								<div class="mt-1">
+									<PortBadge ports={item.ports} />
+								</div>
+							</div>
 						</div>
-						<div class="mt-1">
-							<PortBadge ports={item.ports} />
+					{/if}
+					{#if mobileFieldVisibility.updates ?? true}
+						{@const imageRef = parseImageRef(item.image)}
+						<div class="flex min-w-0 flex-1 items-start gap-2.5">
+							<div class="flex min-w-0 flex-col">
+								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+									{m.images_updates()}
+								</div>
+								<div class="mt-1">
+									<ImageUpdateItem
+										updateInfo={item.updateInfo}
+										imageId={item.id}
+										repo={imageRef.repo}
+										tag={imageRef.tag}
+										onUpdateContainer={() => handleUpdateContainer(item)}
+										debugHasUpdate={false}
+									/>
+								</div>
+							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 			{/if}
 		{/snippet}
@@ -804,9 +840,9 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
+					<EllipsisIcon class="size-4" />
 				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
@@ -817,16 +853,7 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				{#if item.updateInfo?.hasUpdate}
-					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
-						{#if status === 'updating'}
-							<Spinner class="size-4" />
-						{:else}
-							<UpdateIcon class="size-4" />
-						{/if}
-						{m.containers_update_container()}
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Separator />
 
 				{#if item.state !== 'running'}
 					<DropdownMenu.Item
@@ -842,18 +869,6 @@
 					</DropdownMenu.Item>
 				{:else}
 					<DropdownMenu.Item
-						onclick={() => performContainerAction('restart', item.id)}
-						disabled={status === 'restarting' || isAnyLoading}
-					>
-						{#if status === 'restarting'}
-							<Spinner class="size-4" />
-						{:else}
-							<RefreshIcon class="size-4" />
-						{/if}
-						{m.common_restart()}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Item
 						onclick={() => performContainerAction('stop', item.id)}
 						disabled={status === 'stopping' || isAnyLoading}
 					>
@@ -863,6 +878,18 @@
 							<StopIcon class="size-4" />
 						{/if}
 						{m.common_stop()}
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('restart', item.id)}
+						disabled={status === 'restarting' || isAnyLoading}
+					>
+						{#if status === 'restarting'}
+							<Spinner class="size-4" />
+						{:else}
+							<RefreshIcon class="size-4" />
+						{/if}
+						{m.common_restart()}
 					</DropdownMenu.Item>
 				{/if}
 
@@ -900,125 +927,14 @@
 	rowActions={RowActions}
 	mobileCard={ContainerMobileCardSnippet}
 	customViewOptions={CustomViewOptions}
-	customTableView={groupByProject && groupedContainers() ? GroupedTableView : undefined}
+	groupBy={groupByProject ? groupContainerByProject : undefined}
+	groupIcon={groupByProject ? getGroupIcon : undefined}
+	groupCollapsedState={collapsedGroups}
+	onGroupToggle={toggleGroup}
 />
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem bind:checked={() => groupByProject, (v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
 	</DropdownMenu.CheckboxItem>
-{/snippet}
-
-{#snippet GroupedTableView({
-	table,
-	renderPagination,
-	mobileFieldsForOptions,
-	onToggleMobileField
-}: {
-	table: TableType<ContainerSummaryDto>;
-	renderPagination: import('svelte').Snippet;
-	mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
-	onToggleMobileField: (fieldId: string) => void;
-})}
-	<div class="flex h-full flex-col">
-		<div class="shrink-0 border-b">
-			<DataTableToolbar
-				{table}
-				{selectedIds}
-				{bulkActions}
-				mobileFields={mobileFieldsForOptions}
-				{onToggleMobileField}
-				customViewOptions={CustomViewOptions}
-			/>
-		</div>
-
-		<div class="hidden flex-1 overflow-auto px-6 py-8 md:block">
-			<div class="overflow-x-auto rounded-md border">
-				<Table.Root>
-					<Table.Header>
-						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-							<Table.Row>
-								{#each headerGroup.headers as header (header.id)}
-									<Table.Head colspan={header.colSpan}>
-										{#if !header.isPlaceholder}
-											<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
-										{/if}
-									</Table.Head>
-								{/each}
-							</Table.Row>
-						{/each}
-					</Table.Header>
-					<Table.Body>
-						{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
-							<Table.Row
-								class="bg-muted/50 hover:bg-muted/60 cursor-pointer transition-colors"
-								onclick={() => toggleGroup(projectName)}
-							>
-								<Table.Cell colspan={table.getAllColumns().length} class="py-3 font-medium">
-									<div class="flex items-center gap-2">
-										{#if collapsedGroups[projectName]}
-											<ArrowRightIcon class="text-muted-foreground size-4" />
-										{:else}
-											<ArrowDownIcon class="text-muted-foreground size-4" />
-										{/if}
-										<ProjectsIcon class="text-muted-foreground size-4" />
-										<span>{projectName}</span>
-										<span class="text-muted-foreground text-xs font-normal">({projectContainers.length})</span>
-									</div>
-								</Table.Cell>
-							</Table.Row>
-
-							{#if !collapsedGroups[projectName]}
-								{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
-								{@const projectRows = table
-									.getRowModel()
-									.rows.filter((row) => projectContainerIds.has((row.original as ContainerSummaryDto).id))}
-
-								{#each projectRows as row (row.id)}
-									<Table.Row
-										data-state={(selectedIds ?? []).includes((row.original as ContainerSummaryDto).id) && 'selected'}
-										class="hover:bg-primary/5 transition-colors"
-									>
-										{#each row.getVisibleCells() as cell, i (cell.id)}
-											<Table.Cell class={i === 0 ? 'pl-12' : ''}>
-												<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-											</Table.Cell>
-										{/each}
-									</Table.Row>
-								{/each}
-							{/if}
-						{/each}
-					</Table.Body>
-				</Table.Root>
-			</div>
-		</div>
-
-		<div class="space-y-4 py-2 md:hidden">
-			{#each groupedContainers() ?? [] as [projectName, projectContainers] (projectName)}
-				{@const projectContainerIds = new Set(projectContainers.map((c) => c.id))}
-				{@const projectRows = table
-					.getRowModel()
-					.rows.filter((row) => projectContainerIds.has((row.original as ContainerSummaryDto).id))}
-
-				<DropdownCard
-					id={`container-project-${projectName}`}
-					title={projectName}
-					description={`${projectContainers.length} ${projectContainers.length === 1 ? 'container' : 'containers'}`}
-					icon={ProjectsIcon}
-				>
-					{#each projectRows as row (row.id)}
-						{@render ContainerMobileCardSnippet({ item: row.original as ContainerSummaryDto, mobileFieldVisibility })}
-					{:else}
-						<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
-							{m.common_no_results_found()}
-						</div>
-					{/each}
-				</DropdownCard>
-			{/each}
-		</div>
-
-		<div class="shrink-0 border-t px-2 py-4">
-			{@render renderPagination()}
-		</div>
-	</div>
 {/snippet}

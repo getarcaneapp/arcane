@@ -2,8 +2,8 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -15,7 +15,7 @@
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EllipsisIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		registries = $bindable(),
@@ -242,9 +242,9 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
+					<EllipsisIcon class="size-4" />
 				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
@@ -258,11 +258,14 @@
 					{/if}
 					{m.registries_test_connection()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleDeleteOne(item.id, item.url)}

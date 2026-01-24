@@ -375,26 +375,6 @@ func (s *VolumeService) calculateVolumeUsageCounts(items []volumetypes.Volume) v
 	return counts
 }
 
-func (s *VolumeService) buildPaginationResponse(result pagination.FilterResult[volumetypes.Volume], params pagination.QueryParams) pagination.Response {
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
-}
-
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
@@ -468,7 +448,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	config := s.buildVolumePaginationConfig()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 	counts := s.calculateVolumeUsageCounts(items)
-	paginationResp := s.buildPaginationResponse(result, params)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, counts, nil
 }

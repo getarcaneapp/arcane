@@ -94,7 +94,6 @@ test.describe('Volumes Page', () => {
 
     const row = await page.getByRole('row', { name: volumeName });
     await row.getByRole('button', { name: 'Open menu' }).click();
-
     await page.getByRole('menuitem', { name: 'Remove' }).click();
 
     await expect(page.getByRole('heading', { name: 'Remove Volume' })).toBeVisible();

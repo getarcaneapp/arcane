@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -14,7 +14,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import * as m from '$lib/paraglide/messages.js';
-	import { ApiKeyIcon, TrashIcon, EllipsisIcon, EditIcon } from '$lib/icons';
+	import { ApiKeyIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		apiKeys = $bindable(),
@@ -234,16 +234,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -252,6 +246,9 @@
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
 					<TrashIcon class="size-4" />
 					{m.common_delete()}

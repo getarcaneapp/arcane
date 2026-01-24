@@ -33,6 +33,10 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (
 	}
 
 	limit := params.Limit
+	// limit = -1 means "show all" - skip pagination
+	if limit == -1 {
+		return paginateDBAll(query, result)
+	}
 	if limit <= 0 {
 		limit = 20
 	} else if limit > 100 {
@@ -45,6 +49,25 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (
 	}
 
 	return paginateDB(page, limit, query, result)
+}
+
+// paginateDBAll returns all results without pagination limits
+func paginateDBAll(query *gorm.DB, result interface{}) (Response, error) {
+	var totalItems int64
+	if err := query.Count(&totalItems).Error; err != nil {
+		return Response{}, err
+	}
+
+	if err := query.Find(result).Error; err != nil {
+		return Response{}, err
+	}
+
+	return Response{
+		TotalPages:   1,
+		TotalItems:   totalItems,
+		CurrentPage:  1,
+		ItemsPerPage: int(totalItems),
+	}, nil
 }
 
 func paginateDB(page int, pageSize int, query *gorm.DB, result interface{}) (Response, error) {

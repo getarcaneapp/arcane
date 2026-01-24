@@ -9,6 +9,9 @@ export type FieldSpec = {
 
 export type MobileFieldVisibility = Record<string, boolean>;
 
+export type ColumnWidth = 'auto' | 'min' | 'max' | number;
+export type ColumnAlign = 'left' | 'center' | 'right';
+
 export type ColumnSpec<T> = {
 	accessorKey?: keyof T & string;
 	accessorFn?: (row: T) => any;
@@ -20,6 +23,9 @@ export type ColumnSpec<T> = {
 	header?: Snippet<[{ column: Column<T>; title: string; class?: string }]>;
 	class?: string;
 	filterFn?: FilterFn<T>;
+	width?: ColumnWidth;
+	align?: ColumnAlign;
+	truncate?: boolean;
 };
 
 // Compact persisted prefs to reduce JSON size
@@ -103,3 +109,11 @@ export type BulkAction = {
 	loading?: boolean;
 	icon?: any;
 };
+
+// Grouping types
+export type GroupedData<T> = {
+	groupName: string;
+	items: T[];
+};
+
+export type GroupSelectionState = 'none' | 'some' | 'all';
