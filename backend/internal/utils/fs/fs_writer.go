@@ -8,22 +8,38 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
 
-var composeFileCandidates = []string{
+// ComposeFileCandidates contains the list of compose file names to search for.
+var ComposeFileCandidates = []string{
 	"compose.yaml",
 	"compose.yml",
 	"docker-compose.yaml",
 	"docker-compose.yml",
 }
 
-// detectExistingComposeFile finds an existing compose file in the directory
-func detectExistingComposeFile(dir string) string {
-	for _, filename := range composeFileCandidates {
+// EnvFileCandidates contains the list of env file names to search for.
+var EnvFileCandidates = []string{
+	".env",
+}
+
+// locateComposeFile finds an existing compose file in the directory
+func locateComposeFile(dir string) string {
+	for _, filename := range ComposeFileCandidates {
 		fullPath := filepath.Join(dir, filename)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 			return fullPath
 		}
 	}
 	return ""
+}
+
+// DetectComposeFile finds a compose file in the given directory.
+// Returns the full path to the compose file or an error if none found.
+func DetectComposeFile(dir string) (string, error) {
+	compose := locateComposeFile(dir)
+	if compose == "" {
+		return "", fmt.Errorf("no compose file found in %q", dir)
+	}
+	return compose, nil
 }
 
 // WriteComposeFile writes a compose file to the specified directory.
@@ -54,7 +70,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	}
 
 	var composePath string
-	if existingFile := detectExistingComposeFile(dirPath); existingFile != "" {
+	if existingFile := locateComposeFile(dirPath); existingFile != "" {
 		composePath = existingFile
 	} else {
 		composePath = filepath.Join(dirPath, "compose.yaml")

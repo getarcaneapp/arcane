@@ -10,7 +10,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 )
 
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
@@ -47,7 +46,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 }
 
 func ReadProjectFiles(projectPath string) (composeContent, envContent string, err error) {
-	if composeFile, derr := projects.DetectComposeFile(projectPath); derr == nil && composeFile != "" {
+	if composeFile, derr := DetectComposeFile(projectPath); derr == nil && composeFile != "" {
 		if content, rerr := os.ReadFile(composeFile); rerr == nil {
 			composeContent = string(content)
 		}
