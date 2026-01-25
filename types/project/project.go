@@ -109,6 +109,11 @@ type RuntimeService struct {
 	// Required: false
 	Health *string `json:"health,omitempty"`
 
+	// IconURL is an optional icon URL derived from Arcane labels.
+	//
+	// Required: false
+	IconURL string `json:"iconUrl,omitempty"`
+
 	// ServiceConfig is the configuration of the service from the compose file.
 	//
 	// Required: false
@@ -194,6 +199,16 @@ type Details struct {
 	//
 	// Required: true
 	Path string `json:"path"`
+
+	// IconURL is the optional stack icon URL from compose metadata.
+	//
+	// Required: false
+	IconURL string `json:"iconUrl,omitempty"`
+
+	// URLs are optional custom stack URLs from compose metadata.
+	//
+	// Required: false
+	URLs []string `json:"urls,omitempty"`
 
 	// ComposeContent is the Docker Compose file content.
 	//

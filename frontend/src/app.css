@@ -6,13 +6,17 @@
 @font-face {
 	font-family: 'Geist';
 	src: url('/api/fonts/sans') format('woff2');
+	font-weight: 100 900;
 	font-display: swap;
+	font-style: normal;
 }
 
 @font-face {
 	font-family: 'Geist Mono';
 	src: url('/api/fonts/mono') format('woff2');
+	font-weight: 100 900;
 	font-display: swap;
+	font-style: normal;
 }
 
 @font-face {
@@ -158,8 +162,11 @@
 	}
 
 	body {
-		@apply bg-background text-foreground antialiased;
+		@apply bg-background text-foreground;
 		position: relative;
+		-webkit-font-smoothing: auto;
+		-moz-osx-font-smoothing: auto;
+		text-rendering: optimizeLegibility;
 	}
 	button {
 		@apply cursor-pointer;
@@ -196,6 +203,9 @@ body::after {
 	background-size: 200px 200px;
 	opacity: var(--glass-noise-opacity);
 	pointer-events: none;
+	backface-visibility: hidden;
+	transform: translateZ(0);
+	will-change: transform;
 }
 
 @keyframes ambient-float {

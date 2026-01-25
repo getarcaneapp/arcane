@@ -5,7 +5,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon } from '$lib/icons';
+	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon, GlobeIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -19,6 +19,7 @@
 	import { z } from 'zod/v4';
 	import { createForm } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
 	import ServicesGrid from '../components/ServicesGrid.svelte';
@@ -31,6 +32,7 @@
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { RefreshIcon } from '$lib/icons';
+	import IconImage from '$lib/components/icon-image.svelte';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -262,6 +264,17 @@
 			}
 		});
 	}
+
+	function formatUrlLabel(raw: string): string {
+		const trimmed = raw.trim();
+		if (!trimmed) return raw;
+		try {
+			const parsed = new URL(trimmed);
+			return parsed.host || parsed.hostname || trimmed;
+		} catch {
+			return trimmed;
+		}
+	}
 </script>
 
 {#if project}
@@ -276,60 +289,80 @@
 		}}
 	>
 		{#snippet headerInfo()}
-			<div class="flex items-center gap-2">
-				<EditableName
-					bind:value={$inputs.name.value}
-					bind:ref={nameInputRef}
-					variant="inline"
-					error={$inputs.name.error ?? undefined}
-					originalValue={originalName}
-					canEdit={canEditName}
-					onCommit={saveNameIfChanged}
-					class="hidden sm:block"
+			<div class="grid items-start gap-x-3 gap-y-1.5 sm:grid-cols-[auto,1fr]">
+				<IconImage
+					src={project.iconUrl}
+					alt={project.name}
+					fallback={ProjectsIcon}
+					class="size-9"
+					containerClass="size-12 bg-transparent ring-0"
 				/>
-				<EditableName
-					bind:value={$inputs.name.value}
-					bind:ref={nameInputRef}
-					variant="block"
-					error={$inputs.name.error ?? undefined}
-					originalValue={originalName}
-					canEdit={canEditName}
-					onCommit={saveNameIfChanged}
-					class="block sm:hidden"
-				/>
-				{#if project.status}
-					{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
-					<StatusBadge
-						variant={getStatusVariant(project.status)}
-						text={capitalizeFirstLetter(project.status)}
-						tooltip={showTooltip ? project.statusReason : undefined}
+				<div class="flex flex-wrap items-center gap-2">
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="inline"
+						error={$inputs.name.error ?? undefined}
+						originalValue={originalName}
+						canEdit={canEditName}
+						onCommit={saveNameIfChanged}
+						class="hidden sm:block"
 					/>
-				{/if}
-			</div>
-			<div class="mt-0.5 flex items-center gap-4">
-				{#if project.createdAt}
-					<p class="text-muted-foreground hidden text-xs sm:block">
-						{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
-					</p>
-				{/if}
-				{#if project.lastSyncCommit}
-					<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
-						<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
-						{#if project.gitRepositoryURL}
-							<a
-								href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
-								target="_blank"
-								class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
-							>
-								{project.lastSyncCommit}
-							</a>
-						{:else}
-							<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
-								{project.lastSyncCommit}
-							</span>
-						{/if}
-					</div>
-				{/if}
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="block"
+						error={$inputs.name.error ?? undefined}
+						originalValue={originalName}
+						canEdit={canEditName}
+						onCommit={saveNameIfChanged}
+						class="block sm:hidden"
+					/>
+					{#if project.status}
+						{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
+						<StatusBadge
+							variant={getStatusVariant(project.status)}
+							text={capitalizeFirstLetter(project.status)}
+							tooltip={showTooltip ? project.statusReason : undefined}
+						/>
+					{/if}
+					{#if project.urls && project.urls.length > 0}
+						<div class="flex flex-wrap items-center gap-2">
+							{#each project.urls as url, i (i)}
+								<a
+									class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex min-h-6 max-w-full items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-0.5 text-[12px] font-semibold shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+									href={toSafeHref(url)}
+									target="_blank"
+									rel="noopener noreferrer"
+									title={url}
+								>
+									<GlobeIcon class="size-3 text-sky-500" />
+									<span class="truncate leading-normal">{formatUrlLabel(url)}</span>
+								</a>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				<div class="text-muted-foreground flex flex-wrap items-center gap-4 text-xs sm:col-start-2">
+					{#if project.lastSyncCommit}
+						<div class="flex items-center gap-1.5">
+							<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
+							{#if project.gitRepositoryURL}
+								<a
+									href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+									target="_blank"
+									class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
+								>
+									{project.lastSyncCommit}
+								</a>
+							{:else}
+								<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
+									{project.lastSyncCommit}
+								</span>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		{/snippet}
 
