@@ -30,6 +30,8 @@ const (
 	managementEndpointAgentPair      = "/agent/pair"
 	managementEndpointVersion        = "/version"
 	managementEndpointSettings       = "/settings"
+	managementEndpointJobSchedules   = "/job-schedules"
+	managementEndpointJobs           = "/jobs"
 
 	errEnvironmentNotFound      = "Environment not found"
 	errEnvironmentDisabled      = "Environment is disabled"
@@ -179,6 +181,8 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 		managementEndpointAgentPair,
 		managementEndpointVersion,
 		managementEndpointSettings,
+		managementEndpointJobSchedules,
+		managementEndpointJobs,
 	}
 
 	for _, endpoint := range managementEndpoints {
