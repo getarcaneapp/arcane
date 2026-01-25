@@ -10,6 +10,10 @@ type Config struct {
 	EnvironmentHealthInterval  string `json:"environmentHealthInterval"`
 	EventCleanupInterval       string `json:"eventCleanupInterval"`
 	AnalyticsHeartbeatInterval string `json:"analyticsHeartbeatInterval"`
+	AutoUpdateInterval         string `json:"autoUpdateInterval"`
+	PollingInterval            string `json:"pollingInterval"`
+	ScheduledPruneInterval     string `json:"scheduledPruneInterval"`
+	GitopsSyncInterval         string `json:"gitopsSyncInterval"`
 }
 
 // Update is used to update job schedule intervals (in minutes).
@@ -19,6 +23,10 @@ type Update struct {
 	EnvironmentHealthInterval  *string `json:"environmentHealthInterval,omitempty"`
 	EventCleanupInterval       *string `json:"eventCleanupInterval,omitempty"`
 	AnalyticsHeartbeatInterval *string `json:"analyticsHeartbeatInterval,omitempty"`
+	AutoUpdateInterval         *string `json:"autoUpdateInterval,omitempty"`
+	PollingInterval            *string `json:"pollingInterval,omitempty"`
+	ScheduledPruneInterval     *string `json:"scheduledPruneInterval,omitempty"`
+	GitopsSyncInterval         *string `json:"gitopsSyncInterval,omitempty"`
 }
 
 // JobStatus represents the current status and metadata for a background job.
