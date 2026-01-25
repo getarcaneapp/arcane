@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@react-email/preview-server": "5.1.0",
-    "@types/node": "^25.0.9",
+    "@types/node": "^25.0.10",
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
     "react-email": "5.2.5",
