@@ -588,7 +588,7 @@
 	"images_remove_success_one": "Image removed successfully",
 	"images_remove_success_many": "{count} images removed successfully",
 	"images_remove_failed_one": "Failed to remove image",
-	"images_remove_failed_many": "Failed to remove {count} images",
+	"images_remove_failed_many": "Не удалось удалить {count} образов",
 	"_comment_volumes": "=== VOLUMES ===",
 	"volumes_title": "Volumes",
 	"volumes_subtitle": "Manage your Docker volumes",
