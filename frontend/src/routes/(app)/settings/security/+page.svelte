@@ -41,7 +41,9 @@
 			oidcIssuerUrl: z.string(),
 			oidcScopes: z.string(),
 			oidcAdminClaim: z.string(),
-			oidcAdminValue: z.string()
+			oidcAdminValue: z.string(),
+			oidcProviderName: z.string(),
+			oidcProviderLogoUrl: z.string()
 		})
 		.superRefine((formData, ctx) => {
 			if (data.oidcStatus.envForced || formData.oidcEnabled) return;
@@ -69,7 +71,9 @@
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
 		oidcScopes: currentSettings.oidcScopes,
 		oidcAdminClaim: currentSettings.oidcAdminClaim,
-		oidcAdminValue: currentSettings.oidcAdminValue
+		oidcAdminValue: currentSettings.oidcAdminValue,
+		oidcProviderName: currentSettings.oidcProviderName,
+		oidcProviderLogoUrl: currentSettings.oidcProviderLogoUrl
 	});
 
 	// Security page needs custom submit logic for OIDC client secret handling
@@ -90,7 +94,9 @@
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
 				oidcScopes: ($settingsStore || data.settings!).oidcScopes,
 				oidcAdminClaim: ($settingsStore || data.settings!).oidcAdminClaim,
-				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue
+				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue,
+				oidcProviderName: ($settingsStore || data.settings!).oidcProviderName,
+				oidcProviderLogoUrl: ($settingsStore || data.settings!).oidcProviderLogoUrl
 			}),
 			successMessage: m.security_settings_saved()
 		})
@@ -110,6 +116,8 @@
 			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
 			$formInputs.oidcAdminClaim.value !== currentSettings.oidcAdminClaim ||
 			$formInputs.oidcAdminValue.value !== currentSettings.oidcAdminValue ||
+			$formInputs.oidcProviderName.value !== currentSettings.oidcProviderName ||
+			$formInputs.oidcProviderLogoUrl.value !== currentSettings.oidcProviderLogoUrl ||
 			$formInputs.oidcClientSecret.value !== ''
 	);
 
@@ -145,6 +153,8 @@
 				oidcScopes: formData.oidcScopes,
 				oidcAdminClaim: formData.oidcAdminClaim,
 				oidcAdminValue: formData.oidcAdminValue,
+				oidcProviderName: formData.oidcProviderName,
+				oidcProviderLogoUrl: formData.oidcProviderLogoUrl,
 				...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
 			});
 			$formInputs.oidcClientSecret.value = '';
@@ -316,6 +326,38 @@
 											<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
 											{#if $formInputs.oidcIssuerUrl.error}
 												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
+											{/if}
+										</div>
+
+										<div class="space-y-2">
+											<Label for="oidcProviderName" class="text-sm font-medium">{m.oidc_provider_name_label()}</Label>
+											<Input
+												id="oidcProviderName"
+												type="text"
+												placeholder={m.oidc_provider_name_placeholder()}
+												disabled={isOidcEnvForced}
+												bind:value={$formInputs.oidcProviderName.value}
+												class="font-mono text-sm"
+											/>
+											<p class="text-muted-foreground text-xs">{m.oidc_provider_name_description()}</p>
+											{#if $formInputs.oidcProviderName.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderName.error}</p>
+											{/if}
+										</div>
+
+										<div class="space-y-2">
+											<Label for="oidcProviderLogoUrl" class="text-sm font-medium">{m.oidc_provider_logo_url_label()}</Label>
+											<Input
+												id="oidcProviderLogoUrl"
+												type="text"
+												placeholder={m.oidc_provider_logo_url_placeholder()}
+												disabled={isOidcEnvForced}
+												bind:value={$formInputs.oidcProviderLogoUrl.value}
+												class="font-mono text-sm"
+											/>
+											<p class="text-muted-foreground text-xs">{m.oidc_provider_logo_url_description()}</p>
+											{#if $formInputs.oidcProviderLogoUrl.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderLogoUrl.error}</p>
 											{/if}
 										</div>
 
