@@ -1,0 +1,16 @@
+
+> arcane-frontend@1.13.2 check:ci /Users/kylemendell/dev/getarcaneapp/arcane/frontend
+> svelte-kit sync && svelte-check --tsconfig ./tsconfig.json
+
+Loading svelte-check in workspace: /Users/kylemendell/dev/getarcaneapp/arcane/frontend
+Getting Svelte diagnostics...
+
+/Users/kylemendell/dev/getarcaneapp/arcane/frontend/src/lib/components/resizable-split.svelte:50:17
+Warn: This reference only captures the initial value of `minSize`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+	let collapsedSide = $state<'first' | 'second' | null>(null);
+	let lastSize = minSize;
+	let persistedState = $state<PersistedState<number | null> | null>(null);
+
+====================================
+svelte-check found 0 errors and 1 warning in 1 file

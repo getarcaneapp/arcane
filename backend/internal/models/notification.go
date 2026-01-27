@@ -14,6 +14,7 @@ const (
 	NotificationProviderSlack    NotificationProvider = "slack"
 	NotificationProviderNtfy     NotificationProvider = "ntfy"
 	NotificationProviderPushover NotificationProvider = "pushover"
+	NotificationProviderGotify   NotificationProvider = "gotify"
 	NotificationProviderGeneric  NotificationProvider = "generic"
 )
 
@@ -25,6 +26,7 @@ var validNotificationProviders = map[NotificationProvider]struct{}{
 	NotificationProviderSlack:    {},
 	NotificationProviderNtfy:     {},
 	NotificationProviderPushover: {},
+	NotificationProviderGotify:   {},
 	NotificationProviderGeneric:  {},
 }
 
@@ -151,6 +153,17 @@ type PushoverConfig struct {
 	Priority int8                           `json:"priority"`
 	Title    string                         `json:"title,omitempty"`
 	Events   map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type GotifyConfig struct {
+	Host       string                         `json:"host"`
+	Port       int                            `json:"port,omitempty"`
+	Token      string                         `json:"token"`
+	Path       string                         `json:"path,omitempty"`
+	Priority   int                            `json:"priority,omitempty"`
+	Title      string                         `json:"title,omitempty"`
+	DisableTLS bool                           `json:"disableTls"`
+	Events     map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GenericConfig struct {

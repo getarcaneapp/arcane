@@ -75,10 +75,8 @@
 		type="password"
 		autocomplete="off"
 		helpText="The bot token from @BotFather"
+		error={fieldErrors.botToken}
 	/>
-	{#if fieldErrors.botToken}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.botToken}</p>
-	{/if}
 
 	<div class="space-y-2">
 		<Label for="telegram-chat-ids">Chat IDs</Label>

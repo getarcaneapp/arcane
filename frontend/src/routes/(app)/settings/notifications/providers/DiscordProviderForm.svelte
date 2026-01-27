@@ -71,10 +71,8 @@
 		type="text"
 		autocomplete="off"
 		helpText={m.notifications_discord_webhook_id_help()}
+		error={fieldErrors.webhookId}
 	/>
-	{#if fieldErrors.webhookId}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.webhookId}</p>
-	{/if}
 
 	<TextInputWithLabel
 		bind:value={values.token}
@@ -84,10 +82,8 @@
 		type="password"
 		autocomplete="off"
 		helpText={m.notifications_discord_token_help()}
+		error={fieldErrors.token}
 	/>
-	{#if fieldErrors.token}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.token}</p>
-	{/if}
 
 	<TextInputWithLabel
 		bind:value={values.username}
