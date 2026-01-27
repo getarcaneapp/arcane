@@ -916,3 +916,94 @@ func mapEndpointSettings(n *network.EndpointSettings) NetworkEndpoint {
 		DNSNames:            n.DNSNames,
 	}
 }
+
+// FileEntryType represents the type of a file entry.
+type FileEntryType string
+
+const (
+	// FileEntryTypeFile represents a regular file.
+	FileEntryTypeFile FileEntryType = "file"
+	// FileEntryTypeDirectory represents a directory.
+	FileEntryTypeDirectory FileEntryType = "directory"
+	// FileEntryTypeSymlink represents a symbolic link.
+	FileEntryTypeSymlink FileEntryType = "symlink"
+)
+
+// FileEntry represents a file or directory in a container's filesystem.
+type FileEntry struct {
+	// Name of the file or directory.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// Path is the full path of the file or directory.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Type indicates if this is a file, directory, or symlink.
+	//
+	// Required: true
+	Type FileEntryType `json:"type"`
+
+	// Size of the file in bytes (0 for directories).
+	//
+	// Required: false
+	Size int64 `json:"size,omitempty"`
+
+	// Mode is the file permission mode.
+	//
+	// Required: false
+	Mode string `json:"mode,omitempty"`
+
+	// ModTime is the modification time of the file.
+	//
+	// Required: false
+	ModTime string `json:"modTime,omitempty"`
+
+	// LinkTarget is the target path for symbolic links.
+	//
+	// Required: false
+	LinkTarget string `json:"linkTarget,omitempty"`
+}
+
+// BrowseFilesResponse represents the response for browsing container files.
+type BrowseFilesResponse struct {
+	// Path that was browsed.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Files and directories at the path.
+	//
+	// Required: true
+	Files []FileEntry `json:"files"`
+}
+
+// FileContentResponse represents the response for reading a file's content.
+type FileContentResponse struct {
+	// Path of the file.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Content is the file content (base64 encoded for binary files).
+	//
+	// Required: true
+	Content string `json:"content"`
+
+	// Size of the file in bytes.
+	//
+	// Required: true
+	Size int64 `json:"size"`
+
+	// IsBinary indicates if the content is base64 encoded.
+	//
+	// Required: true
+	IsBinary bool `json:"isBinary"`
+
+	// Truncated indicates if the content was truncated due to size limits.
+	//
+	// Required: true
+	Truncated bool `json:"truncated"`
+}

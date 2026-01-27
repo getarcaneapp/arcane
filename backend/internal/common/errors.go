@@ -188,6 +188,22 @@ func (e *ContainerCreationError) Error() string {
 	return fmt.Sprintf("Failed to create container: %v", e.Err)
 }
 
+type ContainerFileBrowseError struct {
+	Err error
+}
+
+func (e *ContainerFileBrowseError) Error() string {
+	return fmt.Sprintf("Failed to browse container files: %v", e.Err)
+}
+
+type ContainerFileReadError struct {
+	Err error
+}
+
+func (e *ContainerFileReadError) Error() string {
+	return fmt.Sprintf("Failed to read container file: %v", e.Err)
+}
+
 type RegistryListError struct {
 	Err error
 }

@@ -404,6 +404,7 @@
 	"containers_nav_logs": "Logs",
 	"containers_nav_networks": "Networks",
 	"containers_nav_storage": "Storage",
+	"containers_nav_files": "Files",
 	"containers_ip_address": "IP Address",
 	"containers_cpu_usage": "CPU Usage",
 	"containers_memory_usage": "Memory Usage",
@@ -1851,5 +1852,13 @@
 	"environments_agent_address_description": "The URL where your agent will be accessible",
 	"environments_generate_config": "Generate Agent Configuration",
 	"project_files": "Project Files",
-	"project_includes": "Includes"
+	"project_includes": "Includes",
+	"_comment_file_browser": "=== FILE BROWSER ===",
+	"file_browser_title": "File Browser",
+	"file_browser_description": "Browse and view files inside the container",
+	"file_browser_empty_directory": "This directory is empty",
+	"file_browser_select_file": "Select a file to preview",
+	"file_browser_binary_file": "Binary file cannot be displayed",
+	"file_browser_content_truncated": "File content was truncated due to size limits",
+	"file_browser_show_preview": "Show preview"
 }

@@ -13,9 +13,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/browser"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
@@ -603,4 +605,171 @@ func (s *ContainerService) AttachExec(ctx context.Context, execID string) (io.Wr
 	}
 
 	return execAttach.Conn, execAttach.Reader, nil
+}
+
+// BrowseContainerFiles lists files and directories at the given path inside a container.
+func (s *ContainerService) BrowseContainerFiles(ctx context.Context, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	// Validate and sanitize path
+	if dirPath == "" {
+		dirPath = "/"
+	}
+
+	// Apply timeout for the entire browse operation
+	browseCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileBrowse)
+	defer cancel()
+
+	// Check if container is running
+	inspect, err := dockerClient.ContainerInspect(browseCtx, containerID)
+	if err != nil {
+		if errors.Is(browseCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while inspecting container")
+		}
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	if inspect.State != nil && inspect.State.Running {
+		result, err := s.browseContainerFilesExec(browseCtx, dockerClient, containerID, dirPath)
+		if err == nil {
+			return result, nil
+		}
+		slog.DebugContext(ctx, "ls exec failed, falling back to TAR", "error", err, "containerID", containerID, "path", dirPath)
+	}
+
+	return s.browseContainerFilesTar(browseCtx, dockerClient, containerID, dirPath)
+}
+
+// browseContainerFilesExec lists files using exec (fast, requires running container).
+func (s *ContainerService) browseContainerFilesExec(ctx context.Context, dockerClient *dockerclient.Client, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
+	cmd := []string{"ls", "-la", dirPath}
+
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	// Apply timeout for exec creation
+	execCtx, execCancel := context.WithTimeout(ctx, timeouts.DefaultContainerExec)
+	defer execCancel()
+
+	execResp, err := dockerClient.ContainerExecCreate(execCtx, containerID, execConfig)
+	if err != nil {
+		if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while creating exec command")
+		}
+		return nil, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	execAttach, err := dockerClient.ContainerExecAttach(execCtx, execResp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while attaching to exec")
+		}
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer execAttach.Close()
+
+	// Read output with a size limit to prevent memory issues
+	var stdout, stderr strings.Builder
+	limitedReader := io.LimitReader(execAttach.Reader, browser.MaxExecOutputSize)
+	_, err = stdcopy.StdCopy(&stdout, &stderr, limitedReader)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while reading directory listing")
+		}
+		return nil, fmt.Errorf("failed to read exec output: %w", err)
+	}
+
+	// Check for errors
+	if stderr.Len() > 0 {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg != "" && !strings.Contains(errMsg, "cannot access") {
+			return nil, fmt.Errorf("failed to list directory: %s", errMsg)
+		}
+	}
+
+	// Parse ls output with file limit
+	files := browser.ParseLsOutput(stdout.String(), dirPath, browser.MaxFilesPerDirectory)
+
+	return &containertypes.BrowseFilesResponse{
+		Path:  dirPath,
+		Files: files,
+	}, nil
+}
+
+// browseContainerFilesTar lists files using CopyFromContainer (works on stopped containers).
+func (s *ContainerService) browseContainerFilesTar(ctx context.Context, dockerClient *dockerclient.Client, containerID, dirPath string) (*containertypes.BrowseFilesResponse, error) {
+	// Ensure path ends with / for directory listing
+	if !strings.HasSuffix(dirPath, "/") {
+		dirPath += "/"
+	}
+
+	// Use CopyFromContainer to get directory contents as a TAR stream
+	tarStream, _, err := dockerClient.CopyFromContainer(ctx, containerID, dirPath)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while reading container path")
+		}
+		return nil, fmt.Errorf("failed to read container path: %w", err)
+	}
+	defer tarStream.Close()
+
+	files, err := browser.ParseTarDirectory(tarStream, dirPath, browser.MaxFilesPerDirectory)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while parsing directory contents")
+		}
+		return nil, fmt.Errorf("failed to parse directory contents: %w", err)
+	}
+
+	return &containertypes.BrowseFilesResponse{
+		Path:  strings.TrimSuffix(dirPath, "/"),
+		Files: files,
+	}, nil
+}
+
+// GetContainerFileContent reads the content of a file inside a container.
+// Uses Docker's CopyFromContainer API which works on both running and stopped containers.
+func (s *ContainerService) GetContainerFileContent(ctx context.Context, containerID, filePath string) (*containertypes.FileContentResponse, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	// Apply timeout for the file read operation
+	readCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultFileContentRead)
+	defer cancel()
+
+	// Use CopyFromContainer to get the file as a TAR stream
+	tarStream, stat, err := dockerClient.CopyFromContainer(readCtx, containerID, filePath)
+	if err != nil {
+		if errors.Is(readCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("timeout while accessing file")
+		}
+		return nil, fmt.Errorf("file not found or not accessible: %w", err)
+	}
+	defer tarStream.Close()
+
+	// Check if this is a directory
+	if stat.Mode.IsDir() {
+		return nil, fmt.Errorf("path is a directory, not a file")
+	}
+
+	content, isBinary, truncated, err := browser.ReadFileContentFromTar(tarStream, stat.Size)
+	if err != nil {
+		return nil, err
+	}
+
+	return &containertypes.FileContentResponse{
+		Path:      filePath,
+		Content:   content,
+		Size:      stat.Size,
+		IsBinary:  isBinary,
+		Truncated: truncated,
+	}, nil
 }

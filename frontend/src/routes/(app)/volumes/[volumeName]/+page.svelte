@@ -1,6 +1,15 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
+	import {
+		VolumesIcon,
+		ClockIcon,
+		TagIcon,
+		LayersIcon,
+		InfoIcon,
+		GlobeIcon,
+		ContainersIcon,
+		BoxIcon
+	} from '$lib/icons';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { truncateString } from '$lib/utils/string.utils';
@@ -14,10 +23,11 @@
 	import { untrack } from 'svelte';
 	import { volumeService } from '$lib/services/volume-service.js';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
+	import type { VolumeContainerInfo } from './+page';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
-	let containersDetailed = $state<{ id: string; name: string }[]>(untrack(() => data.containersDetailed ?? []));
+	let containersDetailed = $state<VolumeContainerInfo[]>(untrack(() => data.containersDetailed ?? []));
 
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());

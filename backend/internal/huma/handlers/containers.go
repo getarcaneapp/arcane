@@ -113,6 +113,38 @@ type DeleteContainerOutput struct {
 	Body ContainerActionResponse
 }
 
+type BrowseContainerFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Path          string `query:"path" default:"/" doc:"Path to browse"`
+}
+
+// BrowseFilesResponse is the API response for browsing container files
+type BrowseFilesResponse struct {
+	Success bool                               `json:"success"`
+	Data    containertypes.BrowseFilesResponse `json:"data"`
+}
+
+type BrowseContainerFilesOutput struct {
+	Body BrowseFilesResponse
+}
+
+type GetContainerFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Path          string `query:"path" doc:"Path to file"`
+}
+
+// FileContentResponse is the API response for getting file content
+type FileContentResponse struct {
+	Success bool                               `json:"success"`
+	Data    containertypes.FileContentResponse `json:"data"`
+}
+
+type GetContainerFileOutput struct {
+	Body FileContentResponse
+}
+
 // RegisterContainers registers container endpoints.
 func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService) {
 	h := &ContainerHandler{
@@ -192,6 +224,26 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.DeleteContainer)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "browse-container-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/containers/{containerId}/files",
+		Summary:     "Browse container files",
+		Description: "List files and directories at a path inside the container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.BrowseContainerFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-container-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/containers/{containerId}/files/content",
+		Summary:     "Get container file content",
+		Description: "Read the content of a file inside the container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetContainerFile)
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
@@ -610,6 +662,46 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container deleted successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) BrowseContainerFiles(ctx context.Context, input *BrowseContainerFilesInput) (*BrowseContainerFilesOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	result, err := h.containerService.BrowseContainerFiles(ctx, input.ContainerID, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerFileBrowseError{Err: err}).Error())
+	}
+
+	return &BrowseContainerFilesOutput{
+		Body: BrowseFilesResponse{
+			Success: true,
+			Data:    *result,
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) GetContainerFile(ctx context.Context, input *GetContainerFileInput) (*GetContainerFileOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.Path == "" {
+		return nil, huma.Error400BadRequest("path query parameter is required")
+	}
+
+	result, err := h.containerService.GetContainerFileContent(ctx, input.ContainerID, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerFileReadError{Err: err}).Error())
+	}
+
+	return &GetContainerFileOutput{
+		Body: FileContentResponse{
+			Success: true,
+			Data:    *result,
 		},
 	}, nil
 }

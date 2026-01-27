@@ -23,6 +23,7 @@
 	import ContainerStorage from '../components/ContainerStorage.svelte';
 	import ContainerLogsPanel from '../components/ContainerLogsPanel.svelte';
 	import ContainerShell from '../components/ContainerShell.svelte';
+	import ContainerFiles from '../components/ContainerFiles.svelte';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -36,7 +37,8 @@
 		NetworksIcon,
 		TerminalIcon,
 		ContainersIcon,
-		StatsIcon
+		StatsIcon,
+		FolderOpenIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -221,12 +223,14 @@
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
+	const showFiles = $derived(!!container?.state?.running);
 
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
 		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
+		...(showFiles ? [{ value: 'files', label: m.containers_nav_files(), icon: FolderOpenIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(hasNetworks ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
@@ -347,6 +351,14 @@
 				<Tabs.Content value="shell" class="h-full">
 					{#if selectedTab === 'shell'}
 						<ContainerShell containerId={container?.id} />
+					{/if}
+				</Tabs.Content>
+			{/if}
+
+			{#if showFiles}
+				<Tabs.Content value="files" class="h-full">
+					{#if selectedTab === 'files'}
+						<ContainerFiles containerId={container?.id} />
 					{/if}
 				</Tabs.Content>
 			{/if}

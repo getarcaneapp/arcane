@@ -6,7 +6,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
+	import GitFileBrowserDialog from '$lib/components/dialogs/git-file-browser-dialog.svelte';
 	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/gitops.type';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { z } from 'zod/v4';
@@ -270,7 +270,7 @@
 	{/snippet}
 </ResponsiveDialog>
 
-<FileBrowserDialog
+<GitFileBrowserDialog
 	bind:open={showFileBrowser}
 	repositoryId={selectedRepository?.value || ''}
 	branch={$inputs.branch.value}
