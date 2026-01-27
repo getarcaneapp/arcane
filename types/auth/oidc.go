@@ -109,6 +109,16 @@ type OidcStatusInfo struct {
 	//
 	// Required: true
 	MergeAccounts bool `json:"mergeAccounts"`
+
+	// ProviderName is the custom display name for the OIDC provider.
+	//
+	// Required: false
+	ProviderName string `json:"providerName,omitempty"`
+
+	// ProviderLogoUrl is the custom logo URL for the OIDC provider.
+	//
+	// Required: false
+	ProviderLogoUrl string `json:"providerLogoUrl,omitempty"`
 }
 
 // OidcAuthUrlRequest is used to request an OIDC authorization URL.

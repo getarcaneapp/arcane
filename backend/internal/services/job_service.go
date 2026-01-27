@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -50,6 +51,10 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 		EnvironmentHealthInterval:  s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
 		EventCleanupInterval:       s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
 		AnalyticsHeartbeatInterval: s.settings.GetStringSetting(ctx, "analyticsHeartbeatInterval", "0 0 0 * * *"),
+		AutoUpdateInterval:         s.settings.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *"),
+		PollingInterval:            s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
+		ScheduledPruneInterval:     s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
+		GitopsSyncInterval:         s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */5 * * * *"),
 	}
 }
 
@@ -57,7 +62,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	if s == nil || s.db == nil || s.settings == nil {
 		return jobschedule.Config{}, fmt.Errorf("job service not initialized")
 	}
-	if s.cfg != nil && (s.cfg.UIConfigurationDisabled || s.cfg.AgentMode) {
+	if s.cfg != nil && s.cfg.UIConfigurationDisabled {
 		return jobschedule.Config{}, fmt.Errorf("job schedule updates are disabled")
 	}
 
@@ -83,9 +88,21 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	if err := validate("analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval); err != nil {
 		return jobschedule.Config{}, err
 	}
+	if err := validate("autoUpdateInterval", updates.AutoUpdateInterval); err != nil {
+		return jobschedule.Config{}, err
+	}
+	if err := validate("pollingInterval", updates.PollingInterval); err != nil {
+		return jobschedule.Config{}, err
+	}
+	if err := validate("scheduledPruneInterval", updates.ScheduledPruneInterval); err != nil {
+		return jobschedule.Config{}, err
+	}
+	if err := validate("gitopsSyncInterval", updates.GitopsSyncInterval); err != nil {
+		return jobschedule.Config{}, err
+	}
 
 	changed := false
-	changedKeys := make([]string, 0, 3)
+	changedKeys := make([]string, 0, 7)
 	upsert := func(tx *gorm.DB, key string, v *string, currentVal string) error {
 		if v == nil {
 			return nil
@@ -106,6 +123,18 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 			return err
 		}
 		if err := upsert(tx, "analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval, current.AnalyticsHeartbeatInterval); err != nil {
+			return err
+		}
+		if err := upsert(tx, "autoUpdateInterval", updates.AutoUpdateInterval, current.AutoUpdateInterval); err != nil {
+			return err
+		}
+		if err := upsert(tx, "pollingInterval", updates.PollingInterval, current.PollingInterval); err != nil {
+			return err
+		}
+		if err := upsert(tx, "scheduledPruneInterval", updates.ScheduledPruneInterval, current.ScheduledPruneInterval); err != nil {
+			return err
+		}
+		if err := upsert(tx, "gitopsSyncInterval", updates.GitopsSyncInterval, current.GitopsSyncInterval); err != nil {
 			return err
 		}
 		return nil
@@ -145,6 +174,11 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		jobStatus := meta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
 	}
+
+	// Sort jobs by ID to ensure stable UI order
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].ID < jobs[j].ID
+	})
 
 	isAgent := s.cfg != nil && s.cfg.AgentMode
 

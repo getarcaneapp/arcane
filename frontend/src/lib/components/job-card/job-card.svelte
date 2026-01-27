@@ -14,6 +14,7 @@
 
 	let {
 		job,
+		environmentId = '0',
 		isAgent = false,
 		onScheduleUpdate,
 		children,
@@ -21,6 +22,7 @@
 		headerAccessory
 	}: {
 		job: JobStatus;
+		environmentId?: string;
 		isAgent?: boolean;
 		onScheduleUpdate?: () => void;
 		children?: Snippet;
@@ -47,7 +49,7 @@
 		if (!canRun) return;
 
 		isRunning = true;
-		const result = await tryCatch(jobScheduleService.runJob(job.id));
+		const result = await tryCatch(jobScheduleService.runJob(job.id, environmentId));
 		isRunning = false;
 
 		if (result.error || !result.data?.success) {
@@ -137,5 +139,5 @@
 </Card.Root>
 
 {#if showScheduleDialog}
-	<JobScheduleDialog {job} bind:open={showScheduleDialog} onUpdate={handleScheduleUpdated} />
+	<JobScheduleDialog {job} {environmentId} bind:open={showScheduleDialog} onUpdate={handleScheduleUpdated} />
 {/if}

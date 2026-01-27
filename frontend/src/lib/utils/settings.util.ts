@@ -9,7 +9,23 @@ const LOCAL_SETTING_KEYS = new Set([
 	'accentColor',
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
-	'sidebarHoverExpansion'
+	'sidebarHoverExpansion',
+	'authLocalEnabled',
+	'authSessionTimeout',
+	'authPasswordPolicy',
+	'authOidcConfig',
+	'oidcEnabled',
+	'oidcMergeAccounts',
+	'oidcSkipTlsVerify',
+	'oidcAutoRedirectToProvider',
+	'oidcClientId',
+	'oidcClientSecret',
+	'oidcIssuerUrl',
+	'oidcScopes',
+	'oidcAdminClaim',
+	'oidcAdminValue',
+	'oidcProviderName',
+	'oidcProviderLogoUrl'
 ]);
 
 export function isLocalSetting(key: string): boolean {

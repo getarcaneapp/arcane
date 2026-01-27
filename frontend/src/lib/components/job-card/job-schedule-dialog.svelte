@@ -11,10 +11,12 @@
 
 	let {
 		job,
+		environmentId = '0',
 		open = $bindable(false),
 		onUpdate
 	}: {
 		job: JobStatus;
+		environmentId?: string;
 		open?: boolean;
 		onUpdate?: () => void;
 	} = $props();
@@ -58,7 +60,7 @@
 
 		isLoading = true;
 		const update = { [job.settingsKey]: scheduleValue };
-		const result = await tryCatch(jobScheduleService.updateJobSchedules(update));
+		const result = await tryCatch(jobScheduleService.updateJobSchedules(update, environmentId));
 		isLoading = false;
 
 		if (result.error) {

@@ -38,6 +38,8 @@ export type Settings = {
 	oidcSkipTlsVerify: boolean;
 	oidcAutoRedirectToProvider: boolean;
 	oidcMergeAccounts: boolean;
+	oidcProviderName: string;
+	oidcProviderLogoUrl: string;
 
 	mobileNavigationMode: 'floating' | 'docked';
 	mobileNavigationShowLabels: boolean;
@@ -64,4 +66,6 @@ export interface OidcStatusInfo {
 	envForced: boolean;
 	envConfigured: boolean;
 	mergeAccounts: boolean;
+	providerName: string;
+	providerLogoUrl: string;
 }

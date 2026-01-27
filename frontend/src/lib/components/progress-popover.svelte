@@ -15,7 +15,9 @@
 		getPullPhase,
 		getLayerStats,
 		showImageLayersState,
-		isIndeterminatePhase
+		isIndeterminatePhase,
+		getAggregatePullPhase,
+		getAggregateStatus
 	} from '$lib/utils/pull-progress';
 	import { DownloadIcon, BoxIcon, ArrowDownIcon, VerifiedCheckIcon, CloseIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
@@ -90,8 +92,14 @@
 	const isIndeterminate = $derived(isIndeterminatePhase(layers, progress));
 	const isIndeterminateGeneric = $derived(mode !== 'pull' && loading && !isComplete && !error);
 
+	// Derive aggregate status for display
+	const aggregateStatus = $derived(getAggregateStatus(layers, statusText, hasReachedComplete || isComplete));
+
 	// Derive the current phase from status text using utility (pull-mode only)
 	const currentPhase = $derived.by((): PullPhase => {
+		if (Object.keys(layers).length > 0) {
+			return getAggregatePullPhase(layers, hasReachedComplete || isComplete, !!error);
+		}
 		return getPullPhase(statusText, hasReachedComplete || isComplete, !!error);
 	});
 
@@ -163,14 +171,14 @@
 				{#if error}
 					{error}
 				{:else if mode !== 'pull'}
-					{statusText || subtitle}
+					{aggregateStatus || subtitle}
 				{:else if layerStats.total > 0}
-					{statusText || subtitle}
+					{aggregateStatus || subtitle}
 					<span class="text-muted-foreground">
 						· {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}</span
 					>
 				{:else}
-					{hasReachedComplete ? 100 : percent}% · {statusText || subtitle}
+					{hasReachedComplete ? 100 : percent}% · {aggregateStatus || subtitle}
 				{/if}
 			</Item.Description>
 		</Item.Content>
