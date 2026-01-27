@@ -9,6 +9,9 @@
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation.utils';
 	import { browser } from '$app/environment';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { navigationItems, getManagementItems, type NavigationItem } from '$lib/config/navigation-config';
+	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -34,6 +37,14 @@
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
+	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const managementItems = $derived(getManagementItems(currentEnvId));
+	const settingsShortcutItems = $derived.by(() => (isAdmin ? (navigationItems.settingsItems ?? []) : []));
+	const shortcutItems = $derived.by(() => {
+		const items: NavigationItem[] = [...managementItems, ...navigationItems.resourceItems, ...settingsShortcutItems];
+		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
+	});
 
 	$effect(() => {
 		const redirectPath = getAuthRedirectPath(page.url.pathname, user);
@@ -53,7 +64,25 @@
 			}
 		});
 	}
+
+	function handleNavigationShortcut(event: KeyboardEvent) {
+		if (event.defaultPrevented) return;
+		if (isMobile.current || isTablet.current) return;
+		if (isEditableTarget(event.target)) return;
+
+		const match = shortcutItems.find((item: NavigationItem) => item.shortcut && matchesShortcutEvent(item.shortcut, event));
+		if (!match) return;
+
+		event.preventDefault();
+		goto(match.url);
+	}
+
+	function flattenNavigationItems(items: NavigationItem[]): NavigationItem[] {
+		return items.flatMap((item) => [item, ...(item.items ? flattenNavigationItems(item.items) : [])]);
+	}
 </script>
+
+<svelte:window onkeydown={handleNavigationShortcut} />
 
 {#if isMobile.current}
 	<main class="flex-1">
