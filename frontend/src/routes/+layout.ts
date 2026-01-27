@@ -8,12 +8,37 @@ import type { AppVersionInformation } from '$lib/types/application-configuration
 import { userService } from '$lib/services/user-service';
 import { settingsService } from '$lib/services/settings-service';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
+import { authService } from '$lib/services/auth-service';
+import { browser } from '$app/environment';
 
 export const ssr = false;
 
 export const load = async () => {
 	// Step 1: Check authentication first
-	const user = await userService.getCurrentUser().catch(() => null);
+	let user = await userService.getCurrentUser().catch(() => null);
+
+	// Step 1.5: Attempt auto-login if not authenticated
+	if (!user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
+		// Check if auto-login is enabled
+		const autoLoginConfig = await authService.getAutoLoginConfig();
+
+		if (autoLoginConfig?.enabled) {
+			settingsStore.autoLoginEnabled.set(true);
+			// Attempt auto-login using server-configured credentials
+			user = await authService.attemptAutoLogin();
+		} else {
+			// Cache that auto-login is disabled to avoid checking on every page load
+			settingsStore.autoLoginEnabled.cacheDisabled();
+		}
+	} else if (user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
+		// User is already logged in, check if auto-login is enabled (for password change dialog skip)
+		const autoLoginConfig = await authService.getAutoLoginConfig().catch(() => null);
+		if (autoLoginConfig?.enabled) {
+			settingsStore.autoLoginEnabled.set(true);
+		} else {
+			settingsStore.autoLoginEnabled.cacheDisabled();
+		}
+	}
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;

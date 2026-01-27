@@ -58,6 +58,12 @@ type Config struct {
 	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
 	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
 
+	// Auto-login configuration
+	// When enabled, the frontend will automatically authenticate using the specified credentials.
+	AutoLoginEnable   bool   `env:"AUTO_LOGIN_ENABLE" default:"false"`
+	AutoLoginUsername string `env:"AUTO_LOGIN_USERNAME" default:"arcane"`
+	AutoLoginPassword string `env:"AUTO_LOGIN_PASSWORD" default:"arcane-admin" options:"file"`
+
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
 	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`

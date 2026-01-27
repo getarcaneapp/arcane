@@ -18,6 +18,7 @@
 	import { cn } from '$lib/utils';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import settingsStore from '$lib/stores/config-store';
 
 	let {
 		data,
@@ -46,9 +47,16 @@
 	);
 
 	let showPasswordChangeDialog = $state(false);
+	let autoLoginEnabled = $state(false);
 
 	$effect(() => {
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage) {
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
+		return unsub;
+	});
+
+	$effect(() => {
+		// Skip password change dialog when auto-login is enabled
+		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled) {
 			showPasswordChangeDialog = true;
 		} else {
 			showPasswordChangeDialog = false;

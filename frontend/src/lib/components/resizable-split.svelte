@@ -47,7 +47,7 @@
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let isResizing = $state(false);
 	let collapsedSide = $state<'first' | 'second' | null>(null);
-	let lastSize = minSize;
+	let lastSize = 0;
 	let persistedState = $state<PersistedState<number | null> | null>(null);
 	let persistedKey = $state<string | null>(null);
 

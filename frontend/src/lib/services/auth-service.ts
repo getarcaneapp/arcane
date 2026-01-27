@@ -3,7 +3,7 @@ import BaseAPIService from './api-service';
 import userStore from '$lib/stores/user-store';
 import type { User } from '$lib/types/user.type';
 import type { OidcStatusInfo } from '$lib/types/settings.type';
-import type { OidcUserInfo, LoginCredentials, LoginResponseData } from '$lib/types/auth.type';
+import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '$lib/types/auth.type';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -195,6 +195,42 @@ export class AuthService extends BaseAPIService {
 	logout(): void {
 		this.clearTokenData();
 		userStore.clearUser();
+	}
+
+	/**
+	 * Get auto-login configuration from the backend.
+	 * @returns The auto-login config, or null if the request fails
+	 */
+	async getAutoLoginConfig(): Promise<AutoLoginConfig | null> {
+		try {
+			const response = await this.handleResponse<AutoLoginConfig>(this.api.get('/auth/auto-login-config'));
+			return response;
+		} catch {
+			// Silently fail - auto-login is optional
+			return null;
+		}
+	}
+
+	/**
+	 * Attempt auto-login using server-configured credentials.
+	 * The server handles the credentials - they are never exposed to the frontend.
+	 * @returns The user if login succeeded, null otherwise
+	 */
+	async attemptAutoLogin(): Promise<User | null> {
+		try {
+			const data = await this.handleResponse<LoginResponseData>(this.api.post('/auth/auto-login'));
+			const user = data.user as User;
+
+			if (data.refreshToken && data.expiresAt) {
+				this.storeTokenData(data.refreshToken, data.expiresAt);
+			}
+
+			await userStore.setUser(user);
+			return user;
+		} catch {
+			// Silently fail - fall back to normal login flow
+			return null;
+		}
 	}
 }
 
