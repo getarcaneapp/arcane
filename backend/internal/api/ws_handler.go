@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -58,14 +59,8 @@ type SystemStats struct {
 	GPUs         []GPUStats `json:"gpus,omitempty"`
 }
 
-// ROCmSMIOutput represents the JSON structure from rocm-smi
-type ROCmSMIOutput map[string]ROCmGPUInfo
-
-// ROCmGPUInfo represents GPU info from rocm-smi
-type ROCmGPUInfo struct {
-	VRAMUsed  string `json:"VRAM Total Used Memory (B)"`
-	VRAMTotal string `json:"VRAM Total Memory (B)"`
-}
+// amdGPUSysfsPath is the base path for AMD GPU sysfs entries
+const amdGPUSysfsPath = "/sys/class/drm"
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
@@ -831,18 +826,18 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
 
 		case "amd":
-			if path, err := exec.LookPath("rocm-smi"); err == nil {
+			if hasAMDGPUInternal() {
 				h.gpuDetectionCache.Lock()
 				h.gpuDetectionCache.detected = true
 				h.gpuDetectionCache.gpuType = "amd"
-				h.gpuDetectionCache.toolPath = path
+				h.gpuDetectionCache.toolPath = amdGPUSysfsPath
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
-			return fmt.Errorf("rocm-smi not found but GPU_TYPE set to amd")
+			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 
 		case "intel":
 			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
@@ -875,15 +870,15 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 		return nil
 	}
 
-	if path, err := exec.LookPath("rocm-smi"); err == nil {
+	if hasAMDGPUInternal() {
 		h.gpuDetectionCache.Lock()
 		h.gpuDetectionCache.detected = true
 		h.gpuDetectionCache.gpuType = "amd"
-		h.gpuDetectionCache.toolPath = path
+		h.gpuDetectionCache.toolPath = amdGPUSysfsPath
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", "tool", "rocm-smi", "path", path)
+		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", amdGPUSysfsPath)
 		return nil
 	}
 
@@ -969,54 +964,99 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, erro
 	return stats, nil
 }
 
-// getAMDStats collects AMD GPU statistics using rocm-smi
+// getAMDStats collects AMD GPU statistics using sysfs
 func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "rocm-smi", "--showmeminfo", "vram", "--json")
-	output, err := cmd.Output()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute rocm-smi", "error", err)
-		return nil, fmt.Errorf("rocm-smi execution failed: %w", err)
-	}
-
-	var rocmData ROCmSMIOutput
-	if err := json.Unmarshal(output, &rocmData); err != nil {
-		slog.WarnContext(ctx, "Failed to parse rocm-smi JSON output", "error", err)
-		return nil, fmt.Errorf("failed to parse rocm-smi output: %w", err)
-	}
-
 	var stats []GPUStats
+
+	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
+	entries, err := os.ReadDir(amdGPUSysfsPath)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
+		return nil, fmt.Errorf("failed to read sysfs: %w", err)
+	}
+
 	index := 0
-	for gpuID, info := range rocmData {
-		memUsedBytes, err := strconv.ParseFloat(info.VRAMUsed, 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory used", "gpu", gpuID, "value", info.VRAMUsed)
+	for _, entry := range entries {
+		name := entry.Name()
+		// Only check card* entries (card0, card1, etc.) - skip renderD* and connector entries
+		if !strings.HasPrefix(name, "card") {
+			continue
+		}
+		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
+		if strings.Contains(name, "-") {
 			continue
 		}
 
-		memTotalBytes, err := strconv.ParseFloat(info.VRAMTotal, 64)
+		devicePath := fmt.Sprintf("%s/%s/device", amdGPUSysfsPath, name)
+
+		// Check if this is an AMD GPU by looking for VRAM info files
+		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
+		memUsedPath := fmt.Sprintf("%s/mem_info_vram_used", devicePath)
+
+		memTotalBytes, err := readSysfsValueInternal(memTotalPath)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory total", "gpu", gpuID, "value", info.VRAMTotal)
+			// Not an AMD GPU or doesn't have VRAM info
+			continue
+		}
+
+		memUsedBytes, err := readSysfsValueInternal(memUsedPath)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
 			continue
 		}
 
 		stats = append(stats, GPUStats{
-			Name:        fmt.Sprintf("AMD GPU %s", gpuID),
+			Name:        fmt.Sprintf("AMD GPU %d", index),
 			Index:       index,
-			MemoryUsed:  memUsedBytes,
-			MemoryTotal: memTotalBytes,
+			MemoryUsed:  float64(memUsedBytes),
+			MemoryTotal: float64(memTotalBytes),
 		})
 		index++
 	}
 
 	if len(stats) == 0 {
-		return nil, fmt.Errorf("no GPU data parsed from rocm-smi")
+		return nil, fmt.Errorf("no AMD GPU data found in sysfs")
 	}
 
 	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
 	return stats, nil
+}
+
+// readSysfsValueInternal reads a numeric value from a sysfs file
+func readSysfsValueInternal(path string) (uint64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+}
+
+// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
+func hasAMDGPUInternal() bool {
+	entries, err := os.ReadDir(amdGPUSysfsPath)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		// Only check card* entries (card0, card1, etc.) - skip card0-DP-1 style entries
+		if !strings.HasPrefix(name, "card") {
+			continue
+		}
+		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
+		if strings.Contains(name, "-") {
+			continue
+		}
+
+		// Check if this card has AMD VRAM info
+		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", amdGPUSysfsPath, name)
+		if _, err := os.Stat(memTotalPath); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // getIntelStats collects Intel GPU statistics using intel_gpu_top
