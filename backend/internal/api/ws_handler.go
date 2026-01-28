@@ -1023,7 +1023,7 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) 
 }
 
 // readSysfsValue reads a numeric value from a sysfs file
-func readSysfsValue(path string) (uint64, error) {
+func readSysfsValueInternal(path string) (uint64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
