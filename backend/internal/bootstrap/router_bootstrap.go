@@ -137,6 +137,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Image:             appServices.Image,
 		ImageUpdate:       appServices.ImageUpdate,
 		Volume:            appServices.Volume,
+		Secret:            appServices.Secret,
 		Container:         appServices.Container,
 		Network:           appServices.Network,
 		Notification:      appServices.Notification,
