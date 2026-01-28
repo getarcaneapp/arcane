@@ -1032,7 +1032,7 @@ func readSysfsValue(path string) (uint64, error) {
 }
 
 // hasAMDGPU checks if an AMD GPU is present by looking for VRAM info in sysfs
-func hasAMDGPU() bool {
+func hasAMDGPUInternal() bool {
 	entries, err := os.ReadDir(amdGPUSysfsPath)
 	if err != nil {
 		return false
