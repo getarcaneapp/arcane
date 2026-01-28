@@ -8,6 +8,8 @@ import type { AppVersionInformation } from '$lib/types/application-configuration
 import { userService } from '$lib/services/user-service';
 import { settingsService } from '$lib/services/settings-service';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
+import { systemService } from '$lib/services/system-service';
+import type { DockerInfo } from '$lib/types/docker-info.type';
 
 export const ssr = false;
 
@@ -17,6 +19,7 @@ export const load = async () => {
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
+	let dockerInfo: DockerInfo | null = null;
 
 	if (user) {
 		// Initialize environment store (required for settings service)
@@ -37,6 +40,7 @@ export const load = async () => {
 		// Fetch settings after environment store is initialized
 		// Settings service depends on environmentStore.getCurrentEnvironmentId()
 		settings = await settingsService.getSettings().catch(() => null);
+		dockerInfo = await systemService.getDockerInfo().catch(() => null);
 	} else {
 		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
@@ -86,6 +90,7 @@ export const load = async () => {
 	return {
 		user,
 		settings,
-		versionInformation
+		versionInformation,
+		dockerInfo
 	};
 };

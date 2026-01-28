@@ -12,8 +12,8 @@ import Trigger from './dropdown-menu-trigger.svelte';
 import SubContent from './dropdown-menu-sub-content.svelte';
 import SubTrigger from './dropdown-menu-sub-trigger.svelte';
 import GroupHeading from './dropdown-menu-group-heading.svelte';
+import Root from './dropdown-menu-root.svelte';
 const Sub = DropdownMenuPrimitive.Sub;
-const Root = DropdownMenuPrimitive.Root;
 
 export {
 	CheckboxItem,
