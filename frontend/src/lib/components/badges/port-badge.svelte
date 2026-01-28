@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import settingsStore from '$lib/stores/config-store';
+	import { toPortHref } from '$lib/utils/url';
 
 	let { ports = [] as ContainerPorts[] } = $props<{
 		ports?: ContainerPorts[];
@@ -61,17 +62,6 @@
 		});
 	}
 
-	function toHref(hostPort: string): string {
-		try {
-			const base = baseServerUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-			const url = new URL(base.startsWith('http') ? base : `http://${base}`);
-			url.port = hostPort;
-			return url.toString();
-		} catch {
-			return '#';
-		}
-	}
-
 	const allPorts = $derived(uniquePorts(ports));
 	const published = $derived(allPorts.filter((p) => p.isPublished));
 	const exposedOnly = $derived(allPorts.filter((p) => !p.isPublished));
@@ -85,8 +75,8 @@
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
 					<a
-						class="ring-offset-background focus-visible:ring-ring bg-background/70 dark:bg-sky-500/20 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 dark:border-sky-400/40 px-2 py-1 text-[11px] dark:text-sky-100 shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-						href={toHref(p.hostPort!)}
+						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-1 text-[11px] shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+						href={toPortHref(p.hostPort!, baseServerUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
 					>
@@ -107,7 +97,7 @@
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span
-						class="bg-background/50 dark:bg-slate-500/20 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 dark:border-slate-400/40 px-2 py-1 text-[11px] text-gray-400 dark:text-slate-200 shadow-sm"
+						class="bg-background/50 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 shadow-sm dark:border-slate-400/40 dark:bg-slate-500/20 dark:text-slate-200"
 					>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}

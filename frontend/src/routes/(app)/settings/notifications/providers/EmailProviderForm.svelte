@@ -108,10 +108,8 @@
 			type="text"
 			autocomplete="off"
 			helpText={m.notifications_email_smtp_host_help()}
+			error={fieldErrors.smtpHost}
 		/>
-		{#if fieldErrors.smtpHost}
-			<p class="text-destructive col-span-2 -mt-2 text-sm">{fieldErrors.smtpHost}</p>
-		{/if}
 
 		<div class="space-y-2">
 			<Label for="smtp-port">{m.notifications_email_smtp_port_label()}</Label>
@@ -158,10 +156,8 @@
 		type="email"
 		autocomplete="off"
 		helpText={m.notifications_email_from_address_help()}
+		error={fieldErrors.fromAddress}
 	/>
-	{#if fieldErrors.fromAddress}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.fromAddress}</p>
-	{/if}
 
 	<div class="space-y-2">
 		<Label for="to-addresses">{m.notifications_email_to_addresses_label()}</Label>

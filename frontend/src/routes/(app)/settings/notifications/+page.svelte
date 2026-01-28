@@ -18,6 +18,7 @@
 		type SlackFormValues,
 		type NtfyFormValues,
 		type PushoverFormValues,
+		type GotifyFormValues,
 		type GenericFormValues,
 		type AppriseFormValues,
 		type NotificationProviderKey,
@@ -29,6 +30,7 @@
 		slackSettingsToFormValues,
 		ntfySettingsToFormValues,
 		pushoverSettingsToFormValues,
+		gotifySettingsToFormValues,
 		genericSettingsToFormValues,
 		appriseSettingsToFormValues,
 		discordFormValuesToSettings,
@@ -38,6 +40,7 @@
 		slackFormValuesToSettings,
 		ntfyFormValuesToSettings,
 		pushoverFormValuesToSettings,
+		gotifyFormValuesToSettings,
 		genericFormValuesToSettings,
 		appriseFormValuesToSettings
 	} from '$lib/types/notification-providers';
@@ -50,6 +53,7 @@
 		SlackProviderForm,
 		NtfyProviderForm,
 		PushoverProviderForm,
+		GotifyProviderForm,
 		GenericProviderForm,
 		AppriseProviderForm
 	} from './providers';
@@ -82,6 +86,7 @@
 	let slackFormRef: SlackProviderForm;
 	let ntfyFormRef: NtfyProviderForm;
 	let pushoverFormRef: PushoverProviderForm;
+	let gotifyFormRef: GotifyProviderForm;
 	let genericFormRef: GenericProviderForm;
 
 	// Saved settings from server (used to detect if settings exist)
@@ -93,6 +98,7 @@
 		slack: null,
 		ntfy: null,
 		pushover: null,
+		gotify: null,
 		generic: null
 	});
 
@@ -104,6 +110,7 @@
 	let slackValues = $state<SlackFormValues>(slackSettingsToFormValues());
 	let ntfyValues = $state<NtfyFormValues>(ntfySettingsToFormValues());
 	let pushoverValues = $state<PushoverFormValues>(pushoverSettingsToFormValues());
+	let gotifyValues = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseValues = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -115,6 +122,7 @@
 	let slackBaseline = $state<SlackFormValues>(slackSettingsToFormValues());
 	let ntfyBaseline = $state<NtfyFormValues>(ntfySettingsToFormValues());
 	let pushoverBaseline = $state<PushoverFormValues>(pushoverSettingsToFormValues());
+	let gotifyBaseline = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseBaseline = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -126,6 +134,7 @@
 	const slackHasChanges = $derived(JSON.stringify(slackValues) !== JSON.stringify(slackBaseline));
 	const ntfyHasChanges = $derived(JSON.stringify(ntfyValues) !== JSON.stringify(ntfyBaseline));
 	const pushoverHasChanges = $derived(JSON.stringify(pushoverValues) !== JSON.stringify(pushoverBaseline));
+	const gotifyHasChanges = $derived(JSON.stringify(gotifyValues) !== JSON.stringify(gotifyBaseline));
 	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
 	const appriseHasChanges = $derived(JSON.stringify(appriseValues) !== JSON.stringify(appriseBaseline));
 	const hasChanges = $derived(
@@ -136,6 +145,7 @@
 			slackHasChanges ||
 			ntfyHasChanges ||
 			pushoverHasChanges ||
+			gotifyHasChanges ||
 			genericHasChanges ||
 			appriseHasChanges
 	);
@@ -180,6 +190,9 @@
 		pushoverValues = pushoverSettingsToFormValues(savedSettings.pushover ?? undefined);
 		pushoverBaseline = { ...pushoverValues };
 
+		gotifyValues = gotifySettingsToFormValues(savedSettings.gotify ?? undefined);
+		gotifyBaseline = { ...gotifyValues };
+
 		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
 		genericBaseline = { ...genericValues };
 
@@ -202,10 +215,21 @@
 		const slackValid = slackFormRef?.isValid() ?? true;
 		const ntfyValid = ntfyFormRef?.isValid() ?? true;
 		const pushoverValid = pushoverFormRef?.isValid() ?? true;
+		const gotifyValid = gotifyFormRef?.isValid() ?? true;
 		const genericValid = genericFormRef?.isValid() ?? true;
 
 		if (
-			!(emailValid && discordValid && telegramValid && signalValid && slackValid && ntfyValid && pushoverValid && genericValid)
+			!(
+				emailValid &&
+				discordValid &&
+				telegramValid &&
+				signalValid &&
+				slackValid &&
+				ntfyValid &&
+				pushoverValid &&
+				gotifyValid &&
+				genericValid
+			)
 		) {
 			toast.error('Please check the form for errors');
 			return;
@@ -307,6 +331,19 @@
 				}
 			}
 
+			// Save Gotify settings if changed
+			if (gotifyHasChanges) {
+				try {
+					const settings = gotifyFormValuesToSettings(gotifyValues);
+					await notificationService.updateSettings('gotify', settings);
+					savedSettings.gotify = settings;
+					gotifyBaseline = { ...gotifyValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Gotify', error: errorMsg }));
+				}
+			}
+
 			// Save Generic settings if changed
 			if (genericHasChanges) {
 				try {
@@ -353,6 +390,7 @@
 		slackValues = { ...slackBaseline };
 		ntfyValues = { ...ntfyBaseline };
 		pushoverValues = { ...pushoverBaseline };
+		gotifyValues = { ...gotifyBaseline };
 		genericValues = { ...genericBaseline };
 		appriseValues = { ...appriseBaseline };
 	}
@@ -509,6 +547,16 @@
 									disabled={isReadOnly}
 									{isTesting}
 									onTest={() => testNotification('pushover')}
+								/>
+							</Tabs.Content>
+
+							<Tabs.Content value="gotify" class="mt-4 space-y-4">
+								<GotifyProviderForm
+									bind:this={gotifyFormRef}
+									bind:values={gotifyValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('gotify')}
 								/>
 							</Tabs.Content>
 

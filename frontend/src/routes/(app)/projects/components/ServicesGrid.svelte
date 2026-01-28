@@ -8,6 +8,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import type { RuntimeService } from '$lib/types/project.type';
 	import { HealthIcon, ContainersIcon } from '$lib/icons';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 
 	interface Props {
 		services?: RuntimeService[];
@@ -60,6 +62,7 @@
 	{@const containerUrl = projectId
 		? `/containers/${service.containerId}?from=project&projectId=${projectId}`
 		: `/containers/${service.containerId}`}
+	{@const iconUrl = service.iconUrl || getArcaneIconUrlFromLabels(service.serviceConfig?.labels)}
 
 	{#if service.containerId}
 		<a href={containerUrl} class="group">
@@ -69,9 +72,13 @@
 			>
 				<Card.Content class="flex flex-col p-4">
 					<div class="flex items-start gap-3">
-						<div class="rounded-lg bg-blue-500/10 p-2 transition-colors group-hover:bg-blue-500/15">
-							<ContainersIcon class="size-5 text-blue-500" />
-						</div>
+						<IconImage
+							src={iconUrl}
+							alt={service.containerName || service.name}
+							fallback={ContainersIcon}
+							class="size-6 text-blue-500"
+							containerClass="size-10 bg-blue-500/10 p-2 group-hover:bg-blue-500/15"
+						/>
 						<div class="min-w-0 flex-1">
 							<div class="mb-2 flex items-center gap-2">
 								<h3 class="text-foreground text-base font-semibold transition-colors">
@@ -101,9 +108,13 @@
 		<Card.Root variant="subtle" class="flex h-full opacity-60">
 			<Card.Content class="flex flex-col p-4">
 				<div class="flex items-start gap-3">
-					<div class="rounded-lg bg-amber-500/10 p-2">
-						<ContainersIcon class="size-5 text-amber-500" />
-					</div>
+					<IconImage
+						src={iconUrl}
+						alt={service.name}
+						fallback={ContainersIcon}
+						class="size-6 text-amber-500"
+						containerClass="size-10 bg-amber-500/10 p-2"
+					/>
 					<div class="min-w-0 flex-1">
 						<h3 class="text-foreground mb-2 text-base font-semibold">
 							{service.name}

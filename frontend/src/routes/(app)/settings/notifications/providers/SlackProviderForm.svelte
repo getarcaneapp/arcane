@@ -73,10 +73,8 @@
 		type="password"
 		autocomplete="off"
 		helpText={m.notifications_slack_token_help()}
+		error={fieldErrors.token}
 	/>
-	{#if fieldErrors.token}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.token}</p>
-	{/if}
 
 	<div class="grid grid-cols-2 gap-4">
 		<TextInputWithLabel

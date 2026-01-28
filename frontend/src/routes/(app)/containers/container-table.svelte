@@ -30,6 +30,8 @@
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import {
 		StartIcon,
 		StopIcon,
@@ -616,13 +618,12 @@
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
-	<a class="font-medium hover:underline" href="/containers/{item.id}">
-		{#if item.names && item.names.length > 0}
-			{item.names[0].startsWith('/') ? item.names[0].substring(1) : item.names[0]}
-		{:else}
-			{item.id.substring(0, 12)}
-		{/if}
-	</a>
+	{@const displayName = getContainerDisplayName(item)}
+	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	<div class="flex items-center gap-2">
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
+		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+	</div>
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
@@ -723,10 +724,13 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
+			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
 			const state = item.state;
 			return {
 				component: BoxIcon,
-				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber'
+				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber',
+				imageUrl: iconUrl ?? undefined,
+				alt: getContainerDisplayName(item)
 			};
 		}}
 		title={(item) => {

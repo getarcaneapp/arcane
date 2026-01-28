@@ -40,6 +40,8 @@ type Config struct {
 	OidcAdminValue             string `env:"OIDC_ADMIN_VALUE" default:""`
 	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
 	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
+	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
+	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`

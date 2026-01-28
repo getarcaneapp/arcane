@@ -129,6 +129,8 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 			sendErr = s.sendNtfyNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderPushover:
 			sendErr = s.sendPushoverNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericNotification(ctx, imageRef, updateInfo, setting.Config)
 		default:
@@ -224,6 +226,8 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 			sendErr = s.sendNtfyContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderPushover:
 			sendErr = s.sendPushoverContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		default:
@@ -713,6 +717,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		return s.sendNtfyNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	case models.NotificationProviderPushover:
 		return s.sendPushoverNotification(ctx, "test/image:latest", testUpdate, setting.Config)
+	case models.NotificationProviderGotify:
+		return s.sendGotifyNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	case models.NotificationProviderGeneric:
 		return s.sendGenericNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	default:
@@ -873,6 +879,8 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 			sendErr = s.sendBatchNtfyNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderPushover:
 			sendErr = s.sendBatchPushoverNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendBatchGotifyNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendBatchGenericNotification(ctx, updatesWithChanges, setting.Config)
 		default:
@@ -1836,6 +1844,132 @@ func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, 
 
 	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
 		return fmt.Errorf("failed to send batch Generic webhook notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendGotifyNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Gotify config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &gotifyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Gotify config: %w", err)
+	}
+
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	message := fmt.Sprintf("🔔 Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
+	}
+
+	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Gotify notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendGotifyContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Gotify config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &gotifyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Gotify config: %w", err)
+	}
+
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+
+	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Gotify notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal gotify config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &gotifyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal gotify config: %w", err)
+	}
+
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		}
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Gotify notification: %w", err)
 	}
 
 	return nil

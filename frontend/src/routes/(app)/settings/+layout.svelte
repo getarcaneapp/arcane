@@ -5,11 +5,13 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
+	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
+	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
@@ -38,7 +40,8 @@
 			settingsEntry?.items?.map((item) => ({
 				href: item.url,
 				label: item.title,
-				icon: item.icon
+				icon: item.icon,
+				shortcut: item.shortcut
 			})) ?? []
 		);
 	});
@@ -179,6 +182,20 @@
 	}
 </script>
 
+{#snippet Shortcut({ keys }: { keys?: ShortcutKey[] })}
+	{@const displayKeys = keys ? formatShortcutKeys(keys) : []}
+	{#if displayKeys.length}
+		<Kbd.Group class="text-muted-foreground ml-auto items-center gap-1">
+			{#each displayKeys as key, index}
+				<Kbd.Root>{key}</Kbd.Root>
+				{#if index < displayKeys.length - 1}
+					<span class="text-muted-foreground/70 text-[10px]">+</span>
+				{/if}
+			{/each}
+		</Kbd.Group>
+	{/if}
+{/snippet}
+
 <div class="flex h-full min-h-full flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
 	<aside class={cn('relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full', 'backdrop-blur-sm')}>
@@ -197,6 +214,7 @@
 					>
 						<item.icon class="size-4" />
 						{item.label}
+						{@render Shortcut({ keys: item.shortcut })}
 					</a>
 				{/each}
 			</nav>

@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	let isRedirecting = $state(true);
 	let error = $state('');
@@ -43,14 +44,14 @@
 
 <div class="bg-background flex min-h-screen items-center justify-center">
 	<div class="w-full max-w-md space-y-8">
-		<div class="text-center">
+		<div class="flex flex-col items-center text-center">
 			{#if isRedirecting && !error}
-				<div class="border-primary mx-auto h-12 w-12 animate-spin rounded-full border-b-2"></div>
+				<Spinner class="text-primary size-12" />
 				<h2 class="mt-6 text-2xl font-bold">{m.auth_oidc_redirecting_title()}</h2>
 				<p class="text-muted-foreground mt-2 text-sm">{m.auth_oidc_redirecting_description()}</p>
 			{:else if error}
-				<div class="text-destructive">
-					<svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<div class="text-destructive flex flex-col items-center">
+					<svg class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"

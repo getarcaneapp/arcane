@@ -113,10 +113,8 @@
 			type="text"
 			autocomplete="off"
 			helpText={m.notifications_signal_host_help()}
+			error={fieldErrors.host}
 		/>
-		{#if fieldErrors.host}
-			<p class="text-destructive col-span-2 -mt-2 text-sm">{fieldErrors.host}</p>
-		{/if}
 
 		<TextInputWithLabel
 			bind:value={values.port}
@@ -126,10 +124,8 @@
 			type="number"
 			autocomplete="off"
 			helpText={m.notifications_signal_port_help()}
+			error={fieldErrors.port}
 		/>
-		{#if fieldErrors.port}
-			<p class="text-destructive col-span-2 -mt-2 text-sm">{fieldErrors.port}</p>
-		{/if}
 	</div>
 
 	<div class="space-y-4">
@@ -192,10 +188,8 @@
 		type="text"
 		autocomplete="off"
 		helpText={m.notifications_signal_source_help()}
+		error={fieldErrors.source}
 	/>
-	{#if fieldErrors.source}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.source}</p>
-	{/if}
 
 	<div class="space-y-2">
 		<Label for="signal-recipients">{m.notifications_signal_recipients_label()}</Label>

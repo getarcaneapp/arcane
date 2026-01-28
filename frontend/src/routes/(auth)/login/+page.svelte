@@ -3,7 +3,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, GithubIcon } from '$lib/icons';
+	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
@@ -33,6 +33,12 @@
 	const showLocalLoginForm = $derived(localAuthEnabledBySettings);
 
 	const oidcAutoRedirect = $derived(data.settings?.oidcAutoRedirectToProvider === true);
+
+	const oidcProviderName = $derived(data.settings?.oidcProviderName || '');
+	const oidcProviderLogoUrl = $derived(data.settings?.oidcProviderLogoUrl || '');
+	const oidcButtonLabel = $derived(
+		oidcProviderName ? m.auth_oidc_signin_with({ provider: oidcProviderName }) : m.auth_oidc_signin()
+	);
 
 	onMount(() => {
 		if (oidcAutoRedirect && oidcEnabledBySettings && !data.error) {
@@ -200,7 +206,16 @@
 								onclick={() => handleOidcLogin()}
 								loading={isLoading.oidc}
 								disabled={isLoading.local}
-							/>
+								icon={null}
+								customLabel=""
+							>
+								{#if oidcProviderLogoUrl}
+									<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+								{:else}
+									<OpenIdIcon class="size-4" />
+								{/if}
+								{oidcButtonLabel}
+							</ArcaneButton>
 						{/if}
 
 						{#if showLocalLoginForm}
@@ -270,7 +285,16 @@
 									onclick={() => handleOidcLogin()}
 									loading={isLoading.oidc}
 									disabled={isLoading.local}
-								/>
+									icon={null}
+									customLabel=""
+								>
+									{#if oidcProviderLogoUrl}
+										<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+									{:else}
+										<OpenIdIcon class="size-4" />
+									{/if}
+									{oidcButtonLabel}
+								</ArcaneButton>
 							{/if}
 						{/if}
 					</div>
