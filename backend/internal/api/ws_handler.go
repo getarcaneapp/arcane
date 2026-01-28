@@ -826,7 +826,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
 
 		case "amd":
-			if hasAMDGPU() {
+			if hasAMDGPUInternal() {
 				h.gpuDetectionCache.Lock()
 				h.gpuDetectionCache.detected = true
 				h.gpuDetectionCache.gpuType = "amd"
@@ -870,7 +870,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 		return nil
 	}
 
-	if hasAMDGPU() {
+	if hasAMDGPUInternal() {
 		h.gpuDetectionCache.Lock()
 		h.gpuDetectionCache.detected = true
 		h.gpuDetectionCache.gpuType = "amd"
@@ -993,13 +993,13 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) 
 		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
 		memUsedPath := fmt.Sprintf("%s/mem_info_vram_used", devicePath)
 
-		memTotalBytes, err := readSysfsValue(memTotalPath)
+		memTotalBytes, err := readSysfsValueInternal(memTotalPath)
 		if err != nil {
 			// Not an AMD GPU or doesn't have VRAM info
 			continue
 		}
 
-		memUsedBytes, err := readSysfsValue(memUsedPath)
+		memUsedBytes, err := readSysfsValueInternal(memUsedPath)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
 			continue
@@ -1022,7 +1022,7 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) 
 	return stats, nil
 }
 
-// readSysfsValue reads a numeric value from a sysfs file
+// readSysfsValueInternal reads a numeric value from a sysfs file
 func readSysfsValueInternal(path string) (uint64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -1031,7 +1031,7 @@ func readSysfsValueInternal(path string) (uint64, error) {
 	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
 }
 
-// hasAMDGPU checks if an AMD GPU is present by looking for VRAM info in sysfs
+// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
 func hasAMDGPUInternal() bool {
 	entries, err := os.ReadDir(amdGPUSysfsPath)
 	if err != nil {
