@@ -62,12 +62,13 @@ type Config struct {
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
 	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
 
-	DockerAPITimeout       int `env:"DOCKER_API_TIMEOUT" default:"0"`
-	DockerImagePullTimeout int `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`
-	GitOperationTimeout    int `env:"GIT_OPERATION_TIMEOUT" default:"0"`
-	HTTPClientTimeout      int `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
-	RegistryTimeout        int `env:"REGISTRY_TIMEOUT" default:"0"`
-	ProxyRequestTimeout    int `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
+	DockerAPITimeout       int    `env:"DOCKER_API_TIMEOUT" default:"0"`
+	DockerImagePullTimeout int    `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`
+	GitOperationTimeout    int    `env:"GIT_OPERATION_TIMEOUT" default:"0"`
+	HTTPClientTimeout      int    `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
+	RegistryTimeout        int    `env:"REGISTRY_TIMEOUT" default:"0"`
+	ProxyRequestTimeout    int    `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
+	BackupVolumeName       string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
 }
 
 func Load() *Config {
