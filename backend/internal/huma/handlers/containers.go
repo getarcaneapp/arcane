@@ -13,6 +13,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 )
@@ -31,12 +32,13 @@ type ContainerPaginatedResponse struct {
 }
 
 type ListContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	Search          string `query:"search" doc:"Search query"`
+	Sort            string `query:"sort" doc:"Column to sort by"`
+	Order           string `query:"order" default:"asc" doc:"Sort direction"`
+	Start           int    `query:"start" default:"0" doc:"Start index"`
+	Limit           int    `query:"limit" default:"20" doc:"Limit"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 }
 
 type ListContainersOutput struct {
@@ -44,7 +46,8 @@ type ListContainersOutput struct {
 }
 
 type GetContainerStatusCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 }
 
 // ContainerStatusCountsResponse is a dedicated response type to avoid schema name collision
@@ -211,7 +214,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		},
 	}
 
-	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true)
+	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerListError{Err: err}).Error())
 	}
@@ -237,10 +240,31 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		return nil, huma.Error500InternalServerError("docker service not available")
 	}
 
-	_, running, stopped, total, err := h.dockerService.GetAllContainers(ctx)
+	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStatusCountsError{Err: err}).Error())
 	}
+
+	if !input.IncludeInternal {
+		filtered := make([]dockercontainer.Summary, 0, len(containers))
+		for _, c := range containers {
+			if libarcane.IsInternalContainer(c.Labels) {
+				continue
+			}
+			filtered = append(filtered, c)
+		}
+		containers = filtered
+	}
+
+	running, stopped := 0, 0
+	for _, c := range containers {
+		if c.State == "running" {
+			running++
+		} else {
+			stopped++
+		}
+	}
+	total := len(containers)
 
 	return &GetContainerStatusCountsOutput{
 		Body: ContainerStatusCountsResponse{

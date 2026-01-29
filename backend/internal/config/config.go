@@ -68,6 +68,7 @@ type Config struct {
 	HTTPClientTimeout      int `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
 	RegistryTimeout        int `env:"REGISTRY_TIMEOUT" default:"0"`
 	ProxyRequestTimeout    int `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
+	BackupVolumeName       string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
 }
 
 func Load() *Config {

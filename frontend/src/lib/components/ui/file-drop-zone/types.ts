@@ -18,6 +18,9 @@ export type FileDropZonePropsWithoutHTML = WithChildren<{
 	/** Called when a file does not meet the upload criteria (size, or type) */
 	onFileRejected?: (opts: { reason: FileRejectedReason; file: File }) => void;
 
+	/** Whether to allow multiple files. If undefined, it will be true if maxFiles is not 1. */
+	multiple?: boolean;
+
 	// just for extra documentation
 	/** Takes a comma separated list of one or more file types.
 	 *
@@ -40,4 +43,4 @@ export type FileDropZonePropsWithoutHTML = WithChildren<{
 	accept?: string;
 }>;
 
-export type FileDropZoneProps = FileDropZonePropsWithoutHTML & Omit<HTMLInputAttributes, 'multiple' | 'files'>;
+export type FileDropZoneProps = FileDropZonePropsWithoutHTML & Omit<HTMLInputAttributes, 'files'>;

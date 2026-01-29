@@ -115,6 +115,27 @@
 		return 'amber';
 	}
 
+	async function refreshContainers(options: SearchPaginationSortRequest) {
+		const result = await containerService.getContainers(options);
+		containers = result;
+		return result;
+	}
+
+	function getCurrentLimit() {
+		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
+	}
+
+	function setShowInternal(value: boolean) {
+		customSettings = { ...customSettings, showInternalContainers: value };
+		const nextOptions: SearchPaginationSortRequest = {
+			...requestOptions,
+			includeInternal: value,
+			pagination: { page: 1, limit: getCurrentLimit() }
+		};
+		requestOptions = nextOptions;
+		refreshContainers(nextOptions);
+	}
+
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		// Set action status for this specific container
 		if (action === 'start') {
@@ -406,6 +427,9 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
+	let showInternal = $derived.by(() => {
+		return (customSettings.showInternalContainers as boolean) ?? false;
+	});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
@@ -470,6 +494,15 @@
 	function setGroupByProject(value: boolean) {
 		customSettings = { ...customSettings, groupByProject: value };
 	}
+
+	$effect(() => {
+		const current = requestOptions?.includeInternal;
+		if (showInternal && current !== true) {
+			setShowInternal(true);
+		} else if (!showInternal && current === true) {
+			setShowInternal(false);
+		}
+	});
 
 	function toggleGroup(groupName: string) {
 		if (!collapsedGroupsState) return;
@@ -897,7 +930,7 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
-	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
+	onRefresh={refreshContainers}
 	{columns}
 	{mobileFields}
 	{bulkActions}
@@ -910,6 +943,9 @@
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem bind:checked={() => groupByProject, (v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
+	</DropdownMenu.CheckboxItem>
+	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
+		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 

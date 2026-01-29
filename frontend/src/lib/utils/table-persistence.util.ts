@@ -10,7 +10,8 @@ function cloneRequest(options: SearchPaginationSortRequest): SearchPaginationSor
 		search: options.search,
 		filters: options.filters ? { ...options.filters } : undefined,
 		pagination: options.pagination ? { ...options.pagination } : undefined,
-		sort: options.sort ? { ...options.sort } : undefined
+		sort: options.sort ? { ...options.sort } : undefined,
+		includeInternal: options.includeInternal
 	};
 }
 
