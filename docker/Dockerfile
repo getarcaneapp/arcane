@@ -62,7 +62,7 @@ ARG REVISION="unknown"
 
 RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
-    vainfo clinfo \
+    vainfo clinfo libdrm2 libsystemd0 \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         apt-get install -y --no-install-recommends intel-gpu-tools; \
     fi \

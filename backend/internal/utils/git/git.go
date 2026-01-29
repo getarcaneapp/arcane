@@ -1,7 +1,10 @@
 package git
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +18,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/gofrs/flock"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // Client handles git operations
@@ -29,12 +35,20 @@ func NewClient(workDir string) *Client {
 	}
 }
 
+// SSH host key verification modes
+const (
+	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
+	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
+	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
+)
+
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	AuthType string
-	Username string
-	Token    string
-	SSHKey   string
+	AuthType               string
+	Username               string
+	Token                  string
+	SSHKey                 string
+	SSHHostKeyVerification string // strict, accept_new, skip
 }
 
 // getAuth returns the appropriate transport.AuthMethod
@@ -54,6 +68,16 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to create ssh auth: %w", err)
 			}
+
+			// Configure host key verification based on mode
+			hostKeyCallback, err := c.getSSHHostKeyCallback(config.SSHHostKeyVerification)
+			if err != nil {
+				return nil, fmt.Errorf("failed to configure SSH host key verification: %w", err)
+			}
+			publicKeys.HostKeyCallbackHelper = ssh.HostKeyCallbackHelper{
+				HostKeyCallback: hostKeyCallback,
+			}
+
 			return publicKeys, nil
 		}
 		return nil, fmt.Errorf("ssh key required for ssh authentication")
@@ -64,8 +88,136 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 	}
 }
 
+// getSSHHostKeyCallback returns the appropriate SSH host key callback based on verification mode
+func (c *Client) getSSHHostKeyCallback(mode string) (gossh.HostKeyCallback, error) {
+	switch mode {
+	case SSHHostKeyVerificationStrict:
+		// Use known_hosts verification respecting SSH_KNOWN_HOSTS env var
+		return knownhosts.New(getKnownHostsPath())
+	case SSHHostKeyVerificationSkip:
+		// Skip host key verification - intentionally insecure, user explicitly opted in via UI
+		return gossh.InsecureIgnoreHostKey(), nil //nolint:gosec // User explicitly chose to skip verification
+	case SSHHostKeyVerificationAcceptNew, "":
+		// Default: accept and remember new host keys
+		return c.createAcceptNewHostKeyCallback()
+	default:
+		// Fall back to accept_new for unknown modes
+		return c.createAcceptNewHostKeyCallback()
+	}
+}
+
+// createAcceptNewHostKeyCallback creates a callback that accepts new host keys and saves them
+func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error) {
+	knownHostsPath := getKnownHostsPath()
+
+	// Ensure the directory exists
+	dir := filepath.Dir(knownHostsPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
+	}
+
+	// Create the file if it doesn't exist
+	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create known_hosts file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close known_hosts file %s: %v\n", knownHostsPath, err)
+		}
+	}
+
+	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+		// Re-read known_hosts on each call to handle concurrent modifications
+		existingCallback, err := knownhosts.New(knownHostsPath)
+		if err != nil {
+			existingCallback = nil
+		}
+
+		// Check if the host is already known
+		if existingCallback != nil {
+			err := existingCallback(hostname, remote, key)
+			if err == nil {
+				return nil // Host key matches
+			}
+			// Check if it's a "key mismatch" error vs "unknown host"
+			var keyErr *knownhosts.KeyError
+			if errors.As(err, &keyErr) && len(keyErr.Want) > 0 {
+				// Host is known but key doesn't match - this is a security concern
+				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, err)
+			}
+			// Otherwise, host is unknown - we'll add it
+		}
+
+		// Add the new host key to known_hosts
+		if err := addHostKey(knownHostsPath, hostname, key); err != nil {
+			// Log the error but don't fail - still allow the connection
+			// The host key just won't be remembered for next time
+			fmt.Fprintf(os.Stderr, "Warning: failed to save host key for %s: %v\n", hostname, err)
+		}
+
+		return nil
+	}, nil
+}
+
+// getKnownHostsPath returns the path to the known_hosts file
+func getKnownHostsPath() string {
+	// Check environment variable first
+	if path := os.Getenv("SSH_KNOWN_HOSTS"); path != "" {
+		return path
+	}
+
+	// Fall back to default location
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Use a fallback in the working directory
+		return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+	}
+	return filepath.Join(homeDir, ".ssh", "known_hosts")
+}
+
+// addHostKey adds a host key to the known_hosts file
+func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error) {
+	// Format the known_hosts line
+	line := knownhosts.Line([]string{hostname}, key)
+
+	// Acquire exclusive lock to prevent concurrent writes
+	fileLock := flock.New(knownHostsPath)
+	if err := fileLock.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", err)
+	}
+	defer fileLock.Unlock() //nolint:errcheck
+
+	// Append to the file
+	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open known_hosts file: %w", err)
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close known_hosts file: %w", cerr)
+		}
+	}()
+
+	if _, err := file.WriteString(line + "\n"); err != nil {
+		return fmt.Errorf("failed to write to known_hosts file: %w", err)
+	}
+
+	return nil
+}
+
 // Clone clones a repository to a temporary directory
-func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
+func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig) (string, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	// Create a temporary directory
 	workDir := c.workDir
 	if workDir == "" {
@@ -100,7 +252,7 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 		cloneOptions.SingleBranch = true
 	}
 
-	_, err = git.PlainClone(tmpDir, false, cloneOptions)
+	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
@@ -110,7 +262,10 @@ func (c *Client) Clone(url, branch string, auth AuthConfig) (string, error) {
 }
 
 // GetCurrentCommit returns the HEAD commit hash of a cloned repository
-func (c *Client) GetCurrentCommit(repoPath string) (string, error) {
+func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open repository: %w", err)
@@ -131,7 +286,10 @@ type BranchInfo struct {
 }
 
 // ListBranches lists all branches in a remote repository
-func (c *Client) ListBranches(url string, auth AuthConfig) ([]BranchInfo, error) {
+func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	authMethod, err := c.getAuth(auth)
 	if err != nil {
 		return nil, err
@@ -148,7 +306,10 @@ func (c *Client) ListBranches(url string, auth AuthConfig) ([]BranchInfo, error)
 		listOptions.Auth = authMethod
 	}
 
-	refs, err := rem.List(listOptions)
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	refs, err := rem.ListContext(listCtx, listOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
@@ -217,7 +378,10 @@ func ValidatePath(repoPath, requestedPath string) error {
 }
 
 // BrowseTree returns the file tree at the specified path
-func (c *Client) BrowseTree(repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Validate path to prevent traversal
 	if err := ValidatePath(repoPath, targetPath); err != nil {
 		return nil, err
@@ -242,6 +406,11 @@ func (c *Client) BrowseTree(repoPath, targetPath string) ([]gitops.FileTreeNode,
 
 	var nodes []gitops.FileTreeNode
 	for _, entry := range entries {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		// Skip .git directory
 		if entry.Name() == ".git" {
 			continue
@@ -285,8 +454,12 @@ type CommitInfo struct {
 }
 
 // TestConnection tests if the repository can be accessed with the given credentials
-func (c *Client) TestConnection(url, branch string, auth AuthConfig) error {
-	tmpDir, err := c.Clone(url, branch, auth)
+func (c *Client) TestConnection(ctx context.Context, url, branch string, auth AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	tmpDir, err := c.Clone(ctx, url, branch, auth)
 	if err != nil {
 		return err
 	}
@@ -297,7 +470,10 @@ func (c *Client) TestConnection(url, branch string, auth AuthConfig) error {
 }
 
 // FileExists checks if a file exists in the repository
-func (c *Client) FileExists(repoPath, filePath string) bool {
+func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool {
+	if err := ctx.Err(); err != nil {
+		return false
+	}
 	if err := ValidatePath(repoPath, filePath); err != nil {
 		return false
 	}
@@ -308,7 +484,10 @@ func (c *Client) FileExists(repoPath, filePath string) bool {
 }
 
 // ReadFile reads a file from the repository
-func (c *Client) ReadFile(repoPath, filePath string) (string, error) {
+func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := ValidatePath(repoPath, filePath); err != nil {
 		return "", err
 	}

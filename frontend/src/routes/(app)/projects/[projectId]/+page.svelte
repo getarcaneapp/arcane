@@ -5,7 +5,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon } from '$lib/icons';
+	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon, GlobeIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -19,17 +19,20 @@
 	import { z } from 'zod/v4';
 	import { createForm } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
 	import ServicesGrid from '../components/ServicesGrid.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
+	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { RefreshIcon } from '$lib/icons';
+	import IconImage from '$lib/components/icon-image.svelte';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -96,6 +99,12 @@
 	let selectedFile = $state<'compose' | 'env' | string>('compose');
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedIncludeTab = $state<string | null>(null);
+	let treePaneWidth = $state(320);
+	let composeSplitWidth = $state<number | null>(null);
+	const minTreePaneWidth = 200;
+	const minEditorPaneWidth = 360;
+	const minComposePaneWidth = 360;
+	const minEnvPaneWidth = 280;
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -175,14 +184,17 @@
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
 
-		const validated = form.validate();
+		const formValues = form.data();
+		const validated = isGitOpsManaged ? formValues : form.validate();
 		if (!validated) return;
 
 		const { name, composeContent, envContent } = validated;
+		const namePayload = isGitOpsManaged ? undefined : name;
+		const composePayload = isGitOpsManaged ? undefined : composeContent;
 
 		// First update the main project files
 		handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.updateProject(projectId, name, composeContent, envContent)),
+			result: await tryCatch(projectService.updateProject(projectId, namePayload, composePayload, envContent)),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
 			onSuccess: async (updatedStack: Project) => {
@@ -252,6 +264,17 @@
 			}
 		});
 	}
+
+	function formatUrlLabel(raw: string): string {
+		const trimmed = raw.trim();
+		if (!trimmed) return raw;
+		try {
+			const parsed = new URL(trimmed);
+			return parsed.host || parsed.hostname || trimmed;
+		} catch {
+			return trimmed;
+		}
+	}
 </script>
 
 {#if project}
@@ -266,60 +289,80 @@
 		}}
 	>
 		{#snippet headerInfo()}
-			<div class="flex items-center gap-2">
-				<EditableName
-					bind:value={$inputs.name.value}
-					bind:ref={nameInputRef}
-					variant="inline"
-					error={$inputs.name.error ?? undefined}
-					originalValue={originalName}
-					canEdit={canEditName}
-					onCommit={saveNameIfChanged}
-					class="hidden sm:block"
+			<div class="grid items-start gap-x-3 gap-y-1.5 sm:grid-cols-[auto,1fr]">
+				<IconImage
+					src={project.iconUrl}
+					alt={project.name}
+					fallback={ProjectsIcon}
+					class="size-9"
+					containerClass="size-12 bg-transparent ring-0"
 				/>
-				<EditableName
-					bind:value={$inputs.name.value}
-					bind:ref={nameInputRef}
-					variant="block"
-					error={$inputs.name.error ?? undefined}
-					originalValue={originalName}
-					canEdit={canEditName}
-					onCommit={saveNameIfChanged}
-					class="block sm:hidden"
-				/>
-				{#if project.status}
-					{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
-					<StatusBadge
-						variant={getStatusVariant(project.status)}
-						text={capitalizeFirstLetter(project.status)}
-						tooltip={showTooltip ? project.statusReason : undefined}
+				<div class="flex flex-wrap items-center gap-2">
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="inline"
+						error={$inputs.name.error ?? undefined}
+						originalValue={originalName}
+						canEdit={canEditName}
+						onCommit={saveNameIfChanged}
+						class="hidden sm:block"
 					/>
-				{/if}
-			</div>
-			<div class="mt-0.5 flex items-center gap-4">
-				{#if project.createdAt}
-					<p class="text-muted-foreground hidden text-xs sm:block">
-						{m.common_created()}: {new Date(project.createdAt ?? '').toLocaleDateString()}
-					</p>
-				{/if}
-				{#if project.lastSyncCommit}
-					<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
-						<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
-						{#if project.gitRepositoryURL}
-							<a
-								href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
-								target="_blank"
-								class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
-							>
-								{project.lastSyncCommit}
-							</a>
-						{:else}
-							<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
-								{project.lastSyncCommit}
-							</span>
-						{/if}
-					</div>
-				{/if}
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="block"
+						error={$inputs.name.error ?? undefined}
+						originalValue={originalName}
+						canEdit={canEditName}
+						onCommit={saveNameIfChanged}
+						class="block sm:hidden"
+					/>
+					{#if project.status}
+						{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
+						<StatusBadge
+							variant={getStatusVariant(project.status)}
+							text={capitalizeFirstLetter(project.status)}
+							tooltip={showTooltip ? project.statusReason : undefined}
+						/>
+					{/if}
+					{#if project.urls && project.urls.length > 0}
+						<div class="flex flex-wrap items-center gap-2">
+							{#each project.urls as url, i (i)}
+								<a
+									class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex min-h-6 max-w-full items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-0.5 text-[12px] font-semibold shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+									href={toSafeHref(url)}
+									target="_blank"
+									rel="noopener noreferrer"
+									title={url}
+								>
+									<GlobeIcon class="size-3 text-sky-500" />
+									<span class="truncate leading-normal">{formatUrlLabel(url)}</span>
+								</a>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				<div class="text-muted-foreground flex flex-wrap items-center gap-4 text-xs sm:col-start-2">
+					{#if project.lastSyncCommit}
+						<div class="flex items-center gap-1.5">
+							<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
+							{#if project.gitRepositoryURL}
+								<a
+									href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+									target="_blank"
+									class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
+								>
+									{project.lastSyncCommit}
+								</a>
+							{:else}
+								<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
+									{project.lastSyncCommit}
+								</span>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		{/snippet}
 
@@ -435,15 +478,15 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col gap-4 lg:flex-row">
-								<Card.Root class="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:w-fit lg:max-w-xs lg:min-w-48">
+							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
+								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 										<Card.Title>
 											<h2>{m.project_files()}</h2>
 										</Card.Title>
 									</Card.Header>
-									<Card.Content class="min-h-0 flex-1 overflow-y-auto p-2">
-										<TreeView.Root class="p-2">
+									<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
+										<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
 											<TreeView.File
 												name="compose.yaml"
 												onclick={() => (selectedFile = 'compose')}
@@ -483,7 +526,7 @@
 									</Card.Content>
 								</Card.Root>
 
-								<div class="flex h-full min-h-0 flex-1 flex-col">
+								<div class="flex min-h-0 flex-1 flex-col">
 									{#if selectedFile === 'compose'}
 										<CodePanel
 											bind:open={composeOpen}
@@ -514,6 +557,101 @@
 									{/if}
 								</div>
 							</div>
+
+							<ResizableSplit
+								class="hidden h-full min-h-0 lg:flex lg:gap-2"
+								firstClass="flex min-h-0 flex-col"
+								secondClass="flex min-h-0 flex-col"
+								bind:size={treePaneWidth}
+								minSize={minTreePaneWidth}
+								minSecondSize={minEditorPaneWidth}
+								defaultRatio={0.3}
+								ariaLabel="Resize project files panel"
+								persistKey={`arcane.compose.split:${project.id}:tree`}
+								onResizeEnd={persistPrefs}
+							>
+								{#snippet first()}
+									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+											<Card.Title>
+												<h2>{m.project_files()}</h2>
+											</Card.Title>
+										</Card.Header>
+										<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
+											<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
+												<TreeView.File
+													name="compose.yaml"
+													onclick={() => (selectedFile = 'compose')}
+													class={selectedFile === 'compose' ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FileTextIcon class="size-4 text-blue-500" />
+													{/snippet}
+												</TreeView.File>
+
+												<TreeView.File
+													name=".env"
+													onclick={() => (selectedFile = 'env')}
+													class={selectedFile === 'env' ? 'bg-accent' : ''}
+												>
+													{#snippet icon()}
+														<FileTextIcon class="size-4 text-green-500" />
+													{/snippet}
+												</TreeView.File>
+
+												{#if project?.includeFiles && project.includeFiles.length > 0}
+													<TreeView.Folder name={m.project_includes()}>
+														{#each project.includeFiles as includeFile (includeFile.relativePath)}
+															<TreeView.File
+																name={includeFile.relativePath}
+																onclick={() => (selectedFile = includeFile.relativePath)}
+																class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
+															>
+																{#snippet icon()}
+																	<FileTextIcon class="size-4 text-amber-500" />
+																{/snippet}
+															</TreeView.File>
+														{/each}
+													</TreeView.Folder>
+												{/if}
+											</TreeView.Root>
+										</Card.Content>
+									</Card.Root>
+								{/snippet}
+
+								{#snippet second()}
+									<div class="flex h-full min-h-0 flex-1 flex-col">
+										{#if selectedFile === 'compose'}
+											<CodePanel
+												bind:open={composeOpen}
+												title="compose.yaml"
+												language="yaml"
+												bind:value={$inputs.composeContent.value}
+												error={$inputs.composeContent.error ?? undefined}
+												readOnly={!canEditCompose}
+											/>
+										{:else if selectedFile === 'env'}
+											<CodePanel
+												bind:open={envOpen}
+												title=".env"
+												language="env"
+												bind:value={$inputs.envContent.value}
+												error={$inputs.envContent.error ?? undefined}
+											/>
+										{:else}
+											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+											{#if includeFile}
+												<CodePanel
+													bind:open={includeFilesPanelStates[includeFile.relativePath]}
+													title={includeFile.relativePath}
+													language="yaml"
+													bind:value={includeFilesState[includeFile.relativePath]}
+												/>
+											{/if}
+										{/if}
+									</div>
+								{/snippet}
+							</ResizableSplit>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if project?.includeFiles && project.includeFiles.length > 0}
@@ -548,28 +686,61 @@
 										/>
 									{/if}
 								{:else}
-									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1">
-										<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
-											<CodePanel
-												bind:open={composeOpen}
-												title="compose.yaml"
-												language="yaml"
-												bind:value={$inputs.composeContent.value}
-												error={$inputs.composeContent.error ?? undefined}
-												readOnly={!canEditCompose}
-											/>
-										</div>
-
-										<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
-											<CodePanel
-												bind:open={envOpen}
-												title=".env"
-												language="env"
-												bind:value={$inputs.envContent.value}
-												error={$inputs.envContent.error ?? undefined}
-											/>
-										</div>
+									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
+										<CodePanel
+											bind:open={composeOpen}
+											title="compose.yaml"
+											language="yaml"
+											bind:value={$inputs.composeContent.value}
+											error={$inputs.composeContent.error ?? undefined}
+											readOnly={!canEditCompose}
+										/>
+										<CodePanel
+											bind:open={envOpen}
+											title=".env"
+											language="env"
+											bind:value={$inputs.envContent.value}
+											error={$inputs.envContent.error ?? undefined}
+										/>
 									</div>
+
+									<ResizableSplit
+										class="hidden min-h-0 flex-1 lg:flex lg:gap-2"
+										firstClass="flex min-h-0 flex-col"
+										secondClass="flex min-h-0 flex-col"
+										bind:size={composeSplitWidth}
+										minSize={minComposePaneWidth}
+										minSecondSize={minEnvPaneWidth}
+										defaultRatio={0.6}
+										ariaLabel="Resize compose and env editors"
+										persistKey={`arcane.compose.split:${project.id}:classic`}
+										onResizeEnd={persistPrefs}
+									>
+										{#snippet first()}
+											<div class="flex min-h-0 flex-1 flex-col">
+												<CodePanel
+													bind:open={composeOpen}
+													title="compose.yaml"
+													language="yaml"
+													bind:value={$inputs.composeContent.value}
+													error={$inputs.composeContent.error ?? undefined}
+													readOnly={!canEditCompose}
+												/>
+											</div>
+										{/snippet}
+
+										{#snippet second()}
+											<div class="flex min-h-0 flex-1 flex-col">
+												<CodePanel
+													bind:open={envOpen}
+													title=".env"
+													language="env"
+													bind:value={$inputs.envContent.value}
+													error={$inputs.envContent.error ?? undefined}
+												/>
+											</div>
+										{/snippet}
+									</ResizableSplit>
 								{/if}
 							</div>
 						{/if}

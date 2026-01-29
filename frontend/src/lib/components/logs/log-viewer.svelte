@@ -6,6 +6,7 @@
 	import { cn } from '$lib/utils';
 	import { ansiToHtml } from '$lib/utils/ansi';
 	import { onDestroy } from 'svelte';
+	import StructuredLogEntry from './structured-log-entry.svelte';
 
 	interface LogEntry {
 		id: number;
@@ -14,6 +15,8 @@
 		message: string;
 		service?: string;
 		containerId?: string;
+		parsedJson?: any;
+		isJson?: boolean;
 	}
 
 	interface Props {
@@ -30,6 +33,7 @@
 		onToggleAutoScroll?: () => void;
 		onStart?: () => void;
 		onStop?: () => void;
+		showParsedJson?: boolean;
 	}
 
 	let {
@@ -45,7 +49,8 @@
 		onClear,
 		onToggleAutoScroll,
 		onStart,
-		onStop
+		onStop,
+		showParsedJson = $bindable(false)
 	}: Props = $props();
 
 	let logs: LogEntry[] = $state([]);
@@ -269,13 +274,17 @@
 
 	function addLogEntry(logData: { level: string; message: string; timestamp?: string; service?: string; containerId?: string }) {
 		const timestamp = logData.timestamp || new Date().toISOString();
+		const { isJson, parsed } = tryParseJson(logData.message);
+
 		pending.push({
 			id: seq++,
 			timestamp,
 			level: logData.level as LogEntry['level'],
 			message: logData.message,
 			service: logData.service,
-			containerId: logData.containerId
+			containerId: logData.containerId,
+			isJson,
+			parsedJson: parsed
 		});
 		scheduleFlush();
 	}
@@ -333,6 +342,19 @@
 			hash = service.charCodeAt(i) + ((hash << 5) - hash);
 		}
 		return colors[Math.abs(hash) % colors.length];
+	}
+
+	function tryParseJson(message: string): { isJson: boolean; parsed?: any } {
+		const trimmed = message.trim();
+		if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+			return { isJson: false };
+		}
+		try {
+			const parsed = JSON.parse(trimmed);
+			return { isJson: true, parsed };
+		} catch {
+			return { isJson: false };
+		}
 	}
 
 	$effect(() => {
@@ -409,7 +431,11 @@
 						</span>
 					</div>
 					<div class="text-sm break-words whitespace-pre-wrap text-gray-300">
-						{@html ansiToHtml(log.message)}
+						{#if log.isJson && showParsedJson && typeof log.parsedJson === 'object' && log.parsedJson !== null}
+							<StructuredLogEntry data={log.parsedJson} rawJson={log.message} showTimestamp={showTimestamps} />
+						{:else}
+							{@html ansiToHtml(log.message)}
+						{/if}
 					</div>
 				</div>
 
@@ -429,7 +455,11 @@
 						{log.level.toUpperCase()}
 					</span>
 					<span class="flex-1 break-words whitespace-pre-wrap text-gray-300">
-						{@html ansiToHtml(log.message)}
+						{#if log.isJson && showParsedJson && typeof log.parsedJson === 'object' && log.parsedJson !== null}
+							<StructuredLogEntry data={log.parsedJson} rawJson={log.message} showTimestamp={showTimestamps} />
+						{:else}
+							{@html ansiToHtml(log.message)}
+						{/if}
 					</span>
 				</div>
 			{/each}

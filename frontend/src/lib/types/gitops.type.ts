@@ -5,6 +5,7 @@ export interface GitRepositoryCreateDto {
 	username?: string;
 	token?: string;
 	sshKey?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -16,6 +17,7 @@ export interface GitRepositoryUpdateDto {
 	username?: string;
 	token?: string;
 	sshKey?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -26,6 +28,7 @@ export interface GitRepository {
 	url: string;
 	authType: string;
 	username?: string;
+	sshHostKeyVerification?: string;
 	description?: string;
 	enabled: boolean;
 	createdAt: string;
@@ -40,7 +43,6 @@ export interface GitOpsSyncCreateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
-	enabled?: boolean;
 }
 
 export interface GitOpsSyncUpdateDto {
@@ -51,7 +53,6 @@ export interface GitOpsSyncUpdateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
-	enabled?: boolean;
 }
 
 export interface GitOpsSync {
@@ -70,7 +71,6 @@ export interface GitOpsSync {
 	lastSyncStatus?: string;
 	lastSyncError?: string;
 	lastSyncCommit?: string;
-	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -97,7 +97,6 @@ export interface BrowseResponse {
 
 export interface SyncStatus {
 	id: string;
-	enabled: boolean;
 	autoSync: boolean;
 	nextSyncAt?: string;
 	lastSyncAt?: string;
@@ -126,7 +125,6 @@ export interface ImportGitOpsSyncRequest {
 	dockerComposePath: string;
 	autoSync: boolean;
 	syncInterval: number;
-	enabled: boolean;
 }
 
 export interface ImportGitOpsSyncResponse {

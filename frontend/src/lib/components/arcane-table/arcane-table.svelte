@@ -29,7 +29,8 @@
 		applyHiddenPatch,
 		encodeFilters,
 		encodeMobileVisibility,
-		buildMobileVisibility
+		buildMobileVisibility,
+		type BulkAction
 	} from './arcane-table.types.svelte';
 	import { extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
@@ -52,7 +53,7 @@
 		mobileFields = [],
 		mobileFieldVisibility = $bindable<Record<string, boolean>>({}),
 		selectedIds = $bindable<string[]>([]),
-		onRemoveSelected,
+		bulkActions = [],
 		persistKey,
 		customViewOptions,
 		customTableView,
@@ -72,7 +73,7 @@
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
 		selectedIds?: string[];
-		onRemoveSelected?: (ids: string[]) => void;
+		bulkActions?: BulkAction[];
 		persistKey?: string;
 		customViewOptions?: Snippet;
 		customTableView?: Snippet<
@@ -522,7 +523,7 @@
 					{table}
 					{selectedIds}
 					{selectionDisabled}
-					{onRemoveSelected}
+					{bulkActions}
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
@@ -556,7 +557,7 @@
 						{table}
 						{selectedIds}
 						{selectionDisabled}
-						{onRemoveSelected}
+						{bulkActions}
 						mobileFields={mobileFieldsForOptions}
 						{onToggleMobileField}
 						{customViewOptions}

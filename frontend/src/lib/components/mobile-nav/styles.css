@@ -12,9 +12,10 @@
 	will-change: transform, opacity;
 	/* Prevent layout shifts during animation */
 	transform-origin: center bottom;
-	/* Smooth subpixel rendering */
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
+	/* Proper cross-platform font rendering */
+	-webkit-font-smoothing: auto;
+	-moz-osx-font-smoothing: auto;
+	text-rendering: optimizeLegibility;
 	/* Ensure it stays fixed to viewport, not page content */
 	position: fixed;
 	/* Prevent the nav from being affected by virtual keyboard */

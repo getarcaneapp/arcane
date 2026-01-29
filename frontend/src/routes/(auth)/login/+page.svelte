@@ -3,7 +3,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, GithubIcon } from '$lib/icons';
+	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '$lib/icons';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
@@ -12,6 +12,7 @@
 	import { getApplicationLogo } from '$lib/utils/image.util';
 	import { Motion } from 'svelte-motion';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { onMount } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -30,6 +31,20 @@
 
 	const localAuthEnabledBySettings = $derived(data.settings?.authLocalEnabled !== false);
 	const showLocalLoginForm = $derived(localAuthEnabledBySettings);
+
+	const oidcAutoRedirect = $derived(data.settings?.oidcAutoRedirectToProvider === true);
+
+	const oidcProviderName = $derived(data.settings?.oidcProviderName || '');
+	const oidcProviderLogoUrl = $derived(data.settings?.oidcProviderLogoUrl || '');
+	const oidcButtonLabel = $derived(
+		oidcProviderName ? m.auth_oidc_signin_with({ provider: oidcProviderName }) : m.auth_oidc_signin()
+	);
+
+	onMount(() => {
+		if (oidcAutoRedirect && oidcEnabledBySettings && !data.error) {
+			handleOidcLogin();
+		}
+	});
 
 	async function handleOidcLogin() {
 		isLoading.oidc = true;
@@ -151,10 +166,20 @@
 										{m.auth_oidc_token_error()}
 									{:else if data.error === 'user_processing_failed'}
 										{m.auth_user_processing_failed()}
+									{:else if data.errorMessage}
+										{data.errorMessage}
 									{:else}
 										{m.auth_unexpected_error()}
 									{/if}
 								</Alert.Description>
+							</Alert.Root>
+						{/if}
+
+						{#if data.errorMessage && !data.error}
+							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
+								<AlertIcon class="size-4" />
+								<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+								<Alert.Description>{data.errorMessage}</Alert.Description>
 							</Alert.Root>
 						{/if}
 
@@ -181,7 +206,16 @@
 								onclick={() => handleOidcLogin()}
 								loading={isLoading.oidc}
 								disabled={isLoading.local}
-							/>
+								icon={null}
+								customLabel=""
+							>
+								{#if oidcProviderLogoUrl}
+									<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+								{:else}
+									<OpenIdIcon class="size-4" />
+								{/if}
+								{oidcButtonLabel}
+							</ArcaneButton>
 						{/if}
 
 						{#if showLocalLoginForm}
@@ -251,7 +285,16 @@
 									onclick={() => handleOidcLogin()}
 									loading={isLoading.oidc}
 									disabled={isLoading.local}
-								/>
+									icon={null}
+									customLabel=""
+								>
+									{#if oidcProviderLogoUrl}
+										<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+									{:else}
+										<OpenIdIcon class="size-4" />
+									{/if}
+									{oidcButtonLabel}
+								</ArcaneButton>
 							{/if}
 						{/if}
 					</div>

@@ -341,6 +341,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 		Subject:       "sub-merge",
 		Email:         email,
 		EmailVerified: false,
+		Extra: map[string]any{
+			"email_verified": false,
+		},
 	}
 
 	_, _, err = authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
@@ -350,4 +353,49 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
 	require.NoError(t, err)
 	require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
+}
+
+func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExistingUser_Merges(t *testing.T) {
+	ctx := context.Background()
+	db := setupAuthServiceTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
+
+	userSvc := NewUserService(db)
+	// Seed an existing local user with matching email
+	email := "existing@example.com"
+	existing := &models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "existing",
+		Email:     &email,
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(ctx, existing)
+	require.NoError(t, err)
+
+	authSvc := newTestAuthService("")
+	authSvc.userService = userSvc
+	authSvc.settingsService = settingsSvc
+
+	userInfo := auth.OidcUserInfo{
+		Subject:       "sub-merge-missing-verified",
+		Email:         email,
+		EmailVerified: false,
+		Extra:         map[string]any{},
+	}
+
+	mergedUser, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
+	require.NoError(t, err)
+	require.False(t, isNew)
+	require.NotNil(t, mergedUser)
+	require.Equal(t, existing.ID, mergedUser.ID)
+
+	// Ensure existing user is linked
+	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched.OidcSubjectId)
+	require.Equal(t, userInfo.Subject, *fetched.OidcSubjectId)
 }

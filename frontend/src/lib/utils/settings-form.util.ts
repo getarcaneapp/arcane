@@ -2,15 +2,22 @@ import { z } from 'zod/v4';
 import { createForm } from '$lib/utils/form.utils';
 import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
 import { toast } from 'svelte-sonner';
-import type { Writable } from 'svelte/store';
+import type { Settings } from '$lib/types/settings.type';
 
 type FormInput<T> = { value: T; error: string | null };
 type FormInputs<T> = { [K in keyof T]: FormInput<T[K]> };
+type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 
-export interface SettingsFormConfig<T extends z.ZodType<any, any>> {
+export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload, any>> {
 	schema: T;
 	currentSettings: z.infer<T>;
 	getCurrentSettings?: () => z.infer<T>;
+	/**
+	 * Custom save handler. If provided, this will be called instead of the default
+	 * settingsService.updateSettings(). Useful for environment-specific settings
+	 * or other custom save logic.
+	 */
+	onSave?: (data: z.infer<T>) => Promise<void>;
 	onSuccess?: () => void;
 	onReset?: () => void;
 	successMessage?: string;
@@ -38,6 +45,7 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 		schema,
 		currentSettings,
 		getCurrentSettings,
+		onSave,
 		onSuccess,
 		onReset,
 		successMessage = 'Settings saved',
@@ -48,7 +56,8 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 
 	const settingsForm = new UseSettingsForm({
 		formInputs,
-		getCurrentSettings: getCurrentSettings ?? (() => currentSettings)
+		getCurrentSettings: getCurrentSettings ?? (() => currentSettings),
+		onSave
 	});
 
 	const onSubmit = async () => {
@@ -65,7 +74,8 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 			onSuccess?.();
 		} catch (error) {
 			console.error('Failed to save settings:', error);
-			toast.error(errorMessage);
+			const message = error instanceof Error ? error.message : errorMessage;
+			toast.error(message);
 		} finally {
 			settingsForm.setLoading(false);
 		}
@@ -84,7 +94,7 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 	};
 
 	return {
-		formInputs: formInputs as Writable<FormInputs<z.infer<T>>>,
+		formInputs,
 		form,
 		settingsForm,
 		onSubmit,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/gin-gonic/gin"
@@ -29,11 +30,14 @@ const (
 	managementEndpointAgentPair      = "/agent/pair"
 	managementEndpointVersion        = "/version"
 	managementEndpointSettings       = "/settings"
+	managementEndpointJobSchedules   = "/job-schedules"
+	managementEndpointJobs           = "/jobs"
 
 	errEnvironmentNotFound      = "Environment not found"
 	errEnvironmentDisabled      = "Environment is disabled"
 	errFailedCreateProxyRequest = "Failed to create proxy request"
 	errProxyRequestFailedPrefix = "Proxy request failed:"
+	errUnauthorized             = "Authentication required to access remote environments"
 
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
@@ -44,13 +48,18 @@ const (
 // Returns: apiURL, accessToken, enabled, error
 type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
 
+// AuthValidator validates authentication for a request.
+// Returns true if the request is authenticated, false otherwise.
+type AuthValidator func(ctx context.Context, c *gin.Context) bool
+
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
-	localID    string
-	paramName  string
-	resolver   EnvResolver
-	envService *services.EnvironmentService
-	httpClient *http.Client
+	localID       string
+	paramName     string
+	resolver      EnvResolver
+	authValidator AuthValidator
+	envService    *services.EnvironmentService
+	httpClient    *http.Client
 }
 
 // NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
@@ -58,13 +67,15 @@ type EnvironmentMiddleware struct {
 // - paramName: the URL parameter name containing the environment ID (e.g., "id")
 // - resolver: function to resolve environment ID to connection details
 // - envService: environment service for additional lookups
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService) gin.HandlerFunc {
+// - authValidator: function to validate authentication before proxying (required for security)
+func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService, authValidator AuthValidator) gin.HandlerFunc {
 	m := &EnvironmentMiddleware{
-		localID:    localID,
-		paramName:  paramName,
-		resolver:   resolver,
-		envService: envService,
-		httpClient: &http.Client{Timeout: proxyTimeout},
+		localID:       localID,
+		paramName:     paramName,
+		resolver:      resolver,
+		authValidator: authValidator,
+		envService:    envService,
+		httpClient:    &http.Client{Timeout: proxyTimeout},
 	}
 	return m.Handle
 }
@@ -84,6 +95,19 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	// Not proxied: /api/environments/{id} (management operations)
 	if !m.hasResourcePath(c, envID) {
 		c.Next()
+		return
+	}
+
+	// SECURITY: Validate authentication BEFORE proxying to remote environments.
+	// The proxy attaches the agent token to forwarded requests, which grants full access
+	// on the remote agent. Without this check, unauthenticated users could access
+	// remote environment resources.
+	if m.authValidator != nil && !m.authValidator(c.Request.Context(), c) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"data":    gin.H{"error": errUnauthorized},
+		})
+		c.Abort()
 		return
 	}
 
@@ -109,6 +133,20 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 
 	// Build target URL and proxy the request
 	target := m.buildTargetURL(c, envID, apiURL)
+
+	// Check if this environment has an active edge tunnel
+	if tunnel, ok := edge.GetRegistry().Get(envID); ok && !tunnel.Conn.IsClosed() {
+		slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
+		proxyPath := m.buildProxyPath(c, envID)
+		if m.isWebSocketUpgrade(c) {
+			// Route WebSocket through the edge tunnel
+			edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+		} else {
+			edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+		}
+		c.Abort()
+		return
+	}
 
 	if m.isWebSocketUpgrade(c) {
 		m.proxyWebSocket(c, target, accessToken, envID)
@@ -143,6 +181,8 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 		managementEndpointAgentPair,
 		managementEndpointVersion,
 		managementEndpointSettings,
+		managementEndpointJobSchedules,
+		managementEndpointJobs,
 	}
 
 	for _, endpoint := range managementEndpoints {
@@ -199,6 +239,18 @@ func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL str
 	}
 
 	return target
+}
+
+// buildProxyPath constructs the path to send through the edge tunnel.
+// This includes the /api/environments/{localID} prefix so the agent can route it properly.
+func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) string {
+	prefix := apiEnvironmentsPrefix + envID
+	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
+	if suffix != "" && !strings.HasPrefix(suffix, "/") {
+		suffix = "/" + suffix
+	}
+	// Build path: /api/environments/{localID} + suffix
+	return path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.

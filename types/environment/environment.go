@@ -30,6 +30,11 @@ type Create struct {
 	//
 	// Required: false
 	UseApiKey *bool `json:"useApiKey,omitempty"`
+
+	// IsEdge indicates if this is an edge agent that connects outbound to manager.
+	//
+	// Required: false
+	IsEdge *bool `json:"isEdge,omitempty"`
 }
 
 type Update struct {
@@ -110,6 +115,12 @@ type Environment struct {
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
+
+	// IsEdge indicates if this is an edge agent that connects outbound.
+	//
+	// Required: false
+	IsEdge bool `json:"isEdge"`
+
 	// ApiKey is returned only when creating or regenerating
 	//
 	// Required: false

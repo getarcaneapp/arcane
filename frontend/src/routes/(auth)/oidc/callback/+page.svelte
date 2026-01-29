@@ -9,9 +9,18 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';
 	import { authService } from '$lib/services/auth-service';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	let isProcessing = $state(true);
 	let error = $state('');
+
+	const buildLoginRedirect = (errorCode: string, message?: string) => {
+		const params = new URLSearchParams({ error: errorCode });
+		if (message) {
+			params.set('message', message);
+		}
+		return `/login?${params.toString()}`;
+	};
 
 	onMount(async () => {
 		try {
@@ -32,14 +41,14 @@
 				}
 
 				error = errorDescription || userMessage;
-				setTimeout(() => goto('/login?error=oidc_provider_error'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_provider_error', error)), 3000);
 				isProcessing = false;
 				return;
 			}
 
 			if (!code || !stateFromUrl) {
 				error = m.auth_oidc_invalid_response();
-				setTimeout(() => goto('/login?error=oidc_invalid_response'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_invalid_response', error)), 3000);
 				isProcessing = false;
 				return;
 			}
@@ -54,8 +63,8 @@
 					userMessage = m.auth_oidc_session_expired();
 				}
 
-				error = userMessage;
-				setTimeout(() => goto('/login?error=oidc_auth_failed'), 3000);
+				error = authResult.error || userMessage;
+				setTimeout(() => goto(buildLoginRedirect('oidc_auth_failed', error)), 3000);
 				isProcessing = false;
 				return;
 			}
@@ -89,7 +98,7 @@
 				finalizeLogin();
 			} else {
 				error = m.auth_oidc_user_info_missing();
-				setTimeout(() => goto('/login?error=oidc_user_info_missing'), 3000);
+				setTimeout(() => goto(buildLoginRedirect('oidc_user_info_missing', error)), 3000);
 				isProcessing = false;
 			}
 		} catch (err: any) {
@@ -100,25 +109,24 @@
 				userMessage = m.auth_oidc_network_error();
 			}
 
-			error = userMessage;
-			setTimeout(() => goto('/login?error=oidc_callback_error'), 3000);
+			const serverMessage = err?.message && !err.message.includes('Request failed') ? err.message : '';
+			error = serverMessage || userMessage;
+			setTimeout(() => goto(buildLoginRedirect('oidc_callback_error', error)), 3000);
 			isProcessing = false;
 		}
 	});
 </script>
 
-<svelte:head><title>{m.layout_title()}</title></svelte:head>
-
 <div class="bg-background flex min-h-screen items-center justify-center">
 	<div class="w-full max-w-md space-y-8">
-		<div class="text-center">
+		<div class="flex flex-col items-center text-center">
 			{#if isProcessing}
-				<div class="border-primary mx-auto h-12 w-12 animate-spin rounded-full border-b-2"></div>
+				<Spinner class="text-primary size-12" />
 				<h2 class="mt-6 text-2xl font-bold">{m.auth_processing_login()}</h2>
 				<p class="text-muted-foreground mt-2 text-sm">{m.auth_processing_login_description()}</p>
 			{:else if error}
-				<div class="text-destructive">
-					<svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<div class="text-destructive flex flex-col items-center">
+					<svg class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"

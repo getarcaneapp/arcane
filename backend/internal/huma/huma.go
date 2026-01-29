@@ -136,7 +136,7 @@ type Services struct {
 	Container         *services.ContainerService
 	Network           *services.NetworkService
 	Notification      *services.NotificationService
-	Apprise           *services.AppriseService
+	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
@@ -294,7 +294,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
 	var notificationSvc *services.NotificationService
-	var appriseSvc *services.AppriseService
+	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService
@@ -351,7 +351,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
-	handlers.RegisterJobSchedules(api, jobScheduleSvc)
+	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)

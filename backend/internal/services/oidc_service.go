@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -98,24 +99,34 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 
 	// Create insecure client
 	insecureClient := *s.httpClient
+
+	var insecureTransport *http.Transport
 	if transport, ok := insecureClient.Transport.(*http.Transport); ok {
-		insecureTransport := transport.Clone()
-		if insecureTransport.TLSClientConfig == nil {
-			// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
-			insecureTransport.TLSClientConfig = &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			}
-		}
-		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
-		// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
-		// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
-		if err := http2.ConfigureTransport(insecureTransport); err != nil {
-			slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
-		}
-		insecureClient.Transport = insecureTransport
+		insecureTransport = transport.Clone()
 	} else {
-		slog.Warn("getInsecureHttpClient: Transport is not *http.Transport, cannot skip TLS verification")
+		// Transport is nil or not *http.Transport - create a new default transport
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			insecureTransport = defaultTransport.Clone()
+		} else {
+			insecureTransport = &http.Transport{}
+		}
 	}
+
+	if insecureTransport.TLSClientConfig == nil {
+		// #nosec G402 - This is explicitly an insecure client for OIDC discovery when TLS verification is skipped
+		insecureTransport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true,
+		}
+	} else {
+		insecureTransport.TLSClientConfig.InsecureSkipVerify = true
+	}
+	// Force HTTP/2 even with custom TLS config to avoid "malformed HTTP response" errors
+	// when the server speaks HTTP/2 but the client disabled it due to custom TLS config.
+	if err := http2.ConfigureTransport(insecureTransport); err != nil {
+		slog.Warn("getInsecureHttpClient: failed to configure http2 transport", "error", err)
+	}
+	insecureClient.Transport = insecureTransport
 	s.insecureHttpClient = &insecureClient
 	return s.insecureHttpClient
 }
@@ -134,20 +145,37 @@ func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
 	return scopes
 }
 
-func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider, origin string) oauth2.Config {
+func (s *OidcService) hasManualEndpoints(cfg *models.OidcConfig) bool {
+	return cfg.AuthorizationEndpoint != "" || cfg.TokenEndpoint != "" || cfg.UserinfoEndpoint != ""
+}
+
+func (s *OidcService) getOauth2Config(cfg *models.OidcConfig, provider *oidc.Provider, origin string) (oauth2.Config, error) {
 	scopes := strings.Fields(cfg.Scopes)
 	if len(scopes) == 0 {
 		scopes = []string{"email", "profile"}
 	}
 	scopes = s.ensureOpenIDScope(scopes)
 
+	var endpoint oauth2.Endpoint
+	if provider != nil {
+		endpoint = provider.Endpoint()
+	} else {
+		endpoint = oauth2.Endpoint{
+			AuthURL:  cfg.AuthorizationEndpoint,
+			TokenURL: cfg.TokenEndpoint,
+		}
+	}
+	if endpoint.AuthURL == "" || endpoint.TokenURL == "" {
+		return oauth2.Config{}, errors.New("authorization and token endpoints must be configured")
+	}
+
 	return oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
-		Endpoint:     provider.Endpoint(),
+		Endpoint:     endpoint,
 		RedirectURL:  s.GetOidcRedirectURL(origin),
 		Scopes:       scopes,
-	}
+	}, nil
 }
 
 func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, origin string) (string, string, error) {
@@ -157,17 +185,25 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		return "", "", err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, config)
-	if err != nil {
-		slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
-		return "", "", fmt.Errorf("failed to discover provider: %w", err)
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(config) {
+		var err error
+		provider, err = s.getOrDiscoverProvider(ctx, config)
+		if err != nil {
+			slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
+			return "", "", fmt.Errorf("failed to discover provider: %w", err)
+		}
 	}
 
 	state := stringutils.GenerateRandomString(32)
 	nonce := stringutils.GenerateRandomString(32)
 	codeVerifier := stringutils.GenerateRandomString(128)
 
-	oauth2Config := s.getOauth2Config(config, provider, origin)
+	oauth2Config, err := s.getOauth2Config(config, provider, origin)
+	if err != nil {
+		slog.Error("GenerateAuthURL: invalid OIDC endpoints", "error", err)
+		return "", "", err
+	}
 
 	authURL := oauth2Config.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
@@ -234,7 +270,7 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 
 		// Use the custom HTTP client with the new context
 		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClient(skipTls))
-		provider, err := oidc.NewProvider(providerCtx, issuer)
+		provider, discoveredIssuer, err := s.discoverProvider(providerCtx, issuer)
 		if err != nil {
 			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", issuer, "skipTls", skipTls, "error", err)
 			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
@@ -242,11 +278,13 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 
 		s.providerMutex.Lock()
 		s.providerCache = provider
+		// Cache based on the configured issuer to avoid repeated discovery on
+		// trailing-slash-only mismatches.
 		s.cachedIssuer = issuer
 		s.cachedSkipTls = skipTls
 		s.providerMutex.Unlock()
 
-		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "skipTls", skipTls)
+		slog.DebugContext(ctx, "getOrDiscoverProvider: provider cached", "issuer", issuer, "effectiveIssuer", discoveredIssuer, "skipTls", skipTls)
 		return provider, nil
 	})
 
@@ -257,8 +295,32 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 	return v.(*oidc.Provider), nil
 }
 
+func (s *OidcService) discoverProvider(ctx context.Context, issuer string) (*oidc.Provider, string, error) {
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err == nil {
+		return provider, issuer, nil
+	}
+
+	altIssuer := strings.TrimRight(issuer, "/")
+	if altIssuer == issuer {
+		altIssuer = issuer + "/"
+	}
+
+	slog.WarnContext(ctx, "getOrDiscoverProvider: retrying discovery with alternate issuer", "configured", issuer, "alternate", altIssuer)
+	provider, altErr := oidc.NewProvider(ctx, altIssuer)
+	if altErr == nil {
+		return provider, altIssuer, nil
+	}
+
+	slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed with alternate issuer", "issuer", altIssuer, "error", altErr)
+	return nil, issuer, err
+}
+
 func (s *OidcService) exchangeToken(ctx context.Context, cfg *models.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string) (*oauth2.Token, error) {
-	oauth2Config := s.getOauth2Config(cfg, provider, origin)
+	oauth2Config, err := s.getOauth2Config(cfg, provider, origin)
+	if err != nil {
+		return nil, err
+	}
 
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
 	token, err := oauth2Config.Exchange(providerCtx, code, oauth2.VerifierOption(verifier))
@@ -283,25 +345,41 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 		}
 	}
 
-	userInfo, err := provider.UserInfo(providerCtx, oauth2.StaticTokenSource(token))
-	if err != nil {
-		slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
-		if claims != nil {
-			return claims, nil
-		}
-		return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
-	}
-
 	var userInfoClaims map[string]any
-	if err := userInfo.Claims(&userInfoClaims); err != nil {
-		slog.Warn("fetchClaims: failed to decode userinfo claims", "error", err)
-		if claims != nil {
-			return claims, nil
+	switch {
+	case provider != nil:
+		userInfo, err := provider.UserInfo(providerCtx, oauth2.StaticTokenSource(token))
+		if err != nil {
+			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
 		}
-		return nil, fmt.Errorf("failed to decode userinfo claims: %w", err)
+		if err := userInfo.Claims(&userInfoClaims); err != nil {
+			slog.Warn("fetchClaims: failed to decode userinfo claims", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to decode userinfo claims: %w", err)
+		}
+		slog.Debug("fetchClaims: fetched userinfo claims successfully")
+	case cfg.UserinfoEndpoint != "":
+		manualClaims, err := s.fetchUserInfoClaims(providerCtx, cfg, token)
+		if err != nil {
+			slog.Debug("fetchClaims: userinfo endpoint call failed", "error", err)
+			if claims != nil {
+				return claims, nil
+			}
+			return nil, fmt.Errorf("failed to fetch userinfo: %w", err)
+		}
+		userInfoClaims = manualClaims
+		slog.Debug("fetchClaims: fetched userinfo claims successfully")
+	case claims != nil:
+		return claims, nil
+	default:
+		return nil, errors.New("userinfo endpoint not configured")
 	}
-
-	slog.Debug("fetchClaims: fetched userinfo claims successfully")
 
 	if claims == nil {
 		claims = make(map[string]any)
@@ -310,6 +388,46 @@ func (s *OidcService) fetchClaims(ctx context.Context, cfg *models.OidcConfig, p
 		if _, exists := claims[k]; !exists {
 			claims[k] = v
 		}
+	}
+
+	return claims, nil
+}
+
+func (s *OidcService) fetchUserInfoClaims(ctx context.Context, cfg *models.OidcConfig, token *oauth2.Token) (map[string]any, error) {
+	if cfg.UserinfoEndpoint == "" {
+		return nil, errors.New("userinfo endpoint not configured")
+	}
+	if token == nil || token.AccessToken == "" {
+		return nil, errors.New("missing access token for userinfo request")
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.UserinfoEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType := token.TokenType
+	if tokenType == "" {
+		tokenType = "Bearer"
+	}
+	request.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, token.AccessToken))
+	request.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(cfg.SkipTlsVerify)
+	resp, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("userinfo endpoint returned status %d", resp.StatusCode)
+	}
+
+	var claims map[string]any
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&claims); err != nil {
+		return nil, err
 	}
 
 	return claims, nil
@@ -329,9 +447,12 @@ func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedSta
 		return nil, nil, err
 	}
 
-	provider, err := s.getOrDiscoverProvider(ctx, cfg)
-	if err != nil {
-		return nil, nil, err
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(cfg) {
+		provider, err = s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	token, err := s.exchangeToken(ctx, cfg, provider, code, stateData.CodeVerifier, origin)
@@ -387,8 +508,17 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		verifierConfig.Now = time.Now
 	}
 
-	verifier := provider.Verifier(verifierConfig)
 	providerCtx := oidc.ClientContext(ctx, s.getHttpClient(cfg.SkipTlsVerify))
+	var verifier *oidc.IDTokenVerifier
+	if provider != nil {
+		verifier = provider.Verifier(verifierConfig)
+	} else {
+		if cfg.JwksURI == "" {
+			return nil, "", errors.New("jwks URI must be configured when using manual OIDC endpoints")
+		}
+		keySet := oidc.NewRemoteKeySet(providerCtx, cfg.JwksURI)
+		verifier = oidc.NewVerifier(cfg.IssuerURL, keySet, verifierConfig)
+	}
 
 	idToken, err := verifier.Verify(providerCtx, rawIDToken)
 	if err != nil {
@@ -478,4 +608,252 @@ func (s *OidcService) decodeState(encodedState string) (*OidcState, error) {
 	}
 
 	return &stateData, nil
+}
+
+// InitiateDeviceAuth initiates the OIDC device authorization flow.
+func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (*auth.OidcDeviceAuthResponse, error) {
+	cfg, err := s.getEffectiveConfig(ctx)
+	if err != nil {
+		slog.Error("InitiateDeviceAuth: failed to get OIDC config", "error", err)
+		return nil, err
+	}
+
+	deviceEndpoint, err := s.getDeviceAuthorizationEndpoint(ctx, cfg)
+	if err != nil {
+		slog.Error("InitiateDeviceAuth: failed to get device endpoint", "error", err)
+		return nil, err
+	}
+
+	scopes := strings.Fields(cfg.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{"email", "profile"}
+	}
+	scopes = s.ensureOpenIDScope(scopes)
+
+	values := url.Values{}
+	values.Set("client_id", cfg.ClientID)
+	values.Set("scope", strings.Join(scopes, " "))
+	if cfg.ClientSecret != "" {
+		values.Set("client_secret", cfg.ClientSecret)
+	}
+
+	respData, err := s.makeDeviceAuthRequest(ctx, deviceEndpoint, values, cfg.SkipTlsVerify)
+	if err != nil {
+		return nil, err
+	}
+
+	deviceCode, ok := respData["device_code"].(string)
+	if !ok || deviceCode == "" {
+		return nil, errors.New("invalid device_code in response")
+	}
+	userCode, ok := respData["user_code"].(string)
+	if !ok || userCode == "" {
+		return nil, errors.New("invalid user_code in response")
+	}
+	verificationUri, ok := respData["verification_uri"].(string)
+	if !ok || verificationUri == "" {
+		return nil, errors.New("invalid verification_uri in response")
+	}
+	expiresIn, ok := respData["expires_in"].(float64)
+	if !ok {
+		return nil, errors.New("invalid expires_in in response")
+	}
+
+	response := &auth.OidcDeviceAuthResponse{
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		VerificationUri: verificationUri,
+		ExpiresIn:       int(expiresIn),
+	}
+
+	if uri, ok := respData["verification_uri_complete"].(string); ok {
+		response.VerificationUriComplete = uri
+	}
+	if interval, ok := respData["interval"].(float64); ok {
+		response.Interval = int(interval)
+	} else {
+		response.Interval = 5
+	}
+
+	slog.Debug("InitiateDeviceAuth: device authorization initiated", "user_code", response.UserCode, "expires_in", response.ExpiresIn)
+	return response, nil
+}
+
+// getDeviceAuthorizationEndpoint discovers or returns the configured device authorization endpoint.
+func (s *OidcService) getDeviceAuthorizationEndpoint(ctx context.Context, cfg *models.OidcConfig) (string, error) {
+	if cfg.DeviceAuthorizationEndpoint != "" {
+		return cfg.DeviceAuthorizationEndpoint, nil
+	}
+
+	provider, err := s.getOrDiscoverProvider(ctx, cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to discover provider: %w", err)
+	}
+
+	var claims struct {
+		DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
+	}
+	if err := provider.Claims(&claims); err != nil {
+		return "", fmt.Errorf("failed to get device authorization endpoint from provider: %w", err)
+	}
+
+	if claims.DeviceAuthorizationEndpoint == "" {
+		return "", errors.New("device authorization endpoint not found in provider configuration")
+	}
+
+	return claims.DeviceAuthorizationEndpoint, nil
+}
+
+// makeDeviceAuthRequest makes a device authorization request.
+func (s *OidcService) makeDeviceAuthRequest(ctx context.Context, endpoint string, params url.Values, skipTls bool) (map[string]any, error) {
+	body := params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(skipTls)
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("makeDeviceAuthRequest: request failed", "error", err)
+		return nil, fmt.Errorf("device authorization request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errorResp map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+			if errMsg, ok := errorResp["error"].(string); ok {
+				return nil, fmt.Errorf("device authorization failed: %s", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("device authorization endpoint returned status %d", resp.StatusCode)
+	}
+
+	var respData map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
+	}
+
+	return respData, nil
+}
+
+// ExchangeDeviceToken exchanges a device code for tokens.
+func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (*auth.OidcUserInfo, *auth.OidcTokenResponse, error) {
+	cfg, err := s.getEffectiveConfig(ctx)
+	if err != nil {
+		slog.Error("ExchangeDeviceToken: failed to get OIDC config", "error", err)
+		return nil, nil, err
+	}
+
+	var tokenEndpoint string
+	if cfg.TokenEndpoint != "" {
+		tokenEndpoint = cfg.TokenEndpoint
+	} else {
+		provider, err := s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		tokenEndpoint = provider.Endpoint().TokenURL
+	}
+
+	params := map[string]string{
+		"grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+		"device_code": deviceCode,
+		"client_id":   cfg.ClientID,
+	}
+	if cfg.ClientSecret != "" {
+		params["client_secret"] = cfg.ClientSecret
+	}
+
+	tokenResp, err := s.makeTokenRequest(ctx, tokenEndpoint, params, cfg.SkipTlsVerify)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var provider *oidc.Provider
+	if !s.hasManualEndpoints(cfg) {
+		provider, err = s.getOrDiscoverProvider(ctx, cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	accessToken, ok := tokenResp["access_token"].(string)
+	if !ok || accessToken == "" {
+		return nil, nil, errors.New("invalid access_token in response")
+	}
+
+	token := &oauth2.Token{
+		AccessToken: accessToken,
+		TokenType:   stringutils.GetStringOrDefault(tokenResp, "token_type", "Bearer"),
+	}
+	if refreshToken, ok := tokenResp["refresh_token"].(string); ok {
+		token.RefreshToken = refreshToken
+	}
+	if expiresIn, ok := tokenResp["expires_in"].(float64); ok {
+		token.Expiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	}
+	if idToken, ok := tokenResp["id_token"].(string); ok {
+		token = token.WithExtra(map[string]any{"id_token": idToken})
+	}
+
+	idToken, rawIDToken, err := s.verifyIDToken(ctx, provider, cfg, token, "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return s.buildUserInfo(ctx, provider, cfg, token, idToken, rawIDToken)
+}
+
+// makeTokenRequest makes a token exchange request.
+func (s *OidcService) makeTokenRequest(ctx context.Context, endpoint string, params map[string]string, skipTls bool) (map[string]any, error) {
+	values := url.Values{}
+	for k, v := range params {
+		values.Set(k, v)
+	}
+	body := values.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	client := s.getHttpClient(skipTls)
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("makeTokenRequest: request failed", "error", err)
+		return nil, fmt.Errorf("token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errMsg, ok := tokenResp["error"].(string); ok {
+			switch errMsg {
+			case "authorization_pending":
+				return nil, errors.New("authorization_pending")
+			case "slow_down":
+				return nil, errors.New("slow_down")
+			case "expired_token":
+				return nil, errors.New("expired_token")
+			case "access_denied":
+				return nil, errors.New("access_denied")
+			default:
+				return nil, fmt.Errorf("token exchange failed: %s", errMsg)
+			}
+		}
+		return nil, fmt.Errorf("token endpoint returned status %d", resp.StatusCode)
+	}
+
+	return tokenResp, nil
 }

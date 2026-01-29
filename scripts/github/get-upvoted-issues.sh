@@ -14,45 +14,51 @@ else
   TOKEN=""
 fi
 
-echo "Fetching open Feature issues with most upvotes..."
+if ! command -v jq &> /dev/null; then
+  echo "Error: jq is required. Install it and try again."
+  exit 1
+fi
+
+echo "Fetching open issues with most upvotes (label: needs more upvotes)..."
 echo ""
 
 # Create temporary file for sorting
 temp=$(mktemp)
 
-# Get all OPEN issues with the label and process them
-curl -s ${TOKEN:+-H "Authorization: token $TOKEN"} \
-  -H "Accept: application/vnd.github.v3+json" \
-  "https://api.github.com/repos/getarcaneapp/arcane/issues?labels=need+more+upvotes&state=open&per_page=100" \
-  | jq -r '.[] | select(.title | startswith("⚡️ Feature:")) | "\(.number)|\(.title)|\(.state)"' \
-  | while IFS='|' read -r num title state; do
-    # Get reactions for this issue
-    reactions=$(curl -s ${TOKEN:+-H "Authorization: token $TOKEN"} \
-      -H "Accept: application/vnd.github.squirrel-girl-preview+json" \
-      "https://api.github.com/repos/getarcaneapp/arcane/issues/$num/reactions")
+# Get all OPEN issues with the label and process them (paginate)
+page=1
+while :; do
+  response=$(curl -s ${TOKEN:+-H "Authorization: token $TOKEN"} \
+    -H "Accept: application/vnd.github.squirrel-girl-preview+json" \
+    "https://api.github.com/repos/getarcaneapp/arcane/issues?labels=needs+more+upvotes&state=open&per_page=100&page=$page")
 
-    # Check if reactions is an array (successful response) or error message
-    if echo "$reactions" | jq -e 'type == "array"' > /dev/null 2>&1; then
-      likes=$(echo "$reactions" | jq '[.[] | select(.content == "+1")] | length')
-    else
-      # If error or rate limited, set to -1 to indicate error
-      likes="-1"
-      echo "Warning: Could not fetch reactions for issue #$num (possible rate limit)" >&2
-    fi
+  if ! echo "$response" | jq -e 'type == "array"' > /dev/null 2>&1; then
+    message=$(echo "$response" | jq -r '.message // "Unknown error"')
+    echo "Error: GitHub API response was not an array: $message" >&2
+    break
+  fi
 
-    echo "$likes|$num|$state|$title" >> "$temp"
+  count=$(echo "$response" | jq 'length')
+  if [ "$count" -eq 0 ]; then
+    break
+  fi
 
-    # Small delay to avoid rate limiting
-    sleep 0.5
-  done
+  echo "$response" \
+    | jq -r '.[] | "\(.reactions["+1"] // 0)|\(.number)|\(.state)|\(.title)"' \
+    >> "$temp"
+
+  page=$((page + 1))
+done
+
+if [ ! -s "$temp" ]; then
+  echo "No matching issues found (label: needs more upvotes)."
+  rm "$temp"
+  exit 0
+fi
 
 # Sort and display
 sort -t'|' -k1 -rn "$temp" | while IFS='|' read -r likes num state title; do
-  if [ "$likes" = "-1" ]; then
-    printf "  ? 👍 - #%-4s [%s] %s\n" "$num" "$state" "$title"
-  else
-    printf "%3d 👍 - #%-4s [%s] %s\n" "$likes" "$num" "$state" "$title"
-  fi
+  printf "%3d 👍 - #%-4s [%s] %s\n" "$likes" "$num" "$state" "$title"
   echo "         https://github.com/getarcaneapp/arcane/issues/$num"
   echo ""
 done

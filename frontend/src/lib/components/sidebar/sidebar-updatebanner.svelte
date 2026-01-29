@@ -17,13 +17,11 @@
 	let {
 		isCollapsed,
 		versionInformation,
-		updateAvailable = false,
 		debug = false,
 		user
 	}: {
 		isCollapsed: boolean;
 		versionInformation?: AppVersionInformation;
-		updateAvailable?: boolean;
 		debug?: boolean;
 		user?: User | null;
 	} = $props();
@@ -63,9 +61,16 @@
 		if (upgrading) return m.upgrade_in_progress();
 		if (checkingUpgrade) return m.upgrade_checking();
 		if (updateType === 'digest') {
-			return `Update ${versionInformation?.currentTag ?? 'image'}`;
+			const tag = versionInformation?.currentTag ?? m.common_image();
+			return m.upgrade_update_tag({ tag });
 		}
-		return m.upgrade_to_version({ version: versionInformation?.newestVersion ?? '' });
+		// For semver updates, use newestVersion or fallback to updateDisplayText
+		const version = versionInformation?.newestVersion || updateDisplayText;
+		if (version) {
+			return m.upgrade_to_version({ version });
+		}
+		// Fallback if no version info is available (shouldn't happen in prod, but safe fallback)
+		return m.upgrade_now();
 	});
 
 	// Debug mode: force show upgrade button
@@ -77,7 +82,7 @@
 
 	// Check if self-upgrade is available
 	onMount(() => {
-		if (updateAvailable && isAdmin && !debug) {
+		if (versionInformation?.updateAvailable && isAdmin && !debug) {
 			checkUpgradeAvailability();
 		}
 	});
@@ -113,7 +118,7 @@
 	}
 
 	// Show banner for both semver and digest-based updates
-	const shouldShowBanner = $derived(updateAvailable || debug);
+	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
 </script>
 
 {#snippet updateInfo()}

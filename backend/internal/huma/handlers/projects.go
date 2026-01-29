@@ -41,6 +41,7 @@ type ListProjectsInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
 }
 
 type ListProjectsOutput struct {
@@ -337,6 +338,9 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
+		},
+		Filters: map[string]string{
+			"status": input.Status,
 		},
 	}
 
@@ -696,10 +700,16 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 			if err := h.projectService.PullProjectImages(humaCtx.Context(), input.ProjectID, writer, nil); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
 				return
 			}
 
 			_, _ = writer.Write([]byte(`{"status":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
 		},
 	}, nil
 }

@@ -20,7 +20,8 @@
 		getLayerStats,
 		getPullPhase,
 		showImageLayersState,
-		isIndeterminatePhase
+		isIndeterminatePhase,
+		getAggregateStatus
 	} from '$lib/utils/pull-progress';
 	import { ArrowDownIcon, SuccessIcon, DownloadIcon } from '$lib/icons';
 
@@ -50,8 +51,8 @@
 	let layerProgress = $state<Record<string, LayerProgress>>({});
 	let hasReachedComplete = $state(false);
 	let currentImageName = $state('');
-
 	const layerStats = $derived(getLayerStats(layerProgress, hasReachedComplete));
+	const aggregateStatus = $derived(getAggregateStatus(layerProgress, pullStatusText, hasReachedComplete));
 	const showPullUI = $derived(isPulling || hasReachedComplete || !!pullError);
 	const isIndeterminate = $derived(isIndeterminatePhase(layerProgress, pullProgress));
 	let prevOpen = $state(false);
@@ -249,9 +250,15 @@
 								{#if hasReachedComplete}
 									{m.progress_pull_completed()}
 								{:else if layerStats.total > 0}
-									{m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
+									<span class="flex items-center gap-1.5">
+										<span>{aggregateStatus}</span>
+										<span class="text-muted-foreground font-normal">•</span>
+										<span class="text-muted-foreground font-normal">
+											{m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
+										</span>
+									</span>
 								{:else}
-									{pullStatusText || m.common_action_pulling()}
+									{aggregateStatus || m.common_action_pulling()}
 								{/if}
 							</p>
 							{#if !isIndeterminate || hasReachedComplete}

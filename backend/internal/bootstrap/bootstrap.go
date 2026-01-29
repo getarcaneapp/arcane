@@ -18,7 +18,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -32,7 +34,7 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
-	db, err := initializeDBAndMigrate(cfg)
+	db, err := initializeDBAndMigrate(appCtx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
@@ -46,6 +48,9 @@ func Bootstrap(ctx context.Context) error {
 	}(appCtx)
 
 	httpClient := httputils.NewHTTPClient()
+	if cfg.HTTPClientTimeout > 0 {
+		httpClient = httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+	}
 
 	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
 	if err != nil {
@@ -56,6 +61,19 @@ func Bootstrap(ctx context.Context) error {
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
 	crypto.InitEncryption(cfg)
 	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
+	utils.MigrateSchedulerCronValues(
+		appCtx,
+		appServices.Settings.GetStringSetting,
+		appServices.Settings.UpdateSetting,
+		appServices.Settings.LoadDatabaseSettings,
+	)
+	if appServices.GitOpsSync != nil {
+		utils.MigrateGitOpsSyncIntervals(
+			appCtx,
+			appServices.GitOpsSync.ListSyncIntervalsRaw,
+			appServices.GitOpsSync.UpdateSyncIntervalMinutes,
+		)
+	}
 
 	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
@@ -76,7 +94,9 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
-		appServices.Settings.MigrateOidcConfigToFields)
+		appServices.Settings.MigrateOidcConfigToFields,
+		appServices.Notification.MigrateDiscordWebhookUrlToFields)
+	utils.CleanupUnknownSettings(appCtx, appServices.Settings)
 
 	// Handle agent auto-pairing with API key
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
@@ -85,15 +105,29 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}
 
-	scheduler, err := initializeScheduler()
-	if err != nil {
-		return fmt.Errorf("failed to create job scheduler: %w", err)
-	}
+	scheduler := scheduler.NewJobScheduler(appCtx)
+	appServices.JobSchedule.SetScheduler(scheduler)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
-	router := setupRouter(cfg, appServices) //nolint:contextcheck
+	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
 
-	err = runServices(appCtx, cfg, router, scheduler)
+	// Start edge tunnel client if running as an edge agent
+	if cfg.EdgeAgent && cfg.ManagerApiUrl != "" && cfg.AgentToken != "" {
+		slog.InfoContext(appCtx, "Starting edge tunnel client", "manager_url", cfg.ManagerApiUrl)
+		errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)
+		if err != nil {
+			slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
+		} else {
+			slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
+			go func() {
+				for err := range errCh {
+					slog.ErrorContext(appCtx, "Edge tunnel client error", "error", err)
+				}
+			}()
+		}
+	}
+
+	err = runServices(appCtx, cfg, router, tunnelServer, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -123,26 +157,42 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
+		return nil
+	case http.StatusBadRequest:
+		// Environment is not in pending status - already paired, this is fine
+		if strings.Contains(string(body), "not in pending status") {
+			slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
+			return nil
+		}
+		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+	case http.StatusUnauthorized:
+		// Invalid API key - could be already paired with a different key, or key was deleted
+		// This is not fatal; the agent can still function if it has a valid token configured
+		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
+		return nil
+	default:
 		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
-
-	slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
-
-	return nil
 }
 
-func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, scheduler interface{ Run(context.Context) error }) error {
-	go func() {
-		slog.InfoContext(appCtx, "Starting scheduler")
-		if err := scheduler.Run(appCtx); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
+func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface{ Run(context.Context) error }) error {
+	for _, s := range schedulers {
+		scheduler := s
+		go func() {
+			slog.InfoContext(appCtx, "Starting scheduler")
+			if err := scheduler.Run(appCtx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
+				}
 			}
-		}
-		slog.InfoContext(appCtx, "Scheduler stopped")
-	}()
+			slog.InfoContext(appCtx, "Scheduler stopped")
+		}()
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -174,6 +224,11 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
 		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", "error", err) //nolint:contextcheck
 		return err
+	}
+
+	// Wait for tunnel cleanup loop to finish
+	if tunnelServer != nil {
+		tunnelServer.WaitForCleanupDone()
 	}
 
 	slog.InfoContext(shutdownCtx, "Server stopped gracefully") //nolint:contextcheck

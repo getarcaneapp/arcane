@@ -5,11 +5,13 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
+	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
+	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
@@ -28,7 +30,6 @@
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const isGlassEnabled = $derived.by(() => $settingsStore?.glassEffectEnabled ?? false);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
@@ -39,7 +40,8 @@
 			settingsEntry?.items?.map((item) => ({
 				href: item.url,
 				label: item.title,
-				icon: item.icon
+				icon: item.icon,
+				shortcut: item.shortcut
 			})) ?? []
 		);
 	});
@@ -180,11 +182,24 @@
 	}
 </script>
 
-<div class="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
+{#snippet Shortcut({ keys }: { keys?: ShortcutKey[] })}
+	{@const displayKeys = keys ? formatShortcutKeys(keys) : []}
+	{#if displayKeys.length}
+		<Kbd.Group class="text-muted-foreground ml-auto items-center gap-1">
+			{#each displayKeys as key, index}
+				<Kbd.Root>{key}</Kbd.Root>
+				{#if index < displayKeys.length - 1}
+					<span class="text-muted-foreground/70 text-[10px]">+</span>
+				{/if}
+			{/each}
+		</Kbd.Group>
+	{/if}
+{/snippet}
+
+<div class="flex h-full min-h-full flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
-	<aside
-		class={cn('hidden w-64 shrink-0 border-r md:block', isGlassEnabled ? 'bg-background/50 backdrop-blur-sm' : 'bg-transparent')}
-	>
+	<aside class={cn('relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full', 'backdrop-blur-sm')}>
+		<div aria-hidden="true" class="bg-border/60 pointer-events-none absolute top-4 right-0 bottom-4 w-px"></div>
 		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
 			<nav class="space-y-1">
@@ -199,6 +214,7 @@
 					>
 						<item.icon class="size-4" />
 						{item.label}
+						{@render Shortcut({ keys: item.shortcut })}
 					</a>
 				{/each}
 			</nav>
@@ -211,7 +227,7 @@
 			<div
 				class={cn(
 					'sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg transition-all duration-200 md:hidden',
-					isGlassEnabled ? 'bg-background/95 backdrop-blur-md' : 'bg-card'
+					'bg-background/95 backdrop-blur-md'
 				)}
 			>
 				<div class="px-4 py-3">

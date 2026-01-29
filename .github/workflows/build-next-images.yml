@@ -63,7 +63,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
-          distribution: goreleaser
+          distribution: goreleaser-pro
           version: "~> v2"
           args: release --clean --skip=sign,announce,validate,nfpm,homebrew
         env:
@@ -72,3 +72,4 @@ jobs:
           SKIP_RELEASE: "true"
           SKIP_CHANGELOG: "true"
           GORELEASER_CURRENT_TAG: next-${{ steps.vars.outputs.sha_short }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}

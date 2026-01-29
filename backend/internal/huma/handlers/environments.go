@@ -15,6 +15,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
@@ -394,6 +395,9 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	}
 	if input.Body.Enabled != nil {
 		env.Enabled = *input.Body.Enabled
+	}
+	if input.Body.IsEdge != nil {
+		env.IsEdge = *input.Body.IsEdge
 	}
 
 	// Determine pairing method
@@ -924,7 +928,13 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 	}
 
 	// Generate snippets with placeholder for API key
-	snippets, err := h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
+	// Use edge snippets for edge environments
+	var snippets *services.DeploymentSnippets
+	if env.IsEdge {
+		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
+	} else {
+		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentID", input.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
@@ -952,30 +962,50 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		return nil, huma.Error404NotFound("Environment not found")
 	}
 
-	// Make HTTP request to the environment's /api/app-version endpoint
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create request")
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))
-	}
-
 	var versionInfo version.Info
-	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to decode version response")
+
+	// For edge environments, route through the tunnel
+	if env.IsEdge {
+		if !edge.HasActiveTunnel(input.ID) {
+			return nil, huma.Error503ServiceUnavailable("Edge agent is not connected")
+		}
+
+		statusCode, respBody, err := edge.DoRequest(reqCtx, input.ID, http.MethodGet, "/api/app-version", nil)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Request via tunnel failed: " + err.Error())
+		}
+		if statusCode != http.StatusOK {
+			return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", statusCode))
+		}
+
+		if err := json.Unmarshal(respBody, &versionInfo); err != nil {
+			return nil, huma.Error500InternalServerError("Failed to decode version response")
+		}
+	} else {
+		// Direct HTTP request for non-edge environments
+		url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to create request")
+		}
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+			return nil, huma.Error500InternalServerError("Failed to decode version response")
+		}
 	}
 
 	// Update environment status to online since we successfully contacted it

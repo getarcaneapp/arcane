@@ -10,7 +10,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ContainerRegistry } from '$lib/types/container-registry.type';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -162,6 +162,22 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
+	let isLoading = $state({
+		removing: false
+	});
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
+
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
@@ -271,7 +287,7 @@
 		bind:requestOptions
 		bind:selectedIds
 		bind:mobileFieldVisibility
-		onRemoveSelected={(ids) => handleDeleteSelected(ids)}
+		{bulkActions}
 		onRefresh={async (options) => (registries = await containerRegistryService.getRegistries(options))}
 		{columns}
 		{mobileFields}

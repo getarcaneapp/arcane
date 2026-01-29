@@ -25,6 +25,7 @@
 	let viewer = $state<LogViewer>();
 	let autoStartLogs = $state(false);
 	let hasAutoStarted = $state(false);
+	let showParsedJson = $state(false);
 
 	function handleStart() {
 		viewer?.startLogStream();
@@ -93,6 +94,7 @@
 			<LogControls
 				bind:autoScroll
 				bind:autoStartLogs
+				bind:showParsedJson
 				{isStreaming}
 				disabled={!containerId}
 				onStart={handleStart}
@@ -109,6 +111,7 @@
 				bind:autoScroll
 				type="container"
 				{containerId}
+				{showParsedJson}
 				maxLines={500}
 				showTimestamps={true}
 				height="calc(100vh - 320px)"

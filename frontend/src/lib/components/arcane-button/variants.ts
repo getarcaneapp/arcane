@@ -20,7 +20,8 @@ import {
 	type IconType,
 	LoginIcon,
 	OpenIdIcon,
-	RedeployIcon
+	RedeployIcon,
+	CodeIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -191,6 +192,12 @@ export const actionConfigs = {
 		IconComponent: FileTextIcon,
 		tone: 'ghost',
 		loadingLabel: m.common_action_fetching_logs()
+	},
+	json: {
+		defaultLabel: m.common_json(),
+		IconComponent: CodeIcon,
+		tone: 'outline',
+		loadingLabel: m.common_processing()
 	},
 	cancel: {
 		defaultLabel: m.common_cancel(),

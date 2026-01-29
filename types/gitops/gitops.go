@@ -29,6 +29,11 @@ type GitRepository struct {
 	// Required: false
 	Username string `json:"username,omitempty"`
 
+	// SSHHostKeyVerification specifies how SSH host keys are verified (strict, accept_new, skip).
+	//
+	// Required: false
+	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -127,11 +132,6 @@ type GitOpsSync struct {
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
-
 	// CreatedAt is the date and time at which the sync was created.
 	//
 	// Required: true
@@ -175,6 +175,13 @@ type CreateRepositoryRequest struct {
 	// Required: false
 	SSHKey string `json:"sshKey,omitempty"`
 
+	// SSHHostKeyVerification specifies how SSH host keys are verified.
+	// Options: strict (require known_hosts), accept_new (auto-add new hosts), skip (disable verification).
+	// Default: accept_new
+	//
+	// Required: false
+	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -217,6 +224,12 @@ type UpdateRepositoryRequest struct {
 	//
 	// Required: false
 	SSHKey *string `json:"sshKey,omitempty"`
+
+	// SSHHostKeyVerification specifies how SSH host keys are verified.
+	// Options: strict (require known_hosts), accept_new (auto-add new hosts), skip (disable verification).
+	//
+	// Required: false
+	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitempty"`
 
 	// Description of the git repository.
 	//
@@ -267,11 +280,6 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // UpdateSyncRequest represents the request to update a gitops sync.
@@ -310,11 +318,6 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: false
-	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // SyncResult represents the result of a sync operation.
@@ -457,6 +460,11 @@ type RepositorySync struct {
 	// Required: false
 	SSHKey string `json:"sshKey,omitempty"`
 
+	// SSHHostKeyVerification specifies how SSH host keys are verified.
+	//
+	// Required: false
+	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -492,11 +500,6 @@ type SyncStatus struct {
 	//
 	// Required: true
 	ID string `json:"id"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
 
 	// AutoSync indicates if automatic sync is enabled.
 	//
@@ -560,11 +563,6 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
-
-	// Enabled indicates if the sync is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.

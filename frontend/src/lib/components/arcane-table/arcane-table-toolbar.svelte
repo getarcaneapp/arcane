@@ -2,19 +2,20 @@
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters } from './data.js';
+	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters, projectStatusFilters } from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ResetIcon } from '$lib/icons';
+	import type { BulkAction } from './arcane-table.types.svelte';
 
 	let {
 		table,
 		selectedIds = [],
 		selectionDisabled = false,
-		onRemoveSelected,
+		bulkActions = [],
 		mobileFields = [],
 		onToggleMobileField,
 		customViewOptions,
@@ -23,7 +24,7 @@
 		table: Table<TData>;
 		selectedIds?: string[];
 		selectionDisabled?: boolean;
-		onRemoveSelected?: (ids: string[]) => void;
+		bulkActions?: BulkAction[];
 		mobileFields?: { id: string; label: string; visible: boolean }[];
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
@@ -38,10 +39,15 @@
 	const severityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
+	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
+	const serviceCountColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
+	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
+	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 </script>
 
 <div class={cn('flex flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:justify-between', className)}>
@@ -81,6 +87,9 @@
 				{#if severityColumn}
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 				{/if}
+				{#if statusColumn && serviceCountColumn}
+					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
+				{/if}
 
 				{#if isFiltered}
 					<ArcaneButton
@@ -98,21 +107,31 @@
 				{/if}
 			</div>
 		</div>
+	</div>
 
-		<!-- View options - desktop only, end aligned -->
+	<!-- Bulk actions and View options -->
+	<div class="flex items-center gap-2">
+		{#if hasSelection}
+			{#if hasBulkActions}
+				<div class="flex flex-wrap items-center gap-2">
+					{#each bulkActions as bulkAction (bulkAction.id)}
+						{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
+						<ArcaneButton
+							action={actionType}
+							icon={bulkAction.icon}
+							customLabel={bulkAction.label}
+							onclick={() => bulkAction.onClick(selectedIds!)}
+							disabled={bulkAction.disabled || bulkAction.loading}
+							loading={bulkAction.loading}
+						/>
+					{/each}
+				</div>
+			{/if}
+		{/if}
+
+		<!-- View options - desktop only, always on the right -->
 		<div class="hidden md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
 		</div>
 	</div>
-
-	<!-- Actions on the right (wraps on mobile) -->
-	{#if hasSelection && onRemoveSelected}
-		<ArcaneButton
-			action="remove"
-			size="sm"
-			hoverEffect="none"
-			customLabel={m.common_remove_selected_count({ count: selectedIds?.length ?? 0 })}
-			onclick={() => onRemoveSelected?.(selectedIds!)}
-		/>
-	{/if}
 </div>

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-uuid"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -32,9 +33,10 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged func(ctx context.Context)
-	OnAutoUpdateSettingsChanged   func(ctx context.Context)
-	OnProjectsDirectoryChanged    func(ctx context.Context)
+	OnImagePollingSettingsChanged   func(ctx context.Context)
+	OnAutoUpdateSettingsChanged     func(ctx context.Context)
+	OnProjectsDirectoryChanged      func(ctx context.Context)
+	OnScheduledPruneSettingsChanged func(ctx context.Context)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -84,13 +86,20 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		ProjectsDirectory:          models.SettingVariable{Value: "/app/data/projects"},
 		DiskUsagePath:              models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                 models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:         models.SettingVariable{Value: "1440"},
+		AutoUpdateInterval:         models.SettingVariable{Value: "0 0 0 * * *"},
 		PollingEnabled:             models.SettingVariable{Value: "true"},
-		PollingInterval:            models.SettingVariable{Value: "60"},
-		EventCleanupInterval:       models.SettingVariable{Value: "360"},
-		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "1440"},
+		PollingInterval:            models.SettingVariable{Value: "0 0 * * * *"},
+		EventCleanupInterval:       models.SettingVariable{Value: "0 0 */6 * * *"},
+		AnalyticsHeartbeatInterval: models.SettingVariable{Value: "0 0 0 * * *"},
 		AutoInjectEnv:              models.SettingVariable{Value: "false"},
 		PruneMode:                  models.SettingVariable{Value: "dangling"},
+		ScheduledPruneEnabled:      models.SettingVariable{Value: "false"},
+		ScheduledPruneInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
+		ScheduledPruneContainers:   models.SettingVariable{Value: "true"},
+		ScheduledPruneImages:       models.SettingVariable{Value: "true"},
+		ScheduledPruneVolumes:      models.SettingVariable{Value: "false"},
+		ScheduledPruneNetworks:     models.SettingVariable{Value: "true"},
+		ScheduledPruneBuildCache:   models.SettingVariable{Value: "false"},
 		BaseServerURL:              models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:             models.SettingVariable{Value: "true"},
 		DefaultShell:               models.SettingVariable{Value: "/bin/sh"},
@@ -104,18 +113,31 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcClientId:               models.SettingVariable{Value: ""},
 		OidcClientSecret:           models.SettingVariable{Value: ""},
 		OidcIssuerUrl:              models.SettingVariable{Value: ""},
+		OidcAuthorizationEndpoint:  models.SettingVariable{Value: ""},
+		OidcTokenEndpoint:          models.SettingVariable{Value: ""},
+		OidcUserinfoEndpoint:       models.SettingVariable{Value: ""},
+		OidcJwksEndpoint:           models.SettingVariable{Value: ""},
 		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
 		OidcAdminClaim:             models.SettingVariable{Value: ""},
 		OidcAdminValue:             models.SettingVariable{Value: ""},
 		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider: models.SettingVariable{Value: "false"},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
+		OidcProviderName:           models.SettingVariable{Value: ""},
+		OidcProviderLogoUrl:        models.SettingVariable{Value: ""},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		GlassEffectEnabled:         models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
-		EnvironmentHealthInterval:  models.SettingVariable{Value: "2"},
+		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
+
+		DockerAPITimeout:       models.SettingVariable{Value: "30"},
+		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
+		GitOperationTimeout:    models.SettingVariable{Value: "300"},
+		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
+		RegistryTimeout:        models.SettingVariable{Value: "30"},
+		ProxyRequestTimeout:    models.SettingVariable{Value: "60"},
 
 		InstanceID: models.SettingVariable{Value: ""},
 	}
@@ -407,7 +429,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +457,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoUpdate && s.OnAutoUpdateSettingsChanged != nil {
 		s.OnAutoUpdateSettingsChanged(ctx)
 	}
+	if changedScheduledPrune && s.OnScheduledPruneSettingsChanged != nil {
+		s.OnScheduledPruneSettingsChanged(ctx)
+	}
 	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
@@ -442,13 +467,14 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
 
 	changedPolling := false
 	changedAutoUpdate := false
+	changedScheduledPrune := false
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -462,6 +488,14 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		var value string
 		if fieldValue.Kind() == reflect.Ptr {
 			value = fieldValue.Elem().String()
+		}
+
+		// Validate cron settings
+		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval"}
+		if slices.Contains(cronFields, key) && value != "" {
+			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
+				return nil, false, false, false, fmt.Errorf("invalid cron expression for %s: %w", key, err)
+			}
 		}
 
 		var valueToSave string
@@ -479,7 +513,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -492,10 +526,12 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
+		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
+			changedScheduledPrune = true
 		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
@@ -591,6 +627,29 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	return nil
 }
 
+func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
+	allowedKeys := allowedSettingKeys()
+	if len(allowedKeys) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(allowedKeys))
+	for key := range allowedKeys {
+		keys = append(keys, key)
+	}
+
+	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to prune unknown settings: %w", result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.InfoContext(ctx, "Pruned unknown settings", "count", result.RowsAffected)
+	}
+
+	return nil
+}
+
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
 	rt := reflect.TypeOf(models.Settings{})
 	appCfg := config.Load()
@@ -610,6 +669,23 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 
 	// Reload settings after persisting env vars
 	return s.LoadDatabaseSettings(ctx)
+}
+
+func allowedSettingKeys() map[string]struct{} {
+	allowed := make(map[string]struct{})
+
+	settingsType := reflect.TypeOf(models.Settings{})
+	for i := 0; i < settingsType.NumField(); i++ {
+		key, _, _ := strings.Cut(settingsType.Field(i).Tag.Get("key"), ",")
+		if key == "" {
+			continue
+		}
+		allowed[key] = struct{}{}
+	}
+
+	allowed["encryptionKey"] = struct{}{}
+
+	return allowed
 }
 
 func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, field reflect.StructField, isEnvOnlyMode bool) error {

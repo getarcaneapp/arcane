@@ -26,6 +26,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	libproject "github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/project"
 	"gorm.io/gorm"
@@ -109,6 +111,7 @@ type ProjectServiceInfo struct {
 	ContainerName string                      `json:"container_name"`
 	Ports         []string                    `json:"ports"`
 	Health        *string                     `json:"health,omitempty"`
+	IconURL       string                      `json:"icon_url,omitempty"`
 	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
 }
 
@@ -213,6 +216,11 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
+	meta, metaErr := libproject.ParseArcaneComposeMetadata(composeFileFullPath)
+	if metaErr != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
+	}
+
 	containers, err := projects.ComposePs(ctx, project, nil, true)
 	if err != nil {
 		slog.Error("compose ps error", "projectName", project.Name, "error", err)
@@ -247,6 +255,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			ContainerName: c.Name,
 			Ports:         formatPorts(c.Publishers),
 			Health:        health,
+			IconURL:       meta.ServiceIcons[c.Service],
 			ServiceConfig: svcConfig,
 		})
 		have[c.Service] = true
@@ -260,6 +269,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 				Image:         svc.Image,
 				Status:        "stopped",
 				Ports:         []string{},
+				IconURL:       meta.ServiceIcons[svc.Name],
 				ServiceConfig: &svcCopy,
 			})
 		}
@@ -295,6 +305,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.EnvContent = envContent
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
+	meta := s.getProjectMetadataFromComposeContent(ctx, composeContent)
+	resp.IconURL = meta.ProjectIconURL
+	resp.URLs = meta.ProjectURLS
 
 	// Default counts/status from DB (will be overridden if runtime check succeeds)
 	resp.ServiceCount = proj.ServiceCount
@@ -329,6 +342,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 				ContainerName: svc.ContainerName,
 				Ports:         svc.Ports,
 				Health:        svc.Health,
+				IconURL:       svc.IconURL,
 				ServiceConfig: svc.ServiceConfig,
 			}
 		}
@@ -963,9 +977,22 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		images[img] = struct{}{}
 	}
 
+	settings := s.settingsService.GetSettingsConfig()
+
 	for img := range images {
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
-			return fmt.Errorf("failed to pull image %s: %w", img, err)
+		err := func() error {
+			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+			defer pullCancel()
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
+				}
+				return fmt.Errorf("failed to pull image %s: %w", img, err)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1007,6 +1034,8 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		images[img] = struct{}{}
 	}
 
+	settings := s.settingsService.GetSettingsConfig()
+
 	for img := range images {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
 		if ierr != nil {
@@ -1017,8 +1046,19 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
-		if err := s.imageService.PullImage(ctx, img, progressWriter, systemUser, credentials); err != nil {
-			return fmt.Errorf("failed to pull missing image %s: %w", img, err)
+		err := func() error {
+			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+			defer pullCancel()
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
+				}
+				return fmt.Errorf("failed to pull missing image %s: %w", img, err)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1224,8 +1264,14 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 // Table Functions
 
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
-	var projectsArray []models.Project
 	query := s.db.WithContext(ctx).Model(&models.Project{})
+	statusFilter := ""
+	if params.Filters != nil {
+		statusFilter = strings.TrimSpace(params.Filters["status"])
+	}
+	if statusFilter != "" {
+		return s.listProjectsByStatus(ctx, params, query)
+	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -1235,6 +1281,9 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		)
 	}
 
+	query = pagination.ApplyFilter(query, "status", params.Filters["status"])
+
+	var projectsArray []models.Project
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate projects: %w", err)
@@ -1250,6 +1299,116 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		"result_count", len(result))
 
 	return result, paginationResp, nil
+}
+
+func (s *ProjectService) listProjectsByStatus(
+	ctx context.Context,
+	params pagination.QueryParams,
+	query *gorm.DB,
+) ([]project.Details, pagination.Response, error) {
+	var projectsArray []models.Project
+	if term := strings.TrimSpace(params.Search); term != "" {
+		searchPattern := "%" + term + "%"
+		query = query.Where(
+			"name LIKE ? OR path LIKE ? OR status LIKE ? OR COALESCE(dir_name, '') LIKE ?",
+			searchPattern, searchPattern, searchPattern, searchPattern,
+		)
+	}
+	if err := query.Find(&projectsArray).Error; err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+	params.Limit = limit
+
+	config := pagination.Config[project.Details]{
+		SearchAccessors: []pagination.SearchAccessor[project.Details]{
+			func(p project.Details) (string, error) { return p.Name, nil },
+			func(p project.Details) (string, error) { return p.Path, nil },
+			func(p project.Details) (string, error) { return p.Status, nil },
+			func(p project.Details) (string, error) { return p.DirName, nil },
+		},
+		SortBindings: []pagination.SortBinding[project.Details]{
+			{
+				Key: "name",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(a.Name, b.Name)
+				},
+			},
+			{
+				Key: "status",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(a.Status, b.Status)
+				},
+			},
+			{
+				Key: "serviceCount",
+				Fn: func(a, b project.Details) int {
+					if a.ServiceCount < b.ServiceCount {
+						return -1
+					}
+					if a.ServiceCount > b.ServiceCount {
+						return 1
+					}
+					return 0
+				},
+			},
+			{
+				Key: "createdAt",
+				Fn: func(a, b project.Details) int {
+					at, aerr := time.Parse(time.RFC3339, a.CreatedAt)
+					bt, berr := time.Parse(time.RFC3339, b.CreatedAt)
+					if aerr != nil || berr != nil {
+						return strings.Compare(a.CreatedAt, b.CreatedAt)
+					}
+					if at.Before(bt) {
+						return -1
+					}
+					if at.After(bt) {
+						return 1
+					}
+					return 0
+				},
+			},
+		},
+		FilterAccessors: []pagination.FilterAccessor[project.Details]{
+			{
+				Key: "status",
+				Fn: func(p project.Details, filterValue string) bool {
+					return strings.EqualFold(strings.TrimSpace(p.Status), strings.TrimSpace(filterValue))
+				},
+			},
+		},
+	}
+
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+
+	totalPages := int64(0)
+	if params.Limit > 0 {
+		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
+	}
+
+	page := 1
+	if params.Limit > 0 {
+		page = (params.Start / params.Limit) + 1
+	}
+
+	paginationResp := pagination.Response{
+		TotalPages:      totalPages,
+		TotalItems:      int64(result.TotalCount),
+		CurrentPage:     page,
+		ItemsPerPage:    params.Limit,
+		GrandTotalItems: int64(result.TotalAvailable),
+	}
+
+	return result.Items, paginationResp, nil
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
@@ -1294,6 +1453,9 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.DirName = utils.DerefString(p.DirName)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
+	meta := s.getProjectMetadataFromPath(ctx, p.Path)
+	resp.IconURL = meta.ProjectIconURL
+	resp.URLs = meta.ProjectURLS
 
 	// Find containers for this project
 	normName := normalizeComposeProjectName(p.Name)
@@ -1388,6 +1550,35 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	}
 
 	return resp
+}
+
+func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, projectPath string) libproject.ArcaneComposeMetadata {
+	composeFile, err := projects.DetectComposeFile(projectPath)
+	if err != nil {
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	meta, err := libproject.ParseArcaneComposeMetadata(composeFile)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	return meta
+}
+
+func (s *ProjectService) getProjectMetadataFromComposeContent(ctx context.Context, composeContent string) libproject.ArcaneComposeMetadata {
+	if composeContent == "" {
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	meta, err := libproject.ParseArcaneComposeMetadataFromContent([]byte(composeContent))
+	if err != nil {
+		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "error", err)
+		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	return meta
 }
 
 // End Table Functions

@@ -9,16 +9,17 @@
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
 	import './styles.css';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 	let {
 		navigationSettings,
 		user = null,
-		versionInformation = null,
+		versionInformation,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
 		user?: any;
-		versionInformation?: any;
+		versionInformation?: AppVersionInformation;
 		class?: string;
 	} = $props();
 
@@ -183,4 +184,4 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} navigationMode={mode} />
+<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} />

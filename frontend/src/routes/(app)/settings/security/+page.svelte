@@ -35,12 +35,15 @@
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
+			oidcAutoRedirectToProvider: z.boolean(),
 			oidcClientId: z.string(),
 			oidcClientSecret: z.string(),
 			oidcIssuerUrl: z.string(),
 			oidcScopes: z.string(),
 			oidcAdminClaim: z.string(),
-			oidcAdminValue: z.string()
+			oidcAdminValue: z.string(),
+			oidcProviderName: z.string(),
+			oidcProviderLogoUrl: z.string()
 		})
 		.superRefine((formData, ctx) => {
 			if (data.oidcStatus.envForced || formData.oidcEnabled) return;
@@ -62,12 +65,15 @@
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
+		oidcAutoRedirectToProvider: currentSettings.oidcAutoRedirectToProvider,
 		oidcClientId: currentSettings.oidcClientId,
 		oidcClientSecret: '',
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
 		oidcScopes: currentSettings.oidcScopes,
 		oidcAdminClaim: currentSettings.oidcAdminClaim,
-		oidcAdminValue: currentSettings.oidcAdminValue
+		oidcAdminValue: currentSettings.oidcAdminValue,
+		oidcProviderName: currentSettings.oidcProviderName,
+		oidcProviderLogoUrl: currentSettings.oidcProviderLogoUrl
 	});
 
 	// Security page needs custom submit logic for OIDC client secret handling
@@ -82,12 +88,15 @@
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
+				oidcAutoRedirectToProvider: ($settingsStore || data.settings!).oidcAutoRedirectToProvider,
 				oidcClientId: ($settingsStore || data.settings!).oidcClientId,
 				oidcClientSecret: '',
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
 				oidcScopes: ($settingsStore || data.settings!).oidcScopes,
 				oidcAdminClaim: ($settingsStore || data.settings!).oidcAdminClaim,
-				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue
+				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue,
+				oidcProviderName: ($settingsStore || data.settings!).oidcProviderName,
+				oidcProviderLogoUrl: ($settingsStore || data.settings!).oidcProviderLogoUrl
 			}),
 			successMessage: m.security_settings_saved()
 		})
@@ -101,11 +110,14 @@
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
+			$formInputs.oidcAutoRedirectToProvider.value !== currentSettings.oidcAutoRedirectToProvider ||
 			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
 			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
 			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
 			$formInputs.oidcAdminClaim.value !== currentSettings.oidcAdminClaim ||
 			$formInputs.oidcAdminValue.value !== currentSettings.oidcAdminValue ||
+			$formInputs.oidcProviderName.value !== currentSettings.oidcProviderName ||
+			$formInputs.oidcProviderLogoUrl.value !== currentSettings.oidcProviderLogoUrl ||
 			$formInputs.oidcClientSecret.value !== ''
 	);
 
@@ -141,6 +153,8 @@
 				oidcScopes: formData.oidcScopes,
 				oidcAdminClaim: formData.oidcAdminClaim,
 				oidcAdminValue: formData.oidcAdminValue,
+				oidcProviderName: formData.oidcProviderName,
+				oidcProviderLogoUrl: formData.oidcProviderLogoUrl,
 				...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
 			});
 			$formInputs.oidcClientSecret.value = '';
@@ -316,6 +330,38 @@
 										</div>
 
 										<div class="space-y-2">
+											<Label for="oidcProviderName" class="text-sm font-medium">{m.oidc_provider_name_label()}</Label>
+											<Input
+												id="oidcProviderName"
+												type="text"
+												placeholder={m.oidc_provider_name_placeholder()}
+												disabled={isOidcEnvForced}
+												bind:value={$formInputs.oidcProviderName.value}
+												class="font-mono text-sm"
+											/>
+											<p class="text-muted-foreground text-xs">{m.oidc_provider_name_description()}</p>
+											{#if $formInputs.oidcProviderName.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderName.error}</p>
+											{/if}
+										</div>
+
+										<div class="space-y-2">
+											<Label for="oidcProviderLogoUrl" class="text-sm font-medium">{m.oidc_provider_logo_url_label()}</Label>
+											<Input
+												id="oidcProviderLogoUrl"
+												type="text"
+												placeholder={m.oidc_provider_logo_url_placeholder()}
+												disabled={isOidcEnvForced}
+												bind:value={$formInputs.oidcProviderLogoUrl.value}
+												class="font-mono text-sm"
+											/>
+											<p class="text-muted-foreground text-xs">{m.oidc_provider_logo_url_description()}</p>
+											{#if $formInputs.oidcProviderLogoUrl.error}
+												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderLogoUrl.error}</p>
+											{/if}
+										</div>
+
+										<div class="space-y-2">
 											<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
 											<Input
 												id="oidcScopes"
@@ -398,6 +444,24 @@
 													</Label>
 													<p class="text-muted-foreground text-xs">
 														{m.oidc_skip_tls_verify_description()}
+													</p>
+												</div>
+											</div>
+										</div>
+
+										<div class="border-t pt-4">
+											<div class="flex items-center gap-2">
+												<Switch
+													id="oidcAutoRedirectSwitch"
+													disabled={isOidcEnvForced}
+													bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
+												/>
+												<div class="grid gap-1.5 leading-none">
+													<Label for="oidcAutoRedirectSwitch" class="font-normal">
+														{m.oidc_auto_redirect_label()}
+													</Label>
+													<p class="text-muted-foreground text-xs">
+														{m.oidc_auto_redirect_description()}
 													</p>
 												</div>
 											</div>

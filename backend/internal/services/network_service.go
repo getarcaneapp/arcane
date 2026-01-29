@@ -231,7 +231,8 @@ func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
 	bInUse := b.InUse || b.IsDefault
 
 	if aInUse == bInUse {
-		return 0
+		// Use name as secondary sort key for consistent ordering
+		return strings.Compare(a.Name, b.Name)
 	}
 	if aInUse {
 		return -1

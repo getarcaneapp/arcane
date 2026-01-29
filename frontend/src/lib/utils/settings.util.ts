@@ -3,7 +3,6 @@ export type LocalSettings = {
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
-	glassEffectEnabled: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -11,7 +10,22 @@ const LOCAL_SETTING_KEYS = new Set([
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',
-	'glassEffectEnabled'
+	'authLocalEnabled',
+	'authSessionTimeout',
+	'authPasswordPolicy',
+	'authOidcConfig',
+	'oidcEnabled',
+	'oidcMergeAccounts',
+	'oidcSkipTlsVerify',
+	'oidcAutoRedirectToProvider',
+	'oidcClientId',
+	'oidcClientSecret',
+	'oidcIssuerUrl',
+	'oidcScopes',
+	'oidcAdminClaim',
+	'oidcAdminValue',
+	'oidcProviderName',
+	'oidcProviderLogoUrl'
 ]);
 
 export function isLocalSetting(key: string): boolean {

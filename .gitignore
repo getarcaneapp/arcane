@@ -42,3 +42,4 @@ tests/package-lock.json
 .claude/settings.local.json
 .claude/**
 .fast-check
+*.out
