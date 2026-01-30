@@ -20,7 +20,7 @@ export interface BaseProviderFormValues {
 	eventImageUpdate: boolean;
 	eventContainerUpdate: boolean;
 	eventVulnerabilityFound: boolean;
-  eventPruneReport: boolean;
+	eventPruneReport: boolean;
 }
 
 // Provider-specific form value types

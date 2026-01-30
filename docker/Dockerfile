@@ -2,7 +2,7 @@
 ARG BUILD_TAGS=""
 
 # Stage 1: Build Frontend
-FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
+FROM --platform=$BUILDPLATFORM ghcr.io/getarcaneapp/build-node:latest AS frontend-builder
 RUN npm install -g --force corepack@v0.34.5 && corepack enable
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -25,15 +25,12 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm -C frontend build
 
 # Stage 2: Build Backend
-FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-builder
+FROM --platform=$BUILDPLATFORM ghcr.io/getarcaneapp/build-go:latest AS backend-builder
 ARG TARGETARCH
 ARG BUILD_TAGS
 ARG VERSION="dev"
 ARG REVISION="unknown"
 WORKDIR /build
-
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \ 
-&& apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY go.work ./
 COPY types ./types
@@ -58,18 +55,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     ./cmd/main.go
 
 # Stage 3: Production Image
-FROM debian:trixie-slim AS runner
+FROM ghcr.io/getarcaneapp/base:latest AS runner
 ARG TARGETARCH
 ARG VERSION
 ARG REVISION
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
-    vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV GIN_MODE=release
 ENV PORT=3552

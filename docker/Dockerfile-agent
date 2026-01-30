@@ -2,15 +2,12 @@
 ARG VERSION="dev"
 ARG REVISION="unknown"
 
-FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS agent-builder
+FROM --platform=$BUILDPLATFORM ghcr.io/getarcaneapp/build-go:latest AS agent-builder
 ARG TARGETARCH
 ARG BUILD_TAGS="exclude_frontend"
 ARG VERSION="dev"
 ARG REVISION="unknown"
 WORKDIR /build
-
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tzdata curl jq \
-&& apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY go.work ./
 COPY types ./types
@@ -34,15 +31,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /out/arcane-agent \
     ./cmd/main.go
 
-FROM debian:trixie-slim AS agent
+FROM ghcr.io/getarcaneapp/base:latest AS agent
 ARG TARGETARCH
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
-    vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 RUN mkdir -p /app/data

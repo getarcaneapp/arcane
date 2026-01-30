@@ -1,10 +1,10 @@
-FROM alpine:3
+FROM dhi.io/static:20250419-glibc
 
 ARG TARGETARCH
 ARG TARGETVARIANT
 
 WORKDIR /app
-RUN apk add --no-cache ca-certificates tzdata curl
+RUN apk add --no-cache curl
 RUN mkdir -p /app/data
 
 COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-agent ./arcane-agent
