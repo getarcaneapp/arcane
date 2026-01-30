@@ -19,6 +19,8 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { containerService } from '$lib/services/container-service';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import {
 		StartIcon,
 		StopIcon,
@@ -28,7 +30,8 @@
 		ContainersIcon,
 		HealthIcon,
 		InspectIcon,
-		FolderXIcon
+		FolderXIcon,
+		BoxIcon
 	} from '$lib/icons';
 
 	interface Props {
@@ -300,13 +303,18 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ServiceWithId })}
-	{#if item.containerId}
-		<a class="font-medium hover:underline" href={getContainerUrl(item)}>
-			{item.containerName || item.name}
-		</a>
-	{:else}
-		<span class="text-muted-foreground">{item.name}</span>
-	{/if}
+	{@const displayName = item.containerName || item.name}
+	{@const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels)}
+	<div class="flex items-center gap-2">
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
+		{#if item.containerId}
+			<a class="font-medium hover:underline" href={getContainerUrl(item)}>
+				{displayName}
+			</a>
+		{:else}
+			<span class="text-muted-foreground">{displayName}</span>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ServiceWithId })}
@@ -368,10 +376,15 @@
 })}
 	<UniversalMobileCard
 		{item}
-		icon={() => ({
-			component: ContainersIcon,
-			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber'
-		})}
+		icon={(item) => {
+			const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels);
+			return {
+				component: BoxIcon,
+				variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
+				imageUrl: iconUrl ?? undefined,
+				alt: item.containerName || item.name
+			};
+		}}
 		title={(item) => item.containerName || item.name}
 		badges={[
 			(item) =>
