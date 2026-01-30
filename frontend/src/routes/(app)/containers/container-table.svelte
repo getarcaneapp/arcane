@@ -38,7 +38,8 @@
 		ImagesIcon,
 		NetworksIcon,
 		ProjectsIcon,
-		InspectIcon
+		InspectIcon,
+		UpdateIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -700,41 +701,6 @@
 	</span>
 {/snippet}
 
-{#snippet MobileRowActions({ item }: { item: ContainerSummaryDto })}
-	{@const status = actionStatus[item.id]}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
-					disabled={status === 'removing' || isAnyLoading}
-				>
-					{#if status === 'removing'}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/snippet}
-
 {#snippet ContainerMobileCardSnippet({
 	item,
 	mobileFieldVisibility
@@ -825,7 +791,7 @@
 					icon: ClockIcon
 				}
 			: undefined}
-		rowActions={MobileRowActions}
+		rowActions={RowActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
 		{#snippet children()}
@@ -892,6 +858,16 @@
 
 				<DropdownMenu.Separator />
 
+				{#if item.updateInfo?.hasUpdate}
+					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
+						{#if status === 'updating'}
+							<Spinner class="size-4" />
+						{:else}
+							<UpdateIcon class="size-4" />
+							{m.common_update()}
+						{/if}
+					</DropdownMenu.Item>
+				{/if}
 				{#if item.state !== 'running'}
 					<DropdownMenu.Item
 						onclick={() => performContainerAction('start', item.id)}

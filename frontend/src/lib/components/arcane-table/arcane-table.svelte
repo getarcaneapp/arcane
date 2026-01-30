@@ -678,7 +678,7 @@
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
-						{customToolbarActions}
+					{customToolbarActions}
 				/>
 			</div>
 		{/if}

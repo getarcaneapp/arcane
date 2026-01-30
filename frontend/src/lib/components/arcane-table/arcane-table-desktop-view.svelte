@@ -53,19 +53,16 @@
 		return '';
 	}
 
-	const stickyActionsBodyClasses = 'sticky right-0 z-10 bg-background';
-	const stickyActionsHeaderClasses = 'sticky right-0 z-20 bg-background';
-	const stickySelectHeaderClasses = 'sticky left-0 z-20 bg-background pr-6!';
-	const stickySelectBodyClasses = 'sticky left-0 z-10 bg-background pr-6!';
-	const stickyGroupSelectClasses = 'sticky w-0 left-0 z-10 bg-background pr-6!';
+	const stickyActionsClasses = 'sticky right-0 z-10 bg-background';
+	const stickySelectClasses = 'sticky w-0 left-0 z-10 bg-background pr-6!';
 
 	// Get cell classes based on column metadata
 	function getCellClasses(cell: Cell<any, unknown>, isGrouped: boolean, isFirstCell: boolean): string {
 		const meta = cell.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign; truncate?: boolean } | undefined;
 		return cn(
 			cell.column.id === 'actions' && 'w-px whitespace-nowrap',
-			cell.column.id === 'select' && stickySelectBodyClasses,
-			cell.column.id === 'actions' && stickyActionsBodyClasses,
+			cell.column.id === 'select' && stickySelectClasses,
+			cell.column.id === 'actions' && stickyActionsClasses,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
 			meta?.truncate && 'max-w-0 truncate',
@@ -97,8 +94,8 @@
 						<Table.Head
 							colspan={header.colSpan}
 							class={cn(
-								header.column.id === 'select' && stickySelectHeaderClasses,
-								header.column.id === 'actions' && stickyActionsHeaderClasses
+								header.column.id === 'select' && stickySelectClasses,
+								header.column.id === 'actions' && stickyActionsClasses
 							)}
 						>
 							{#if !header.isPlaceholder}
@@ -121,12 +118,12 @@
 					<Table.Row
 						class={cn(
 							'cursor-pointer transition-colors',
-							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70')
+							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-muted/70')
 						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
 						{#if !selectionDisabled}
-							<Table.Cell class={stickyGroupSelectClasses}>
+							<Table.Cell class={stickySelectClasses}>
 								<TableCheckbox
 									checked={selectionState === 'all'}
 									indeterminate={selectionState === 'some'}
