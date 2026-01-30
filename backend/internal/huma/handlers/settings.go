@@ -208,6 +208,15 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		Value: strconv.FormatBool(uiConfigDisabled),
 		Type:  "boolean",
 	})
+	backupVolumeName := "arcane-backups"
+	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+		backupVolumeName = h.cfg.BackupVolumeName
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "backupVolumeName",
+		Value: backupVolumeName,
+		Type:  "string",
+	})
 
 	return &GetPublicSettingsOutput{Body: settingsDto}, nil
 }
@@ -256,6 +265,15 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		Value: strconv.FormatBool(uiConfigDisabled),
 		Type:  "boolean",
 	})
+	backupVolumeName := "arcane-backups"
+	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+		backupVolumeName = h.cfg.BackupVolumeName
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "backupVolumeName",
+		Value: backupVolumeName,
+		Type:  "string",
+	})
 
 	return &GetSettingsOutput{Body: settingsDto}, nil
 }
@@ -290,7 +308,8 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
 			req.OidcScopes != nil || req.OidcAdminClaim != nil ||
 			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
-			req.OidcSkipTlsVerify != nil {
+			req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
+			req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil {
 			return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 		}
 

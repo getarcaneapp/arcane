@@ -12,16 +12,16 @@ tag_pattern = "v[0-9]*"
 commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
 commit_parsers = [
   { message = "^feat\\(cli\\)", group = "<!-- 01 --> CLI - New features" },
-  { message = "^feat", group = "<!-- 00 --> Backend - New features" },
+  { message = "^feat", group = "<!-- 00 --> New features" },
 
   { message = "^fix\\(cli\\)", group = "<!-- 11 --> CLI - Bug fixes" },
-  { message = "^fix", group = "<!-- 10 --> Backend - Bug fixes" },
+  { message = "^fix", group = "<!-- 10 --> Bug fixes" },
 
   { message = "^perf\\(cli\\)", group = "<!-- 21 --> CLI - Performance improvements" },
-  { message = "^perf", group = "<!-- 20 --> Backend - Performance improvements" },
+  { message = "^perf", group = "<!-- 20 --> Performance improvements" },
 
   { message = "^docs\\(cli\\)", group = "<!-- 31 --> CLI - Documentation", default_scope = "other" },
-  { message = "^docs", group = "<!-- 30 --> Backend - Documentation", default_scope = "other" },
+  { message = "^docs", group = "<!-- 30 --> Documentation", default_scope = "other" },
 
   { message = "^chore\\(deps\\)", group = "<!-- 40 --> Dependencies" },
         { message = "^chore", skip = true },

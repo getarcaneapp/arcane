@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -424,7 +425,7 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 	return nil
 }
 
-func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
+func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool, includeInternal bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -435,7 +436,9 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
-	updateInfoMap := s.fetchContainerUpdateInfo(ctx, dockerContainers)
+	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
+	imageIDs := collectImageIDs(dockerContainers)
+	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
 	items := s.buildContainerSummaries(dockerContainers, updateInfoMap)
 
 	config := s.buildContainerPaginationConfig()
@@ -446,7 +449,22 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 	return result.Items, paginationResp, counts, nil
 }
 
-func (s *ContainerService) fetchContainerUpdateInfo(ctx context.Context, containers []container.Summary) map[string]*imagetypes.UpdateInfo {
+func filterInternalContainers(containers []container.Summary, includeInternal bool) []container.Summary {
+	if includeInternal {
+		return containers
+	}
+
+	filtered := make([]container.Summary, 0, len(containers))
+	for _, dc := range containers {
+		if libarcane.IsInternalContainer(dc.Labels) {
+			continue
+		}
+		filtered = append(filtered, dc)
+	}
+	return filtered
+}
+
+func collectImageIDs(containers []container.Summary) []string {
 	imageIDSet := make(map[string]struct{}, len(containers))
 	for _, dc := range containers {
 		if dc.ImageID != "" {
@@ -458,13 +476,17 @@ func (s *ContainerService) fetchContainerUpdateInfo(ctx context.Context, contain
 	for id := range imageIDSet {
 		imageIDs = append(imageIDs, id)
 	}
+	return imageIDs
+}
 
+func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []string) map[string]*imagetypes.UpdateInfo {
 	if s.imageService == nil || len(imageIDs) == 0 {
 		return make(map[string]*imagetypes.UpdateInfo)
 	}
 
 	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
 	if err != nil {
+		// Log error but continue - update info is optional
 		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
 		return make(map[string]*imagetypes.UpdateInfo)
 	}

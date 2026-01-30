@@ -5,6 +5,7 @@ export const NOTIFICATION_PROVIDER_KEYS = [
 	'discord',
 	'email',
 	'generic',
+	'gotify',
 	'ntfy',
 	'pushover',
 	'signal',
@@ -89,6 +90,16 @@ export interface PushoverFormValues extends BaseProviderFormValues {
 	title: string;
 }
 
+export interface GotifyFormValues extends BaseProviderFormValues {
+	host: string;
+	port: number;
+	token: string;
+	path: string;
+	priority: number;
+	title: string;
+	disableTls: boolean;
+}
+
 export interface GenericFormValues extends BaseProviderFormValues {
 	webhookUrl: string;
 	method: string;
@@ -114,6 +125,7 @@ export type ProviderFormValues =
 	| SlackFormValues
 	| NtfyFormValues
 	| PushoverFormValues
+	| GotifyFormValues
 	| GenericFormValues;
 
 // Map provider keys to their form value types
@@ -125,6 +137,7 @@ export type ProviderFormValuesMap = {
 	slack: SlackFormValues;
 	ntfy: NtfyFormValues;
 	pushover: PushoverFormValues;
+	gotify: GotifyFormValues;
 	generic: GenericFormValues;
 };
 
@@ -370,6 +383,23 @@ export function pushoverSettingsToFormValues(settings?: NotificationSettings): P
 	};
 }
 
+export function gotifySettingsToFormValues(settings?: NotificationSettings): GotifyFormValues {
+	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
+	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	return {
+		enabled: settings?.enabled ?? false,
+		host: (cfg?.host as string) || '',
+		port: (cfg?.port as number) || 0,
+		token: (cfg?.token as string) || '',
+		path: (cfg?.path as string) || '',
+		priority: Number(cfg?.priority ?? 0),
+		title: (cfg?.title as string) || '',
+		disableTls: (cfg?.disableTls as boolean) ?? false,
+		eventImageUpdate: events?.image_update ?? true,
+		eventContainerUpdate: events?.container_update ?? true
+	};
+}
+
 export function genericSettingsToFormValues(settings?: NotificationSettings): GenericFormValues {
 	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
 	const events = (cfg?.events ?? {}) as Record<string, boolean>;
@@ -433,6 +463,26 @@ export function pushoverFormValuesToSettings(values: PushoverFormValues): Notifi
 				.filter((device) => device.length > 0),
 			priority: values.priority,
 			title: values.title,
+			events: {
+				image_update: values.eventImageUpdate,
+				container_update: values.eventContainerUpdate
+			}
+		}
+	};
+}
+
+export function gotifyFormValuesToSettings(values: GotifyFormValues): NotificationSettings {
+	return {
+		provider: 'gotify',
+		enabled: values.enabled,
+		config: {
+			host: values.host,
+			port: values.port,
+			token: values.token,
+			path: values.path,
+			priority: values.priority,
+			title: values.title,
+			disableTls: values.disableTls,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate

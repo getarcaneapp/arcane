@@ -110,6 +110,8 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 
 func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.OidcStatusInfo, error) {
 	mergeAccounts := false
+	providerName := ""
+	providerLogoUrl := ""
 	if s.settingsService != nil {
 		func() {
 			defer func() {
@@ -118,16 +120,26 @@ func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.Oid
 			}()
 			if settings, err := s.settingsService.GetSettings(ctx); err == nil {
 				mergeAccounts = settings.OidcMergeAccounts.IsTrue()
+				providerName = settings.OidcProviderName.Value
+				providerLogoUrl = settings.OidcProviderLogoUrl.Value
 			}
 		}()
 	}
 
 	status := &auth.OidcStatusInfo{
-		EnvForced:     s.config.OidcEnabled,
-		MergeAccounts: mergeAccounts,
+		EnvForced:       s.config.OidcEnabled,
+		MergeAccounts:   mergeAccounts,
+		ProviderName:    providerName,
+		ProviderLogoUrl: providerLogoUrl,
 	}
 	if s.config.OidcEnabled {
 		status.EnvConfigured = s.config.OidcClientID != "" && s.config.OidcIssuerURL != ""
+		if status.ProviderName == "" {
+			status.ProviderName = s.config.OidcProviderName
+		}
+		if status.ProviderLogoUrl == "" {
+			status.ProviderLogoUrl = s.config.OidcProviderLogoUrl
+		}
 	}
 	return status, nil
 }

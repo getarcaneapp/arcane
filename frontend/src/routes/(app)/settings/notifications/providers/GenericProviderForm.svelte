@@ -74,10 +74,8 @@
 		type="text"
 		autocomplete="off"
 		helpText={m.notifications_generic_webhook_url_help()}
+		error={fieldErrors.webhookUrl}
 	/>
-	{#if fieldErrors.webhookUrl}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.webhookUrl}</p>
-	{/if}
 
 	<TextInputWithLabel
 		bind:value={values.method}

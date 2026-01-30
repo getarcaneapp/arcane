@@ -44,9 +44,8 @@ export function isLayerComplete(status: string): boolean {
 	return (
 		s.includes('pull complete') ||
 		s.includes('already exists') ||
-		s.includes('download complete') ||
-		s.includes('extracted') ||
-		(s.includes('complete') && !s.includes('downloading'))
+		s.includes('downloaded newer image') ||
+		s.includes('image is up to date')
 	);
 }
 
@@ -93,33 +92,34 @@ export function isDownloadingLine(data: unknown): boolean {
  * Calculates overall progress from layer progress data
  */
 export function calculateOverallProgress(layers: Record<string, LayerProgress>): number {
-	let totalCurrentBytes = 0;
-	let totalExpectedBytes = 0;
-	let activeLayers = 0;
+	const entries = Object.values(layers);
+	if (entries.length === 0) return 0;
 
-	for (const id in layers) {
-		const layer = layers[id];
-		if (layer.total > 0) {
-			totalCurrentBytes += layer.current;
-			totalExpectedBytes += layer.total;
-			activeLayers++;
+	const totalLayers = entries.length;
+	let weightedSum = 0;
+
+	for (const layer of entries) {
+		const s = (layer.status || '').toLowerCase();
+		if (isLayerComplete(s)) {
+			weightedSum += 1.0;
+		} else if (s.includes('extracting')) {
+			// Extraction is the last step before completion
+			weightedSum += 0.95;
+		} else if (s.includes('verifying')) {
+			weightedSum += 0.92;
+		} else if (s.includes('download complete')) {
+			weightedSum += 0.85;
+		} else if (layer.total > 0) {
+			// Download progress is weighted up to 85%
+			const downloadProgress = (layer.current / layer.total) * 0.85;
+			weightedSum += Math.min(downloadProgress, 0.85);
+		} else if (s.includes('downloading') || s.includes('pulling')) {
+			weightedSum += 0.05;
 		}
 	}
 
-	if (totalExpectedBytes > 0) {
-		return (totalCurrentBytes / totalExpectedBytes) * 100;
-	}
-
-	if (activeLayers > 0 && totalCurrentBytes > 0) {
-		return 5;
-	}
-
-	if (Object.keys(layers).length > 0 && activeLayers === 0) {
-		const allDone = Object.values(layers).every((l) => l.status && isLayerComplete(l.status));
-		if (allDone) return 100;
-	}
-
-	return 0;
+	const overallProgress = (weightedSum / totalLayers) * 100;
+	return Math.min(overallProgress, 100);
 }
 
 /**
@@ -129,13 +129,7 @@ export function areAllLayersComplete(layers: Record<string, LayerProgress>): boo
 	const entries = Object.values(layers);
 	if (entries.length === 0) return false;
 
-	return entries.every(
-		(l) =>
-			l.status &&
-			(l.status.toLowerCase().includes('complete') ||
-				l.status.toLowerCase().includes('already exists') ||
-				l.status.toLowerCase().includes('downloaded newer image'))
-	);
+	return entries.every((l) => l.status && isLayerComplete(l.status));
 }
 
 /**
@@ -146,7 +140,13 @@ export function getLayerStats(layers: Record<string, LayerProgress>, forceComple
 	const total = entries.length;
 	const completed = entries.filter(([_, l]) => isLayerComplete(l.status || '')).length;
 	const effectiveCompleted = forceComplete ? total : completed;
-	const downloading = entries.filter(([_, l]) => l.status?.toLowerCase().includes('downloading')).length;
+
+	// Downloading: status contains 'downloading' or 'pulling' explicitly
+	const downloading = entries.filter(([_, l]) => {
+		const s = (l.status || '').toLowerCase();
+		return s.includes('downloading') || s.includes('pulling');
+	}).length;
+
 	const extracting = entries.filter(([_, l]) => l.status?.toLowerCase().includes('extracting')).length;
 
 	return { total, completed: effectiveCompleted, downloading, extracting };
@@ -261,4 +261,65 @@ export function createPullStreamHandler(callbacks: {
 		const progress = calculateOverallProgress(layers);
 		callbacks.onProgressChange(progress);
 	};
+}
+
+/**
+ * Returns a computed aggregate status string based on all layers
+ */
+export function getAggregateStatus(
+	layers: Record<string, LayerProgress>,
+	fallbackStatus = '',
+	isComplete = false
+): string {
+	if (isComplete) return 'Pull complete';
+
+	const entries = Object.values(layers);
+	if (entries.length === 0) return fallbackStatus;
+
+	if (areAllLayersComplete(layers)) return 'Pull complete';
+
+	const stats = getLayerStats(layers);
+
+	if (stats.downloading > 0 || stats.extracting > 0) return 'Pulling';
+
+	const hasVerifying = entries.some(
+		(l) => l.status?.toLowerCase().includes('verifying') || l.status?.toLowerCase().includes('digest')
+	);
+	if (hasVerifying) return 'Verifying checksum';
+
+	const hasWaiting = entries.some((l) => l.status?.toLowerCase().includes('waiting'));
+	if (hasWaiting) return 'Waiting';
+
+	return fallbackStatus || 'Preparing';
+}
+
+/**
+ * Returns an aggregate PullPhase for phase-based title system
+ */
+export function getAggregatePullPhase(
+	layers: Record<string, LayerProgress>,
+	isComplete = false,
+	hasError = false
+): PullPhase {
+	if (hasError) return 'error';
+	if (isComplete) return 'complete';
+
+	const entries = Object.values(layers);
+	if (entries.length === 0) return 'preparing';
+
+	if (areAllLayersComplete(layers)) return 'complete';
+
+	const stats = getLayerStats(layers);
+
+	if (stats.downloading > 0 || stats.extracting > 0) return 'downloading';
+
+	const hasVerifying = entries.some(
+		(l) => l.status?.toLowerCase().includes('verifying') || l.status?.toLowerCase().includes('digest')
+	);
+	if (hasVerifying) return 'verifying';
+
+	const hasWaiting = entries.some((l) => l.status?.toLowerCase().includes('waiting'));
+	if (hasWaiting) return 'waiting';
+
+	return 'preparing';
 }

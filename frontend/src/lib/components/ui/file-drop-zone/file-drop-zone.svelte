@@ -13,6 +13,7 @@
 		maxFileSize,
 		fileCount,
 		disabled = false,
+		multiple,
 		onUpload,
 		onFileRejected,
 		accept,
@@ -161,7 +162,7 @@
 		disabled={!canUploadFiles}
 		{id}
 		{accept}
-		multiple={maxFiles === undefined || maxFiles - (fileCount ?? 0) > 1}
+		multiple={multiple ?? (maxFiles === undefined || maxFiles - (fileCount ?? 0) > 1)}
 		type="file"
 		onchange={change}
 		class="hidden"

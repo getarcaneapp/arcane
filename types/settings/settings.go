@@ -212,6 +212,16 @@ type Update struct {
 	// Required: false
 	OidcAutoRedirectToProvider *string `json:"oidcAutoRedirectToProvider,omitempty"`
 
+	// OidcProviderName is the custom display name for the OIDC provider.
+	//
+	// Required: false
+	OidcProviderName *string `json:"oidcProviderName,omitempty"`
+
+	// OidcProviderLogoUrl is the custom logo URL for the OIDC provider.
+	//
+	// Required: false
+	OidcProviderLogoUrl *string `json:"oidcProviderLogoUrl,omitempty"`
+
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false

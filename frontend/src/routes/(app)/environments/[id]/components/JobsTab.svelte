@@ -14,6 +14,7 @@
 
 	let jobsResponse = $state<JobListResponse | null>(null);
 	let isLoading = $state(true);
+	let isFirstLoad = $state(true);
 	let error = $state<string | null>(null);
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -35,12 +36,18 @@
 	}
 
 	async function loadJobs() {
-		isLoading = true;
-		const result = await tryCatch(jobScheduleService.listJobs());
+		if (isFirstLoad) {
+			isLoading = true;
+		}
+
+		const result = await tryCatch(jobScheduleService.listJobs(environmentId));
 		isLoading = false;
+		isFirstLoad = false;
 
 		if (result.error) {
-			error = result.error.message;
+			if (!jobsResponse) {
+				error = result.error.message;
+			}
 			return;
 		}
 
@@ -108,11 +115,11 @@
 			</div>
 		</Card.Header>
 		<Card.Content class="p-4 sm:p-6">
-			{#if isLoading}
+			{#if isLoading && !jobsResponse}
 				<div class="flex h-32 items-center justify-center">
 					<Spinner class="size-8" />
 				</div>
-			{:else if error}
+			{:else if error && !jobsResponse}
 				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
 					{error}
 				</div>
@@ -129,6 +136,7 @@
 									{#each categoryJobs as job (job.id)}
 										<JobCard
 											{job}
+											{environmentId}
 											isAgent={jobsResponse.isAgent}
 											onScheduleUpdate={loadJobs}
 											enabledOverride={getEnabledOverride(job)}

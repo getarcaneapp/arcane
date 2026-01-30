@@ -48,6 +48,16 @@ const (
 	EventTypeVolumeDelete EventType = "volume.delete"
 	EventTypeVolumeError  EventType = "volume.error"
 
+	EventTypeVolumeFileCreate EventType = "volume.file.create"
+	EventTypeVolumeFileDelete EventType = "volume.file.delete"
+	EventTypeVolumeFileUpload EventType = "volume.file.upload"
+
+	EventTypeVolumeBackupCreate       EventType = "volume.backup.create"
+	EventTypeVolumeBackupDelete       EventType = "volume.backup.delete"
+	EventTypeVolumeBackupRestore      EventType = "volume.backup.restore"
+	EventTypeVolumeBackupRestoreFiles EventType = "volume.backup.restore_files"
+	EventTypeVolumeBackupDownload     EventType = "volume.backup.download"
+
 	EventTypeNetworkCreate EventType = "network.create"
 	EventTypeNetworkDelete EventType = "network.delete"
 	EventTypeNetworkError  EventType = "network.error"

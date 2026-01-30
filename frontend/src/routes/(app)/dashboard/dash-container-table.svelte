@@ -15,6 +15,8 @@
 	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 
 	let {
 		containers = $bindable(),
@@ -93,13 +95,17 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
-	<a class="font-medium hover:underline" href="/containers/{item.id}">
-		{#if item.names && item.names.length > 0}
-			{item.names[0].startsWith('/') ? item.names[0].substring(1) : item.names[0]}
-		{:else}
-			{item.id.substring(0, 12)}
-		{/if}
-	</a>
+	{@const displayName =
+		item.names && item.names.length > 0
+			? item.names[0].startsWith('/')
+				? item.names[0].substring(1)
+				: item.names[0]
+			: item.id.substring(0, 12)}
+	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	<div class="flex items-center gap-2">
+		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-4" containerClass="size-7" />
+		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+	</div>
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
@@ -110,10 +116,13 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
+			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
 			const state = item.state;
 			return {
 				component: ContainersIcon,
-				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber'
+				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber',
+				imageUrl: iconUrl ?? undefined,
+				alt: item.names?.[0] ? item.names[0].replace(/^\//, '') : item.id.substring(0, 12)
 			};
 		}}
 		title={(item) => {

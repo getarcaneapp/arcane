@@ -56,6 +56,7 @@
 		bulkActions = [],
 		persistKey,
 		customViewOptions,
+		customToolbarActions,
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<VisibilityState>({}),
@@ -81,6 +82,7 @@
 		bulkActions?: BulkAction[];
 		persistKey?: string;
 		customViewOptions?: Snippet;
+		customToolbarActions?: Snippet;
 		customTableView?: Snippet<
 			[
 				{
@@ -622,6 +624,7 @@
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
+					{customToolbarActions}
 				/>
 			</div>
 		{/if}
@@ -673,6 +676,7 @@
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
+						{customToolbarActions}
 				/>
 			</div>
 		{/if}
