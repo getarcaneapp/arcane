@@ -20,7 +20,8 @@
 		selectionDisabled = false,
 		onGroupToggle,
 		getGroupSelectionState,
-		onToggleGroupSelection
+		onToggleGroupSelection,
+		unstyled = false
 	}: {
 		table: TableType<any>;
 		selectedIds: string[];
@@ -32,6 +33,7 @@
 		onGroupToggle?: (groupName: string) => void;
 		getGroupSelectionState?: (groupItems: any[]) => GroupSelectionState;
 		onToggleGroupSelection?: (groupItems: any[]) => void;
+		unstyled?: boolean;
 	} = $props();
 
 	// Get column width class from meta
@@ -72,7 +74,13 @@
 	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
 </script>
 
-<div class="h-full w-full">
+<div
+	class={cn(
+		'h-full w-full',
+		unstyled &&
+			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr[data-state=selected]]:bg-transparent!'
+	)}
+>
 	<Table.Root>
 		<Table.Header>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
@@ -99,7 +107,7 @@
 					<Table.Row
 						class={cn(
 							'cursor-pointer transition-colors',
-							hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70'
+							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/50 hover:bg-muted/70')
 						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
@@ -148,7 +156,11 @@
 				{#if groupedRows.length === 0}
 					<Table.Row>
 						<Table.Cell colspan={columnsCount} class="h-48">
-							<Empty.Root class="bg-card/30 rounded-lg py-12 backdrop-blur-sm" role="status" aria-live="polite">
+							<Empty.Root
+								class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
+								role="status"
+								aria-live="polite"
+							>
 								<Empty.Header>
 									<Empty.Media variant="icon">
 										<FolderXIcon class="text-muted-foreground/40 size-10" />
@@ -171,7 +183,11 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columnsCount} class="h-48">
-							<Empty.Root class="backdrop-blur-sm bg-card/30 rounded-lg py-12" role="status" aria-live="polite">
+							<Empty.Root
+								class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'backdrop-blur-sm bg-card/30')}
+								role="status"
+								aria-live="polite"
+							>
 								<Empty.Header>
 									<Empty.Media variant="icon">
 										<FolderXIcon class="text-muted-foreground/40 size-10" />

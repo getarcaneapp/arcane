@@ -151,9 +151,9 @@
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
 	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
-		<Card.Header icon={ContainersIcon} class="bg-background shrink-0 border-b">
+		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1">
+				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<a href="/containers" class="hover:underline">{m.containers_title()}</a>
 					</Card.Title>
@@ -165,23 +165,23 @@
 				</ArcaneButton>
 			</div>
 		</Card.Header>
-		<Card.Content class="bg-background flex min-h-0 flex-1 flex-col p-0">
+		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
 				items={{ ...containers, data: containers.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (containers = await containerService.getContainers(options))}
-				withoutSearch={true}
-				withoutPagination={true}
-				selectionDisabled={true}
-				unstyled={true}
 				{columns}
 				mobileCard={DashContainerMobileCard}
+				withoutSearch
+				withoutPagination
+				selectionDisabled
+				unstyled
 			/>
 		</Card.Content>
 		{#if containers.data.length >= calculatedLimit && containers.pagination.totalItems > calculatedLimit}
-			<Card.Footer class="bg-background border-t px-6 py-2.5">
-				<span class="text-foreground text-xs">
+			<Card.Footer class="border-t px-6 py-3">
+				<span class="text-muted-foreground text-xs">
 					{m.containers_showing_of_total({ shown: calculatedLimit, total: containers.pagination.totalItems })}
 				</span>
 			</Card.Footer>

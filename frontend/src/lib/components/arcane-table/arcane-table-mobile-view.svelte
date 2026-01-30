@@ -4,6 +4,7 @@
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
 	import { FolderXIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
+	import { cn } from '$lib/utils';
 	import type { Snippet, Component } from 'svelte';
 	import type { GroupedData } from './arcane-table.types.svelte.ts';
 
@@ -13,16 +14,14 @@
 		mobileFieldVisibility,
 		groupedRows = null,
 		groupIcon,
-		groupCollapsedState = {},
-		onGroupToggle
+		unstyled = false
 	}: {
 		table: TableType<any>;
 		mobileCard: Snippet<[{ row: any; item: any; mobileFieldVisibility: Record<string, boolean> }]>;
 		mobileFieldVisibility: Record<string, boolean>;
 		groupedRows?: GroupedData<any>[] | null;
 		groupIcon?: (groupName: string) => Component;
-		groupCollapsedState?: Record<string, boolean>;
-		onGroupToggle?: (groupName: string) => void;
+		unstyled?: boolean;
 	} = $props();
 
 	// Get rows for a specific group from the table model
@@ -63,7 +62,14 @@
 
 		{#if groupedRows.length === 0}
 			<div class="p-4">
-				<Empty.Root class="min-h-48 rounded-xl border-0 bg-card/30 py-12 backdrop-blur-sm" role="status" aria-live="polite">
+				<Empty.Root
+					class={cn(
+						'min-h-48 rounded-xl border-0 py-12',
+						unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm'
+					)}
+					role="status"
+					aria-live="polite"
+				>
 					<Empty.Header>
 						<Empty.Media variant="icon">
 							<FolderXIcon class="text-muted-foreground/40 size-10" />
@@ -79,7 +85,14 @@
 			{@render mobileCard({ row, item: row.original as any, mobileFieldVisibility })}
 		{:else}
 			<div class="p-4">
-				<Empty.Root class="min-h-48 rounded-xl border-0 bg-card/30 py-12 backdrop-blur-sm" role="status" aria-live="polite">
+				<Empty.Root
+					class={cn(
+						'min-h-48 rounded-xl border-0 py-12',
+						unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm'
+					)}
+					role="status"
+					aria-live="polite"
+				>
 					<Empty.Header>
 						<Empty.Media variant="icon">
 							<FolderXIcon class="text-muted-foreground/40 size-10" />

@@ -156,9 +156,9 @@
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
 	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
-		<Card.Header icon={ImagesIcon} class="bg-background shrink-0 border-b">
+		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1">
+				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
 						<a href="/images" class="hover:underline">{m.images_title()}</a>
 					</Card.Title>
@@ -170,23 +170,23 @@
 				</ArcaneButton>
 			</div>
 		</Card.Header>
-		<Card.Content class="bg-background flex min-h-0 flex-1 flex-col p-0">
+		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
 				items={{ ...images, data: images.data.slice(0, calculatedLimit) }}
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (images = await imageService.getImages(options))}
-				withoutSearch={true}
-				selectionDisabled={true}
-				withoutPagination={true}
-				unstyled={true}
 				{columns}
 				mobileCard={DashImageMobileCard}
+				withoutSearch
+				selectionDisabled
+				withoutPagination
+				unstyled
 			/>
 		</Card.Content>
 		{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}
-			<Card.Footer class="bg-background border-t px-6 py-2.5">
-				<span class="text-foreground text-xs">
+			<Card.Footer class="border-t px-6 py-3">
+				<span class="text-muted-foreground text-xs">
 					{m.images_showing_of_total({ shown: calculatedLimit, total: images.pagination.totalItems })}
 				</span>
 			</Card.Footer>

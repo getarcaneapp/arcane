@@ -28,13 +28,13 @@
 	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined') {
 		switch (variant) {
 			case 'default':
-				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
+				return 'bg-card border border-border/40 shadow-sm';
 			case 'subtle':
-				return 'backdrop-blur-sm bg-surface/40';
+				return 'bg-card/80 border border-border/30';
 			case 'outlined':
-				return 'backdrop-blur-lg bg-surface/40 border-border/50';
+				return 'bg-card/60 border border-border/60';
 			default:
-				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
+				return 'bg-card border border-border/40 shadow-sm';
 		}
 	}
 </script>
@@ -43,10 +43,10 @@
 	bind:this={ref}
 	data-slot="card"
 	class={cn(
-		'text-card-foreground group relative isolate gap-0 overflow-hidden rounded-xl border p-0 transition-all duration-300',
+		'text-card-foreground group relative isolate gap-0 overflow-hidden rounded-xl p-0 transition-all duration-200',
 		getVariantClasses(variant),
 		onclick
-			? '[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/50 cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
+			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:border-border/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
 			: '',
 		className
 	)}

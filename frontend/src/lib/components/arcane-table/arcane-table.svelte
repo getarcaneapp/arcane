@@ -641,6 +641,7 @@
 				onGroupToggle={handleGroupToggle}
 				{getGroupSelectionState}
 				{onToggleGroupSelection}
+				{unstyled}
 			/>
 		</div>
 
@@ -654,6 +655,7 @@
 					{groupIcon}
 					{groupCollapsedState}
 					onGroupToggle={handleGroupToggle}
+					{unstyled}
 				/>
 			</div>
 		</div>
