@@ -53,11 +53,19 @@
 		return '';
 	}
 
+	const stickyActionsBodyClasses = 'sticky right-0 z-10 bg-background';
+	const stickyActionsHeaderClasses = 'sticky right-0 z-20 bg-background';
+	const stickySelectHeaderClasses = 'sticky left-0 z-20 bg-background pr-6!';
+	const stickySelectBodyClasses = 'sticky left-0 z-10 bg-background pr-6!';
+	const stickyGroupSelectClasses = 'sticky w-0 left-0 z-10 bg-background pr-6!';
+
 	// Get cell classes based on column metadata
 	function getCellClasses(cell: Cell<any, unknown>, isGrouped: boolean, isFirstCell: boolean): string {
 		const meta = cell.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign; truncate?: boolean } | undefined;
 		return cn(
 			cell.column.id === 'actions' && 'w-px whitespace-nowrap',
+			cell.column.id === 'select' && stickySelectBodyClasses,
+			cell.column.id === 'actions' && stickyActionsBodyClasses,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
 			meta?.truncate && 'max-w-0 truncate',
@@ -86,7 +94,13 @@
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<Table.Row>
 					{#each headerGroup.headers as header (header.id)}
-						<Table.Head colspan={header.colSpan}>
+						<Table.Head
+							colspan={header.colSpan}
+							class={cn(
+								header.column.id === 'select' && stickySelectHeaderClasses,
+								header.column.id === 'actions' && stickyActionsHeaderClasses
+							)}
+						>
 							{#if !header.isPlaceholder}
 								<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
 							{/if}
@@ -112,7 +126,7 @@
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
 						{#if !selectionDisabled}
-							<Table.Cell class="w-0">
+							<Table.Cell class={stickyGroupSelectClasses}>
 								<TableCheckbox
 									checked={selectionState === 'all'}
 									indeterminate={selectionState === 'some'}
