@@ -658,16 +658,55 @@
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
 	{@const status = actionStatus[item.id]}
-	{#if status}
-		<div class="flex items-center gap-1.5">
-			<Spinner class="size-3.5" />
-			<span class="text-muted-foreground text-xs font-medium">
-				{getActionStatusMessage(status)}
-			</span>
+	<div class="flex items-center gap-2">
+		{#if status}
+			<div class="flex items-center gap-1.5">
+				<Spinner class="size-3.5" />
+				<span class="text-muted-foreground text-xs font-medium">
+					{getActionStatusMessage(status)}
+				</span>
+			</div>
+		{:else}
+			<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+		{/if}
+		<div class="flex items-center gap-1">
+			{#if !status && item.state !== 'running'}
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					class="size-7 border-transparent bg-transparent p-0 text-green-600 shadow-none hover:bg-green-600/10 hover:text-green-500"
+					onclick={() => performContainerAction('start', item.id)}
+					disabled={isAnyLoading}
+					icon={StartIcon}
+					title={m.common_start()}
+				/>
+			{:else if !status && item.state === 'running'}
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					class="size-7 border-transparent bg-transparent p-0 text-red-600 shadow-none hover:bg-red-600/10 hover:text-red-500"
+					onclick={() => performContainerAction('stop', item.id)}
+					disabled={isAnyLoading}
+					title={m.common_stop()}
+					icon={StopIcon}
+				/>
+			{/if}
+			{#if !status && item.updateInfo?.hasUpdate}
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="sm"
+					class="size-7 p-0"
+					onclick={() => handleUpdateContainer(item)}
+					disabled={isAnyLoading}
+					title={m.containers_update_container()}
+					icon={UpdateIcon}
+				/>
+			{/if}
 		</div>
-	{:else}
-		<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
-	{/if}
+	</div>
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ContainerSummaryDto })}

@@ -641,6 +641,7 @@
 				onGroupToggle={handleGroupToggle}
 				{getGroupSelectionState}
 				{onToggleGroupSelection}
+				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
 				{unstyled}
 			/>
 		</div>
@@ -695,6 +696,7 @@
 				onGroupToggle={handleGroupToggle}
 				{getGroupSelectionState}
 				{onToggleGroupSelection}
+				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
 			/>
 		</div>
 

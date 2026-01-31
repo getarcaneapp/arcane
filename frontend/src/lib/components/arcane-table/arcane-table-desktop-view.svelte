@@ -21,6 +21,7 @@
 		onGroupToggle,
 		getGroupSelectionState,
 		onToggleGroupSelection,
+		onToggleRowSelection,
 		unstyled = false
 	}: {
 		table: TableType<any>;
@@ -33,6 +34,7 @@
 		onGroupToggle?: (groupName: string) => void;
 		getGroupSelectionState?: (groupItems: any[]) => GroupSelectionState;
 		onToggleGroupSelection?: (groupItems: any[]) => void;
+		onToggleRowSelection?: (id: string, selected: boolean) => void;
 		unstyled?: boolean;
 	} = $props();
 
@@ -53,14 +55,25 @@
 		return '';
 	}
 
-	const stickyActionsClasses = 'sticky right-0 z-10 bg-background';
-	const stickySelectClasses = 'sticky w-0 left-0 z-10 bg-background pr-6!';
+	const stickyActionsClasses = 'sticky right-0 z-10 bg-[color:var(--row-bg,var(--color-background))] transition-colors';
+	const stickySelectClasses = 'w-0 pr-6!';
+
+	function shouldIgnoreRowClick(event: MouseEvent): boolean {
+		const target = event.target as HTMLElement | null;
+		return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
+	}
+
+	function handleRowClick(event: MouseEvent, rowId: string) {
+		if (selectionDisabled || shouldIgnoreRowClick(event)) return;
+		const isSelected = (selectedIds ?? []).includes(rowId);
+		onToggleRowSelection?.(rowId, !isSelected);
+	}
 
 	// Get cell classes based on column metadata
 	function getCellClasses(cell: Cell<any, unknown>, isGrouped: boolean, isFirstCell: boolean): string {
 		const meta = cell.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign; truncate?: boolean } | undefined;
 		return cn(
-			cell.column.id === 'actions' && 'w-px whitespace-nowrap',
+			cell.column.id === 'actions' && 'text-right whitespace-nowrap',
 			cell.column.id === 'select' && stickySelectClasses,
 			cell.column.id === 'actions' && stickyActionsClasses,
 			getWidthClass(meta?.width),
@@ -83,7 +96,7 @@
 	class={cn(
 		'h-full w-full',
 		unstyled &&
-			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr[data-state=selected]]:bg-transparent!'
+			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
 	<Table.Root>
@@ -118,7 +131,10 @@
 					<Table.Row
 						class={cn(
 							'cursor-pointer transition-colors',
-							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-muted/70')
+							!unstyled &&
+								(hasSelection
+									? '[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))] hover:[--row-bg:color-mix(in_oklch,var(--color-primary)_15%,var(--color-background))]'
+									: 'hover:[--row-bg:color-mix(in_oklch,var(--color-muted)_70%,var(--color-background))]')
 						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
@@ -152,11 +168,28 @@
 					<!-- Group Items (if not collapsed) -->
 					{#if !isCollapsed}
 						{#each groupRows as row (row.id)}
-							<Table.Row data-state={(selectedIds ?? []).includes((row.original as any).id) && 'selected'}>
+							{@const rowId = (row.original as any).id}
+							<Table.Row
+								data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
+								onclick={(event) => handleRowClick(event, rowId)}
+							>
 								{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
 									{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
 									<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
-										<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+										{#if cell.column.id === 'actions'}
+											<div class="flex items-center justify-end" data-row-select-ignore>
+												<div
+													class={cn(
+														'border-border/40 bg-card/70 pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm backdrop-blur-md',
+														unstyled && 'backdrop-blur-0 border-transparent bg-transparent shadow-none'
+													)}
+												>
+													<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+												</div>
+											</div>
+										{:else}
+											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+										{/if}
 									</Table.Cell>
 								{/each}
 							</Table.Row>
@@ -184,10 +217,27 @@
 				{/if}
 			{:else}
 				{#each table.getRowModel().rows as row (row.id)}
-					<Table.Row data-state={(selectedIds ?? []).includes((row.original as any).id) && 'selected'}>
+					{@const rowId = (row.original as any).id}
+					<Table.Row
+						data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
+						onclick={(event) => handleRowClick(event, rowId)}
+					>
 						{#each row.getVisibleCells() as cell (cell.id)}
 							<Table.Cell class={getCellClasses(cell, false, false)}>
-								<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+								{#if cell.column.id === 'actions'}
+									<div class="flex items-center justify-end" data-row-select-ignore>
+										<div
+											class={cn(
+												'border-border/40 bg-card/70 pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm backdrop-blur-md',
+												unstyled && 'backdrop-blur-0 border-transparent bg-transparent shadow-none'
+											)}
+										>
+											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+										</div>
+									</div>
+								{:else}
+									<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+								{/if}
 							</Table.Cell>
 						{/each}
 					</Table.Row>

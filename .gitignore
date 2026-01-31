@@ -43,3 +43,6 @@ tests/package-lock.json
 .claude/**
 .fast-check
 *.out
+
+# btca
+.btca

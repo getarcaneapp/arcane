@@ -28,13 +28,13 @@
 	function getVariantClasses(variant: 'default' | 'subtle' | 'outlined') {
 		switch (variant) {
 			case 'default':
-				return 'bg-card border border-border/40 shadow-sm';
+				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
 			case 'subtle':
-				return 'bg-card/80 border border-border/30';
+				return 'backdrop-blur-sm bg-surface/40';
 			case 'outlined':
-				return 'bg-card/60 border border-border/60';
+				return 'backdrop-blur-sm bg-surface/40 border border-border/60';
 			default:
-				return 'bg-card border border-border/40 shadow-sm';
+				return 'backdrop-blur-sm bg-surface/40 shadow-sm';
 		}
 	}
 </script>
@@ -46,7 +46,7 @@
 		'text-card-foreground group relative isolate gap-0 overflow-hidden rounded-xl p-0 transition-all duration-200',
 		getVariantClasses(variant),
 		onclick
-			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:border-border/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
+			? '[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:border-border/60 cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
 			: '',
 		className
 	)}

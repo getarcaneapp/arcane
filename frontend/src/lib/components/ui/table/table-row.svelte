@@ -15,8 +15,9 @@
 	data-slot="table-row"
 	class={cn(
 		'group/row border-border/40 bg-background border-b transition-colors',
-		'hover:bg-muted',
-		'data-[state=selected]:bg-primary/10',
+		'[&_td]:transition-colors',
+		'hover:[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))]',
+		'data-[state=selected]:[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))]',
 		className
 	)}
 	{...restProps}
