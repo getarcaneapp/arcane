@@ -43,7 +43,7 @@
   "devDependencies": {
     "@codecov/sveltekit-plugin": "^1.9.1",
     "@iconify/json": "^2.2.431",
-    "@inlang/paraglide-js": "2.9.0",
+    "@inlang/paraglide-js": "2.9.1",
     "@internationalized/date": "^3.10.1",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.1.18",
