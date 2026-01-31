@@ -183,7 +183,7 @@ dockers_v2:
     images:
       - "ghcr.io/getarcaneapp/arcane"
     tags:
-      - "next"
+      - "next-static"
       - "{{.Tag}}"
     platforms:
       - linux/amd64
@@ -210,7 +210,7 @@ dockers_v2:
     images:
       - "ghcr.io/getarcaneapp/arcane-headless"
     tags:
-      - "next"
+      - "next-static"
       - "{{.Tag}}"
     platforms:
       - linux/amd64

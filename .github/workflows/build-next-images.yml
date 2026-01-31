@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build-next-images:
-    runs-on: depot-ubuntu-24.04-16
+    runs-on: depot-ubuntu-24.04-32
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -71,5 +71,67 @@ jobs:
           BUILD_NEXT: "true"
           SKIP_RELEASE: "true"
           SKIP_CHANGELOG: "true"
-          GORELEASER_CURRENT_TAG: next-${{ steps.vars.outputs.sha_short }}
+          GORELEASER_CURRENT_TAG: next-static-${{ steps.vars.outputs.sha_short }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
+      - name: Resolve manager image name
+        id: manager-image
+        run: |
+          OWNER=${{ github.repository_owner }}
+          echo "value=ghcr.io/${OWNER,,}/arcane" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve agent image name
+        id: agent-image
+        run: |
+          OWNER=${{ github.repository_owner }}
+          echo "value=ghcr.io/${OWNER,,}/arcane-headless" >> "$GITHUB_OUTPUT"
+
+      - name: Manager image metadata
+        id: manager-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.manager-image.outputs.value }}
+          tags: |
+            type=raw,value=next
+            type=raw,value=next-${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push manager image
+        id: manager-build
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.manager-meta.outputs.tags }}
+          labels: ${{ steps.manager-meta.outputs.labels }}
+          build-args: |
+            VERSION=next-${{ steps.vars.outputs.sha_short }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: true
+
+      - name: Agent image metadata
+        id: agent-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.agent-image.outputs.value }}
+          tags: |
+            type=raw,value=next
+            type=raw,value=next-${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push agent image
+        id: agent-build
+        uses: depot/build-push-action@v1
+        with:
+          context: .
+          file: docker/Dockerfile-agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.agent-meta.outputs.tags }}
+          labels: ${{ steps.agent-meta.outputs.labels }}
+          build-args: |
+            VERSION=next-${{ steps.vars.outputs.sha_short }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: true
