@@ -86,7 +86,7 @@
 			title: m.volumes_stat_unused(),
 			value: volumeUsageCounts.unused,
 			icon: VolumeUnusedIcon,
-			iconColor: 'text-red-500'
+			iconColor: 'text-amber-500'
 		}
 	]);
 </script>
