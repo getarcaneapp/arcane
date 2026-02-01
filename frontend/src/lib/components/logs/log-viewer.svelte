@@ -104,7 +104,7 @@
 		});
 	}
 
-	export function clearLogs(opts?: { hard?: boolean; restart?: boolean }) {
+	export async function clearLogs(opts?: { hard?: boolean; restart?: boolean }) {
 		const hard = opts?.hard === true;
 
 		if (hard) {
@@ -120,7 +120,7 @@
 		onClear?.();
 
 		if (opts?.restart) {
-			stopLogStream();
+			await stopLogStream();
 			startLogStream();
 		}
 	}
@@ -132,10 +132,13 @@
 	let logContainer: HTMLElement | undefined = $state();
 	let isStreaming = $state(false);
 	let shouldBeStreaming = $state(false);
+	let connecting = $state(false);
 	let error: string | null = $state(null);
 	let eventSource: EventSource | null = null;
 	let wsClient: ReconnectingWebSocket<string> | null = null;
 	let currentStreamKey: string | null = null;
+	let streamSession = 0;
+	let currentStreamSession = 0;
 	function streamKey() {
 		return type === 'project' ? (projectId ? `project:${projectId}` : null) : containerId ? `ctr:${containerId}` : null;
 	}
@@ -167,15 +170,18 @@
 			return;
 		}
 
-		// Prevent starting if already streaming
-		if (shouldBeStreaming && wsClient) {
+		// Prevent starting if already streaming or connecting
+		if (connecting || (shouldBeStreaming && wsClient)) {
 			return;
 		}
 
+		connecting = true;
+		const sessionId = ++streamSession;
+		currentStreamSession = sessionId;
 		try {
 			shouldBeStreaming = true;
 			error = null;
-			await startWebSocketStream();
+			await startWebSocketStream(sessionId);
 			// Only notify after successful start
 			isStreaming = true;
 			onStart?.();
@@ -185,10 +191,15 @@
 			error = m.log_stream_failed_connect({ type: humanType });
 			isStreaming = false;
 			shouldBeStreaming = false;
+			if (currentStreamSession === sessionId) {
+				currentStreamSession = 0;
+			}
+		} finally {
+			connecting = false;
 		}
 	}
 
-	async function startWebSocketStream() {
+	async function startWebSocketStream(sessionId: number) {
 		// Close existing connection if any
 		if (wsClient) {
 			try {
@@ -210,11 +221,13 @@
 				}
 			},
 			onOpen: () => {
+				if (sessionId !== currentStreamSession) return;
 				if (dev) console.log(m.log_viewer_connected({ type: humanType }));
 				error = null;
 				isStreaming = true;
 			},
 			onMessage: (payload) => {
+				if (sessionId !== currentStreamSession) return;
 				if (!payload) return;
 				if (Array.isArray(payload)) {
 					for (const obj of payload) processLogObject(obj);
@@ -223,16 +236,18 @@
 				}
 			},
 			onError: (e) => {
+				if (sessionId !== currentStreamSession) return;
 				console.error('WebSocket log stream error:', e);
 				error = m.log_stream_connection_lost({ type: humanType });
 			},
 			onClose: () => {
+				if (sessionId !== currentStreamSession) return;
 				isStreaming = false;
 				if (!error && shouldBeStreaming) {
 					error = m.log_stream_closed_by_server({ type: humanType });
 				}
 			},
-			shouldReconnect: () => shouldBeStreaming,
+			shouldReconnect: () => shouldBeStreaming && sessionId === currentStreamSession,
 			maxBackoff: 10000
 		});
 
@@ -252,24 +267,29 @@
 		});
 	}
 
-	export function stopLogStream(notifyCallback = true) {
+	export async function stopLogStream(notifyCallback = true): Promise<void> {
 		shouldBeStreaming = false;
+		currentStreamSession = 0;
 
 		if (eventSource) {
 			if (dev) console.log(m.log_viewer_stopping({ type: humanType }));
 			eventSource.close();
 			eventSource = null;
 		}
+
+		let closePromise: Promise<void> | undefined;
 		if (wsClient) {
-			try {
-				wsClient.close();
-			} catch {}
+			closePromise = wsClient.closeAndWait?.();
 			wsClient = null;
 		}
+
 		isStreaming = false;
+		connecting = false;
 		if (notifyCallback) {
 			onStop?.();
 		}
+
+		await closePromise;
 	}
 
 	function addLogEntry(logData: { level: string; message: string; timestamp?: string; service?: string; containerId?: string }) {
@@ -370,13 +390,18 @@
 		// If key changed while streaming, restart with new key
 		if (currentStreamKey && currentStreamKey !== key) {
 			const wasStreaming = shouldBeStreaming;
-			if (wasStreaming) {
-				stopLogStream(false);
-			}
-			logs = [];
 			currentStreamKey = key;
+
 			if (wasStreaming) {
-				startLogStream();
+				(async () => {
+					await stopLogStream(false);
+					logs = [];
+					if (currentStreamKey === key) {
+						startLogStream();
+					}
+				})();
+			} else {
+				logs = [];
 			}
 		} else if (!currentStreamKey) {
 			// First time - just set the key, don't auto-start
