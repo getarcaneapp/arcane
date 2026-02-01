@@ -101,10 +101,8 @@
 		type="text"
 		autocomplete="off"
 		helpText={m.notifications_ntfy_topic_help()}
+		error={fieldErrors.topic}
 	/>
-	{#if fieldErrors.topic}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.topic}</p>
-	{/if}
 
 	<TextInputWithLabel
 		bind:value={values.username}

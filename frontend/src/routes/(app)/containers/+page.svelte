@@ -84,7 +84,8 @@
 		{
 			title: m.common_total(),
 			value: containerStatusCounts.totalContainers,
-			icon: BoxIcon
+			icon: BoxIcon,
+			iconColor: 'text-blue-500'
 		},
 		{
 			title: m.common_running(),
@@ -96,7 +97,7 @@
 			title: m.common_stopped(),
 			value: containerStatusCounts.stoppedContainers,
 			icon: BoxIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-red-500'
 		}
 	]);
 </script>

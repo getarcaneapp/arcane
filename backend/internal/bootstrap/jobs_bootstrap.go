@@ -37,32 +37,100 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	gitOpsSyncJob := pkg_scheduler.NewGitOpsSyncJob(appServices.GitOpsSync, appServices.Settings)
 	newScheduler.RegisterJob(gitOpsSyncJob)
 
-	setupJobScheduleCallbacks(appServices, appConfig, newScheduler, environmentHealthJob, analyticsJob, eventCleanupJob)
+	setupJobScheduleCallbacks(
+		appServices,
+		appConfig,
+		newScheduler,
+		imagePollingJob,
+		autoUpdateJob,
+		environmentHealthJob,
+		analyticsJob,
+		eventCleanupJob,
+		scheduledPruneJob,
+		gitOpsSyncJob,
+	)
 	setupSettingsCallbacks(appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob)
 }
 
-func setupJobScheduleCallbacks(appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, analyticsJob *pkg_scheduler.AnalyticsJob, eventCleanupJob *pkg_scheduler.EventCleanupJob) {
-	if appServices.JobSchedule != nil {
-		appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context, changedKeys []string) {
-			for _, key := range changedKeys {
-				switch key {
-				case "environmentHealthInterval":
-					if appConfig.AgentMode {
-						continue
-					}
-					if err := newScheduler.RescheduleJob(ctx, environmentHealthJob); err != nil {
-						slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
-					}
-				case "analyticsHeartbeatInterval":
-					if err := newScheduler.RescheduleJob(ctx, analyticsJob); err != nil {
-						slog.WarnContext(ctx, "Failed to reschedule analytics heartbeat job", "error", err)
-					}
-				case "eventCleanupInterval":
-					if err := newScheduler.RescheduleJob(ctx, eventCleanupJob); err != nil {
-						slog.WarnContext(ctx, "Failed to reschedule event cleanup job", "error", err)
-					}
-				}
-			}
+func setupJobScheduleCallbacks(
+	appServices *Services,
+	appConfig *config.Config,
+	newScheduler *pkg_scheduler.JobScheduler,
+	imagePollingJob *pkg_scheduler.ImagePollingJob,
+	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
+	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
+	analyticsJob *pkg_scheduler.AnalyticsJob,
+	eventCleanupJob *pkg_scheduler.EventCleanupJob,
+	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
+	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
+) {
+	if appServices.JobSchedule == nil {
+		return
+	}
+
+	appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context, changedKeys []string) {
+		for _, key := range changedKeys {
+			handleJobScheduleChangeInternal(
+				ctx,
+				key,
+				appConfig,
+				newScheduler,
+				imagePollingJob,
+				autoUpdateJob,
+				environmentHealthJob,
+				analyticsJob,
+				eventCleanupJob,
+				scheduledPruneJob,
+				gitOpsSyncJob,
+			)
+		}
+	}
+}
+
+func handleJobScheduleChangeInternal(
+	ctx context.Context,
+	key string,
+	appConfig *config.Config,
+	newScheduler *pkg_scheduler.JobScheduler,
+	imagePollingJob *pkg_scheduler.ImagePollingJob,
+	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
+	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
+	analyticsJob *pkg_scheduler.AnalyticsJob,
+	eventCleanupJob *pkg_scheduler.EventCleanupJob,
+	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
+	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
+) {
+	switch key {
+	case "pollingInterval":
+		if err := newScheduler.RescheduleJob(ctx, imagePollingJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
+		}
+	case "autoUpdateInterval":
+		if err := newScheduler.RescheduleJob(ctx, autoUpdateJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
+		}
+	case "environmentHealthInterval":
+		if appConfig.AgentMode {
+			return
+		}
+		if err := newScheduler.RescheduleJob(ctx, environmentHealthJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
+		}
+	case "analyticsHeartbeatInterval":
+		if err := newScheduler.RescheduleJob(ctx, analyticsJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule analytics heartbeat job", "error", err)
+		}
+	case "eventCleanupInterval":
+		if err := newScheduler.RescheduleJob(ctx, eventCleanupJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule event cleanup job", "error", err)
+		}
+	case "scheduledPruneInterval":
+		if err := newScheduler.RescheduleJob(ctx, scheduledPruneJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule scheduled-prune job", "error", err)
+		}
+	case "gitopsSyncInterval":
+		if err := newScheduler.RescheduleJob(ctx, gitOpsSyncJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule gitops sync job", "error", err)
 		}
 	}
 }

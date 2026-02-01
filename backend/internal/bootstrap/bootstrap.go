@@ -56,6 +56,14 @@ func Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}
+	defer func(ctx context.Context) {
+		baseCtx := context.WithoutCancel(ctx)
+		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
+		defer shutdownCancel()
+		if appServices.Volume != nil {
+			appServices.Volume.CleanupHelperContainers(shutdownCtx)
+		}
+	}(appCtx)
 
 	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)

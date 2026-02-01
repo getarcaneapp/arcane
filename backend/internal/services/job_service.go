@@ -68,37 +68,29 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 
 	current := s.GetJobSchedules(ctx)
 
-	// Validate inputs (cron expressions)
-	validate := func(name string, v *string) error {
-		if v == nil || *v == "" {
-			return nil
-		}
-		if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(*v); err != nil {
-			return fmt.Errorf("invalid cron expression for %s: %w", name, err)
-		}
-		return nil
+	fields := []struct {
+		key     string
+		current string
+		update  *string
+	}{
+		{key: "environmentHealthInterval", current: current.EnvironmentHealthInterval, update: updates.EnvironmentHealthInterval},
+		{key: "eventCleanupInterval", current: current.EventCleanupInterval, update: updates.EventCleanupInterval},
+		{key: "analyticsHeartbeatInterval", current: current.AnalyticsHeartbeatInterval, update: updates.AnalyticsHeartbeatInterval},
+		{key: "autoUpdateInterval", current: current.AutoUpdateInterval, update: updates.AutoUpdateInterval},
+		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
+		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
+		{key: "gitopsSyncInterval", current: current.GitopsSyncInterval, update: updates.GitopsSyncInterval},
 	}
 
-	if err := validate("environmentHealthInterval", updates.EnvironmentHealthInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("eventCleanupInterval", updates.EventCleanupInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("autoUpdateInterval", updates.AutoUpdateInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("pollingInterval", updates.PollingInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("scheduledPruneInterval", updates.ScheduledPruneInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("gitopsSyncInterval", updates.GitopsSyncInterval); err != nil {
-		return jobschedule.Config{}, err
+	// Validate inputs (cron expressions)
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	for _, field := range fields {
+		if field.update == nil || *field.update == "" {
+			continue
+		}
+		if _, err := parser.Parse(*field.update); err != nil {
+			return jobschedule.Config{}, fmt.Errorf("invalid cron expression for %s: %w", field.key, err)
+		}
 	}
 
 	changed := false
@@ -116,26 +108,10 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := upsert(tx, "environmentHealthInterval", updates.EnvironmentHealthInterval, current.EnvironmentHealthInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "eventCleanupInterval", updates.EventCleanupInterval, current.EventCleanupInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval, current.AnalyticsHeartbeatInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "autoUpdateInterval", updates.AutoUpdateInterval, current.AutoUpdateInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "pollingInterval", updates.PollingInterval, current.PollingInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "scheduledPruneInterval", updates.ScheduledPruneInterval, current.ScheduledPruneInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "gitopsSyncInterval", updates.GitopsSyncInterval, current.GitopsSyncInterval); err != nil {
-			return err
+		for _, field := range fields {
+			if err := upsert(tx, field.key, field.update, field.current); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

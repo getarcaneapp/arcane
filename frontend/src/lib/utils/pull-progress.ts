@@ -266,11 +266,7 @@ export function createPullStreamHandler(callbacks: {
 /**
  * Returns a computed aggregate status string based on all layers
  */
-export function getAggregateStatus(
-	layers: Record<string, LayerProgress>,
-	fallbackStatus = '',
-	isComplete = false
-): string {
+export function getAggregateStatus(layers: Record<string, LayerProgress>, fallbackStatus = '', isComplete = false): string {
 	if (isComplete) return 'Pull complete';
 
 	const entries = Object.values(layers);
@@ -296,11 +292,7 @@ export function getAggregateStatus(
 /**
  * Returns an aggregate PullPhase for phase-based title system
  */
-export function getAggregatePullPhase(
-	layers: Record<string, LayerProgress>,
-	isComplete = false,
-	hasError = false
-): PullPhase {
+export function getAggregatePullPhase(layers: Record<string, LayerProgress>, isComplete = false, hasError = false): PullPhase {
 	if (hasError) return 'error';
 	if (isComplete) return 'complete';
 

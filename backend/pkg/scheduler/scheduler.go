@@ -49,7 +49,7 @@ func (js *JobScheduler) StartScheduler() {
 			slog.InfoContext(js.context, "Job finished", "name", currentJob.Name())
 		})
 		if err != nil {
-			slog.ErrorContext(js.context, "Failed to schedule job", "name", currentJob.Name(), "error", err)
+			slog.ErrorContext(js.context, "Failed to schedule job", "name", currentJob.Name(), "schedule", schedule, "error", err)
 			continue
 		}
 

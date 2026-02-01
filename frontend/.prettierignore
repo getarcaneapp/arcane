@@ -6,3 +6,12 @@ yarn.lock
 # Compiled files
 .svelte-kit/
 build/
+backend/frontend/dist/**
+
+# Paraglide
+frontend/messages/
+messages/
+frontend/project.inlang
+project.inlang/
+frontend/src/lib/paraglide/**
+src/lib/paraglide/**

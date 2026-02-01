@@ -89,10 +89,8 @@
 		type="password"
 		autocomplete="off"
 		helpText={m.notifications_pushover_token_help()}
+		error={fieldErrors.token}
 	/>
-	{#if fieldErrors.token}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.token}</p>
-	{/if}
 
 	<TextInputWithLabel
 		bind:value={values.user}
@@ -102,10 +100,8 @@
 		type="text"
 		autocomplete="off"
 		helpText={m.notifications_pushover_user_help()}
+		error={fieldErrors.user}
 	/>
-	{#if fieldErrors.user}
-		<p class="text-destructive -mt-2 text-sm">{fieldErrors.user}</p>
-	{/if}
 
 	<div class="space-y-2">
 		<Label for="pushover-devices">{m.notifications_pushover_devices_label()}</Label>
