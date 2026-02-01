@@ -280,6 +280,9 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleRemoveVolumeConfirm(item.name)}
