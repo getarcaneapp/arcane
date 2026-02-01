@@ -19,6 +19,7 @@ import (
 const (
 	AnalyticsJobName         = "analytics-heartbeat"
 	defaultHeartbeatEndpoint = "https://checkin.getarcane.app/heartbeat"
+	devHeartbeatEndpoint     = "http://localhost:8080/heartbeat"
 )
 
 type AnalyticsJob struct {
@@ -36,10 +37,14 @@ func NewAnalyticsJob(
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	heartbeatURL := defaultHeartbeatEndpoint
+	if !cfg.Environment.IsProdEnvironment() {
+		heartbeatURL = devHeartbeatEndpoint
+	}
 	return &AnalyticsJob{
 		settingsService: settingsService,
 		httpClient:      httpClient,
-		heartbeatURL:    defaultHeartbeatEndpoint,
+		heartbeatURL:    heartbeatURL,
 		cfg:             cfg,
 	}
 }
@@ -72,8 +77,12 @@ func (j *AnalyticsJob) Schedule(ctx context.Context) string {
 }
 
 func (j *AnalyticsJob) Run(ctx context.Context) {
-	if j.cfg.AnalyticsDisabled || !j.cfg.Environment.IsProdEnvironment() {
-		slog.DebugContext(ctx, "analytics disabled or not in production; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled, "env", j.cfg.Environment)
+	if j.cfg.AnalyticsDisabled {
+		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled)
+		return
+	}
+	if j.cfg.Environment.IsTestEnvironment() {
+		slog.DebugContext(ctx, "test environment; skipping heartbeat", "env", j.cfg.Environment)
 		return
 	}
 
@@ -82,9 +91,11 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 	payload := struct {
 		Version    string `json:"version"`
 		InstanceID string `json:"instance_id"`
+		ServerType string `json:"server_type,omitempty"`
 	}{
 		Version:    getAnalyticsVersion(),
 		InstanceID: instanceID,
+		ServerType: j.getServerType(),
 	}
 
 	body, err := json.Marshal(payload)
@@ -93,7 +104,22 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		return
 	}
 
-	slog.InfoContext(ctx, "sending analytics heartbeat", "jobName", AnalyticsJobName)
+	slog.InfoContext(
+		ctx,
+		"sending analytics heartbeat",
+		"jobName",
+		AnalyticsJobName,
+		"version",
+		payload.Version,
+		"instanceID",
+		payload.InstanceID,
+		"serverType",
+		payload.ServerType,
+		"heartbeatURL",
+		j.heartbeatURL,
+		"env",
+		j.cfg.Environment,
+	)
 
 	_, err = backoff.Retry(
 		ctx,
@@ -127,12 +153,34 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		return
 	}
 
-	slog.InfoContext(ctx, "analytics heartbeat sent successfully", "jobName", AnalyticsJobName)
+	slog.InfoContext(
+		ctx,
+		"analytics heartbeat sent successfully",
+		"jobName",
+		AnalyticsJobName,
+		"version",
+		payload.Version,
+		"instanceID",
+		payload.InstanceID,
+		"serverType",
+		payload.ServerType,
+		"heartbeatURL",
+		j.heartbeatURL,
+		"env",
+		j.cfg.Environment,
+	)
 }
 
 func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
 	slog.InfoContext(ctx, "rescheduling analytics heartbeat job in new scheduler; currently requires restart")
 	return nil
+}
+
+func (j *AnalyticsJob) getServerType() string {
+	if j.cfg.AgentMode {
+		return "agent"
+	}
+	return "manager"
 }
 
 func getAnalyticsVersion() string {
