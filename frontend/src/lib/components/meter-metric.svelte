@@ -14,6 +14,7 @@
 		loading?: boolean;
 		showAbsoluteValues?: boolean;
 		formatAbsoluteValue?: (value: number) => string;
+		formatUsageValue?: (value: number) => string;
 	}
 
 	let {
@@ -26,10 +27,16 @@
 		icon,
 		loading = false,
 		showAbsoluteValues = false,
-		formatAbsoluteValue = (v) => v.toString()
+		formatAbsoluteValue = (v) => v.toString(),
+		formatUsageValue
 	}: Props = $props();
 
 	const percentage = $derived(currentValue !== undefined && !loading && maxValue > 0 ? (currentValue / maxValue) * 100 : 0);
+	const usageValueText = $derived.by(() => {
+		if (currentValue === undefined) return m.common_na();
+		if (formatUsageValue) return formatUsageValue(currentValue);
+		return `${percentage.toFixed(1)}%`;
+	});
 </script>
 
 <Card.Root class="flex h-full flex-col">
@@ -67,7 +74,7 @@
 					<div class="flex items-center gap-2 whitespace-nowrap">
 						<div class="bg-primary size-2 shrink-0 rounded-full"></div>
 						<span class="text-muted-foreground text-xs">{m.dashboard_meter_usage()}</span>
-						<span class="text-foreground text-sm font-semibold tabular-nums">{percentage.toFixed(1)}%</span>
+						<span class="text-foreground text-sm font-semibold tabular-nums">{usageValueText}</span>
 					</div>
 					{#if showAbsoluteValues && currentValue !== undefined && maxValue !== undefined && formatAbsoluteValue}
 						<div class="flex items-center gap-2 whitespace-nowrap">
