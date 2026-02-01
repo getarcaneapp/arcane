@@ -246,8 +246,22 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		return err
 	}
 
-	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
-		return fmt.Errorf("failed to delete sync: %w", err)
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clear gitops_managed_by for the associated project, if any.
+		if sync.ProjectID != nil && *sync.ProjectID != "" {
+			if err := tx.Model(&models.Project{}).
+				Where("id = ? AND gitops_managed_by = ?", *sync.ProjectID, id).
+				Update("gitops_managed_by", nil).Error; err != nil {
+				return fmt.Errorf("failed to clear gitops_managed_by: %w", err)
+			}
+		}
+
+		if err := tx.Where("id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
+			return fmt.Errorf("failed to delete sync: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Log event
