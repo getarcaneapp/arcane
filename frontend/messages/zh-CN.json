@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "更新磁盘使用路径失败",
 	"directory_path": "目录路径",
 	"_comment_settings_timeouts": "=== 设置 - TIMEOUTS ===",
-	"timeouts_settings": "超时设置",
+	"timeouts_settings": "超时",
 	"timeouts_settings_description": "为慢速网络或硬件配置操作超时，所有值以秒为单位",
 	"timeouts_save": "超时设置更新成功",
 	"docker_api_timeout": "Docker API 超时",
