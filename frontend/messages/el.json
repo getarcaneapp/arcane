@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Failed to update disk usage path",
 	"directory_path": "Directory Path",
 	"_comment_settings_timeouts": "=== ΡΥΘΜΙΣΕΙΣ - ΧΡΟΝΟΥΣ ===",
-	"timeouts_settings": "Ρυθμίσεις Χρονικού Ορίου",
+	"timeouts_settings": "Χρονοδιαγράμματα",
 	"timeouts_settings_description": "Ρύθμιση χρονικών ορίων λειτουργίας για αργά δίκτυα ή υλικό. Όλες οι τιμές είναι σε δευτερόλεπτα.",
 	"timeouts_save": "Οι ρυθμίσεις χρονικού ορίου ενημερώθηκαν επιτυχώς",
 	"docker_api_timeout": "Χρονικό Όριο Docker Api",
