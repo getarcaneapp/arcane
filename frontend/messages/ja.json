@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Failed to update disk usage path",
 	"directory_path": "Directory Path",
 	"_comment_settings_timeouts": "=== 設定 - タイムアウト ===",
-	"timeouts_settings": "タイムアウト設定",
+	"timeouts_settings": "タイムアウト",
 	"timeouts_settings_description": "遅いネットワークまたはハードウェアの操作タイムアウトを設定します。すべての値は秒です。",
 	"timeouts_save": "タイムアウト設定が正常に更新されました",
 	"docker_api_timeout": "Docker API タイムアウト",
