@@ -2,19 +2,19 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
-	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
+	import SidebarItemTooltipContent from '$lib/components/sidebar/sidebar-item-tooltip-content.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -31,7 +31,6 @@
 	const isTablet = new IsTablet();
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
-	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
 
 	const navItems = $derived.by(() => {
@@ -182,40 +181,39 @@
 	}
 </script>
 
-{#snippet Shortcut({ keys }: { keys?: ShortcutKey[] })}
-	{@const displayKeys = keys ? formatShortcutKeys(keys) : []}
-	{#if displayKeys.length}
-		<Kbd.Group class="text-muted-foreground ml-auto items-center gap-1">
-			{#each displayKeys as key, index}
-				<Kbd.Root>{key}</Kbd.Root>
-				{#if index < displayKeys.length - 1}
-					<span class="text-muted-foreground/70 text-[10px]">+</span>
-				{/if}
-			{/each}
-		</Kbd.Group>
-	{/if}
-{/snippet}
-
 <div class="flex h-full min-h-full flex-col md:flex-row">
 	<!-- Desktop Sidebar -->
 	<aside class={cn('relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full', 'backdrop-blur-sm')}>
 		<div aria-hidden="true" class="bg-border/60 pointer-events-none absolute top-4 right-0 bottom-4 w-px"></div>
 		<div class="sticky top-0 px-3 py-4">
 			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
-			<nav class="space-y-1">
+			<nav class="flex min-w-0 flex-col gap-1">
 				{#each navItems as item (item.href)}
 					{@const isActive = currentPath.startsWith(item.href)}
-					<a
-						href={item.href}
-						class={cn(
-							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-						)}
-					>
-						<item.icon class="size-4" />
-						{item.label}
-						{@render Shortcut({ keys: item.shortcut })}
-					</a>
+					{@const linkClass = cn(
+						'flex w-full min-w-0 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+						isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					)}
+					<div class="w-full min-w-0">
+						{#if item.shortcut?.length}
+							<ArcaneTooltip.Root>
+								<ArcaneTooltip.Trigger class="w-full">
+									<a href={item.href} class={linkClass}>
+										<item.icon class="size-4 shrink-0" />
+										<span class="truncate">{item.label}</span>
+									</a>
+								</ArcaneTooltip.Trigger>
+								<ArcaneTooltip.Content side="right" align="start">
+									<SidebarItemTooltipContent title={item.label} shortcut={item.shortcut} includeTitle={false} />
+								</ArcaneTooltip.Content>
+							</ArcaneTooltip.Root>
+						{:else}
+							<a href={item.href} class={linkClass}>
+								<item.icon class="size-4 shrink-0" />
+								<span class="truncate">{item.label}</span>
+							</a>
+						{/if}
+					</div>
 				{/each}
 			</nav>
 		</div>

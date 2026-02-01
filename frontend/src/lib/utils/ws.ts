@@ -155,6 +155,48 @@ export class ReconnectingWebSocket<T = unknown> {
 		this.connecting = false;
 	}
 
+	closeAndWait(timeoutMs = 2000) {
+		this.closed = true;
+		this.attempt = 0;
+
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+
+		const socket = this.ws;
+		if (!socket || socket.readyState === WebSocket.CLOSED) {
+			this.ws = null;
+			this.connecting = false;
+			return Promise.resolve();
+		}
+
+		return new Promise<void>((resolve) => {
+			let timeout: ReturnType<typeof setTimeout> | null = null;
+			const finalize = () => {
+				if (timeout) clearTimeout(timeout);
+				socket.removeEventListener('close', handleClose);
+				if (socket === this.ws) {
+					this.ws = null;
+				}
+				this.connecting = false;
+				resolve();
+			};
+			const handleClose = () => finalize();
+
+			socket.addEventListener('close', handleClose, { once: true });
+			try {
+				socket.close();
+			} catch {
+				// Ignore close errors; rely on timeout/close event.
+			}
+
+			if (timeoutMs > 0) {
+				timeout = setTimeout(finalize, timeoutMs);
+			}
+		});
+	}
+
 	isConnected() {
 		return !!this.ws && this.ws.readyState === WebSocket.OPEN;
 	}
