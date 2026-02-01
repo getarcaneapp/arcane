@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "更新儲存空間使用率路徑時失敗",
 	"directory_path": "目錄路徑",
 	"_comment_settings_timeouts": "=== SETTINGS - TIMEOUTS ===",
-	"timeouts_settings": "逾時設定",
+	"timeouts_settings": "Timeouts",
 	"timeouts_settings_description": "設定緩慢網路或硬體的操作逾時，所有值的單位為秒。",
 	"timeouts_save": "逾時設定更新成功",
 	"docker_api_timeout": "Docker API 逾時",
