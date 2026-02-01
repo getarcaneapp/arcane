@@ -150,12 +150,12 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
-	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
+	<Card.Root class="flex h-full min-h-0 flex-col">
 		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
-						<a href="/containers" class="hover:underline">{m.containers_title()}</a>
+						<h2><a class="hover:underline" href="/containers">{m.containers_title()}</a></h2>
 					</Card.Title>
 					<Card.Description>{m.containers_recent()}</Card.Description>
 				</div>
