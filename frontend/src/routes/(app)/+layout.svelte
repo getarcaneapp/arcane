@@ -67,6 +67,7 @@
 
 	function handleNavigationShortcut(event: KeyboardEvent) {
 		if (event.defaultPrevented) return;
+		if (settings?.keyboardShortcutsEnabled === false) return;
 		if (isMobile.current || isTablet.current) return;
 		if (isEditableTarget(event.target)) return;
 

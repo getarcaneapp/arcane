@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
+	import settingsStore from '$lib/stores/config-store';
 
 	let {
 		title,
@@ -11,16 +12,18 @@
 		shortcut?: ShortcutKey[];
 		includeTitle?: boolean;
 	} = $props();
+
+	const showShortcut = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 </script>
 
 <div class="flex flex-wrap items-center gap-2">
 	{#if includeTitle}
 		<span>{title}</span>
 	{/if}
-	{#if shortcut?.length}
+	{#if showShortcut && shortcut?.length}
 		{@const displayKeys = formatShortcutKeys(shortcut)}
 		<Kbd.Group class="text-muted-foreground inline-flex items-center gap-1">
-			{#each displayKeys as key, index}
+			{#each displayKeys as key, index (index)}
 				<Kbd.Root
 					class="text-popover-foreground! in-data-[slot=tooltip-content]:text-popover-foreground! dark:in-data-[slot=tooltip-content]:text-popover-foreground!"
 				>

@@ -3,6 +3,7 @@ export type LocalSettings = {
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
+	keyboardShortcutsEnabled: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -10,6 +11,7 @@ const LOCAL_SETTING_KEYS = new Set([
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',
+	'keyboardShortcutsEnabled',
 	'authLocalEnabled',
 	'authSessionTimeout',
 	'authPasswordPolicy',

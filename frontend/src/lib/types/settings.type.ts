@@ -45,6 +45,7 @@ export type Settings = {
 	mobileNavigationMode: 'floating' | 'docked';
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
+	keyboardShortcutsEnabled: boolean;
 
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;
