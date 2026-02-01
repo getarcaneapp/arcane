@@ -13,4 +13,5 @@ overrides:
   valibot: ^1.2.0
   validator: ^13.15.22
   cookie: ^0.7.0
-  next: ^16.0.10
+  next: ^16.1.5
+  undici: ^6.23.0

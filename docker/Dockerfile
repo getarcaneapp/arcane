@@ -60,8 +60,8 @@ ARG TARGETARCH
 ARG VERSION="dev"
 ARG REVISION="unknown"
 
-RUN apt-get update && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
     vainfo clinfo libdrm2 libsystemd0 \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         apt-get install -y --no-install-recommends intel-gpu-tools; \

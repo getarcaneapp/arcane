@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"path"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -133,6 +136,173 @@ type GetVolumeSizesOutput struct {
 	Body base.ApiResponse[[]VolumeSizeInfo]
 }
 
+// --- Volume Browser & Backup ---
+
+type BrowseDirectoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
+}
+
+type BrowseDirectoryOutput struct {
+	Body base.ApiResponse[[]volumetypes.FileEntry]
+}
+
+type GetFileContentInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File path"`
+	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
+}
+
+type FileContentResponse struct {
+	Content  []byte `json:"content"`
+	MimeType string `json:"mimeType"`
+}
+
+type GetFileContentOutput struct {
+	Body base.ApiResponse[FileContentResponse]
+}
+
+type DownloadFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File path"`
+}
+
+type DownloadFileOutput struct {
+	ContentType        string `header:"Content-Type"`
+	ContentDisposition string `header:"Content-Disposition"`
+	ContentLength      int64  `header:"Content-Length"`
+	Body               io.ReadCloser
+}
+
+type UploadFileInput struct {
+	EnvironmentID string        `path:"id" doc:"Environment ID"`
+	VolumeName    string        `path:"volumeName" doc:"Volume name"`
+	Path          string        `query:"path" default:"/" doc:"Destination path"`
+	File          huma.FormFile `form:"file" doc:"File to upload"`
+}
+
+type CreateDirectoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"Directory path to create"`
+}
+
+type DeleteFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Path          string `query:"path" doc:"File or directory path to delete"`
+}
+
+type ListBackupsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"20" doc:"Limit"`
+}
+
+type VolumeBackupPaginatedResponse struct {
+	Success    bool                    `json:"success"`
+	Data       []models.VolumeBackup   `json:"data"`
+	Pagination base.PaginationResponse `json:"pagination"`
+	Warnings   []string                `json:"warnings,omitempty"`
+}
+
+type ListBackupsOutput struct {
+	Body VolumeBackupPaginatedResponse
+}
+
+type CreateBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+}
+
+type CreateBackupOutput struct {
+	Body base.ApiResponse[*models.VolumeBackup]
+}
+
+type RestoreBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type RestoreBackupOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type RestoreBackupFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Body          struct {
+		Paths []string `json:"paths" doc:"Paths to restore from backup"`
+	}
+}
+
+type RestoreBackupFilesOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type BackupHasPathInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+	Path          string `query:"path" doc:"Path to check"`
+}
+
+type BackupHasPathResponse struct {
+	Exists bool `json:"exists"`
+}
+
+type BackupHasPathOutput struct {
+	Body base.ApiResponse[BackupHasPathResponse]
+}
+
+type ListBackupFilesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type ListBackupFilesOutput struct {
+	Body base.ApiResponse[[]string]
+}
+
+type DeleteBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type DeleteBackupOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DownloadBackupInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BackupID      string `path:"backupId" doc:"Backup ID"`
+}
+
+type DownloadBackupOutput struct {
+	ContentType        string `header:"Content-Type"`
+	ContentDisposition string `header:"Content-Disposition"`
+	ContentLength      int64  `header:"Content-Length"`
+	Body               io.ReadCloser
+}
+
+type UploadAndRestoreInput struct {
+	EnvironmentID string        `path:"id" doc:"Environment ID"`
+	VolumeName    string        `path:"volumeName" doc:"Volume name"`
+	File          huma.FormFile `form:"file" doc:"Backup archive (tar.gz)"`
+}
+
+type UploadAndRestoreOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 // RegisterVolumes registers volume management routes using Huma.
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService) {
 	h := &VolumeHandler{
@@ -243,6 +413,190 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetVolumeSizes)
+
+	// --- Volume Browsing Endpoints ---
+
+	huma.Register(api, huma.Operation{
+		OperationID: "browse-volume-directory",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse",
+		Summary:     "List volume directory",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.BrowseDirectory)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-volume-file-content",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/content",
+		Summary:     "Get file content preview",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetFileContent)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-volume-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/download",
+		Summary:     "Download file from volume",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DownloadFile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-volume-file",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/upload",
+		Summary:     "Upload file to volume",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UploadFile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-volume-directory",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse/mkdir",
+		Summary:     "Create directory in volume",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.CreateDirectory)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-volume-file",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/volumes/{volumeName}/browse",
+		Summary:     "Delete file or directory in volume",
+		Tags:        []string{"Volume Browser"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DeleteFile)
+
+	// --- Volume Backup Endpoints ---
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-volume-backups",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups",
+		Summary:     "List volume backups",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListBackups)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups",
+		Summary:     "Create volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.CreateBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "restore-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
+		Summary:     "Restore volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.RestoreBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "restore-volume-backup-files",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
+		Summary:     "Restore specific files from a volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.RestoreBackupFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-volume-backup",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/volumes/backups/{backupId}",
+		Summary:     "Delete volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DeleteBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-volume-backup",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/download",
+		Summary:     "Download volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DownloadBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "backup-has-path",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
+		Summary:     "Check if backup contains path",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.BackupHasPath)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-backup-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/backups/{backupId}/files",
+		Summary:     "List files in a volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListBackupFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-volume-backup",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
+		Summary:     "Upload and restore volume backup",
+		Tags:        []string{"Volume Backup"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UploadAndRestore)
 }
 
 // ListVolumes returns a paginated list of volumes.
@@ -471,6 +825,320 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 		Body: base.ApiResponse[[]VolumeSizeInfo]{
 			Success: true,
 			Data:    result,
+		},
+	}, nil
+}
+
+// --- Volume Browser Handler Methods ---
+
+func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirectoryInput) (*BrowseDirectoryOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	entries, err := h.volumeService.ListDirectory(ctx, input.VolumeName, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &BrowseDirectoryOutput{
+		Body: base.ApiResponse[[]volumetypes.FileEntry]{
+			Success: true,
+			Data:    entries,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileContentInput) (*GetFileContentOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	content, mimeType, err := h.volumeService.GetFileContent(ctx, input.VolumeName, input.Path, input.MaxBytes)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &GetFileContentOutput{
+		Body: base.ApiResponse[FileContentResponse]{
+			Success: true,
+			Data: FileContentResponse{
+				Content:  content,
+				MimeType: mimeType,
+			},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*DownloadFileOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	reader, size, err := h.volumeService.DownloadFile(ctx, input.VolumeName, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DownloadFileOutput{
+		ContentType:        "application/octet-stream",
+		ContentDisposition: "attachment; filename=" + path.Base(input.Path),
+		ContentLength:      size,
+		Body:               reader,
+	}, nil
+}
+
+func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	err := h.volumeService.UploadFile(ctx, input.VolumeName, input.Path, input.File, input.File.Filename, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "File uploaded successfully"},
+	}, nil
+}
+
+func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	err := h.volumeService.CreateDirectory(ctx, input.VolumeName, input.Path, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "Directory created successfully"},
+	}, nil
+}
+
+func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	err := h.volumeService.DeleteFile(ctx, input.VolumeName, input.Path, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "Deleted successfully"},
+	}, nil
+}
+
+// --- Volume Backup Handler Methods ---
+
+func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: input.Search,
+		},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+	}
+
+	if params.Limit == 0 {
+		params.Limit = 20
+	}
+
+	backups, paginationResp, err := h.volumeService.ListBackupsPaginated(ctx, input.VolumeName, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	warning := h.volumeService.BackupMountWarning(ctx)
+
+	return &ListBackupsOutput{
+		Body: VolumeBackupPaginatedResponse{
+			Success: true,
+			Data:    backups,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
+			Warnings: func() []string {
+				if warning == "" {
+					return nil
+				}
+				return []string{warning}
+			}(),
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	backup, err := h.volumeService.CreateBackup(ctx, input.VolumeName, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &CreateBackupOutput{
+		Body: base.ApiResponse[*models.VolumeBackup]{
+			Success: true,
+			Data:    backup,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	err := h.volumeService.RestoreBackup(ctx, input.VolumeName, input.BackupID, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &RestoreBackupOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Restore initiated successfully"},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if len(input.Body.Paths) == 0 {
+		return nil, huma.Error400BadRequest("paths are required")
+	}
+
+	if err := h.volumeService.RestoreBackupFiles(ctx, input.VolumeName, input.BackupID, input.Body.Paths, *user); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &RestoreBackupFilesOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Restore initiated successfully"},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*BackupHasPathOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.Path == "" {
+		return nil, huma.Error400BadRequest("path is required")
+	}
+
+	exists, err := h.volumeService.BackupHasPath(ctx, input.BackupID, input.Path)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &BackupHasPathOutput{
+		Body: base.ApiResponse[BackupHasPathResponse]{
+			Success: true,
+			Data:    BackupHasPathResponse{Exists: exists},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*ListBackupFilesOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	files, err := h.volumeService.ListBackupFiles(ctx, input.BackupID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &ListBackupFilesOutput{
+		Body: base.ApiResponse[[]string]{
+			Success: true,
+			Data:    files,
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	err := h.volumeService.DeleteBackup(ctx, input.BackupID, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DeleteBackupOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Backup deleted successfully"},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*DownloadBackupOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	reader, size, err := h.volumeService.DownloadBackup(ctx, input.BackupID, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DownloadBackupOutput{
+		ContentType:        "application/x-gzip",
+		ContentDisposition: "attachment; filename=" + input.BackupID + ".tar.gz",
+		ContentLength:      size,
+		Body:               reader,
+	}, nil
+}
+
+func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	err := h.volumeService.UploadAndRestore(ctx, input.VolumeName, input.File, input.File.Filename, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &UploadAndRestoreOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully"},
 		},
 	}, nil
 }

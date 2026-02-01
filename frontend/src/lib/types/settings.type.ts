@@ -24,6 +24,7 @@ export type Settings = {
 	dockerHost: string;
 	accentColor: string;
 	autoInjectEnv: boolean;
+	backupVolumeName?: string;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;

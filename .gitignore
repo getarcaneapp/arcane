@@ -43,3 +43,4 @@ tests/package-lock.json
 .claude/**
 .fast-check
 *.out
+arcane-devcli

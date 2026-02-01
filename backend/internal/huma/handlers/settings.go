@@ -208,6 +208,15 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		Value: strconv.FormatBool(uiConfigDisabled),
 		Type:  "boolean",
 	})
+	backupVolumeName := "arcane-backups"
+	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+		backupVolumeName = h.cfg.BackupVolumeName
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "backupVolumeName",
+		Value: backupVolumeName,
+		Type:  "string",
+	})
 
 	return &GetPublicSettingsOutput{Body: settingsDto}, nil
 }
@@ -255,6 +264,15 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		Key:   "uiConfigDisabled",
 		Value: strconv.FormatBool(uiConfigDisabled),
 		Type:  "boolean",
+	})
+	backupVolumeName := "arcane-backups"
+	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+		backupVolumeName = h.cfg.BackupVolumeName
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "backupVolumeName",
+		Value: backupVolumeName,
+		Type:  "string",
 	})
 
 	return &GetSettingsOutput{Body: settingsDto}, nil

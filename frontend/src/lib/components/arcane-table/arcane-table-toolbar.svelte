@@ -19,6 +19,7 @@
 		mobileFields = [],
 		onToggleMobileField,
 		customViewOptions,
+		customToolbarActions,
 		class: className
 	}: {
 		table: Table<TData>;
@@ -28,6 +29,7 @@
 		mobileFields?: { id: string; label: string; visible: boolean }[];
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
+		customToolbarActions?: Snippet;
 		class?: string;
 	} = $props();
 
@@ -127,6 +129,10 @@
 					{/each}
 				</div>
 			{/if}
+		{/if}
+
+		{#if customToolbarActions}
+			{@render customToolbarActions()}
 		{/if}
 
 		<!-- View options - desktop only, always on the right -->
