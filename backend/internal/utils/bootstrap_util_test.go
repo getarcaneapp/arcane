@@ -262,7 +262,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, nil, nil)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, nil, nil, nil)
 
 		assert.False(t, createAdminCalled)
 	})
@@ -272,9 +272,14 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 		createAdminCalled := false
 		migrateOidcCalled := false
 		migrateDiscordCalled := false
+		autoLoginInitCalled := false
 
 		createAdminFunc := func(ctx context.Context) error {
 			createAdminCalled = true
+			return nil
+		}
+		autoLoginInitFunc := func(ctx context.Context) error {
+			autoLoginInitCalled = true
 			return nil
 		}
 		migrateOidcFunc := func(ctx context.Context) error {
@@ -286,15 +291,19 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, migrateOidcFunc, migrateDiscordFunc)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
 
 		assert.True(t, createAdminCalled)
 		assert.True(t, migrateOidcCalled)
 		assert.True(t, migrateDiscordCalled)
+		assert.True(t, autoLoginInitCalled)
 	})
 
 	t.Run("handles errors gracefully", func(t *testing.T) {
 		cfg := &config.Config{AgentMode: false}
+		autoLoginInitFunc := func(ctx context.Context) error {
+			return errors.New("autologin init failed")
+		}
 		createAdminFunc := func(ctx context.Context) error {
 			return errors.New("admin creation failed")
 		}
@@ -305,7 +314,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return errors.New("discord migration failed")
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, migrateOidcFunc, migrateDiscordFunc)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
 	})
 }
 
