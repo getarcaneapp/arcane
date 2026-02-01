@@ -70,10 +70,6 @@
 		return openStates[itemTitle];
 	}
 
-	function showTooltip(collapsed: boolean, hasShortcut: boolean): boolean {
-		return collapsed || hasShortcut;
-	}
-
 	const collapsed = $derived(sidebar.state === 'collapsed');
 	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 </script>
@@ -89,10 +85,7 @@
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
 					<Sidebar.MenuItem>
-						<Sidebar.MenuButton
-							isActive={item.isActive}
-							tooltipContent={showTooltip(true, (item.shortcut?.length ?? 0) > 0) ? tooltipContent : undefined}
-						>
+						<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
 							{#snippet child({ props })}
 								{@const Icon = item.icon}
 								<a href={item.url} {...props}>
@@ -113,10 +106,7 @@
 							<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
 						{/snippet}
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={subItem.isActive}
-								tooltipContent={showTooltip(true, (subItem.shortcut?.length ?? 0) > 0) ? subItemTooltipContent : undefined}
-							>
+							<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
 								{#snippet child({ props })}
 									{@const SubIcon = subItem.icon}
 									<a href={subItem.url} {...props}>
@@ -157,7 +147,7 @@
 					{/snippet}
 					<SidebarCollapsibleItem
 						{item}
-						showTooltip={showTooltip(collapsed, (item.shortcut?.length ?? 0) > 0)}
+						showTooltip={collapsed || !!item.shortcut?.length}
 						{includeTitleInTooltip}
 						{getIsOpen}
 						onOpenChange={(open) => {
@@ -175,7 +165,7 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton
 						isActive={item.isActive}
-						tooltipContent={showTooltip(collapsed, (item.shortcut?.length ?? 0) > 0) ? simpleItemTooltipContent : undefined}
+						tooltipContent={collapsed || !!item.shortcut?.length ? simpleItemTooltipContent : undefined}
 					>
 						{#snippet child({ props })}
 							{@const Icon = item.icon}
