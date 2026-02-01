@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Error al actualizar la ruta de uso del disco",
 	"directory_path": "Ruta del directorio",
 	"_comment_settings_timeouts": "=== SETINGOS - TIMEOUTOS ===",
-	"timeouts_settings": "Ajustes de tiempo agotado",
+	"timeouts_settings": "Tiempo de espera",
 	"timeouts_settings_description": "Configurar tiempos de espera de operación para redes lentas o hardware. Todos los valores están en segundos.",
 	"timeouts_save": "Configuración de tiempo de espera actualizada correctamente",
 	"docker_api_timeout": "Tiempo de espera de la API de Docker",
