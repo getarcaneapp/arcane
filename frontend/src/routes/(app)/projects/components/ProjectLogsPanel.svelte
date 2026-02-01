@@ -34,9 +34,8 @@
 		viewer?.clearLogs();
 	}
 
-	function handleRefresh() {
-		viewer?.stopLogStream();
-		viewer?.startLogStream();
+	async function handleRefresh() {
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	$effect(() => {
@@ -97,7 +96,6 @@
 			height="calc(100vh - 320px)"
 			onStart={handleStart}
 			onStop={handleStop}
-			onClear={handleClear}
 		/>
 	</Card.Content>
 </Card.Root>
