@@ -56,7 +56,12 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 			items: [
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon, shortcut: ['mod', 'shift', '1'] },
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon, shortcut: ['mod', 'shift', '2'] },
-				{ title: m.notifications_title(), url: '/settings/notifications', icon: NotificationsIcon, shortcut: ['mod', 'shift', '3'] },
+				{
+					title: m.notifications_title(),
+					url: '/settings/notifications',
+					icon: NotificationsIcon,
+					shortcut: ['mod', 'shift', '3']
+				},
 				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon, shortcut: ['mod', 'shift', '4'] },
 				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '5'] }
 			]

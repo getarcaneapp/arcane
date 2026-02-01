@@ -1,5 +1,5 @@
 <script lang="ts">
-import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
+	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
 	import type { BackupEntry } from '$lib/types/file-browser.type';
 	import { onMount } from 'svelte';
@@ -22,7 +22,7 @@ import { volumeBackupService, type VolumeBackupListResponse } from '$lib/service
 	import bytes from 'bytes';
 	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -34,16 +34,16 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 
 	let { volumeName }: { volumeName: string } = $props();
 
-let backupsPaginated = $state<VolumeBackupListResponse>({
-	data: [],
-	pagination: {
-		currentPage: 1,
-		totalPages: 1,
-		totalItems: 0,
-		itemsPerPage: 10
-	}
-});
-let backupWarnings = $state<string[]>([]);
+	let backupsPaginated = $state<VolumeBackupListResponse>({
+		data: [],
+		pagination: {
+			currentPage: 1,
+			totalPages: 1,
+			totalItems: 0,
+			itemsPerPage: 10
+		}
+	});
+	let backupWarnings = $state<string[]>([]);
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },

@@ -457,7 +457,7 @@
 	showReadOnlyTag={isReadOnly}
 >
 	{#snippet mainContent()}
-		<fieldset disabled={isReadOnly} class="relative">
+		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
 			{#if isReadOnly}
 				<Alert.Root variant="default" class="mb-4 sm:mb-6">
 					<Alert.Title>{m.notifications_read_only_title()}</Alert.Title>
@@ -473,10 +473,12 @@
 
 				<Tabs.Content value="built-in" class="mt-4 sm:mt-6">
 					<div class="space-y-8">
-						<Tabs.Root bind:value={providerTab}>
-							<Tabs.List class="inline-flex w-auto">
+						<Tabs.Root bind:value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
+							<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
 								{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-									<Tabs.Trigger value={provider}>{provider.charAt(0).toUpperCase() + provider.slice(1)}</Tabs.Trigger>
+									<Tabs.Trigger value={provider} class="flex-shrink-0">
+										{provider.charAt(0).toUpperCase() + provider.slice(1)}
+									</Tabs.Trigger>
 								{/each}
 							</Tabs.List>
 

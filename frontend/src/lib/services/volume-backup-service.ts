@@ -22,9 +22,7 @@ export class VolumeBackupService extends BaseAPIService {
 
 	async restoreBackup(volumeName: string, backupId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore`)
-		);
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore`));
 	}
 
 	async restoreBackupFiles(volumeName: string, backupId: string, paths: string[]): Promise<void> {
