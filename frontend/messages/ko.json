@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "디스크 사용량 경로 업데이트 실패",
 	"directory_path": "디렉토리 경로",
 	"_comment_settings_timeouts": "=== SETTINGS - TIMEOUTS ===",
-	"timeouts_settings": "타임아웃 설정",
+	"timeouts_settings": "Timeouts",
 	"timeouts_settings_description": "느린 네트워크나 하드웨어를 위해 작업 타임아웃을 구성합니다. 모든 값은 초 단위입니다.",
 	"timeouts_save": "타임아웃 설정이 업데이트되었습니다",
 	"docker_api_timeout": "Docker API 타임아웃",
