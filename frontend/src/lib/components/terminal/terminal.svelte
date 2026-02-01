@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import '@xterm/xterm/css/xterm.css';
@@ -24,6 +24,7 @@
 	let ws: WebSocket | null = null;
 	let isReconnecting = false;
 	let resizeObserver: ResizeObserver | null = null;
+	let isReady = $state(false);
 
 	const darkTheme = {
 		background: '#09090b',
@@ -165,8 +166,8 @@
 
 	onMount(() => {
 		initializeTerminal();
-		connectWebSocket();
 		window.addEventListener('resize', handleResize);
+		isReady = true;
 
 		return () => {
 			window.removeEventListener('resize', handleResize);
@@ -178,7 +179,7 @@
 	});
 
 	$effect(() => {
-		if (websocketUrl && terminal) {
+		if (isReady && websocketUrl && terminal) {
 			terminal.clear();
 			connectWebSocket();
 		}
@@ -190,12 +191,6 @@
 		}
 	});
 
-	onDestroy(() => {
-		resizeObserver?.disconnect();
-		isReconnecting = true;
-		ws?.close();
-		terminal?.dispose();
-	});
 </script>
 
 <div bind:this={container} class="terminal-container h-full w-full" style="height: {height}"></div>
