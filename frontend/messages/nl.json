@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Updaten van schijfgebruikspad mislukt",
 	"directory_path": "Map pad",
 	"_comment_settings_timeouts": "=== INSTELLINGEN - TIMEOUTS ===",
-	"timeouts_settings": "Time-out instellingen",
+	"timeouts_settings": "Time-outs",
 	"timeouts_settings_description": "Configureer operatie timeouts voor langzame netwerken of hardware. Alle waarden zijn in seconden.",
 	"timeouts_save": "Time-out instellingen bijgewerkt",
 	"docker_api_timeout": "Docker API time-out",
