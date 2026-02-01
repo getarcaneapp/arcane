@@ -1,11 +1,12 @@
 <script lang="ts">
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
+	import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
 	import { ArrowRightIcon } from '$lib/icons';
+	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
+	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
 
 	let {
 		items,
@@ -68,23 +69,10 @@
 		}
 		return openStates[itemTitle];
 	}
-</script>
 
-{#snippet Shortcut({ keys }: { keys?: ShortcutKey[] })}
-	{@const displayKeys = keys ? formatShortcutKeys(keys) : []}
-	{#if displayKeys.length}
-		<Kbd.Group
-			class="text-muted-foreground ml-auto items-center gap-1 group-data-[collapsible=icon]:hidden group-data-[collapsible=icon]:group-data-[hovered=true]:inline-flex"
-		>
-			{#each displayKeys as key, index}
-				<Kbd.Root>{key}</Kbd.Root>
-				{#if index < displayKeys.length - 1}
-					<span class="text-muted-foreground/70 text-[10px]">+</span>
-				{/if}
-			{/each}
-		</Kbd.Group>
-	{/if}
-{/snippet}
+	const collapsed = $derived(sidebar.state === 'collapsed');
+	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
+</script>
 
 <Sidebar.Group>
 	<Sidebar.GroupLabel>{label}</Sidebar.GroupLabel>
@@ -93,8 +81,11 @@
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
 					<!-- In collapsed mode without hover expansion, show parent and children as separate icon buttons -->
+					{#snippet tooltipContent()}
+						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
+					{/snippet}
 					<Sidebar.MenuItem>
-						<Sidebar.MenuButton isActive={item.isActive} tooltipContent={sidebar.hoverExpansionEnabled ? undefined : item.title}>
+						<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
 							{#snippet child({ props })}
 								{@const Icon = item.icon}
 								<a href={item.url} {...props}>
@@ -102,7 +93,6 @@
 										<Icon />
 									{/if}
 									<span>{item.title}</span>
-									{@render Shortcut({ keys: item.shortcut })}
 								</a>
 							{/snippet}
 						</Sidebar.MenuButton>
@@ -112,11 +102,11 @@
 						<Sidebar.Separator class="my-0 w-6" />
 					</div>
 					{#each item.items ?? [] as subItem (subItem.title)}
+						{#snippet subItemTooltipContent()}
+							<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
+						{/snippet}
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={subItem.isActive}
-								tooltipContent={sidebar.hoverExpansionEnabled ? undefined : subItem.title}
-							>
+							<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
 								{#snippet child({ props })}
 									{@const SubIcon = subItem.icon}
 									<a href={subItem.url} {...props}>
@@ -124,77 +114,59 @@
 											<SubIcon />
 										{/if}
 										<span>{subItem.title}</span>
-										{@render Shortcut({ keys: subItem.shortcut })}
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
 					{/each}
 				{:else}
-					<Collapsible.Root
-						open={getIsOpen(item.title, item.isActive)}
+					{#snippet collapsibleSubMenu()}
+						<Collapsible.Content>
+							<Sidebar.MenuSub
+								class={sidebar.state === 'collapsed' && (!sidebar.isHovered || !sidebar.hoverExpansionEnabled)
+									? 'hidden'
+									: undefined}
+							>
+								{#each item.items ?? [] as subItem (subItem.title)}
+									<Sidebar.MenuSubItem>
+										<Sidebar.MenuSubButton isActive={subItem.isActive}>
+											{#snippet child({ props })}
+												{@const SubIcon = subItem.icon}
+												<a href={subItem.url} {...props}>
+													{#if subItem.icon}
+														<SubIcon />
+													{/if}
+													<span>{subItem.title}</span>
+												</a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+								{/each}
+							</Sidebar.MenuSub>
+						</Collapsible.Content>
+					{/snippet}
+					<SidebarCollapsibleItem
+						{item}
+						showTooltip={collapsed || !!item.shortcut?.length}
+						{includeTitleInTooltip}
+						{getIsOpen}
 						onOpenChange={(open) => {
 							if (!sidebar.hoverExpansionEnabled) {
 								openStates[item.title] = open;
 							}
 						}}
-						class="group/collapsible"
-					>
-						{#snippet child({ props })}
-							<Sidebar.MenuItem {...props}>
-								<Collapsible.Trigger>
-									{#snippet child({ props })}
-										{@const Icon = item.icon}
-										<Sidebar.MenuButton
-											tooltipContent={sidebar.hoverExpansionEnabled ? undefined : item.title}
-											isActive={item.isActive}
-										>
-											{#snippet child({ props })}
-												<a href={item.url} {...props}>
-													{#if item.icon}
-														<Icon />
-													{/if}
-													<span>{item.title}</span>
-													{@render Shortcut({ keys: item.shortcut })}
-													<ArrowRightIcon
-														class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
-													/>
-												</a>
-											{/snippet}
-										</Sidebar.MenuButton>
-									{/snippet}
-								</Collapsible.Trigger>
-								<Collapsible.Content>
-									<Sidebar.MenuSub
-										class={sidebar.state === 'collapsed' && (!sidebar.isHovered || !sidebar.hoverExpansionEnabled)
-											? 'hidden'
-											: undefined}
-									>
-										{#each item.items ?? [] as subItem (subItem.title)}
-											<Sidebar.MenuSubItem>
-												<Sidebar.MenuSubButton isActive={subItem.isActive}>
-													{#snippet child({ props })}
-														{@const SubIcon = subItem.icon}
-														<a href={subItem.url} {...props}>
-															{#if subItem.icon}
-																<SubIcon />
-															{/if}
-															<span>{subItem.title}</span>
-															{@render Shortcut({ keys: subItem.shortcut })}
-														</a>
-													{/snippet}
-												</Sidebar.MenuSubButton>
-											</Sidebar.MenuSubItem>
-										{/each}
-									</Sidebar.MenuSub>
-								</Collapsible.Content>
-							</Sidebar.MenuItem>
-						{/snippet}
-					</Collapsible.Root>
+						content={collapsibleSubMenu}
+					/>
 				{/if}
 			{:else}
+				{#snippet simpleItemTooltipContent()}
+					<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />
+				{/snippet}
 				<Sidebar.MenuItem>
-					<Sidebar.MenuButton isActive={item.isActive} tooltipContent={sidebar.hoverExpansionEnabled ? undefined : item.title}>
+					<Sidebar.MenuButton
+						isActive={item.isActive}
+						tooltipContent={collapsed || !!item.shortcut?.length ? simpleItemTooltipContent : undefined}
+					>
 						{#snippet child({ props })}
 							{@const Icon = item.icon}
 							<a href={item.url} {...props}>
@@ -202,7 +174,6 @@
 									<Icon />
 								{/if}
 								<span>{item.title}</span>
-								{@render Shortcut({ keys: item.shortcut })}
 							</a>
 						{/snippet}
 					</Sidebar.MenuButton>

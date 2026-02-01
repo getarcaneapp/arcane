@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-slot="sidebar-menu-item"
 	data-sidebar="menu-item"
-	class={cn('group/menu-item relative', className)}
+	class={cn('group/menu-item relative flex min-w-0 *:min-w-0 *:flex-1', className)}
 	{...restProps}
 >
 	{@render children?.()}

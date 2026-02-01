@@ -2,6 +2,8 @@
 
 Thanks for helping make Arcane better! We've built a modern, streamlined development experience that gets you up and running in minutes.
 
+> **Using AI tools?** Please read our [AI Usage Policy](AI_POLICY.md) before contributing.
+
 ## 🌟 Ways to Contribute
 
 - 🐛 **Report bugs** using our issue templates
