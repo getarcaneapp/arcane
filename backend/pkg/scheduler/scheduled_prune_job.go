@@ -8,6 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/system"
+	"github.com/robfig/cron/v3"
 )
 
 const ScheduledPruneJobName = "scheduled-prune"
@@ -29,26 +30,33 @@ func (j *ScheduledPruneJob) Name() string {
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
-	s := j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *")
-	if s == "" {
-		return "0 0 0 * * *"
+	schedule := j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *")
+	if schedule == "" {
+		schedule = "0 0 0 * * *"
 	}
 
 	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(s); err == nil {
+	if i, err := strconv.Atoi(schedule); err == nil {
 		if i <= 0 {
 			i = 1440
 		}
-		if i%1440 == 0 {
-			return fmt.Sprintf("0 0 0 */%d * *", i/1440)
+		switch {
+		case i%1440 == 0:
+			schedule = fmt.Sprintf("0 0 0 */%d * *", i/1440)
+		case i%60 == 0:
+			schedule = fmt.Sprintf("0 0 */%d * * *", i/60)
+		default:
+			schedule = fmt.Sprintf("0 */%d * * * *", i)
 		}
-		if i%60 == 0 {
-			return fmt.Sprintf("0 0 */%d * * *", i/60)
-		}
-		return fmt.Sprintf("0 */%d * * * *", i)
 	}
 
-	return s
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(schedule); err != nil {
+		slog.WarnContext(ctx, "Invalid cron expression for scheduled-prune, using default", "invalid_schedule", schedule, "error", err)
+		return "0 0 0 * * *"
+	}
+
+	return schedule
 }
 
 func (j *ScheduledPruneJob) Run(ctx context.Context) {
@@ -99,6 +107,9 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 		"networks_deleted", len(result.NetworksDeleted),
 		"errors", len(result.Errors),
 	)
+	if len(result.Errors) > 0 {
+		slog.DebugContext(ctx, "scheduled prune run errors", "errors", result.Errors)
+	}
 }
 
 func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
