@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Failed to update disk usage path",
 	"directory_path": "Directory Path",
 	"_comment_settings_timeouts": "=== IMPOSTAZIONI - TIMEOUTS ===",
-	"timeouts_settings": "Impostazioni Timeout",
+	"timeouts_settings": "Timeout",
 	"timeouts_settings_description": "Configura i timeout operativi per reti lente o hardware. Tutti i valori sono in secondi.",
 	"timeouts_save": "Impostazioni di timeout aggiornate con successo",
 	"docker_api_timeout": "Timeout API Docker",
