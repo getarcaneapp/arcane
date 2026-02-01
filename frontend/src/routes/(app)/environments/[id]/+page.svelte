@@ -38,40 +38,54 @@
 
 	let activeTab = $state('details');
 
-	const tabItems: TabItem[] = [
-		{
-			value: 'details',
-			label: m.environments_overview_title(),
-			icon: EnvironmentsIcon
-		},
-		{
-			value: 'general',
-			label: m.general_title(),
-			icon: SettingsIcon
-		},
-		{
-			value: 'docker',
-			label: m.environments_docker_settings_title(),
-			icon: DockerBrandIcon
-		},
-		{
-			value: 'jobs',
-			label: m.jobs_title(),
-			icon: JobsIcon
-		},
-		{
-			value: 'agent',
-			label: m.environments_agent_config_title(),
-			icon: ApiKeyIcon
-		},
-		{
+	const tabItems = $derived.by((): TabItem[] => {
+		const items: TabItem[] = [
+			{
+				value: 'details',
+				label: m.environments_overview_title(),
+				icon: EnvironmentsIcon
+			},
+			{
+				value: 'general',
+				label: m.general_title(),
+				icon: SettingsIcon
+			},
+			{
+				value: 'docker',
+				label: m.environments_docker_settings_title(),
+				icon: DockerBrandIcon
+			},
+			{
+				value: 'jobs',
+				label: m.jobs_title(),
+				icon: JobsIcon
+			}
+		];
+
+		if (environment.id !== '0') {
+			items.push({
+				value: 'agent',
+				label: m.environments_agent_config_title(),
+				icon: ApiKeyIcon
+			});
+		}
+
+		items.push({
 			value: 'gitops',
 			label: m.git_syncs_title(),
 			icon: GitBranchIcon
-		}
-	];
+		});
 
-	const tabValues = new Set(tabItems.map((tab) => tab.value));
+		return items;
+	});
+
+	const tabValues = $derived(new Set(tabItems.map((tab) => tab.value)));
+
+	$effect(() => {
+		if (!tabValues.has(activeTab)) {
+			activeTab = 'details';
+		}
+	});
 
 	$effect(() => {
 		const tabFromUrl = page.url.searchParams.get('tab');

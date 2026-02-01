@@ -19,6 +19,7 @@
 	import bytes from 'bytes';
 	import { TrashIcon, EllipsisIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import settingsStore from '$lib/stores/config-store';
 
 	let {
 		volumes = $bindable(),
@@ -33,6 +34,10 @@
 	let isLoading = $state({
 		removing: false
 	});
+
+	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
+	const isBackupVolumeName = (name?: string) => (name ?? '') === backupVolumeName;
+	const isBackupVolume = (item: VolumeSummaryDto) => isBackupVolumeName(item.name);
 
 	// Lazy load volume sizes - this is a slow operation
 	let volumeSizesPromise = $state<Promise<Map<string, VolumeSizeInfo>> | null>(null);
@@ -51,6 +56,7 @@
 
 	async function handleRemoveVolumeConfirm(name: string) {
 		const safeName = name?.trim() || m.common_unknown();
+		if (isBackupVolumeName(safeName)) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_volume() }),
 			message: m.common_remove_confirm({ resource: `${m.resource_volume()} "${safeName}"` }),
@@ -88,8 +94,14 @@
 					let failureCount = 0;
 
 					const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+					const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
+					if (!idsToDelete.length) {
+						isLoading.removing = false;
+						selectedIds = [];
+						return;
+					}
 
-					for (const id of ids) {
+					for (const id of idsToDelete) {
 						const name = idToName.get(id);
 						const safeName = name?.trim() || m.common_unknown();
 						const result = await tryCatch(volumeService.deleteVolume(safeName));
@@ -136,14 +148,19 @@
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true }
 	];
 
+	const deletableSelectedIds = $derived.by(() => {
+		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+		return (selectedIds ?? []).filter((id) => !isBackupVolumeName(idToName.get(id)));
+	});
+
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'remove',
-			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			label: m.common_remove_selected_count({ count: deletableSelectedIds.length }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onClick: () => handleDeleteSelected(deletableSelectedIds),
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: isLoading.removing || deletableSelectedIds.length === 0,
 			icon: TrashIcon
 		}
 	]);
@@ -268,7 +285,11 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item variant="destructive" onclick={() => handleRemoveVolumeConfirm(item.name)} disabled={item.inUse}>
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleRemoveVolumeConfirm(item.name)}
+					disabled={item.inUse || isBackupVolume(item)}
+				>
 					<TrashIcon class="size-4" />
 					{m.common_remove()}
 				</DropdownMenu.Item>

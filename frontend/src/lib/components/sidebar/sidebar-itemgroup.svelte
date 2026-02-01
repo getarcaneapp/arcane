@@ -1,8 +1,10 @@
 <script lang="ts">
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
+	import { formatShortcutKeys, type ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
 	import { ArrowRightIcon } from '$lib/icons';
 
 	let {
@@ -14,10 +16,12 @@
 			title: string;
 			url: string;
 			icon?: typeof ArrowRightIcon;
+			shortcut?: ShortcutKey[];
 			items?: {
 				title: string;
 				url: string;
 				icon?: typeof ArrowRightIcon;
+				shortcut?: ShortcutKey[];
 			}[];
 		}[];
 	} = $props();
@@ -66,6 +70,22 @@
 	}
 </script>
 
+{#snippet Shortcut({ keys }: { keys?: ShortcutKey[] })}
+	{@const displayKeys = keys ? formatShortcutKeys(keys) : []}
+	{#if displayKeys.length}
+		<Kbd.Group
+			class="text-muted-foreground ml-auto items-center gap-1 group-data-[collapsible=icon]:hidden group-data-[collapsible=icon]:group-data-[hovered=true]:inline-flex"
+		>
+			{#each displayKeys as key, index}
+				<Kbd.Root>{key}</Kbd.Root>
+				{#if index < displayKeys.length - 1}
+					<span class="text-muted-foreground/70 text-[10px]">+</span>
+				{/if}
+			{/each}
+		</Kbd.Group>
+	{/if}
+{/snippet}
+
 <Sidebar.Group>
 	<Sidebar.GroupLabel>{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu>
@@ -82,6 +102,7 @@
 										<Icon />
 									{/if}
 									<span>{item.title}</span>
+									{@render Shortcut({ keys: item.shortcut })}
 								</a>
 							{/snippet}
 						</Sidebar.MenuButton>
@@ -103,6 +124,7 @@
 											<SubIcon />
 										{/if}
 										<span>{subItem.title}</span>
+										{@render Shortcut({ keys: subItem.shortcut })}
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
@@ -133,6 +155,7 @@
 														<Icon />
 													{/if}
 													<span>{item.title}</span>
+													{@render Shortcut({ keys: item.shortcut })}
 													<ArrowRightIcon
 														class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
 													/>
@@ -157,6 +180,7 @@
 																<SubIcon />
 															{/if}
 															<span>{subItem.title}</span>
+															{@render Shortcut({ keys: subItem.shortcut })}
 														</a>
 													{/snippet}
 												</Sidebar.MenuSubButton>
@@ -178,6 +202,7 @@
 									<Icon />
 								{/if}
 								<span>{item.title}</span>
+								{@render Shortcut({ keys: item.shortcut })}
 							</a>
 						{/snippet}
 					</Sidebar.MenuButton>

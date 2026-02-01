@@ -1,268 +1,250 @@
-# Arcane — Copilot / AI agent quick instructions
+# Arcane AI Agent Instructions
 
-Purpose: Get an AI coding agent productive quickly. Make small, well-scoped edits, follow repository wiring, and run the provided dev script for integrated testing, dont make useless comments that dont help the codebase.
+Arcane is a modern Docker management UI with a **Go backend** (Huma v2 API), **SvelteKit frontend** (Svelte 5), and an optional headless agent. Three Go modules unified via `go.work`: `backend/`, `cli/`, `types/`.
 
-Quick architecture summary
+## Development Environment
 
-- Backend: Go (cmd/main.go) + Gin. App wiring and DI live in `internal/bootstrap/`. DB via GORM; models under `internal/models/`. Handlers in `internal/api/*_handler.go`, services in `internal/services/*_service.go`.
-- Frontend: SvelteKit (frontend/src) using Svelte 5 syntax (runes). Routes: `frontend/src/routes/`. Shared components: `frontend/src/lib/components/`.
-- Integration: Docker + local containers. Entry scripts: `scripts/docker/entrypoint.sh` and `docker/entrypoint.sh`.
-
-Essential workflows (commands)
-
-- Start dev env (recommended): `./scripts/development/dev.sh start` (VS Code task "Start").
-- Stop / Restart / Rebuild: same script with `stop|restart|rebuild|clean`.
-- Frontend local build: use `frontend/package.json` scripts (or run inside the dev containers).
-- Tests: Playwright E2E specs in `tests/spec/*.ts`; helpers in `tests/` and `setup/`.
-
-Project-specific conventions (follow exactly)
-
-- Keep HTTP handlers thin — push business logic into `internal/services/*_service.go`.
-- File naming: `*_handler.go`, `*_service.go`, DTOs in `internal/dto/`.
-- Use DTOs for API boundaries; frontend also has DTOs under `frontend/src/lib/dto/`.
-- Database models include `BaseModel` fields and may implement `TableName()` for custom names.
-- Svelte 5: use `$state()/$effect()/$derived()` and `let { prop } = $props()` patterns. Frontend files use Svelte 5 runes consistently.
-
-Where to look when adding features or debugging
-
-- Startup & wiring: `internal/bootstrap/` -> `cmd/main.go`.
-- API endpoints and handlers: `internal/api/`.
-- Services and business logic: `internal/services/`.
-- Frontend pages & components: `frontend/src/routes/` and `frontend/src/lib/components/`.
-- Docker/dev scripts: `scripts/development/dev.sh`, `docker-compose*.yml`, and `scripts/docker/entrypoint.sh`.
-
-Tests & CI notes
-
-- Playwright E2E lives in `tests/` and is configured via `tests/package.json` and `playwright.config.ts`.
-- Backend unit tests should mock Docker client calls where possible.
-
-Safe-edit checklist for AI agents
-
-1. Make minimal changes and run `go build ./...` if you change backend code.
-2. Run frontend build (`pnpm -w -C frontend build`) or use the dev script for integrated runs.
-3. Do not commit secrets or change environment wiring; use `dev.sh` for env setup.
-
-Examples (copyable patterns)
-
-- New handler: add `internal/api/foo_handler.go` that binds request DTO, calls `services.NewFooService(db, docker).Create(...)`, and returns JSON.
-- New service: `internal/services/foo_service.go` that accepts DB and Docker clients from bootstrap and implements business logic; return wrapped errors with `fmt.Errorf("context: %w", err)`.
-
-If unclear
-
-- Ask to inspect a specific file (path) and whether you want me to run build/tests. I'll run them and return results.
-
-— End of concise instructions —
-
-# Arcane Docker Management UI - Copilot Instructions
-
-## Project Overview
-
-Arcane is a modern, full-stack Docker management UI built with SvelteKit frontend and Go backend. It provides comprehensive Docker environment management including containers, images, volumes, networks, stacks, and image update tracking.
-
-## Architecture & Tech Stack
-
-### Backend (Go)
-
-- **Framework**: Gin web framework with Go 1.24.3+
-- **Database**: GORM with PostgreSQL/SQLite support
-- **Structure**: Clean architecture with bootstrap pattern
-- **Authentication**: JWT + optional OIDC integration
-- **Jobs**: gocron v2 for scheduled tasks
-- **Docker**: Official Docker SDK integration
-
-### Frontend (SvelteKit + TypeScript)
-
-- **Framework**: SvelteKit with Svelte 5 syntax
-- **UI**: shadcn-svelte components + Tailwind CSS
-- **Icons**: Lucide Svelte
-- **State**: Svelte 5 runes ($state, $effect, $derived)
-- **API**: Axios for HTTP requests
-- **Build**: Vite with static adapter
-
-## Code Conventions & Patterns
-
-### Backend (Go)
-
-#### File Organization
-
-```
-backend/
-├── cmd/main.go                    # Application entry point
-├── internal/
-│   ├── bootstrap/                 # App initialization (DI container pattern)
-│   ├── api/                      # HTTP handlers (*_handler.go)
-│   ├── services/                 # Business logic (*_service.go)
-│   ├── models/                   # Database models
-│   ├── dto/                      # Data transfer objects
-│   ├── database/                 # DB connection & migrations
-│   ├── config/                   # Configuration management
-│   ├── middleware/               # HTTP middleware
-│   ├── utils/                    # Utility functions
-│   └── job/                      # Background job scheduling
+```bash
+./scripts/development/dev.sh start    # Start Docker-based dev environment (hot reload)
+./scripts/development/dev.sh stop|restart|rebuild|clean|logs
 ```
 
-#### Naming Conventions
+- Frontend: http://localhost:3000 (Vite HMR)
+- Backend: http://localhost:3552 (Air hot reload)
 
-- **Handlers**: `*_handler.go` with methods like `List`, `Create`, `Update`, `Delete`
-- **Services**: `*_service.go` with business logic implementation
-- **Models**: Singular names (e.g., `Container`, `Image`, `Stack`)
-- **Package names**: Lowercase, single word when possible
+## Architecture Overview
 
-#### Database Models
-
-- Use GORM annotations for relationships and constraints
-- Include `BaseModel` for common fields (ID, CreatedAt, UpdatedAt)
-- Implement `TableName()` method for custom table names
-- Use proper foreign key relationships with preloading
-
-#### API Patterns
-
-- RESTful endpoints with proper HTTP status codes
-- Use DTOs for request/response transformation
-- Implement pagination with `SortedPaginationRequest`
-- Return consistent JSON error responses
-- Use Gin binding for request validation
-
-#### Error Handling
-
-- Return meaningful HTTP status codes
-- Use structured logging with `slog`
-- Wrap errors with context using `fmt.Errorf`
-- Handle Docker API errors gracefully
-
-### Frontend (SvelteKit + TypeScript)
-
-#### File Organization
+### Backend (`backend/`)
 
 ```
-frontend/src/
-├── routes/                       # SvelteKit file-based routing
-├── lib/
-│   ├── components/              # Reusable Svelte components
-│   ├── services/api/           # API service classes
-│   ├── stores/                 # Svelte stores
-│   ├── types/                  # TypeScript type definitions
-│   ├── dto/                    # Frontend DTOs
-│   ├── utils/                  # Utility functions
-│   └── constants.ts            # App constants
+internal/
+├── bootstrap/        # App initialization & DI wiring — START HERE for understanding how services connect
+├── huma/handlers/    # HTTP handlers (Huma v2) — thin wrappers that call services
+├── services/         # Business logic — *_service.go files contain all domain logic
+├── models/           # GORM database models (include BaseModel for UUID, timestamps)
+├── config/           # Environment configuration
+└── middleware/       # Auth, logging, rate limiting
 ```
 
-#### Svelte 5 Conventions
+**Key patterns:**
+- Handlers are thin: extract user from context, call service, return response
+- Services receive dependencies via constructor injection (see [bootstrap.go](backend/internal/bootstrap/bootstrap.go))
+- Use `slog` for structured logging with context
+- Error wrapping: `fmt.Errorf("context: %w", err)`
 
-- **Props**: Use `let { prop1, prop2 } = $props()` destructuring
-- **State**: Use `$state()` for reactive variables
-- **Effects**: Use `$effect()` for side effects
-- **Derived**: Use `$derived()` for computed values
-- **Event handlers**: Use `on*` props or inline handlers
+### Frontend (`frontend/src/`)
 
-#### Component Patterns
+```
+routes/(app)/         # Main app pages (dashboard, containers, images, etc.)
+routes/(auth)/        # Auth pages  
+lib/components/       # Reusable Svelte components (shadcn-svelte based)
+lib/services/         # API service classes extending BaseAPIService
+lib/stores/           # Svelte stores (*.store.svelte files use runes)
+lib/types/            # TypeScript types
+```
 
-- **Reusable components**: Place in `/lib/components/`
-- **Page components**: Use `+page.svelte` in routes
-- **Layout components**: Use `+layout.svelte` for shared layouts
-- **Loading states**: Implement with `loading` props and spinners
-- **Error boundaries**: Handle errors gracefully with user feedback
+### Shared Types (`types/`)
 
-#### TypeScript Usage
+Domain types shared between backend and CLI. Each domain has its own package (e.g., `types/container/`, `types/image/`).
 
-- Define interfaces for all data structures
-- Use strict type checking
-- Export types from dedicated `*.type.ts` files
-- Use generic types for reusable components
+## Critical Patterns
 
-#### API Integration
+### Svelte 5 ONLY — No Svelte 4 Syntax
 
-- Create service classes in `/lib/services/api/`
-- Use Axios with proper error handling
-- Implement request/response DTOs
-- Use async/await patterns consistently
+```svelte
+<!-- Props: use $props() -->
+let { prop1, prop2 }: { prop1: string; prop2?: number } = $props();
 
-#### Styling
+<!-- State: use $state() -->
+let count = $state(0);
 
-- Use Tailwind CSS classes
-- Follow shadcn-svelte component patterns
-- Implement dark/light mode support
-- Use CSS variables for theming
+<!-- Derived values: use $derived() or $derived.by() -->
+let doubled = $derived(count * 2);
+let computed = $derived.by(() => complexCalculation());
 
-## Development Guidelines
+<!-- Side effects: use $effect() -->
+$effect(() => { /* runs when dependencies change */ });
+```
 
-### General Rules
+**NEVER use:** `export let`, `on:click` (use `onclick`), `$:`, `$$props`, `$$restProps`, slot syntax
 
-- **No unnecessary comments**: Code should be self-documenting
-- **Clean imports**: Group and sort imports logically
-- **Error handling**: Always handle errors appropriately
-- **Type safety**: Use TypeScript strictly on frontend
-- **Performance**: Implement pagination, lazy loading, and efficient updates
+Example component: [job-card.svelte](frontend/src/lib/components/job-card/job-card.svelte)
 
-### Backend Specific
+### API Service Pattern
 
-- Use dependency injection through bootstrap pattern
-- Implement proper service layer separation
-- Use GORM relationships efficiently with preloading
-- Handle Docker API rate limits and timeouts
-- Implement proper logging with structured data
+Frontend services extend `BaseAPIService` and use `environmentStore` for multi-environment support:
 
-### Frontend Specific
+```typescript
+export class ContainerService extends BaseAPIService {
+  async getContainers(options?: SearchPaginationSortRequest) {
+    const envId = await environmentStore.getCurrentEnvironmentId();
+    const params = transformPaginationParams(options);
+    return this.api.get(`/environments/${envId}/containers`, { params });
+  }
+}
+export const containerService = new ContainerService();
+```
 
-- **Always use Svelte 5 syntax** (runes, new event handling)
-- Implement proper loading and error states
-- Use reactive patterns efficiently
-- Follow SvelteKit best practices for SSR/hydration
-- Implement proper form validation
+### Huma Handler Pattern
 
-### Database
+Handlers use typed input/output structs with struct tags for validation:
 
-- Use migrations for schema changes
-- Implement proper indexing for performance
-- Use foreign key constraints
-- Handle soft deletes where appropriate
+```go
+type ListContainersInput struct {
+    EnvironmentID string `path:"id" doc:"Environment ID"`
+    Search        string `query:"search" doc:"Search query"`
+    Limit         int    `query:"limit" default:"20" doc:"Limit"`
+}
+```
 
-### Security
+Register handlers in [backend/internal/huma/handlers/](backend/internal/huma/handlers/).
 
-- Validate all user inputs
-- Use proper authentication middleware
-- Implement CORS correctly
-- Encrypt sensitive configuration data
-- Follow Docker security best practices
+## Testing
 
-### Testing
+```bash
+# Backend unit tests
+cd backend && go test ./...
 
-- Write Playwright E2E tests for critical user flows
-- Test API endpoints thoroughly
-- Mock external Docker API calls in tests
-- Use proper test data setup and teardown
+# E2E tests (Playwright)
+pnpm test                    # from project root
+
+# Frontend type checking
+pnpm -C frontend check:ci
+```
+
+Backend tests use in-memory SQLite and testify. See [auth_service_test.go](backend/internal/services/auth_service_test.go) for patterns.
 
 ## Anti-Patterns to Avoid
 
-### Backend
-
-- Don't put business logic in handlers
-- Don't use global variables for state
-- Don't ignore database transaction boundaries
-- Don't hardcode registry-specific logic (use generic patterns)
-
-### Frontend
-
-- Don't use Svelte 4 syntax (no export let, on:click, etc.)
-- Don't ignore loading/error states
-- Don't create overly complex component hierarchies
-- Don't bypass type checking with `any`
-
-### General
-
-- Don't add unnecessary comments or console.log statements
-- Don't ignore error handling
-- Don't create tight coupling between layers
-- Don't commit sensitive configuration data
+- Business logic in handlers — move to services
+- Svelte 4 syntax anywhere
+- Hardcoded registry logic — use generic OCI patterns
+- TypeScript `any` without justification
+- Unnecessary comments explaining obvious code
 
 ## Container Registry Integration
 
-When working with container registries:
+- Use generic authentication (bearer tokens, basic auth)
+- Support multiple providers (Docker Hub, GHCR, custom OCI)
+- Use case-insensitive header checking
 
-- Use generic authentication patterns, not registry-specific hardcoding
-- Handle different authentication methods (bearer tokens, basic auth)
-- Implement proper error handling for network timeouts
-- Support multiple registry providers (Docker Hub, GHCR, custom OCI)
-- Use case-insensitive header checking for registry responses
+## Multi-Environment Support
 
-This codebase emphasizes clean architecture, type safety, and maintainable patterns. Follow these guidelines to ensure consistency and quality across all contributions.
+Arcane supports managing multiple Docker environments (local + remote agents). The frontend uses `environmentStore` to track the active environment:
+
+```typescript
+// LOCAL_DOCKER_ENVIRONMENT_ID = '0' is the local Docker socket
+const envId = await environmentStore.getCurrentEnvironmentId();
+
+// All API calls include environment ID in the path
+this.api.get(`/environments/${envId}/containers`);
+```
+
+**Key patterns:**
+- Environment ID `"0"` = local Docker connection  
+- Remote environments connect via agents (standard or edge)
+- `environmentStore.ready` is a Promise — await before accessing environment-specific data
+- When environment changes, resource detail pages redirect to list pages (resources don't exist across environments)
+
+See [environment.store.svelte.ts](frontend/src/lib/stores/environment.store.svelte.ts) for implementation.
+
+## Background Job Scheduling
+
+Jobs use cron-based scheduling via `robfig/cron/v3`. To add a new job:
+
+1. Implement the `Job` interface in `backend/pkg/scheduler/`:
+
+```go
+type Job interface {
+    Name() string                      // Unique job identifier
+    Schedule(ctx context.Context) string  // Cron expression (6-field with seconds)
+    Run(ctx context.Context)           // Job execution logic
+}
+```
+
+2. Create job with service dependencies:
+
+```go
+type MyJob struct {
+    myService      *services.MyService
+    settingsService *services.SettingsService
+}
+
+func NewMyJob(myService *services.MyService, settings *services.SettingsService) *MyJob {
+    return &MyJob{myService: myService, settingsService: settings}
+}
+
+func (j *MyJob) Schedule(ctx context.Context) string {
+    return j.settingsService.GetStringSetting(ctx, "myJobInterval", "0 0 * * * *") // hourly default
+}
+```
+
+3. Register in [jobs_bootstrap.go](backend/internal/bootstrap/jobs_bootstrap.go):
+
+```go
+myJob := pkg_scheduler.NewMyJob(appServices.MyService, appServices.Settings)
+newScheduler.RegisterJob(myJob)
+```
+
+**Note:** Cron uses 6 fields (with seconds): `"0 0 * * * *"` = every hour at :00:00
+
+## Database Patterns (GORM)
+
+### BaseModel
+
+All models embed `BaseModel` for UUID primary key and timestamps:
+
+```go
+type MyModel struct {
+    models.BaseModel           // ID, CreatedAt, UpdatedAt
+    Name        string         `json:"name" gorm:"column:name" sortable:"true"`
+    ForeignID   string         `json:"foreignId" gorm:"column:foreign_id"`
+    Related     *OtherModel    `json:"related,omitempty" gorm:"foreignKey:ForeignID"`
+}
+
+func (MyModel) TableName() string { return "my_models" }
+```
+
+### Relationships & Preloading
+
+Always use `Preload` for eager loading relationships:
+
+```go
+// Single preload
+s.db.WithContext(ctx).Preload("Registry").Where("id = ?", id).First(&template)
+
+// Multiple preloads
+s.db.WithContext(ctx).
+    Preload("Repository").
+    Preload("Project").
+    Where("id = ?", id).First(&sync)
+```
+
+### Custom Types
+
+Use `models.JSON` for arbitrary JSON fields and `models.StringSlice` for string arrays — both implement `driver.Valuer` and `sql.Scanner`.
+
+## Edge Agent Mode
+
+Edge agents connect to a central Arcane manager via WebSocket tunnel, allowing management of Docker hosts behind NAT/firewalls.
+
+**Architecture:**
+- Manager: Receives tunnel connections, proxies HTTP requests over WebSocket
+- Agent: Connects outbound to manager, executes requests locally
+
+**Configuration** (agent side):
+```bash
+ARCANE_EDGE_AGENT=true
+ARCANE_MANAGER_API_URL=https://manager.example.com
+ARCANE_AGENT_TOKEN=<api-key>
+```
+
+**Message types** (see [tunnel.go](backend/internal/utils/edge/tunnel.go)):
+- `request` / `response`: HTTP request/response proxying
+- `heartbeat` / `heartbeat_ack`: Connection keepalive
+- `ws_start` / `ws_data` / `ws_close`: WebSocket streaming (logs, stats)
+
+**When implementing agent features:**
+- Check `cfg.AgentMode` to skip manager-only logic (e.g., environment health checks)
+- Agent auto-pairs with manager on startup if token is configured
+- Edge connections are stateless — each request is independent

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -50,6 +51,10 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 		EnvironmentHealthInterval:  s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
 		EventCleanupInterval:       s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
 		AnalyticsHeartbeatInterval: s.settings.GetStringSetting(ctx, "analyticsHeartbeatInterval", "0 0 0 * * *"),
+		AutoUpdateInterval:         s.settings.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *"),
+		PollingInterval:            s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
+		ScheduledPruneInterval:     s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
+		GitopsSyncInterval:         s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */5 * * * *"),
 	}
 }
 
@@ -57,35 +62,39 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	if s == nil || s.db == nil || s.settings == nil {
 		return jobschedule.Config{}, fmt.Errorf("job service not initialized")
 	}
-	if s.cfg != nil && (s.cfg.UIConfigurationDisabled || s.cfg.AgentMode) {
+	if s.cfg != nil && s.cfg.UIConfigurationDisabled {
 		return jobschedule.Config{}, fmt.Errorf("job schedule updates are disabled")
 	}
 
 	current := s.GetJobSchedules(ctx)
 
-	// Validate inputs (cron expressions)
-	validate := func(name string, v *string) error {
-		if v == nil || *v == "" {
-			return nil
-		}
-		if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(*v); err != nil {
-			return fmt.Errorf("invalid cron expression for %s: %w", name, err)
-		}
-		return nil
+	fields := []struct {
+		key     string
+		current string
+		update  *string
+	}{
+		{key: "environmentHealthInterval", current: current.EnvironmentHealthInterval, update: updates.EnvironmentHealthInterval},
+		{key: "eventCleanupInterval", current: current.EventCleanupInterval, update: updates.EventCleanupInterval},
+		{key: "analyticsHeartbeatInterval", current: current.AnalyticsHeartbeatInterval, update: updates.AnalyticsHeartbeatInterval},
+		{key: "autoUpdateInterval", current: current.AutoUpdateInterval, update: updates.AutoUpdateInterval},
+		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
+		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
+		{key: "gitopsSyncInterval", current: current.GitopsSyncInterval, update: updates.GitopsSyncInterval},
 	}
 
-	if err := validate("environmentHealthInterval", updates.EnvironmentHealthInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("eventCleanupInterval", updates.EventCleanupInterval); err != nil {
-		return jobschedule.Config{}, err
-	}
-	if err := validate("analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval); err != nil {
-		return jobschedule.Config{}, err
+	// Validate inputs (cron expressions)
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	for _, field := range fields {
+		if field.update == nil || *field.update == "" {
+			continue
+		}
+		if _, err := parser.Parse(*field.update); err != nil {
+			return jobschedule.Config{}, fmt.Errorf("invalid cron expression for %s: %w", field.key, err)
+		}
 	}
 
 	changed := false
-	changedKeys := make([]string, 0, 3)
+	changedKeys := make([]string, 0, 7)
 	upsert := func(tx *gorm.DB, key string, v *string, currentVal string) error {
 		if v == nil {
 			return nil
@@ -99,14 +108,10 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := upsert(tx, "environmentHealthInterval", updates.EnvironmentHealthInterval, current.EnvironmentHealthInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "eventCleanupInterval", updates.EventCleanupInterval, current.EventCleanupInterval); err != nil {
-			return err
-		}
-		if err := upsert(tx, "analyticsHeartbeatInterval", updates.AnalyticsHeartbeatInterval, current.AnalyticsHeartbeatInterval); err != nil {
-			return err
+		for _, field := range fields {
+			if err := upsert(tx, field.key, field.update, field.current); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -145,6 +150,11 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		jobStatus := meta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
 	}
+
+	// Sort jobs by ID to ensure stable UI order
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].ID < jobs[j].ID
+	})
 
 	isAgent := s.cfg != nil && s.cfg.AgentMode
 

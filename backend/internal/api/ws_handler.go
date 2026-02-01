@@ -6,8 +6,10 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -58,14 +60,8 @@ type SystemStats struct {
 	GPUs         []GPUStats `json:"gpus,omitempty"`
 }
 
-// ROCmSMIOutput represents the JSON structure from rocm-smi
-type ROCmSMIOutput map[string]ROCmGPUInfo
-
-// ROCmGPUInfo represents GPU info from rocm-smi
-type ROCmGPUInfo struct {
-	VRAMUsed  string `json:"VRAM Total Used Memory (B)"`
-	VRAMTotal string `json:"VRAM Total Memory (B)"`
-}
+// amdGPUSysfsPath is the base path for AMD GPU sysfs entries
+const amdGPUSysfsPath = "/sys/class/drm"
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
@@ -444,67 +440,101 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
+	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
+}
+
+func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecCreationError{Err: err}).Error()+"\r\n"))
+		h.writeExecErrorInternal(conn, &common.ExecCreationError{Err: err})
 		return
 	}
 
 	// Attach to exec
-	stdin, stdout, err := h.containerService.AttachExec(ctx, execID)
+	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecAttachError{Err: err}).Error()+"\r\n"))
+		h.writeExecErrorInternal(conn, &common.ExecAttachError{Err: err})
 		return
 	}
-	defer stdin.Close()
+	cleanup := h.execCleanupFuncInternal(ctx, execSession, execID, containerID)
+	defer cleanup()
+	h.watchExecContextInternal(ctx, execID, containerID, cleanup)
 
 	done := make(chan struct{})
-
-	// Read from container, write to websocket
-	go func() {
-		defer close(done)
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			n, err := stdout.Read(buf)
-			if err != nil {
-				return
-			}
-			if n > 0 {
-				if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
-					return
-				}
-			}
-		}
-	}()
-
-	// Read from websocket, write to container
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				cancel()
-				return
-			}
-			if _, err := stdin.Write(data); err != nil {
-				return
-			}
-		}
-	}()
+	go h.pipeExecOutputInternal(ctx, conn, execSession.Stdout(), execID, containerID, done)
+	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin(), execID, containerID)
 
 	<-done
+}
+
+func (h *WebSocketHandler) writeExecErrorInternal(conn *websocket.Conn, err error) {
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(err.Error()+"\r\n"))
+}
+
+func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
+	return func() {
+		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
+		// Cleanup must proceed even if parent ctx is canceled.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck
+		defer cleanupCancel()
+		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
+			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
+		}
+	}
+}
+
+func (h *WebSocketHandler) watchExecContextInternal(ctx context.Context, execID, containerID string, cleanup func()) {
+	go func() {
+		<-ctx.Done()
+		slog.Debug("Exec context cancelled", "execID", execID, "containerID", containerID)
+		cleanup()
+	}()
+}
+
+func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *websocket.Conn, stdout io.Reader, execID, containerID string, done chan<- struct{}) {
+	defer close(done)
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		n, err := stdout.Read(buf)
+		if err != nil {
+			slog.Debug("Exec stdout read error", "execID", execID, "containerID", containerID, "error", err)
+			return
+		}
+		if n > 0 {
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				slog.Debug("Exec websocket write error", "execID", execID, "containerID", containerID, "error", err)
+				return
+			}
+		}
+	}
+}
+
+func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
+			cancel()
+			return
+		}
+		if _, err := stdin.Write(data); err != nil {
+			slog.Debug("Exec stdin write error", "execID", execID, "containerID", containerID, "error", err)
+			return
+		}
+	}
 }
 
 // ============================================================================
@@ -831,18 +861,18 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
 
 		case "amd":
-			if path, err := exec.LookPath("rocm-smi"); err == nil {
+			if hasAMDGPUInternal() {
 				h.gpuDetectionCache.Lock()
 				h.gpuDetectionCache.detected = true
 				h.gpuDetectionCache.gpuType = "amd"
-				h.gpuDetectionCache.toolPath = path
+				h.gpuDetectionCache.toolPath = amdGPUSysfsPath
 				h.gpuDetectionCache.timestamp = time.Now()
 				h.gpuDetectionCache.Unlock()
 				h.detectionDone = true
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
-			return fmt.Errorf("rocm-smi not found but GPU_TYPE set to amd")
+			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 
 		case "intel":
 			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
@@ -875,15 +905,15 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 		return nil
 	}
 
-	if path, err := exec.LookPath("rocm-smi"); err == nil {
+	if hasAMDGPUInternal() {
 		h.gpuDetectionCache.Lock()
 		h.gpuDetectionCache.detected = true
 		h.gpuDetectionCache.gpuType = "amd"
-		h.gpuDetectionCache.toolPath = path
+		h.gpuDetectionCache.toolPath = amdGPUSysfsPath
 		h.gpuDetectionCache.timestamp = time.Now()
 		h.gpuDetectionCache.Unlock()
 		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", "tool", "rocm-smi", "path", path)
+		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", amdGPUSysfsPath)
 		return nil
 	}
 
@@ -969,54 +999,99 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, erro
 	return stats, nil
 }
 
-// getAMDStats collects AMD GPU statistics using rocm-smi
+// getAMDStats collects AMD GPU statistics using sysfs
 func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "rocm-smi", "--showmeminfo", "vram", "--json")
-	output, err := cmd.Output()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute rocm-smi", "error", err)
-		return nil, fmt.Errorf("rocm-smi execution failed: %w", err)
-	}
-
-	var rocmData ROCmSMIOutput
-	if err := json.Unmarshal(output, &rocmData); err != nil {
-		slog.WarnContext(ctx, "Failed to parse rocm-smi JSON output", "error", err)
-		return nil, fmt.Errorf("failed to parse rocm-smi output: %w", err)
-	}
-
 	var stats []GPUStats
+
+	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
+	entries, err := os.ReadDir(amdGPUSysfsPath)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
+		return nil, fmt.Errorf("failed to read sysfs: %w", err)
+	}
+
 	index := 0
-	for gpuID, info := range rocmData {
-		memUsedBytes, err := strconv.ParseFloat(info.VRAMUsed, 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory used", "gpu", gpuID, "value", info.VRAMUsed)
+	for _, entry := range entries {
+		name := entry.Name()
+		// Only check card* entries (card0, card1, etc.) - skip renderD* and connector entries
+		if !strings.HasPrefix(name, "card") {
+			continue
+		}
+		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
+		if strings.Contains(name, "-") {
 			continue
 		}
 
-		memTotalBytes, err := strconv.ParseFloat(info.VRAMTotal, 64)
+		devicePath := fmt.Sprintf("%s/%s/device", amdGPUSysfsPath, name)
+
+		// Check if this is an AMD GPU by looking for VRAM info files
+		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
+		memUsedPath := fmt.Sprintf("%s/mem_info_vram_used", devicePath)
+
+		memTotalBytes, err := readSysfsValueInternal(memTotalPath)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse AMD memory total", "gpu", gpuID, "value", info.VRAMTotal)
+			// Not an AMD GPU or doesn't have VRAM info
+			continue
+		}
+
+		memUsedBytes, err := readSysfsValueInternal(memUsedPath)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
 			continue
 		}
 
 		stats = append(stats, GPUStats{
-			Name:        fmt.Sprintf("AMD GPU %s", gpuID),
+			Name:        fmt.Sprintf("AMD GPU %d", index),
 			Index:       index,
-			MemoryUsed:  memUsedBytes,
-			MemoryTotal: memTotalBytes,
+			MemoryUsed:  float64(memUsedBytes),
+			MemoryTotal: float64(memTotalBytes),
 		})
 		index++
 	}
 
 	if len(stats) == 0 {
-		return nil, fmt.Errorf("no GPU data parsed from rocm-smi")
+		return nil, fmt.Errorf("no AMD GPU data found in sysfs")
 	}
 
 	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
 	return stats, nil
+}
+
+// readSysfsValueInternal reads a numeric value from a sysfs file
+func readSysfsValueInternal(path string) (uint64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+}
+
+// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
+func hasAMDGPUInternal() bool {
+	entries, err := os.ReadDir(amdGPUSysfsPath)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		// Only check card* entries (card0, card1, etc.) - skip card0-DP-1 style entries
+		if !strings.HasPrefix(name, "card") {
+			continue
+		}
+		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
+		if strings.Contains(name, "-") {
+			continue
+		}
+
+		// Check if this card has AMD VRAM info
+		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", amdGPUSysfsPath, name)
+		if _, err := os.Stat(memTotalPath); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // getIntelStats collects Intel GPU statistics using intel_gpu_top

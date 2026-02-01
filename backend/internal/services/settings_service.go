@@ -123,6 +123,8 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
 		OidcAutoRedirectToProvider: models.SettingVariable{Value: "false"},
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
+		OidcProviderName:           models.SettingVariable{Value: ""},
+		OidcProviderLogoUrl:        models.SettingVariable{Value: ""},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},

@@ -16,6 +16,7 @@ export type SearchPaginationSortRequest = {
 	pagination?: PaginationRequest;
 	sort?: SortRequest;
 	filters?: FilterMap;
+	includeInternal?: boolean;
 };
 
 export type PaginationResponse = {

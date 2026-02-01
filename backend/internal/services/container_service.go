@@ -9,15 +9,20 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -424,7 +429,7 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 	return nil
 }
 
-func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
+func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool, includeInternal bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -435,42 +440,77 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
-	// Collect unique image IDs for update info lookup
-	imageIDSet := make(map[string]struct{}, len(dockerContainers))
-	for _, dc := range dockerContainers {
+	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
+	imageIDs := collectImageIDs(dockerContainers)
+	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
+	items := buildContainerSummaries(dockerContainers, updateInfoMap)
+
+	result := pagination.SearchOrderAndPaginate(items, params, containerPaginationConfig())
+	counts := computeContainerCounts(items)
+	paginationResp := buildPaginationResponse(result, params)
+
+	return result.Items, paginationResp, counts, nil
+}
+
+func filterInternalContainers(containers []container.Summary, includeInternal bool) []container.Summary {
+	if includeInternal {
+		return containers
+	}
+
+	filtered := make([]container.Summary, 0, len(containers))
+	for _, dc := range containers {
+		if libarcane.IsInternalContainer(dc.Labels) {
+			continue
+		}
+		filtered = append(filtered, dc)
+	}
+	return filtered
+}
+
+func collectImageIDs(containers []container.Summary) []string {
+	imageIDSet := make(map[string]struct{}, len(containers))
+	for _, dc := range containers {
 		if dc.ImageID != "" {
 			imageIDSet[dc.ImageID] = struct{}{}
 		}
 	}
+
 	imageIDs := make([]string, 0, len(imageIDSet))
 	for id := range imageIDSet {
 		imageIDs = append(imageIDs, id)
 	}
+	return imageIDs
+}
 
-	// Fetch update info for all images used by containers
-	var updateInfoMap map[string]*imagetypes.UpdateInfo
-	if s.imageService != nil && len(imageIDs) > 0 {
-		updateInfoMap, err = s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
-		if err != nil {
-			// Log error but continue - update info is optional
-			slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
-			updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
-		}
-	} else {
-		updateInfoMap = make(map[string]*imagetypes.UpdateInfo)
+func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []string) map[string]*imagetypes.UpdateInfo {
+	if s.imageService == nil || len(imageIDs) == 0 {
+		return make(map[string]*imagetypes.UpdateInfo)
 	}
 
-	items := make([]containertypes.Summary, 0, len(dockerContainers))
-	for _, dc := range dockerContainers {
+	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
+	if err != nil {
+		// Log error but continue - update info is optional
+		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
+		return make(map[string]*imagetypes.UpdateInfo)
+	}
+
+	return updateInfoMap
+}
+
+func buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo) []containertypes.Summary {
+	items := make([]containertypes.Summary, 0, len(containers))
+	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
-		// Attach update info if available
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
 		items = append(items, summary)
 	}
+	return items
+}
 
-	config := pagination.Config[containertypes.Summary]{
+func containerPaginationConfig() pagination.Config[containertypes.Summary] {
+	return pagination.Config[containertypes.Summary]{
 		SearchAccessors: []pagination.SearchAccessor[containertypes.Summary]{
 			func(c containertypes.Summary) (string, error) {
 				if len(c.Names) > 0 {
@@ -529,10 +569,9 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 			},
 		},
 	}
+}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
-
-	// Calculate status counts from items (before pagination)
+func computeContainerCounts(items []containertypes.Summary) containertypes.StatusCounts {
 	counts := containertypes.StatusCounts{
 		TotalContainers: len(items),
 	}
@@ -543,10 +582,13 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 			counts.StoppedContainers++
 		}
 	}
+	return counts
+}
 
+func buildPaginationResponse(result pagination.FilterResult[containertypes.Summary], params pagination.QueryParams) pagination.Response {
 	totalPages := int64(0)
 	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
+		totalPages = (result.TotalCount + int64(params.Limit) - 1) / int64(params.Limit)
 	}
 
 	page := 1
@@ -554,15 +596,13 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		page = (params.Start / params.Limit) + 1
 	}
 
-	paginationResp := pagination.Response{
+	return pagination.Response{
 		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
+		TotalItems:      result.TotalCount,
 		CurrentPage:     page,
 		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
+		GrandTotalItems: result.TotalAvailable,
 	}
-
-	return result.Items, paginationResp, counts, nil
 }
 
 // CreateExec creates an exec instance in the container
@@ -588,19 +628,54 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 	return execResp.ID, nil
 }
 
-// AttachExec attaches to an exec instance and returns stdin, stdout/stderr streams
-func (s *ContainerService) AttachExec(ctx context.Context, execID string) (io.WriteCloser, io.Reader, error) {
+// ExecSession manages the lifecycle of a Docker exec session.
+type ExecSession struct {
+	execID       string
+	containerID  string
+	hijackedResp types.HijackedResponse
+	dockerClient *client.Client
+	closeOnce    sync.Once
+}
+
+func (e *ExecSession) Stdin() io.WriteCloser { return e.hijackedResp.Conn }
+func (e *ExecSession) Stdout() io.Reader     { return e.hijackedResp.Reader }
+
+// Close terminates the exec session and kills the process if still running.
+func (e *ExecSession) Close(ctx context.Context) error {
+	var closeErr error
+	e.closeOnce.Do(func() {
+		slog.Debug("Closing exec session", "execID", e.execID, "containerID", e.containerID)
+
+		// Send EOF (Ctrl-D) then exit to terminate the shell gracefully.
+		_, _ = e.hijackedResp.Conn.Write([]byte{0x04})
+		time.Sleep(50 * time.Millisecond)
+		_, _ = e.hijackedResp.Conn.Write([]byte("exit\n"))
+		time.Sleep(100 * time.Millisecond)
+
+		e.hijackedResp.Close()
+	})
+
+	return closeErr
+}
+
+// AttachExec attaches to an exec instance and returns an ExecSession for lifecycle management.
+func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID string) (*ExecSession, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	execAttach, err := dockerClient.ContainerExecAttach(ctx, execID, container.ExecAttachOptions{
 		Tty: true,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to attach to exec: %w", err)
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
 	}
 
-	return execAttach.Conn, execAttach.Reader, nil
+	return &ExecSession{
+		execID:       execID,
+		containerID:  containerID,
+		hijackedResp: execAttach,
+		dockerClient: dockerClient,
+	}, nil
 }

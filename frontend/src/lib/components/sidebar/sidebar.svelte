@@ -102,12 +102,7 @@
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
-		<SidebarUpdatebanner
-			{isCollapsed}
-			{versionInformation}
-			user={effectiveUser}
-			debug={false}
-		/>
+		<SidebarUpdatebanner {isCollapsed} {versionInformation} user={effectiveUser} debug={false} />
 		{#if effectiveUser}
 			{#if isCollapsed}
 				<div class="px-0 pb-2">

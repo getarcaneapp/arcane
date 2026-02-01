@@ -1,3 +1,58 @@
+## v1.14.0
+
+### New features
+
+* make glass ui the default theme and ui ([#1518](https://github.com/getarcaneapp/arcane/pull/1518) by @kmendell)
+* arcane-cli device code authentication ([#1521](https://github.com/getarcaneapp/arcane/pull/1521) by @kmendell)
+* add OIDC auto redirect to provider setting ([#1522](https://github.com/getarcaneapp/arcane/pull/1522) by @Dimariqe)
+* add pushover notifcation provider ([#1516](https://github.com/getarcaneapp/arcane/pull/1516) by @kmendell)
+* self update button in mobile sheet ([#1543](https://github.com/getarcaneapp/arcane/pull/1543) by @cabaucom376)
+* edge based agent with connection to manager ([#1538](https://github.com/getarcaneapp/arcane/pull/1538) by @kmendell)
+* refactored job schedules page ([#1545](https://github.com/getarcaneapp/arcane/pull/1545) by @kmendell)
+* arcane specific labels for icons and custom urls ([#1561](https://github.com/getarcaneapp/arcane/pull/1561) by @kmendell)
+* allow defining oidc provider name and logo ([#1579](https://github.com/getarcaneapp/arcane/pull/1579) by @kmendell)
+* sidebar keyboard shortcuts for easier and quicker navigation ([#1587](https://github.com/getarcaneapp/arcane/pull/1587) by @kmendell)
+* gotfy notifcation provider ([#1588](https://github.com/getarcaneapp/arcane/pull/1588) by @kmendell)
+* AMD GPU Monitoring support ([#1593](https://github.com/getarcaneapp/arcane/pull/1593) by @mrtimothyduong)
+* volume browsing and backups ([#1591](https://github.com/getarcaneapp/arcane/pull/1591) by @kmendell)
+
+### Bug fixes
+
+* font antialiasing causing blurriness([2bcb2e2](https://github.com/getarcaneapp/arcane/commit/2bcb2e2475fbf9b101b4e7adbb62303bf914fd39) by @kmendell)
+* allow job schedules to be changed per environment ([#1577](https://github.com/getarcaneapp/arcane/pull/1577) by @kmendell)
+* pre-mature pull completed message in popover ([#1580](https://github.com/getarcaneapp/arcane/pull/1580) by @kmendell)
+* spinner not centered on oidc callback page ([#1585](https://github.com/getarcaneapp/arcane/pull/1585) by @kmendell)
+* oidc validation missing fields making it unable to save ([#1586](https://github.com/getarcaneapp/arcane/pull/1586) by @kmendell)
+* resource overview icons mismatching colors([76ccce2](https://github.com/getarcaneapp/arcane/commit/76ccce2301b47f99b97115c24eb2abf35a19aa08) by @kmendell)
+* notification provider tab-bar unable to scroll on mobile([68f59c9](https://github.com/getarcaneapp/arcane/commit/68f59c9d986972e877be2b9c9b44225443a5788c) by @kmendell)
+* certain jobs not being adding to job scheduler ([#1612](https://github.com/getarcaneapp/arcane/pull/1612) by @kmendell)
+* projects retain gitManagedBy after the git sync is removed ([#1613](https://github.com/getarcaneapp/arcane/pull/1613) by @kmendell)
+* container exec sessions not being cleaned up after websockets close ([#1614](https://github.com/getarcaneapp/arcane/pull/1614) by @kmendell)
+* mismatched memory counts based on cached memory ([#1615](https://github.com/getarcaneapp/arcane/pull/1615) by @kmendell)
+* show more detailed error message for analytics heartbeat([fe00264](https://github.com/getarcaneapp/arcane/commit/fe00264d7891679bd17925cf9dbdedc142d8576d) by @kmendell)
+
+### Dependencies
+
+* update github.com/docker/compose/v5 to v5.0.2([e4f3a16](https://github.com/getarcaneapp/arcane/commit/e4f3a16cb1da637bf97eae0f4b2c8655a6f072b7) by @kmendell)
+* bump github.com/danielgtaylor/huma/v2 from 2.34.2 to 2.35.0 in /backend ([#1568](https://github.com/getarcaneapp/arcane/pull/1568) by @dependabot[bot])
+* bump @react-email/components from 1.0.4 to 1.0.6 ([#1569](https://github.com/getarcaneapp/arcane/pull/1569) by @dependabot[bot])
+* bump axios from 1.13.2 to 1.13.4 ([#1607](https://github.com/getarcaneapp/arcane/pull/1607) by @dependabot[bot])
+* bump github.com/golang-jwt/jwt/v5 from 5.3.0 to 5.3.1 in /backend ([#1606](https://github.com/getarcaneapp/arcane/pull/1606) by @dependabot[bot])
+
+### Other
+
+* upload test results to codecov([ab43775](https://github.com/getarcaneapp/arcane/commit/ab437757030821e0e4b4ca77b775ac2226adb2f5) by @kmendell)
+* cron based job scheduler ([#1501](https://github.com/getarcaneapp/arcane/pull/1501) by @kmendell)
+* use correct go version([a6f738a](https://github.com/getarcaneapp/arcane/commit/a6f738a734198c6a1b7affbd58cef1b364ed23cc) by @kmendell)
+* use correct go version path([fd4ac5f](https://github.com/getarcaneapp/arcane/commit/fd4ac5fa2aabf3b33567e759d9fa6a45fb92e847) by @kmendell)
+* next builds produce 3 tags next, next-static, and next-distroless([849700f](https://github.com/getarcaneapp/arcane/commit/849700f2a42669b7665fe0c1ea5a92b754b5234b) by @kmendell)
+* cleanup release workflows([7ee1c44](https://github.com/getarcaneapp/arcane/commit/7ee1c44d102626c99780bd562dbededb5243ae12) by @kmendell)
+* update analytics job to send manager or agent server type([f2cfe0f](https://github.com/getarcaneapp/arcane/commit/f2cfe0fa7939ab34e62b6b57c4cf017104891488) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.13.2...v1.14.0
+
 ## v1.13.2
 
 ### Backend - Bug fixes

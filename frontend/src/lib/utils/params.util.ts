@@ -30,5 +30,9 @@ export function transformPaginationParams(options?: SearchPaginationSortRequest)
 		});
 	}
 
+	if (typeof options.includeInternal === 'boolean') {
+		params.includeInternal = String(options.includeInternal);
+	}
+
 	return params;
 }

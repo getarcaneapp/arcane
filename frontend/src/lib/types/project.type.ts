@@ -64,6 +64,7 @@ export interface RuntimeService {
 	containerName?: string;
 	ports?: string[];
 	health?: string;
+	iconUrl?: string;
 	serviceConfig?: ProjectService;
 }
 
@@ -71,6 +72,8 @@ export interface Project {
 	id: string;
 	name: string;
 	path: string;
+	iconUrl?: string;
+	urls?: string[];
 	runningCount: string;
 	serviceCount: string;
 	status: string;

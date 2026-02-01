@@ -30,6 +30,8 @@
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import {
 		StartIcon,
 		StopIcon,
@@ -111,6 +113,27 @@
 		if (state === 'running') return 'green';
 		if (state === 'exited') return 'red';
 		return 'amber';
+	}
+
+	async function refreshContainers(options: SearchPaginationSortRequest) {
+		const result = await containerService.getContainers(options);
+		containers = result;
+		return result;
+	}
+
+	function getCurrentLimit() {
+		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
+	}
+
+	function setShowInternal(value: boolean) {
+		customSettings = { ...customSettings, showInternalContainers: value };
+		const nextOptions: SearchPaginationSortRequest = {
+			...requestOptions,
+			includeInternal: value,
+			pagination: { page: 1, limit: getCurrentLimit() }
+		};
+		requestOptions = nextOptions;
+		refreshContainers(nextOptions);
 	}
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
@@ -404,6 +427,9 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
+	let showInternal = $derived.by(() => {
+		return (customSettings.showInternalContainers as boolean) ?? false;
+	});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
@@ -468,6 +494,15 @@
 	function setGroupByProject(value: boolean) {
 		customSettings = { ...customSettings, groupByProject: value };
 	}
+
+	$effect(() => {
+		const current = requestOptions?.includeInternal;
+		if (showInternal && current !== true) {
+			setShowInternal(true);
+		} else if (!showInternal && current === true) {
+			setShowInternal(false);
+		}
+	});
 
 	function toggleGroup(groupName: string) {
 		if (!collapsedGroupsState) return;
@@ -616,13 +651,12 @@
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
-	<a class="font-medium hover:underline" href="/containers/{item.id}">
-		{#if item.names && item.names.length > 0}
-			{item.names[0].startsWith('/') ? item.names[0].substring(1) : item.names[0]}
-		{:else}
-			{item.id.substring(0, 12)}
-		{/if}
-	</a>
+	{@const displayName = getContainerDisplayName(item)}
+	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	<div class="flex items-center gap-2">
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
+		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+	</div>
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
@@ -723,10 +757,13 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
+			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
 			const state = item.state;
 			return {
 				component: BoxIcon,
-				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber'
+				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber',
+				imageUrl: iconUrl ?? undefined,
+				alt: getContainerDisplayName(item)
 			};
 		}}
 		title={(item) => {
@@ -893,7 +930,7 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
-	onRefresh={async (options) => (containers = await containerService.getContainers(options))}
+	onRefresh={refreshContainers}
 	{columns}
 	{mobileFields}
 	{bulkActions}
@@ -906,6 +943,9 @@
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem bind:checked={() => groupByProject, (v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
+	</DropdownMenu.CheckboxItem>
+	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
+		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
 

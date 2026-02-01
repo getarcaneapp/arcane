@@ -27,6 +27,8 @@ RUN pnpm -C frontend build
 FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-builder
 ARG TARGETARCH
 ARG BUILD_TAGS
+ARG VERSION="dev"
+ARG REVISION="unknown"
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \ 
@@ -43,8 +45,8 @@ COPY .arcane.json ../arcane.json
 
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    VERSION=$(jq -r '.version // "dev"' ../arcane.json) && \
-    REVISION=$(jq -r '.revision // "unknown"' ../arcane.json) && \
+    if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
+    if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
     BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ') && \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
@@ -57,12 +59,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Stage 3: Production Image
 FROM debian:trixie-slim AS runner
 ARG TARGETARCH
-ARG VERSION="dev"
-ARG REVISION="unknown"
+ARG VERSION
+ARG REVISION
 
-RUN apt-get update && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
-    vainfo clinfo \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
+    vainfo clinfo libdrm2 libsystemd0 \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         apt-get install -y --no-install-recommends intel-gpu-tools; \
     fi \
@@ -85,16 +87,6 @@ COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
 
-LABEL org.opencontainers.image.authors="OFKM Technologies" \
-org.opencontainers.image.url="https://github.com/getarcaneapp/arcane" \
-org.opencontainers.image.documentation="https://github.com/getarcaneapp/arcane/blob/main/README.md" \
-org.opencontainers.image.source="https://github.com/getarcaneapp/arcane" \
-org.opencontainers.image.version=${VERSION} \
-org.opencontainers.image.revision=${REVISION} \
-org.opencontainers.image.licenses="BSD-3-Clause" \
-org.opencontainers.image.ref.name="arcane" \
-org.opencontainers.image.title="Arcane" \
-org.opencontainers.image.description="Modern Docker Management, Made for Everyone" \
-com.getarcaneapp.arcane="true"
+LABEL com.getarcaneapp.arcane="true"
 
 CMD ["./arcane"]
