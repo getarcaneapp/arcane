@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Не удалось обновить путь использования диска",
 	"directory_path": "Путь к директории",
 	"_comment_settings_timeouts": "=== SETTINGS - TIMEOUTS ===",
-	"timeouts_settings": "Настройки таймаута",
+	"timeouts_settings": "Таймаут",
 	"timeouts_settings_description": "Настройка таймаутов операций для медленных сетей или оборудования. Все значения в секундах.",
 	"timeouts_save": "Настройки таймаута успешно обновлены",
 	"docker_api_timeout": "Тайм-аут API Docker",
