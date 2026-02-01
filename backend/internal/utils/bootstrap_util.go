@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 )
 
@@ -103,10 +104,11 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 }
 
 func InitializeAutoLogin(ctx context.Context, cfg *config.Config) {
-	if cfg.AutoLoginEnable {
-		slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.AutoLoginUsername)
-		slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
+	if !buildables.HasBuildFeature("autologin") {
+		return
 	}
+	slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.BuildablesConfig.AutoLoginUsername)
+	slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
 }
 
 func MigrateSchedulerCronValues(

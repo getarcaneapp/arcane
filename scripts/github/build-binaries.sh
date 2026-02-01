@@ -15,10 +15,13 @@ VERSION=${VERSION:-"dev"}
 REVISION=${REVISION:-$(git rev-parse HEAD 2>/dev/null || echo "unknown")}
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
+ENABLED_FEATURES=${ENABLED_FEATURES:-${BUILD_FEATURES:-}}
+
 LDFLAGS="-w -s -buildid=${VERSION} \
   -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} \
   -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} \
-  -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}"
+  -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME} \
+  -X github.com/getarcaneapp/arcane/backend/buildables.EnabledFeatures=${ENABLED_FEATURES}"
 
 DOCKER_ONLY=false
 AGENT_BUILD=false
@@ -40,6 +43,18 @@ if [ "$AGENT_BUILD" = true ]; then
   BUILD_TAGS="exclude_frontend"
 fi
 
+combined_tags() {
+  local tags="$BUILD_TAGS"
+  if [ -n "${ENABLED_FEATURES:-}" ]; then
+    if [ -n "$tags" ]; then
+      tags="${tags},buildables"
+    else
+      tags="buildables"
+    fi
+  fi
+  echo "$tags"
+}
+
 build_platform() {
   local target="$1" os="$2" arch="$3" arm_version="${4:-}"
 
@@ -56,21 +71,24 @@ build_platform() {
     cgo_enabled="${CGO_ENABLED_DARWIN_OVERRIDE:-1}"
   fi
 
+  local combined
+  combined="$(combined_tags)"
+
   if [ -n "$arm_version" ]; then
     printf "Building %s (GOOS=%s GOARCH=%s GOARM=%s CGO_ENABLED=%s)%s ... " \
-      "$output_path" "$os" "$arch" "$arm_version" "$cgo_enabled" "${BUILD_TAGS:+ tags=$BUILD_TAGS}"
+      "$output_path" "$os" "$arch" "$arm_version" "$cgo_enabled" "${combined:+ tags=$combined}"
   else
     printf "Building %s (GOOS=%s GOARCH=%s CGO_ENABLED=%s)%s ... " \
-      "$output_path" "$os" "$arch" "$cgo_enabled" "${BUILD_TAGS:+ tags=$BUILD_TAGS}"
+      "$output_path" "$os" "$arch" "$cgo_enabled" "${combined:+ tags=$combined}"
   fi
 
-  if [ -n "$BUILD_TAGS" ]; then
+  if [ -n "$combined" ]; then
     if [ -n "$arm_version" ]; then
       GOARM="$arm_version" CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
-        go build -tags "$BUILD_TAGS" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+        go build -tags "$combined" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
     else
       CGO_ENABLED="$cgo_enabled" GOOS="$os" GOARCH="$arch" \
-        go build -tags "$BUILD_TAGS" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
+        go build -tags "$combined" -ldflags="$LDFLAGS" -trimpath -o "$output_path" ./cmd/main.go
     fi
   else
     if [ -n "$arm_version" ]; then

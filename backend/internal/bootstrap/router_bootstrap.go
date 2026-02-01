@@ -20,6 +20,7 @@ import (
 )
 
 var registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)
+var registerBuildableRoutes []func(apiGroup *gin.RouterGroup, services *Services)
 
 var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/containers/*/logs",
@@ -117,7 +118,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	)
 	apiGroup.Use(envMiddleware)
 
-	_ = huma.SetupAPI(router, apiGroup, cfg, &huma.Services{
+	humaServices := &huma.Services{
 		User:              appServices.User,
 		Auth:              appServices.Auth,
 		Oidc:              appServices.Oidc,
@@ -148,7 +149,13 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		GitRepository:     appServices.GitRepository,
 		GitOpsSync:        appServices.GitOpsSync,
 		Config:            cfg,
-	})
+	}
+
+	_ = huma.SetupAPI(router, apiGroup, cfg, humaServices)
+
+	for _, register := range registerBuildableRoutes {
+		register(apiGroup, appServices)
+	}
 
 	// Remaining Gin handlers (WebSocket/streaming)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg) //nolint:contextcheck

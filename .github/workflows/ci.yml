@@ -71,6 +71,7 @@ jobs:
         run: |
           if [ "${{ matrix.module.name }}" = "backend" ]; then
             go test -tags=exclude_frontend ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+            go test -tags=exclude_frontend,buildables -ldflags "-X github.com/getarcaneapp/arcane/backend/buildables.EnabledFeatures=autologin" ./... -race -v
           else
             go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
           fi
