@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Impossible de mettre à jour le chemin d'accès à l'utilisation du disque",
 	"directory_path": "Chemin du répertoire",
 	"_comment_settings_timeouts": "=== PARAMÈTRES - DÉLAIS D'EXPIRATION ===",
-	"timeouts_settings": "Paramètres de délai d'expiration",
+	"timeouts_settings": "Délai d'attente",
 	"timeouts_settings_description": "Configurez les délais d'expiration des opérations pour les réseaux ou matériels lents. Toutes les valeurs sont en secondes.",
 	"timeouts_save": "Les paramètres de délai d'expiration ont été mis à jour avec succès",
 	"docker_api_timeout": "Délai d'attente de l'API Docker dépassé",
