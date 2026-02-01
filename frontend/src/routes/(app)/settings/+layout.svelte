@@ -11,11 +11,10 @@
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
-	import * as Kbd from '$lib/components/ui/kbd/index.js';
 	import { cn } from '$lib/utils';
 	import { navigationItems } from '$lib/config/navigation-config';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
-	import { formatShortcutKeys } from '$lib/utils/keyboard-shortcut.utils';
+	import SidebarItemTooltipContent from '$lib/components/sidebar/sidebar-item-tooltip-content.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -197,21 +196,6 @@
 					)}
 					<div class="w-full min-w-0">
 						{#if item.shortcut?.length}
-							{#snippet tooltipContent()}
-								{@const displayKeys = formatShortcutKeys(item.shortcut ?? [])}
-								<Kbd.Group class="text-muted-foreground inline-flex items-center gap-1">
-									{#each displayKeys as key, index}
-										<Kbd.Root
-											class="text-popover-foreground! in-data-[slot=tooltip-content]:text-popover-foreground! dark:in-data-[slot=tooltip-content]:text-popover-foreground!"
-										>
-											{key}
-										</Kbd.Root>
-										{#if index < displayKeys.length - 1}
-											<span class="text-muted-foreground/70 text-[10px]">+</span>
-										{/if}
-									{/each}
-								</Kbd.Group>
-							{/snippet}
 							<ArcaneTooltip.Root>
 								<ArcaneTooltip.Trigger class="w-full">
 									<a href={item.href} class={linkClass}>
@@ -220,7 +204,7 @@
 									</a>
 								</ArcaneTooltip.Trigger>
 								<ArcaneTooltip.Content side="right" align="start">
-									{@render tooltipContent()}
+									<SidebarItemTooltipContent title={item.label} shortcut={item.shortcut} includeTitle={false} />
 								</ArcaneTooltip.Content>
 							</ArcaneTooltip.Root>
 						{:else}
