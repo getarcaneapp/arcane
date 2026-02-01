@@ -14,10 +14,8 @@
 	bind:this={ref}
 	data-slot="table-row"
 	class={cn(
-		'group/row border-border/40 bg-background border-b transition-colors',
-		'[&_td]:transition-colors',
-		'hover:[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))]',
-		'data-[state=selected]:[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))]',
+		'group/row border-border/40 bg-background cursor-pointer border-b transition-colors',
+		'hover:bg-primary/15 data-[state=selected]:bg-primary/10',
 		className
 	)}
 	{...restProps}

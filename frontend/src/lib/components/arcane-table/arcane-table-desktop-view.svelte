@@ -55,7 +55,7 @@
 		return '';
 	}
 
-	const stickyActionsClasses = 'sticky right-0 z-10 bg-[color:var(--row-bg,var(--color-background))] transition-colors';
+	const stickyActionsClasses = 'sticky right-0 z-10 transition-colors';
 	const stickySelectClasses = 'w-0 pr-6!';
 
 	function shouldIgnoreRowClick(event: MouseEvent): boolean {
@@ -131,10 +131,7 @@
 					<Table.Row
 						class={cn(
 							'cursor-pointer transition-colors',
-							!unstyled &&
-								(hasSelection
-									? '[--row-bg:color-mix(in_oklch,var(--color-primary)_10%,var(--color-background))] hover:[--row-bg:color-mix(in_oklch,var(--color-primary)_15%,var(--color-background))]'
-									: 'hover:[--row-bg:color-mix(in_oklch,var(--color-muted)_70%,var(--color-background))]')
+							!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-primary/15')
 						)}
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
@@ -180,8 +177,8 @@
 											<div class="flex items-center justify-end" data-row-select-ignore>
 												<div
 													class={cn(
-														'border-border/40 bg-card/70 pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm backdrop-blur-md',
-														unstyled && 'backdrop-blur-0 border-transparent bg-transparent shadow-none'
+														'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
+														unstyled && 'border-transparent bg-transparent shadow-none'
 													)}
 												>
 													<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
@@ -228,8 +225,8 @@
 									<div class="flex items-center justify-end" data-row-select-ignore>
 										<div
 											class={cn(
-												'border-border/40 bg-card/70 pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm backdrop-blur-md',
-												unstyled && 'backdrop-blur-0 border-transparent bg-transparent shadow-none'
+												'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
+												unstyled && 'border-transparent bg-transparent shadow-none'
 											)}
 										>
 											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
