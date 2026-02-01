@@ -7,6 +7,7 @@
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
+	import settingsStore from '$lib/stores/config-store';
 
 	let {
 		items,
@@ -72,6 +73,7 @@
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
 	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
+	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 </script>
 
 <Sidebar.Group>
@@ -147,7 +149,7 @@
 					{/snippet}
 					<SidebarCollapsibleItem
 						{item}
-						showTooltip={collapsed || !!item.shortcut?.length}
+						showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
 						{includeTitleInTooltip}
 						{getIsOpen}
 						onOpenChange={(open) => {
@@ -165,7 +167,7 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton
 						isActive={item.isActive}
-						tooltipContent={collapsed || !!item.shortcut?.length ? simpleItemTooltipContent : undefined}
+						tooltipContent={collapsed || (shortcutsEnabled && !!item.shortcut?.length) ? simpleItemTooltipContent : undefined}
 					>
 						{#snippet child({ props })}
 							{@const Icon = item.icon}

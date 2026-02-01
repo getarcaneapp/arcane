@@ -236,4 +236,9 @@ type Update struct {
 	//
 	// Required: false
 	SidebarHoverExpansion *string `json:"sidebarHoverExpansion,omitempty"`
+
+	// KeyboardShortcutsEnabled indicates if keyboard shortcuts are enabled.
+	//
+	// Required: false
+	KeyboardShortcutsEnabled *string `json:"keyboardShortcutsEnabled,omitempty"`
 }

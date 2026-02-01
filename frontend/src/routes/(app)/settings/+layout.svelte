@@ -32,6 +32,7 @@
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
+	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 
 	const navItems = $derived.by(() => {
 		const settingsEntry = navigationItems.settingsItems.find((item) => item.url === '/settings');
@@ -195,7 +196,7 @@
 						isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
 					)}
 					<div class="w-full min-w-0">
-						{#if item.shortcut?.length}
+						{#if item.shortcut?.length && shortcutsEnabled}
 							<ArcaneTooltip.Root>
 								<ArcaneTooltip.Trigger class="w-full">
 									<a href={item.href} class={linkClass}>
