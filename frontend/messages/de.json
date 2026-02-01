@@ -1045,7 +1045,7 @@
 	"disk_usage_save_failed": "Fehler beim öffnen des Pfad für die Festplatten Nutzung",
 	"directory_path": "Pfad",
 	"_comment_settings_timeouts": "=== EINSTELLUNGEN - TIMEOUTS ===",
-	"timeouts_settings": "Timeout Einstellungen",
+	"timeouts_settings": "Timeouts",
 	"timeouts_settings_description": "Konfigurieren Sie Timeouts für langsame Netzwerke oder Hardware. Alle Werte sind in Sekunden.",
 	"timeouts_save": "Timeout Einstellungen erfolgreich aktualisiert",
 	"docker_api_timeout": "Docker API Timeout",
