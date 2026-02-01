@@ -16,7 +16,7 @@ export function calculateCPUPercent(stats: ContainerStats | null): number {
 export function calculateMemoryPercent(stats: ContainerStats | null): number {
 	if (!stats?.memory_stats) return 0;
 
-	const usage = stats.memory_stats.usage || 0;
+	const usage = calculateMemoryUsage(stats);
 	const limit = stats.memory_stats.limit || 0;
 
 	if (limit > 0) {
@@ -24,4 +24,12 @@ export function calculateMemoryPercent(stats: ContainerStats | null): number {
 		return Math.min(Math.max(percent, 0), 100);
 	}
 	return 0;
+}
+
+export function calculateMemoryUsage(stats: ContainerStats | null): number {
+	if (!stats?.memory_stats) return 0;
+
+	const usage = stats.memory_stats.usage || 0;
+	const inactiveFile = stats.memory_stats.stats?.inactive_file || 0;
+	return Math.max(usage - inactiveFile, 0);
 }

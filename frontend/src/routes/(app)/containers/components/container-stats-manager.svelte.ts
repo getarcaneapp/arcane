@@ -1,7 +1,11 @@
-import { createContainerStatsWebSocket } from '../../../../lib/utils/ws';
+import { createContainerStatsWebSocket } from '$lib/utils/ws';
 import type { ContainerStats } from '$lib/types/container.type';
-import { calculateCPUPercent, calculateMemoryPercent } from '../../../../lib/utils/container-stats.utils';
-import type { ReconnectingWebSocket } from '../../../../lib/utils/ws';
+import {
+	calculateCPUPercent,
+	calculateMemoryPercent,
+	calculateMemoryUsage
+} from '$lib/utils/container-stats.utils';
+import type { ReconnectingWebSocket } from '$lib/utils/ws';
 
 export class ContainerStatsManager {
 	private connections = new Map<string, ReconnectingWebSocket<ContainerStats>>();
@@ -61,7 +65,7 @@ export class ContainerStatsManager {
 		const stats = this.stats.get(containerId);
 		if (!stats) return undefined;
 		return {
-			usage: stats.memory_stats?.usage || 0,
+			usage: calculateMemoryUsage(stats),
 			limit: stats.memory_stats?.limit || 0
 		};
 	}
