@@ -155,3 +155,152 @@ func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 
 	return nil
 }
+
+// SyncFile represents a file to be written during directory sync
+type SyncFile struct {
+	RelativePath string // Path relative to the project directory
+	Content      []byte
+}
+
+// WriteSyncedDirectory writes multiple files to a project directory.
+// It validates all paths are within the project directory and creates
+// subdirectories as needed. Returns the list of written file paths.
+func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([]string, error) {
+	// Security: Validate projectPath is within projectsRoot
+	rootAbs, err := filepath.Abs(projectsRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve projects root: %w", err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	projectAbs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	projectAbs = filepath.Clean(projectAbs)
+
+	if !IsSafeSubdirectory(rootAbs, projectAbs) {
+		return nil, fmt.Errorf("project path is outside projects root")
+	}
+
+	// Ensure project directory exists
+	if err := os.MkdirAll(projectAbs, common.DirPerm); err != nil {
+		return nil, fmt.Errorf("failed to create project directory: %w", err)
+	}
+
+	writtenPaths := make([]string, 0, len(files))
+
+	for _, file := range files {
+		// Validate relative path doesn't escape project directory
+		targetPath := filepath.Join(projectAbs, file.RelativePath)
+		targetPathClean := filepath.Clean(targetPath)
+
+		if !IsSafeSubdirectory(projectAbs, targetPathClean) {
+			return nil, fmt.Errorf("file path %s would escape project directory", file.RelativePath)
+		}
+
+		// Create parent directories
+		parentDir := filepath.Dir(targetPathClean)
+		if err := os.MkdirAll(parentDir, common.DirPerm); err != nil {
+			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, err)
+		}
+
+		// Write the file
+		if err := os.WriteFile(targetPathClean, file.Content, common.FilePerm); err != nil {
+			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)
+		}
+
+		writtenPaths = append(writtenPaths, file.RelativePath)
+	}
+
+	return writtenPaths, nil
+}
+
+// CleanupRemovedFiles deletes files that were in the old sync but are not in the new sync.
+// It only removes files that were previously synced (tracked in oldFiles).
+// Empty directories are removed after file deletion.
+// This is a best-effort operation - errors are logged but don't cause failure.
+func CleanupRemovedFiles(projectsRoot, projectPath string, oldFiles, newFiles []string) error {
+	// Security: Validate projectPath is within projectsRoot
+	rootAbs, err := filepath.Abs(projectsRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve projects root: %w", err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	projectAbs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	projectAbs = filepath.Clean(projectAbs)
+
+	if !IsSafeSubdirectory(rootAbs, projectAbs) {
+		return fmt.Errorf("project path is outside projects root")
+	}
+
+	// Build set of new files for quick lookup
+	newFileSet := make(map[string]bool, len(newFiles))
+	for _, f := range newFiles {
+		newFileSet[f] = true
+	}
+
+	// Track directories that may need cleanup
+	dirsToCheck := make(map[string]bool)
+
+	// Delete files that are in old but not in new
+	for _, oldFile := range oldFiles {
+		if newFileSet[oldFile] {
+			continue // File still exists in new sync
+		}
+
+		targetPath := filepath.Join(projectAbs, oldFile)
+		targetPathClean := filepath.Clean(targetPath)
+
+		// Security check
+		if !IsSafeSubdirectory(projectAbs, targetPathClean) {
+			continue // Skip files that would be outside project
+		}
+
+		// Delete the file (best effort)
+		if err := os.Remove(targetPathClean); err != nil {
+			if !os.IsNotExist(err) {
+				// Log but continue - this is best effort
+				fmt.Printf("Warning: failed to remove old synced file %s: %v\n", oldFile, err)
+			}
+		}
+
+		// Track parent directory for potential cleanup
+		parentDir := filepath.Dir(targetPathClean)
+		if parentDir != projectAbs {
+			dirsToCheck[parentDir] = true
+		}
+	}
+
+	// Clean up empty directories (best effort, deepest first)
+	for dir := range dirsToCheck {
+		cleanupEmptyDirs(projectAbs, dir)
+	}
+
+	return nil
+}
+
+// cleanupEmptyDirs removes empty directories starting from the given path
+// up to (but not including) the project root.
+func cleanupEmptyDirs(projectRoot, startDir string) {
+	current := startDir
+	for {
+		// Don't delete the project root
+		if current == projectRoot || !IsSafeSubdirectory(projectRoot, current) {
+			break
+		}
+
+		// Try to remove the directory (will fail if not empty)
+		err := os.Remove(current)
+		if err != nil {
+			break // Directory not empty or other error
+		}
+
+		// Move to parent directory
+		current = filepath.Dir(current)
+	}
+}
