@@ -3,17 +3,12 @@
   "private": true,
   "version": "1.14.1",
   "type": "module",
-  "packageManager": "pnpm@10.28.1+sha512.7d7dbbca9e99447b7c3bf7a73286afaaf6be99251eb9498baefa7d406892f67b879adb3a1d7e687fc4ccc1a388c7175fbaae567a26ab44d1067b54fcb0d6a316",
-  "engines": {
-    "node": ">=25"
-  },
   "scripts": {
     "dev": "vite dev --port 3000 --host",
     "build": "vite build",
     "preview": "vite preview --port 3000",
     "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-fast-check --incremental --config ./svelte-fast-check.config.ts",
-    "check:ci": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write ./src",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "knip": "knip",
@@ -60,7 +55,6 @@
     "paneforge": "^1.0.2",
     "runed": "^0.37.0",
     "svelte-check": "^4.3.5",
-    "svelte-fast-check": "^0.4.3",
     "svelte-sonner": "^1.0.7",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.29.1",

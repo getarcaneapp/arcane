@@ -129,12 +129,14 @@ git add CHANGELOG.md
 # Commit the changes with the new version
 git commit -m "release: $NEW_VERSION"
 
-# Create a Git tag with the new version
+# Create Git tags with the new version
 git tag "v$NEW_VERSION"
+git tag "cli/v$NEW_VERSION"
+git tag "types/v$NEW_VERSION"
 
-# Push the commit and the tag to the repository
+# Push the commit and the tags to the repository
 git push
-git push origin "v$NEW_VERSION"
+git push origin "v$NEW_VERSION" "cli/v$NEW_VERSION" "types/v$NEW_VERSION"
 
 # Extract the changelog content for the latest release
 echo "Extracting changelog content for version $NEW_VERSION..."

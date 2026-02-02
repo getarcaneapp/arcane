@@ -29,8 +29,16 @@ fi
 # Ensure local tags are up to date
 git fetch --tags --quiet || true
 
-# Get the latest release tag
-LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+# Get the latest repo-wide release tag (ignore module tags like cli/v* or types/v*)
+get_latest_repo_tag() {
+    local ref="${1:-HEAD}"
+    git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "$ref" | head -n1
+}
+
+LATEST_TAG=$(get_latest_repo_tag "main")
+if [ -z "$LATEST_TAG" ]; then
+    LATEST_TAG=$(get_latest_repo_tag "HEAD")
+fi
 if [ -z "$LATEST_TAG" ]; then
     echo -e "${RED}Error: No previous release tag found.${NC}"
     exit 1
@@ -150,7 +158,10 @@ while true; do
 done
 
 # Check if any commits were added
-BASE_TAG=$(git describe --tags --abbrev=0 "${RELEASE_BRANCH}^" 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null)
+BASE_TAG=$(get_latest_repo_tag "HEAD")
+if [ -z "$BASE_TAG" ]; then
+    BASE_TAG="$LATEST_TAG"
+fi
 COMMITS_ADDED=$(git rev-list "${BASE_TAG}..HEAD" --count)
 
 if [ "$COMMITS_ADDED" -eq 0 ]; then
@@ -214,6 +225,9 @@ git tag -a "$NEW_TAG" -m "Release ${NEW_TAG} (Hotfix)
 Hotfix release based on ${BASE_TAG}
 
 See CHANGELOG.md for details."
+
+git tag "cli/${NEW_TAG}"
+git tag "types/${NEW_TAG}"
 
 echo ""
 echo -e "${GREEN}✅ Hotfix release ${NEW_TAG} created successfully!${NC}"

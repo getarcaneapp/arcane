@@ -32,6 +32,9 @@ jobs:
         with:
           run_install: false
 
+      - name: Setup Just
+        uses: extractions/setup-just@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:

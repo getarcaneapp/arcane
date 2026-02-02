@@ -36,12 +36,12 @@ jobs:
             timeout: 10
             gcc: false
             cgo_enabled: "1"
-    defaults:
-      run:
-        working-directory: ${{ matrix.module.path }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Setup Just
+        uses: extractions/setup-just@v3
 
       - name: Set up Depot CLI
         if: matrix.module.gcc
@@ -61,17 +61,12 @@ jobs:
           sudo apt-get install -y gcc
 
       - name: Download modules
-        run: go mod download
+        run: just deps install go
 
       - name: Run unit tests
         env:
           CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
-        run: |
-          if [ "${{ matrix.module.name }}" = "backend" ]; then
-            go test -tags=exclude_frontend ./... -race -coverprofile=coverage.txt -covermode=atomic -v
-          else
-            go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
-          fi
+        run: just test ${{ matrix.module.name }}
 
       - name: Upload coverage artifact
         if: always()
@@ -88,14 +83,11 @@ jobs:
       matrix:
         module:
           - name: backend
-            path: backend
-            args: --build-tags=exclude_frontend --config=.golangci.yml
+            args: --build-tags=exclude_frontend --config=../.github/.golangci.yml
           - name: cli
-            path: cli
-            args: --config=../backend/.golangci.yml
+            args: --config=../.github/.golangci.yml
           - name: types
-            path: types
-            args: --config=../backend/.golangci.yml
+            args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -103,16 +95,16 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ matrix.module.path }}/go.mod
-          cache-dependency-path: ${{ matrix.module.path }}/go.sum
+          go-version-file: ${{ matrix.module.name }}/go.mod
+          cache-dependency-path: ${{ matrix.module.name }}/go.sum
 
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.7.2
+          version: latest
           args: ${{ matrix.module.args }}
-          working-directory: ${{ matrix.module.path }}
-          only-new-issues: true
+          working-directory: ${{ matrix.module.name }}
+          only-new-issues: false
 
   deadcode:
     name: Go Deadcode Analysis
@@ -156,7 +148,19 @@ jobs:
           comment-author: "github-actions[bot]"
           body-includes: "## 🔍 Deadcode Analysis"
 
+      - name: Delete comment if no deadcode found
+        if: steps.deadcode.outputs.count == '0' && steps.fc.outputs.comment-id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: ${{ steps.fc.outputs.comment-id }}
+            })
+
       - name: Comment deadcode results
+        if: steps.deadcode.outputs.count != '0'
         uses: peter-evans/create-or-update-comment@v5
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
@@ -173,7 +177,7 @@ jobs:
             ${{ steps.deadcode.outputs.output }}
             ```
 
-            Only remove deadcode that you know is 100% no longer used. 
+            Only remove deadcode that you know is 100% no longer used.
 
             </details>
 
@@ -196,17 +200,20 @@ jobs:
           node-version: 25
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm --filter arcane-frontend install --frozen-lockfile
+      - name: Setup Just
+        uses: extractions/setup-just@v3
+
+      - name: Install Fontend Dependencies
+        run: just deps install frontend
 
       - name: Add svelte-check problem matcher
         run: echo "::add-matcher::.github/matchers/svelte-check-matcher.json"
 
       - name: Build frontend
-        run: pnpm --filter arcane-frontend build
+        run: just build single frontend
 
       - name: Run svelte-check
-        run: pnpm --filter arcane-frontend check:ci
+        run: just lint frontend
 
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
@@ -230,12 +237,16 @@ jobs:
             compose_file: setup/compose-proxy.yaml
             port: 3002
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout code
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
+
+      - name: Setup Just
+        uses: extractions/setup-just@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -264,15 +275,11 @@ jobs:
           docker pull ghcr.io/linuxserver/radarr:nightly
           docker save ghcr.io/linuxserver/nginx:latest ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
 
-      - name: Install test dependencies
-        run: pnpm --filter arcane-tests install
-
-      - name: Install Playwright Browsers
-        working-directory: ./tests
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Setup and Install Playwright Dependencies
+        run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: pnpm --filter arcane-tests test
+        run: just test e2e
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}

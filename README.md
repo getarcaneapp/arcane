@@ -25,6 +25,20 @@
 
 For setup instructions, configuration details, and development guides, visit the **[official documentation site](https://getarcane.app)**.
 
+## Tagging Scheme for Go Modules
+
+Arcane releases are tagged repo-wide as `vX.Y.Z`. To provide stable versions for nested Go modules, we also create module tags:
+
+- `cli/vX.Y.Z`
+- `types/vX.Y.Z`
+
+Module tags are for Go tooling only and do not trigger CI releases (only `v*.*.*` tags do).
+
+Examples:
+
+- `go install github.com/getarcaneapp/arcane/cli@cli/vX.Y.Z`
+- `go get github.com/getarcaneapp/arcane/types@types/vX.Y.Z`
+
 ## Sponsors
 
 This project is supported by the following amazing people:
