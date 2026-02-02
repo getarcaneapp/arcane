@@ -615,7 +615,11 @@ func (s *GitOpsSyncService) updateProjectForSync(ctx context.Context, sync *mode
 	// Get current content to see if it changed
 	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
 	contentChanged := oldCompose != composeContent
-	if envContent != nil && oldEnv != *envContent {
+	if envContent != nil {
+		if oldEnv != *envContent {
+			contentChanged = true
+		}
+	} else if oldEnv != "" {
 		contentChanged = true
 	}
 
