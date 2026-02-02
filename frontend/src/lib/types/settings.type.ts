@@ -5,6 +5,7 @@ export type Settings = {
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
+	autoUpdateExcludedContainers?: string;
 	pollingEnabled: boolean;
 	pollingInterval: number;
 	environmentHealthInterval: number;

@@ -31,7 +31,7 @@
 	// Derive excluded containers from settings
 	const excludedContainers = $derived.by(() => {
 		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
-		return new Set(savedValue.split(',').map((s) => s.trim()).filter(Boolean));
+		return new Set(savedValue.split(',').map((s: string) => s.trim()).filter(Boolean));
 	});
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
