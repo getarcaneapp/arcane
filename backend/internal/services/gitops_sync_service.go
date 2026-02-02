@@ -32,9 +32,9 @@ const defaultGitSyncTimeout = 5 * time.Minute
 
 // Directory sync limits
 const (
-	maxSyncFiles      = 500                    // Maximum number of files to sync
-	maxSyncTotalSize  = 50 * 1024 * 1024       // 50MB total size limit
-	maxSyncBinarySize = 10 * 1024 * 1024       // 10MB per binary file limit
+	maxSyncFiles      = 500              // Maximum number of files to sync
+	maxSyncTotalSize  = 50 * 1024 * 1024 // 50MB total size limit
+	maxSyncBinarySize = 10 * 1024 * 1024 // 10MB per binary file limit
 )
 
 func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {

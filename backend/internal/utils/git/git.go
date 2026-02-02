@@ -17,7 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
 	gossh "golang.org/x/crypto/ssh"
@@ -57,7 +57,7 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 	switch config.AuthType {
 	case "http":
 		if config.Token != "" {
-			return &http.BasicAuth{
+			return &githttp.BasicAuth{
 				Username: config.Username,
 				Password: config.Token,
 			}, nil
@@ -517,6 +517,14 @@ type DirectoryWalkResult struct {
 	SkippedBinaries int
 }
 
+// walkConfig holds configuration for directory walking
+type walkConfig struct {
+	syncDir       string
+	maxFiles      int
+	maxTotalSize  int64
+	maxBinarySize int64
+}
+
 // WalkDirectory walks the directory containing the compose file and returns all files.
 // It enforces limits on file count, total size, and skips large binary files.
 // The composePath is the path to the compose file within the repo - the directory
@@ -548,74 +556,15 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 		Files: make([]SyncFileInfo, 0),
 	}
 
+	cfg := walkConfig{
+		syncDir:       syncDir,
+		maxFiles:      maxFiles,
+		maxTotalSize:  maxTotalSize,
+		maxBinarySize: maxBinarySize,
+	}
+
 	err = filepath.Walk(syncDir, func(path string, info os.FileInfo, err error) error {
-		// Check context cancellation
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if err != nil {
-			return err
-		}
-
-		// Skip symlinks to prevent path traversal attacks via malicious symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip directories but continue walking into them
-		if info.IsDir() {
-			// Skip .git directory entirely
-			if info.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Check file count limit (use > to allow exactly maxFiles files)
-		if result.TotalFiles >= maxFiles {
-			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
-		}
-
-		// Get relative path from sync directory
-		relPath, err := filepath.Rel(syncDir, path)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %w", err)
-		}
-
-		// Read file content
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", relPath, err)
-		}
-
-		fileSize := int64(len(content))
-		isBinary := isBinaryContent(content)
-
-		// Skip large binary files
-		if isBinary && fileSize > maxBinarySize {
-			result.SkippedBinaries++
-			return nil
-		}
-
-		// Check total size limit
-		if result.TotalSize+fileSize > maxTotalSize {
-			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
-		}
-
-		result.Files = append(result.Files, SyncFileInfo{
-			RelativePath: relPath,
-			Content:      content,
-			Size:         fileSize,
-			IsBinary:     isBinary,
-		})
-		result.TotalFiles++
-		result.TotalSize += fileSize
-
-		return nil
+		return c.processWalkEntry(ctx, path, info, err, cfg, result)
 	})
 
 	if err != nil {
@@ -628,6 +577,76 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	}
 
 	return result, nil
+}
+
+// processWalkEntry processes a single entry during directory walking
+func (c *Client) processWalkEntry(ctx context.Context, path string, info os.FileInfo, err error, cfg walkConfig, result *DirectoryWalkResult) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Skip symlinks to prevent path traversal attacks via malicious symlinks
+	if info.Mode()&os.ModeSymlink != 0 {
+		if info.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	// Skip directories but continue walking into them
+	if info.IsDir() {
+		if info.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	return c.processFile(path, cfg, result)
+}
+
+// processFile processes a single file during directory walking
+func (c *Client) processFile(path string, cfg walkConfig, result *DirectoryWalkResult) error {
+	if result.TotalFiles >= cfg.maxFiles {
+		return fmt.Errorf("file count limit exceeded (max %d files)", cfg.maxFiles)
+	}
+
+	relPath, err := filepath.Rel(cfg.syncDir, path)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", relPath, err)
+	}
+
+	fileSize := int64(len(content))
+	isBinary := isBinaryContent(content)
+
+	// Skip large binary files
+	if isBinary && fileSize > cfg.maxBinarySize {
+		result.SkippedBinaries++
+		return nil
+	}
+
+	if result.TotalSize+fileSize > cfg.maxTotalSize {
+		return fmt.Errorf("total size limit exceeded (max %d bytes)", cfg.maxTotalSize)
+	}
+
+	result.Files = append(result.Files, SyncFileInfo{
+		RelativePath: relPath,
+		Content:      content,
+		Size:         fileSize,
+		IsBinary:     isBinary,
+	})
+	result.TotalFiles++
+	result.TotalSize += fileSize
+
+	return nil
 }
 
 // isBinaryContent detects if content is binary using HTTP content type detection.
