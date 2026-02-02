@@ -18,34 +18,6 @@ services:
         - BUILD_TAGS=playwright
       context: ../..
       dockerfile: docker/Dockerfile
-    depends_on:
-      gitea:
-        condition: service_healthy
-
-  gitea:
-    image: gitea/gitea:1.23-rootless
-    environment:
-      - GITEA__database__DB_TYPE=sqlite3
-      - GITEA__server__ROOT_URL=http://gitea:3001
-      - GITEA__server__HTTP_PORT=3001
-      - GITEA__server__DISABLE_SSH=true
-      - GITEA__security__INSTALL_LOCK=true
-      - GITEA__service__DISABLE_REGISTRATION=false
-      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
-      - GITEA__repository__DEFAULT_BRANCH=main
-    ports:
-      - '3001:3001'
-    volumes:
-      - gitea_data:/var/lib/gitea
-      - gitea_config:/etc/gitea
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/api/v1/version']
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
 
 volumes:
   arcane_data:
-  gitea_data:
-  gitea_config:
