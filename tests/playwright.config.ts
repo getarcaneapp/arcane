@@ -21,13 +21,19 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'setup',
-      testMatch: /setup\/.*\.setup\.ts/,
+      name: 'auth-setup',
+      testMatch: /setup\/auth\.setup\.ts/,
+    },
+    {
+      name: 'gitops-setup',
+      testMatch: /setup\/gitops\.setup\.ts/,
+      use: { storageState: '.auth/login.json' },
+      dependencies: ['auth-setup'],
     },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], storageState: '.auth/login.json' },
-      dependencies: ['setup'],
+      dependencies: ['auth-setup', 'gitops-setup'],
       testMatch: /spec\/.*\.spec\.ts/,
     },
   ],
