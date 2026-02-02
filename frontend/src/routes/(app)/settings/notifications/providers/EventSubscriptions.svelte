@@ -7,10 +7,17 @@
 		providerId: string;
 		eventImageUpdate: boolean;
 		eventContainerUpdate: boolean;
+		eventPruneReport: boolean;
 		disabled?: boolean;
 	}
 
-	let { providerId, eventImageUpdate = $bindable(), eventContainerUpdate = $bindable(), disabled = false }: Props = $props();
+	let {
+		providerId,
+		eventImageUpdate = $bindable(),
+		eventContainerUpdate = $bindable(),
+		eventPruneReport = $bindable(),
+		disabled = false
+	}: Props = $props();
 </script>
 
 <div class="space-y-3 pt-2">
@@ -30,6 +37,13 @@
 			{disabled}
 			label={m.notifications_event_container_update_label()}
 			description={m.notifications_event_container_update_description()}
+		/>
+		<SwitchWithLabel
+			id="{providerId}-event-prune-report"
+			bind:checked={eventPruneReport}
+			{disabled}
+			label={m.notifications_event_prune_report_label()}
+			description={m.notifications_event_prune_report_description()}
 		/>
 	</div>
 </div>

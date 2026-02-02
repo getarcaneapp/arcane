@@ -67,6 +67,8 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		if err := s.pruneContainers(ctx, result); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Container pruning failed: %v", err))
 			result.Success = false
+		} else {
+			result.ContainerSpaceReclaimed += result.SpaceReclaimed
 		}
 	}
 
@@ -91,6 +93,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 				mu.Lock()
 				result.ImagesDeleted = append(result.ImagesDeleted, localResult.ImagesDeleted...)
 				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.ImageSpaceReclaimed += localResult.ImageSpaceReclaimed
 				mu.Unlock()
 			}
 			return nil
@@ -107,6 +110,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 			} else {
 				mu.Lock()
 				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.BuildCacheSpaceReclaimed += localResult.BuildCacheSpaceReclaimed
 				mu.Unlock()
 			}
 			return nil
@@ -126,6 +130,7 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 				mu.Lock()
 				result.VolumesDeleted = append(result.VolumesDeleted, localResult.VolumesDeleted...)
 				result.SpaceReclaimed += localResult.SpaceReclaimed
+				result.VolumeSpaceReclaimed += localResult.VolumeSpaceReclaimed
 				mu.Unlock()
 			}
 			return nil
@@ -277,6 +282,7 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *system.Prun
 
 	result.ContainersPruned = report.ContainersDeleted
 	result.SpaceReclaimed += report.SpaceReclaimed
+	result.ContainerSpaceReclaimed += report.SpaceReclaimed
 	return nil
 }
 
@@ -324,6 +330,7 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 
 	result.ImagesDeleted = idsToDelete
 	result.SpaceReclaimed += report.SpaceReclaimed
+	result.ImageSpaceReclaimed += report.SpaceReclaimed
 	return nil
 }
 
@@ -350,6 +357,7 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.CachesDeleted), "bytes_reclaimed", report.SpaceReclaimed)
 
 	result.SpaceReclaimed += report.SpaceReclaimed
+	result.BuildCacheSpaceReclaimed += report.SpaceReclaimed
 	return nil
 }
 
@@ -368,6 +376,7 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAl
 
 	result.VolumesDeleted = report.VolumesDeleted
 	result.SpaceReclaimed += report.SpaceReclaimed
+	result.VolumeSpaceReclaimed += report.SpaceReclaimed
 	return nil
 }
 

@@ -1879,5 +1879,7 @@
 	"environments_agent_address_description": "The URL where your agent will be accessible",
 	"environments_generate_config": "Generate Agent Configuration",
 	"project_files": "Project Files",
-	"project_includes": "Includes"
+	"project_includes": "Includes",
+	"notifications_event_prune_report_label": "System Prune Report",
+	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes"
 }

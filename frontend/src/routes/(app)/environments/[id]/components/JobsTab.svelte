@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
+	import { containerService } from '$lib/services/container-service';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import JobCard from '$lib/components/job-card/job-card.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
@@ -7,8 +8,13 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
-	import { JobsIcon, AlertIcon } from '$lib/icons';
+	import { Button } from '$lib/components/ui/button';
+	import * as Command from '$lib/components/ui/command';
+	import * as Popover from '$lib/components/ui/popover';
+	import { cn } from '$lib/utils';
+	import { JobsIcon, AlertIcon, CheckIcon, ArrowsUpDownIcon } from '$lib/icons';
 	import type { JobListResponse, JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
+	import type { ContainerSummaryDto } from '$lib/types/container.type';
 
 	let { formInputs, environmentId } = $props();
 
@@ -16,6 +22,17 @@
 	let isLoading = $state(true);
 	let isFirstLoad = $state(true);
 	let error = $state<string | null>(null);
+
+	// Container exclusion state
+	let containers = $state<ContainerSummaryDto[]>([]);
+	let isLoadingContainers = $state(false);
+	let openExclusionCombobox = $state(false);
+
+	// Derive excluded containers from settings
+	const excludedContainers = $derived.by(() => {
+		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
+		return new Set(savedValue.split(',').map((s) => s.trim()).filter(Boolean));
+	});
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
 		if (!prereq.settingsUrl) return undefined;
@@ -63,11 +80,42 @@
 		};
 	}
 
+	async function loadContainers() {
+		if (isLoadingContainers) return;
+		isLoadingContainers = true;
+		const result = await tryCatch(containerService.getContainers({ pagination: { page: 1, limit: 100 } }));
+		isLoadingContainers = false;
+		if (result.data) {
+			containers = result.data.data;
+		}
+	}
+
 	$effect(() => {
 		if (environmentId) {
 			loadJobs();
 		}
 	});
+
+	// Load containers if auto-update is enabled or becomes enabled
+	$effect(() => {
+		if ($formInputs.autoUpdate.value && containers.length === 0) {
+			loadContainers();
+		}
+	});
+
+	function toggleContainerExclusion(containerName: string) {
+		const currentSet = new Set(excludedContainers);
+		if (currentSet.has(containerName)) {
+			currentSet.delete(containerName);
+		} else {
+			currentSet.add(containerName);
+		}
+		
+		const newValue = Array.from(currentSet).join(',');
+		if ($formInputs.autoUpdateExcludedContainers) {
+			$formInputs.autoUpdateExcludedContainers.value = newValue;
+		}
+	}
 
 	const categories = [
 		{ id: 'monitoring', label: m.jobs_monitoring_heading() },
@@ -101,6 +149,10 @@
 			default:
 				return undefined;
 		}
+	}
+
+	function getContainerName(c: ContainerSummaryDto): string {
+		return c.names[0]?.replace(/^\//, '') || c.id.substring(0, 12);
 	}
 </script>
 
@@ -150,6 +202,63 @@
 													<Switch bind:checked={$formInputs.scheduledPruneEnabled.value} />
 												{/if}
 											{/snippet}
+
+											{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
+												<div class="border-border/20 space-y-3 border-t pt-3">
+													<div class="space-y-1">
+														<Label class="text-sm font-medium">Excluded Containers</Label>
+														<p class="text-muted-foreground text-xs">Select containers to exclude from automatic updates.</p>
+													</div>
+
+													<Popover.Root bind:open={openExclusionCombobox}>
+														<Popover.Trigger>
+															{#snippet child({ props })}
+																<Button
+																	variant="outline"
+																	role="combobox"
+																	aria-expanded={openExclusionCombobox}
+																	class="w-full justify-between"
+																	{...props}
+																>
+																	{#if excludedContainers.size === 0}
+																		Select containers...
+																	{:else if excludedContainers.size === 1}
+																		1 container excluded
+																	{:else}
+																		{excludedContainers.size} containers excluded
+																	{/if}
+																	<ArrowsUpDownIcon class="ml-2 size-4 shrink-0 opacity-50" />
+																</Button>
+															{/snippet}
+														</Popover.Trigger>
+														<Popover.Content class="w-full p-0">
+															<Command.Root>
+																<Command.Input placeholder="Search containers..." />
+																<Command.List>
+																	<Command.Empty>No containers found.</Command.Empty>
+																	<Command.Group>
+																		{#each containers as container (container.id)}
+																			{@const name = getContainerName(container)}
+																			<Command.Item
+																				value={name}
+																				onSelect={() => toggleContainerExclusion(name)}
+																			>
+																				<CheckIcon
+																					class={cn(
+																						'mr-2 size-4',
+																						excludedContainers.has(name) ? 'opacity-100' : 'opacity-0'
+																					)}
+																				/>
+																				{name}
+																			</Command.Item>
+																		{/each}
+																	</Command.Group>
+																</Command.List>
+															</Command.Root>
+														</Popover.Content>
+													</Popover.Root>
+												</div>
+											{/if}
 
 											{#if job.id === 'scheduled-prune'}
 												{#if $formInputs.scheduledPruneEnabled.value}

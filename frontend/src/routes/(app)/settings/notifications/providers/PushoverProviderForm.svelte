@@ -39,7 +39,8 @@
 			priority: z.coerce.number().int().min(-2).max(2),
 			title: z.string(),
 			eventImageUpdate: z.boolean(),
-			eventContainerUpdate: z.boolean()
+			eventContainerUpdate: z.boolean(),
+			eventPruneReport: z.boolean()
 		})
 		.superRefine((d, ctx) => {
 			if (!d.enabled) return;
@@ -152,6 +153,7 @@
 		providerId="pushover"
 		bind:eventImageUpdate={values.eventImageUpdate}
 		bind:eventContainerUpdate={values.eventContainerUpdate}
+		bind:eventPruneReport={values.eventPruneReport}
 		{disabled}
 	/>
 
