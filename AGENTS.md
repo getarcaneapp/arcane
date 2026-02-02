@@ -111,7 +111,7 @@ cd backend && go test ./...
 just test e2e
 
 # Frontend type checking
-just check frontend
+just lint frontend
 ```
 
 Backend tests use in-memory SQLite and testify. See [auth_service_test.go](backend/internal/services/auth_service_test.go) for patterns.
