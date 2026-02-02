@@ -416,7 +416,7 @@ Fixes #[issue number]
 ## Testing
 - [ ] Dev environment starts successfully
 - [ ] Backend tests pass: `cd backend && go test ./...`
-- [ ] Frontend type checks pass: `just check frontend`
+- [ ] Frontend type checks pass: `just lint frontend`
 - [ ] Manually tested: [describe how]
 
 ## AI Tool Used
