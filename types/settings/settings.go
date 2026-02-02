@@ -236,4 +236,39 @@ type Update struct {
 	//
 	// Required: false
 	SidebarHoverExpansion *string `json:"sidebarHoverExpansion,omitempty"`
+
+	// KeyboardShortcutsEnabled indicates if keyboard shortcuts are enabled.
+	//
+	// Required: false
+	KeyboardShortcutsEnabled *string `json:"keyboardShortcutsEnabled,omitempty"`
+
+	// DockerApiTimeout is the timeout for Docker API operations in seconds.
+	//
+	// Required: false
+	DockerApiTimeout *string `json:"dockerApiTimeout,omitempty"`
+
+	// DockerImagePullTimeout is the timeout for Docker image pulls in seconds.
+	//
+	// Required: false
+	DockerImagePullTimeout *string `json:"dockerImagePullTimeout,omitempty"`
+
+	// GitOperationTimeout is the timeout for Git clone/fetch operations in seconds.
+	//
+	// Required: false
+	GitOperationTimeout *string `json:"gitOperationTimeout,omitempty"`
+
+	// HttpClientTimeout is the default timeout for HTTP requests in seconds.
+	//
+	// Required: false
+	HttpClientTimeout *string `json:"httpClientTimeout,omitempty"`
+
+	// RegistryTimeout is the timeout for container registry operations in seconds.
+	//
+	// Required: false
+	RegistryTimeout *string `json:"registryTimeout,omitempty"`
+
+	// ProxyRequestTimeout is the timeout for proxied requests to remote environments in seconds.
+	//
+	// Required: false
+	ProxyRequestTimeout *string `json:"proxyRequestTimeout,omitempty"`
 }

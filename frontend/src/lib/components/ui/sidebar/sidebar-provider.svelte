@@ -69,7 +69,13 @@
 	});
 </script>
 
-<svelte:window onkeydown={sidebar.handleShortcutKeydown} />
+<svelte:window
+	onkeydown={(event) => {
+		if ($settingsStore?.keyboardShortcutsEnabled !== false) {
+			sidebar.handleShortcutKeydown(event);
+		}
+	}}
+/>
 
 <Tooltip.Provider delayDuration={0}>
 	<div

@@ -32,7 +32,7 @@
 			/>
 		{/snippet}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content align="center">
+	<DropdownMenu.Content align="end">
 		{#if customViewOptions}
 			<DropdownMenu.Group>
 				<DropdownMenu.Label>{m.common_view()}</DropdownMenu.Label>
