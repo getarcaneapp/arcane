@@ -254,7 +254,7 @@ test.describe('New Compose Project Page', () => {
     await page.waitForTimeout(5000);
     await page.waitForLoadState('networkidle');
 
-    const containerNameElement = page.getByRole('link', { name: 'test-redis-container redis' });
+    const containerNameElement = page.getByRole('link', { name: 'test-redis-container' });
     await expect(containerNameElement).toBeVisible({ timeout: 15000 });
   });
 
