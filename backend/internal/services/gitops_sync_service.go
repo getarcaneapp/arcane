@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -334,8 +335,20 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		return result, s.failSync(syncCtx, id, result, sync, "Failed to read compose file", err.Error())
 	}
 
+	// Try to read .env file from the same directory as the compose file
+	var envContent *string
+	envPath := filepath.Join(filepath.Dir(sync.ComposePath), ".env")
+	if s.repoService.gitClient.FileExists(syncCtx, repoPath, envPath) {
+		content, err := s.repoService.gitClient.ReadFile(syncCtx, repoPath, envPath)
+		if err != nil {
+			slog.WarnContext(syncCtx, "Failed to read .env file", "path", envPath, "error", err)
+		} else {
+			envContent = &content
+		}
+	}
+
 	// Get or create project
-	project, err := s.getOrCreateProject(syncCtx, sync, id, composeContent, result)
+	project, err := s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result)
 	if err != nil {
 		return result, err
 	}
@@ -547,8 +560,8 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 	return fmt.Errorf("%s", errMsg)
 }
 
-func (s *GitOpsSyncService) createProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, result *gitops.SyncResult) (*models.Project, error) {
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, nil, systemUser)
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, systemUser)
 	if err != nil {
 		return nil, s.failSync(ctx, id, result, sync, "Failed to create project", err.Error())
 	}
@@ -576,7 +589,7 @@ func (s *GitOpsSyncService) createProjectForSync(ctx context.Context, sync *mode
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProject(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, result *gitops.SyncResult) (*models.Project, error) {
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
 	var project *models.Project
 	var err error
 
@@ -589,26 +602,33 @@ func (s *GitOpsSyncService) getOrCreateProject(ctx context.Context, sync *models
 	}
 
 	if project == nil {
-		return s.createProjectForSync(ctx, sync, id, composeContent, result)
+		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, result)
 	}
 
-	if err := s.updateProjectForSync(ctx, sync, id, project, composeContent, result); err != nil {
+	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, result); err != nil {
 		return nil, err
 	}
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, result *gitops.SyncResult) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult) error {
 	// Get current content to see if it changed
-	oldCompose, _, _ := s.projectService.GetProjectContent(ctx, project.ID)
+	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
 	contentChanged := oldCompose != composeContent
-
-	// Update existing project's compose file
-	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, nil)
-	if err != nil {
-		return s.failSync(ctx, id, result, sync, "Failed to update project compose file", err.Error())
+	if envContent != nil {
+		if oldEnv != *envContent {
+			contentChanged = true
+		}
+	} else if oldEnv != "" {
+		contentChanged = true
 	}
-	slog.InfoContext(ctx, "Updated project compose file", "projectName", project.Name, "projectId", project.ID)
+
+	// Update existing project's compose and env files
+	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, envContent)
+	if err != nil {
+		return s.failSync(ctx, id, result, sync, "Failed to update project files", err.Error())
+	}
+	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID)
 
 	// If content changed and project is running, redeploy
 	if contentChanged {
