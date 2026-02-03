@@ -348,7 +348,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	}
 
 	// Get or create project
-	project, err := s.getOrCreateProject(syncCtx, sync, id, composeContent, envContent, result)
+	project, err := s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result)
 	if err != nil {
 		return result, err
 	}
@@ -560,7 +560,7 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 	return fmt.Errorf("%s", errMsg)
 }
 
-func (s *GitOpsSyncService) createProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
 	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, systemUser)
 	if err != nil {
 		return nil, s.failSync(ctx, id, result, sync, "Failed to create project", err.Error())
@@ -589,7 +589,7 @@ func (s *GitOpsSyncService) createProjectForSync(ctx context.Context, sync *mode
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProject(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
 	var project *models.Project
 	var err error
 
@@ -602,16 +602,16 @@ func (s *GitOpsSyncService) getOrCreateProject(ctx context.Context, sync *models
 	}
 
 	if project == nil {
-		return s.createProjectForSync(ctx, sync, id, composeContent, envContent, result)
+		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, result)
 	}
 
-	if err := s.updateProjectForSync(ctx, sync, id, project, composeContent, envContent, result); err != nil {
+	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, result); err != nil {
 		return nil, err
 	}
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSync(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult) error {
 	// Get current content to see if it changed
 	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
 	contentChanged := oldCompose != composeContent
