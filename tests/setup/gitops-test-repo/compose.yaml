@@ -1,0 +1,11 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: gitops-test-nginx
+    ports:
+      - "8888:80"
+    volumes:
+      - nginx_data:/usr/share/nginx/html
+
+volumes:
+  nginx_data:

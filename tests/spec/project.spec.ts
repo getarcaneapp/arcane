@@ -54,7 +54,12 @@ test.describe('Projects Page', () => {
     await menuButton.click();
 
     await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: /Up|Down|Restart/ })).toBeVisible();
+    // Check for at least one of the state action buttons (Up/Down/Restart)
+    const upItem = page.getByRole('menuitem', { name: 'Up', exact: true });
+    const downItem = page.getByRole('menuitem', { name: 'Down', exact: true });
+    const restartItem = page.getByRole('menuitem', { name: 'Restart', exact: true });
+    const hasStateAction = (await upItem.count()) > 0 || (await downItem.count()) > 0 || (await restartItem.count()) > 0;
+    expect(hasStateAction).toBe(true);
     await expect(page.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
   });
@@ -63,12 +68,13 @@ test.describe('Projects Page', () => {
     test.skip(!realProjects.length, 'No projects available for navigation test');
 
     await page.waitForLoadState('networkidle');
-    const firstProjectLink = page.locator('tbody tr').first().getByRole('link');
+    // Get the first project link that points to /projects/ (not the "Git" indicator link)
+    const firstProjectLink = page.locator('tbody tr').first().getByRole('link').filter({ hasText: /^(?!Git$)/ }).first();
     const projectName = await firstProjectLink.textContent();
 
     await firstProjectLink.click();
     await expect(page).toHaveURL(/\/projects\/.+/);
-    await expect(page.getByRole('heading', { name: new RegExp(`.*${projectName}`) })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`${projectName}`) })).toBeVisible();
   });
 
   test('should allow searching/filtering projects', async ({ page }) => {
@@ -304,6 +310,165 @@ test.describe('New Compose Project Page', () => {
     // 4. Verify redirection and project removal
     await page.waitForURL(ROUTES.page, { timeout: 10000 });
     await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+  });
+});
+
+test.describe('GitOps Managed Project', () => {
+  test('should show read-only alert when project is GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    // Navigate to Configuration tab
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Verify the GitOps read-only alert is visible (title contains "Git" and "Read-only")
+    await expect(page.getByText('Git Read-only')).toBeVisible();
+    await expect(page.getByText(/managed by Git/i)).toBeVisible();
+  });
+
+  test('should display Sync from Git button when GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Verify the Sync from Git button is present
+    await expect(page.getByRole('button', { name: 'Sync from Git' })).toBeVisible();
+  });
+
+  test('should show last sync commit when GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy && p.lastSyncCommit);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects with sync commit found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    // The commit hash should be visible somewhere on the page
+    const commitHash = gitOpsProject!.lastSyncCommit!.substring(0, 7);
+    await expect(page.getByText(new RegExp(commitHash))).toBeVisible();
+  });
+
+  test('should disable name editing when GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    // The name button should be disabled for GitOps-managed projects
+    const nameButton = page.getByRole('button', { name: gitOpsProject!.name });
+    await expect(nameButton).toBeDisabled();
+  });
+
+  test('should have compose editor in read-only mode when GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Wait for Monaco editor to load
+    await page.waitForTimeout(1000);
+
+    // Check that the Monaco editor instance has readOnly option set
+    const isReadOnly = await page.evaluate(() => {
+      const editors = (window as any).monaco?.editor?.getEditors() ?? [];
+      // Find the YAML editor (compose file)
+      const yamlEditor = editors.find((e: any) => {
+        const model = e.getModel();
+        return model && model.getLanguageId() === 'yaml';
+      });
+      if (yamlEditor) {
+        return yamlEditor.getOption((window as any).monaco.editor.EditorOption.readOnly);
+      }
+      return null;
+    });
+
+    expect(isReadOnly).toBe(true);
+  });
+
+  test('should have env editor in read-only mode when GitOps managed', async ({ page }) => {
+    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
+    test.skip(!gitOpsProject, 'No GitOps-managed projects found');
+
+    await page.goto(`/projects/${gitOpsProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Wait for Monaco editor to load
+    await page.waitForTimeout(1000);
+
+    // Check that the Monaco editor instance has readOnly option set
+    const isReadOnly = await page.evaluate(() => {
+      const editors = (window as any).monaco?.editor?.getEditors() ?? [];
+      // Find the env/ini editor
+      const envEditor = editors.find((e: any) => {
+        const model = e.getModel();
+        return model && model.getLanguageId() === 'ini';
+      });
+      if (envEditor) {
+        return envEditor.getOption((window as any).monaco.editor.EditorOption.readOnly);
+      }
+      return null;
+    });
+
+    expect(isReadOnly).toBe(true);
+  });
+
+  test('should allow editing for non-GitOps managed projects', async ({ page }) => {
+    const regularProject = realProjects.find((p) => !p.gitOpsManagedBy && p.status === 'stopped');
+    test.skip(!regularProject, 'No regular (non-GitOps) stopped projects found');
+
+    await page.goto(`/projects/${regularProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    // The name button should be enabled for regular projects that are stopped
+    const nameButton = page.getByRole('button', { name: regularProject!.name });
+    await expect(nameButton).toBeEnabled();
+
+    // Navigate to Configuration tab
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // GitOps alert should NOT be visible
+    await expect(page.getByText('Git Read-only')).not.toBeVisible();
+
+    // Sync from Git button should NOT be visible
+    await expect(page.getByRole('button', { name: 'Sync from Git' })).not.toBeVisible();
+  });
+
+  test('should not show GitOps alert on Configuration tab for regular projects', async ({ page }) => {
+    const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
+    test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+
+    await page.goto(`/projects/${regularProject!.id}`);
+    await page.waitForLoadState('networkidle');
+
+    const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+    await configTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Verify no GitOps-related UI elements
+    await expect(page.getByText(/managed by Git\./i)).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sync from Git' })).not.toBeVisible();
   });
 });
 
