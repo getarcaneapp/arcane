@@ -287,6 +287,16 @@ dockers_v2:
 changelog:
   disable: true
 
+announce:
+  discord:
+    enabled: true
+    # Default: '{{ .ProjectName }} {{ .Tag }} is out! Check it out at {{ .ReleaseURL }}'.
+    message_template: "Arcane version {{.Tag}} has been released! Checkout the changelog at {{ .ReleaseURL }}"
+    author: "Github Actions"
+    # Color code of the embed. You have to use decimal numeral system, not hexadecimal.
+    color: "9320959"
+    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+
 release:
   github:
     owner: getarcaneapp

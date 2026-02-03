@@ -342,6 +342,7 @@
 					maxValue={currentStats?.memoryTotal}
 					showAbsoluteValues={true}
 					formatAbsoluteValue={(v) => bytes.format(v, { unitSeparator: ' ' }) ?? '-'}
+					formatUsageValue={(v) => bytes.format(v, { unitSeparator: ' ' }) ?? '-'}
 					loading={isLoading.loadingStats || !hasInitialStatsLoaded}
 				/>
 

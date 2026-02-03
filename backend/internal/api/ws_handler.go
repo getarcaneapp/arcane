@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -439,67 +440,101 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
+	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
+}
+
+func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecCreationError{Err: err}).Error()+"\r\n"))
+		h.writeExecErrorInternal(conn, &common.ExecCreationError{Err: err})
 		return
 	}
 
 	// Attach to exec
-	stdin, stdout, err := h.containerService.AttachExec(ctx, execID)
+	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte((&common.ExecAttachError{Err: err}).Error()+"\r\n"))
+		h.writeExecErrorInternal(conn, &common.ExecAttachError{Err: err})
 		return
 	}
-	defer stdin.Close()
+	cleanup := h.execCleanupFuncInternal(ctx, execSession, execID, containerID)
+	defer cleanup()
+	h.watchExecContextInternal(ctx, execID, containerID, cleanup)
 
 	done := make(chan struct{})
-
-	// Read from container, write to websocket
-	go func() {
-		defer close(done)
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			n, err := stdout.Read(buf)
-			if err != nil {
-				return
-			}
-			if n > 0 {
-				if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
-					return
-				}
-			}
-		}
-	}()
-
-	// Read from websocket, write to container
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				cancel()
-				return
-			}
-			if _, err := stdin.Write(data); err != nil {
-				return
-			}
-		}
-	}()
+	go h.pipeExecOutputInternal(ctx, conn, execSession.Stdout(), execID, containerID, done)
+	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin(), execID, containerID)
 
 	<-done
+}
+
+func (h *WebSocketHandler) writeExecErrorInternal(conn *websocket.Conn, err error) {
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(err.Error()+"\r\n"))
+}
+
+func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
+	return func() {
+		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
+		// Cleanup must proceed even if parent ctx is canceled.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck
+		defer cleanupCancel()
+		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
+			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
+		}
+	}
+}
+
+func (h *WebSocketHandler) watchExecContextInternal(ctx context.Context, execID, containerID string, cleanup func()) {
+	go func() {
+		<-ctx.Done()
+		slog.Debug("Exec context cancelled", "execID", execID, "containerID", containerID)
+		cleanup()
+	}()
+}
+
+func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *websocket.Conn, stdout io.Reader, execID, containerID string, done chan<- struct{}) {
+	defer close(done)
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		n, err := stdout.Read(buf)
+		if err != nil {
+			slog.Debug("Exec stdout read error", "execID", execID, "containerID", containerID, "error", err)
+			return
+		}
+		if n > 0 {
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				slog.Debug("Exec websocket write error", "execID", execID, "containerID", containerID, "error", err)
+				return
+			}
+		}
+	}
+}
+
+func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
+			cancel()
+			return
+		}
+		if _, err := stdin.Write(data); err != nil {
+			slog.Debug("Exec stdin write error", "execID", execID, "containerID", containerID, "error", err)
+			return
+		}
+	}
 }
 
 // ============================================================================

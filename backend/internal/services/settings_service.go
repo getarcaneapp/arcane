@@ -37,6 +37,7 @@ type SettingsService struct {
 	OnAutoUpdateSettingsChanged     func(ctx context.Context)
 	OnProjectsDirectoryChanged      func(ctx context.Context)
 	OnScheduledPruneSettingsChanged func(ctx context.Context)
+	OnTimeoutSettingsChanged        func(ctx context.Context, timeoutSettings map[string]string)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -128,6 +129,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
+		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
@@ -429,7 +431,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -463,11 +465,24 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
+	if len(changedTimeouts) > 0 && s.OnTimeoutSettingsChanged != nil {
+		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)
+	}
 
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, error) {
+// timeoutSettingKeys defines the keys for timeout settings that should be synced to agents
+var timeoutSettingKeys = []string{
+	"dockerApiTimeout",
+	"dockerImagePullTimeout",
+	"gitOperationTimeout",
+	"httpClientTimeout",
+	"registryTimeout",
+	"proxyRequestTimeout",
+}
+
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, map[string]string, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
@@ -475,6 +490,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedPolling := false
 	changedAutoUpdate := false
 	changedScheduledPrune := false
+	changedTimeouts := make(map[string]string)
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -494,7 +510,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval"}
 		if slices.Contains(cronFields, key) && value != "" {
 			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
-				return nil, false, false, false, fmt.Errorf("invalid cron expression for %s: %w", key, err)
+				return nil, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 			}
 		}
 
@@ -513,7 +529,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, false, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -529,9 +545,14 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
 		}
+
+		// Track timeout setting changes
+		if slices.Contains(timeoutSettingKeys, key) {
+			changedTimeouts[key] = valueToSave
+		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedTimeouts, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {

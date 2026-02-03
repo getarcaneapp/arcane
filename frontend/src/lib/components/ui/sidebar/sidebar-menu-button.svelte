@@ -26,7 +26,7 @@
 </script>
 
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { cn, type WithElementRef, type WithoutChildrenOrChild } from '$lib/utils.js';
 	import { mergeProps } from 'bits-ui';
 	import type { ComponentProps, Snippet } from 'svelte';
@@ -49,7 +49,7 @@
 		variant?: SidebarMenuButtonVariant;
 		size?: SidebarMenuButtonSize;
 		tooltipContent?: Snippet | string;
-		tooltipContentProps?: WithoutChildrenOrChild<ComponentProps<typeof Tooltip.Content>>;
+		tooltipContentProps?: WithoutChildrenOrChild<ComponentProps<typeof ArcaneTooltip.Content>>;
 		child?: Snippet<[{ props: Record<string, unknown> }]>;
 	} = $props();
 
@@ -94,23 +94,19 @@
 
 {#if !tooltipContent}
 	{@render Button({})}
-{:else if sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered)}
-	<!-- Render tooltip only when collapsed and not in hover expansion mode -->
-	<Tooltip.Root>
-		<Tooltip.Trigger>
+{:else}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
 			{#snippet child({ props })}
 				{@render Button({ props })}
 			{/snippet}
-		</Tooltip.Trigger>
-		<Tooltip.Content side="right" align="center" class="z-50" {...tooltipContentProps}>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="right" align="center" class="z-50" {...tooltipContentProps}>
 			{#if typeof tooltipContent === 'string'}
 				{tooltipContent}
 			{:else if tooltipContent}
 				{@render tooltipContent()}
 			{/if}
-		</Tooltip.Content>
-	</Tooltip.Root>
-{:else}
-	<!-- Either expanded (hover expansion active) or not collapsed: no tooltip to avoid empty popover -->
-	{@render Button({})}
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/if}

@@ -18,7 +18,11 @@ permissions:
 jobs:
   build-next-images:
     runs-on: depot-ubuntu-24.04-32
-    timeout-minutes: 30
+
+    env:
+      MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
+      AGENT_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane-headless
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -50,15 +54,15 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set short git commit SHA
-        id: vars
-        run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - name: Setup depot buildx driver
         id: setup-buildx-driver
         run: |
           depot configure-docker
+
+      - name: Set Short Git Commit SHA
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -74,26 +78,26 @@ jobs:
           GORELEASER_CURRENT_TAG: next-static-${{ steps.vars.outputs.sha_short }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 
-      - name: Resolve manager image name
-        id: manager-image
-        run: |
-          OWNER=${{ github.repository_owner }}
-          echo "value=ghcr.io/${OWNER,,}/arcane" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve agent image name
-        id: agent-image
-        run: |
-          OWNER=${{ github.repository_owner }}
-          echo "value=ghcr.io/${OWNER,,}/arcane-headless" >> "$GITHUB_OUTPUT"
-
       - name: Manager image metadata
         id: manager-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.manager-image.outputs.value }}
+          images: ${{ env.MANAGER_IMAGE_NAME }}
           tags: |
             type=raw,value=next
             type=raw,value=next-${{ steps.vars.outputs.sha_short }}
+          labels: |
+            org.opencontainers.image.authors=OFKM Technologies
+            org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
+            org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
+            org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
+            org.opencontainers.image.version=next-${{ steps.vars.outputs.sha_short }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=BSD-3-Clause
+            org.opencontainers.image.ref.name=arcane
+            org.opencontainers.image.title=Arcane
+            org.opencontainers.image.description=Modern Docker Management, Made for Everyone
+            com.getarcaneapp.arcane=true
 
       - name: Build and push manager image
         id: manager-build
@@ -115,10 +119,22 @@ jobs:
         id: agent-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.agent-image.outputs.value }}
+          images: ${{ env.AGENT_IMAGE_NAME }}
           tags: |
             type=raw,value=next
             type=raw,value=next-${{ steps.vars.outputs.sha_short }}
+          labels: |
+            org.opencontainers.image.authors=OFKM Technologies
+            org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
+            org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
+            org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
+            org.opencontainers.image.version=next-${{ steps.vars.outputs.sha_short }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=BSD-3-Clause
+            org.opencontainers.image.ref.name=arcane-agent
+            org.opencontainers.image.title=Arcane Agent
+            org.opencontainers.image.description=Arcane Agent
+            com.getarcaneapp.arcane.agent=true
 
       - name: Build and push agent image
         id: agent-build

@@ -9,10 +9,14 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -624,19 +628,54 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 	return execResp.ID, nil
 }
 
-// AttachExec attaches to an exec instance and returns stdin, stdout/stderr streams
-func (s *ContainerService) AttachExec(ctx context.Context, execID string) (io.WriteCloser, io.Reader, error) {
+// ExecSession manages the lifecycle of a Docker exec session.
+type ExecSession struct {
+	execID       string
+	containerID  string
+	hijackedResp types.HijackedResponse
+	dockerClient *client.Client
+	closeOnce    sync.Once
+}
+
+func (e *ExecSession) Stdin() io.WriteCloser { return e.hijackedResp.Conn }
+func (e *ExecSession) Stdout() io.Reader     { return e.hijackedResp.Reader }
+
+// Close terminates the exec session and kills the process if still running.
+func (e *ExecSession) Close(ctx context.Context) error {
+	var closeErr error
+	e.closeOnce.Do(func() {
+		slog.Debug("Closing exec session", "execID", e.execID, "containerID", e.containerID)
+
+		// Send EOF (Ctrl-D) then exit to terminate the shell gracefully.
+		_, _ = e.hijackedResp.Conn.Write([]byte{0x04})
+		time.Sleep(50 * time.Millisecond)
+		_, _ = e.hijackedResp.Conn.Write([]byte("exit\n"))
+		time.Sleep(100 * time.Millisecond)
+
+		e.hijackedResp.Close()
+	})
+
+	return closeErr
+}
+
+// AttachExec attaches to an exec instance and returns an ExecSession for lifecycle management.
+func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID string) (*ExecSession, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	execAttach, err := dockerClient.ContainerExecAttach(ctx, execID, container.ExecAttachOptions{
 		Tty: true,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to attach to exec: %w", err)
+		return nil, fmt.Errorf("failed to attach to exec: %w", err)
 	}
 
-	return execAttach.Conn, execAttach.Reader, nil
+	return &ExecSession{
+		execID:       execID,
+		containerID:  containerID,
+		hijackedResp: execAttach,
+		dockerClient: dockerClient,
+	}, nil
 }

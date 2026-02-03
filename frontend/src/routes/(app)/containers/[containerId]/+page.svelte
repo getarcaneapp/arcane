@@ -26,6 +26,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { calculateMemoryUsage } from '$lib/utils/container-stats.utils';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -162,7 +163,7 @@
 		}
 		return stats?.cpu_stats?.online_cpus || 0;
 	});
-	const memoryUsageBytes = $derived(stats?.memory_stats?.usage || 0);
+	const memoryUsageBytes = $derived(calculateMemoryUsage(stats));
 	const memoryLimitBytes = $derived(stats?.memory_stats?.limit || 0);
 	const memoryUsageFormatted = $derived(bytes.format(memoryUsageBytes || 0) || '0 B');
 	const memoryLimitFormatted = $derived(bytes.format(memoryLimitBytes || 0) || '0 B');

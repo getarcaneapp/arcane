@@ -2,20 +2,22 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
-	import { cn } from '$lib/utils.js';
-	import type { Snippet } from 'svelte';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import type { ComponentProps, Snippet } from 'svelte';
+
+	export type ArcaneTooltipContentProps = WithoutChildrenOrChild<ComponentProps<typeof Tooltip.Content>>;
 
 	let {
+		ref = $bindable(null),
 		children,
-		side = 'top',
-		align = 'center',
 		class: className,
+		sideOffset = 0,
+		side = 'top',
+		arrowClasses,
+		portalProps,
 		...restProps
-	}: {
+	}: ArcaneTooltipContentProps & {
 		children?: Snippet;
-		side?: 'top' | 'right' | 'bottom' | 'left';
-		align?: 'start' | 'center' | 'end';
-		class?: string;
 	} = $props();
 
 	const ctx = getArcaneTooltipContext();
@@ -23,8 +25,9 @@
 
 {#if ctx.isTouch}
 	<Popover.Content
+		bind:ref
+		{sideOffset}
 		{side}
-		{align}
 		class={cn(
 			'bg-popover/90 border-border/50 w-fit max-w-[min(calc(100vw-2rem),320px)] px-3 py-1.5 text-xs text-balance shadow-lg backdrop-blur-md',
 			className
@@ -34,7 +37,7 @@
 		{@render children?.()}
 	</Popover.Content>
 {:else}
-	<Tooltip.Content {side} {align} class={className} {...restProps}>
+	<Tooltip.Content bind:ref {sideOffset} {side} class={className} {arrowClasses} {portalProps} {...restProps}>
 		{@render children?.()}
 	</Tooltip.Content>
 {/if}

@@ -18,8 +18,12 @@ jobs:
     build-pr-images:
         # Only build if the PR is from a branch within the getarcaneapp organization
         if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
-        runs-on: depot-ubuntu-24.04-16
-        timeout-minutes: 60
+        runs-on: depot-ubuntu-24.04-32
+
+        env:
+            MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
+            AGENT_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane-headless
+
         steps:
             - name: Checkout code
               uses: actions/checkout@v6
@@ -37,28 +41,43 @@ jobs:
                   username: ${{ github.repository_owner }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Resolve image names
-              id: images
-              run: |
-                  OWNER=${{ github.repository_owner }}
-                  echo "manager=ghcr.io/${OWNER,,}/arcane" >> "$GITHUB_OUTPUT"
-                  echo "agent=ghcr.io/${OWNER,,}/arcane-headless" >> "$GITHUB_OUTPUT"
-
             - name: Manager image metadata
               id: manager-meta
               uses: docker/metadata-action@v5
               with:
-                  images: ${{ steps.images.outputs.manager }}
+                  images: ${{ env.MANAGER_IMAGE_NAME }}
                   tags: |
                       type=raw,value=pr-${{ github.event.pull_request.number }}
+                  labels: |
+                      org.opencontainers.image.authors=OFKM Technologies
+                      org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
+                      org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
+                      org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
+                      org.opencontainers.image.version=pr-${{ github.event.pull_request.number }}
+                      org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+                      org.opencontainers.image.licenses=BSD-3-Clause
+                      org.opencontainers.image.ref.name=arcane
+                      org.opencontainers.image.title=Arcane
+                      org.opencontainers.image.description=Modern Docker Management, Made for Everyone
 
             - name: Agent image metadata
               id: agent-meta
               uses: docker/metadata-action@v5
               with:
-                  images: ${{ steps.images.outputs.agent }}
+                  images: ${{ env.AGENT_IMAGE_NAME }}
                   tags: |
                       type=raw,value=pr-${{ github.event.pull_request.number }}
+                  labels: |
+                      org.opencontainers.image.authors=OFKM Technologies
+                      org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
+                      org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
+                      org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
+                      org.opencontainers.image.version=pr-${{ github.event.pull_request.number }}
+                      org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+                      org.opencontainers.image.licenses=BSD-3-Clause
+                      org.opencontainers.image.ref.name=arcane-agent
+                      org.opencontainers.image.title=Arcane Agent
+                      org.opencontainers.image.description=Arcane Agent
 
             - name: Build and push manager image
               uses: depot/build-push-action@v1
@@ -105,10 +124,10 @@ jobs:
                   issue-number: ${{ github.event.pull_request.number }}
                   token: ${{ secrets.ARCANE_BOT_TOKEN }}
                   body: |
-                      Docker images for this PR have been built successfully!
+                      Container images for this PR have been built successfully!
 
-                      - **Manager**: `${{ steps.images.outputs.manager }}:pr-${{ github.event.pull_request.number }}`
-                      - **Agent**: `${{ steps.images.outputs.agent }}:pr-${{ github.event.pull_request.number }}`
+                      - **Manager**: `${{ env.MANAGER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}`
+                      - **Agent**: `${{ env.AGENT_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}`
 
                       Built from commit ${{ github.event.pull_request.head.sha }}
                   edit-mode: replace

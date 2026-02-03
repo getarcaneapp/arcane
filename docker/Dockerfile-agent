@@ -5,6 +5,8 @@ ARG REVISION="unknown"
 FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS agent-builder
 ARG TARGETARCH
 ARG BUILD_TAGS="exclude_frontend"
+ARG VERSION="dev"
+ARG REVISION="unknown"
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tzdata curl jq \
@@ -21,8 +23,8 @@ COPY backend ./
 COPY .arcane.json ../arcane.json
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    VERSION=$(jq -r '.version // "dev"' ../arcane.json) && \
-    REVISION=$(jq -r '.revision // "unknown"' ../arcane.json) && \
+    if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
+    if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
     BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ') && \
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
@@ -62,20 +64,9 @@ ENV ENVIRONMENT=production \
     GIN_MODE=release \
     PORT=3553
 
-LABEL org.opencontainers.image.authors="OFKM Technologies"
-LABEL org.opencontainers.image.url="https://github.com/getarcaneapp/arcane"
-LABEL org.opencontainers.image.documentation="https://github.com/getarcaneapp/arcane/blob/main/README.md"
-LABEL org.opencontainers.image.source="https://github.com/getarcaneapp/arcane"
-LABEL org.opencontainers.image.version=$VERSION
-LABEL org.opencontainers.image.revision=$REVISION
-LABEL org.opencontainers.image.licenses="BSD-3-Clause"
-LABEL org.opencontainers.image.ref.name="arcane-agent"
-LABEL org.opencontainers.image.title="Arcane Agent"
-LABEL org.opencontainers.image.description="Arcane Agent"
-
-LABEL com.getarcaneapp.arcane.agent="true"
-
 EXPOSE 3553
 VOLUME ["/app/data"]
+
+LABEL com.getarcaneapp.arcane.agent="true"
 
 CMD ["./arcane-agent"]
