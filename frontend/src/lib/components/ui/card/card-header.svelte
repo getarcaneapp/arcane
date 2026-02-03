@@ -50,7 +50,7 @@
 	bind:this={ref}
 	data-slot="card-header"
 	class={cn(
-		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-[[data-slot=card-action]]:grid-cols-[1fr_auto]',
+		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto]',
 		'from-muted/60 to-muted/20 dark:from-muted/20 bg-linear-to-b dark:to-transparent',
 		icon && 'flex flex-row items-start space-y-0',
 		icon && compact ? 'gap-2 p-2' : icon ? 'gap-3 p-4' : 'py-5',
@@ -64,7 +64,7 @@
 
 	<!-- Subtle inner shadow for depth -->
 	<div
-		class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-black/[0.03] to-transparent dark:from-black/[0.15]"
+		class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-black/3 to-transparent dark:from-black/15"
 	></div>
 
 	{#if icon}

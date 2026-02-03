@@ -50,6 +50,11 @@ export interface IncludeFile {
 	content: string;
 }
 
+export interface CustomFile {
+	path: string;
+	content: string;
+}
+
 // RuntimeService contains live container status information
 export interface RuntimeService {
 	name: string;
@@ -83,6 +88,7 @@ export interface Project {
 	composeContent?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
+	customFiles?: CustomFile[];
 }
 
 export interface ProjectStatusCounts {

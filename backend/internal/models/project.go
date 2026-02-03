@@ -21,6 +21,7 @@ type Project struct {
 	ServiceCount    int           `json:"service_count" sortable:"true"`
 	RunningCount    int           `json:"running_count" sortable:"true"`
 	GitOpsManagedBy *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
+	CustomFiles     StringSlice   `json:"custom_files,omitempty" gorm:"column:custom_files;type:text"`
 
 	BaseModel
 }

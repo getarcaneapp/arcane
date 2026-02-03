@@ -4,39 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
-
-var ComposeFileCandidates = []string{
-	"compose.yaml",
-	"compose.yml",
-	"docker-compose.yaml",
-	"docker-compose.yml",
-}
-
-func locateComposeFile(dir string) string {
-	for _, filename := range ComposeFileCandidates {
-		fullPath := filepath.Join(dir, filename)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			return fullPath
-		}
-	}
-	return ""
-}
-
-func DetectComposeFile(dir string) (string, error) {
-	compose := locateComposeFile(dir)
-	if compose == "" {
-		return "", fmt.Errorf("no compose file found in %q", dir)
-	}
-	return compose, nil
-}
 
 func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
@@ -128,7 +103,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 }
 
 func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, string, error) {
-	composeFile, err := DetectComposeFile(dir)
+	composeFile, err := fs.DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err
 	}

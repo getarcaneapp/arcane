@@ -132,6 +132,11 @@ type Update struct {
 	// Required: false
 	DefaultShell *string `json:"defaultShell,omitempty"`
 
+	// AllowedExternalPaths is a comma-separated list of absolute paths where include and custom files can be located outside the project directory.
+	//
+	// Required: false
+	AllowedExternalPaths *string `json:"allowedExternalPaths,omitempty"`
+
 	// DockerHost is the Docker host connection string.
 	//
 	// Required: false
