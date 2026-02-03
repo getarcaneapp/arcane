@@ -15,6 +15,7 @@
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
+	import { toGitCommitUrl } from '$lib/utils/git';
 	import {
 		EllipsisIcon,
 		EditIcon as PencilIcon,
@@ -241,11 +242,12 @@
 
 {#snippet CommitCell({ value, item }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
 	{#if value}
+		{@const commitUrl = item.repository?.url ? toGitCommitUrl(item.repository.url, String(value)) : null}
 		<div class="flex items-center gap-1.5">
 			<HashIcon class="text-muted-foreground size-3.5" />
-			{#if item.repository?.url}
+			{#if commitUrl}
 				<a
-					href="{item.repository.url.replace(/\.git$/, '')}/commit/{value}"
+					href={commitUrl}
 					target="_blank"
 					class="hover:text-primary bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs transition-colors"
 				>
