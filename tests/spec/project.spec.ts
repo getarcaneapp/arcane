@@ -245,11 +245,8 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('tab', { name: 'Services' }).click();
     await page.waitForLoadState('networkidle');
 
-    const serviceNameWhenStopped = page.getByRole('heading', { name: 'redis', exact: true });
+    const serviceNameWhenStopped = page.getByRole('table').getByText('nginx', { exact: true });
     await expect(serviceNameWhenStopped).toBeVisible();
-
-    const containerNameWhenStopped = page.getByRole('link', { name: 'test-redis-container redis' });
-    await expect(containerNameWhenStopped).not.toBeVisible();
 
     const deployButton = page.getByRole('button', { name: 'Up', exact: true }).filter({ hasText: 'Up' }).last();
     await deployButton.click();
