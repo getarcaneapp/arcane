@@ -239,17 +239,35 @@
 																	<Command.Group>
 																		{#each containers as container (container.id)}
 																			{@const name = getContainerName(container)}
+																			{@const labelExcluded = (() => {
+																				const labels = container.labels || {};
+																				for (const [k, v] of Object.entries(labels)) {
+																					if (k.toLowerCase() === 'com.getarcaneapp.arcane.updater') {
+																						return ['false', '0', 'no', 'off'].includes(v.trim().toLowerCase());
+																					}
+																				}
+																				return false;
+																			})()}
+																			{@const isExcluded = excludedContainers.has(name) || labelExcluded}
+																			
 																			<Command.Item
 																				value={name}
-																				onSelect={() => toggleContainerExclusion(name)}
+																				onSelect={() => {
+																					if (labelExcluded) return;
+																					toggleContainerExclusion(name);
+																				}}
+																				disabled={labelExcluded}
 																			>
 																				<CheckIcon
 																					class={cn(
 																						'mr-2 size-4',
-																						excludedContainers.has(name) ? 'opacity-100' : 'opacity-0'
+																						isExcluded ? 'opacity-100' : 'opacity-0'
 																					)}
 																				/>
-																				{name}
+																				<span class={cn(labelExcluded && "text-muted-foreground")}>{name}</span>
+																				{#if labelExcluded}
+																					<span class="ml-auto text-xs text-muted-foreground">(Label)</span>
+																				{/if}
 																			</Command.Item>
 																		{/each}
 																	</Command.Group>
