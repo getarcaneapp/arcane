@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
 	gossh "golang.org/x/crypto/ssh"
@@ -56,7 +57,7 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 	switch config.AuthType {
 	case "http":
 		if config.Token != "" {
-			return &http.BasicAuth{
+			return &githttp.BasicAuth{
 				Username: config.Username,
 				Password: config.Token,
 			}, nil
@@ -498,4 +499,213 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 	return string(content), nil
+}
+
+// SyncFileInfo holds information about a file to be synced
+type SyncFileInfo struct {
+	RelativePath string // Path relative to the sync directory
+	Content      []byte
+	Size         int64
+	IsBinary     bool
+}
+
+// DirectoryWalkResult holds the result of walking a directory for sync
+type DirectoryWalkResult struct {
+	Files           []SyncFileInfo
+	TotalFiles      int
+	TotalSize       int64
+	SkippedBinaries int
+}
+
+// walkConfig holds configuration for directory walking
+type walkConfig struct {
+	syncDir       string
+	maxFiles      int
+	maxTotalSize  int64
+	maxBinarySize int64
+}
+
+// WalkDirectory walks the directory containing the compose file and returns all files.
+// It enforces limits on file count, total size, and skips large binary files.
+// The composePath is the path to the compose file within the repo - the directory
+// containing this file will be walked.
+func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string,
+	maxFiles int, maxTotalSize, maxBinarySize int64) (*DirectoryWalkResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Validate compose path
+	if err := ValidatePath(repoPath, composePath); err != nil {
+		return nil, fmt.Errorf("invalid compose path: %w", err)
+	}
+
+	// Get the directory containing the compose file
+	syncDir := filepath.Dir(filepath.Join(repoPath, composePath))
+
+	// Verify the sync directory exists
+	info, err := os.Stat(syncDir)
+	if err != nil {
+		return nil, fmt.Errorf("sync directory not found: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("sync path is not a directory")
+	}
+
+	result := &DirectoryWalkResult{
+		Files: make([]SyncFileInfo, 0),
+	}
+
+	cfg := walkConfig{
+		syncDir:       syncDir,
+		maxFiles:      maxFiles,
+		maxTotalSize:  maxTotalSize,
+		maxBinarySize: maxBinarySize,
+	}
+
+	err = filepath.Walk(syncDir, func(path string, info os.FileInfo, err error) error {
+		return c.processWalkEntry(ctx, path, info, err, cfg, result)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate we found at least one file
+	if len(result.Files) == 0 {
+		return nil, fmt.Errorf("no files found in sync directory (directory may be empty or all files were skipped)")
+	}
+
+	return result, nil
+}
+
+// processWalkEntry processes a single entry during directory walking
+func (c *Client) processWalkEntry(ctx context.Context, path string, info os.FileInfo, err error, cfg walkConfig, result *DirectoryWalkResult) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Skip symlinks to prevent path traversal attacks via malicious symlinks
+	if info.Mode()&os.ModeSymlink != 0 {
+		if info.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	// Skip directories but continue walking into them
+	if info.IsDir() {
+		if info.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	return c.processFile(path, cfg, result)
+}
+
+// processFile processes a single file during directory walking
+func (c *Client) processFile(path string, cfg walkConfig, result *DirectoryWalkResult) error {
+	if result.TotalFiles >= cfg.maxFiles {
+		return fmt.Errorf("file count limit exceeded (max %d files)", cfg.maxFiles)
+	}
+
+	relPath, err := filepath.Rel(cfg.syncDir, path)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", relPath, err)
+	}
+
+	fileSize := int64(len(content))
+	isBinary := isBinaryContent(content)
+
+	// Skip large binary files
+	if isBinary && fileSize > cfg.maxBinarySize {
+		result.SkippedBinaries++
+		return nil
+	}
+
+	if result.TotalSize+fileSize > cfg.maxTotalSize {
+		return fmt.Errorf("total size limit exceeded (max %d bytes)", cfg.maxTotalSize)
+	}
+
+	result.Files = append(result.Files, SyncFileInfo{
+		RelativePath: relPath,
+		Content:      content,
+		Size:         fileSize,
+		IsBinary:     isBinary,
+	})
+	result.TotalFiles++
+	result.TotalSize += fileSize
+
+	return nil
+}
+
+// isBinaryContent detects if content is binary using HTTP content type detection.
+// Returns true for binary content, false for text content.
+func isBinaryContent(content []byte) bool {
+	if len(content) == 0 {
+		return false
+	}
+
+	// Check first 512 bytes (or less if file is smaller)
+	checkSize := 512
+	if len(content) < checkSize {
+		checkSize = len(content)
+	}
+
+	// Use net/http's content type detection
+	contentType := detectContentType(content[:checkSize])
+
+	// Text types are not binary
+	if strings.HasPrefix(contentType, "text/") {
+		return false
+	}
+
+	// Common text-based application types
+	textAppTypes := []string{
+		"application/json",
+		"application/xml",
+		"application/javascript",
+		"application/x-yaml",
+		"application/yaml",
+		"application/toml",
+		"application/x-sh",
+	}
+	for _, t := range textAppTypes {
+		if strings.HasPrefix(contentType, t) {
+			return false
+		}
+	}
+
+	// For application/octet-stream, do additional null-byte check
+	// Text files rarely have null bytes, so their presence indicates binary
+	if contentType == "application/octet-stream" {
+		for _, b := range content[:checkSize] {
+			if b == 0 {
+				return true
+			}
+		}
+		// No null bytes found, likely a text file (Dockerfile, Makefile, etc.)
+		return false
+	}
+
+	// Everything else is considered binary
+	return strings.HasPrefix(contentType, "application/") ||
+		strings.HasPrefix(contentType, "image/") ||
+		strings.HasPrefix(contentType, "video/") ||
+		strings.HasPrefix(contentType, "audio/")
+}
+
+// detectContentType wraps http.DetectContentType for easier testing
+func detectContentType(data []byte) string {
+	return http.DetectContentType(data)
 }

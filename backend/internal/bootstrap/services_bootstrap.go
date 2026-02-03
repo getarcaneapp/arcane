@@ -78,7 +78,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
-	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
+	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event, svcs.Settings)
 
 	return svcs, dockerClient, nil
 }

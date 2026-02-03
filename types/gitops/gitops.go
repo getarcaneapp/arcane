@@ -112,6 +112,19 @@ type GitOpsSync struct {
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
 
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true, all files in the compose file's directory (and subdirectories) are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: true
+	SyncDirectory bool `json:"syncDirectory"`
+
+	// SyncedFiles is a JSON-encoded list of file paths that were synced in the last successful sync.
+	// Only populated when SyncDirectory is true. Parse as JSON array of strings.
+	//
+	// Required: false
+	SyncedFiles *string `json:"syncedFiles,omitempty"`
+
 	// LastSyncAt is the date and time of the last successful sync.
 	//
 	// Required: false
@@ -280,6 +293,13 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true (default), all files in the compose file's directory are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 }
 
 // UpdateSyncRequest represents the request to update a gitops sync.
@@ -318,6 +338,13 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true, all files in the compose file's directory are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 }
 
 // SyncResult represents the result of a sync operation.
@@ -563,6 +590,12 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true (default), all files in the compose file's directory are synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.

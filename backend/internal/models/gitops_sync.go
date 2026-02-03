@@ -17,6 +17,8 @@ type GitOpsSync struct {
 	Project        *Project       `json:"project,omitempty" gorm:"foreignKey:ProjectID"`
 	AutoSync       bool           `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
 	SyncInterval   int            `json:"syncInterval" sortable:"true" search:"interval,frequency,schedule,cron,minutes"` // in minutes
+	SyncDirectory  bool           `json:"syncDirectory" gorm:"column:sync_directory;default:true"`                        // Sync entire directory containing compose file
+	SyncedFiles    *string        `json:"syncedFiles,omitempty" gorm:"column:synced_files"`                               // JSON array of synced file paths
 	LastSyncAt     *time.Time     `json:"lastSyncAt,omitempty" sortable:"true"`
 	LastSyncStatus *string        `json:"lastSyncStatus,omitempty" search:"status,success,failed,pending,error"`
 	LastSyncError  *string        `json:"lastSyncError,omitempty"`
