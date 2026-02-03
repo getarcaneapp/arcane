@@ -40,11 +40,8 @@
 		onClear();
 	}
 
-	function handleRefresh() {
-		viewer?.stopLogStream();
-		setTimeout(() => {
-			viewer?.startLogStream();
-		}, 100);
+	async function handleRefresh() {
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	// Sync isStreaming from viewer callbacks

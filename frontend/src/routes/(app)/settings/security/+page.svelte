@@ -150,6 +150,7 @@
 				oidcEnabled: formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
 				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
+				oidcAutoRedirectToProvider: formData.oidcAutoRedirectToProvider,
 				oidcClientId: formData.oidcClientId,
 				oidcIssuerUrl: formData.oidcIssuerUrl,
 				oidcScopes: formData.oidcScopes,

@@ -41,6 +41,11 @@ export function matchesShortcutEvent(keys: ShortcutKey[], event: KeyboardEvent, 
 	const key = event.key.toLowerCase();
 	if (MODIFIER_KEYS.has(key)) return false;
 
+	const expectedCode = getExpectedCode(nonModifierKeys[0]);
+	if (expectedCode) {
+		return event.code.toLowerCase() === expectedCode;
+	}
+
 	return key === nonModifierKeys[0];
 }
 
@@ -67,4 +72,14 @@ function formatShortcutKey(key: ShortcutKey, isMac: boolean): string {
 		default:
 			return key.length === 1 ? key.toUpperCase() : key;
 	}
+}
+
+function getExpectedCode(key: string): string | null {
+	if (/^[0-9]$/.test(key)) {
+		return `digit${key}`;
+	}
+	if (/^[a-z]$/.test(key)) {
+		return `key${key}`;
+	}
+	return null;
 }

@@ -24,6 +24,7 @@
 		mobileNavigationMode: z.enum(['floating', 'docked']),
 		mobileNavigationShowLabels: z.boolean(),
 		sidebarHoverExpansion: z.boolean(),
+		keyboardShortcutsEnabled: z.boolean(),
 		accentColor: z.string(),
 		enableGravatar: z.boolean()
 	});
@@ -185,6 +186,31 @@
 									{$formInputs.sidebarHoverExpansion.value
 										? m.navigation_sidebar_hover_expansion_enabled()
 										: m.navigation_sidebar_hover_expansion_disabled()}
+								</Label>
+							</div>
+						</div>
+
+						<Separator />
+
+						<!-- Keyboard Shortcuts -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.navigation_keyboard_shortcuts_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_keyboard_shortcuts_description()}</p>
+							</div>
+							<div class="flex items-center gap-2">
+								<Switch
+									id="keyboardShortcutsEnabled"
+									checked={$formInputs.keyboardShortcutsEnabled.value}
+									disabled={isReadOnly}
+									onCheckedChange={(checked) => {
+										$formInputs.keyboardShortcutsEnabled.value = checked;
+									}}
+								/>
+								<Label for="keyboardShortcutsEnabled" class="font-normal">
+									{$formInputs.keyboardShortcutsEnabled.value
+										? m.navigation_keyboard_shortcuts_enabled()
+										: m.navigation_keyboard_shortcuts_disabled()}
 								</Label>
 							</div>
 						</div>

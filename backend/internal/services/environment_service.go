@@ -150,6 +150,20 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
+// ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
+func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error) {
+	var envs []models.Environment
+	err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("id != ?", "0").
+		Where("enabled = ?", true).
+		Find(&envs).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote environments: %w", err)
+	}
+	return envs, nil
+}
+
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]interface{}, userID, username *string) (*models.Environment, error) {
 	now := time.Now()
 	updates["updated_at"] = &now
