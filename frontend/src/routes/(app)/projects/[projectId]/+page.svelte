@@ -19,6 +19,7 @@
 	import { z } from 'zod/v4';
 	import { createForm } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { toGitCommitUrl } from '$lib/utils/git';
 	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
@@ -345,11 +346,14 @@
 				</div>
 				<div class="text-muted-foreground flex flex-wrap items-center gap-4 text-xs sm:col-start-2">
 					{#if project.lastSyncCommit}
+						{@const commitUrl = project.gitRepositoryURL
+							? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
+							: null}
 						<div class="flex items-center gap-1.5">
 							<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
-							{#if project.gitRepositoryURL}
+							{#if commitUrl}
 								<a
-									href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+									href={commitUrl}
 									target="_blank"
 									class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
 								>
@@ -425,11 +429,14 @@
 										<br />
 										<div class="mt-2 flex flex-col gap-1">
 											{#if project.lastSyncCommit}
+												{@const commitUrl = project.gitRepositoryURL
+													? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
+													: null}
 												<div class="flex items-center gap-1.5 font-mono text-xs">
 													<span class="text-muted-foreground">{m.git_sync_commit()}:</span>
-													{#if project.gitRepositoryURL}
+													{#if commitUrl}
 														<a
-															href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+															href={commitUrl}
 															target="_blank"
 															class="bg-muted hover:text-primary rounded px-1.5 py-0.5 transition-colors"
 														>
