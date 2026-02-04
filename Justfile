@@ -36,6 +36,7 @@ dev target="docker":
     @just "_dev-{{ target }}"
 
 # Add a new i18n locale. Example:
+
 # just i18n-add es "Español"
 [group('i18n')]
 i18n-add locale native_name settings="frontend/project.inlang/settings.json" picker="frontend/src/lib/components/locale-picker.svelte" messages_dir="frontend/messages" base_locale="en":
@@ -395,7 +396,7 @@ _utils-hotfix:
     while true; do
         echo ""
         read -p "Enter commit hash to cherry-pick (or 'done' to finish, 'list' to see commits again, 'quit' to abort): " INPUT
-        
+
         case "$INPUT" in
             done)
                 break
@@ -864,7 +865,7 @@ _deps-install-frontend:
 [group('deps')]
 _deps-install-tests:
     pnpm -C tests install
-    pnpm exec playwright install --with-deps chromium
+    pnpm -C tests exec playwright install --with-deps chromium
 
 # Install backend Go dependencies
 [group('deps')]
@@ -914,17 +915,17 @@ _lint-all:
 # Lint Go backend
 [group('lint')]
 _lint-backend:
-    cd backend && golangci-lint run ./...
+    cd backend && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint Go CLI
 [group('lint')]
 _lint-cli:
-    cd cli && golangci-lint run ./...
+    cd cli && golangci-lint run -c ../.github/.golangci.yml  ./...
 
 # Lint Types
 [group('lint')]
 _lint-types:
-    cd types && golangci-lint run ./...
+    cd types && golangci-lint run -c ../.github/.golangci.yml  ./...
 
 # Lint all Go code
 [group('lint')]
