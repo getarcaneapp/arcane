@@ -10,7 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 )
 
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
