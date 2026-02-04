@@ -41,7 +41,6 @@
     "svelte-motion": "^0.12.2"
   },
   "devDependencies": {
-    "@codecov/sveltekit-plugin": "^1.9.1",
     "@iconify/json": "^2.2.431",
     "@inlang/paraglide-js": "2.9.1",
     "@internationalized/date": "^3.10.1",

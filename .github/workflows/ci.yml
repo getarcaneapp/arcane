@@ -31,13 +31,11 @@ jobs:
             timeout: 30
             gcc: true
             cgo_enabled: "1"
-            coverage_name: backend-coverage
           - name: cli
             path: cli
             timeout: 10
             gcc: false
             cgo_enabled: "1"
-            coverage_name: cli-coverage
     defaults:
       run:
         working-directory: ${{ matrix.module.path }}
@@ -79,13 +77,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.module.coverage_name }}
+          name: ${{ matrix.module.name }}-coverage
           path: ${{ matrix.module.path }}/coverage.txt
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   go-linter:
     name: Go Linter (${{ matrix.module.name }})
