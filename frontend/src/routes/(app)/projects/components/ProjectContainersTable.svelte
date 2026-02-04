@@ -247,6 +247,8 @@
 		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
 	);
 
+	const showActionsColumn = $derived(servicesWithIds.some((service) => service.status === 'running'));
+
 	const columns = [
 		{ accessorKey: 'containerName', id: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'status', title: m.common_state(), cell: StateCell },
@@ -406,108 +408,98 @@
 				show: mobileFieldVisibility.image ?? true
 			}
 		]}
-		rowActions={MobileRowActions}
+		rowActions={showActionsColumn ? MobileRowActions : undefined}
 		onclick={(item: ServiceWithId) => item.containerId && goto(getContainerUrl(item))}
 	/>
 {/snippet}
 
 {#snippet MobileRowActions({ item }: { item: ServiceWithId })}
-	{#if !item.containerId}
-		<ArcaneTooltip.Root>
-			<ArcaneTooltip.Trigger>
-				<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			</ArcaneTooltip.Trigger>
-			<ArcaneTooltip.Content>
-				<p>{m.compose_service_not_created()}</p>
-			</ArcaneTooltip.Content>
-		</ArcaneTooltip.Root>
-	{:else}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-						<span class="sr-only">{m.common_open_menu()}</span>
-						<EllipsisIcon />
+	{#if item.status === 'running'}
+		{#if !item.containerId}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
+						<EllipsisIcon class="size-4" />
 					</ArcaneButton>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end">
-				<DropdownMenu.Group>
-					<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
-						<InspectIcon class="size-4" />
-						{m.common_inspect()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-						disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
-					>
-						{#if actionStatus[item.id] === 'removing'}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				</DropdownMenu.Group>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p>{m.compose_service_not_created()}</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		{:else}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+							<span class="sr-only">{m.common_open_menu()}</span>
+							<EllipsisIcon />
+						</ArcaneButton>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<DropdownMenu.Group>
+						<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
+							<InspectIcon class="size-4" />
+							{m.common_inspect()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item
+							variant="destructive"
+							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+							disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
+						>
+							{#if actionStatus[item.id] === 'removing'}
+								<Spinner class="size-4" />
+							{:else}
+								<TrashIcon class="size-4" />
+							{/if}
+							{m.common_remove()}
+						</DropdownMenu.Item>
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 	{/if}
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ServiceWithId })}
 	{@const status = actionStatus[item.id]}
 
-	{#if !item.containerId}
-		<ArcaneTooltip.Root>
-			<ArcaneTooltip.Trigger>
-				<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			</ArcaneTooltip.Trigger>
-			<ArcaneTooltip.Content>
-				<p>{m.compose_service_not_created()}</p>
-			</ArcaneTooltip.Content>
-		</ArcaneTooltip.Root>
-	{:else}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-						<span class="sr-only">{m.common_open_menu()}</span>
-						{#if status}
-							<Spinner class="size-4" />
-						{:else}
-							<EllipsisIcon class="size-4" />
-						{/if}
+	{#if item.status === 'running'}
+		{#if !item.containerId}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
+						<EllipsisIcon class="size-4" />
 					</ArcaneButton>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end">
-				<DropdownMenu.Group>
-					<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
-						<InspectIcon class="size-4" />
-						{m.common_inspect()}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Separator />
-
-					{#if item.status !== 'running'}
-						<DropdownMenu.Item
-							onclick={() => performContainerAction('start', item.containerId!)}
-							disabled={status === 'starting' || isAnyLoading}
-						>
-							{#if status === 'starting'}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p>{m.compose_service_not_created()}</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		{:else}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+							<span class="sr-only">{m.common_open_menu()}</span>
+							{#if status}
 								<Spinner class="size-4" />
 							{:else}
-								<StartIcon class="size-4" />
+								<EllipsisIcon class="size-4" />
 							{/if}
-							{m.common_start()}
+						</ArcaneButton>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<DropdownMenu.Group>
+						<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
+							<InspectIcon class="size-4" />
+							{m.common_inspect()}
 						</DropdownMenu.Item>
-					{:else}
+
+						<DropdownMenu.Separator />
+
 						<DropdownMenu.Item
 							onclick={() => performContainerAction('stop', item.containerId!)}
 							disabled={status === 'stopping' || isAnyLoading}
@@ -531,25 +523,25 @@
 							{/if}
 							{m.common_restart()}
 						</DropdownMenu.Item>
-					{/if}
 
-					<DropdownMenu.Separator />
+						<DropdownMenu.Separator />
 
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-						disabled={status === 'removing' || isAnyLoading}
-					>
-						{#if status === 'removing'}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				</DropdownMenu.Group>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+						<DropdownMenu.Item
+							variant="destructive"
+							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+							disabled={status === 'removing' || isAnyLoading}
+						>
+							{#if status === 'removing'}
+								<Spinner class="size-4" />
+							{:else}
+								<TrashIcon class="size-4" />
+							{/if}
+							{m.common_remove()}
+						</DropdownMenu.Item>
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 	{/if}
 {/snippet}
 
@@ -559,6 +551,7 @@
 		bind:requestOptions
 		bind:selectedIds
 		bind:mobileFieldVisibility
+		selectionDisabled
 		onRefresh={async () => {
 			await onRefresh?.();
 			return paginatedServices;
@@ -566,7 +559,7 @@
 		{columns}
 		{mobileFields}
 		{bulkActions}
-		rowActions={RowActions}
+		rowActions={showActionsColumn ? RowActions : undefined}
 		mobileCard={ContainerMobileCard}
 		withoutSearch
 		withoutPagination
