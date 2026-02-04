@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	writeWait  = 10 * time.Second
-	pongWait   = 60 * time.Second
-	pingPeriod = pongWait * 9 / 10
+	writeWait      = 10 * time.Second
+	pingWriteWait  = 1 * time.Second // shorter so writePump doesn't block long on dead conns
+	pongWait       = 60 * time.Second
+	pingPeriod     = pongWait * 9 / 10
 
 	maxMessageSize   = 64 * 1024
 	clientSendBuffer = 256
@@ -80,10 +81,11 @@ func (c *Client) readPump(ctx context.Context, hub *Hub) {
 }
 
 func (c *Client) writePump(ctx context.Context, hub *Hub) {
-	ticker := time.NewTicker(pingPeriod)
-	// Stop ticker and ensure client is removed from hub without writing to hub.unregister.
+	// Timer instead of Ticker: no drain-after-Stop, and we can reset after each ping
+	// so shutdown sees ctx.Done() without waiting for an extra tick.
+	pingTimer := time.NewTimer(pingPeriod)
 	defer func() {
-		ticker.Stop()
+		pingTimer.Stop()
 		c.safeRemove(hub)
 	}()
 
@@ -94,7 +96,6 @@ func (c *Client) writePump(ctx context.Context, hub *Hub) {
 		case msg, ok := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// Hub closed the channel.
 				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
@@ -104,11 +105,17 @@ func (c *Client) writePump(ctx context.Context, hub *Hub) {
 				}
 				return
 			}
-		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+		case <-pingTimer.C:
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			_ = c.conn.SetWriteDeadline(time.Now().Add(pingWriteWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+			pingTimer.Reset(pingPeriod)
 		}
 	}
 }
