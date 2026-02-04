@@ -3,11 +3,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
@@ -27,6 +23,16 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { createContainerActions } from './container-table.actions';
+	import {
+		getActionStatusMessage,
+		getContainerDisplayName,
+		getContainerIpAddress,
+		getStateBadgeVariant,
+		groupContainerByProject,
+		parseImageRef,
+		type ActionStatus
+	} from './container-table.helpers';
 	import {
 		StartIcon,
 		StopIcon,
@@ -55,7 +61,6 @@
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
-	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 
 	let isBulkLoading = $state({
@@ -65,48 +70,7 @@
 		remove: false
 	});
 
-	let statsManager = $state<ContainerStatsManager | null>(null);
-
-	// Parse image reference into repo and tag
-	function parseImageRef(imageRef: string): { repo: string; tag: string } {
-		// Handle images like "nginx:latest", "library/nginx:1.0", "ghcr.io/org/image:tag"
-		const lastColon = imageRef.lastIndexOf(':');
-		// Check if colon is part of a tag (not a port in registry URL)
-		const hasTag = lastColon > 0 && !imageRef.substring(lastColon).includes('/');
-
-		if (hasTag) {
-			return {
-				repo: imageRef.substring(0, lastColon),
-				tag: imageRef.substring(lastColon + 1)
-			};
-		}
-		return { repo: imageRef, tag: 'latest' };
-	}
-
-	function getContainerDisplayName(container: ContainerSummaryDto): string {
-		if (container.names && container.names.length > 0) {
-			return container.names[0].replace(/^\//, '');
-		}
-		return container.id.substring(0, 12);
-	}
-
-	function getActionStatusMessage(status: ActionStatus): string {
-		const messages: Record<ActionStatus, () => string> = {
-			starting: () => m.common_action_starting(),
-			stopping: () => m.common_action_stopping(),
-			restarting: () => m.common_action_restarting(),
-			updating: () => m.common_action_updating(),
-			removing: () => m.common_action_removing(),
-			'': () => ''
-		};
-		return messages[status]();
-	}
-
-	function getStateBadgeVariant(state: string): 'green' | 'red' | 'amber' {
-		if (state === 'running') return 'green';
-		if (state === 'exited') return 'red';
-		return 'amber';
-	}
+	const statsManager = new ContainerStatsManager();
 
 	async function refreshContainers(options: SearchPaginationSortRequest) {
 		const result = await containerService.getContainers(options);
@@ -119,6 +83,10 @@
 	}
 
 	function setShowInternal(value: boolean) {
+		const currentSetting = (customSettings.showInternalContainers as boolean) ?? false;
+		const currentRequest = requestOptions?.includeInternal ?? false;
+		if (value === currentSetting && value === currentRequest) return;
+
 		customSettings = { ...customSettings, showInternalContainers: value };
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
@@ -129,290 +97,25 @@
 		refreshContainers(nextOptions);
 	}
 
-	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
-		// Set action status for this specific container
-		if (action === 'start') {
-			actionStatus[id] = 'starting';
-		} else if (action === 'stop') {
-			actionStatus[id] = 'stopping';
-		} else if (action === 'restart') {
-			actionStatus[id] = 'restarting';
-		}
-
-		try {
-			if (action === 'start') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(containerService.startContainer(id)),
-					message: m.containers_start_failed(),
-					setLoadingState: (value) => {
-						actionStatus[id] = value ? 'starting' : '';
-					},
-					async onSuccess() {
-						toast.success(m.containers_start_success());
-						containers = await containerService.getContainers(requestOptions);
-					}
-				});
-			} else if (action === 'stop') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(containerService.stopContainer(id)),
-					message: m.containers_stop_failed(),
-					setLoadingState: (value) => {
-						actionStatus[id] = value ? 'stopping' : '';
-					},
-					async onSuccess() {
-						toast.success(m.containers_stop_success());
-						containers = await containerService.getContainers(requestOptions);
-					}
-				});
-			} else if (action === 'restart') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(containerService.restartContainer(id)),
-					message: m.containers_restart_failed(),
-					setLoadingState: (value) => {
-						actionStatus[id] = value ? 'restarting' : '';
-					},
-					async onSuccess() {
-						toast.success(m.containers_restart_success());
-						containers = await containerService.getContainers(requestOptions);
-					}
-				});
-			}
-		} catch (error) {
-			console.error('Container action failed:', error);
-			toast.error(m.containers_action_error());
-			actionStatus[id] = '';
-		}
-	}
-
-	async function handleRemoveContainer(id: string, name: string) {
-		openConfirmDialog({
-			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message({ resource: name }),
-			checkboxes: [
-				{
-					id: 'force',
-					label: m.containers_remove_force_label(),
-					initialState: false
-				},
-				{
-					id: 'volumes',
-					label: m.containers_remove_volumes_label(),
-					initialState: false
-				}
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
-					const volumes = !!checkboxStates.volumes;
-					actionStatus[id] = 'removing';
-					handleApiResultWithCallbacks({
-						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
-						message: m.containers_remove_failed(),
-						setLoadingState: (value) => {
-							actionStatus[id] = value ? 'removing' : '';
-						},
-						async onSuccess() {
-							toast.success(m.containers_remove_success());
-							containers = await containerService.getContainers(requestOptions);
-						}
-					});
-				}
-			}
-		});
-	}
-
-	async function handleUpdateContainer(container: ContainerSummaryDto) {
-		const containerName = getContainerDisplayName(container);
-
-		openConfirmDialog({
-			title: m.containers_update_confirm_title(),
-			message: m.containers_update_confirm_message({ name: containerName }),
-			confirm: {
-				label: m.containers_update_container(),
-				destructive: false,
-				action: async () => {
-					actionStatus[container.id] = 'updating';
-					try {
-						toast.info(m.containers_update_pulling_image());
-
-						// Use the new single container update endpoint
-						const result = await containerService.updateContainer(container.id);
-
-						if (result.failed > 0) {
-							const failedItem = result.items?.find((item: any) => item.status === 'failed');
-							toast.error(
-								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : '')
-							);
-						} else if (result.updated > 0) {
-							toast.success(m.containers_update_success({ name: containerName }));
-						} else {
-							toast.info(m.image_update_up_to_date_title());
-						}
-
-						// Refresh containers
-						containers = await containerService.getContainers(requestOptions);
-					} catch (error) {
-						console.error('Container update failed:', error);
-						toast.error(m.containers_update_failed({ name: containerName }));
-					} finally {
-						actionStatus[container.id] = '';
-					}
-				}
-			}
-		});
-	}
-
-	async function handleBulkStart(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.containers_bulk_start_confirm_title({ count: ids.length }),
-			message: m.containers_bulk_start_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_start(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.start = true;
-
-					const results = await Promise.allSettled(ids.map((id) => containerService.startContainer(id)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.start = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.containers_bulk_start_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.containers_bulk_start_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.containers_start_failed());
-					}
-
-					containers = await containerService.getContainers(requestOptions);
-					selectedIds = [];
-				}
-			}
-		});
-	}
-
-	async function handleBulkStop(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.containers_bulk_stop_confirm_title({ count: ids.length }),
-			message: m.containers_bulk_stop_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_stop(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.stop = true;
-
-					const results = await Promise.allSettled(ids.map((id) => containerService.stopContainer(id)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.stop = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.containers_bulk_stop_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.containers_bulk_stop_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.containers_stop_failed());
-					}
-
-					containers = await containerService.getContainers(requestOptions);
-					selectedIds = [];
-				}
-			}
-		});
-	}
-
-	async function handleBulkRestart(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.containers_bulk_restart_confirm_title({ count: ids.length }),
-			message: m.containers_bulk_restart_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_restart(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.restart = true;
-
-					const results = await Promise.allSettled(ids.map((id) => containerService.restartContainer(id)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.restart = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.containers_bulk_restart_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.containers_bulk_restart_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.containers_restart_failed());
-					}
-
-					containers = await containerService.getContainers(requestOptions);
-					selectedIds = [];
-				}
-			}
-		});
-	}
-
-	async function handleBulkRemove(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.containers_bulk_remove_confirm_title({ count: ids.length }),
-			message: m.containers_bulk_remove_confirm_message({ count: ids.length }),
-			checkboxes: [
-				{
-					id: 'force',
-					label: m.containers_remove_force_label(),
-					initialState: false
-				},
-				{
-					id: 'volumes',
-					label: m.containers_remove_volumes_label(),
-					initialState: false
-				}
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
-					const volumes = !!checkboxStates.volumes;
-					isBulkLoading.remove = true;
-
-					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.remove = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.containers_bulk_remove_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.containers_remove_failed());
-					}
-
-					containers = await containerService.getContainers(requestOptions);
-					selectedIds = [];
-				}
-			}
-		});
-	}
+	const {
+		performContainerAction,
+		handleRemoveContainer,
+		handleUpdateContainer,
+		handleBulkStart,
+		handleBulkStop,
+		handleBulkRestart,
+		handleBulkRemove
+	} = createContainerActions({
+		getRequestOptions: () => requestOptions,
+		setContainers: (next) => {
+			containers = next;
+		},
+		setSelectedIds: (next) => {
+			selectedIds = next;
+		},
+		actionStatus,
+		isBulkLoading
+	});
 
 	const isAnyLoading = $derived(
 		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
@@ -427,56 +130,37 @@
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
 
+	const shouldConnect = $derived.by(() => {
+		const cpuVisible = columnVisibility.cpuUsage !== false;
+		const memoryVisible = columnVisibility.memoryUsage !== false;
+		const statsVisible = cpuVisible || memoryVisible;
+
+		if (!statsVisible) {
+			return new Set<string>();
+		}
+
+		const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
+		return new Set(runningContainers.map((c) => c.id));
+	});
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+
+	$effect(() => {
+		statsManager.envId = currentEnvId;
+		statsManager.targetIds = shouldConnect;
+	});
+
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
 
-		statsManager = new ContainerStatsManager();
-
-		// Derive which containers should be connected based on current state
-		const shouldConnect = $derived.by(() => {
-			const cpuVisible = columnVisibility.cpuUsage !== false;
-			const memoryVisible = columnVisibility.memoryUsage !== false;
-			const statsVisible = cpuVisible || memoryVisible;
-
-			if (!statsVisible) {
-				return new Set<string>();
-			}
-
-			const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
-			return new Set(runningContainers.map((c) => c.id));
-		});
-
-		const currentEnvId = $derived(environmentStore.selected?.id || '0');
-
-		// Effect ONLY for side effects - connecting/disconnecting websockets
-		const unsubscribe = $effect.root(() => {
-			$effect(() => {
-				if (!statsManager) return;
-
-				const targetIds = shouldConnect;
-				const connectedIds = new Set(statsManager.getConnectedIds());
-
-				// Connect new containers
-				for (const id of targetIds) {
-					if (!connectedIds.has(id)) {
-						statsManager.connect(id, currentEnvId);
-					}
-				}
-
-				// Disconnect removed containers
-				for (const id of connectedIds) {
-					if (!targetIds.has(id)) {
-						statsManager.disconnect(id);
-					}
-				}
-			});
-
-			return () => {};
-		});
+		const persistedInternal = (customSettings.showInternalContainers as boolean) ?? false;
+		const currentInternal = requestOptions?.includeInternal ?? false;
+		if (persistedInternal !== currentInternal) {
+			setShowInternal(persistedInternal);
+		}
 
 		return () => {
-			unsubscribe();
-			statsManager?.destroy();
+			statsManager.destroy();
 		};
 	});
 
@@ -488,31 +172,12 @@
 		customSettings = { ...customSettings, groupByProject: value };
 	}
 
-	$effect(() => {
-		const current = requestOptions?.includeInternal;
-		if (showInternal && current !== true) {
-			setShowInternal(true);
-		} else if (!showInternal && current === true) {
-			setShowInternal(false);
-		}
-	});
-
 	function toggleGroup(groupName: string) {
 		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
 			[groupName]: !collapsedGroupsState.current[groupName]
 		};
-	}
-
-	function getContainerIpAddress(container: ContainerSummaryDto): string | null {
-		const networks = container.networkSettings?.networks;
-		if (!networks) return null;
-		for (const networkName in networks) {
-			const network = networks[networkName];
-			if (network?.ipAddress) return network.ipAddress;
-		}
-		return null;
 	}
 
 	const columns = $derived([
@@ -533,14 +198,14 @@
 			cell: UpdatesCell
 		},
 		{
-			accessorFn: (row) => statsManager?.getCPUPercent(row.id) ?? -1,
+			accessorFn: (row) => statsManager.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
 			title: m.containers_cpu_usage(),
 			sortable: false,
 			cell: CPUCell
 		},
 		{
-			accessorFn: (row) => statsManager?.getMemoryPercent(row.id) ?? -1,
+			accessorFn: (row) => statsManager.getMemoryPercent(row.id) ?? -1,
 			id: 'memoryUsage',
 			title: m.containers_memory_usage(),
 			sortable: false,
@@ -604,16 +269,6 @@
 		}
 	]);
 
-	function getProjectName(container: ContainerSummaryDto): string {
-		const projectLabel = container.labels?.['com.docker.compose.project'];
-		return projectLabel || 'No Project';
-	}
-
-	// Group by function for containers
-	function groupContainerByProject(container: ContainerSummaryDto): string {
-		return getProjectName(container);
-	}
-
 	// Icon for each group
 	function getGroupIcon(_groupName: string) {
 		return ProjectsIcon;
@@ -627,15 +282,15 @@
 
 {#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
 	<ContainerStatsCell
-		value={statsManager?.getCPUPercent(item.id)}
-		loading={statsManager?.isLoading(item.id) ?? false}
+		value={statsManager.getCPUPercent(item.id)}
+		loading={statsManager.isLoading(item.id) ?? false}
 		stopped={item.state !== 'running'}
 		type="cpu"
 	/>
 {/snippet}
 
 {#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
-	{@const memoryData = statsManager?.getMemoryUsage(item.id)}
+	{@const memoryData = statsManager.getMemoryUsage(item.id)}
 	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
 {/snippet}
 
@@ -759,18 +414,13 @@
 				alt: getContainerDisplayName(item)
 			};
 		}}
-		title={(item) => {
-			if (item.names && item.names.length > 0) {
-				return item.names[0].startsWith('/') ? item.names[0].substring(1) : item.names[0];
-			}
-			return item.id.substring(0, 12);
-		}}
+		title={(item) => getContainerDisplayName(item)}
 		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? (item.id.length > 12 ? item.id : null) : null)}
 		badges={[
 			(item) =>
 				(mobileFieldVisibility.state ?? true)
 					? {
-							variant: item.state === 'running' ? 'green' : item.state === 'exited' ? 'red' : 'amber',
+							variant: getStateBadgeVariant(item.state),
 							text: capitalizeFirstLetter(item.state)
 						}
 					: null
@@ -801,7 +451,7 @@
 			{
 				label: m.containers_cpu_usage(),
 				getValue: (item: ContainerSummaryDto) => {
-					const cpu = statsManager?.getCPUPercent(item.id);
+					const cpu = statsManager.getCPUPercent(item.id);
 					if (item.state !== 'running') return m.common_na();
 					if (cpu === undefined) return '...';
 					return `${cpu.toFixed(1)}%`;
@@ -813,7 +463,7 @@
 			{
 				label: m.containers_memory_usage(),
 				getValue: (item: ContainerSummaryDto) => {
-					const memData = statsManager?.getMemoryUsage(item.id);
+					const memData = statsManager.getMemoryUsage(item.id);
 					if (item.state !== 'running') return m.common_na();
 					if (!memData?.usage) return '...';
 					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
@@ -833,48 +483,46 @@
 		rowActions={RowActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
-		{#snippet children()}
-			{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
-				<div class="flex flex-row gap-4 border-t pt-3">
-					{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
-						<div class="flex min-w-0 flex-1 items-start gap-2.5">
-							<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
-								<NetworksIcon class="size-3.5 text-sky-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-									{m.common_ports()}
-								</div>
-								<div class="mt-1">
-									<PortBadge ports={item.ports} />
-								</div>
-							</div>
+	{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
+		<div class="flex flex-row gap-4 border-t pt-3">
+			{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
+				<div class="flex min-w-0 flex-1 items-start gap-2.5">
+					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
+						<NetworksIcon class="size-3.5 text-sky-500" />
+					</div>
+					<div class="min-w-0 flex-1">
+						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+							{m.common_ports()}
 						</div>
-					{/if}
-					{#if mobileFieldVisibility.updates ?? true}
-						{@const imageRef = parseImageRef(item.image)}
-						<div class="flex min-w-0 flex-1 items-start gap-2.5">
-							<div class="flex min-w-0 flex-col">
-								<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-									{m.images_updates()}
-								</div>
-								<div class="mt-1">
-									<ImageUpdateItem
-										updateInfo={item.updateInfo}
-										imageId={item.id}
-										repo={imageRef.repo}
-										tag={imageRef.tag}
-										onUpdateContainer={() => handleUpdateContainer(item)}
-										debugHasUpdate={false}
-									/>
-								</div>
-							</div>
+						<div class="mt-1">
+							<PortBadge ports={item.ports} />
 						</div>
-					{/if}
+					</div>
 				</div>
 			{/if}
-		{/snippet}
-	</UniversalMobileCard>
+			{#if mobileFieldVisibility.updates ?? true}
+				{@const imageRef = parseImageRef(item.image)}
+				<div class="flex min-w-0 flex-1 items-start gap-2.5">
+					<div class="flex min-w-0 flex-col">
+						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+							{m.images_updates()}
+						</div>
+						<div class="mt-1">
+							<ImageUpdateItem
+								updateInfo={item.updateInfo}
+								imageId={item.id}
+								repo={imageRef.repo}
+								tag={imageRef.tag}
+								onUpdateContainer={() => handleUpdateContainer(item)}
+								debugHasUpdate={false}
+							/>
+						</div>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
+</UniversalMobileCard>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerSummaryDto })}
