@@ -112,5 +112,5 @@ export { default as EdgeConnectionIcon } from 'virtual:icons/solar/cloud-upload-
 export { default as ShieldCheckIcon } from 'virtual:icons/solar/shield-check-linear';
 export { default as ShieldAlertIcon } from 'virtual:icons/solar/shield-warning-linear';
 export { default as ShieldXIcon } from 'virtual:icons/solar/shield-cross-linear';
-export { default as ScanIcon } from 'virtual:icons/solar/scanning-linear';
+export { default as ScanIcon } from 'virtual:icons/solar/magnifer-linear';
 export { default as AlertTriangleIcon } from 'virtual:icons/solar/danger-triangle-linear';
