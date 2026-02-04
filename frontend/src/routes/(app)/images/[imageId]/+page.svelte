@@ -86,6 +86,12 @@
 	const architecture = $derived(() => image?.architecture || m.common_na());
 	const osName = $derived(() => image?.os || m.common_na());
 
+	// Determine the appropriate icon for the vulnerability scan header
+	const vulnerabilityHeaderIcon = $derived.by(() => {
+		const isClean = vulnerabilityScan?.status === 'completed' && (vulnerabilityScan?.summary?.total ?? 0) === 0;
+		return isClean ? ShieldCheckIcon : ShieldAlertIcon;
+	});
+
 	async function handleImageRemove(id: string) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
@@ -269,7 +275,7 @@
 
 			<!-- Vulnerability Scan Section -->
 			<Card.Root>
-				<Card.Header icon={vulnerabilityScan?.status === 'completed' && (vulnerabilityScan?.summary?.total ?? 0) === 0 ? ShieldCheckIcon : ShieldAlertIcon}>
+				<Card.Header icon={vulnerabilityHeaderIcon}>
 					<div class="flex flex-col space-y-1.5">
 						<Card.Title>{m.vuln_title()}</Card.Title>
 						<Card.Description>
