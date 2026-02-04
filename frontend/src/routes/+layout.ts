@@ -17,26 +17,23 @@ export const load = async () => {
 	// Step 1: Check authentication first
 	let user = await userService.getCurrentUser().catch(() => null);
 
-	// Step 1.5: Attempt auto-login if not authenticated
-	if (!user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
-		// Check if auto-login is enabled
+	// Step 1.5: Check auto-login config (and attempt auto-login if enabled)
+	if (browser) {
 		const autoLoginConfig = await authService.getAutoLoginConfig();
 
-		if (autoLoginConfig?.enabled) {
-			settingsStore.autoLoginEnabled.set(true);
-			// Attempt auto-login using server-configured credentials
-			user = await authService.attemptAutoLogin();
-		} else {
-			// Cache that auto-login is disabled to avoid checking on every page load
-			settingsStore.autoLoginEnabled.cacheDisabled();
-		}
-	} else if (user && browser && !settingsStore.autoLoginEnabled.isKnownDisabled()) {
-		// User is already logged in, check if auto-login is enabled (for password change dialog skip)
-		const autoLoginConfig = await authService.getAutoLoginConfig().catch(() => null);
-		if (autoLoginConfig?.enabled) {
-			settingsStore.autoLoginEnabled.set(true);
-		} else {
-			settingsStore.autoLoginEnabled.cacheDisabled();
+		if (autoLoginConfig) {
+			if (autoLoginConfig.enabled) {
+				settingsStore.autoLoginEnabled.set(true);
+				settingsStore.autoLoginEnabled.clearDisabledCache();
+				if (!user) {
+					// Attempt auto-login using server-configured credentials
+					user = await authService.attemptAutoLogin();
+				}
+			} else {
+				settingsStore.autoLoginEnabled.set(false);
+				// Cache that auto-login is disabled to avoid checking on every page load
+				settingsStore.autoLoginEnabled.cacheDisabled();
+			}
 		}
 	}
 
@@ -86,6 +83,7 @@ export const load = async () => {
 		revision: 'unknown',
 		shortRevision: 'unknown',
 		goVersion: 'unknown',
+		enabledFeatures: [],
 		isSemverVersion: false
 	};
 
@@ -99,6 +97,7 @@ export const load = async () => {
 			revision: info.revision,
 			shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
 			goVersion: info.goVersion || 'unknown',
+			enabledFeatures: info.enabledFeatures ?? [],
 			buildTime: info.buildTime,
 			isSemverVersion: info.isSemverVersion,
 			newestVersion: info.newestVersion,

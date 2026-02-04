@@ -19,6 +19,7 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision?: string;
 			shortRevision?: string;
 			goVersion?: string;
+			enabledFeatures?: string[];
 			buildTime?: string;
 			isSemverVersion?: boolean;
 			newestVersion?: string;
@@ -35,6 +36,7 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: data.revision || 'unknown',
 			shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
 			goVersion: data.goVersion || 'unknown',
+			enabledFeatures: data.enabledFeatures ?? [],
 			buildTime: data.buildTime,
 			isSemverVersion: data.isSemverVersion || false,
 			newestVersion: data.newestVersion,
@@ -50,6 +52,7 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: 'unknown',
 			shortRevision: 'unknown',
 			goVersion: 'unknown',
+			enabledFeatures: [],
 			isSemverVersion: false,
 			updateAvailable: false
 		};

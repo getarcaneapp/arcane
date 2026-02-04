@@ -17,6 +17,7 @@
 
 	const shortCommit = $derived(versionInfo.shortRevision || versionInfo.revision?.slice(0, 8) || '-');
 	const shortDigest = $derived(versionInfo.currentDigest?.slice(0, 19) || '-');
+	const enabledFeatures = $derived((versionInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
 	const logoUrl = $derived(getApplicationLogo(false));
 </script>
 
@@ -40,6 +41,8 @@
 				{@render infoRowWithCopy(m.version_info_full_commit(), shortCommit, versionInfo.revision)}
 
 				{@render infoRow(m.version_info_go_version(), versionInfo.goVersion || '-')}
+
+				{@render infoRow(m.version_info_build_features(), enabledFeatures)}
 
 				{#if versionInfo.buildTime && versionInfo.buildTime !== 'unknown'}
 					{@render infoRow(m.version_info_build_time(), versionInfo.buildTime, false)}
