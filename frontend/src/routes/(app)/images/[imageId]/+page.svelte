@@ -11,9 +11,12 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
+	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import type { VulnerabilityScanResult, Vulnerability as VulnType } from '$lib/types/vulnerability.type';
+	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon, ShieldCheckIcon, ShieldAlertIcon, ScanIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let { image } = $derived(data);
@@ -21,8 +24,50 @@
 	let isLoading = $state({
 		pulling: false,
 		removing: false,
-		refreshing: false
+		refreshing: false,
+		scanning: false
 	});
+
+	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
+	let hasLoadedVulnerabilities = $state(false);
+
+	// Load vulnerability scan data when image changes
+	$effect(() => {
+		if (image?.id && !hasLoadedVulnerabilities) {
+			loadVulnerabilityScan();
+		}
+	});
+
+	async function loadVulnerabilityScan() {
+		if (!image?.id) return;
+		try {
+			const result = await vulnerabilityService.getScanResult(image.id);
+			vulnerabilityScan = result;
+		} catch {
+			// No scan data found, that's okay
+			vulnerabilityScan = null;
+		}
+		hasLoadedVulnerabilities = true;
+	}
+
+	async function handleScanImage() {
+		if (!image?.id || isLoading.scanning) return;
+		isLoading.scanning = true;
+		try {
+			const result = await vulnerabilityService.scanImage(image.id);
+			vulnerabilityScan = result;
+			if (result.status === 'completed') {
+				toast.success(m.vuln_scan_completed());
+			} else if (result.status === 'failed') {
+				toast.error(result.error || m.vuln_scan_failed());
+			}
+		} catch (error) {
+			console.error('Failed to scan image:', error);
+			toast.error(m.vuln_scan_failed());
+		} finally {
+			isLoading.scanning = false;
+		}
+	}
 
 	const shortId = $derived(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
 
@@ -64,6 +109,14 @@
 	}
 
 	const actions: DetailAction[] = $derived([
+		{
+			id: 'scan',
+			action: 'base',
+			label: m.vuln_scan(),
+			loading: isLoading.scanning,
+			disabled: isLoading.scanning,
+			onclick: handleScanImage
+		},
 		{
 			id: 'remove',
 			action: 'remove',
@@ -211,6 +264,153 @@
 							</div>
 						{/if}
 					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<!-- Vulnerability Scan Section -->
+			<Card.Root>
+				<Card.Header icon={vulnerabilityScan?.status === 'completed' && (vulnerabilityScan?.summary?.total ?? 0) === 0 ? ShieldCheckIcon : ShieldAlertIcon}>
+					<div class="flex flex-col space-y-1.5">
+						<Card.Title>{m.vuln_title()}</Card.Title>
+						<Card.Description>
+							{#if vulnerabilityScan?.status === 'completed'}
+								{m.vuln_scan_time()}: {format(new Date(vulnerabilityScan.scanTime), 'PP p')}
+							{:else if isLoading.scanning}
+								{m.vuln_scanning()}
+							{:else}
+								{m.vuln_no_scan()}
+							{/if}
+						</Card.Description>
+					</div>
+				</Card.Header>
+				<Card.Content class="p-4">
+					{#if isLoading.scanning}
+						<div class="flex items-center justify-center py-8">
+							<Spinner class="size-8" />
+							<span class="ml-3 text-muted-foreground">{m.vuln_scanning()}</span>
+						</div>
+					{:else if vulnerabilityScan?.status === 'completed' && vulnerabilityScan.summary}
+						{@const summary = vulnerabilityScan.summary}
+						{#if summary.total === 0}
+							<div class="flex items-center gap-3 rounded-lg bg-green-50 p-4 dark:bg-green-950/20">
+								<ShieldCheckIcon class="size-8 text-green-500" />
+								<div>
+									<p class="font-medium text-green-800 dark:text-green-200">{m.vuln_clean()}</p>
+									<p class="text-sm text-green-600 dark:text-green-400">{m.vuln_no_vulnerabilities()}</p>
+								</div>
+							</div>
+						{:else}
+							<!-- Severity Summary Cards -->
+							<div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+								{#if summary.critical > 0}
+									<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-center dark:border-red-800 dark:bg-red-950/20">
+										<div class="text-2xl font-bold text-red-600 dark:text-red-400">{summary.critical}</div>
+										<div class="text-xs font-medium text-red-800 dark:text-red-300">{m.vuln_severity_critical()}</div>
+									</div>
+								{/if}
+								{#if summary.high > 0}
+									<div class="rounded-lg border border-orange-200 bg-orange-50 p-3 text-center dark:border-orange-800 dark:bg-orange-950/20">
+										<div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{summary.high}</div>
+										<div class="text-xs font-medium text-orange-800 dark:text-orange-300">{m.vuln_severity_high()}</div>
+									</div>
+								{/if}
+								{#if summary.medium > 0}
+									<div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center dark:border-amber-800 dark:bg-amber-950/20">
+										<div class="text-2xl font-bold text-amber-600 dark:text-amber-400">{summary.medium}</div>
+										<div class="text-xs font-medium text-amber-800 dark:text-amber-300">{m.vuln_severity_medium()}</div>
+									</div>
+								{/if}
+								{#if summary.low > 0}
+									<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-center dark:border-yellow-800 dark:bg-yellow-950/20">
+										<div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{summary.low}</div>
+										<div class="text-xs font-medium text-yellow-800 dark:text-yellow-300">{m.vuln_severity_low()}</div>
+									</div>
+								{/if}
+								<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center dark:border-gray-700 dark:bg-gray-950/20">
+									<div class="text-2xl font-bold text-gray-600 dark:text-gray-400">{summary.total}</div>
+									<div class="text-xs font-medium text-gray-800 dark:text-gray-300">{m.common_total()}</div>
+								</div>
+							</div>
+
+							<!-- Vulnerability List -->
+							{#if vulnerabilityScan.vulnerabilities && vulnerabilityScan.vulnerabilities.length > 0}
+								<div class="space-y-2">
+									<h4 class="text-sm font-medium text-muted-foreground">{m.vuln_details()}</h4>
+									<div class="max-h-96 overflow-y-auto rounded-lg border">
+										<table class="w-full text-sm">
+											<thead class="sticky top-0 bg-muted">
+												<tr>
+													<th class="p-2 text-left font-medium">CVE</th>
+													<th class="p-2 text-left font-medium">{m.vuln_package()}</th>
+													<th class="p-2 text-left font-medium">{m.common_status()}</th>
+													<th class="p-2 text-left font-medium">{m.vuln_installed_version()}</th>
+													<th class="p-2 text-left font-medium">{m.vuln_fixed_version()}</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each vulnerabilityScan.vulnerabilities.slice(0, 100) as vuln (vuln.vulnerabilityId + vuln.pkgName)}
+													<tr class="border-t hover:bg-muted/50">
+														<td class="p-2">
+															<a
+																href="https://nvd.nist.gov/vuln/detail/{vuln.vulnerabilityId}"
+																target="_blank"
+																rel="noopener noreferrer"
+																class="font-mono text-xs text-blue-600 hover:underline dark:text-blue-400"
+															>
+																{vuln.vulnerabilityId}
+															</a>
+														</td>
+														<td class="p-2 font-mono text-xs">{vuln.pkgName}</td>
+														<td class="p-2">
+															{#if vuln.severity === 'CRITICAL'}
+																<StatusBadge text={m.vuln_severity_critical()} variant="red" size="sm" />
+															{:else if vuln.severity === 'HIGH'}
+																<StatusBadge text={m.vuln_severity_high()} variant="orange" size="sm" />
+															{:else if vuln.severity === 'MEDIUM'}
+																<StatusBadge text={m.vuln_severity_medium()} variant="amber" size="sm" />
+															{:else if vuln.severity === 'LOW'}
+																<StatusBadge text={m.vuln_severity_low()} variant="lime" size="sm" />
+															{:else}
+																<StatusBadge text={m.vuln_severity_unknown()} variant="gray" size="sm" />
+															{/if}
+														</td>
+														<td class="p-2 font-mono text-xs">{vuln.installedVersion}</td>
+														<td class="p-2 font-mono text-xs">{vuln.fixedVersion || m.vuln_no_fix()}</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+									{#if vulnerabilityScan.vulnerabilities.length > 100}
+										<p class="text-xs text-muted-foreground">
+											{m.vuln_showing_first({ count: 100, total: vulnerabilityScan.vulnerabilities.length })}
+										</p>
+									{/if}
+								</div>
+							{/if}
+						{/if}
+					{:else if vulnerabilityScan?.status === 'failed'}
+						<div class="flex items-center gap-3 rounded-lg bg-red-50 p-4 dark:bg-red-950/20">
+							<ShieldAlertIcon class="size-8 text-red-500" />
+							<div>
+								<p class="font-medium text-red-800 dark:text-red-200">{m.vuln_scan_failed()}</p>
+								<p class="text-sm text-red-600 dark:text-red-400">{vulnerabilityScan.error || m.vuln_scanner_not_installed()}</p>
+							</div>
+						</div>
+					{:else}
+						<div class="flex flex-col items-center justify-center py-8 text-center">
+							<ScanIcon class="mb-4 size-12 text-muted-foreground/50" />
+							<p class="mb-2 text-muted-foreground">{m.vuln_no_scan()}</p>
+							<ArcaneButton action="base" onclick={handleScanImage} disabled={isLoading.scanning}>
+								{#if isLoading.scanning}
+									<Spinner class="mr-2 size-4" />
+								{:else}
+									<ScanIcon class="mr-2 size-4" />
+								{/if}
+								{m.vuln_scan_image()}
+							</ArcaneButton>
+						</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
