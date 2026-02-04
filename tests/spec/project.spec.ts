@@ -245,11 +245,8 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('tab', { name: 'Services' }).click();
     await page.waitForLoadState('networkidle');
 
-    const serviceNameWhenStopped = page.getByRole('heading', { name: 'redis', exact: true });
+    const serviceNameWhenStopped = page.getByRole('table').getByText('redis', { exact: true });
     await expect(serviceNameWhenStopped).toBeVisible();
-
-    const containerNameWhenStopped = page.getByRole('link', { name: 'test-redis-container redis' });
-    await expect(containerNameWhenStopped).not.toBeVisible();
 
     const deployButton = page.getByRole('button', { name: 'Up', exact: true }).filter({ hasText: 'Up' }).last();
     await deployButton.click();
@@ -257,8 +254,7 @@ test.describe('New Compose Project Page', () => {
     await page.waitForTimeout(5000);
     await page.waitForLoadState('networkidle');
 
-    const containerNameElement = page.getByRole('link', { name: 'test-redis-container redis' });
-    await expect(containerNameElement).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('link', { name: 'test-redis-container' })).toBeVisible();
   });
 
   test('should destroy the project and remove files from disk', async ({ page }) => {

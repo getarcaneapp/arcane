@@ -23,7 +23,7 @@
 	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
-	import ServicesGrid from '../components/ServicesGrid.svelte';
+	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
@@ -414,7 +414,7 @@
 
 		{#snippet tabContent()}
 			<Tabs.Content value="services" class="h-full">
-				<ServicesGrid services={project.runtimeServices} {projectId} />
+				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={refreshProjectDetails} />
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
@@ -467,7 +467,7 @@
 							</div>
 						</Alert.Root>
 					{/if}
-					<div class="mb-4 flex-shrink-0">
+					<div class="mb-4 shrink-0">
 						<SwitchWithLabel
 							id="layout-mode-toggle"
 							checked={layoutMode === 'tree'}
@@ -488,7 +488,7 @@
 						{#if layoutMode === 'tree'}
 							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
 								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+									<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 										<Card.Title>
 											<h2>{m.project_files()}</h2>
 										</Card.Title>
@@ -581,7 +581,7 @@
 							>
 								{#snippet first()}
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 											<Card.Title>
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
@@ -672,7 +672,7 @@
 													action="base"
 													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
 													size="sm"
-													class="flex-shrink-0"
+													class="shrink-0"
 													onclick={() => {
 														selectedIncludeTab =
 															selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;

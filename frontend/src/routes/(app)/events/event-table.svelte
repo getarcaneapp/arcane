@@ -16,7 +16,7 @@
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
-	import { EllipsisIcon, TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
+	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		events = $bindable(),
@@ -218,9 +218,9 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
+					<EllipsisIcon class="size-4" />
 				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
@@ -230,6 +230,9 @@
 					<InfoIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleDeleteEvent(item.id, item.title)}

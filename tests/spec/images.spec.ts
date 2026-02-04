@@ -84,8 +84,8 @@ test.describe('Images Page', () => {
     test.skip(!realImages.length, 'No images available for pull API test');
     await navigateToImages(page);
 
-    const firstRow = await page.getByRole('row', { name: 'ghcr.io/linuxserver/nginx' });
-    await firstRow.getByLabel('Open menu').click();
+    const firstRow = await page.getByRole('cell', { name: 'Open menu' }).first();
+    await firstRow.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('menuitem', { name: 'Pull' }).click();
 
     await page.waitForLoadState('networkidle');

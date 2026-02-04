@@ -1389,24 +1389,7 @@ func (s *ProjectService) listProjectsByStatus(
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	paginationResp := pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
 }

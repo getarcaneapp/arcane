@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
@@ -17,17 +17,15 @@
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { toGitCommitUrl } from '$lib/utils/git';
 	import {
-		EllipsisIcon,
 		EditIcon as PencilIcon,
 		StartIcon as PlayIcon,
 		TrashIcon as Trash2Icon,
 		RefreshIcon as RefreshCwIcon,
 		GitBranchIcon,
 		ProjectsIcon as FolderIcon,
-		HashIcon
+		HashIcon,
+		EllipsisIcon
 	} from '$lib/icons';
-	import { goto } from '$app/navigation';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -307,10 +305,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
 					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</Button>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -319,10 +317,14 @@
 					<PlayIcon class="size-4" />
 					{m.git_sync_perform()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Item onclick={() => onEditSync(item)}>
 					<PencilIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleDeleteOne(item.id, item.name)}

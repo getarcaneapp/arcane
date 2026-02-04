@@ -7,7 +7,6 @@
 	import type { Paginated } from '$lib/types/pagination.type';
 
 	let {
-		table,
 		items,
 		currentPage,
 		totalPages,
@@ -29,6 +28,19 @@
 		setPage: (page: number) => void;
 		setPageSize: (limit: number) => void;
 	} = $props();
+
+	const pageSizeOptions = [10, 20, 30, 40, 50];
+	const isAllSelected = $derived(pageSize === -1);
+	const displayValue = $derived(isAllSelected ? m.common_all() : String(pageSize));
+	const selectValue = $derived(isAllSelected ? 'all' : String(pageSize));
+
+	function handlePageSizeChange(value: string) {
+		if (value === 'all') {
+			setPageSize(-1);
+		} else {
+			setPageSize(Number(value));
+		}
+	}
 </script>
 
 <div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
@@ -38,21 +50,19 @@
 	<div class="order-1 flex flex-col gap-4 sm:order-2 sm:flex-row sm:items-center sm:space-x-6 lg:space-x-8">
 		<div class="flex items-center justify-between space-x-2 sm:justify-start">
 			<p class="text-sm font-medium">{m.common_rows_per_page()}</p>
-			<Select.Root
-				allowDeselect={false}
-				type="single"
-				value={`${pageSize}`}
-				onValueChange={(value) => setPageSize(Number(value))}
-			>
-				<Select.Trigger class="h-8 w-[70px]">
-					{String(pageSize)}
+			<Select.Root allowDeselect={false} type="single" value={selectValue} onValueChange={handlePageSizeChange}>
+				<Select.Trigger class="h-11 w-[70px] sm:h-8">
+					{displayValue}
 				</Select.Trigger>
 				<Select.Content side="top">
-					{#each [10, 20, 30, 40, 50] as size (size)}
+					{#each pageSizeOptions as size (size)}
 						<Select.Item value={`${size}`}>
 							{size}
 						</Select.Item>
 					{/each}
+					<Select.Item value="all">
+						{m.common_all()}
+					</Select.Item>
 				</Select.Content>
 			</Select.Root>
 		</div>
@@ -76,7 +86,7 @@
 					tone="outline"
 					size="icon"
 					icon={ArrowLeftIcon}
-					class="size-8"
+					class="size-11 sm:size-8"
 					onclick={() => setPage(currentPage - 1)}
 					disabled={!canPrev}
 					aria-label={m.common_go_prev_page()}
@@ -86,7 +96,7 @@
 					tone="outline"
 					size="icon"
 					icon={ArrowRightIcon}
-					class="size-8"
+					class="size-11 sm:size-8"
 					onclick={() => setPage(currentPage + 1)}
 					disabled={!canNext}
 					aria-label={m.common_go_next_page()}
