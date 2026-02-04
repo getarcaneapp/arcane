@@ -245,7 +245,7 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('tab', { name: 'Services' }).click();
     await page.waitForLoadState('networkidle');
 
-    const serviceNameWhenStopped = page.getByRole('table').getByText('nginx', { exact: true });
+    const serviceNameWhenStopped = page.getByRole('table').getByText('redis', { exact: true });
     await expect(serviceNameWhenStopped).toBeVisible();
 
     const deployButton = page.getByRole('button', { name: 'Up', exact: true }).filter({ hasText: 'Up' }).last();
@@ -254,8 +254,7 @@ test.describe('New Compose Project Page', () => {
     await page.waitForTimeout(5000);
     await page.waitForLoadState('networkidle');
 
-    const containerNameElement = page.getByRole('link', { name: 'test-redis-container' });
-    await expect(containerNameElement).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('link', { name: 'test-redis-container' })).toBeVisible();
   });
 
   test('should destroy the project and remove files from disk', async ({ page }) => {
