@@ -2,8 +2,9 @@
 
 package config
 
-// BuildablesConfig is an empty struct when buildables are not enabled.
-// This ensures the main Config struct remains valid but without buildable fields.
+// BuildablesConfig provides stub fields when buildables are not enabled.
+// This keeps references compile-safe while avoiding env-based configuration.
 type BuildablesConfig struct {
-	// No fields when buildables are disabled - this gets pruned away
+	AutoLoginUsername string
+	AutoLoginPassword string
 }

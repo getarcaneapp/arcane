@@ -784,7 +784,7 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*auth.AutoLoginCo
 
 	return &auth.AutoLoginConfig{
 		Enabled:  true,
-		Username: s.config.BuildablesConfig.AutoLoginUsername,
+		Username: s.config.AutoLoginUsername,
 	}, nil
 }
 
@@ -795,5 +795,5 @@ func (s *AuthService) GetAutoLoginPassword() string {
 	if !buildables.HasBuildFeature("autologin") {
 		return ""
 	}
-	return s.config.BuildablesConfig.AutoLoginPassword
+	return s.config.AutoLoginPassword
 }

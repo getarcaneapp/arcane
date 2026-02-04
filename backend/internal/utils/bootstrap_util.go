@@ -107,7 +107,7 @@ func InitializeAutoLogin(ctx context.Context, cfg *config.Config) {
 	if !buildables.HasBuildFeature("autologin") {
 		return
 	}
-	slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.BuildablesConfig.AutoLoginUsername)
+	slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.AutoLoginUsername)
 	slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
 }
 
