@@ -27,6 +27,8 @@ Before submitting any AI-assisted contribution, you must:
 5. Ensure no linting errors exist
 6. Verify hot reload works for both frontend and backend
 
+If you prefer `just`, the `Justfile` includes equivalent shortcuts such as `just dev docker`, `just lint frontend`, and `just test backend`.
+
 ## There are Humans Here
 
 Please remember that Arcane is maintained by humans.

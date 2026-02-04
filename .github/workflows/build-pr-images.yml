@@ -34,6 +34,9 @@ jobs:
             - name: Set up Depot CLI
               uses: depot/setup-action@v1
 
+            - name: Setup Just
+              uses: extractions/setup-just@v3
+
             - name: Login to GitHub Container Registry
               uses: docker/login-action@v3
               with:
@@ -115,7 +118,7 @@ jobs:
               with:
                   issue-number: ${{ github.event.pull_request.number }}
                   comment-author: "getarcaneappbot"
-                  body-includes: Docker images for this PR have been built successfully!
+                  body-includes: Container images for this PR have been built successfully!
 
             - name: Comment PR Images
               uses: peter-evans/create-or-update-comment@v5
