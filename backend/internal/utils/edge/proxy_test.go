@@ -25,7 +25,7 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			_, data, err := conn.ReadMessage()
@@ -48,7 +48,7 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	tunnel := NewAgentTunnel("env-1", conn)
@@ -81,7 +81,7 @@ func TestProxyRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -107,7 +107,7 @@ func TestProxyHTTPRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	// Mock Gin context
 	w := httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestDoRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	// Register tunnel globally
 	registry := GetRegistry()
@@ -155,7 +155,7 @@ func TestDoRequest_NoTunnel(t *testing.T) {
 
 func TestHasActiveTunnel(t *testing.T) {
 	conn := createTestConn(t)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tunnel := NewAgentTunnel("env-active", conn)
 
 	registry := GetRegistry()
@@ -165,7 +165,7 @@ func TestHasActiveTunnel(t *testing.T) {
 	assert.True(t, HasActiveTunnel("env-active"))
 	assert.False(t, HasActiveTunnel("non-existent"))
 
-	tunnel.Close()
+	_ = tunnel.Close()
 	assert.False(t, HasActiveTunnel("env-active"))
 }
 

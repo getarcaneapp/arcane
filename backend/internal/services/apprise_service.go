@@ -134,7 +134,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body for debugging
 	bodyBytes, _ := io.ReadAll(resp.Body)

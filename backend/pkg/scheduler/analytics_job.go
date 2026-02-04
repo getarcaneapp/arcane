@@ -138,7 +138,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 			if err != nil {
 				return struct{}{}, fmt.Errorf("failed to send request: %w", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))

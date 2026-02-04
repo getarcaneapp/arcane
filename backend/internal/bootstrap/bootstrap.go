@@ -167,7 +167,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	if err != nil {
 		return fmt.Errorf("pairing request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 

@@ -70,7 +70,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	defer dockerClient.Close()
+	defer func() { _ = dockerClient.Close() }()
 
 	// Find the container
 	var targetContainer container.InspectResponse
@@ -324,7 +324,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Copy output to discard but wait for completion
 	_, err = io.Copy(io.Discard, reader)

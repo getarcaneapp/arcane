@@ -52,9 +52,9 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
@@ -169,7 +169,7 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	_, resp, err := websocket.DefaultDialer.Dial(url, headers)
 	require.Error(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
@@ -187,7 +187,7 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	_, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.Error(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }

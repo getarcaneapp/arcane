@@ -28,7 +28,7 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 		slog.ErrorContext(ctx, "Failed to upgrade WebSocket for edge proxy", "error", err)
 		return
 	}
-	defer clientWS.Close()
+	defer func() { _ = clientWS.Close() }()
 
 	streamID := uuid.New().String()
 	streamCtx, cancel := context.WithCancel(ctx)

@@ -140,13 +140,13 @@ func (c *TunnelClient) connectAndServe(ctx context.Context) error {
 	conn, resp, err := dialer.DialContext(ctx, c.managerURL, headers)
 	if err != nil {
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, _ := io.ReadAll(resp.Body)
 			return fmt.Errorf("failed to connect to manager: %w, status: %d, body: %s", err, resp.StatusCode, string(body))
 		}
 		return fmt.Errorf("failed to connect to manager: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	c.conn = NewTunnelConn(conn)
 	slog.InfoContext(ctx, "Edge tunnel connected to manager")
@@ -299,7 +299,7 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, msg *TunnelMess
 
 	ws, resp, err := c.dialLocalWebSocket(ctx, localURL, headers)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to dial local WebSocket", "error", err, "url", localURL)

@@ -147,7 +147,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 	// Drain the reader to complete the pull
 	_, _ = io.Copy(io.Discard, pullReader)
-	pullReader.Close()
+	if closeErr := pullReader.Close(); closeErr != nil {
+		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
+	}
 	slog.Info("Upgrader image pulled successfully", "image", ArcaneUpgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.

@@ -82,7 +82,7 @@ func (c *Client) CheckAuth(ctx context.Context, registry string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		h := resp.Header.Get("WWW-Authenticate")
@@ -133,7 +133,7 @@ func (c *Client) GetTokenMulti(ctx context.Context, authURL string, repositories
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token request failed with status: %d", resp.StatusCode)
 	}
@@ -286,7 +286,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	ch := resp.Header.Get(ChallengeHeader)
 	if ch == "" {

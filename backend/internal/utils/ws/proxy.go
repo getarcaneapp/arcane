@@ -23,7 +23,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		slog.Error("failed to upgrade client connection", "remoteWS", remoteWS, "err", err)
 		return err
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	dialer := websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
@@ -47,7 +47,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		_ = clientConn.WriteMessage(websocket.CloseMessage, []byte{})
 		return err
 	}
-	defer remoteConn.Close()
+	defer func() { _ = remoteConn.Close() }()
 
 	slog.Debug("websocket proxy established", "remoteWS", remoteWS)
 

@@ -435,7 +435,7 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
@@ -720,7 +720,7 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	interval, _ := httputil.GetIntQueryParam(c, "interval", false)
 	if interval <= 0 {

@@ -23,7 +23,7 @@ func createTestConn(t *testing.T) *websocket.Conn {
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	return conn
 }
@@ -34,7 +34,7 @@ func TestTunnelRegistry(t *testing.T) {
 
 	// Create a tunnel
 	conn := createTestConn(t)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tunnel := NewAgentTunnel(envID, conn)
 
 	// Register
@@ -59,12 +59,12 @@ func TestTunnelRegistry_RegisterReplace(t *testing.T) {
 	envID := "env-1"
 
 	conn1 := createTestConn(t)
-	defer conn1.Close()
+	defer func() { _ = conn1.Close() }()
 	tunnel1 := NewAgentTunnel(envID, conn1)
 	r.Register(envID, tunnel1)
 
 	conn2 := createTestConn(t)
-	defer conn2.Close()
+	defer func() { _ = conn2.Close() }()
 	tunnel2 := NewAgentTunnel(envID, conn2)
 
 	// Register replacement
@@ -85,7 +85,7 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	envID := "env-1"
 
 	conn := createTestConn(t)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tunnel := NewAgentTunnel(envID, conn)
 
 	// Manually set last heartbeat to past
@@ -112,7 +112,7 @@ func TestGetRegistry(t *testing.T) {
 
 func TestAgentTunnel_Heartbeat(t *testing.T) {
 	conn := createTestConn(t)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tunnel := NewAgentTunnel("env-1", conn)
 
 	initial := tunnel.GetLastHeartbeat()

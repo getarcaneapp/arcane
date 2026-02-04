@@ -291,7 +291,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 		c.Abort()
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	m.writeProxyResponse(c, resp)
 	c.Abort()

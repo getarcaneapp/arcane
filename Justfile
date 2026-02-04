@@ -915,17 +915,17 @@ _lint-all:
 # Lint Go backend
 [group('lint')]
 _lint-backend:
-    cd backend && golangci-lint run ./...
+    cd backend && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint Go CLI
 [group('lint')]
 _lint-cli:
-    cd cli && golangci-lint run ./...
+    cd cli && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint Types
 [group('lint')]
 _lint-types:
-    cd types && golangci-lint run ./...
+    cd types && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint all Go code
 [group('lint')]

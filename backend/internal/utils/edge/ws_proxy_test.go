@@ -21,7 +21,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			_, data, err := conn.ReadMessage()
@@ -68,11 +68,11 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	agentConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	tunnel := NewAgentTunnel("env-ws-proxy", agentConn)
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	// Start receiving on tunnel
 	go func() {
@@ -106,9 +106,9 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	clientConn, clientResp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if clientResp != nil {
-		defer clientResp.Body.Close()
+		defer func() { _ = clientResp.Body.Close() }()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// Read Hello
 	_, msg, err := clientConn.ReadMessage()
@@ -135,7 +135,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		for {
 			if _, _, err := conn.ReadMessage(); err != nil {
 				return
@@ -148,11 +148,11 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 	agentConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	tunnel := NewAgentTunnel("env-ws-close", agentConn)
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	go func() {
 		for {
@@ -173,11 +173,11 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 	clientConn, clientResp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if clientResp != nil {
-		defer clientResp.Body.Close()
+		defer func() { _ = clientResp.Body.Close() }()
 	}
 
 	// Client closes
-	clientConn.Close()
+	_ = clientConn.Close()
 
 	// Server side should handle it gracefully
 	time.Sleep(100 * time.Millisecond)
@@ -196,7 +196,7 @@ func TestSendWebSocketData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Read message
 		_, data, err := conn.ReadMessage()
@@ -218,12 +218,12 @@ func TestSendWebSocketData(t *testing.T) {
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	tunnel := NewAgentTunnel("env-helper", conn)
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	err = sendWebSocketData(tunnel, "test-stream", websocket.TextMessage, []byte("payload"))
 	require.NoError(t, err)
@@ -234,7 +234,7 @@ func TestSendWebSocketClose(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Read message
 		_, data, err := conn.ReadMessage()
@@ -254,11 +254,11 @@ func TestSendWebSocketClose(t *testing.T) {
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	tunnel := NewAgentTunnel("env-helper-close", conn)
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	sendWebSocketClose(tunnel, "test-stream")
 }

@@ -158,22 +158,20 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 		fieldType := t.Field(i)
 
 		if fieldType.Anonymous {
-			switch field.Kind() {
-			case reflect.Struct:
+			if field.Kind() == reflect.Struct {
 				visitConfigFields(field, fn)
 				continue
-			case reflect.Pointer:
-				if field.Type().Elem().Kind() == reflect.Struct {
-					if field.IsNil() {
-						if field.CanSet() {
-							field.Set(reflect.New(field.Type().Elem()))
-						} else {
-							continue
-						}
+			}
+			if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Struct {
+				if field.IsNil() {
+					if field.CanSet() {
+						field.Set(reflect.New(field.Type().Elem()))
+					} else {
+						continue
 					}
-					visitConfigFields(field.Elem(), fn)
-					continue
 				}
+				visitConfigFields(field.Elem(), fn)
+				continue
 			}
 		}
 
@@ -236,37 +234,41 @@ func setFieldValue(field reflect.Value, value string) {
 		return
 	}
 
-	//nolint:exhaustive
-	switch field.Kind() {
-	case reflect.String:
+	if field.Kind() == reflect.String {
 		field.SetString(value)
+		return
+	}
 
-	case reflect.Bool:
+	if field.Kind() == reflect.Bool {
 		if b, err := strconv.ParseBool(value); err == nil {
 			field.SetBool(b)
 		}
+		return
+	}
 
-	case reflect.Uint32:
+	if field.Kind() == reflect.Uint32 {
 		// Handle os.FileMode (which is uint32)
 		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
 			field.SetUint(i)
 		}
+		return
+	}
 
-	case reflect.Int:
+	if field.Kind() == reflect.Int {
 		if i, err := strconv.Atoi(value); err == nil {
 			field.SetInt(int64(i))
 		}
+		return
+	}
 
-	default:
-		// Handle custom types based on underlying kind
-		if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
-			// String-based types like AppEnvironment
-			field.Set(reflect.ValueOf(value).Convert(field.Type()))
-		} else if field.Type() == reflect.TypeFor[os.FileMode]() {
-			// os.FileMode
-			if i, err := strconv.ParseUint(value, 8, 32); err == nil {
-				field.Set(reflect.ValueOf(os.FileMode(i)))
-			}
+	// Handle custom types based on underlying kind
+	if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
+		// String-based types like AppEnvironment
+		field.Set(reflect.ValueOf(value).Convert(field.Type()))
+	} else if field.Type() == reflect.TypeFor[os.FileMode]() {
+		// os.FileMode
+		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
+			field.Set(reflect.ValueOf(os.FileMode(i)))
 		}
 	}
 }

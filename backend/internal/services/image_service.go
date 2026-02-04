@@ -126,7 +126,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	scanner := bufio.NewScanner(reader)
 	flusher, implementsFlusher := progressWriter.(http.Flusher)
@@ -189,7 +189,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
-	defer loadResp.Body.Close()
+	defer func() { _ = loadResp.Body.Close() }()
 
 	var result imagetypes.LoadResult
 	responseBytes, err := io.ReadAll(loadResp.Body)

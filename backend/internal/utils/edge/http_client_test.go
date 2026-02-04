@@ -22,7 +22,7 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithTunnel(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer tunnel.Close()
+	defer func() { _ = tunnel.Close() }()
 
 	envID := "env-edge-1"
 	GetRegistry().Register(envID, tunnel)

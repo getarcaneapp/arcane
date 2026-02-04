@@ -166,7 +166,7 @@ func parseEnvFileWithContext(path string, contextEnv EnvMap) (EnvMap, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Create lookup function for variable expansion
 	// Checks contextEnv first (previously loaded vars), then process environment

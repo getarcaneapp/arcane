@@ -240,7 +240,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		}
 		return "offline", fmt.Errorf("connection failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusOK {
 		if customApiUrl == nil {
@@ -396,7 +396,7 @@ func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl,
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

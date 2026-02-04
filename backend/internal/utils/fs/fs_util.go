@@ -112,7 +112,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 				// We only reach here if somehow a directory was created outside the root
 				// despite pre-checks. Clean up by removing ONLY if it's actually within root.
 				if strings.HasPrefix(candidateAbs, projectsRootAbs+string(filepath.Separator)) {
-					os.Remove(candidateAbs)
+					_ = os.Remove(candidateAbs)
 				}
 				return "", "", fmt.Errorf("created directory is outside allowed projects root")
 			}

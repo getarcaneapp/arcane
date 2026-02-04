@@ -41,7 +41,7 @@ func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]bootstr
 	if err != nil {
 		return nil, fmt.Errorf("failed to load git sync intervals: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]bootstraputils.IntervalMigrationItem, 0)
 	for rows.Next() {
