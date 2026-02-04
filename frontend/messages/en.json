@@ -634,6 +634,7 @@
 	"vuln_status_completed": "Completed",
 	"vuln_status_failed": "Failed",
 	"vuln_clean": "Clean",
+	"vuln_click_to_scan": "Click scan to check for vulnerabilities",
 	"vuln_showing_first": "Showing first {count} of {total} vulnerabilities",
 	"_comment_volumes": "=== VOLUMES ===",
 	"volumes_title": "Volumes",
