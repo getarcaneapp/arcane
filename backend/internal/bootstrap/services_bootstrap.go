@@ -41,6 +41,7 @@ type Services struct {
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
 	Font              *services.FontService
+	Vulnerability     *services.VulnerabilityService
 }
 
 func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
@@ -79,6 +80,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
+	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event)
 
 	return svcs, dockerClient, nil
 }
