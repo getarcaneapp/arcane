@@ -96,15 +96,10 @@ func applyAgentModeDefaults(cfg *Config) {
 // loadFromEnv uses reflection to load configuration from environment variables.
 func loadFromEnv(cfg *Config) {
 	v := reflect.ValueOf(cfg).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
+	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
 		envTag := fieldType.Tag.Get("env")
 		if envTag == "" {
-			continue
+			return
 		}
 
 		defaultValue := fieldType.Tag.Get("default")
@@ -116,21 +111,16 @@ func loadFromEnv(cfg *Config) {
 		}
 
 		setFieldValue(field, envValue)
-	}
+	})
 }
 
 // applyOptions processes special options for Config fields after initial load.
 func applyOptions(cfg *Config) {
 	v := reflect.ValueOf(cfg).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
+	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
 		optionsTag := fieldType.Tag.Get("options")
 		if optionsTag == "" {
-			continue
+			return
 		}
 
 		options := strings.Split(optionsTag, ",")
@@ -148,6 +138,46 @@ func applyOptions(cfg *Config) {
 				}
 			}
 		}
+	})
+}
+
+func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructField)) {
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return
+	}
+
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		if fieldType.Anonymous {
+			switch field.Kind() {
+			case reflect.Struct:
+				visitConfigFields(field, fn)
+				continue
+			case reflect.Pointer:
+				if field.Type().Elem().Kind() == reflect.Struct {
+					if field.IsNil() {
+						if field.CanSet() {
+							field.Set(reflect.New(field.Type().Elem()))
+						} else {
+							continue
+						}
+					}
+					visitConfigFields(field.Elem(), fn)
+					continue
+				}
+			}
+		}
+
+		fn(field, fieldType)
 	}
 }
 
