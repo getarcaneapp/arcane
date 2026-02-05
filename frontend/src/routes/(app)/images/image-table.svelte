@@ -12,7 +12,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
-	import VulnerabilityScanItem from '$lib/components/vulnerability-scan-item.svelte';
+	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
@@ -392,7 +392,7 @@
 				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
-				</DropdownMenu.Item> 
+				</DropdownMenu.Item>
 
 				<DropdownMenu.Separator />
 
@@ -408,10 +408,7 @@
 					{m.images_pull()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item
-					onclick={() => handleInlineVulnerabilityScan(item.id)}
-					disabled={isScanningInline[item.id]}
-				>
+				<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
 					{#if isScanningInline[item.id]}
 						<Spinner class="size-4" />
 					{:else}

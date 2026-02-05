@@ -63,8 +63,9 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
+	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
-	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Event)
+	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Vulnerability, svcs.Event)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings)
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings)
@@ -80,7 +81,6 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
-	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event)
 
 	return svcs, dockerClient, nil
 }

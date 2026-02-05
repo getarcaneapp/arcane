@@ -46,6 +46,22 @@ type GetScanSummaryOutput struct {
 	Body base.ApiResponse[vulnerability.ScanSummary]
 }
 
+type ListImageVulnerabilitiesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageID       string `path:"imageId" doc:"Image ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Sort field"`
+	Order         string `query:"order" doc:"Sort order"`
+	Start         int    `query:"start" doc:"Start offset"`
+	Limit         int    `query:"limit" doc:"Limit"`
+	Page          int    `query:"page" doc:"Page number"`
+	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
+}
+
+type ListImageVulnerabilitiesOutput struct {
+	Body base.Paginated[vulnerability.Vulnerability]
+}
+
 type GetScannerStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
@@ -106,6 +122,19 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetScanSummary)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-image-vulnerabilities",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{imageId}/vulnerabilities/list",
+		Summary:     "List image vulnerabilities",
+		Description: "Retrieves paginated vulnerabilities for an image",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListImageVulnerabilities)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-vulnerability-scanner-status",
@@ -187,6 +216,44 @@ func (h *VulnerabilityHandler) GetScanSummary(ctx context.Context, input *GetSca
 		Body: base.ApiResponse[vulnerability.ScanSummary]{
 			Success: true,
 			Data:    *summary,
+		},
+	}, nil
+}
+
+// ListImageVulnerabilities returns a paginated list of vulnerabilities for an image.
+func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, input *ListImageVulnerabilitiesInput) (*ListImageVulnerabilitiesOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	params := buildPaginationParams(input.Page, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if params.Limit == 0 {
+		params.Limit = 20
+	}
+	if input.Severity != "" {
+		params.Filters["severity"] = input.Severity
+	}
+
+	items, paginationResp, err := h.vulnerabilityService.ListVulnerabilities(ctx, input.ImageID, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+	}
+
+	if items == nil {
+		items = []vulnerability.Vulnerability{}
+	}
+
+	return &ListImageVulnerabilitiesOutput{
+		Body: base.Paginated[vulnerability.Vulnerability]{
+			Success: true,
+			Data:    items,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
 		},
 	}, nil
 }

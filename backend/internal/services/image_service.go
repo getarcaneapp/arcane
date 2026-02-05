@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	"github.com/getarcaneapp/arcane/types/vulnerability"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -32,15 +33,17 @@ type ImageService struct {
 	dockerService      *DockerClientService
 	imageUpdateService *ImageUpdateService
 	registryService    *ContainerRegistryService
+	vulnerabilityService *VulnerabilityService
 	eventService       *EventService
 }
 
-func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, eventService *EventService) *ImageService {
+func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, vulnerabilityService *VulnerabilityService, eventService *EventService) *ImageService {
 	return &ImageService{
 		db:                 db,
 		dockerService:      dockerService,
 		registryService:    registryService,
 		imageUpdateService: imageUpdateService,
+		vulnerabilityService: vulnerabilityService,
 		eventService:       eventService,
 	}
 }
@@ -431,6 +434,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		dockerImages  []image.Summary
 		containers    []container.Summary
 		updateRecords []models.ImageUpdateRecord
+		vulnerabilityMap map[string]*vulnerability.ScanSummary
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -463,14 +467,27 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil
 	})
 
+
 	if err := g.Wait(); err != nil {
 		return nil, pagination.Response{}, err
+	}
+
+	if s.vulnerabilityService != nil {
+		imageIDs := make([]string, 0, len(dockerImages))
+		for _, img := range dockerImages {
+			imageIDs = append(imageIDs, img.ID)
+		}
+		var err error
+		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
+		}
 	}
 
 	inUseMap := buildInUseMap(containers)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := mapDockerImagesToDTOs(dockerImages, inUseMap, updateMap)
+	items := mapDockerImagesToDTOs(dockerImages, inUseMap, updateMap, vulnerabilityMap)
 
 	config := s.getImagePaginationConfig()
 
@@ -597,7 +614,7 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 	}
 }
 
-func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord) []imagetypes.Summary {
+func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerability.ScanSummary) []imagetypes.Summary {
 	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)
@@ -617,6 +634,12 @@ func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]boo
 
 		if updateRecord, exists := updateMap[di.ID]; exists {
 			imageDto.UpdateInfo = buildUpdateInfo(updateRecord)
+		}
+
+		if vulnerabilityMap != nil {
+			if summary, exists := vulnerabilityMap[di.ID]; exists {
+				imageDto.VulnerabilityScan = summary
+			}
 		}
 
 		items = append(items, imageDto)
