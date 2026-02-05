@@ -483,46 +483,46 @@
 		rowActions={RowActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
-	{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
-		<div class="flex flex-row gap-4 border-t pt-3">
-			{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
-				<div class="flex min-w-0 flex-1 items-start gap-2.5">
-					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
-						<NetworksIcon class="size-3.5 text-sky-500" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-							{m.common_ports()}
+		{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
+			<div class="flex flex-row gap-4 border-t pt-3">
+				{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
+					<div class="flex min-w-0 flex-1 items-start gap-2.5">
+						<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
+							<NetworksIcon class="size-3.5 text-sky-500" />
 						</div>
-						<div class="mt-1">
-							<PortBadge ports={item.ports} />
-						</div>
-					</div>
-				</div>
-			{/if}
-			{#if mobileFieldVisibility.updates ?? true}
-				{@const imageRef = parseImageRef(item.image)}
-				<div class="flex min-w-0 flex-1 items-start gap-2.5">
-					<div class="flex min-w-0 flex-col">
-						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-							{m.images_updates()}
-						</div>
-						<div class="mt-1">
-							<ImageUpdateItem
-								updateInfo={item.updateInfo}
-								imageId={item.id}
-								repo={imageRef.repo}
-								tag={imageRef.tag}
-								onUpdateContainer={() => handleUpdateContainer(item)}
-								debugHasUpdate={false}
-							/>
+						<div class="min-w-0 flex-1">
+							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+								{m.common_ports()}
+							</div>
+							<div class="mt-1">
+								<PortBadge ports={item.ports} />
+							</div>
 						</div>
 					</div>
-				</div>
-			{/if}
-		</div>
-	{/if}
-</UniversalMobileCard>
+				{/if}
+				{#if mobileFieldVisibility.updates ?? true}
+					{@const imageRef = parseImageRef(item.image)}
+					<div class="flex min-w-0 flex-1 items-start gap-2.5">
+						<div class="flex min-w-0 flex-col">
+							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+								{m.images_updates()}
+							</div>
+							<div class="mt-1">
+								<ImageUpdateItem
+									updateInfo={item.updateInfo}
+									imageId={item.id}
+									repo={imageRef.repo}
+									tag={imageRef.tag}
+									onUpdateContainer={() => handleUpdateContainer(item)}
+									debugHasUpdate={false}
+								/>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</UniversalMobileCard>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerSummaryDto })}

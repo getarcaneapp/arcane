@@ -24,7 +24,7 @@ const (
 `
 )
 
-type EnvMap map[string]string
+type EnvMap = map[string]string
 
 type EnvLoader struct {
 	projectsDir   string

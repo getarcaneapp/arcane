@@ -159,8 +159,7 @@ export function createContainerActions({
 						if (result.failed > 0) {
 							const failedItem = result.items?.find((item: { status?: string; error?: string }) => item.status === 'failed');
 							toast.error(
-								m.containers_update_failed({ name: containerName }) +
-									(failedItem?.error ? `: ${failedItem.error}` : '')
+								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : '')
 							);
 						} else if (result.updated > 0) {
 							toast.success(m.containers_update_success({ name: containerName }));
@@ -222,8 +221,7 @@ export function createContainerActions({
 			loadingKey: 'start',
 			run: (id) => containerService.startContainer(id),
 			success: (count) => m.containers_bulk_start_success({ count }),
-			partial: (success, total, failed) =>
-				m.containers_bulk_start_partial({ success, total, failed }),
+			partial: (success, total, failed) => m.containers_bulk_start_partial({ success, total, failed }),
 			failure: () => m.containers_start_failed()
 		});
 	}
@@ -236,8 +234,7 @@ export function createContainerActions({
 			loadingKey: 'stop',
 			run: (id) => containerService.stopContainer(id),
 			success: (count) => m.containers_bulk_stop_success({ count }),
-			partial: (success, total, failed) =>
-				m.containers_bulk_stop_partial({ success, total, failed }),
+			partial: (success, total, failed) => m.containers_bulk_stop_partial({ success, total, failed }),
 			failure: () => m.containers_stop_failed()
 		});
 	}
@@ -250,8 +247,7 @@ export function createContainerActions({
 			loadingKey: 'restart',
 			run: (id) => containerService.restartContainer(id),
 			success: (count) => m.containers_bulk_restart_success({ count }),
-			partial: (success, total, failed) =>
-				m.containers_bulk_restart_partial({ success, total, failed }),
+			partial: (success, total, failed) => m.containers_bulk_restart_partial({ success, total, failed }),
 			failure: () => m.containers_restart_failed()
 		});
 	}
@@ -282,9 +278,7 @@ export function createContainerActions({
 					const volumes = !!checkboxStates.volumes;
 					isBulkLoading.remove = true;
 
-					const results = await Promise.allSettled(
-						ids.map((id) => containerService.deleteContainer(id, { force, volumes }))
-					);
+					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));
 
 					const successCount = results.filter((result) => result.status === 'fulfilled').length;
 					const failureCount = results.length - successCount;
@@ -294,9 +288,7 @@ export function createContainerActions({
 					if (successCount === ids.length) {
 						toast.success(m.containers_bulk_remove_success({ count: successCount }));
 					} else if (successCount > 0) {
-						toast.warning(
-							m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount })
-						);
+						toast.warning(m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount }));
 					} else {
 						toast.error(m.containers_remove_failed());
 					}
