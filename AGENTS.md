@@ -108,10 +108,10 @@ Register handlers in [backend/internal/huma/handlers/](backend/internal/huma/han
 cd backend && go test ./...
 
 # E2E tests (Playwright)
-pnpm test                    # from project root
+just test e2e
 
 # Frontend type checking
-pnpm -C frontend check:ci
+just lint frontend
 ```
 
 Backend tests use in-memory SQLite and testify. See [auth_service_test.go](backend/internal/services/auth_service_test.go) for patterns.
@@ -385,13 +385,13 @@ Before submitting any AI-assisted contribution, ensure:
 ./scripts/development/dev.sh start
 
 # 2. Backend tests (if you changed Go code)
-cd backend && go test ./...
+just test backend
 
 # 3. Frontend type checking (if you changed frontend code)
-pnpm -C frontend check:ci
+just lint frontend
 
 # 4. E2E tests
-pnpm test
+just test e2e
 
 # 5. Verify hot reload works
 # - Frontend: http://localhost:3000
@@ -416,7 +416,7 @@ Fixes #[issue number]
 ## Testing
 - [ ] Dev environment starts successfully
 - [ ] Backend tests pass: `cd backend && go test ./...`
-- [ ] Frontend type checks pass: `pnpm -C frontend check:ci`
+- [ ] Frontend type checks pass: `just lint frontend`
 - [ ] Manually tested: [describe how]
 
 ## AI Tool Used

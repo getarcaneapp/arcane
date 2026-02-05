@@ -120,6 +120,24 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
 
 **Note**: All commands should be run from the project root directory (`arcane/`).
 
+### Justfile Shortcuts
+
+We provide a `Justfile` for common workflows. Run `just --list` to see everything.
+
+```bash
+# Dev environment
+just dev docker
+
+# Tests
+just test all
+
+# Linting
+just lint frontend
+
+# Formatting
+just format frontend
+```
+
 ### Environment Management
 
 ```bash

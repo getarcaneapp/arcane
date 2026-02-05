@@ -8,8 +8,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { ResetIcon } from '$lib/icons';
+	import { ResetIcon, SearchIcon, FilterIcon } from '$lib/icons';
 	import type { BulkAction } from './arcane-table.types.svelte';
+	import * as Popover from '$lib/components/ui/popover/index.js';
 
 	let {
 		table,
@@ -50,33 +51,36 @@
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
+
+	// Check if any filter columns exist
+	const hasFilterColumns = $derived(
+		!!(typeColumn && !severityColumn) ||
+			!!usageColumn ||
+			!!updatesColumn ||
+			!!severityColumn ||
+			!!(statusColumn && serviceCountColumn)
+	);
+	const activeFilterCount = $derived(table.getState().columnFilters.length);
 </script>
 
-<div class={cn('flex flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:justify-between', className)}>
-	<div class="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center sm:justify-between">
-		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
-			<div class="flex items-center gap-2">
-				<Input
-					placeholder={m.common_search()}
-					value={(table.getState().globalFilter as string) ?? ''}
-					oninput={(e) => debouncedSetGlobal(e.currentTarget.value)}
-					onchange={(e) => table.setGlobalFilter(e.currentTarget.value)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') table.setGlobalFilter((e.currentTarget as HTMLInputElement).value);
-					}}
-					class="h-8 w-full sm:w-[150px] lg:w-[250px]"
-				/>
+<div class={cn('flex items-center justify-between gap-2 px-3 py-2.5', className)}>
+	<div class="flex min-w-0 flex-1 items-center gap-2 md:flex-none">
+		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
+			<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+			<Input
+				placeholder={m.common_search()}
+				value={(table.getState().globalFilter as string) ?? ''}
+				oninput={(e) => debouncedSetGlobal(e.currentTarget.value)}
+				onchange={(e) => table.setGlobalFilter(e.currentTarget.value)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') table.setGlobalFilter((e.currentTarget as HTMLInputElement).value);
+				}}
+				class="h-9 w-full pl-8"
+			/>
+		</div>
 
-				<div class="md:hidden">
-					{#if mobileFields.length > 0 && onToggleMobileField}
-						<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
-					{:else}
-						<DataTableViewOptions {table} {customViewOptions} />
-					{/if}
-				</div>
-			</div>
-
-			<div class="flex flex-wrap items-center gap-2 sm:gap-0 sm:space-x-2">
+		{#if hasFilterColumns}
+			<div class="hidden items-center gap-1.5 md:flex">
 				{#if typeColumn && !severityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 				{/if}
@@ -92,52 +96,99 @@
 				{#if statusColumn && serviceCountColumn}
 					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
 				{/if}
-
-				{#if isFiltered}
-					<ArcaneButton
-						action="base"
-						tone="ghost"
-						size="sm"
-						icon={ResetIcon}
-						customLabel={m.common_reset()}
-						onclick={() => {
-							table.setColumnFilters([]);
-							table.setGlobalFilter('');
-						}}
-						class="h-8 px-2 lg:px-3"
-					/>
-				{/if}
 			</div>
-		</div>
+
+			<div class="md:hidden">
+				<Popover.Root>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton {...props} action="base" tone="outline" size="icon" class="relative size-9">
+								<FilterIcon class="size-4" />
+								{#if activeFilterCount > 0}
+									<span
+										class="bg-primary text-primary-foreground absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-medium"
+									>
+										{activeFilterCount}
+									</span>
+								{/if}
+							</ArcaneButton>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content align="end" class="w-56 p-2">
+						<div class="flex flex-col gap-1.5">
+							{#if typeColumn && !severityColumn}
+								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+							{/if}
+							{#if usageColumn}
+								<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
+							{/if}
+							{#if updatesColumn}
+								<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
+							{/if}
+							{#if severityColumn}
+								<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
+							{/if}
+							{#if statusColumn && serviceCountColumn}
+								<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
+							{/if}
+						</div>
+					</Popover.Content>
+				</Popover.Root>
+			</div>
+		{/if}
+
+		{#if isFiltered}
+			<ArcaneButton
+				action="base"
+				tone="ghost"
+				size="sm"
+				icon={ResetIcon}
+				customLabel={m.common_reset()}
+				onclick={() => {
+					table.setColumnFilters([]);
+					table.setGlobalFilter('');
+				}}
+				class="h-9 shrink-0"
+			/>
+		{/if}
 	</div>
 
-	<!-- Bulk actions and View options -->
-	<div class="flex items-center gap-2">
-		{#if hasSelection}
-			{#if hasBulkActions}
-				<div class="flex flex-wrap items-center gap-2">
-					{#each bulkActions as bulkAction (bulkAction.id)}
-						{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
-						<ArcaneButton
-							action={actionType}
-							icon={bulkAction.icon}
-							customLabel={bulkAction.label}
-							onclick={() => bulkAction.onClick(selectedIds!)}
-							disabled={bulkAction.disabled || bulkAction.loading}
-							loading={bulkAction.loading}
-						/>
-					{/each}
-				</div>
-			{/if}
+	<div class="flex shrink-0 items-center gap-2">
+		{#if hasSelection && hasBulkActions}
+			<div class="flex items-center gap-1.5">
+				{#each bulkActions as bulkAction (bulkAction.id)}
+					{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
+					<ArcaneButton
+						action={actionType}
+						size="sm"
+						icon={bulkAction.icon}
+						customLabel={bulkAction.label}
+						onclick={() => bulkAction.onClick(selectedIds!)}
+						disabled={bulkAction.disabled || bulkAction.loading}
+						loading={bulkAction.loading}
+						class="h-9"
+					/>
+				{/each}
+			</div>
 		{/if}
 
 		{#if customToolbarActions}
 			{@render customToolbarActions()}
 		{/if}
 
-		<!-- View options - desktop only, always on the right -->
+		{#if customToolbarActions}
+			{@render customToolbarActions()}
+		{/if}
+
 		<div class="hidden md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
+		</div>
+		<div class="md:hidden">
+			{#if mobileFields.length > 0 && onToggleMobileField}
+				<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
+			{:else}
+				<DataTableViewOptions {table} {customViewOptions} />
+			{/if}
 		</div>
 	</div>
 </div>

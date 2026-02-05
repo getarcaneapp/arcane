@@ -32,7 +32,7 @@
 			case 'subtle':
 				return 'backdrop-blur-sm bg-white/10 dark:bg-surface/10';
 			case 'outlined':
-				return 'backdrop-blur-lg bg-white/10 dark:bg-surface/10';
+				return 'backdrop-blur-sm bg-white/10 dark:bg-surface/10 border border-border/60';
 			default:
 				return 'backdrop-blur-sm bg-white/10 shadow-sm dark:bg-surface/10';
 		}
@@ -46,7 +46,7 @@
 		'text-card-foreground group relative isolate gap-0 overflow-hidden rounded-xl border border-white/80 p-0 transition-all duration-300 dark:border-surface/80',
 		getVariantClasses(variant),
 		onclick
-			? '[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/50 cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
+			? '[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'
 			: '',
 		className
 	)}

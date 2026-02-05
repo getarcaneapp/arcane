@@ -443,11 +443,12 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
-	items := buildContainerSummaries(dockerContainers, updateInfoMap)
+	items := s.buildContainerSummaries(dockerContainers, updateInfoMap)
 
-	result := pagination.SearchOrderAndPaginate(items, params, containerPaginationConfig())
-	counts := computeContainerCounts(items)
-	paginationResp := buildPaginationResponse(result, params)
+	config := s.buildContainerPaginationConfig()
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+	counts := s.calculateContainerStatusCounts(items)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, counts, nil
 }
@@ -497,7 +498,7 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	return updateInfoMap
 }
 
-func buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo) []containertypes.Summary {
+func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
@@ -509,7 +510,7 @@ func buildContainerSummaries(containers []container.Summary, updateInfoMap map[s
 	return items
 }
 
-func containerPaginationConfig() pagination.Config[containertypes.Summary] {
+func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {
 	return pagination.Config[containertypes.Summary]{
 		SearchAccessors: []pagination.SearchAccessor[containertypes.Summary]{
 			func(c containertypes.Summary) (string, error) {
@@ -522,56 +523,82 @@ func containerPaginationConfig() pagination.Config[containertypes.Summary] {
 			func(c containertypes.Summary) (string, error) { return c.State, nil },
 			func(c containertypes.Summary) (string, error) { return c.Status, nil },
 		},
-		SortBindings: []pagination.SortBinding[containertypes.Summary]{
-			{
-				Key: "name",
-				Fn: func(a, b containertypes.Summary) int {
-					nameA := ""
-					if len(a.Names) > 0 {
-						nameA = a.Names[0]
-					}
-					nameB := ""
-					if len(b.Names) > 0 {
-						nameB = b.Names[0]
-					}
-					return strings.Compare(nameA, nameB)
-				},
+		SortBindings:    s.buildContainerSortBindings(),
+		FilterAccessors: s.buildContainerFilterAccessors(),
+	}
+}
+
+func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding[containertypes.Summary] {
+	return []pagination.SortBinding[containertypes.Summary]{
+		{
+			Key: "name",
+			Fn: func(a, b containertypes.Summary) int {
+				nameA, nameB := "", ""
+				if len(a.Names) > 0 {
+					nameA = a.Names[0]
+				}
+				if len(b.Names) > 0 {
+					nameB = b.Names[0]
+				}
+				return strings.Compare(nameA, nameB)
 			},
-			{
-				Key: "image",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.Image, b.Image)
-				},
+		},
+		{
+			Key: "image",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.Image, b.Image)
 			},
-			{
-				Key: "state",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.State, b.State)
-				},
+		},
+		{
+			Key: "state",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.State, b.State)
 			},
-			{
-				Key: "status",
-				Fn: func(a, b containertypes.Summary) int {
-					return strings.Compare(a.Status, b.Status)
-				},
+		},
+		{
+			Key: "status",
+			Fn: func(a, b containertypes.Summary) int {
+				return strings.Compare(a.Status, b.Status)
 			},
-			{
-				Key: "created",
-				Fn: func(a, b containertypes.Summary) int {
-					if a.Created < b.Created {
-						return -1
-					}
-					if a.Created > b.Created {
-						return 1
-					}
-					return 0
-				},
+		},
+		{
+			Key: "created",
+			Fn: func(a, b containertypes.Summary) int {
+				if a.Created < b.Created {
+					return -1
+				}
+				if a.Created > b.Created {
+					return 1
+				}
+				return 0
 			},
 		},
 	}
 }
 
-func computeContainerCounts(items []containertypes.Summary) containertypes.StatusCounts {
+func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAccessor[containertypes.Summary] {
+	return []pagination.FilterAccessor[containertypes.Summary]{
+		{
+			Key: "updates",
+			Fn: func(c containertypes.Summary, filterValue string) bool {
+				switch filterValue {
+				case "has_update":
+					return c.UpdateInfo != nil && c.UpdateInfo.HasUpdate
+				case "up_to_date":
+					return c.UpdateInfo != nil && !c.UpdateInfo.HasUpdate && c.UpdateInfo.Error == ""
+				case "error":
+					return c.UpdateInfo != nil && c.UpdateInfo.Error != ""
+				case "unknown":
+					return c.UpdateInfo == nil
+				default:
+					return true
+				}
+			},
+		},
+	}
+}
+
+func (s *ContainerService) calculateContainerStatusCounts(items []containertypes.Summary) containertypes.StatusCounts {
 	counts := containertypes.StatusCounts{
 		TotalContainers: len(items),
 	}
@@ -583,26 +610,6 @@ func computeContainerCounts(items []containertypes.Summary) containertypes.Statu
 		}
 	}
 	return counts
-}
-
-func buildPaginationResponse(result pagination.FilterResult[containertypes.Summary], params pagination.QueryParams) pagination.Response {
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (result.TotalCount + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      result.TotalCount,
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: result.TotalAvailable,
-	}
 }
 
 // CreateExec creates an exec instance in the container

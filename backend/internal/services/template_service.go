@@ -218,24 +218,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	currentPage := 1
-	if params.Limit > 0 && params.Start > 0 {
-		currentPage = (params.Start / params.Limit) + 1
-	}
-
-	paginationResp := pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     currentPage,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
 }

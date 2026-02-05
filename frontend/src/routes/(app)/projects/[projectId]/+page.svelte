@@ -19,10 +19,11 @@
 	import { z } from 'zod/v4';
 	import { createForm } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
+	import { toGitCommitUrl } from '$lib/utils/git';
 	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
-	import ServicesGrid from '../components/ServicesGrid.svelte';
+	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
@@ -89,6 +90,7 @@
 		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(!isGitOpsManaged);
+	let canEditEnv = $derived(!isGitOpsManaged);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -345,11 +347,14 @@
 				</div>
 				<div class="text-muted-foreground flex flex-wrap items-center gap-4 text-xs sm:col-start-2">
 					{#if project.lastSyncCommit}
+						{@const commitUrl = project.gitRepositoryURL
+							? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
+							: null}
 						<div class="flex items-center gap-1.5">
 							<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
-							{#if project.gitRepositoryURL}
+							{#if commitUrl}
 								<a
-									href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+									href={commitUrl}
 									target="_blank"
 									class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
 								>
@@ -409,7 +414,7 @@
 
 		{#snippet tabContent()}
 			<Tabs.Content value="services" class="h-full">
-				<ServicesGrid services={project.runtimeServices} {projectId} />
+				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={refreshProjectDetails} />
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
@@ -425,11 +430,14 @@
 										<br />
 										<div class="mt-2 flex flex-col gap-1">
 											{#if project.lastSyncCommit}
+												{@const commitUrl = project.gitRepositoryURL
+													? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
+													: null}
 												<div class="flex items-center gap-1.5 font-mono text-xs">
 													<span class="text-muted-foreground">{m.git_sync_commit()}:</span>
-													{#if project.gitRepositoryURL}
+													{#if commitUrl}
 														<a
-															href="{project.gitRepositoryURL.replace(/\.git$/, '')}/commit/{project.lastSyncCommit}"
+															href={commitUrl}
 															target="_blank"
 															class="bg-muted hover:text-primary rounded px-1.5 py-0.5 transition-colors"
 														>
@@ -459,7 +467,7 @@
 							</div>
 						</Alert.Root>
 					{/if}
-					<div class="mb-4 flex-shrink-0">
+					<div class="mb-4 shrink-0">
 						<SwitchWithLabel
 							id="layout-mode-toggle"
 							checked={layoutMode === 'tree'}
@@ -480,7 +488,7 @@
 						{#if layoutMode === 'tree'}
 							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
 								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-									<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+									<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 										<Card.Title>
 											<h2>{m.project_files()}</h2>
 										</Card.Title>
@@ -543,6 +551,7 @@
 											language="env"
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
+											readOnly={!canEditEnv}
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -572,7 +581,7 @@
 							>
 								{#snippet first()}
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 											<Card.Title>
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
@@ -637,6 +646,7 @@
 												language="env"
 												bind:value={$inputs.envContent.value}
 												error={$inputs.envContent.error ?? undefined}
+												readOnly={!canEditEnv}
 											/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -662,7 +672,7 @@
 													action="base"
 													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
 													size="sm"
-													class="flex-shrink-0"
+													class="shrink-0"
 													onclick={() => {
 														selectedIncludeTab =
 															selectedIncludeTab === includeFile.relativePath ? null : includeFile.relativePath;
@@ -701,6 +711,7 @@
 											language="env"
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
+											readOnly={!canEditEnv}
 										/>
 									</div>
 
@@ -737,6 +748,7 @@
 													language="env"
 													bind:value={$inputs.envContent.value}
 													error={$inputs.envContent.error ?? undefined}
+													readOnly={!canEditEnv}
 												/>
 											</div>
 										{/snippet}

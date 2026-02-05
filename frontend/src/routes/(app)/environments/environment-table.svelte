@@ -21,7 +21,6 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import {
-		EllipsisIcon,
 		EyeOnIcon,
 		TrashIcon,
 		EnvironmentsIcon,
@@ -29,7 +28,8 @@
 		UpdateIcon,
 		StatsIcon,
 		EyeOffIcon,
-		TestIcon
+		TestIcon,
+		EllipsisIcon
 	} from '$lib/icons';
 
 	let {
@@ -323,16 +323,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -355,18 +349,21 @@
 					<EnvironmentsIcon class="size-4" />
 					{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
 					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
+
 				<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
 					<TestIcon class="size-4" />
 					{m.environments_test_connection()}
 				</DropdownMenu.Item>
+
 				{#if item.id !== '0'}
+					<DropdownMenu.Separator />
+
 					{#if item.status === 'online'}
-						<DropdownMenu.Separator />
 						<DropdownMenu.Item
 							onclick={() => handleUpgradeClick(item)}
 							disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
@@ -375,16 +372,19 @@
 							{upgradingEnvironmentId === item.id ? m.upgrade_in_progress() : m.upgrade_to_version({ version: 'Latest' })}
 						</DropdownMenu.Item>
 					{/if}
+
 					<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
 						{#if item.enabled}
 							<EyeOffIcon class="size-4" />
 							{m.common_disable()}
 						{:else}
 							<EyeOnIcon class="size-4" />
-							{m.common_disable()}
+							{m.common_enable()}
 						{/if}
 					</DropdownMenu.Item>
+
 					<DropdownMenu.Separator />
+
 					<DropdownMenu.Item
 						variant="destructive"
 						onclick={() => handleDeleteOne(item.id, item.name)}

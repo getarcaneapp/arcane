@@ -1,6 +1,5 @@
 <script lang="ts" generics="TData extends {id: string}">
 	import {
-		type Column,
 		type ColumnDef,
 		type ColumnFiltersState,
 		type Row,
@@ -12,10 +11,8 @@
 	} from '@tanstack/table-core';
 	import { createSvelteTable } from '$lib/components/ui/data-table/data-table.svelte.js';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
 	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
-	import { untrack } from 'svelte';
-
+	import { onMount, untrack } from 'svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
@@ -25,6 +22,8 @@
 	import {
 		type CompactTablePrefs,
 		type FieldSpec,
+		type GroupedData,
+		type GroupSelectionState,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -32,6 +31,7 @@
 		buildMobileVisibility,
 		type BulkAction
 	} from './arcane-table.types.svelte';
+	import type { Component } from 'svelte';
 	import { extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
@@ -59,7 +59,12 @@
 		customToolbarActions,
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
-		columnVisibility = $bindable<VisibilityState>({})
+		columnVisibility = $bindable<VisibilityState>({}),
+		// Grouping props
+		groupBy,
+		groupIcon,
+		groupCollapsedState = $bindable<Record<string, boolean>>({}),
+		onGroupToggle
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -90,7 +95,15 @@
 		>;
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: VisibilityState;
+		// Grouping props
+		groupBy?: (item: TData) => string;
+		groupIcon?: (groupName: string) => Component;
+		groupCollapsedState?: Record<string, boolean>;
+		onGroupToggle?: (groupName: string) => void;
 	} = $props();
+
+	// Default page size constant
+	const DEFAULT_LIMIT = 20;
 
 	let rowSelection = $state<RowSelectionState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
@@ -98,7 +111,7 @@
 	let globalFilter = $state<string>('');
 
 	const enablePersist = $derived(!!persistKey);
-	const getDefaultLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20;
+	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
@@ -106,24 +119,23 @@
 	const currentPage = $derived(items.pagination?.currentPage ?? requestOptions?.pagination?.page ?? 1);
 	const totalPages = $derived(items.pagination?.totalPages ?? 1);
 	const totalItems = $derived(items.pagination?.totalItems ?? 0);
-	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 20);
+	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT);
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(currentPage < totalPages);
 
-	import { onMount } from 'svelte';
 	onMount(() => {
 		// Initialize prefs first
 		if (persistKey && !prefs) {
 			prefs = new PersistedState<CompactTablePrefs>(
 				persistKey,
-				{ v: [], f: [], g: '', l: getDefaultLimit() },
+				{ v: [], f: [], g: '', l: getEffectiveLimit() },
 				{ syncTabs: false }
 			);
 		}
 
 		// Then restore preferences
 		if (!enablePersist) return;
-		const snapshot = extractPersistedPreferences(prefs?.current, getDefaultLimit());
+		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
 
 		const patchedVisibility = { ...columnVisibility };
 		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
@@ -139,7 +151,7 @@
 				requestOptions = {
 					...requestOptions,
 					filters: filtersMap,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
@@ -147,7 +159,7 @@
 			requestOptions = {
 				...requestOptions,
 				filters: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
 		}
@@ -162,7 +174,7 @@
 				requestOptions = {
 					...requestOptions,
 					search: persistedSearch,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
@@ -170,13 +182,13 @@
 			requestOptions = {
 				...requestOptions,
 				search: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getDefaultLimit() }
+				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
 		}
 
-		const persistedLimit = snapshot.limit ?? getDefaultLimit();
-		const currentLimit = requestOptions?.pagination?.limit ?? getDefaultLimit();
+		const persistedLimit = snapshot.limit ?? getEffectiveLimit();
+		const currentLimit = requestOptions?.pagination?.limit ?? getEffectiveLimit();
 		if (persistedLimit !== currentLimit) {
 			requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
 			shouldRefresh = true;
@@ -276,7 +288,12 @@
 				id,
 				...(accessorKey ? { accessorKey } : {}),
 				...(accessorFn ? { accessorFn } : {}),
-				meta: { title: spec.title },
+				meta: {
+					title: spec.title,
+					width: spec.width,
+					align: spec.align,
+					truncate: spec.truncate
+				},
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
 					return renderComponent(ArcaneTableHeader, {
@@ -331,7 +348,26 @@
 		}
 	});
 
-	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
+	// Memoize column definitions - only rebuild when structure changes
+	// Generate a key based on column structure, not data
+	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
+		const colIds = specs.map((s, i) => s.id ?? s.accessorKey ?? `col_${i}`).join(',');
+		return `${colIds}:${hasRowActions}:${isSelectionDisabled}`;
+	}
+
+	let cachedColumnsDef = $state<ColumnDef<TData>[]>([]);
+	let lastColumnsKey = '';
+
+	// Use $effect to rebuild columns only when structure changes
+	$effect(() => {
+		const key = getColumnsKey(columns, !!rowActions, selectionDisabled);
+		if (key !== lastColumnsKey) {
+			cachedColumnsDef = buildColumns(columns, selectionDisabled);
+			lastColumnsKey = key;
+		}
+	});
+
+	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
 
 	const table = createSvelteTable({
 		get data() {
@@ -447,6 +483,65 @@
 		}))
 	);
 
+	// Compute grouped rows when groupBy is provided
+	const groupedRows = $derived.by((): GroupedData<TData>[] | null => {
+		if (!groupBy) return null;
+
+		const groups = new Map<string, TData[]>();
+		for (const item of items.data ?? []) {
+			const groupName = groupBy(item);
+			if (!groups.has(groupName)) {
+				groups.set(groupName, []);
+			}
+			groups.get(groupName)!.push(item);
+		}
+
+		return Array.from(groups.entries()).map(([groupName, groupItems]) => ({
+			groupName,
+			items: groupItems
+		}));
+	});
+
+	// Get selection state for a group
+	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
+		const groupIds = groupItems.map((item) => item.id);
+		const selectedSet = new Set(selectedIds ?? []);
+		const selectedCount = groupIds.filter((id) => selectedSet.has(id)).length;
+
+		if (selectedCount === 0) return 'none';
+		if (selectedCount === groupIds.length) return 'all';
+		return 'some';
+	}
+
+	// Toggle selection for all items in a group
+	function onToggleGroupSelection(groupItems: TData[]) {
+		const groupIds = groupItems.map((item) => item.id);
+		const state = getGroupSelectionState(groupItems);
+
+		if (state === 'all') {
+			// Deselect all in group
+			const groupSet = new Set(groupIds);
+			selectedIds = (selectedIds ?? []).filter((id) => !groupSet.has(id));
+		} else {
+			// Select all in group
+			const set = new Set([...(selectedIds ?? []), ...groupIds]);
+			selectedIds = Array.from(set);
+		}
+	}
+
+	// Handle group collapse toggle
+	function handleGroupToggle(groupName: string) {
+		if (onGroupToggle) {
+			onGroupToggle(groupName);
+		} else {
+			// Default behavior: toggle collapsed state
+			groupCollapsedState = {
+				...groupCollapsedState,
+				[groupName]: !groupCollapsedState[groupName]
+			};
+		}
+	}
+
 	$effect(() => {
 		const s = requestOptions?.sort;
 		const currentSort = untrack(() => sorting[0]);
@@ -520,7 +615,7 @@
 {:else if unstyled}
 	<div class="flex h-full min-h-0 flex-col">
 		{#if !withoutSearch}
-			<div class="shrink-0 border-b">
+			<div class="w-full shrink-0 border-b">
 				<DataTableToolbar
 					{table}
 					{selectedIds}
@@ -535,13 +630,34 @@
 		{/if}
 
 		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
-			<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
+			<ArcaneTableDesktopView
+				{table}
+				{selectedIds}
+				columnsCount={columnsDef.length}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				{selectionDisabled}
+				onGroupToggle={handleGroupToggle}
+				{getGroupSelectionState}
+				{onToggleGroupSelection}
+				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
+				{unstyled}
+			/>
 		</div>
 
-		<!-- Mobile Card View -->
 		<div class="block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
-				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
+				<ArcaneTableMobileView
+					{table}
+					{mobileCard}
+					{mobileFieldVisibility}
+					{groupedRows}
+					{groupIcon}
+					{groupCollapsedState}
+					onGroupToggle={handleGroupToggle}
+					{unstyled}
+				/>
 			</div>
 		</div>
 
@@ -552,37 +668,54 @@
 		{/if}
 	</div>
 {:else}
-	<Card.Root class="flex h-full min-h-0 flex-col overflow-hidden">
-		{#snippet children()}
-			{#if !withoutSearch}
-				<Card.Header class="border-b px-2 py-2">
-					<DataTableToolbar
-						{table}
-						{selectedIds}
-						{selectionDisabled}
-						{bulkActions}
-						mobileFields={mobileFieldsForOptions}
-						{onToggleMobileField}
-						{customViewOptions}
-						{customToolbarActions}
-					/>
-				</Card.Header>
-			{/if}
+	<div class="bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur-sm">
+		{#if !withoutSearch}
+			<div class="border-border/50 w-full shrink-0 border-b">
+				<DataTableToolbar
+					{table}
+					{selectedIds}
+					{selectionDisabled}
+					{bulkActions}
+					mobileFields={mobileFieldsForOptions}
+					{onToggleMobileField}
+					{customViewOptions}
+					{customToolbarActions}
+				/>
+			</div>
+		{/if}
 
-			<Card.Content class="hidden h-full min-h-0 flex-1 overflow-auto p-0 md:block">
-				<ArcaneTableDesktopView {table} {selectedIds} columnsCount={columnsDef.length} />
-			</Card.Content>
+		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
+			<ArcaneTableDesktopView
+				{table}
+				{selectedIds}
+				columnsCount={columnsDef.length}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				{selectionDisabled}
+				onGroupToggle={handleGroupToggle}
+				{getGroupSelectionState}
+				{onToggleGroupSelection}
+				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
+			/>
+		</div>
 
-			<!-- Mobile Card View -->
-			<Card.Content class="block flex-1 overflow-auto p-0 md:hidden">
-				<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} />
-			</Card.Content>
+		<div class="block flex-1 overflow-auto md:hidden">
+			<ArcaneTableMobileView
+				{table}
+				{mobileCard}
+				{mobileFieldVisibility}
+				{groupedRows}
+				{groupIcon}
+				{groupCollapsedState}
+				onGroupToggle={handleGroupToggle}
+			/>
+		</div>
 
-			{#if !withoutPagination}
-				<Card.Footer class="shrink-0 border-t px-2 py-4">
-					{@render PaginationSnippet()}
-				</Card.Footer>
-			{/if}
-		{/snippet}
-	</Card.Root>
+		{#if !withoutPagination}
+			<div class="border-border/50 shrink-0 border-t px-2 py-4">
+				{@render PaginationSnippet()}
+			</div>
+		{/if}
+	</div>
 {/if}

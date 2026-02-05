@@ -6,27 +6,30 @@ import {
 	calculateMemoryUsage
 } from '$lib/utils/container-stats.utils';
 import type { ReconnectingWebSocket } from '$lib/utils/ws';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 export class ContainerStatsManager {
-	private connections = new Map<string, ReconnectingWebSocket<ContainerStats>>();
-	private stats = $state(new Map<string, ContainerStats>());
-	private loadingStates = $state(new Map<string, boolean>());
+	private connections = new SvelteMap<string, ReconnectingWebSocket<ContainerStats>>();
+	private stats = new SvelteMap<string, ContainerStats>();
+	private loadingStates = new SvelteMap<string, boolean>();
+	private desiredIds = new SvelteSet<string>();
+	private currentEnvId: string | null = null;
 
 	connect(containerId: string, envId: string): void {
 		if (this.connections.has(containerId)) return;
 
-		this.loadingStates = new Map(this.loadingStates).set(containerId, true);
+		this.loadingStates.set(containerId, true);
 
 		const ws = createContainerStatsWebSocket({
 			getEnvId: () => envId,
 			containerId,
 			onMessage: (data: ContainerStats) => {
-				this.stats = new Map(this.stats).set(containerId, data);
-				this.loadingStates = new Map(this.loadingStates).set(containerId, false);
+				this.stats.set(containerId, data);
+				this.loadingStates.set(containerId, false);
 			},
 			onError: (err) => {
 				console.error(`[ContainerStatsManager] Stats error for container ${containerId}:`, err);
-				this.loadingStates = new Map(this.loadingStates).set(containerId, false);
+				this.loadingStates.set(containerId, false);
 			},
 			shouldReconnect: () => this.connections.has(containerId)
 		});
@@ -40,12 +43,8 @@ export class ContainerStatsManager {
 		if (ws) {
 			ws.close();
 			this.connections.delete(containerId);
-			const newStats = new Map(this.stats);
-			newStats.delete(containerId);
-			this.stats = newStats;
-			const newLoadingStates = new Map(this.loadingStates);
-			newLoadingStates.delete(containerId);
-			this.loadingStates = newLoadingStates;
+			this.stats.delete(containerId);
+			this.loadingStates.delete(containerId);
 		}
 	}
 
@@ -82,12 +81,48 @@ export class ContainerStatsManager {
 		return Array.from(this.connections.keys());
 	}
 
+	set envId(value: string) {
+		if (this.currentEnvId === value) return;
+		this.currentEnvId = value;
+		this.resetConnections();
+		this.syncConnections();
+	}
+
+	set targetIds(value: Set<string>) {
+		this.desiredIds = new SvelteSet(value);
+		this.syncConnections();
+	}
+
+	private resetConnections(): void {
+		const ids = Array.from(this.connections.keys());
+		for (const id of ids) {
+			this.disconnect(id);
+		}
+	}
+
+	private syncConnections(): void {
+		if (!this.currentEnvId) return;
+		const connectedIds = new SvelteSet(this.connections.keys());
+
+		for (const id of this.desiredIds) {
+			if (!connectedIds.has(id)) {
+				this.connect(id, this.currentEnvId);
+			}
+		}
+
+		for (const id of connectedIds) {
+			if (!this.desiredIds.has(id)) {
+				this.disconnect(id);
+			}
+		}
+	}
+
 	destroy(): void {
 		for (const ws of this.connections.values()) {
 			ws.close();
 		}
 		this.connections.clear();
-		this.stats = new Map();
-		this.loadingStates = new Map();
+		this.stats.clear();
+		this.loadingStates.clear();
 	}
 }

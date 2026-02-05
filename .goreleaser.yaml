@@ -7,10 +7,8 @@ project_name: arcane
 
 before:
   hooks:
-    - go mod tidy -C backend
-    - go mod tidy -C cli
-    - pnpm install --frozen-lockfile
-    - pnpm build
+    - just deps install all
+    - just build single frontend
 
 builds:
   - id: arcane
