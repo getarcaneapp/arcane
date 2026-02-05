@@ -46,22 +46,10 @@
 			String(page.url.pathname).startsWith('/oidc')
 	);
 
-	let showPasswordChangeDialog = $state(false);
-	let autoLoginEnabled = $state(false);
-
-	$effect(() => {
-		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
-		return unsub;
-	});
-
-	$effect(() => {
-		// Skip password change dialog when auto-login is enabled
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled) {
-			showPasswordChangeDialog = true;
-		} else {
-			showPasswordChangeDialog = false;
-		}
-	});
+	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
+	const showPasswordChangeDialog = $derived(
+		Boolean(data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
+	);
 
 	function handlePasswordChangeSuccess() {
 		invalidateAll();
@@ -100,4 +88,4 @@
 />
 <ConfirmDialog />
 <LoadingIndicator active={isNavigating} thickness="h-1.5" />
-<FirstLoginPasswordDialog bind:open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
+<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
