@@ -8,10 +8,12 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
+	import { onDestroy } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
+	import { startVulnerabilityScanPolling } from '$lib/utils/vulnerability-scan.util';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
@@ -29,6 +31,7 @@
 
 	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
 	let hasLoadedVulnerabilities = $state(false);
+	let stopScanPolling: (() => void) | null = $state(null);
 
 	// Load vulnerability scan data when image changes
 	$effect(() => {
@@ -59,6 +62,8 @@
 				toast.success(m.vuln_scan_completed());
 			} else if (result.status === 'failed') {
 				toast.error(result.error || m.vuln_scan_failed());
+			} else {
+				beginScanPolling(true);
 			}
 		} catch (error) {
 			console.error('Failed to scan image:', error);
@@ -67,6 +72,60 @@
 			isLoading.scanning = false;
 		}
 	}
+
+	function stopPolling() {
+		if (stopScanPolling) {
+			stopScanPolling();
+			stopScanPolling = null;
+		}
+	}
+
+	function beginScanPolling(showToast: boolean) {
+		if (!image?.id || stopScanPolling) return;
+		const cancel = startVulnerabilityScanPolling(image.id, (id) => vulnerabilityService.getScanSummary(id), {
+			onUpdate: (summary) => {
+				vulnerabilityScan = {
+					...(vulnerabilityScan ?? {}),
+					imageId: summary.imageId,
+					scanTime: summary.scanTime,
+					status: summary.status,
+					summary: summary.summary,
+					error: summary.error
+				} as VulnerabilityScanResult;
+			},
+			onComplete: async (summary) => {
+				stopPolling();
+				try {
+					vulnerabilityScan = await vulnerabilityService.getScanResult(summary.imageId);
+				} catch (error) {
+					console.error('Failed to load scan result:', error);
+				}
+				if (showToast) {
+					if (summary.status === 'completed') {
+						toast.success(m.vuln_scan_completed());
+					} else {
+						toast.error(summary.error || m.vuln_scan_failed());
+					}
+				}
+			},
+			onError: () => {}
+		});
+
+		stopScanPolling = cancel;
+	}
+
+	$effect(() => {
+		const scanning = vulnerabilityScan?.status === 'scanning' || vulnerabilityScan?.status === 'pending';
+		if (scanning) {
+			beginScanPolling(false);
+		} else {
+			stopPolling();
+		}
+	});
+
+	onDestroy(() => {
+		stopPolling();
+	});
 
 	const shortId = $derived.by(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
 
@@ -266,7 +325,9 @@
 										{@const [key, ...valueParts] = env.split('=')}
 										{@const value = valueParts.join('=')}
 										<div class="border-border/50 bg-muted/20 rounded-lg border px-3 py-2">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-all uppercase">{key}</div>
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-all uppercase">
+												{key}
+											</div>
 											<div
 												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
 												title="Click to select"

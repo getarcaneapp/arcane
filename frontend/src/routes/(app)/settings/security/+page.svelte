@@ -596,7 +596,7 @@
 									bind:value={$formInputs.trivyImage.value}
 									error={$formInputs.trivyImage.error}
 									label={m.security_trivy_image_label()}
-									placeholder="aquasecurity/trivy:latest"
+									placeholder="ghcr.io/aquasecurity/trivy:latest"
 									type="text"
 								/>
 							</div>

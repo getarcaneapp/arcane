@@ -108,7 +108,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AuthLocalEnabled:           models.SettingVariable{Value: "true"},
 		AuthSessionTimeout:         models.SettingVariable{Value: "1440"},
 		AuthPasswordPolicy:         models.SettingVariable{Value: "strong"},
-		TrivyImage:                 models.SettingVariable{Value: "aquasecurity/trivy:latest"},
+		TrivyImage:                 models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},

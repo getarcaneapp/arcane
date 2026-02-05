@@ -4,6 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import bytes from 'bytes';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -22,6 +23,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
+	import { startVulnerabilityScanPolling } from '$lib/utils/vulnerability-scan.util';
 	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon, ScanIcon } from '$lib/icons';
 
 	let {
@@ -43,6 +45,8 @@
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
+
+	const scanPollers = new Map<string, () => void>();
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids || ids.length === 0) return;
@@ -147,7 +151,6 @@
 			message: m.vuln_scan_failed(),
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
-				toast.success(m.vuln_scan_completed());
 				const summary: VulnerabilityScanSummary = {
 					imageId: data.imageId,
 					scanTime: data.scanTime,
@@ -156,6 +159,17 @@
 					error: data.error
 				};
 				await handleVulnerabilityScanChanged(imageId, summary);
+
+				if (data.status === 'completed') {
+					toast.success(m.vuln_scan_completed());
+					return;
+				}
+				if (data.status === 'failed') {
+					toast.error(data.error || m.vuln_scan_failed());
+					return;
+				}
+
+				startScanPolling(imageId, true);
 			}
 		});
 
@@ -177,8 +191,57 @@
 			images.data[imageIndex].vulnerabilityScan = newScanSummary;
 			images = { ...images, data: [...images.data] };
 		}
-		await onImageUpdated?.();
+		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
+			await onImageUpdated?.();
+		}
 	}
+
+	function stopScanPolling(imageId: string) {
+		const cancel = scanPollers.get(imageId);
+		if (cancel) {
+			cancel();
+			scanPollers.delete(imageId);
+		}
+	}
+
+	function startScanPolling(imageId: string, showToast: boolean) {
+		if (scanPollers.has(imageId)) return;
+
+		const cancel = startVulnerabilityScanPolling(imageId, (id) => vulnerabilityService.getScanSummary(id), {
+			onUpdate: (summary) => {
+				void handleVulnerabilityScanChanged(imageId, summary);
+			},
+			onComplete: (summary) => {
+				void handleVulnerabilityScanChanged(imageId, summary);
+				stopScanPolling(imageId);
+				if (showToast) {
+					if (summary.status === 'completed') {
+						toast.success(m.vuln_scan_completed());
+					} else {
+						toast.error(summary.error || m.vuln_scan_failed());
+					}
+				}
+			},
+			onError: () => {}
+		});
+
+		scanPollers.set(imageId, cancel);
+	}
+
+	$effect(() => {
+		for (const item of images.data ?? []) {
+			if (item.vulnerabilityScan?.status === 'scanning' || item.vulnerabilityScan?.status === 'pending') {
+				startScanPolling(item.id, false);
+			}
+		}
+	});
+
+	onDestroy(() => {
+		for (const cancel of scanPollers.values()) {
+			cancel();
+		}
+		scanPollers.clear();
+	});
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
@@ -199,7 +262,9 @@
 				return 'unknown';
 			},
 			title: m.images_updates(),
-			cell: UpdatesCell
+			cell: UpdatesCell,
+			align: 'center',
+			class: 'text-center'
 		},
 		{
 			id: 'vulnerabilities',
@@ -218,7 +283,9 @@
 				return 'scanning';
 			},
 			title: m.vuln_title(),
-			cell: VulnerabilitiesCell
+			cell: VulnerabilitiesCell,
+			align: 'center',
+			class: 'text-center'
 		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
@@ -292,21 +359,25 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: ImageSummaryDto })}
-	<ImageUpdateItem
-		updateInfo={item.updateInfo}
-		imageId={item.id}
-		repo={item.repo}
-		tag={item.tag}
-		onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
-	/>
+	<div class="flex items-center justify-center">
+		<ImageUpdateItem
+			updateInfo={item.updateInfo}
+			imageId={item.id}
+			repo={item.repo}
+			tag={item.tag}
+			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
+		/>
+	</div>
 {/snippet}
 
 {#snippet VulnerabilitiesCell({ item }: { item: ImageSummaryDto })}
-	<VulnerabilityScanItem
-		scanSummary={item.vulnerabilityScan}
-		imageId={item.id}
-		onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
-	/>
+	<div class="flex items-center justify-center">
+		<VulnerabilityScanItem
+			scanSummary={item.vulnerabilityScan}
+			imageId={item.id}
+			onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
+		/>
+	</div>
 {/snippet}
 
 {#snippet ImageMobileCardSnippet({
