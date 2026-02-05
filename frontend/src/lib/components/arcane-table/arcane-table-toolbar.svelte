@@ -2,7 +2,14 @@
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters, projectStatusFilters } from './data.js';
+	import {
+		imageUpdateFilters,
+		usageFilters,
+		severityFilters,
+		vulnerabilitySeverityFilters,
+		templateTypeFilters,
+		projectStatusFilters
+	} from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
@@ -42,6 +49,9 @@
 	const severityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
+	const vulnSeverityColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'vulnSeverity') ? table.getColumn('vulnSeverity') : undefined
+	);
 	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
 	const serviceCountColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
@@ -54,10 +64,11 @@
 
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
-		!!(typeColumn && !severityColumn) ||
+		!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
 			!!usageColumn ||
 			!!updatesColumn ||
 			!!severityColumn ||
+			!!vulnSeverityColumn ||
 			!!(statusColumn && serviceCountColumn)
 	);
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
@@ -81,7 +92,7 @@
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
-				{#if typeColumn && !severityColumn}
+				{#if typeColumn && !severityColumn && !vulnSeverityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 				{/if}
 				{#if usageColumn}
@@ -90,7 +101,13 @@
 				{#if updatesColumn}
 					<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
 				{/if}
-				{#if severityColumn}
+				{#if vulnSeverityColumn}
+					<DataTableFacetedFilter
+						column={vulnSeverityColumn}
+						title={m.events_col_severity()}
+						options={vulnerabilitySeverityFilters}
+					/>
+				{:else if severityColumn}
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 				{/if}
 				{#if statusColumn && serviceCountColumn}
@@ -116,7 +133,7 @@
 					</Popover.Trigger>
 					<Popover.Content align="end" class="w-56 p-2">
 						<div class="flex flex-col gap-1.5">
-							{#if typeColumn && !severityColumn}
+							{#if typeColumn && !severityColumn && !vulnSeverityColumn}
 								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 							{/if}
 							{#if usageColumn}
@@ -125,7 +142,13 @@
 							{#if updatesColumn}
 								<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
 							{/if}
-							{#if severityColumn}
+							{#if vulnSeverityColumn}
+								<DataTableFacetedFilter
+									column={vulnSeverityColumn}
+									title={m.events_col_severity()}
+									options={vulnerabilitySeverityFilters}
+								/>
+							{:else if severityColumn}
 								<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 							{/if}
 							{#if statusColumn && serviceCountColumn}

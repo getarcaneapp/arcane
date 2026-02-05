@@ -29,6 +29,7 @@ export type Settings = {
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
+	trivyImage: string;
 	oidcEnabled: boolean;
 	oidcClientId: string;
 	oidcClientSecret?: string;

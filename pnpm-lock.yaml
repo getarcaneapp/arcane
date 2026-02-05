@@ -14,7 +14,14 @@ overrides:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
+      lint-staged:
+        specifier: ^16.2.7
+        version: 16.2.7
 
   email-templates:
     dependencies:
@@ -143,9 +150,6 @@ importers:
       formsnap:
         specifier: ^2.0.1
         version: 2.0.1(svelte@5.46.4)(sveltekit-superforms@2.29.1(@sveltejs/kit@2.49.5(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.46.4)(vite@7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(svelte@5.46.4)(typescript@5.9.3)(vite@7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.0)(tsx@4.21.0)(yaml@2.8.1)))(@types/json-schema@7.0.15)(svelte@5.46.4)(typescript@5.9.3))
-      husky:
-        specifier: ^9.1.7
-        version: 9.1.7
       i18n-unused:
         specifier: ^0.19.0
         version: 0.19.0
@@ -155,9 +159,6 @@ importers:
       knip:
         specifier: ^5.82.1
         version: 5.82.1(@types/node@25.0.10)(typescript@5.9.3)
-      lint-staged:
-        specifier: ^16.2.7
-        version: 16.2.7
       mode-watcher:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.46.4)

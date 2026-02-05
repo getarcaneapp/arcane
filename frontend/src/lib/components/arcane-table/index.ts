@@ -3,4 +3,4 @@ export { default as DataTableViewOptions } from './arcane-table-view-options.sve
 export { default as DataTableFacetedFilter } from './arcane-table-filter.svelte';
 export type { ColumnSpec, FieldSpec, MobileFieldVisibility, BulkAction } from './arcane-table.types.svelte';
 export { default as UniversalMobileCard } from './cards/universal-mobile-card.svelte';
-export { usageFilters, imageUpdateFilters, severityFilters } from './data.js';
+export { usageFilters, imageUpdateFilters, severityFilters, vulnerabilitySeverityFilters } from './data.js';

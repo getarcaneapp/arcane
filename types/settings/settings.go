@@ -167,6 +167,11 @@ type Update struct {
 	// Required: false
 	AuthPasswordPolicy *string `json:"authPasswordPolicy,omitempty"`
 
+	// TrivyImage overrides the container image used for vulnerability scans.
+	//
+	// Required: false
+	TrivyImage *string `json:"trivyImage,omitempty"`
+
 	// AuthOidcConfig is deprecated and will be removed in a future release.
 	//
 	// Required: false

@@ -71,6 +71,34 @@ export const severityFilters = [
 	}
 ];
 
+export const vulnerabilitySeverityFilters = [
+	{
+		value: 'CRITICAL',
+		label: m.vuln_severity_critical(),
+		icon: CloseIcon
+	},
+	{
+		value: 'HIGH',
+		label: m.vuln_severity_high(),
+		icon: AlertIcon
+	},
+	{
+		value: 'MEDIUM',
+		label: m.vuln_severity_medium(),
+		icon: InfoIcon
+	},
+	{
+		value: 'LOW',
+		label: m.vuln_severity_low(),
+		icon: CheckIcon
+	},
+	{
+		value: 'UNKNOWN',
+		label: m.vuln_severity_unknown(),
+		icon: InfoIcon
+	}
+];
+
 export const templateTypeFilters = [
 	{
 		value: 'false',

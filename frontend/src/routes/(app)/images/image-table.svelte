@@ -12,14 +12,17 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
+	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
+	import type { VulnerabilityScanSummary } from '$lib/types/vulnerability.type';
 	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
-	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon } from '$lib/icons';
+	import { vulnerabilityService } from '$lib/services/vulnerability-service';
+	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon, ScanIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -39,6 +42,7 @@
 	});
 
 	let isPullingInline = $state<Record<string, boolean>>({});
+	let isScanningInline = $state<Record<string, boolean>>({});
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids || ids.length === 0) return;
@@ -134,10 +138,43 @@
 		isPullingInline[imageId] = false;
 	}
 
+	async function handleInlineVulnerabilityScan(imageId: string) {
+		isScanningInline[imageId] = true;
+
+		const result = await tryCatch(vulnerabilityService.scanImage(imageId));
+		handleApiResultWithCallbacks({
+			result,
+			message: m.vuln_scan_failed(),
+			setLoadingState: () => {},
+			onSuccess: async (data) => {
+				toast.success(m.vuln_scan_completed());
+				const summary: VulnerabilityScanSummary = {
+					imageId: data.imageId,
+					scanTime: data.scanTime,
+					status: data.status,
+					summary: data.summary,
+					error: data.error
+				};
+				await handleVulnerabilityScanChanged(imageId, summary);
+			}
+		});
+
+		isScanningInline[imageId] = false;
+	}
+
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
 		const imageIndex = images.data.findIndex((img) => img.id === imageId);
 		if (imageIndex !== -1) {
 			images.data[imageIndex].updateInfo = newUpdateInfo;
+			images = { ...images, data: [...images.data] };
+		}
+		await onImageUpdated?.();
+	}
+
+	async function handleVulnerabilityScanChanged(imageId: string, newScanSummary: VulnerabilityScanSummary) {
+		const imageIndex = images.data.findIndex((img) => img.id === imageId);
+		if (imageIndex !== -1) {
+			images.data[imageIndex].vulnerabilityScan = newScanSummary;
 			images = { ...images, data: [...images.data] };
 		}
 		await onImageUpdated?.();
@@ -164,6 +201,25 @@
 			title: m.images_updates(),
 			cell: UpdatesCell
 		},
+		{
+			id: 'vulnerabilities',
+			accessorFn: (row) => {
+				if (!row.vulnerabilityScan) return 'not_scanned';
+				if (row.vulnerabilityScan.status === 'failed') return 'error';
+				if (row.vulnerabilityScan.status === 'completed') {
+					const total = row.vulnerabilityScan.summary?.total ?? 0;
+					const critical = row.vulnerabilityScan.summary?.critical ?? 0;
+					const high = row.vulnerabilityScan.summary?.high ?? 0;
+					if (critical > 0) return 'critical';
+					if (high > 0) return 'high';
+					if (total > 0) return 'has_vulnerabilities';
+					return 'clean';
+				}
+				return 'scanning';
+			},
+			title: m.vuln_title(),
+			cell: VulnerabilitiesCell
+		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cell: CreatedCell }
 	] satisfies ColumnSpec<ImageSummaryDto>[];
@@ -173,6 +229,7 @@
 		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'updates', label: m.images_updates(), defaultVisible: false },
+		{ id: 'vulnerabilities', label: m.vuln_title(), defaultVisible: false },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
@@ -241,6 +298,14 @@
 		repo={item.repo}
 		tag={item.tag}
 		onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
+	/>
+{/snippet}
+
+{#snippet VulnerabilitiesCell({ item }: { item: ImageSummaryDto })}
+	<VulnerabilityScanItem
+		scanSummary={item.vulnerabilityScan}
+		imageId={item.id}
+		onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
 	/>
 {/snippet}
 
@@ -341,6 +406,15 @@
 						<DownloadIcon class="size-4" />
 					{/if}
 					{m.images_pull()}
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
+					{#if isScanningInline[item.id]}
+						<Spinner class="size-4" />
+					{:else}
+						<ScanIcon class="size-4" />
+					{/if}
+					{m.vuln_scan()}
 				</DropdownMenu.Item>
 
 				<DropdownMenu.Separator />
