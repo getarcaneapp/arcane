@@ -63,7 +63,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
-	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings)
+	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Vulnerability, svcs.Event)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
