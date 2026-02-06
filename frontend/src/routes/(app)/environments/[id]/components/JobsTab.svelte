@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { containerService } from '$lib/services/container-service';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -8,7 +9,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
-	import { Button } from '$lib/components/ui/button';
+	import { ArcaneButton } from '$lib/components/arcane-button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
 	import { cn } from '$lib/utils';
@@ -18,20 +19,55 @@
 
 	let { formInputs, environmentId } = $props();
 
-	let jobsResponse = $state<JobListResponse | null>(null);
-	let isLoading = $state(true);
-	let isFirstLoad = $state(true);
-	let error = $state<string | null>(null);
+	let refreshSignal = $state(0);
 
-	// Container exclusion state
-	let containers = $state<ContainerSummaryDto[]>([]);
-	let isLoadingContainers = $state(false);
+	const jobsPromise = $derived.by(async () => {
+		refreshSignal; // trigger dependency
+		if (!environmentId) return null;
+
+		const result = await tryCatch(jobScheduleService.listJobs(environmentId));
+
+		if (result.error) {
+			throw result.error;
+		}
+
+		return {
+			...result.data,
+			jobs: result.data.jobs.map((job) => ({
+				...job,
+				prerequisites: job.prerequisites.map((prereq) => ({
+					...prereq,
+					settingsUrl: resolveSettingsUrl(job, prereq)
+				}))
+			}))
+		};
+	});
+
+	const containersPromise = $derived.by(async () => {
+		if (!$formInputs.autoUpdate.value) return [];
+		const result = await tryCatch(containerService.getContainers({ pagination: { page: 1, limit: 100 } }));
+		if (result.error) throw result.error;
+		return result.data.data;
+	});
+
 	let openExclusionCombobox = $state(false);
 
-	// Derive excluded containers from settings
-	const excludedContainers = $derived.by(() => {
+	const excludedContainers = new SvelteSet<string>();
+
+	$effect(() => {
 		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
-		return new Set(savedValue.split(',').map((s: string) => s.trim()).filter(Boolean));
+		const names = savedValue
+			.split(',')
+			.map((s: string) => s.trim())
+			.filter(Boolean);
+
+		// Synchronize the SvelteSet with the form input value
+		// Only update if there are actual changes to avoid unnecessary reactivity
+		const currentNames = Array.from(excludedContainers);
+		if (names.length !== currentNames.length || names.some((n: string) => !excludedContainers.has(n))) {
+			excludedContainers.clear();
+			names.forEach((n: string) => excludedContainers.add(n));
+		}
 	});
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -52,66 +88,18 @@
 		}
 	}
 
-	async function loadJobs() {
-		if (isFirstLoad) {
-			isLoading = true;
-		}
-
-		const result = await tryCatch(jobScheduleService.listJobs(environmentId));
-		isLoading = false;
-		isFirstLoad = false;
-
-		if (result.error) {
-			if (!jobsResponse) {
-				error = result.error.message;
-			}
-			return;
-		}
-
-		jobsResponse = {
-			...result.data,
-			jobs: result.data.jobs.map((job) => ({
-				...job,
-				prerequisites: job.prerequisites.map((prereq) => ({
-					...prereq,
-					settingsUrl: resolveSettingsUrl(job, prereq)
-				}))
-			}))
-		};
+	function loadJobs() {
+		refreshSignal++;
 	}
-
-	async function loadContainers() {
-		if (isLoadingContainers) return;
-		isLoadingContainers = true;
-		const result = await tryCatch(containerService.getContainers({ pagination: { page: 1, limit: 100 } }));
-		isLoadingContainers = false;
-		if (result.data) {
-			containers = result.data.data;
-		}
-	}
-
-	$effect(() => {
-		if (environmentId) {
-			loadJobs();
-		}
-	});
-
-	// Load containers if auto-update is enabled or becomes enabled
-	$effect(() => {
-		if ($formInputs.autoUpdate.value && containers.length === 0) {
-			loadContainers();
-		}
-	});
 
 	function toggleContainerExclusion(containerName: string) {
-		const currentSet = new Set(excludedContainers);
-		if (currentSet.has(containerName)) {
-			currentSet.delete(containerName);
+		if (excludedContainers.has(containerName)) {
+			excludedContainers.delete(containerName);
 		} else {
-			currentSet.add(containerName);
+			excludedContainers.add(containerName);
 		}
-		
-		const newValue = Array.from(currentSet).join(',');
+
+		const newValue = Array.from(excludedContainers).join(',');
 		if ($formInputs.autoUpdateExcludedContainers) {
 			$formInputs.autoUpdateExcludedContainers.value = newValue;
 		}
@@ -127,9 +115,8 @@
 
 	const hiddenJobIds = new Set(['gitops-sync', 'filesystem-watcher']);
 
-	function getJobsByCategory(categoryId: string): JobStatus[] {
-		if (!jobsResponse) return [];
-		return jobsResponse.jobs.filter((j) => {
+	function getJobsByCategory(categoryId: string, jobs: JobStatus[]): JobStatus[] {
+		return jobs.filter((j) => {
 			if (hiddenJobIds.has(j.id)) return false;
 			if (j.category !== categoryId) return false;
 			// Only show manager-only jobs on the local environment (ID "0")
@@ -152,7 +139,7 @@
 	}
 
 	function getContainerName(c: ContainerSummaryDto): string {
-		return c.names[0]?.replace(/^\//, '') || c.id.substring(0, 12);
+		return c.names[0] || c.id.substring(0, 12);
 	}
 </script>
 
@@ -167,19 +154,16 @@
 			</div>
 		</Card.Header>
 		<Card.Content class="p-4 sm:p-6">
-			{#if isLoading && !jobsResponse}
+			{#await jobsPromise}
 				<div class="flex h-32 items-center justify-center">
 					<Spinner class="size-8" />
 				</div>
-			{:else if error && !jobsResponse}
-				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
-					{error}
-				</div>
-			{:else if jobsResponse}
-				<div class="space-y-8">
-					{#each categories as category (category.id)}
-						{@const categoryJobs = getJobsByCategory(category.id)}
-						{#if categoryJobs.length > 0}
+			{:then jobsResponse}
+				{#if jobsResponse}
+					<div class="space-y-8">
+						{#each categories as category (category.id)}
+							{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
+							{#if categoryJobs.length > 0}
 							<div class="space-y-4">
 								<h3 class="text-muted-foreground text-sm font-semibold tracking-tight uppercase">
 									{category.label}
@@ -213,65 +197,81 @@
 													<Popover.Root bind:open={openExclusionCombobox}>
 														<Popover.Trigger>
 															{#snippet child({ props })}
-																<Button
-																	variant="outline"
+																<ArcaneButton
+																	{...props}
+																	action="base"
 																	role="combobox"
 																	aria-expanded={openExclusionCombobox}
 																	class="w-full justify-between"
-																	{...props}
+																	customLabel={excludedContainers.size === 0
+																		? 'Select containers...'
+																		: excludedContainers.size === 1
+																			? '1 container excluded'
+																			: `${excludedContainers.size} containers excluded`}
 																>
-																	{#if excludedContainers.size === 0}
-																		Select containers...
-																	{:else if excludedContainers.size === 1}
-																		1 container excluded
-																	{:else}
-																		{excludedContainers.size} containers excluded
-																	{/if}
 																	<ArrowsUpDownIcon class="ml-2 size-4 shrink-0 opacity-50" />
-																</Button>
+																</ArcaneButton>
 															{/snippet}
 														</Popover.Trigger>
 														<Popover.Content class="w-full p-0">
 															<Command.Root>
 																<Command.Input placeholder="Search containers..." />
-																<Command.List>
-																	<Command.Empty>No containers found.</Command.Empty>
-																	<Command.Group>
-																		{#each containers as container (container.id)}
-																			{@const name = getContainerName(container)}
-																			{@const labelExcluded = (() => {
-																				const labels = container.labels || {};
-																				for (const [k, v] of Object.entries(labels)) {
-																					if (k.toLowerCase() === 'com.getarcaneapp.arcane.updater') {
-																						return ['false', '0', 'no', 'off'].includes(v.trim().toLowerCase());
-																					}
-																				}
-																				return false;
-																			})()}
-																			{@const isExcluded = excludedContainers.has(name) || labelExcluded}
-																			
-																			<Command.Item
-																				value={name}
-																				onSelect={() => {
-																					if (labelExcluded) return;
-																					toggleContainerExclusion(name);
-																				}}
-																				disabled={labelExcluded}
-																			>
-																				<CheckIcon
-																					class={cn(
-																						'mr-2 size-4',
-																						isExcluded ? 'opacity-100' : 'opacity-0'
-																					)}
-																				/>
-																				<span class={cn(labelExcluded && "text-muted-foreground")}>{name}</span>
-																				{#if labelExcluded}
-																					<span class="ml-auto text-xs text-muted-foreground">(Label)</span>
-																				{/if}
-																			</Command.Item>
-																		{/each}
-																	</Command.Group>
-																</Command.List>
+																	<Command.List>
+																		{#await containersPromise}
+																			<div class="flex items-center justify-center p-4">
+																				<Spinner class="size-4" />
+																			</div>
+																		{:then containers}
+																			{#if containers.length === 0}
+																				<Command.Empty>No containers found.</Command.Empty>
+																			{/if}
+																			<Command.Group>
+																				{#each containers as container (container.id)}
+																					{@const name = getContainerName(container)}
+																					{@const labelExcluded = (() => {
+																						const labels = container.labels || {};
+																						for (const [k, v] of Object.entries(labels)) {
+																							if (k.toLowerCase() === 'com.getarcaneapp.arcane.updater') {
+																								return ['false', '0', 'no', 'off'].includes(
+																									v.trim().toLowerCase()
+																								);
+																							}
+																						}
+																						return false;
+																					})()}
+																					{@const isExcluded = excludedContainers.has(name) || labelExcluded}
+
+																					<Command.Item
+																						value={name}
+																						onSelect={() => {
+																							if (labelExcluded) return;
+																							toggleContainerExclusion(name);
+																						}}
+																						disabled={labelExcluded}
+																					>
+																						<CheckIcon
+																							class={cn(
+																								'mr-2 size-4',
+																								isExcluded ? 'opacity-100' : 'opacity-0'
+																							)}
+																						/>
+																						<span class={cn(labelExcluded && 'text-muted-foreground')}
+																							>{name}</span
+																						>
+																						{#if labelExcluded}
+																							<span class="ml-auto text-xs text-muted-foreground"
+																								>(Label)</span
+																							>
+																						{/if}
+																					</Command.Item>
+																				{/each}
+																			</Command.Group>
+																		{:catch error}
+																			<div class="text-destructive p-4 text-xs">
+																				{error.message || 'Failed to load containers'}
+																			</div>
+																		{/await}
+																	</Command.List>
 															</Command.Root>
 														</Popover.Content>
 													</Popover.Root>
@@ -339,6 +339,11 @@
 					{/each}
 				</div>
 			{/if}
+			{:catch error}
+				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
+					{error.message || error}
+				</div>
+			{/await}
 		</Card.Content>
 	</Card.Root>
 </div>
