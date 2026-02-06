@@ -147,7 +147,8 @@
 		scheduledPruneImages: z.boolean(),
 		scheduledPruneVolumes: z.boolean(),
 		scheduledPruneNetworks: z.boolean(),
-		scheduledPruneBuildCache: z.boolean()
+		scheduledPruneBuildCache: z.boolean(),
+		vulnerabilityScanEnabled: z.boolean()
 	});
 
 	// Build current settings object from environment and settings data
@@ -169,7 +170,8 @@
 		scheduledPruneImages: settings?.scheduledPruneImages ?? true,
 		scheduledPruneVolumes: settings?.scheduledPruneVolumes ?? false,
 		scheduledPruneNetworks: settings?.scheduledPruneNetworks ?? true,
-		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false
+		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false,
+		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false
 	});
 
 	// Custom save handler for environment-specific settings
@@ -198,7 +200,8 @@
 				scheduledPruneImages: formData.scheduledPruneImages,
 				scheduledPruneVolumes: formData.scheduledPruneVolumes,
 				scheduledPruneNetworks: formData.scheduledPruneNetworks,
-				scheduledPruneBuildCache: formData.scheduledPruneBuildCache
+				scheduledPruneBuildCache: formData.scheduledPruneBuildCache,
+				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled
 			});
 		}
 

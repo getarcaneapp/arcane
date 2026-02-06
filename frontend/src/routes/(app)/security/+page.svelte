@@ -1,13 +1,11 @@
 <script lang="ts">
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import StatCard from '$lib/components/stat-card.svelte';
+	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '$lib/types/vulnerability.type';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import { ShieldAlertIcon, ShieldCheckIcon, AlertTriangleIcon, ShieldXIcon, ImagesIcon } from '$lib/icons';
 	import { untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 
@@ -33,6 +31,17 @@
 		const total = summary?.totalImages ?? 0;
 		const scanned = summary?.scannedImages ?? 0;
 		return `${scanned}/${total}`;
+	});
+
+	const severityItems = $derived.by(() => {
+		const items = [
+			{ key: 'critical', value: summaryCounts.critical, label: m.vuln_severity_critical(), dotClass: 'bg-red-500' },
+			{ key: 'high', value: summaryCounts.high, label: m.vuln_severity_high(), dotClass: 'bg-orange-500' },
+			{ key: 'medium', value: summaryCounts.medium, label: m.vuln_severity_medium(), dotClass: 'bg-amber-500' },
+			{ key: 'low', value: summaryCounts.low, label: m.vuln_severity_low(), dotClass: 'bg-emerald-500' },
+			{ key: 'unknown', value: summaryCounts.unknown, label: m.vuln_severity_unknown(), dotClass: 'bg-slate-400' }
+		];
+		return items.filter((item) => item.value > 0);
 	});
 
 	function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
@@ -106,75 +115,33 @@
 			disabled: isLoading.refreshing
 		}
 	]);
-
-	const statCards: StatCardConfig[] = $derived([
-		{
-			title: m.security_images_scanned(),
-			value: imagesScannedLabel,
-			icon: ImagesIcon,
-			iconColor: 'text-blue-500'
-		},
-		{
-			title: m.security_total_vulnerabilities(),
-			value: summaryCounts.total,
-			icon: ShieldAlertIcon,
-			iconColor: 'text-red-500'
-		}
-	]);
-
-	const severityCards = $derived.by(() =>
-		[
-			{
-				key: 'critical',
-				title: m.vuln_severity_critical(),
-				value: summaryCounts.critical,
-				icon: AlertTriangleIcon,
-				iconColor: 'text-red-500'
-			},
-			{
-				key: 'high',
-				title: m.vuln_severity_high(),
-				value: summaryCounts.high,
-				icon: ShieldAlertIcon,
-				iconColor: 'text-orange-500'
-			},
-			{
-				key: 'medium',
-				title: m.vuln_severity_medium(),
-				value: summaryCounts.medium,
-				icon: ShieldAlertIcon,
-				iconColor: 'text-amber-500'
-			},
-			{
-				key: 'low',
-				title: m.vuln_severity_low(),
-				value: summaryCounts.low,
-				icon: ShieldCheckIcon,
-				iconColor: 'text-emerald-500'
-			},
-			{
-				key: 'unknown',
-				title: m.vuln_severity_unknown(),
-				value: summaryCounts.unknown,
-				icon: ShieldXIcon,
-				iconColor: 'text-slate-400'
-			}
-		].filter((card) => card.value > 0)
-	);
 </script>
 
-<ResourcePageLayout title={m.security_title()} subtitle={m.security_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.security_title()} subtitle={m.security_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
-			{#if severityCards.length > 0}
-				<div class="border-border/50 bg-muted/30 rounded-xl border">
-					<div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
-						{#each severityCards as card (card.key)}
-							<StatCard variant="mini" title={card.title} value={card.value} icon={card.icon} iconColor={card.iconColor} />
-						{/each}
+			<!-- Minimal overview: one compact block -->
+			<div class="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div class="text-muted-foreground flex items-baseline gap-4 text-xs">
+						<span>{m.security_images_scanned()}: <span class="font-medium tabular-nums text-foreground">{imagesScannedLabel}</span></span>
+						<span>{m.security_total_vulnerabilities()}: <span class="font-medium tabular-nums text-foreground">{summaryCounts.total}</span></span>
 					</div>
+					{#if severityItems.length > 0}
+						<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+							{#each severityItems as item (item.key)}
+								<div class="flex items-center gap-1.5">
+									<span class="{item.dotClass} h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true"></span>
+									<span class="text-muted-foreground text-xs">
+										<span class="font-semibold tabular-nums text-foreground">{item.value}</span>
+										<span class="ml-0.5">{item.label}</span>
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
-			{/if}
+			</div>
 
 			<div class="border-border/60 rounded-xl border">
 				<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions />

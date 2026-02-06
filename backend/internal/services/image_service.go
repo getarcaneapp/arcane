@@ -95,6 +95,13 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		}
 	}
 
+	// Clean up vulnerability scan records for the deleted image
+	if s.vulnerabilityService != nil {
+		if err := s.vulnerabilityService.DeleteScanResult(ctx, id); err != nil {
+			slog.WarnContext(ctx, "failed to delete vulnerability scan record", "id", id, "error", err)
+		}
+	}
+
 	metadata := models.JSON{
 		"action":  "delete",
 		"imageId": id,
@@ -386,6 +393,15 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 				return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
 			}); err != nil {
 				slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
+			}
+
+			// Clean up vulnerability scan records for pruned images
+			if s.vulnerabilityService != nil {
+				for _, imgID := range idsToDelete {
+					if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
+						slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
+					}
+				}
 			}
 		}
 	}

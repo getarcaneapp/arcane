@@ -28,7 +28,8 @@
 		onToggleMobileField,
 		customViewOptions,
 		customToolbarActions,
-		class: className
+		class: className,
+		imageNameFilterOptions = []
 	}: {
 		table: Table<TData>;
 		selectedIds?: string[];
@@ -39,6 +40,7 @@
 		customViewOptions?: Snippet;
 		customToolbarActions?: Snippet;
 		class?: string;
+		imageNameFilterOptions?: string[];
 	} = $props();
 
 	const isFiltered = $derived(table.getState().columnFilters.length > 0 || !!table.getState().globalFilter);
@@ -52,6 +54,9 @@
 	const vulnSeverityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'vulnSeverity') ? table.getColumn('vulnSeverity') : undefined
 	);
+	const imageNameColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'imageName') ? table.getColumn('imageName') : undefined
+	);
 	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
 	const serviceCountColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
@@ -59,6 +64,9 @@
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
+	const imageNameFilterOptionsFormatted = $derived(
+		imageNameFilterOptions.map((name) => ({ label: name, value: name }))
+	);
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 
@@ -69,6 +77,7 @@
 			!!updatesColumn ||
 			!!severityColumn ||
 			!!vulnSeverityColumn ||
+			!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
 			!!(statusColumn && serviceCountColumn)
 	);
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
@@ -110,6 +119,13 @@
 				{:else if severityColumn}
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 				{/if}
+				{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
+					<DataTableFacetedFilter
+						column={imageNameColumn}
+						title={m.common_image()}
+						options={imageNameFilterOptionsFormatted}
+					/>
+				{/if}
 				{#if statusColumn && serviceCountColumn}
 					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
 				{/if}
@@ -150,6 +166,13 @@
 								/>
 							{:else if severityColumn}
 								<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
+							{/if}
+							{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
+								<DataTableFacetedFilter
+									column={imageNameColumn}
+									title={m.common_image()}
+									options={imageNameFilterOptionsFormatted}
+								/>
 							{/if}
 							{#if statusColumn && serviceCountColumn}
 								<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />

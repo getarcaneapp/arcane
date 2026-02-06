@@ -79,6 +79,7 @@ type ListAllVulnerabilitiesInput struct {
 	Limit         int    `query:"limit" doc:"Limit"`
 	Page          int    `query:"page" doc:"Page number"`
 	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
+	ImageName     string `query:"imageName" doc:"Filter by image/repo name (substring)"`
 }
 
 type ListAllVulnerabilitiesOutput struct {
@@ -342,6 +343,9 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 	}
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
+	}
+	if input.ImageName != "" {
+		params.Filters["imageName"] = input.ImageName
 	}
 
 	items, paginationResp, err := h.vulnerabilityService.ListAllVulnerabilities(ctx, params)
