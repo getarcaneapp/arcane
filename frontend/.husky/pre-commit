@@ -1,0 +1,2 @@
+pnpm -C frontend lint-staged
+echo "lint-staged complete"

@@ -93,33 +93,12 @@ func (fw *Watcher) watchLoop(ctx context.Context) {
 		case <-fw.stopCh:
 			return
 		case event, ok := <-fw.watcher.Events:
-			if !ok {
+			if fw.processEventInternal(ctx, event, ok, debounceTimer, &debouncePending) {
 				return
 			}
-			if fw.shouldHandleEvent(event) {
-				fw.handleEvent(ctx, event)
-				if !debounceTimer.Stop() {
-					select {
-					case <-debounceTimer.C:
-					default:
-					}
-				}
-				debounceTimer.Reset(fw.debounce)
-				debouncePending = true
-			}
 		case <-debounceTimer.C:
-			if !debouncePending {
+			if fw.fireDebounceInternal(ctx, &debouncePending, &lastGoroutineLog) {
 				continue
-			}
-			debouncePending = false
-			if time.Since(lastGoroutineLog) > 30*time.Second {
-				slog.DebugContext(ctx, "Filesystem watcher debounce triggered",
-					"path", fw.watchedPath,
-					"goroutines", runtime.NumGoroutine())
-				lastGoroutineLog = time.Now()
-			}
-			if fw.onChange != nil {
-				go fw.onChange(ctx)
 			}
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {
@@ -128,6 +107,44 @@ func (fw *Watcher) watchLoop(ctx context.Context) {
 			slog.ErrorContext(ctx, "Filesystem watcher error", "error", err)
 		}
 	}
+}
+
+// processEventInternal handles one fs event; returns true if the watch loop should exit.
+func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Event, ok bool, debounceTimer *time.Timer, debouncePending *bool) bool {
+	if !ok {
+		return true
+	}
+	if !fw.shouldHandleEvent(event) {
+		return false
+	}
+	fw.handleEvent(ctx, event)
+	if !debounceTimer.Stop() {
+		select {
+		case <-debounceTimer.C:
+		default:
+		}
+	}
+	debounceTimer.Reset(fw.debounce)
+	*debouncePending = true
+	return false
+}
+
+// fireDebounceInternal runs the debounced onChange callback; returns true if nothing was pending (caller should continue).
+func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bool, lastGoroutineLog *time.Time) bool {
+	if !*debouncePending {
+		return true
+	}
+	*debouncePending = false
+	if time.Since(*lastGoroutineLog) > 30*time.Second {
+		slog.DebugContext(ctx, "Filesystem watcher debounce triggered",
+			"path", fw.watchedPath,
+			"goroutines", runtime.NumGoroutine())
+		*lastGoroutineLog = time.Now()
+	}
+	if fw.onChange != nil {
+		go fw.onChange(ctx)
+	}
+	return false
 }
 
 func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {

@@ -190,7 +190,6 @@
 			terminal.options.theme = mode.current === 'dark' ? darkTheme : lightTheme;
 		}
 	});
-
 </script>
 
 <div bind:this={container} class="terminal-container h-full w-full" style="height: {height}"></div>

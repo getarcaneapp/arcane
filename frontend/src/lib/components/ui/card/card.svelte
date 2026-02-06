@@ -43,7 +43,7 @@
 	bind:this={ref}
 	data-slot="card"
 	class={cn(
-		'text-card-foreground group relative isolate gap-0 overflow-hidden rounded-xl border border-white/80 p-0 transition-all duration-300 dark:border-surface/80',
+		'text-card-foreground group dark:border-surface/80 relative isolate gap-0 overflow-hidden rounded-xl border border-white/80 p-0 transition-all duration-300',
 		getVariantClasses(variant),
 		onclick
 			? '[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-md'

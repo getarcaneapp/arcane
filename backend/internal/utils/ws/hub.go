@@ -89,11 +89,10 @@ func (h *Hub) remove(c *Client) {
 		close(c.send)
 		_ = c.conn.Close()
 	}
-	// Capture onEmpty and nil it under the lock so only one remove() invocation fires it.
+	// Capture onEmpty under the lock so we can call it outside.
 	var onEmpty func()
 	if exists && len(h.clients) == 0 && h.onEmpty != nil {
 		onEmpty = h.onEmpty
-		h.onEmpty = nil
 	}
 	h.mu.Unlock()
 

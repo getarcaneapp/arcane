@@ -226,25 +226,14 @@ func TestLeak_RepeatedConnectDisconnect(t *testing.T) {
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-	// Each connection creates its own hub (matching ws_handler.go pattern)
-	type session struct {
-		hub    *Hub
-		cancel context.CancelFunc
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(64)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
+		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 		ServeClient(ctx, hub, conn)
 	}))
@@ -296,20 +285,15 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint:contextcheck // intentional: context must outlive the HTTP request for WebSocket streaming
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
-		hub := NewHub(1024)
 		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
-		go hub.Run(ctx)
+		hub := NewHub(1024)
+		hub.SetOnEmpty(func() { cancel() })
+		go hub.Run(ctx) //nolint:contextcheck // intentional: context must outlive the HTTP request for WebSocket streaming
 
 		// Simulate a streaming data source (like Docker container logs)
 		lines := make(chan string, 256)
@@ -327,9 +311,9 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 			}
 		}()
 
-		go ForwardLines(ctx, hub, lines)
+		go ForwardLines(ctx, hub, lines) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
-		ServeClient(ctx, hub, conn)
+		ServeClient(ctx, hub, conn) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -341,7 +325,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 	}
 
 	// Read a few messages to confirm the pipeline works
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _, err = clientConn.ReadMessage()
 	require.NoError(t, err)
 
@@ -361,20 +345,15 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint:contextcheck // intentional: context must outlive the HTTP request for WebSocket streaming
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
-		hub := NewHub(1024)
 		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
-		go hub.Run(ctx)
+		hub := NewHub(1024)
+		hub.SetOnEmpty(func() { cancel() })
+		go hub.Run(ctx) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
 		// Simulate streaming source
 		lines := make(chan string, 256)
@@ -412,9 +391,9 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 			}
 		}()
 
-		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond)
+		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
-		ServeClient(ctx, hub, conn)
+		ServeClient(ctx, hub, conn) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -426,7 +405,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 	}
 
 	// Read a message to confirm the full pipeline works
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, raw, err := clientConn.ReadMessage()
 	require.NoError(t, err)
 
@@ -443,71 +422,100 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 		"full batched JSON pipeline goroutines should all exit; delta: %d", actual-baseline)
 }
 
+// startStatsHubForTest starts Hub.Run plus stats producer and JSON broadcaster;
+// caller must call ServeClient(ctx, hub, conn). Used by container-stats leak tests.
+func startStatsHubForTest(ctx context.Context, hub *Hub) {
+	statsChan := make(chan interface{}, 64)
+	go func() {
+		defer close(statsChan)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case <-ctx.Done():
+					return
+				case statsChan <- map[string]interface{}{"cpu_percent": 12.5, "memory": 1024000}:
+				default:
+				}
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case stats, ok := <-statsChan:
+				if !ok {
+					return
+				}
+				if b, err := json.Marshal(stats); err == nil {
+					hub.Broadcast(b)
+				}
+			}
+		}
+	}()
+}
+
+// startStatsHubRepeatedTest starts stats producer + broadcaster with 50ms ticker (for repeated cycles test).
+func startStatsHubRepeatedTest(ctx context.Context, hub *Hub) {
+	statsChan := make(chan interface{}, 64)
+	go func() {
+		defer close(statsChan)
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case <-ctx.Done():
+					return
+				case statsChan <- map[string]float64{"cpu": 10.0}:
+				default:
+				}
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case stats, ok := <-statsChan:
+				if !ok {
+					return
+				}
+				if b, err := json.Marshal(stats); err == nil {
+					hub.Broadcast(b)
+				}
+			}
+		}
+	}()
+}
+
 // TestLeak_ContainerStatsHubPattern tests the container stats streaming pattern:
 // Hub.Run + stats producer + JSON broadcaster + ServeClient.
-// This mirrors startContainerStatsHub() exactly.
 func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 	baseline := goroutineCount()
-
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint:contextcheck // intentional: context must outlive the HTTP request for WebSocket streaming
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
-		hub := NewHub(64)
 		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
-		go hub.Run(ctx)
-
-		// Simulate container stats stream (non-blocking send so producer exits on cancel)
-		statsChan := make(chan interface{}, 64)
-		go func() {
-			defer close(statsChan)
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					select {
-					case <-ctx.Done():
-						return
-					case statsChan <- map[string]interface{}{
-						"cpu_percent": 12.5,
-						"memory":      1024000,
-					}:
-					default:
-					}
-				}
-			}
-		}()
-
-		// JSON broadcaster (matches ws_handler.go startContainerStatsHub)
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case stats, ok := <-statsChan:
-					if !ok {
-						return
-					}
-					if b, err := json.Marshal(stats); err == nil {
-						hub.Broadcast(b)
-					}
-				}
-			}
-		}()
-
-		ServeClient(ctx, hub, conn)
+		hub := NewHub(64)
+		hub.SetOnEmpty(func() { cancel() })
+		go hub.Run(ctx)                //nolint:contextcheck // intentional: context must outlive the HTTP request
+		startStatsHubForTest(ctx, hub) //nolint:contextcheck // intentional: context must outlive the HTTP request
+		ServeClient(ctx, hub, conn)    //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -517,15 +525,11 @@ func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close()
 	}
-
-	// Read a stats message
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, raw, err := clientConn.ReadMessage()
 	require.NoError(t, err)
-
 	var stats map[string]interface{}
 	require.NoError(t, json.Unmarshal(raw, &stats))
-
 	clientConn.Close()
 
 	actual := waitForGoroutineCount(t, baseline, 3, 5*time.Second)
@@ -535,11 +539,8 @@ func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 
 // TestLeak_RepeatedStatsHubCycles simulates the exact bug report:
 // "Go to the container page. Reload the page 20/30 times."
-// Each reload creates a full stats hub pipeline. After all connections close,
-// goroutine count must return to baseline.
 func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 	baseline := goroutineCount()
-
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -547,62 +548,17 @@ func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 		if err != nil {
 			return
 		}
-
-		// Full container stats hub pattern (matches startContainerStatsHub)
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(64)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
+		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
-
-		statsChan := make(chan interface{}, 64)
-		go func() {
-			defer close(statsChan)
-			ticker := time.NewTicker(50 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					// Non-blocking send so we never block after ctx is cancelled.
-					select {
-					case <-ctx.Done():
-						return
-					case statsChan <- map[string]float64{"cpu": 10.0}:
-					default:
-						// Channel full; drop and avoid blocking (consumer may have exited).
-					}
-				}
-			}
-		}()
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case stats, ok := <-statsChan:
-					if !ok {
-						return
-					}
-					if b, err := json.Marshal(stats); err == nil {
-						hub.Broadcast(b)
-					}
-				}
-			}
-		}()
-
+		startStatsHubRepeatedTest(ctx, hub)
 		ServeClient(ctx, hub, conn)
 	}))
 	defer server.Close()
 
 	const iterations = 100
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-
 	for i := range iterations {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err, "iteration %d", i)
@@ -610,13 +566,9 @@ func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 			resp.Body.Close()
 		}
 
-		// Read one message to exercise the full pipeline
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, _ = conn.ReadMessage()
 		conn.Close()
-
-		// Brief settle between cycles
 		time.Sleep(30 * time.Millisecond)
 	}
 

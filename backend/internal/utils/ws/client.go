@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	writeWait      = 10 * time.Second
-	pingWriteWait  = 1 * time.Second // shorter so writePump doesn't block long on dead conns
-	pongWait       = 60 * time.Second
-	pingPeriod     = pongWait * 9 / 10
+	writeWait     = 10 * time.Second
+	pingWriteWait = 1 * time.Second // shorter so writePump doesn't block long on dead conns
+	pongWait      = 60 * time.Second
+	pingPeriod    = pongWait * 9 / 10
 
 	maxMessageSize   = 64 * 1024
 	clientSendBuffer = 256

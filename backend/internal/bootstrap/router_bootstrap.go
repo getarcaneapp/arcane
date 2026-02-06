@@ -150,6 +150,8 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Config:            cfg,
 	})
 
+	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, api.DefaultWebSocketMetrics()) //nolint:contextcheck
+
 	// Remaining Gin handlers (WebSocket/streaming)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg) //nolint:contextcheck
 

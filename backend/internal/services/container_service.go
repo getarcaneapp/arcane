@@ -273,23 +273,25 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	decoder := json.NewDecoder(stats.Body)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			var statsData interface{}
-			if err := decoder.Decode(&statsData); err != nil {
-				if err == io.EOF {
-					return nil
-				}
-				return fmt.Errorf("failed to decode stats: %w", err)
-			}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 
-			select {
-			case statsChan <- statsData:
-			case <-ctx.Done():
+		var statsData interface{}
+		if err := decoder.Decode(&statsData); err != nil {
+			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("failed to decode stats: %w", err)
+		}
+
+		select {
+		case statsChan <- statsData:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }

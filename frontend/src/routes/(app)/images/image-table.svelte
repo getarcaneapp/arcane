@@ -327,7 +327,7 @@
 				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
-				</DropdownMenu.Item> 
+				</DropdownMenu.Item>
 
 				<DropdownMenu.Separator />
 

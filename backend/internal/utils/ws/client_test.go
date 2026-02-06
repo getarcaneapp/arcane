@@ -63,7 +63,7 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	h.Broadcast([]byte("test message"))
 
 	// Client should receive it
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := clientConn.ReadMessage()
 	require.NoError(t, err)
 	assert.Equal(t, "test message", string(msg))
@@ -243,7 +243,7 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 		h.Broadcast([]byte(m))
 	}
 
-	clientConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for _, expected := range messages {
 		_, msg, err := clientConn.ReadMessage()
 		require.NoError(t, err)

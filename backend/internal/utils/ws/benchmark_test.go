@@ -201,7 +201,9 @@ func BenchmarkLogMessage_Marshal(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		json.Marshal(msg)
+		if _, err := json.Marshal(msg); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -212,7 +214,7 @@ func BenchmarkLogMessageBatch_Marshal(b *testing.B) {
 			batch := make([]LogMessage, batchSize)
 			for i := range batch {
 				batch[i] = LogMessage{
-					Seq:       uint64(i),
+					Seq:       uint64(i), //nolint:gosec // range index is non-negative
 					Level:     "stdout",
 					Message:   fmt.Sprintf("log message number %d from service", i),
 					Timestamp: "2024-01-15T10:30:45.123456789Z",
@@ -224,7 +226,9 @@ func BenchmarkLogMessageBatch_Marshal(b *testing.B) {
 			b.ResetTimer()
 
 			for b.Loop() {
-				json.Marshal(batch)
+				if _, err := json.Marshal(batch); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}

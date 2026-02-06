@@ -153,7 +153,7 @@ func TestForwardLogJSONBatched(t *testing.T) {
 	logs := make(chan LogMessage, 10)
 	for i := range 5 {
 		logs <- LogMessage{
-			Seq:       uint64(i + 1),
+			Seq:       uint64(i + 1), //nolint:gosec // range index is non-negative
 			Message:   "msg",
 			Timestamp: "2024-01-15T10:30:45Z",
 		}
@@ -201,7 +201,7 @@ func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 	logs := make(chan LogMessage, 10)
 	for i := range 6 {
 		logs <- LogMessage{
-			Seq:       uint64(i + 1),
+			Seq:       uint64(i + 1), //nolint:gosec // range index is non-negative
 			Message:   "msg",
 			Timestamp: "2024-01-15T10:30:45Z",
 		}

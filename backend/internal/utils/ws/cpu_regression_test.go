@@ -15,6 +15,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// startStatsHubPipeline starts the stats producer and JSON broadcaster goroutines
+// for benchmarks/tests that need a container-stats-style hub. Caller must run hub.Run and ServeClient.
+func startStatsHubPipeline(ctx context.Context, hub *Hub) {
+	statsChan := make(chan interface{}, 64)
+	go func() {
+		defer close(statsChan)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case <-ctx.Done():
+					return
+				case statsChan <- map[string]float64{"cpu": 10.0, "memory": 1024.0}:
+				default:
+				}
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case stats, ok := <-statsChan:
+				if !ok {
+					return
+				}
+				if data, err := json.Marshal(stats); err == nil {
+					hub.Broadcast(data)
+				}
+			}
+		}
+	}()
+}
+
 // ============================================================================
 // CPU Regression Benchmarks
 //
@@ -47,48 +86,11 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 		if err != nil {
 			return
 		}
-
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(64)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
+		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
-
-		// Container stats stream
-		statsChan := make(chan interface{}, 64)
-		go func() {
-			defer close(statsChan)
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					statsChan <- map[string]float64{"cpu": 10.0, "memory": 1024.0}
-				}
-			}
-		}()
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case stats, ok := <-statsChan:
-					if !ok {
-						return
-					}
-					if data, err := json.Marshal(stats); err == nil {
-						hub.Broadcast(data)
-					}
-				}
-			}
-		}()
-
+		startStatsHubPipeline(ctx, hub)
 		ServeClient(ctx, hub, conn)
 	}))
 	defer server.Close()
@@ -112,10 +114,8 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 		}
 
 		// Read one message to exercise the pipeline
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-
-		// Close (simulates page reload)
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, _ = conn.ReadMessage()
 		conn.Close()
 
 		// Brief settle for cleanup
@@ -148,14 +148,9 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 		if err != nil {
 			return
 		}
-
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(1024)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		hub.SetOnEmpty(func() {
-			cancel()
-		})
-
+		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 
 		lines := make(chan string, 256)
@@ -211,18 +206,15 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 			resp.Body.Close()
 		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, _ = conn.ReadMessage()
 		conn.Close()
-
 		time.Sleep(50 * time.Millisecond)
-
 		if (i+1)%10 == 0 || i == b.N-1 {
 			current := runtime.NumGoroutine()
 			b.ReportMetric(float64(current-baselineGoroutines), "goroutine_delta")
 		}
 	}
-
 	b.StopTimer()
 	time.Sleep(500 * time.Millisecond)
 	runtime.GC()
@@ -243,43 +235,11 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				if err != nil {
 					return
 				}
-
+				ctx, cancel := context.WithCancel(r.Context())
 				hub := NewHub(64)
-				ctx, cancel := context.WithCancel(context.Background())
 				hub.SetOnEmpty(func() { cancel() })
 				go hub.Run(ctx)
-
-				statsChan := make(chan interface{}, 64)
-				go func() {
-					defer close(statsChan)
-					ticker := time.NewTicker(100 * time.Millisecond)
-					defer ticker.Stop()
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case <-ticker.C:
-							statsChan <- map[string]float64{"cpu": 5.0}
-						}
-					}
-				}()
-
-				go func() {
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case s, ok := <-statsChan:
-							if !ok {
-								return
-							}
-							if d, err := json.Marshal(s); err == nil {
-								hub.Broadcast(d)
-							}
-						}
-					}
-				}()
-
+				startStatsHubPipeline(ctx, hub)
 				ServeClient(ctx, hub, conn)
 			}))
 			defer server.Close()
@@ -307,10 +267,9 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 					conns[j] = conn
 				}
 
-				// Read one message from each
-				for _, conn := range conns {
-					conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-					conn.ReadMessage()
+				for _, c := range conns {
+					_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+					_, _, _ = c.ReadMessage()
 				}
 
 				// Close all
@@ -336,59 +295,22 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 // inefficient polling or tight loops.
 func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(1024)
-		ctx, cancel := context.WithCancel(context.Background())
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
-
-		statsChan := make(chan interface{}, 64)
-		go func() {
-			defer close(statsChan)
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					statsChan <- map[string]float64{"cpu": 10.0}
-				}
-			}
-		}()
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case s, ok := <-statsChan:
-					if !ok {
-						return
-					}
-					if d, err := json.Marshal(s); err == nil {
-						hub.Broadcast(d)
-					}
-				}
-			}
-		}()
-
+		startStatsHubPipeline(ctx, hub)
 		ServeClient(ctx, hub, conn)
 	}))
 	defer server.Close()
-
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-
 	b.ReportAllocs()
 	b.ResetTimer()
-
-	// Each iteration reads N messages from a sustained connection
 	for b.Loop() {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		if err != nil {
@@ -397,15 +319,12 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 		if resp != nil {
 			resp.Body.Close()
 		}
-
-		// Read 10 messages (simulates user staying on page for ~1 second)
 		for range 10 {
-			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 			if _, _, err := conn.ReadMessage(); err != nil {
 				break
 			}
 		}
-
 		conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -420,53 +339,19 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 	t.Logf("baseline goroutines: %d", baseline)
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-
+		ctx, cancel := context.WithCancel(r.Context())
 		hub := NewHub(64)
-		ctx, cancel := context.WithCancel(context.Background())
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
-
-		statsChan := make(chan interface{}, 64)
-		go func() {
-			defer close(statsChan)
-			ticker := time.NewTicker(50 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					statsChan <- map[string]float64{"cpu": 10.0}
-				}
-			}
-		}()
-
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case s, ok := <-statsChan:
-					if !ok {
-						return
-					}
-					if d, err := json.Marshal(s); err == nil {
-						hub.Broadcast(d)
-					}
-				}
-			}
-		}()
-
+		startStatsHubPipeline(ctx, hub)
 		ServeClient(ctx, hub, conn)
 	}))
 	defer server.Close()
-
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	peakGoroutines := baseline
@@ -476,18 +361,14 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 		if resp != nil {
 			resp.Body.Close()
 		}
-
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, _ = conn.ReadMessage()
 		conn.Close()
-
 		time.Sleep(50 * time.Millisecond)
-
 		current := runtime.NumGoroutine()
 		if current > peakGoroutines {
 			peakGoroutines = current
 		}
-
 		if (i+1)%5 == 0 {
 			t.Logf("after %d cycles: goroutines=%d (delta=%d, peak=%d)",
 				i+1, current, current-baseline, peakGoroutines)

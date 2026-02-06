@@ -73,9 +73,7 @@ func New(cfg *types.Config) (*Client, error) {
 		apiKey:   cfg.APIKey,
 		jwtToken: cfg.JWTToken,
 		envID:    envID,
-		httpClient: &http.Client{
-			Timeout: defaultTimeout,
-		},
+		httpClient: newHTTPClientInternal(),
 	}, nil
 }
 
@@ -94,10 +92,22 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 	return &Client{
 		baseURL: cfg.ServerURL,
 		envID:   envID,
-		httpClient: &http.Client{
-			Timeout: defaultTimeout,
-		},
+		httpClient: newHTTPClientInternal(),
 	}, nil
+}
+
+func newHTTPClientInternal() *http.Client {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if ok {
+		return &http.Client{
+			Timeout:   defaultTimeout,
+			Transport: transport.Clone(),
+		}
+	}
+
+	return &http.Client{
+		Timeout: defaultTimeout,
+	}
 }
 
 // NewFromConfig loads the CLI configuration from disk and creates a new client.

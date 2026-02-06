@@ -210,9 +210,7 @@ func TestHub_OnEmptyCallback(t *testing.T) {
 
 	h.unregister <- c
 
-	require.Eventually(t, func() bool {
-		return called.Load()
-	}, time.Second, 5*time.Millisecond, "onEmpty callback was not called")
+	require.Eventually(t, called.Load, time.Second, 5*time.Millisecond, "onEmpty callback was not called")
 }
 
 func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
@@ -315,27 +313,29 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	const goroutines = 10
 	var wg sync.WaitGroup
 
-	// Concurrently register, broadcast, and unregister
-	for range goroutines {
+	// Create all pairs in the test goroutine (newTestWSPair uses t).
+	pairs := make([]struct {
+		sc      *websocket.Conn
+		cleanup func()
+	}, goroutines)
+	for i := range goroutines {
+		_, pairs[i].sc, pairs[i].cleanup = newTestWSPair(t)
+		defer pairs[i].cleanup()
+	}
+
+	for i := range goroutines {
 		wg.Add(1)
-		go func() {
+		go func(idx int) {
 			defer wg.Done()
-
-			_, sc, cleanup := newTestWSPair(t)
-			defer cleanup()
-
+			sc := pairs[idx].sc
 			c := NewClient(sc, 16)
 			h.register <- c
 
-			// Give time for registration
 			time.Sleep(10 * time.Millisecond)
-
 			h.Broadcast([]byte("concurrent message"))
-
 			time.Sleep(10 * time.Millisecond)
-
 			h.unregister <- c
-		}()
+		}(i)
 	}
 
 	wg.Wait()

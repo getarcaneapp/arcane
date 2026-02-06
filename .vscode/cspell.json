@@ -1,0 +1,15 @@
+{
+    "version": "0.2",
+    "ignorePaths": [],
+    "dictionaryDefinitions": [],
+    "dictionaries": [],
+    "words": [
+        "actboy",
+        "bradlc",
+        "dbaeumer",
+        "esbenp",
+        "moby"
+    ],
+    "ignoreWords": [],
+    "import": []
+}

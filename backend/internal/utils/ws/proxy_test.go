@@ -58,7 +58,7 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 		err := clientConn.WriteMessage(websocket.TextMessage, []byte(msg))
 		require.NoError(t, err)
 
-		clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, received, err := clientConn.ReadMessage()
 		require.NoError(t, err)
 		assert.Equal(t, "echo:"+msg, string(received))
@@ -74,7 +74,7 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 			return
 		}
 		// Close immediately
-		conn.WriteMessage(websocket.CloseMessage,
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
 		conn.Close()
 	}))
@@ -122,7 +122,7 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 
 	select {
 	case err := <-proxyDone:
-		assert.Error(t, err, "ProxyHTTP should return error when remote is unreachable")
+		require.Error(t, err, "ProxyHTTP should return error when remote is unreachable")
 	case <-time.After(50 * time.Second):
 		t.Fatal("ProxyHTTP did not return after failed dial")
 	}
@@ -169,7 +169,7 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 	err = clientConn.WriteMessage(websocket.BinaryMessage, binaryData)
 	require.NoError(t, err)
 
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	mt, received, err := clientConn.ReadMessage()
 	require.NoError(t, err)
 	assert.Equal(t, websocket.BinaryMessage, mt)

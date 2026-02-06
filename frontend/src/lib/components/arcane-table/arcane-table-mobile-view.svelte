@@ -67,10 +67,7 @@
 		{#if groupedRows.length === 0}
 			<div class="p-4">
 				<Empty.Root
-					class={cn(
-						'min-h-48 rounded-xl border-0 py-12',
-						unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm'
-					)}
+					class={cn('min-h-48 rounded-xl border-0 py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
 					role="status"
 					aria-live="polite"
 				>
@@ -90,10 +87,7 @@
 		{:else}
 			<div class="p-4">
 				<Empty.Root
-					class={cn(
-						'min-h-48 rounded-xl border-0 py-12',
-						unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm'
-					)}
+					class={cn('min-h-48 rounded-xl border-0 py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
 					role="status"
 					aria-live="polite"
 				>

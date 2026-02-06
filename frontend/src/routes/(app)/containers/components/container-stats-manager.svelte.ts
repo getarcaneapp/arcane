@@ -1,10 +1,6 @@
 import { createContainerStatsWebSocket } from '$lib/utils/ws';
 import type { ContainerStats } from '$lib/types/container.type';
-import {
-	calculateCPUPercent,
-	calculateMemoryPercent,
-	calculateMemoryUsage
-} from '$lib/utils/container-stats.utils';
+import { calculateCPUPercent, calculateMemoryPercent, calculateMemoryUsage } from '$lib/utils/container-stats.utils';
 import type { ReconnectingWebSocket } from '$lib/utils/ws';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
