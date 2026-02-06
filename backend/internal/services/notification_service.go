@@ -2136,7 +2136,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 	return nil
 }
 
-func (s *NotificationService) formatBytes(bytes uint64) string {
+func (s *NotificationService) formatBytesInternal(bytes uint64) string {
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
@@ -2151,7 +2151,7 @@ func (s *NotificationService) formatBytes(bytes uint64) string {
 
 func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var discordConfig models.DiscordConfig
-	if err := s.unmarshalConfig(config, &discordConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
 		return err
 	}
 
@@ -2159,7 +2159,7 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 		return fmt.Errorf("discord webhook ID or token not configured")
 	}
 
-	s.decryptDiscordToken(&discordConfig)
+	s.decryptDiscordTokenInternal(&discordConfig)
 
 	message := fmt.Sprintf("**🧹 System Prune Report**\n\n"+
 		"**Total Space Reclaimed:** %s\n\n"+
@@ -2168,11 +2168,11 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 		"- 🖼️ **Images:** %s\n"+
 		"- 💾 **Volumes:** %s\n"+
 		"- 🏗️ **Build Cache:** %s\n",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
 		return fmt.Errorf("failed to send Discord notification: %w", err)
@@ -2183,7 +2183,7 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 
 func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var telegramConfig models.TelegramConfig
-	if err := s.unmarshalConfig(config, &telegramConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
 		return err
 	}
 
@@ -2191,7 +2191,7 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 		return fmt.Errorf("telegram bot token or chat IDs not configured")
 	}
 
-	s.decryptTelegramToken(&telegramConfig)
+	s.decryptTelegramTokenInternal(&telegramConfig)
 
 	message := fmt.Sprintf("🧹 <b>System Prune Report</b>\n\n"+
 		"<b>Total Space Reclaimed:</b> %s\n\n"+
@@ -2200,11 +2200,11 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 		"- 🖼️ <b>Images:</b> %s\n"+
 		"- 💾 <b>Volumes:</b> %s\n"+
 		"- 🏗️ <b>Build Cache:</b> %s\n",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	if telegramConfig.ParseMode == "" {
 		telegramConfig.ParseMode = "HTML"
@@ -2219,22 +2219,22 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 
 func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var emailConfig models.EmailConfig
-	if err := s.unmarshalConfig(config, &emailConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
 		return err
 	}
 
-	if err := s.validateEmailConfig(&emailConfig); err != nil {
+	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
 		return err
 	}
 
-	s.decryptEmailPassword(&emailConfig)
+	s.decryptEmailPasswordInternal(&emailConfig)
 
 	htmlBody, _, err := s.renderPruneReportEmailTemplate(result)
 	if err != nil {
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	subject := fmt.Sprintf("System Prune Report: %s Reclaimed", s.formatBytes(result.SpaceReclaimed))
+	subject := fmt.Sprintf("System Prune Report: %s Reclaimed", s.formatBytesInternal(result.SpaceReclaimed))
 	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
@@ -2248,20 +2248,20 @@ func (s *NotificationService) renderPruneReportEmailTemplate(result *system.Prun
 	data := map[string]interface{}{
 		"LogoURL":                  logoURL,
 		"AppURL":                   appURL,
-		"TotalSpaceReclaimed":      s.formatBytes(result.SpaceReclaimed),
-		"ContainerSpaceReclaimed":  s.formatBytes(result.ContainerSpaceReclaimed),
-		"ImageSpaceReclaimed":      s.formatBytes(result.ImageSpaceReclaimed),
-		"VolumeSpaceReclaimed":     s.formatBytes(result.VolumeSpaceReclaimed),
-		"BuildCacheSpaceReclaimed": s.formatBytes(result.BuildCacheSpaceReclaimed),
+		"TotalSpaceReclaimed":      s.formatBytesInternal(result.SpaceReclaimed),
+		"ContainerSpaceReclaimed":  s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		"ImageSpaceReclaimed":      s.formatBytesInternal(result.ImageSpaceReclaimed),
+		"VolumeSpaceReclaimed":     s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		"BuildCacheSpaceReclaimed": s.formatBytesInternal(result.BuildCacheSpaceReclaimed),
 		"Time":                     time.Now().Format(time.RFC1123),
 	}
 
-	return s.renderTemplates("prune-report", data)
+	return s.renderTemplatesInternal("prune-report", data)
 }
 
 func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var signalConfig models.SignalConfig
-	if err := s.unmarshalConfig(config, &signalConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
 		return err
 	}
 
@@ -2272,18 +2272,18 @@ func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, r
 		"- Images: %s\n"+
 		"- Volumes: %s\n"+
 		"- Build Cache: %s\n",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	return notifications.SendSignal(ctx, signalConfig, message)
 }
 
 func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var slackConfig models.SlackConfig
-	if err := s.unmarshalConfig(config, &slackConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
 		return err
 	}
 
@@ -2294,18 +2294,18 @@ func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, re
 		"- 🖼️ *Images:* %s\n"+
 		"- 💾 *Volumes:* %s\n"+
 		"- 🏗️ *Build Cache:* %s\n",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	return notifications.SendSlack(ctx, slackConfig, message)
 }
 
 func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var ntfyConfig models.NtfyConfig
-	if err := s.unmarshalConfig(config, &ntfyConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
 		return err
 	}
 
@@ -2315,11 +2315,11 @@ func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, res
 		"Images: %s\n"+
 		"Volumes: %s\n"+
 		"Build Cache: %s",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	// Ntfy sends the title as part of the message or needs a separate header not currently in config
 	// For now, we omit the title attribute as it is not in the struct
@@ -2329,7 +2329,7 @@ func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, res
 
 func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var pushoverConfig models.PushoverConfig
-	if err := s.unmarshalConfig(config, &pushoverConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
 		return err
 	}
 
@@ -2339,11 +2339,11 @@ func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context,
 		"Images: %s\n"+
 		"Volumes: %s\n"+
 		"Build Cache: %s",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	if pushoverConfig.Title == "" {
 		pushoverConfig.Title = "System Prune Report"
@@ -2354,7 +2354,7 @@ func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context,
 
 func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var gotifyConfig models.GotifyConfig
-	if err := s.unmarshalConfig(config, &gotifyConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
 	}
 
@@ -2364,11 +2364,11 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, r
 		"Images: %s\n"+
 		"Volumes: %s\n"+
 		"Build Cache: %s",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	if gotifyConfig.Title == "" {
 		gotifyConfig.Title = "System Prune Report"
@@ -2379,7 +2379,7 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, r
 
 func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var genericConfig models.GenericConfig
-	if err := s.unmarshalConfig(config, &genericConfig); err != nil {
+	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
 		return err
 	}
 
@@ -2389,17 +2389,17 @@ func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, 
 		"Images: %s\n"+
 		"Volumes: %s\n"+
 		"Build Cache: %s",
-		s.formatBytes(result.SpaceReclaimed),
-		s.formatBytes(result.ContainerSpaceReclaimed),
-		s.formatBytes(result.ImageSpaceReclaimed),
-		s.formatBytes(result.VolumeSpaceReclaimed),
-		s.formatBytes(result.BuildCacheSpaceReclaimed))
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	return notifications.SendGenericWithTitle(ctx, genericConfig, "System Prune Report", message)
 }
 
 // Helper methods to reduce code duplication
-func (s *NotificationService) unmarshalConfig(config models.JSON, dest interface{}) error {
+func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest interface{}) error {
 	configBytes, err := json.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -2410,7 +2410,7 @@ func (s *NotificationService) unmarshalConfig(config models.JSON, dest interface
 	return nil
 }
 
-func (s *NotificationService) validateEmailConfig(config *models.EmailConfig) error {
+func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
 	if config.SMTPHost == "" || config.SMTPPort == 0 {
 		return fmt.Errorf("SMTP host or port not configured")
 	}
@@ -2420,7 +2420,7 @@ func (s *NotificationService) validateEmailConfig(config *models.EmailConfig) er
 	return nil
 }
 
-func (s *NotificationService) decryptDiscordToken(config *models.DiscordConfig) {
+func (s *NotificationService) decryptDiscordTokenInternal(config *models.DiscordConfig) {
 	if config.Token != "" {
 		if decrypted, err := crypto.Decrypt(config.Token); err == nil {
 			config.Token = decrypted
@@ -2428,7 +2428,7 @@ func (s *NotificationService) decryptDiscordToken(config *models.DiscordConfig) 
 	}
 }
 
-func (s *NotificationService) decryptTelegramToken(config *models.TelegramConfig) {
+func (s *NotificationService) decryptTelegramTokenInternal(config *models.TelegramConfig) {
 	if config.BotToken != "" {
 		if decrypted, err := crypto.Decrypt(config.BotToken); err == nil {
 			config.BotToken = decrypted
@@ -2436,7 +2436,7 @@ func (s *NotificationService) decryptTelegramToken(config *models.TelegramConfig
 	}
 }
 
-func (s *NotificationService) decryptEmailPassword(config *models.EmailConfig) {
+func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailConfig) {
 	if config.SMTPPassword != "" {
 		if decrypted, err := crypto.Decrypt(config.SMTPPassword); err == nil {
 			config.SMTPPassword = decrypted
@@ -2444,7 +2444,7 @@ func (s *NotificationService) decryptEmailPassword(config *models.EmailConfig) {
 	}
 }
 
-func (s *NotificationService) renderTemplates(name string, data interface{}) (string, string, error) {
+func (s *NotificationService) renderTemplatesInternal(name string, data interface{}) (string, string, error) {
 	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
