@@ -33,12 +33,12 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged       func(ctx context.Context)
-	OnAutoUpdateSettingsChanged         func(ctx context.Context)
-	OnProjectsDirectoryChanged          func(ctx context.Context)
-	OnScheduledPruneSettingsChanged     func(ctx context.Context)
-	OnVulnerabilityScanSettingsChanged  func(ctx context.Context)
-	OnTimeoutSettingsChanged            func(ctx context.Context, timeoutSettings map[string]string)
+	OnImagePollingSettingsChanged      func(ctx context.Context)
+	OnAutoUpdateSettingsChanged        func(ctx context.Context)
+	OnProjectsDirectoryChanged         func(ctx context.Context)
+	OnScheduledPruneSettingsChanged    func(ctx context.Context)
+	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
+	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings map[string]string)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {

@@ -121,11 +121,17 @@
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<!-- Minimal overview: one compact block -->
-			<div class="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
+			<div class="border-border/40 bg-muted/20 rounded-lg border px-4 py-3">
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div class="text-muted-foreground flex items-baseline gap-4 text-xs">
-						<span>{m.security_images_scanned()}: <span class="font-medium tabular-nums text-foreground">{imagesScannedLabel}</span></span>
-						<span>{m.security_total_vulnerabilities()}: <span class="font-medium tabular-nums text-foreground">{summaryCounts.total}</span></span>
+						<span
+							>{m.security_images_scanned()}:
+							<span class="text-foreground font-medium tabular-nums">{imagesScannedLabel}</span></span
+						>
+						<span
+							>{m.security_total_vulnerabilities()}:
+							<span class="text-foreground font-medium tabular-nums">{summaryCounts.total}</span></span
+						>
 					</div>
 					{#if severityItems.length > 0}
 						<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -133,7 +139,7 @@
 								<div class="flex items-center gap-1.5">
 									<span class="{item.dotClass} h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true"></span>
 									<span class="text-muted-foreground text-xs">
-										<span class="font-semibold tabular-nums text-foreground">{item.value}</span>
+										<span class="text-foreground font-semibold tabular-nums">{item.value}</span>
 										<span class="ml-0.5">{item.label}</span>
 									</span>
 								</div>

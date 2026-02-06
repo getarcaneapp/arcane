@@ -627,7 +627,7 @@
 					{onToggleMobileField}
 					{customViewOptions}
 					{customToolbarActions}
-					imageNameFilterOptions={imageNameFilterOptions}
+					{imageNameFilterOptions}
 				/>
 			</div>
 		{/if}
@@ -683,7 +683,7 @@
 					{onToggleMobileField}
 					{customViewOptions}
 					{customToolbarActions}
-					imageNameFilterOptions={imageNameFilterOptions}
+					{imageNameFilterOptions}
 				/>
 			</div>
 		{/if}

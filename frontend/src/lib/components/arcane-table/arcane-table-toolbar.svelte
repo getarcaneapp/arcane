@@ -64,9 +64,7 @@
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
-	const imageNameFilterOptionsFormatted = $derived(
-		imageNameFilterOptions.map((name) => ({ label: name, value: name }))
-	);
+	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 
@@ -120,11 +118,7 @@
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
 				{/if}
 				{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
-					<DataTableFacetedFilter
-						column={imageNameColumn}
-						title={m.common_image()}
-						options={imageNameFilterOptionsFormatted}
-					/>
+					<DataTableFacetedFilter column={imageNameColumn} title={m.common_image()} options={imageNameFilterOptionsFormatted} />
 				{/if}
 				{#if statusColumn && serviceCountColumn}
 					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
