@@ -27,9 +27,12 @@
 	}
 
 	function handlePageChange(page: number) {
-		const newOptions = {
+		const newOptions: SearchPaginationSortRequest = {
 			...requestOptions,
-			pagination: { ...requestOptions.pagination, page }
+			pagination: {
+				page,
+				limit: requestOptions.pagination?.limit ?? DEFAULT_PAGE_SIZE
+			}
 		};
 		onRefresh(newOptions);
 	}
