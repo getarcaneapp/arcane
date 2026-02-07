@@ -2,12 +2,21 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
+	import { imageService } from '$lib/services/image-service';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '$lib/types/vulnerability.type';
+	import type {
+		EnvironmentVulnerabilitySummary,
+		VulnerabilityWithImage,
+		IgnoredVulnerability
+	} from '$lib/types/vulnerability.type';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
+	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
+	import { toast } from 'svelte-sonner';
+	import { InspectIcon } from '$lib/icons';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 
 	let { data } = $props();
 
@@ -16,7 +25,20 @@
 
 	let vulnerabilities = $state<Paginated<VulnerabilityRow>>(untrack(() => data.vulnerabilities));
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
-	let isLoading = $state({ refreshing: false });
+	let isLoading = $state({ refreshing: false, scanningAll: false });
+	let scanProgress = $state({ current: 0, total: 0 });
+	let activeTab = $state('vulnerabilities');
+	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Ignored vulnerabilities state
+	let ignoredVulnerabilities = $state<Paginated<IgnoredVulnerability>>({
+		data: [],
+		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
+	});
+	let ignoredRequestOptions = $state<SearchPaginationSortRequest>({
+		pagination: { page: 1, limit: 20 }
+	});
+	let isLoadingIgnored = $state(false);
 
 	const summaryCounts = $derived.by(() => ({
 		critical: summary?.summary?.critical ?? 0,
@@ -103,16 +125,189 @@
 		);
 	}
 
+	function stopScanPolling() {
+		if (scanPollTimeout) {
+			clearTimeout(scanPollTimeout);
+			scanPollTimeout = null;
+		}
+	}
+
+	function startScanPolling(targetTotal: number) {
+		const POLL_INTERVAL_MS = 5000;
+		const MAX_ATTEMPTS = 24;
+		const MAX_IDLE_TICKS = 3;
+		let attempts = 0;
+		let idleTicks = 0;
+		let lastScanned = summary?.scannedImages ?? 0;
+
+		stopScanPolling();
+
+		const tick = async () => {
+			if (attempts >= MAX_ATTEMPTS) {
+				stopScanPolling();
+				return;
+			}
+			attempts++;
+
+			if (isLoading.refreshing) {
+				scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
+				return;
+			}
+
+			await refreshAll();
+
+			const currentScanned = summary?.scannedImages ?? 0;
+			const currentTotal = summary?.totalImages ?? targetTotal;
+
+			if (currentTotal > 0 && currentScanned >= currentTotal) {
+				stopScanPolling();
+				return;
+			}
+
+			if (currentScanned === lastScanned) {
+				idleTicks++;
+			} else {
+				idleTicks = 0;
+				lastScanned = currentScanned;
+			}
+
+			if (idleTicks >= MAX_IDLE_TICKS) {
+				stopScanPolling();
+				return;
+			}
+
+			scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
+		};
+
+		scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
+	}
+
+	async function loadIgnoredVulnerabilities(options?: SearchPaginationSortRequest) {
+		if (isLoadingIgnored) return;
+		isLoadingIgnored = true;
+		try {
+			const request = options ?? ignoredRequestOptions;
+			const response = await vulnerabilityService.getIgnoredVulnerabilities(request);
+			ignoredVulnerabilities = response;
+			if (options) {
+				ignoredRequestOptions = options;
+			}
+		} catch (error) {
+			console.error('Failed to load ignored vulnerabilities:', error);
+			toast.error(m.common_refresh_failed({ resource: m.vuln_ignored_title() }));
+		} finally {
+			isLoadingIgnored = false;
+		}
+	}
+
+	async function handleUnignore(ignoreId: string) {
+		try {
+			await vulnerabilityService.unignoreVulnerability(ignoreId);
+			toast.success(m.vuln_unignore_success());
+			// Refresh both lists
+			await loadIgnoredVulnerabilities();
+			await refreshAll();
+		} catch (error) {
+			console.error('Failed to unignore vulnerability:', error);
+			toast.error(m.vuln_unignore_failed());
+		}
+	}
+
+	function handleTabChange(value: string) {
+		activeTab = value;
+		if (value === 'ignored' && ignoredVulnerabilities.data.length === 0) {
+			loadIgnoredVulnerabilities();
+		}
+	}
+
 	useEnvironmentRefresh(refreshAll);
 
+	$effect(() => () => stopScanPolling());
+
+	async function scanAllImages() {
+		if (isLoading.scanningAll) return;
+
+		isLoading.scanningAll = true;
+		scanProgress = { current: 0, total: 0 };
+
+		try {
+			// Fetch all images with a high limit to get all of them
+			const imagesResponse = await imageService.getImages({ pagination: { page: 1, limit: 1000 } });
+			const images = imagesResponse.data ?? [];
+
+			if (images.length === 0) {
+				toast.info(m.security_no_images_to_scan());
+				isLoading.scanningAll = false;
+				return;
+			}
+
+			scanProgress = { current: 0, total: images.length };
+
+			const BATCH_SIZE = 3;
+			let succeeded = 0;
+			let failed = 0;
+
+			for (let i = 0; i < images.length; i += BATCH_SIZE) {
+				const batch = images.slice(i, i + BATCH_SIZE);
+
+				await Promise.all(
+					batch.map(async (image) => {
+						try {
+							const result = await vulnerabilityService.scanImage(image.id);
+							if (result.status === 'completed' || result.status === 'scanning' || result.status === 'pending') {
+								succeeded++;
+							} else {
+								failed++;
+							}
+						} catch (error) {
+							console.error(`Failed to scan image ${image.id}:`, error);
+							failed++;
+						}
+						scanProgress.current++;
+					})
+				);
+			}
+
+			// Show summary toast (scans run in background; this reflects requests started, not completed)
+			if (failed === 0) {
+				toast.success(m.security_scan_all_success({ count: succeeded }));
+			} else if (succeeded === 0) {
+				toast.error(m.security_scan_all_failed({ count: failed }));
+			} else {
+				toast.warning(m.security_scan_all_partial({ succeeded, failed }));
+			}
+
+			// Refresh the vulnerability data and keep polling for updates as scans complete
+			await refreshAll();
+			startScanPolling(images.length);
+		} catch (error) {
+			console.error('Error during scan all:', error);
+			toast.error(m.security_scan_all_error());
+		} finally {
+			isLoading.scanningAll = false;
+			scanProgress = { current: 0, total: 0 };
+		}
+	}
+
 	const actionButtons: ActionButton[] = $derived([
+		{
+			id: 'scan-all',
+			action: 'base',
+			label: isLoading.scanningAll
+				? `${m.security_scanning()} (${scanProgress.current}/${scanProgress.total})`
+				: m.security_scan_all(),
+			onclick: scanAllImages,
+			loading: isLoading.scanningAll,
+			disabled: isLoading.scanningAll || isLoading.refreshing,
+			icon: InspectIcon
+		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshAll,
 			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
+			disabled: isLoading.refreshing || isLoading.scanningAll
 		}
 	]);
 </script>
@@ -149,9 +344,28 @@
 				</div>
 			</div>
 
-			<div class="border-border/60 rounded-xl border">
-				<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions />
-			</div>
+			<Tabs.Root value={activeTab} onValueChange={handleTabChange}>
+				<Tabs.List class="grid w-full grid-cols-2">
+					<Tabs.Trigger value="vulnerabilities">{m.vuln_title()}</Tabs.Trigger>
+					<Tabs.Trigger value="ignored">{m.vuln_ignored_title()}</Tabs.Trigger>
+				</Tabs.List>
+				<Tabs.Content value="vulnerabilities" class="mt-4">
+					<div class="border-border/60 rounded-xl border">
+						<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions />
+					</div>
+				</Tabs.Content>
+				<Tabs.Content value="ignored" class="mt-4">
+					<div class="border-border/60 rounded-xl border">
+						<IgnoredVulnerabilitiesTable
+							{ignoredVulnerabilities}
+							requestOptions={ignoredRequestOptions}
+							isLoading={isLoadingIgnored}
+							onRefresh={loadIgnoredVulnerabilities}
+							onUnignore={handleUnignore}
+						/>
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{/snippet}
 </ResourcePageLayout>

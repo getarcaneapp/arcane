@@ -22,6 +22,7 @@
 			label: string;
 			value: string | boolean;
 			icon?: Component;
+			dotClass?: string;
 		}[];
 		showCheckboxes?: boolean;
 	} = $props();
@@ -88,7 +89,9 @@
 									<CheckIcon class="text-foreground size-6" />
 								</div>
 							{/if}
-							{#if option.icon}
+							{#if option.dotClass}
+								<span class="{option.dotClass} h-2 w-2 shrink-0 rounded-full" aria-hidden="true"></span>
+							{:else if option.icon}
 								{@const Icon = option.icon}
 								<Icon class="text-muted-foreground shrink-0" />
 							{/if}

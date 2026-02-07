@@ -198,6 +198,45 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"ApiKeyAuth": {}},
 		},
 	}, h.ListAllVulnerabilities)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "ignore-vulnerability",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/vulnerabilities/ignore",
+		Summary:     "Ignore a vulnerability",
+		Description: "Creates an ignore record for a specific vulnerability",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.IgnoreVulnerability)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unignore-vulnerability",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/vulnerabilities/ignore/{ignoreId}",
+		Summary:     "Unignore a vulnerability",
+		Description: "Removes an ignore record for a vulnerability",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UnignoreVulnerability)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-ignored-vulnerabilities",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/vulnerabilities/ignored",
+		Summary:     "List ignored vulnerabilities",
+		Description: "Retrieves a list of all ignored vulnerabilities for the environment",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListIgnoredVulnerabilities)
 }
 
 // ScanImage initiates a vulnerability scan for an image.
@@ -211,7 +250,7 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	result, err := h.vulnerabilityService.ScanImage(ctx, input.ImageID, *user)
+	result, err := h.vulnerabilityService.ScanImage(ctx, input.EnvironmentID, input.ImageID, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
 	}
@@ -348,7 +387,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 		params.Filters["imageName"] = input.ImageName
 	}
 
-	items, paginationResp, err := h.vulnerabilityService.ListAllVulnerabilities(ctx, params)
+	items, paginationResp, err := h.vulnerabilityService.ListAllVulnerabilities(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
 	}
@@ -387,6 +426,133 @@ func (h *VulnerabilityHandler) GetScannerStatus(ctx context.Context, input *GetS
 			Data: ScannerStatus{
 				Available: available,
 				Version:   version,
+			},
+		},
+	}, nil
+}
+
+type IgnoreVulnerabilityInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          vulnerability.IgnorePayload
+}
+
+type IgnoreVulnerabilityOutput struct {
+	Body base.ApiResponse[vulnerability.IgnoredVulnerability]
+}
+
+// IgnoreVulnerability creates an ignore record for a vulnerability.
+func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *IgnoreVulnerabilityInput) (*IgnoreVulnerabilityOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	payload := &input.Body
+	payload.CreatedBy = user.ID
+
+	ignore, err := h.vulnerabilityService.IgnoreVulnerability(ctx, input.EnvironmentID, payload)
+	if err != nil {
+		if err.Error() == "vulnerability is already ignored" {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &IgnoreVulnerabilityOutput{
+		Body: base.ApiResponse[vulnerability.IgnoredVulnerability]{
+			Success: true,
+			Data: vulnerability.IgnoredVulnerability{
+				ID:               ignore.ID,
+				EnvironmentID:    ignore.EnvironmentID,
+				ImageID:          ignore.ImageID,
+				VulnerabilityID:  ignore.VulnerabilityID,
+				PkgName:          ignore.PkgName,
+				InstalledVersion: ignore.InstalledVersion,
+				Reason:           ignore.Reason,
+				CreatedBy:        ignore.CreatedBy,
+				CreatedAt:        ignore.CreatedAt,
+			},
+		},
+	}, nil
+}
+
+type UnignoreVulnerabilityInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	IgnoreID      string `path:"ignoreId" doc:"Ignore record ID"`
+}
+
+type UnignoreVulnerabilityOutput struct {
+	Body base.ApiResponse[struct{}]
+}
+
+// UnignoreVulnerability removes an ignore record for a vulnerability.
+func (h *VulnerabilityHandler) UnignoreVulnerability(ctx context.Context, input *UnignoreVulnerabilityInput) (*UnignoreVulnerabilityOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := h.vulnerabilityService.UnignoreVulnerability(ctx, input.EnvironmentID, input.IgnoreID); err != nil {
+		if err.Error() == "ignore record not found" {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return &UnignoreVulnerabilityOutput{
+		Body: base.ApiResponse[struct{}]{
+			Success: true,
+		},
+	}, nil
+}
+
+type ListIgnoredVulnerabilitiesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Sort field"`
+	Order         string `query:"order" doc:"Sort order"`
+	Start         int    `query:"start" doc:"Start offset"`
+	Limit         int    `query:"limit" doc:"Limit"`
+	Page          int    `query:"page" doc:"Page number"`
+}
+
+type ListIgnoredVulnerabilitiesOutput struct {
+	Body base.Paginated[vulnerability.IgnoredVulnerability]
+}
+
+// ListIgnoredVulnerabilities returns a list of ignored vulnerabilities.
+func (h *VulnerabilityHandler) ListIgnoredVulnerabilities(ctx context.Context, input *ListIgnoredVulnerabilitiesInput) (*ListIgnoredVulnerabilitiesOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	params := buildPaginationParams(input.Page, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if params.Limit == 0 {
+		params.Limit = 20
+	}
+
+	items, paginationResp, err := h.vulnerabilityService.ListIgnoredVulnerabilities(ctx, input.EnvironmentID, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	if items == nil {
+		items = []vulnerability.IgnoredVulnerability{}
+	}
+
+	return &ListIgnoredVulnerabilitiesOutput{
+		Body: base.Paginated[vulnerability.IgnoredVulnerability]{
+			Success: true,
+			Data:    items,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
 			},
 		},
 	}, nil
