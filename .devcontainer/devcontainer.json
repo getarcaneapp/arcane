@@ -53,5 +53,8 @@
   "remoteUser": "root",
   "containerEnv": {
     "TZ": "Pacific/Auckland"  // setup correct timezone - change as appropriate
+  },
+  "remoteEnv": {
+    "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"
   }
 }
