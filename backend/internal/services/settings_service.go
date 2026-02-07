@@ -33,11 +33,12 @@ type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[models.Settings]
 
-	OnImagePollingSettingsChanged   func(ctx context.Context)
-	OnAutoUpdateSettingsChanged     func(ctx context.Context)
-	OnProjectsDirectoryChanged      func(ctx context.Context)
-	OnScheduledPruneSettingsChanged func(ctx context.Context)
-	OnTimeoutSettingsChanged        func(ctx context.Context, timeoutSettings map[string]string)
+	OnImagePollingSettingsChanged      func(ctx context.Context)
+	OnAutoUpdateSettingsChanged        func(ctx context.Context)
+	OnProjectsDirectoryChanged         func(ctx context.Context)
+	OnScheduledPruneSettingsChanged    func(ctx context.Context)
+	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
+	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings map[string]string)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -108,6 +109,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AuthLocalEnabled:           models.SettingVariable{Value: "true"},
 		AuthSessionTimeout:         models.SettingVariable{Value: "1440"},
 		AuthPasswordPolicy:         models.SettingVariable{Value: "strong"},
+		TrivyImage:                 models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -431,7 +433,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +464,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedScheduledPrune && s.OnScheduledPruneSettingsChanged != nil {
 		s.OnScheduledPruneSettingsChanged(ctx)
 	}
+	if changedVulnerabilityScan && s.OnVulnerabilityScanSettingsChanged != nil {
+		s.OnVulnerabilityScanSettingsChanged(ctx)
+	}
 	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
@@ -482,7 +487,7 @@ var timeoutSettingKeys = []string{
 	"proxyRequestTimeout",
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, map[string]string, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, map[string]string, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
@@ -490,6 +495,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedPolling := false
 	changedAutoUpdate := false
 	changedScheduledPrune := false
+	changedVulnerabilityScan := false
 	changedTimeouts := make(map[string]string)
 
 	for i := 0; i < rt.NumField(); i++ {
@@ -507,10 +513,10 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		// Validate cron settings
-		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval"}
+		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval"}
 		if slices.Contains(cronFields, key) && value != "" {
 			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
-				return nil, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
+				return nil, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 			}
 		}
 
@@ -529,7 +535,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -544,6 +550,8 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval":
+			changedVulnerabilityScan = true
 		}
 
 		// Track timeout setting changes
@@ -552,7 +560,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedTimeouts, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedTimeouts, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {

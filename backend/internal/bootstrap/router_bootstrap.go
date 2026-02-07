@@ -148,6 +148,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		SystemUpgrade:     appServices.SystemUpgrade,
 		GitRepository:     appServices.GitRepository,
 		GitOpsSync:        appServices.GitOpsSync,
+		Vulnerability:     appServices.Vulnerability,
 		Config:            cfg,
 	}
 
@@ -156,6 +157,8 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	for _, register := range registerBuildableRoutes {
 		register(apiGroup, appServices)
 	}
+
+	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, api.DefaultWebSocketMetrics()) //nolint:contextcheck
 
 	// Remaining Gin handlers (WebSocket/streaming)
 	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg) //nolint:contextcheck

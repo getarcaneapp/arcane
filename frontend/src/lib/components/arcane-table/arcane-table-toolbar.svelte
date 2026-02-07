@@ -2,7 +2,14 @@
 	import type { Table } from '@tanstack/table-core';
 	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { imageUpdateFilters, usageFilters, severityFilters, templateTypeFilters, projectStatusFilters } from './data.js';
+	import {
+		imageUpdateFilters,
+		usageFilters,
+		severityFilters,
+		vulnerabilitySeverityFilters,
+		templateTypeFilters,
+		projectStatusFilters
+	} from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
@@ -21,7 +28,8 @@
 		onToggleMobileField,
 		customViewOptions,
 		customToolbarActions,
-		class: className
+		class: className,
+		imageNameFilterOptions = []
 	}: {
 		table: Table<TData>;
 		selectedIds?: string[];
@@ -32,6 +40,7 @@
 		customViewOptions?: Snippet;
 		customToolbarActions?: Snippet;
 		class?: string;
+		imageNameFilterOptions?: string[];
 	} = $props();
 
 	const isFiltered = $derived(table.getState().columnFilters.length > 0 || !!table.getState().globalFilter);
@@ -42,6 +51,12 @@
 	const severityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
+	const vulnSeverityColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'vulnSeverity') ? table.getColumn('vulnSeverity') : undefined
+	);
+	const imageNameColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'imageName') ? table.getColumn('imageName') : undefined
+	);
 	const statusColumn = $derived(table.getAllColumns().some((col) => col.id === 'status') ? table.getColumn('status') : undefined);
 	const serviceCountColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
@@ -49,15 +64,18 @@
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
+	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
 	const hasSelection = $derived(!selectionDisabled && (selectedIds?.length ?? 0) > 0);
 	const hasBulkActions = $derived(bulkActions && bulkActions.length > 0);
 
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
-		!!(typeColumn && !severityColumn) ||
+		!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
 			!!usageColumn ||
 			!!updatesColumn ||
 			!!severityColumn ||
+			!!vulnSeverityColumn ||
+			!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
 			!!(statusColumn && serviceCountColumn)
 	);
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
@@ -81,7 +99,7 @@
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
-				{#if typeColumn && !severityColumn}
+				{#if typeColumn && !severityColumn && !vulnSeverityColumn}
 					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 				{/if}
 				{#if usageColumn}
@@ -90,8 +108,17 @@
 				{#if updatesColumn}
 					<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
 				{/if}
-				{#if severityColumn}
+				{#if vulnSeverityColumn}
+					<DataTableFacetedFilter
+						column={vulnSeverityColumn}
+						title={m.events_col_severity()}
+						options={vulnerabilitySeverityFilters}
+					/>
+				{:else if severityColumn}
 					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
+				{/if}
+				{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
+					<DataTableFacetedFilter column={imageNameColumn} title={m.common_image()} options={imageNameFilterOptionsFormatted} />
 				{/if}
 				{#if statusColumn && serviceCountColumn}
 					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
@@ -116,7 +143,7 @@
 					</Popover.Trigger>
 					<Popover.Content align="end" class="w-56 p-2">
 						<div class="flex flex-col gap-1.5">
-							{#if typeColumn && !severityColumn}
+							{#if typeColumn && !severityColumn && !vulnSeverityColumn}
 								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
 							{/if}
 							{#if usageColumn}
@@ -125,8 +152,21 @@
 							{#if updatesColumn}
 								<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
 							{/if}
-							{#if severityColumn}
+							{#if vulnSeverityColumn}
+								<DataTableFacetedFilter
+									column={vulnSeverityColumn}
+									title={m.events_col_severity()}
+									options={vulnerabilitySeverityFilters}
+								/>
+							{:else if severityColumn}
 								<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
+							{/if}
+							{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
+								<DataTableFacetedFilter
+									column={imageNameColumn}
+									title={m.common_image()}
+									options={imageNameFilterOptionsFormatted}
+								/>
 							{/if}
 							{#if statusColumn && serviceCountColumn}
 								<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />

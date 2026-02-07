@@ -112,6 +112,16 @@ type Update struct {
 	// Required: false
 	ScheduledPruneBuildCache *string `json:"scheduledPruneBuildCache,omitempty"`
 
+	// VulnerabilityScanEnabled indicates if scheduled vulnerability scanning is enabled.
+	//
+	// Required: false
+	VulnerabilityScanEnabled *string `json:"vulnerabilityScanEnabled,omitempty"`
+
+	// VulnerabilityScanInterval is the cron expression for scheduled vulnerability scans.
+	//
+	// Required: false
+	VulnerabilityScanInterval *string `json:"vulnerabilityScanInterval,omitempty"`
+
 	// MaxImageUploadSize is the maximum size for image uploads.
 	//
 	// Required: false
@@ -166,6 +176,11 @@ type Update struct {
 	//
 	// Required: false
 	AuthPasswordPolicy *string `json:"authPasswordPolicy,omitempty"`
+
+	// TrivyImage overrides the container image used for vulnerability scans.
+	//
+	// Required: false
+	TrivyImage *string `json:"trivyImage,omitempty"`
 
 	// AuthOidcConfig is deprecated and will be removed in a future release.
 	//

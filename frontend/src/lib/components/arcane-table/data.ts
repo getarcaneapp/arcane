@@ -12,6 +12,13 @@ import {
 	StopIcon
 } from '$lib/icons';
 
+export interface FilterOption {
+	value: string | boolean;
+	label: string;
+	icon?: any;
+	dotClass?: string;
+}
+
 export const usageFilters = [
 	{
 		value: true,
@@ -68,6 +75,34 @@ export const severityFilters = [
 		value: 'error',
 		label: m.events_error(),
 		icon: CloseIcon
+	}
+];
+
+export const vulnerabilitySeverityFilters = [
+	{
+		value: 'CRITICAL',
+		label: m.vuln_severity_critical(),
+		dotClass: 'bg-red-500'
+	},
+	{
+		value: 'HIGH',
+		label: m.vuln_severity_high(),
+		dotClass: 'bg-orange-500'
+	},
+	{
+		value: 'MEDIUM',
+		label: m.vuln_severity_medium(),
+		dotClass: 'bg-amber-500'
+	},
+	{
+		value: 'LOW',
+		label: m.vuln_severity_low(),
+		dotClass: 'bg-emerald-500'
+	},
+	{
+		value: 'UNKNOWN',
+		label: m.vuln_severity_unknown(),
+		dotClass: 'bg-slate-400'
 	}
 ];
 

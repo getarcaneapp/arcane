@@ -109,3 +109,8 @@ export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';
 export { default as UploadIcon } from 'virtual:icons/solar/upload-minimalistic-linear';
 export { default as RedeployIcon } from 'virtual:icons/solar/refresh-circle-linear';
 export { default as EdgeConnectionIcon } from 'virtual:icons/solar/cloud-upload-linear';
+export { default as ShieldCheckIcon } from 'virtual:icons/solar/shield-check-linear';
+export { default as ShieldAlertIcon } from 'virtual:icons/solar/shield-warning-linear';
+export { default as ShieldXIcon } from 'virtual:icons/solar/shield-cross-linear';
+export { default as ScanIcon } from 'virtual:icons/solar/magnifer-linear';
+export { default as AlertTriangleIcon } from 'virtual:icons/solar/danger-triangle-linear';

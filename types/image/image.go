@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/docker/api/types/image"
 	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/vulnerability"
 )
 
 type UpdateInfo struct {
@@ -131,6 +132,11 @@ type Summary struct {
 	//
 	// Required: false
 	UpdateInfo *UpdateInfo `json:"updateInfo,omitempty"`
+
+	// VulnerabilityScan contains the latest vulnerability scan summary for the image.
+	//
+	// Required: false
+	VulnerabilityScan *vulnerability.ScanSummary `json:"vulnerabilityScan,omitempty"`
 }
 
 type PruneReport struct {

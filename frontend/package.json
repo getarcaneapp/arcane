@@ -7,10 +7,10 @@
     "dev": "vite dev --port 3000 --host",
     "build": "vite build",
     "preview": "vite preview --port 3000",
-    "prepare": "cd .. && husky frontend/.husky",
     "lint-staged": "lint-staged",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write ./src",
+    "format:check": "prettier --check ./src",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "knip": "knip",
     "i18n:unused": "i18n-unused display-unused",
@@ -50,11 +50,9 @@
     "bytes": "^3.1.2",
     "clsx": "^2.1.1",
     "formsnap": "^2.0.1",
-    "husky": "^9.1.7",
     "i18n-unused": "^0.19.0",
     "isomorphic-dompurify": "^2.35.0",
     "knip": "^5.82.1",
-    "lint-staged": "^16.2.7",
     "mode-watcher": "^1.1.0",
     "paneforge": "^1.0.2",
     "runed": "^0.37.0",
@@ -73,10 +71,5 @@
     "vite": "^7.3.1",
     "vite-plugin-devtools-json": "^1.0.0",
     "zod": "^4.3.6"
-  },
-  "lint-staged": {
-    "*": [
-      "sh -c 'cd .. && just format all'"
-    ]
   }
 }

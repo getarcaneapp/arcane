@@ -30,6 +30,8 @@
 				return `${envBase}?tab=gitops`;
 			case 'scheduledPruneEnabled':
 				return undefined;
+			case 'vulnerabilityScanEnabled':
+				return undefined;
 			default:
 				return prereq.settingsUrl;
 		}
@@ -72,6 +74,7 @@
 	const categories = [
 		{ id: 'monitoring', label: m.jobs_monitoring_heading() },
 		{ id: 'maintenance', label: m.jobs_maintenance_heading() },
+		{ id: 'security', label: m.jobs_security_heading() },
 		{ id: 'updates', label: m.jobs_updates_heading() },
 		{ id: 'sync', label: m.jobs_sync_heading() },
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
@@ -98,6 +101,8 @@
 				return $formInputs.autoUpdate.value;
 			case 'image-polling':
 				return $formInputs.pollingEnabled.value;
+			case 'vulnerability-scan':
+				return $formInputs.vulnerabilityScanEnabled.value;
 			default:
 				return undefined;
 		}
@@ -148,6 +153,8 @@
 													<Switch bind:checked={$formInputs.autoUpdate.value} disabled={!$formInputs.pollingEnabled.value} />
 												{:else if job.id === 'scheduled-prune'}
 													<Switch bind:checked={$formInputs.scheduledPruneEnabled.value} />
+												{:else if job.id === 'vulnerability-scan'}
+													<Switch bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
 												{/if}
 											{/snippet}
 

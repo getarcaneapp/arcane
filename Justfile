@@ -952,15 +952,36 @@ _format-just:
     just --fmt --unstable
 
 [group('format')]
+_format-check-frontend:
+    pnpm -C frontend format:check
+
+[group('format')]
+_format-check-go:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    unformatted=$(gofmt -l backend cli types)
+    if [ -n "$unformatted" ]; then
+        echo "Unformatted Go files:"
+        echo "$unformatted"
+        exit 1
+    fi
+
+[group('format')]
 _format-all:
     @just _format-frontend
     @just _format-go
     @just _format-just
 
-# Format targets. Valid: "frontend", "go", "just", "all".
 [group('format')]
-format target="all":
-    @just "_format-{{ target }}"
+_format-check-all:
+    @just _format-check-frontend
+    @just _format-check-go
+
+# Format targets. Valid: "frontend", "go", "just", "all". Use --check to verify formatting.
+[group('format')]
+format target="all" check="":
+    @if [ "{{ check }}" = "--check" ]; then just "_format-check-{{ target }}"; else just "_format-{{ target }}"; fi
 
 # Clean build artifacts
 [group('repo')]
