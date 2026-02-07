@@ -137,6 +137,17 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	// Check if this environment has an active edge tunnel
 	if tunnel, ok := edge.GetRegistry().Get(envID); ok && !tunnel.Conn.IsClosed() {
 		slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
+
+		// Inject agent token into request headers before proxying through the tunnel.
+		// ProxyHTTPRequest and ProxyWebSocketRequest copy headers from c.Request.Header,
+		// so setting the token here ensures the agent receives proper authentication.
+		// Without this, the agent's agentAuth middleware rejects requests with 401
+		// because the browser's session cookies are not valid on the agent.
+		if accessToken != nil && *accessToken != "" {
+			c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
+			c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
+		}
+
 		proxyPath := m.buildProxyPath(c, envID)
 		if m.isWebSocketUpgrade(c) {
 			// Route WebSocket through the edge tunnel
