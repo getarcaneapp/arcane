@@ -7,10 +7,17 @@
 		providerId: string;
 		eventImageUpdate: boolean;
 		eventContainerUpdate: boolean;
+		eventVulnerabilityFound: boolean;
 		disabled?: boolean;
 	}
 
-	let { providerId, eventImageUpdate = $bindable(), eventContainerUpdate = $bindable(), disabled = false }: Props = $props();
+	let {
+		providerId,
+		eventImageUpdate = $bindable(),
+		eventContainerUpdate = $bindable(),
+		eventVulnerabilityFound = $bindable(),
+		disabled = false
+	}: Props = $props();
 </script>
 
 <div class="space-y-3 pt-2">
@@ -30,6 +37,13 @@
 			{disabled}
 			label={m.notifications_event_container_update_label()}
 			description={m.notifications_event_container_update_description()}
+		/>
+		<SwitchWithLabel
+			id="{providerId}-event-vulnerability-found"
+			bind:checked={eventVulnerabilityFound}
+			{disabled}
+			label={m.notifications_event_vulnerability_found_label()}
+			description={m.notifications_event_vulnerability_found_description()}
 		/>
 	</div>
 </div>

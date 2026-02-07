@@ -288,10 +288,15 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, err
 	}
 
-	// Validate projects directory if provided
+	// Validate projects directory if provided and changed from current value.
+	// Skip validation when the value matches the current (possibly env-overridden) setting
+	// so that saving unrelated settings doesn't fail due to env-provided directory formats.
 	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
-		if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
+		if *input.Body.ProjectsDirectory != currentDir {
+			if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
 		}
 	}
 

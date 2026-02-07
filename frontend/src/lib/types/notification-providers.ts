@@ -20,6 +20,7 @@ export interface BaseProviderFormValues {
 	enabled: boolean;
 	eventImageUpdate: boolean;
 	eventContainerUpdate: boolean;
+	eventVulnerabilityFound: boolean;
 }
 
 // Provider-specific form value types
@@ -174,7 +175,8 @@ export function discordSettingsToFormValues(settings?: NotificationSettings): Di
 		username: (cfg?.username as string) || 'Arcane',
 		avatarUrl: (cfg?.avatarUrl as string) || '',
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -191,7 +193,8 @@ export function emailSettingsToFormValues(settings?: NotificationSettings): Emai
 		toAddresses: Array.isArray(cfg?.toAddresses) ? (cfg.toAddresses as string[]).join(', ') : '',
 		tlsMode: ((cfg?.tlsMode as string) || 'starttls') as EmailTLSMode,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -206,7 +209,8 @@ export function telegramSettingsToFormValues(settings?: NotificationSettings): T
 		notification: (cfg?.notification as boolean) ?? true,
 		title: (cfg?.title as string) || '',
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -224,7 +228,8 @@ export function signalSettingsToFormValues(settings?: NotificationSettings): Sig
 		recipients: Array.isArray(cfg?.recipients) ? (cfg.recipients as string[]).join(', ') : '',
 		disableTls: (cfg?.disableTls as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -241,7 +246,8 @@ export function slackSettingsToFormValues(settings?: NotificationSettings): Slac
 		channel: (cfg?.channel as string) || '',
 		threadTs: (cfg?.threadTs as string) || '',
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -266,7 +272,8 @@ export function discordFormValuesToSettings(values: DiscordFormValues): Notifica
 			avatarUrl: values.avatarUrl,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -289,7 +296,8 @@ export function emailFormValuesToSettings(values: EmailFormValues): Notification
 			tlsMode: values.tlsMode,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -310,7 +318,8 @@ export function telegramFormValuesToSettings(values: TelegramFormValues): Notifi
 			title: values.title,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -334,7 +343,8 @@ export function signalFormValuesToSettings(values: SignalFormValues): Notificati
 			disableTls: values.disableTls,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -354,7 +364,8 @@ export function slackFormValuesToSettings(values: SlackFormValues): Notification
 			threadTs: values.threadTs,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -377,7 +388,8 @@ export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyF
 		firebase: (cfg?.firebase as boolean) ?? true,
 		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -392,7 +404,8 @@ export function pushoverSettingsToFormValues(settings?: NotificationSettings): P
 		priority: Number(cfg?.priority ?? 0),
 		title: (cfg?.title as string) || '',
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -409,7 +422,8 @@ export function gotifySettingsToFormValues(settings?: NotificationSettings): Got
 		title: (cfg?.title as string) || '',
 		disableTls: (cfg?.disableTls as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -448,7 +462,8 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 		messageKey: (cfg?.messageKey as string) || 'message',
 		customHeaders: customHeadersStr,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true
 	};
 }
 
@@ -473,7 +488,8 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 			disableTlsVerification: values.disableTlsVerification,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -494,7 +510,8 @@ export function pushoverFormValuesToSettings(values: PushoverFormValues): Notifi
 			title: values.title,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -514,7 +531,8 @@ export function gotifyFormValuesToSettings(values: GotifyFormValues): Notificati
 			disableTls: values.disableTls,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};
@@ -567,7 +585,8 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 			customHeaders: customHeaders,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound
 			}
 		}
 	};

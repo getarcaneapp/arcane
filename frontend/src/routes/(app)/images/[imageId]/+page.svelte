@@ -8,11 +8,15 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
+	import { onDestroy } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
+	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
+	import { startVulnerabilityScanPolling } from '$lib/utils/vulnerability-scan.util';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
+	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -21,12 +25,111 @@
 	let isLoading = $state({
 		pulling: false,
 		removing: false,
-		refreshing: false
+		refreshing: false,
+		scanning: false
 	});
 
-	const shortId = $derived(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
+	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
+	let hasLoadedVulnerabilities = $state(false);
+	let stopScanPolling: (() => void) | null = $state(null);
 
-	const createdDate = $derived(() => {
+	// Load vulnerability scan data when image changes
+	$effect(() => {
+		if (image?.id && !hasLoadedVulnerabilities) {
+			loadVulnerabilityScan();
+		}
+	});
+
+	async function loadVulnerabilityScan() {
+		if (!image?.id) return;
+		try {
+			const result = await vulnerabilityService.getScanResult(image.id);
+			vulnerabilityScan = result;
+		} catch {
+			// No scan data found, that's okay
+			vulnerabilityScan = null;
+		}
+		hasLoadedVulnerabilities = true;
+	}
+
+	async function handleScanImage() {
+		if (!image?.id || isLoading.scanning) return;
+		isLoading.scanning = true;
+		try {
+			const result = await vulnerabilityService.scanImage(image.id);
+			vulnerabilityScan = result;
+			if (result.status === 'completed') {
+				toast.success(m.vuln_scan_completed());
+			} else if (result.status === 'failed') {
+				toast.error(result.error || m.vuln_scan_failed());
+			} else {
+				beginScanPolling(true);
+			}
+		} catch (error) {
+			console.error('Failed to scan image:', error);
+			toast.error(m.vuln_scan_failed());
+		} finally {
+			isLoading.scanning = false;
+		}
+	}
+
+	function stopPolling() {
+		if (stopScanPolling) {
+			stopScanPolling();
+			stopScanPolling = null;
+		}
+	}
+
+	function beginScanPolling(showToast: boolean) {
+		if (!image?.id || stopScanPolling) return;
+		const cancel = startVulnerabilityScanPolling(image.id, (id) => vulnerabilityService.getScanSummary(id), {
+			onUpdate: (summary) => {
+				vulnerabilityScan = {
+					...(vulnerabilityScan ?? {}),
+					imageId: summary.imageId,
+					scanTime: summary.scanTime,
+					status: summary.status,
+					summary: summary.summary,
+					error: summary.error
+				} as VulnerabilityScanResult;
+			},
+			onComplete: async (summary) => {
+				stopPolling();
+				try {
+					vulnerabilityScan = await vulnerabilityService.getScanResult(summary.imageId);
+				} catch (error) {
+					console.error('Failed to load scan result:', error);
+				}
+				if (showToast) {
+					if (summary.status === 'completed') {
+						toast.success(m.vuln_scan_completed());
+					} else {
+						toast.error(summary.error || m.vuln_scan_failed());
+					}
+				}
+			},
+			onError: () => {}
+		});
+
+		stopScanPolling = cancel;
+	}
+
+	$effect(() => {
+		const scanning = vulnerabilityScan?.status === 'scanning' || vulnerabilityScan?.status === 'pending';
+		if (scanning) {
+			beginScanPolling(false);
+		} else {
+			stopPolling();
+		}
+	});
+
+	onDestroy(() => {
+		stopPolling();
+	});
+
+	const shortId = $derived.by(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
+
+	const createdDate = $derived.by(() => {
 		if (!image?.created) return m.common_na();
 		try {
 			const date = new Date(image.created);
@@ -37,9 +140,13 @@
 		}
 	});
 
-	const imageSize = $derived(() => bytes.format(image?.size || 0) || '0 B');
-	const architecture = $derived(() => image?.architecture || m.common_na());
-	const osName = $derived(() => image?.os || m.common_na());
+	const imageSize = $derived.by(() => bytes.format(image?.size || 0) || '0 B');
+	const architecture = $derived.by(() => image?.architecture || m.common_na());
+	const osName = $derived.by(() => image?.os || m.common_na());
+	const repoTags = $derived.by(() => image?.repoTags ?? []);
+	const envVars = $derived.by(() => image?.config?.env ?? []);
+	const hasTags = $derived.by(() => repoTags.length > 0);
+	const hasEnv = $derived.by(() => envVars.length > 0);
 
 	async function handleImageRemove(id: string) {
 		openConfirmDialog({
@@ -65,6 +172,14 @@
 
 	const actions: DetailAction[] = $derived([
 		{
+			id: 'scan',
+			action: 'base',
+			label: m.vuln_scan(),
+			loading: isLoading.scanning,
+			disabled: isLoading.scanning,
+			onclick: handleScanImage
+		},
+		{
 			id: 'remove',
 			action: 'remove',
 			label: m.common_remove(),
@@ -78,22 +193,28 @@
 <ResourceDetailLayout
 	backUrl="/images"
 	backLabel={m.images_title()}
-	title={image?.repoTags?.[0] || shortId()}
-	subtitle={shortId()}
+	title={image?.repoTags?.[0] || shortId}
+	subtitle={shortId}
 	{actions}
 >
-	{#snippet badges()}
-		{#if image?.architecture}
-			<StatusBadge variant="blue" text={image.architecture} />
-		{/if}
-		{#if image?.os}
-			<StatusBadge variant="purple" text={image.os} />
-		{/if}
-		<StatusBadge variant="gray" text={imageSize()} />
-	{/snippet}
-
 	{#if image}
 		<div class="space-y-6">
+			{#if hasTags}
+				<div class="border-border/60 bg-muted/30 rounded-xl border px-4 py-3">
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+							<TagIcon class="size-4" />
+							{m.common_tags()}
+						</span>
+						{#each repoTags as tag (tag)}
+							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title="Click to select">
+								{tag}
+							</Badge>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<Card.Root>
 				<Card.Header icon={InfoIcon}>
 					<div class="flex flex-col space-y-1.5">
@@ -101,180 +222,138 @@
 						<Card.Description>{m.common_details_description({ resource: m.resource_image() })}</Card.Description>
 					</div>
 				</Card.Header>
-				<Card.Content class="p-4">
-					<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10 p-2">
-								<HashIcon class="size-5 text-gray-500" />
+				<Card.Content class="p-5">
+					<div class="grid gap-3 sm:grid-cols-2">
+						<div class="border-border/60 bg-muted/30 rounded-2xl border p-4 sm:col-span-2">
+							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+								<HashIcon class="text-muted-foreground size-4" />
+								{m.common_id()}
 							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_id()}</p>
-								<p
-									class="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-									title="Click to select"
-								>
-									{image?.id || m.common_na()}
-								</p>
-							</div>
+							<p
+								class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
+								title="Click to select"
+							>
+								{image?.id || m.common_na()}
+							</p>
 						</div>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<VolumesIcon class="size-5 text-blue-500" />
+						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+								<VolumesIcon class="size-4 text-blue-500" />
+								{m.common_size()}
 							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_size()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
-									{imageSize()}
-								</p>
-							</div>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{imageSize}</p>
 						</div>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-500/10 p-2">
-								<ClockIcon class="size-5 text-green-500" />
+						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+								<ClockIcon class="size-4 text-green-500" />
+								{m.common_created()}
 							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_created()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
-									{createdDate()}
-								</p>
-							</div>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{createdDate}</p>
 						</div>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10 p-2">
-								<CpuIcon class="size-5 text-orange-500" />
+						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+								<CpuIcon class="size-4 text-orange-500" />
+								{m.common_architecture()}
 							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_architecture()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
-									{architecture()}
-								</p>
-							</div>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{architecture}</p>
 						</div>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
-								<LayersIcon class="size-5 text-indigo-500" />
+						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+								<LayersIcon class="size-4 text-indigo-500" />
+								{m.images_os()}
 							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.images_os()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
-									{osName()}
-								</p>
-							</div>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{osName}</p>
 						</div>
 
 						{#if image?.dockerVersion}
-							<div class="flex items-start gap-3">
-								<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-purple-500/10 p-2">
-									<InfoIcon class="size-5 text-purple-500" />
+							<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+									<InfoIcon class="size-4 text-purple-500" />
+									{m.common_docker_version()}
 								</div>
-								<div class="min-w-0 flex-1">
-									<p class="text-muted-foreground text-sm font-medium">{m.common_docker_version()}</p>
-									<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
-										{image.dockerVersion}
-									</p>
-								</div>
+								<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">
+									{image.dockerVersion}
+								</p>
 							</div>
 						{/if}
 
 						{#if image?.author}
-							<div class="flex items-start gap-3">
-								<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10 p-2">
-									<InfoIcon class="size-5 text-pink-500" />
+							<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
+								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+									<InfoIcon class="size-4 text-pink-500" />
+									{m.common_author()}
 								</div>
-								<div class="min-w-0 flex-1">
-									<p class="text-muted-foreground text-sm font-medium">{m.common_author()}</p>
-									<p class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base" title="Click to select">
-										{image.author}
-									</p>
-								</div>
+								<p class="mt-2 cursor-pointer text-sm font-semibold break-all select-all" title="Click to select">
+									{image.author}
+								</p>
 							</div>
 						{/if}
 
 						{#if image.config?.workingDir}
-							<div class="flex items-start gap-3">
-								<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-500/10 p-2">
-									<InfoIcon class="size-5 text-amber-500" />
+							<div class="border-border/60 bg-muted/30 rounded-xl border p-3 sm:col-span-2">
+								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
+									<InfoIcon class="size-4 text-amber-500" />
+									{m.common_working_dir()}
 								</div>
-								<div class="min-w-0 flex-1">
-									<p class="text-muted-foreground text-sm font-medium">{m.common_working_dir()}</p>
-									<p
-										class="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-										title="Click to select"
-									>
-										{image.config.workingDir}
-									</p>
-								</div>
+								<p
+									class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
+									title="Click to select"
+								>
+									{image.config.workingDir}
+								</p>
 							</div>
 						{/if}
 					</div>
-				</Card.Content>
-			</Card.Root>
 
-			{#if image.repoTags && image.repoTags.length > 0}
-				<Card.Root>
-					<Card.Header icon={TagIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.common_tags()}</Card.Title>
-							<Card.Description>{m.images_tags_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="flex flex-wrap gap-2">
-							{#each image.repoTags as tag (tag)}
-								<Badge variant="secondary" class="cursor-pointer text-sm select-all" title="Click to select">{tag}</Badge>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
-
-			{#if image.config?.env && image.config.env.length > 0}
-				<Card.Root>
-					<Card.Header icon={SettingsIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.common_environment_variables()}</Card.Title>
-							<Card.Description>{m.images_env_vars_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-							{#each image.config.env as env (env)}
-								{#if env.includes('=')}
-									{@const [key, ...valueParts] = env.split('=')}
-									{@const value = valueParts.join('=')}
-									<Card.Root variant="subtle">
-										<Card.Content class="flex flex-col gap-2 p-4">
-											<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
+					{#if hasEnv}
+						<div class="border-border/60 bg-muted/30 mt-4 rounded-2xl border p-4">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+										<SettingsIcon class="size-4" />
+										{m.common_environment_variables()}
+									</div>
+								</div>
+							</div>
+							<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{#each envVars as env (env)}
+									{#if env.includes('=')}
+										{@const [key, ...valueParts] = env.split('=')}
+										{@const value = valueParts.join('=')}
+										<div class="border-border/50 bg-muted/20 rounded-lg border px-3 py-2">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-all uppercase">
+												{key}
+											</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
 												title="Click to select"
 											>
 												{value}
 											</div>
-										</Card.Content>
-									</Card.Root>
-								{:else}
-									<Card.Root variant="subtle">
-										<Card.Content class="flex flex-col gap-2 p-4">
-											<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">ENV_VAR</div>
+										</div>
+									{:else}
+										<div class="border-border/50 bg-muted/20 rounded-lg border px-3 py-2">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">ENV_VAR</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
 												title="Click to select"
 											>
 												{env}
 											</div>
-										</Card.Content>
-									</Card.Root>
-								{/if}
-							{/each}
+										</div>
+									{/if}
+								{/each}
+							</div>
 						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
 		</div>
 	{:else}
 		<div class="py-12 text-center">

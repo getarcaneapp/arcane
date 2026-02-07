@@ -15,7 +15,8 @@ import {
 	VolumesIcon,
 	EventsIcon,
 	SettingsIcon,
-	GitBranchIcon
+	GitBranchIcon,
+	ShieldAlertIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -41,6 +42,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon, shortcut: ['mod', '7'] },
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
+	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
 			title: m.events_title(),
@@ -93,6 +95,10 @@ export function getAvailableMobileNavItems(): NavigationItem[] {
 
 	if (navigationItems.resourceItems) {
 		flatItems.push(...navigationItems.resourceItems);
+	}
+
+	if (navigationItems.securityItems) {
+		flatItems.push(...navigationItems.securityItems);
 	}
 
 	if (navigationItems.settingsItems) {

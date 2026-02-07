@@ -32,7 +32,8 @@
 			toAddresses: z.string(),
 			tlsMode: z.enum(['none', 'starttls', 'ssl']),
 			eventImageUpdate: z.boolean(),
-			eventContainerUpdate: z.boolean()
+			eventContainerUpdate: z.boolean(),
+			eventVulnerabilityFound: z.boolean()
 		})
 		.superRefine((d, ctx) => {
 			if (!d.enabled) return;
@@ -194,6 +195,7 @@
 		providerId="email"
 		bind:eventImageUpdate={values.eventImageUpdate}
 		bind:eventContainerUpdate={values.eventContainerUpdate}
+		bind:eventVulnerabilityFound={values.eventVulnerabilityFound}
 		{disabled}
 	/>
 
@@ -224,6 +226,10 @@
 					<DropdownMenu.Item onclick={() => onTest('batch-image-update')}>
 						<SendEmailIcon class="size-4" />
 						{m.notifications_email_test_batch_image_update()}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => onTest('vulnerability-found')}>
+						<SendEmailIcon class="size-4" />
+						{m.notifications_email_test_vulnerability_found()}
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>

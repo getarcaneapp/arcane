@@ -1,11 +1,12 @@
 <script lang="ts">
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import { SendEmailIcon } from '$lib/icons';
+	import { ArrowDownIcon, SendEmailIcon } from '$lib/icons';
 	import { z } from 'zod/v4';
 	import type { PushoverFormValues } from '$lib/types/notification-providers';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
@@ -15,7 +16,7 @@
 		values: PushoverFormValues;
 		disabled?: boolean;
 		isTesting?: boolean;
-		onTest?: () => void;
+		onTest?: (testType?: string) => void;
 	}
 
 	let { values = $bindable(), disabled = false, isTesting = false, onTest }: Props = $props();
@@ -39,7 +40,8 @@
 			priority: z.coerce.number().int().min(-2).max(2),
 			title: z.string(),
 			eventImageUpdate: z.boolean(),
-			eventContainerUpdate: z.boolean()
+			eventContainerUpdate: z.boolean(),
+			eventVulnerabilityFound: z.boolean()
 		})
 		.superRefine((d, ctx) => {
 			if (!d.enabled) return;
@@ -152,20 +154,36 @@
 		providerId="pushover"
 		bind:eventImageUpdate={values.eventImageUpdate}
 		bind:eventContainerUpdate={values.eventContainerUpdate}
+		bind:eventVulnerabilityFound={values.eventVulnerabilityFound}
 		{disabled}
 	/>
 
 	{#if onTest}
 		<div class="pt-2">
-			<ArcaneButton
-				action="base"
-				tone="outline"
-				onclick={onTest}
-				disabled={disabled || isTesting}
-				loading={isTesting}
-				icon={SendEmailIcon}
-				customLabel={m.notifications_test_notification()}
-			/>
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						disabled={disabled || isTesting}
+						loading={isTesting}
+						icon={SendEmailIcon}
+						customLabel={m.notifications_test_notification()}
+					>
+						<ArrowDownIcon class="ml-2 size-4" />
+					</ArcaneButton>
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="start">
+					<DropdownMenu.Item onclick={() => onTest()}>
+						<SendEmailIcon class="size-4" />
+						{m.notifications_test_notification()}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => onTest('vulnerability-found')}>
+						<SendEmailIcon class="size-4" />
+						{m.notifications_test_vulnerability_notification()}
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		</div>
 	{/if}
 </ProviderFormWrapper>

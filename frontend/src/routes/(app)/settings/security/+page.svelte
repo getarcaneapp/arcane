@@ -32,6 +32,7 @@
 				.min(15, m.security_session_timeout_min())
 				.max(1440, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
+			trivyImage: z.string(),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
@@ -62,6 +63,7 @@
 		authLocalEnabled: currentSettings.authLocalEnabled,
 		authSessionTimeout: currentSettings.authSessionTimeout,
 		authPasswordPolicy: currentSettings.authPasswordPolicy,
+		trivyImage: currentSettings.trivyImage,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
@@ -85,6 +87,7 @@
 				authLocalEnabled: ($settingsStore || data.settings!).authLocalEnabled,
 				authSessionTimeout: ($settingsStore || data.settings!).authSessionTimeout,
 				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
+				trivyImage: ($settingsStore || data.settings!).trivyImage,
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
@@ -107,6 +110,7 @@
 		$formInputs.authLocalEnabled.value !== currentSettings.authLocalEnabled ||
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
+			$formInputs.trivyImage.value !== currentSettings.trivyImage ||
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
@@ -145,6 +149,7 @@
 				authLocalEnabled: formData.authLocalEnabled,
 				authSessionTimeout: formData.authSessionTimeout,
 				authPasswordPolicy: formData.authPasswordPolicy,
+				trivyImage: formData.trivyImage,
 				oidcEnabled: formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
 				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
@@ -569,6 +574,31 @@
 										</ArcaneTooltip.Content>
 									</ArcaneTooltip.Root>
 								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Vulnerability Scanning Section -->
+			<div class="space-y-4">
+				<h3 class="text-lg font-medium">{m.security_vulnerability_scanning_heading()}</h3>
+				<div class="bg-card rounded-lg border shadow-sm">
+					<div class="space-y-6 p-6">
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.security_trivy_image_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.security_trivy_image_description()}</p>
+								<p class="text-muted-foreground mt-2 text-xs">{m.security_trivy_image_note()}</p>
+							</div>
+							<div class="max-w-xs">
+								<TextInputWithLabel
+									bind:value={$formInputs.trivyImage.value}
+									error={$formInputs.trivyImage.error}
+									label={m.security_trivy_image_label()}
+									placeholder="ghcr.io/aquasecurity/trivy:latest"
+									type="text"
+								/>
 							</div>
 						</div>
 					</div>

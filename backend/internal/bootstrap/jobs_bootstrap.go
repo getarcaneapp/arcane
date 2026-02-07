@@ -41,6 +41,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	gitOpsSyncJob := pkg_scheduler.NewGitOpsSyncJob(appServices.GitOpsSync, appServices.Settings)
 	newScheduler.RegisterJob(gitOpsSyncJob)
 
+	vulnerabilityScanJob := pkg_scheduler.NewVulnerabilityScanJob(appServices.Vulnerability, appServices.Settings)
+	newScheduler.RegisterJob(vulnerabilityScanJob)
+
 	setupJobScheduleCallbacks(
 		appServices,
 		appConfig,
@@ -52,8 +55,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		eventCleanupJob,
 		scheduledPruneJob,
 		gitOpsSyncJob,
+		vulnerabilityScanJob,
 	)
-	setupSettingsCallbacks(appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob)
+	setupSettingsCallbacks(appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob)
 }
 
 func setupJobScheduleCallbacks(
@@ -67,6 +71,7 @@ func setupJobScheduleCallbacks(
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
+	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
 ) {
 	if appServices.JobSchedule == nil {
 		return
@@ -86,6 +91,7 @@ func setupJobScheduleCallbacks(
 				eventCleanupJob,
 				scheduledPruneJob,
 				gitOpsSyncJob,
+				vulnerabilityScanJob,
 			)
 		}
 	}
@@ -103,6 +109,7 @@ func handleJobScheduleChangeInternal(
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
+	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
 ) {
 	switch key {
 	case "pollingInterval":
@@ -136,10 +143,14 @@ func handleJobScheduleChangeInternal(
 		if err := newScheduler.RescheduleJob(ctx, gitOpsSyncJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule gitops sync job", "error", err)
 		}
+	case "vulnerabilityScanInterval":
+		if err := newScheduler.RescheduleJob(ctx, vulnerabilityScanJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule vulnerability-scan job", "error", err)
+		}
 	}
 }
 
-func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob) {
+func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
 		if err := newScheduler.RescheduleJob(ctx, imagePollingJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
@@ -169,6 +180,11 @@ func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, new
 	appServices.Settings.OnScheduledPruneSettingsChanged = func(ctx context.Context) {
 		if err := newScheduler.RescheduleJob(ctx, scheduledPruneJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule scheduled-prune job", "error", err)
+		}
+	}
+	appServices.Settings.OnVulnerabilityScanSettingsChanged = func(ctx context.Context) {
+		if err := newScheduler.RescheduleJob(ctx, vulnerabilityScanJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule vulnerability-scan job", "error", err)
 		}
 	}
 
