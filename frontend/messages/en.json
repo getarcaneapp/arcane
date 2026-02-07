@@ -1754,7 +1754,7 @@
 	"notifications_matrix_port_label": "Port (Optional)",
 	"notifications_matrix_port_placeholder": "443",
 	"notifications_matrix_port_help": "Server port. Leave at 0 to use default (443 for HTTPS, 80 for HTTP)",
-	"notifications_matrix_rooms_label": "Matix Room (Optional)",
+	"notifications_matrix_rooms_label": "Matrix Room (Optional)",
 	"notifications_matrix_rooms_placeholder": "!roomId or roomAlias",
 	"notifications_matrix_rooms_help": "Your Matrix room ID (prefixed with '!') or alias",
 	"notifications_matrix_username_label": "Username",

@@ -169,12 +169,13 @@ type GotifyConfig struct {
 }
 
 type MatrixConfig struct {
-	Host                   string `json:"host"`
-	Port                   int    `json:"port,omitempty"`
-	Rooms                  string `json:"rooms"`
-	Username               string `json:"username,omitempty"`
-	Password               string `json:"password,omitempty"`
-	DisableTLSVerification bool   `json:"disableTlsVerification"`
+	Host                   string                         `json:"host"`
+	Port                   int                            `json:"port,omitempty"`
+	Rooms                  string                         `json:"rooms"`
+	Username               string                         `json:"username,omitempty"`
+	Password               string                         `json:"password,omitempty"`
+	DisableTLSVerification bool                           `json:"disableTlsVerification"`
+	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GenericConfig struct {

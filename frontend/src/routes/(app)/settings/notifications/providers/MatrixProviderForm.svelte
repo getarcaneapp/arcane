@@ -28,7 +28,7 @@
 			rooms: z.string(),
 			username: z.string(),
 			password: z.string(),
-			disableTls: z.boolean(),
+			disableTlsVerification: z.boolean(),
 			eventImageUpdate: z.boolean(),
 			eventContainerUpdate: z.boolean()
 		})
@@ -127,7 +127,7 @@
 
 	<SwitchWithLabel
 		id="matrix-disable-tls"
-		bind:checked={values.disableTls}
+		bind:checked={values.disableTlsVerification}
 		{disabled}
 		label={m.notifications_matrix_disable_tls_label()}
 		description={m.notifications_matrix_disable_tls_help()}

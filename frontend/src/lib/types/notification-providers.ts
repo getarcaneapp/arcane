@@ -108,7 +108,7 @@ export interface MatrixFormValues extends BaseProviderFormValues {
 	rooms: string;
 	username: string;
 	password: string;
-	disableTls: boolean;
+	disableTlsVerification: boolean;
 }
 
 export interface GenericFormValues extends BaseProviderFormValues {
@@ -423,7 +423,7 @@ export function matrixSettingsToFormValues(settings?: NotificationSettings): Mat
 		rooms: (cfg?.rooms as string) || '',
 		username: (cfg?.username as string) || '',
 		password: (cfg?.password as string) || '',
-		disableTls: (cfg?.disableTls as boolean) ?? false,
+		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true
 	};
@@ -530,7 +530,7 @@ export function matrixFormValuesToSettings(values: MatrixFormValues): Notificati
 			rooms: values.rooms,
 			username: values.username,
 			password: values.password,
-			disableTls: values.disableTls,
+			disableTlsVerification: values.disableTlsVerification,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate

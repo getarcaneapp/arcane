@@ -1993,6 +1993,12 @@ func (s *NotificationService) sendMatrixNotification(ctx context.Context, imageR
 		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
 	}
 
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+
 	updateStatus := "No Update"
 	if updateInfo.HasUpdate {
 		updateStatus = "⚠️ Update Available"
@@ -2028,6 +2034,12 @@ func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.
 		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
 	}
 
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+
 	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
 		"Your container has been updated with the latest image version.\n\n"+
 		"Container: %s\n"+
@@ -2057,6 +2069,12 @@ func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, u
 	}
 	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
 		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
 	}
 
 	// Build batch message content
