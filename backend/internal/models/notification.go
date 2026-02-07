@@ -15,6 +15,7 @@ const (
 	NotificationProviderNtfy     NotificationProvider = "ntfy"
 	NotificationProviderPushover NotificationProvider = "pushover"
 	NotificationProviderGotify   NotificationProvider = "gotify"
+	NotificationProviderMatrix   NotificationProvider = "matrix"
 	NotificationProviderGeneric  NotificationProvider = "generic"
 )
 
@@ -27,6 +28,7 @@ var validNotificationProviders = map[NotificationProvider]struct{}{
 	NotificationProviderNtfy:     {},
 	NotificationProviderPushover: {},
 	NotificationProviderGotify:   {},
+	NotificationProviderMatrix:   {},
 	NotificationProviderGeneric:  {},
 }
 
@@ -164,6 +166,15 @@ type GotifyConfig struct {
 	Title      string                         `json:"title,omitempty"`
 	DisableTLS bool                           `json:"disableTls"`
 	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+}
+
+type MatrixConfig struct {
+	Host                   string `json:"host"`
+	Port                   int    `json:"port,omitempty"`
+	Rooms                  string `json:"rooms"`
+	Username               string `json:"username,omitempty"`
+	Password               string `json:"password,omitempty"`
+	DisableTLSVerification bool   `json:"disableTlsVerification"`
 }
 
 type GenericConfig struct {
