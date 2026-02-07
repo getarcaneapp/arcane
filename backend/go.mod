@@ -35,7 +35,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	go.podman.io/image/v5 v5.38.0
+	go.podman.io/image/v5 v5.39.1
 	golang.org/x/crypto v0.47.0
 	golang.org/x/mod v0.32.0
 	golang.org/x/net v0.49.0
@@ -209,7 +209,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.8.0 // indirect
-	go.podman.io/storage v1.61.0 // indirect
+	go.podman.io/storage v1.62.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/arch v0.21.0 // indirect
