@@ -69,10 +69,10 @@ func New(cfg *types.Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:  cfg.ServerURL,
-		apiKey:   cfg.APIKey,
-		jwtToken: cfg.JWTToken,
-		envID:    envID,
+		baseURL:    cfg.ServerURL,
+		apiKey:     cfg.APIKey,
+		jwtToken:   cfg.JWTToken,
+		envID:      envID,
 		httpClient: newHTTPClientInternal(),
 	}, nil
 }
@@ -90,8 +90,8 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL: cfg.ServerURL,
-		envID:   envID,
+		baseURL:    cfg.ServerURL,
+		envID:      envID,
 		httpClient: newHTTPClientInternal(),
 	}, nil
 }
