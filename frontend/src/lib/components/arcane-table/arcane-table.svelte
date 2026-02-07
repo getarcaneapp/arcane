@@ -64,7 +64,8 @@
 		groupBy,
 		groupIcon,
 		groupCollapsedState = $bindable<Record<string, boolean>>({}),
-		onGroupToggle
+		onGroupToggle,
+		imageNameFilterOptions
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -100,6 +101,7 @@
 		groupIcon?: (groupName: string) => Component;
 		groupCollapsedState?: Record<string, boolean>;
 		onGroupToggle?: (groupName: string) => void;
+		imageNameFilterOptions?: string[];
 	} = $props();
 
 	// Default page size constant
@@ -625,6 +627,7 @@
 					{onToggleMobileField}
 					{customViewOptions}
 					{customToolbarActions}
+					{imageNameFilterOptions}
 				/>
 			</div>
 		{/if}
@@ -680,6 +683,7 @@
 					{onToggleMobileField}
 					{customViewOptions}
 					{customToolbarActions}
+					{imageNameFilterOptions}
 				/>
 			</div>
 		{/if}

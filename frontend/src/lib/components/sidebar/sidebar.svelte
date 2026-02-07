@@ -97,6 +97,7 @@
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
+		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
 		{/if}

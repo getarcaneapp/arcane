@@ -39,12 +39,6 @@
       ]
     }
   },
-  /*
-    Setup bind mounts in docker - this eliminates the performance overhead of using files mounted from a Windows NTFS volume.  My testing
-    reduced the complete rebuild time of the devcontainer (not including docker image create), including download and add of all node modules 
-    from around 15 minutes to under 2 minutes - I feel this worth doing :-)  Changing the remoteUser to root allows write access to the 
-    bind mount target locations
-  */
   "mounts": [
    "source=node_modules,target=/workspace/node_modules,type=volume",
    "source=pnpm_store,target=/workspace/.pnpm-store,type=volume"
@@ -52,6 +46,9 @@
   "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
   "remoteUser": "root",
   "containerEnv": {
-    "TZ": "Pacific/Auckland"  // setup correct timezone - change as appropriate
+    "TZ": "Pacific/Auckland"
+  },
+  "remoteEnv": {
+    "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"
   }
 }

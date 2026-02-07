@@ -158,7 +158,7 @@
 						{m.sidebar_management()}
 					</h4>
 					<div class="space-y-2">
-						{#each navigationItems.managementItems as item}
+						{#each navigationItems.managementItems as item (item.url)}
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}
@@ -184,7 +184,33 @@
 						{m.sidebar_resources()}
 					</h4>
 					<div class="space-y-2">
-						{#each navigationItems.resourceItems as item}
+						{#each navigationItems.resourceItems as item (item.url)}
+							{@const IconComponent = item.icon}
+							<a
+								href={item.url}
+								onclick={handleItemClick}
+								class={cn(
+									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+									isActiveItem(item)
+										? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+										: 'text-foreground hover:bg-muted/50'
+								)}
+								aria-current={isActiveItem(item) ? 'page' : undefined}
+							>
+								<IconComponent size={20} />
+								<span>{item.title}</span>
+							</a>
+						{/each}
+					</div>
+				</section>
+
+				<section>
+					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+						{m.security_title()}
+					</h4>
+					<div class="space-y-2">
+						{#each navigationItems.securityItems as item (item.url)}
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}
@@ -212,7 +238,7 @@
 								{m.sidebar_administration()}
 							</h4>
 							<div class="space-y-2">
-								{#each navigationItems.settingsItems as item}
+								{#each navigationItems.settingsItems as item (item.url)}
 									{#if item.items}
 										{@const IconComponent = item.icon}
 										<div class="space-y-2">
@@ -230,7 +256,7 @@
 												<span>{item.title}</span>
 											</a>
 											<div class="ml-6 space-y-1">
-												{#each item.items as subItem}
+												{#each item.items as subItem (subItem.url)}
 													{@const SubIconComponent = subItem.icon}
 													<a
 														href={subItem.url}

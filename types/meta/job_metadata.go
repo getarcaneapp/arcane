@@ -153,6 +153,24 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: false,
 		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
+	"vulnerability-scan": {
+		ID:             "vulnerability-scan",
+		Name:           "Vulnerability Scan",
+		Description:    "Scans all Docker images for known vulnerabilities using Trivy",
+		Category:       "security",
+		SettingsKey:    "vulnerabilityScanInterval",
+		EnabledKey:     "vulnerabilityScanEnabled",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites: []JobPrerequisiteMetadata{
+			{
+				SettingKey:  "vulnerabilityScanEnabled",
+				Label:       "Scheduled vulnerability scan enabled",
+				SettingsURL: "/settings/security",
+			},
+		},
+	},
 }
 
 func GetJobMetadata(jobID string) (JobMetadata, bool) {

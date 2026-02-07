@@ -25,6 +25,18 @@ import (
 
 const logoURLPath = "/api/app-images/logo-email"
 
+// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
+// Only vulnerabilities with a fixed version should trigger this notification.
+type VulnerabilityNotificationPayload struct {
+	CVEID            string // e.g. CVE-2024-1234
+	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
+	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+	ImageName        string // e.g. nginx:latest
+	FixedVersion     string
+	PkgName          string // optional
+	InstalledVersion string // optional
+}
+
 type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
@@ -256,6 +268,71 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
 	}
 
+	return nil
+}
+
+// SendVulnerabilityNotification notifies all enabled providers that have vulnerability_found event enabled.
+// Call this for each vulnerability that has a fixed version (so users can upgrade).
+func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload) error {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	var errors []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+		if !s.isEventEnabled(setting.Config, models.NotificationEventVulnerabilityFound) {
+			continue
+		}
+
+		var sendErr error
+		switch setting.Provider {
+		case models.NotificationProviderDiscord:
+			sendErr = s.sendDiscordVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderEmail:
+			sendErr = s.sendEmailVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		status := "success"
+		var errMsg *string
+		if sendErr != nil {
+			status = "failed"
+			msg := sendErr.Error()
+			errMsg = &msg
+			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		}
+
+		s.logNotification(ctx, setting.Provider, payload.ImageName, status, errMsg, models.JSON{
+			"cveId":        payload.CVEID,
+			"severity":     payload.Severity,
+			"fixedVersion": payload.FixedVersion,
+			"eventType":    string(models.NotificationEventVulnerabilityFound),
+		})
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+	}
 	return nil
 }
 
@@ -658,6 +735,41 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if err != nil {
 		return fmt.Errorf("please save your %s settings before testing", provider)
+	}
+
+	// Test vulnerability notification (all providers)
+	if testType == "vulnerability-found" {
+		payload := VulnerabilityNotificationPayload{
+			CVEID:            "CVE-2024-1234",
+			CVELink:          "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+			Severity:         "HIGH",
+			ImageName:        "nginx:latest",
+			FixedVersion:     "1.25.1-1",
+			PkgName:          "libssl3",
+			InstalledVersion: "3.0.0-1",
+		}
+		switch provider {
+		case models.NotificationProviderDiscord:
+			return s.sendDiscordVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderEmail:
+			return s.sendEmailVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderTelegram:
+			return s.sendTelegramVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSignal:
+			return s.sendSignalVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSlack:
+			return s.sendSlackVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderNtfy:
+			return s.sendNtfyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderPushover:
+			return s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGotify:
+			return s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGeneric:
+			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			return fmt.Errorf("unknown provider: %s", provider)
+		}
 	}
 
 	testUpdate := &imageupdate.Response{
@@ -1804,6 +1916,381 @@ func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context
 		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
 	}
 
+	return nil
+}
+
+func (s *NotificationService) renderVulnerabilityEmailTemplate(payload VulnerabilityNotificationPayload) (string, string, error) {
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
+	data := map[string]interface{}{
+		"LogoURL":          logoURL,
+		"AppURL":           appURL,
+		"CVEID":            payload.CVEID,
+		"CVELink":          payload.CVELink,
+		"Severity":         payload.Severity,
+		"ImageName":        payload.ImageName,
+		"FixedVersion":     payload.FixedVersion,
+		"PkgName":          payload.PkgName,
+		"InstalledVersion": payload.InstalledVersion,
+	}
+
+	htmlContent, err := resources.FS.ReadFile("email-templates/vulnerability-found_html.tmpl")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+	}
+	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+	}
+	var htmlBuf bytes.Buffer
+	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+	}
+
+	textContent, err := resources.FS.ReadFile("email-templates/vulnerability-found_text.tmpl")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read text template: %w", err)
+	}
+	textTmpl, err := template.New("text").Parse(string(textContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+	}
+	var textBuf bytes.Buffer
+	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+	}
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var emailConfig models.EmailConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal email config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal email config: %w", err)
+	}
+	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
+		return fmt.Errorf("SMTP host or port not configured")
+	}
+	if len(emailConfig.ToAddresses) == 0 {
+		return fmt.Errorf("no recipient email addresses configured")
+	}
+	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
+		return fmt.Errorf("invalid from address: %w", err)
+	}
+	for _, addr := range emailConfig.ToAddresses {
+		if _, err := mail.ParseAddress(addr); err != nil {
+			return fmt.Errorf("invalid to address %s: %w", addr, err)
+		}
+	}
+	if emailConfig.SMTPPassword != "" {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
+			emailConfig.SMTPPassword = decrypted
+		} else {
+			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	htmlBody, _, err := s.renderVulnerabilityEmailTemplate(payload)
+	if err != nil {
+		return fmt.Errorf("failed to render email template: %w", err)
+	}
+	subject := fmt.Sprintf("Vulnerability %s (fix available): %s", payload.CVEID, notifications.SanitizeForEmail(payload.ImageName))
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var discordConfig models.DiscordConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Discord config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
+	}
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
+	}
+	if discordConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+			discordConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ **Vulnerability Found (Fix Available)**\n\n"+
+		"**CVE:** %s\n"+
+		"**Severity:** %s\n"+
+		"**Image:** %s\n"+
+		"**Fixed version:** %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("**Link:** %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("**Package:** %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("**Installed version:** %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Telegram config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
+	}
+	if telegramConfig.BotToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+	if len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("no telegram chat IDs configured")
+	}
+	if telegramConfig.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+			telegramConfig.BotToken = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ <b>Vulnerability Found (Fix Available)</b>\n\n"+
+		"<b>CVE:</b> %s\n"+
+		"<b>Severity:</b> %s\n"+
+		"<b>Image:</b> %s\n"+
+		"<b>Fixed version:</b> %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("<b>Link:</b> %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("<b>Package:</b> %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("<b>Installed version:</b> <code>%s</code>\n", payload.InstalledVersion)
+	}
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Signal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
+	}
+	if signalConfig.Host == "" || signalConfig.Port == 0 || signalConfig.Source == "" || len(signalConfig.Recipients) == 0 {
+		return fmt.Errorf("signal not fully configured")
+	}
+	if signalConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
+			signalConfig.Password = decrypted
+		}
+	}
+	if signalConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
+			signalConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+		return fmt.Errorf("failed to send Signal notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Slack config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &slackConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Slack config: %w", err)
+	}
+	if slackConfig.Token == "" {
+		return fmt.Errorf("slack token not configured")
+	}
+	if slackConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+			slackConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ *Vulnerability Found (Fix Available)*\n\n"+
+		"*CVE:* %s\n*Severity:* %s\n*Image:* %s\n*Fixed version:* %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("*Link:* %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("*Package:* %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("*Installed version:* `%s`\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+		return fmt.Errorf("failed to send Slack notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Ntfy config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &ntfyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Ntfy config: %w", err)
+	}
+	if ntfyConfig.Topic == "" {
+		return fmt.Errorf("ntfy topic is required")
+	}
+	if ntfyConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
+			ntfyConfig.Password = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Ntfy notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Pushover config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &pushoverConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Pushover config: %w", err)
+	}
+	if pushoverConfig.Token == "" || pushoverConfig.User == "" {
+		return fmt.Errorf("pushover token or user not configured")
+	}
+	if pushoverConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
+			pushoverConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+		return fmt.Errorf("failed to send Pushover notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Gotify config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &gotifyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Gotify config: %w", err)
+	}
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Gotify notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Generic config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
+	}
+	if genericConfig.WebhookURL == "" {
+		return fmt.Errorf("webhook URL not configured")
+	}
+	message := fmt.Sprintf("Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	title := fmt.Sprintf("Vulnerability %s: %s", payload.CVEID, payload.ImageName)
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
+	}
 	return nil
 }
 

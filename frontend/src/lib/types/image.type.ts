@@ -1,3 +1,5 @@
+import type { VulnerabilityScanSummary } from './vulnerability.type';
+
 export interface ImageUpdateInfoDto {
 	hasUpdate: boolean;
 	updateType: string;
@@ -33,6 +35,7 @@ export interface ImageSummaryDto {
 	repo: string;
 	tag: string;
 	updateInfo?: ImageUpdateInfoDto;
+	vulnerabilityScan?: VulnerabilityScanSummary;
 }
 
 export interface ImageDetailSummaryDto {

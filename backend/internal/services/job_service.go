@@ -55,6 +55,7 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 		PollingInterval:            s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
 		ScheduledPruneInterval:     s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
 		GitopsSyncInterval:         s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */5 * * * *"),
+		VulnerabilityScanInterval:  s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", "0 0 0 * * *"),
 	}
 }
 
@@ -80,6 +81,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
 		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
 		{key: "gitopsSyncInterval", current: current.GitopsSyncInterval, update: updates.GitopsSyncInterval},
+		{key: "vulnerabilityScanInterval", current: current.VulnerabilityScanInterval, update: updates.VulnerabilityScanInterval},
 	}
 
 	// Validate inputs (cron expressions)
@@ -219,6 +221,7 @@ func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMe
 		"pollingInterval":            "0 */15 * * * *",
 		"scheduledPruneInterval":     "0 0 0 * * *",
 		"gitopsSyncInterval":         "0 */5 * * * *",
+		"vulnerabilityScanInterval":  "0 0 0 * * *",
 	}
 
 	defaultSchedule := defaultSchedules[meta.SettingsKey]

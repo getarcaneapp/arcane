@@ -147,6 +147,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		SystemUpgrade:     appServices.SystemUpgrade,
 		GitRepository:     appServices.GitRepository,
 		GitOpsSync:        appServices.GitOpsSync,
+		Vulnerability:     appServices.Vulnerability,
 		Config:            cfg,
 	})
 

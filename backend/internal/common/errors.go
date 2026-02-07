@@ -1294,3 +1294,25 @@ type GitOpsSyncMappingError struct {
 func (e *GitOpsSyncMappingError) Error() string {
 	return "Failed to map GitOps sync"
 }
+
+type VulnerabilityScanError struct {
+	Err error
+}
+
+func (e *VulnerabilityScanError) Error() string {
+	return fmt.Sprintf("Failed to scan image for vulnerabilities: %v", e.Err)
+}
+
+type VulnerabilityScanNotFoundError struct{}
+
+func (e *VulnerabilityScanNotFoundError) Error() string {
+	return "Vulnerability scan not found"
+}
+
+type VulnerabilityScanRetrievalError struct {
+	Err error
+}
+
+func (e *VulnerabilityScanRetrievalError) Error() string {
+	return fmt.Sprintf("Failed to retrieve vulnerability scan: %v", e.Err)
+}
