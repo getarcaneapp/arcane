@@ -46,6 +46,15 @@ type GetScanSummaryOutput struct {
 	Body base.ApiResponse[vulnerability.ScanSummary]
 }
 
+type GetScanSummariesInput struct {
+	EnvironmentID string                             `path:"id" doc:"Environment ID"`
+	Body          vulnerability.ScanSummariesRequest `doc:"Batch scan summary request"`
+}
+
+type GetScanSummariesOutput struct {
+	Body base.ApiResponse[vulnerability.ScanSummariesResponse]
+}
+
 type ListImageVulnerabilitiesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
@@ -146,6 +155,19 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetScanSummary)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-image-vulnerability-summaries",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/images/vulnerabilities/summaries",
+		Summary:     "Get vulnerability scan summaries",
+		Description: "Retrieves scan summaries for a list of images (batch)",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetScanSummaries)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-image-vulnerabilities",
@@ -259,6 +281,39 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 		Body: base.ApiResponse[vulnerability.ScanResult]{
 			Success: true,
 			Data:    *result,
+		},
+	}, nil
+}
+
+// GetScanSummaries retrieves scan summaries for a list of image IDs.
+func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetScanSummariesInput) (*GetScanSummariesOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageIDs := input.Body.ImageIDs
+	if len(imageIDs) == 0 {
+		return &GetScanSummariesOutput{
+			Body: base.ApiResponse[vulnerability.ScanSummariesResponse]{
+				Success: true,
+				Data: vulnerability.ScanSummariesResponse{
+					Summaries: map[string]*vulnerability.ScanSummary{},
+				},
+			},
+		}, nil
+	}
+
+	summaries, err := h.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
+	}
+
+	return &GetScanSummariesOutput{
+		Body: base.ApiResponse[vulnerability.ScanSummariesResponse]{
+			Success: true,
+			Data: vulnerability.ScanSummariesResponse{
+				Summaries: summaries,
+			},
 		},
 	}, nil
 }
