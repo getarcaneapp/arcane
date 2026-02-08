@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -319,7 +320,25 @@ func (c *TunnelClient) buildLocalWebSocketURL(msg *TunnelMessage) string {
 	if msg.Query != "" {
 		path = path + "?" + msg.Query
 	}
-	return "ws://localhost:" + c.localPort + path
+	host := c.localWebSocketHostInternal()
+	return "ws://" + net.JoinHostPort(host, c.localPort) + path
+}
+
+func (c *TunnelClient) localWebSocketHostInternal() string {
+	listenHost := strings.TrimSpace(c.cfg.Listen)
+	if listenHost == "" {
+		return "localhost"
+	}
+
+	trimmed := strings.TrimPrefix(listenHost, "[")
+	trimmed = strings.TrimSuffix(trimmed, "]")
+
+	switch trimmed {
+	case "0.0.0.0", "::":
+		return "localhost"
+	default:
+		return trimmed
+	}
 }
 
 func (c *TunnelClient) buildLocalWebSocketHeaders(msg *TunnelMessage) http.Header {

@@ -245,3 +245,70 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 	// Test sendErrorResponse
 	client.sendErrorResponse("req-1", 500, "error")
 }
+
+func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		listen   string
+		port     string
+		path     string
+		query    string
+		expected string
+	}{
+		{
+			name:     "empty listen uses localhost",
+			listen:   "",
+			port:     "3553",
+			path:     "/api",
+			query:    "",
+			expected: "ws://localhost:3553/api",
+		},
+		{
+			name:     "wildcard ipv4 maps to localhost",
+			listen:   "0.0.0.0",
+			port:     "3553",
+			path:     "/",
+			query:    "",
+			expected: "ws://localhost:3553/",
+		},
+		{
+			name:     "wildcard ipv6 maps to localhost",
+			listen:   "::",
+			port:     "3553",
+			path:     "/",
+			query:    "",
+			expected: "ws://localhost:3553/",
+		},
+		{
+			name:     "explicit ipv4 listen",
+			listen:   "127.0.0.1",
+			port:     "3553",
+			path:     "/",
+			query:    "q=1",
+			expected: "ws://127.0.0.1:3553/?q=1",
+		},
+		{
+			name:     "explicit ipv6 listen",
+			listen:   "2001:db8::1",
+			port:     "3553",
+			path:     "/ws",
+			query:    "",
+			expected: "ws://[2001:db8::1]:3553/ws",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Listen: testCase.listen,
+				Port:   testCase.port,
+			}
+			client := NewTunnelClient(cfg, http.NotFoundHandler())
+			msg := &TunnelMessage{
+				Path:  testCase.path,
+				Query: testCase.query,
+			}
+			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURL(msg))
+		})
+	}
+}

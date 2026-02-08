@@ -202,14 +202,15 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 		}()
 	}
 
+	listenAddr := cfg.ListenAddr()
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
+		Addr:              listenAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		slog.InfoContext(appCtx, "Starting HTTP server", "port", cfg.Port)
+		slog.InfoContext(appCtx, "Starting HTTP server", "addr", listenAddr, "listen", cfg.Listen, "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.ErrorContext(appCtx, "Failed to start server", "error", err)
 		}
