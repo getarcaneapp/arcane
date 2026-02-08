@@ -33,7 +33,7 @@ Set the Arcane server URL:
 
 ### Authenticate (choose one)
 
-#### Option A: Device code (OIDC)
+#### Option A: Device code (OIDC must be enabled for this method, as it uses your external provider.)
 
 - `arcane auth login`
 

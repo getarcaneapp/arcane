@@ -9,4 +9,5 @@ export { default as EventSubscriptions } from './EventSubscriptions.svelte';
 export { default as NtfyProviderForm } from './NtfyProviderForm.svelte';
 export { default as PushoverProviderForm } from './PushoverProviderForm.svelte';
 export { default as GotifyProviderForm } from './GotifyProviderForm.svelte';
+export { default as MatrixProviderForm } from './MatrixProviderForm.svelte';
 export { default as GenericProviderForm } from './GenericProviderForm.svelte';

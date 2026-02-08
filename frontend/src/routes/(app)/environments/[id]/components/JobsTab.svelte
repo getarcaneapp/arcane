@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { containerService } from '$lib/services/container-service';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -8,6 +9,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
+	import SearchableSelect from '$lib/components/form/searchable-select.svelte';
 	import { JobsIcon, AlertIcon } from '$lib/icons';
 	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
@@ -45,22 +47,28 @@
 		return result.data.data;
 	});
 
-	// Use $derived to compute the excluded containers set from form input (avoids $effect state mutation)
-	const excludedContainers = $derived.by(() => {
-		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
-		const names = savedValue
-			.split(',')
-			.map((s: string) => normalizeContainerName(s.trim()))
-			.filter(Boolean);
-		return new Set<string>(names);
-	});
-
-	let containerSearchQuery = $state('');
+	const excludedContainers = new SvelteSet<string>();
 
 	const exclusionLabel = $derived.by(() => {
 		if (excludedContainers.size === 0) return m.auto_update_select_containers();
 		if (excludedContainers.size === 1) return m.auto_update_containers_excluded_one();
 		return m.auto_update_containers_excluded_many({ count: excludedContainers.size });
+	});
+
+	$effect(() => {
+		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
+		const names = savedValue
+			.split(',')
+			.map((s: string) => normalizeContainerName(s.trim()))
+			.filter(Boolean);
+
+		// Synchronize the SvelteSet with the form input value
+		// Only update if there are actual changes to avoid unnecessary reactivity
+		const currentNames = Array.from(excludedContainers);
+		if (names.length !== currentNames.length || names.some((n: string) => !excludedContainers.has(n))) {
+			excludedContainers.clear();
+			names.forEach((n: string) => excludedContainers.add(n));
+		}
 	});
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -89,15 +97,13 @@
 
 	function toggleContainerExclusion(containerName: string) {
 		const normalizedName = normalizeContainerName(containerName);
-		const currentExcluded = new Set(excludedContainers);
-		
-		if (currentExcluded.has(normalizedName)) {
-			currentExcluded.delete(normalizedName);
+		if (excludedContainers.has(normalizedName)) {
+			excludedContainers.delete(normalizedName);
 		} else {
-			currentExcluded.add(normalizedName);
+			excludedContainers.add(normalizedName);
 		}
 
-		const newValue = Array.from(currentExcluded).join(',');
+		const newValue = Array.from(excludedContainers).join(',');
 		if ($formInputs.autoUpdateExcludedContainers) {
 			$formInputs.autoUpdateExcludedContainers.value = newValue;
 		}
@@ -221,69 +227,48 @@
 													<div class="border-border/20 space-y-3 border-t pt-3">
 														<div class="space-y-1">
 															<Label class="text-sm font-medium">Excluded Containers</Label>
-									{#if excludedContainers.size > 0}
-										<span class="bg-primary/10 text-primary ml-2 rounded-full px-2 py-0.5 text-xs font-medium">{excludedContainers.size} excluded</span>
-									{/if}
 															<p class="text-muted-foreground text-xs">Select containers to exclude from automatic updates.</p>
 														</div>
 
 														{#await containersPromise}
-															<div class="border-input bg-background rounded-md border p-2">
-																<div class="flex items-center justify-center py-4">
-																	<Spinner class="size-4" />
-																	<span class="text-muted-foreground ml-2 text-sm">Loading containers...</span>
-																</div>
-															</div>
+															<SearchableSelect
+																items={[]}
+																displayText={exclusionLabel}
+																placeholder={excludedContainers.size === 0}
+																isLoading={true}
+																emptyText="Loading containers..."
+																size="sm"
+																class="w-1/2"
+																listClass="max-h-36"
+																inputClass="h-8 py-1 text-sm"
+																itemClass="py-1 text-sm"
+																onSelect={(value) => toggleContainerExclusion(value)}
+															/>
 														{:then containers}
-															{@const allContainerItems = containers.map(mapContainerToItem)}
-															{@const filteredContainerItems = containerSearchQuery
-																? allContainerItems.filter((item) => item.label.toLowerCase().includes(containerSearchQuery.toLowerCase()))
-																: allContainerItems}
-															<div class="border-input bg-background rounded-md border">
-																<div class="border-b p-2">
-																	<input
-																		type="text"
-																		placeholder="Search containers..."
-																		bind:value={containerSearchQuery}
-																		class="bg-transparent text-sm outline-none placeholder:text-muted-foreground w-full"
-																	/>
-																</div>
-																<div class="max-h-48 overflow-y-auto p-1">
-																	{#if filteredContainerItems.length === 0}
-																		<div class="text-muted-foreground py-2 text-center text-sm">No containers found</div>
-																	{:else}
-																		{#each filteredContainerItems as item (item.value)}
-																			<button
-																				type="button"
-																				class="hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors"
-																				class:opacity-50={item.disabled}
-																				disabled={item.disabled}
-																				onclick={() => toggleContainerExclusion(item.value)}
-																			>
-																				<div
-																					class="border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border {item.selected
-																						? 'bg-primary text-primary-foreground'
-																						: 'opacity-50'}"
-																				>
-																					{#if item.selected}
-																						<svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-																							<polyline points="20 6 9 17 4 12"></polyline>
-																						</svg>
-																					{/if}
-																				</div>
-																				<span class="truncate" class:text-muted-foreground={item.disabled}>{item.label}</span>
-																				{#if item.hint}
-																					<span class="text-muted-foreground ml-auto text-xs">{item.hint}</span>
-																				{/if}
-																			</button>
-																		{/each}
-																	{/if}
-																</div>
-															</div>
+															<SearchableSelect
+																items={containers.map(mapContainerToItem)}
+																displayText={exclusionLabel}
+																placeholder={excludedContainers.size === 0}
+																size="sm"
+																class="w-1/2"
+																listClass="max-h-36"
+																inputClass="h-8 py-1 text-sm"
+																itemClass="py-1 text-sm"
+																onSelect={(value) => toggleContainerExclusion(value)}
+															/>
 														{:catch error}
-															<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-md border p-3 text-sm">
-																{error.message || 'Failed to load containers'}
-															</div>
+															<SearchableSelect
+																items={[]}
+																displayText={exclusionLabel}
+																placeholder={excludedContainers.size === 0}
+																emptyText={error.message || 'Failed to load containers'}
+																size="sm"
+																class="w-1/2"
+																listClass="max-h-36"
+																inputClass="h-8 py-1 text-sm"
+																itemClass="py-1 text-sm"
+																onSelect={(value) => toggleContainerExclusion(value)}
+															/>
 														{/await}
 													</div>
 												{/if}

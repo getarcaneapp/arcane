@@ -144,6 +144,8 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 			sendErr = s.sendPushoverNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendGotifyNotification(ctx, imageRef, updateInfo, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixNotification(ctx, imageRef, updateInfo, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericNotification(ctx, imageRef, updateInfo, setting.Config)
 		default:
@@ -241,6 +243,8 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 			sendErr = s.sendPushoverContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendGotifyContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericContainerUpdateNotification(ctx, containerName, imageRef, oldDigest, newDigest, setting.Config)
 		default:
@@ -307,6 +311,8 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 			sendErr = s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
 		default:
@@ -766,6 +772,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			return s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGotify:
 			return s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderMatrix:
+			return s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
 		default:
@@ -832,6 +840,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 		return s.sendPushoverNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	case models.NotificationProviderGotify:
 		return s.sendGotifyNotification(ctx, "test/image:latest", testUpdate, setting.Config)
+	case models.NotificationProviderMatrix:
+		return s.sendMatrixNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	case models.NotificationProviderGeneric:
 		return s.sendGenericNotification(ctx, "test/image:latest", testUpdate, setting.Config)
 	default:
@@ -994,6 +1004,8 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 			sendErr = s.sendBatchPushoverNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendBatchGotifyNotification(ctx, updatesWithChanges, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendBatchMatrixNotification(ctx, updatesWithChanges, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendBatchGenericNotification(ctx, updatesWithChanges, setting.Config)
 		default:
@@ -2265,6 +2277,37 @@ func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Co
 	return nil
 }
 
+func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Matrix config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+		return fmt.Errorf("failed to send Matrix notification: %w", err)
+	}
+	return nil
+}
+
 func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
 	var genericConfig models.GenericConfig
 	configBytes, err := json.Marshal(config)
@@ -2463,6 +2506,128 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, u
 	return nil
 }
 
+func (s *NotificationService) sendMatrixNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Matrix config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+
+	updateStatus := "No Update"
+	if updateInfo.HasUpdate {
+		updateStatus = "⚠️ Update Available"
+	}
+
+	message := fmt.Sprintf("🔔 Container Image Update Notification\n\n"+
+		"Image: %s\n"+
+		"Status: %s\n"+
+		"Update Type: %s\n",
+		imageRef, updateStatus, updateInfo.UpdateType)
+
+	if updateInfo.CurrentDigest != "" {
+		message += fmt.Sprintf("Current Digest: %s\n", updateInfo.CurrentDigest)
+	}
+	if updateInfo.LatestDigest != "" {
+		message += fmt.Sprintf("Latest Digest: %s\n", updateInfo.LatestDigest)
+	}
+
+	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+		return fmt.Errorf("failed to send Matrix notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Matrix config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+
+	message := fmt.Sprintf("✅ Container Successfully Updated\n\n"+
+		"Your container has been updated with the latest image version.\n\n"+
+		"Container: %s\n"+
+		"Image: %s\n"+
+		"Status: ✅ Updated Successfully\n",
+		containerName, imageRef)
+
+	if oldDigest != "" {
+		message += fmt.Sprintf("Previous Version: %s\n", oldDigest)
+	}
+	if newDigest != "" {
+		message += fmt.Sprintf("Current Version: %s\n", newDigest)
+	}
+
+	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+		return fmt.Errorf("failed to send Matrix notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Matrix config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+
+	// Build batch message content
+	title := "Container Image Updates Available"
+	description := fmt.Sprintf("%d container image(s) have updates available.", len(updates))
+	if len(updates) == 1 {
+		description = "1 container image has an update available."
+	}
+
+	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+
+	for imageRef, update := range updates {
+		message += fmt.Sprintf("%s\n"+
+			"• Type: %s\n"+
+			"• Current: %s\n"+
+			"• Latest: %s\n\n",
+			imageRef,
+			update.UpdateType,
+			update.CurrentDigest,
+			update.LatestDigest,
+		)
+	}
+
+	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+		return fmt.Errorf("failed to send batch Matrix notification: %w", err)
+	}
+
+	return nil
+}
+
 // MigrateDiscordWebhookUrlToFields migrates legacy Discord webhookUrl to separate webhookId and token fields.
 // This should be called during bootstrap to ensure existing Discord configurations are preserved.
 func (s *NotificationService) MigrateDiscordWebhookUrlToFields(ctx context.Context) error {
@@ -2579,23 +2744,25 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		var sendErr error
 		switch setting.Provider {
 		case models.NotificationProviderDiscord:
-			sendErr = s.sendDiscordPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendDiscordPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderEmail:
-			sendErr = s.sendEmailPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendEmailPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderTelegram:
-			sendErr = s.sendTelegramPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendTelegramPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderSignal:
-			sendErr = s.sendSignalPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendSignalPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderSlack:
-			sendErr = s.sendSlackPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendSlackPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderNtfy:
-			sendErr = s.sendNtfyPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendNtfyPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderPushover:
-			sendErr = s.sendPushoverPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendPushoverPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderGotify:
-			sendErr = s.sendGotifyPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendGotifyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderGeneric:
-			sendErr = s.sendGenericPruneNotificationInternal(ctx, result, setting.Config)
+			sendErr = s.sendGenericPruneNotification(ctx, result, setting.Config)
 		default:
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
@@ -2636,7 +2803,7 @@ func (s *NotificationService) formatBytesInternal(bytes uint64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-func (s *NotificationService) sendDiscordPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var discordConfig models.DiscordConfig
 	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
 		return err
@@ -2648,13 +2815,13 @@ func (s *NotificationService) sendDiscordPruneNotificationInternal(ctx context.C
 
 	s.decryptDiscordTokenInternal(&discordConfig)
 
-	message := fmt.Sprintf("**System Prune Report**\n\n"+
+	message := fmt.Sprintf("**🧹 System Prune Report**\n\n"+
 		"**Total Space Reclaimed:** %s\n\n"+
 		"**Breakdown:**\n"+
-		"- **Containers:** %s\n"+
-		"- **Images:** %s\n"+
-		"- **Volumes:** %s\n"+
-		"- **Build Cache:** %s\n",
+		"- 📦 **Containers:** %s\n"+
+		"- 🖼️ **Images:** %s\n"+
+		"- 💾 **Volumes:** %s\n"+
+		"- 🏗️ **Build Cache:** %s\n",
 		s.formatBytesInternal(result.SpaceReclaimed),
 		s.formatBytesInternal(result.ContainerSpaceReclaimed),
 		s.formatBytesInternal(result.ImageSpaceReclaimed),
@@ -2668,7 +2835,7 @@ func (s *NotificationService) sendDiscordPruneNotificationInternal(ctx context.C
 	return nil
 }
 
-func (s *NotificationService) sendTelegramPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var telegramConfig models.TelegramConfig
 	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
 		return err
@@ -2680,13 +2847,13 @@ func (s *NotificationService) sendTelegramPruneNotificationInternal(ctx context.
 
 	s.decryptTelegramTokenInternal(&telegramConfig)
 
-	message := fmt.Sprintf("<b>System Prune Report</b>\n\n"+
+	message := fmt.Sprintf("🧹 <b>System Prune Report</b>\n\n"+
 		"<b>Total Space Reclaimed:</b> %s\n\n"+
 		"<b>Breakdown:</b>\n"+
-		"- <b>Containers:</b> %s\n"+
-		"- <b>Images:</b> %s\n"+
-		"- <b>Volumes:</b> %s\n"+
-		"- <b>Build Cache:</b> %s\n",
+		"- 📦 <b>Containers:</b> %s\n"+
+		"- 🖼️ <b>Images:</b> %s\n"+
+		"- 💾 <b>Volumes:</b> %s\n"+
+		"- 🏗️ <b>Build Cache:</b> %s\n",
 		s.formatBytesInternal(result.SpaceReclaimed),
 		s.formatBytesInternal(result.ContainerSpaceReclaimed),
 		s.formatBytesInternal(result.ImageSpaceReclaimed),
@@ -2704,7 +2871,7 @@ func (s *NotificationService) sendTelegramPruneNotificationInternal(ctx context.
 	return nil
 }
 
-func (s *NotificationService) sendEmailPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var emailConfig models.EmailConfig
 	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
 		return err
@@ -2716,7 +2883,7 @@ func (s *NotificationService) sendEmailPruneNotificationInternal(ctx context.Con
 
 	s.decryptEmailPasswordInternal(&emailConfig)
 
-	htmlBody, _, err := s.renderPruneReportEmailTemplateInternal(result)
+	htmlBody, _, err := s.renderPruneReportEmailTemplate(result)
 	if err != nil {
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
@@ -2729,7 +2896,7 @@ func (s *NotificationService) sendEmailPruneNotificationInternal(ctx context.Con
 	return nil
 }
 
-func (s *NotificationService) renderPruneReportEmailTemplateInternal(result *system.PruneAllResult) (string, string, error) {
+func (s *NotificationService) renderPruneReportEmailTemplate(result *system.PruneAllResult) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
 	data := map[string]interface{}{
@@ -2746,13 +2913,13 @@ func (s *NotificationService) renderPruneReportEmailTemplateInternal(result *sys
 	return s.renderTemplatesInternal("prune-report", data)
 }
 
-func (s *NotificationService) sendSignalPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var signalConfig models.SignalConfig
 	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
 		return err
 	}
 
-	message := fmt.Sprintf("System Prune Report\n\n"+
+	message := fmt.Sprintf("🧹 System Prune Report\n\n"+
 		"Total Space Reclaimed: %s\n\n"+
 		"Breakdown:\n"+
 		"- Containers: %s\n"+
@@ -2768,19 +2935,19 @@ func (s *NotificationService) sendSignalPruneNotificationInternal(ctx context.Co
 	return notifications.SendSignal(ctx, signalConfig, message)
 }
 
-func (s *NotificationService) sendSlackPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var slackConfig models.SlackConfig
 	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
 		return err
 	}
 
-	message := fmt.Sprintf("*System Prune Report*\n\n"+
+	message := fmt.Sprintf("*🧹 System Prune Report*\n\n"+
 		"*Total Space Reclaimed:* %s\n\n"+
 		"*Breakdown:*\n"+
-		"- *Containers:* %s\n"+
-		"- *Images:* %s\n"+
-		"- *Volumes:* %s\n"+
-		"- *Build Cache:* %s\n",
+		"- 📦 *Containers:* %s\n"+
+		"- 🖼️ *Images:* %s\n"+
+		"- 💾 *Volumes:* %s\n"+
+		"- 🏗️ *Build Cache:* %s\n",
 		s.formatBytesInternal(result.SpaceReclaimed),
 		s.formatBytesInternal(result.ContainerSpaceReclaimed),
 		s.formatBytesInternal(result.ImageSpaceReclaimed),
@@ -2790,7 +2957,7 @@ func (s *NotificationService) sendSlackPruneNotificationInternal(ctx context.Con
 	return notifications.SendSlack(ctx, slackConfig, message)
 }
 
-func (s *NotificationService) sendNtfyPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var ntfyConfig models.NtfyConfig
 	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
 		return err
@@ -2814,7 +2981,7 @@ func (s *NotificationService) sendNtfyPruneNotificationInternal(ctx context.Cont
 	return notifications.SendNtfy(ctx, ntfyConfig, message)
 }
 
-func (s *NotificationService) sendPushoverPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var pushoverConfig models.PushoverConfig
 	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
 		return err
@@ -2839,7 +3006,7 @@ func (s *NotificationService) sendPushoverPruneNotificationInternal(ctx context.
 	return notifications.SendPushover(ctx, pushoverConfig, message)
 }
 
-func (s *NotificationService) sendGotifyPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var gotifyConfig models.GotifyConfig
 	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
@@ -2864,7 +3031,28 @@ func (s *NotificationService) sendGotifyPruneNotificationInternal(ctx context.Co
 	return notifications.SendGotify(ctx, gotifyConfig, message)
 }
 
-func (s *NotificationService) sendGenericPruneNotificationInternal(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+func (s *NotificationService) sendMatrixPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendMatrix(ctx, matrixConfig, message)
+}
+
+func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
 	var genericConfig models.GenericConfig
 	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
 		return err

@@ -6,6 +6,7 @@ export const NOTIFICATION_PROVIDER_KEYS = [
 	'email',
 	'generic',
 	'gotify',
+	'matrix',
 	'ntfy',
 	'pushover',
 	'signal',
@@ -20,7 +21,7 @@ export interface BaseProviderFormValues {
 	eventImageUpdate: boolean;
 	eventContainerUpdate: boolean;
 	eventVulnerabilityFound: boolean;
-  eventPruneReport: boolean;
+	eventPruneReport: boolean;
 }
 
 // Provider-specific form value types
@@ -102,6 +103,16 @@ export interface GotifyFormValues extends BaseProviderFormValues {
 	disableTls: boolean;
 }
 
+
+export interface MatrixFormValues extends BaseProviderFormValues {
+	host: string;
+	port: number;
+	rooms: string;
+	username: string;
+	password: string;
+	disableTlsVerification: boolean;
+}
+
 export interface GenericFormValues extends BaseProviderFormValues {
 	webhookUrl: string;
 	method: string;
@@ -128,6 +139,7 @@ export type ProviderFormValues =
 	| NtfyFormValues
 	| PushoverFormValues
 	| GotifyFormValues
+	| MatrixFormValues
 	| GenericFormValues;
 
 // Map provider keys to their form value types
@@ -140,6 +152,7 @@ export type ProviderFormValuesMap = {
 	ntfy: NtfyFormValues;
 	pushover: PushoverFormValues;
 	gotify: GotifyFormValues;
+	matrix: MatrixFormValues;
 	generic: GenericFormValues;
 };
 
@@ -428,6 +441,24 @@ export function gotifySettingsToFormValues(settings?: NotificationSettings): Got
 	};
 }
 
+export function matrixSettingsToFormValues(settings?: NotificationSettings): MatrixFormValues {
+	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
+	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	return {
+		enabled: settings?.enabled ?? false,
+		host: (cfg?.host as string) || '',
+		port: (cfg?.port as number) || 0,
+		rooms: (cfg?.rooms as string) || '',
+		username: (cfg?.username as string) || '',
+		password: (cfg?.password as string) || '',
+		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
+		eventImageUpdate: events?.image_update ?? true,
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true,
+		eventPruneReport: events?.prune_report ?? true
+	};
+}
+
 export function genericSettingsToFormValues(settings?: NotificationSettings): GenericFormValues {
 	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
 	const events = (cfg?.events ?? {}) as Record<string, boolean>;
@@ -517,6 +548,27 @@ export function gotifyFormValuesToSettings(values: GotifyFormValues): Notificati
 			priority: values.priority,
 			title: values.title,
 			disableTls: values.disableTls,
+			events: {
+				image_update: values.eventImageUpdate,
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound,
+				prune_report: values.eventPruneReport
+			}
+		}
+	};
+}
+
+export function matrixFormValuesToSettings(values: MatrixFormValues): NotificationSettings {
+	return {
+		provider: 'matrix',
+		enabled: values.enabled,
+		config: {
+			host: values.host,
+			port: values.port,
+			rooms: values.rooms,
+			username: values.username,
+			password: values.password,
+			disableTlsVerification: values.disableTlsVerification,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
