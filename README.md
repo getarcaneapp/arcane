@@ -16,6 +16,7 @@
 <a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/backend"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/backend.svg" alt="Go Reference"></a>
 <a href="https://goreportcard.com/report/github.com/getarcaneapp/arcane/backend"><img src="https://goreportcard.com/badge/github.com/getarcaneapp/arcane/backend" alt="Go Report Card"></a>
 <a href="https://github.com/getarcaneapp/arcane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License"></a>
+<a href="https://app.fossa.com/projects/git%2Bgithub.com%2Fgetarcaneapp%2Farcane?ref=badge_shield" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Fgetarcaneapp%2Farcane.svg?type=shield"/></a>
 
 <br />
 
@@ -46,3 +47,7 @@ Help translate Arcane on Crowdin: https://crowdin.com/project/arcane-docker-mana
 Thank you for checking out Arcane! Your feedback and contributions are always welcome.
 
 </div>
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fgetarcaneapp%2Farcane.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fgetarcaneapp%2Farcane?ref=badge_large)
