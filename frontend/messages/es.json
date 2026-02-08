@@ -180,6 +180,9 @@
 	"scheduled_prune_networks_description": "Eliminar redes no utilizadas",
 	"scheduled_prune_build_cache_label": "Limpiar caché de construcción",
 	"scheduled_prune_build_cache_description": "Eliminar caché de construcción de Docker",
+	"auto_update_select_containers": "Seleccionar contenedores...",
+	"auto_update_containers_excluded_one": "1 contenedor excluido",
+	"auto_update_containers_excluded_many": "Contenedores {count} excluidos",
 	"_comment_common_actions": "=== COMÚN - ESTADOS DE ACCIÓN ===",
 	"common_action_creating": "Creando…",
 	"common_action_deleting": "Eliminando…",
@@ -1956,5 +1959,7 @@
 	"environments_agent_address_description": "La URL a la que su agente será accesible",
 	"environments_generate_config": "Generar configuración del agente",
 	"project_files": "Archivos de proyecto",
-	"project_includes": "Incluye"
+	"project_includes": "Incluye",
+	"notifications_event_prune_report_label": "Informe de borrado del sistema",
+	"notifications_event_prune_report_description": "Recibir un informe de resumen cuando se complete una operación de poda programada"
 }
