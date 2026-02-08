@@ -1959,5 +1959,6 @@
 	"environments_agent_address_description": "The URL where your agent will be accessible",
 	"environments_generate_config": "Generate Agent Configuration",
 	"project_files": "Project Files",
-	"project_includes": "Includes"
+	"project_includes": "Includes",
+	"version_info_build_features": "Build Features"
 }
