@@ -14,14 +14,16 @@ import (
 const ScheduledPruneJobName = "scheduled-prune"
 
 type ScheduledPruneJob struct {
-	systemService   *services.SystemService
-	settingsService *services.SettingsService
+	systemService       *services.SystemService
+	settingsService     *services.SettingsService
+	notificationService *services.NotificationService
 }
 
-func NewScheduledPruneJob(systemService *services.SystemService, settingsService *services.SettingsService) *ScheduledPruneJob {
+func NewScheduledPruneJob(systemService *services.SystemService, settingsService *services.SettingsService, notificationService *services.NotificationService) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
-		systemService:   systemService,
-		settingsService: settingsService,
+		systemService:       systemService,
+		settingsService:     settingsService,
+		notificationService: notificationService,
 	}
 }
 
@@ -109,6 +111,11 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 	)
 	if len(result.Errors) > 0 {
 		slog.DebugContext(ctx, "scheduled prune run errors", "errors", result.Errors)
+	}
+
+	// Send notification
+	if err := j.notificationService.SendPruneReportNotification(ctx, result); err != nil {
+		slog.WarnContext(ctx, "failed to send prune report notification", "error", err)
 	}
 }
 

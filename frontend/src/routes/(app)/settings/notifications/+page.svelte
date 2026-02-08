@@ -19,6 +19,7 @@
 		type NtfyFormValues,
 		type PushoverFormValues,
 		type GotifyFormValues,
+		type MatrixFormValues,
 		type GenericFormValues,
 		type AppriseFormValues,
 		type NotificationProviderKey,
@@ -31,6 +32,7 @@
 		ntfySettingsToFormValues,
 		pushoverSettingsToFormValues,
 		gotifySettingsToFormValues,
+		matrixSettingsToFormValues,
 		genericSettingsToFormValues,
 		appriseSettingsToFormValues,
 		discordFormValuesToSettings,
@@ -41,6 +43,7 @@
 		ntfyFormValuesToSettings,
 		pushoverFormValuesToSettings,
 		gotifyFormValuesToSettings,
+		matrixFormValuesToSettings,
 		genericFormValuesToSettings,
 		appriseFormValuesToSettings
 	} from '$lib/types/notification-providers';
@@ -54,6 +57,7 @@
 		NtfyProviderForm,
 		PushoverProviderForm,
 		GotifyProviderForm,
+		MatrixProviderForm,
 		GenericProviderForm,
 		AppriseProviderForm
 	} from './providers';
@@ -87,6 +91,7 @@
 	let ntfyFormRef: NtfyProviderForm;
 	let pushoverFormRef: PushoverProviderForm;
 	let gotifyFormRef: GotifyProviderForm;
+	let matrixFormRef: MatrixProviderForm;
 	let genericFormRef: GenericProviderForm;
 
 	// Saved settings from server (used to detect if settings exist)
@@ -99,6 +104,7 @@
 		ntfy: null,
 		pushover: null,
 		gotify: null,
+		matrix: null,
 		generic: null
 	});
 
@@ -111,6 +117,7 @@
 	let ntfyValues = $state<NtfyFormValues>(ntfySettingsToFormValues());
 	let pushoverValues = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let gotifyValues = $state<GotifyFormValues>(gotifySettingsToFormValues());
+	let matrixValues = $state<MatrixFormValues>(matrixSettingsToFormValues());
 	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseValues = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -123,6 +130,7 @@
 	let ntfyBaseline = $state<NtfyFormValues>(ntfySettingsToFormValues());
 	let pushoverBaseline = $state<PushoverFormValues>(pushoverSettingsToFormValues());
 	let gotifyBaseline = $state<GotifyFormValues>(gotifySettingsToFormValues());
+	let matrixBaseline = $state<MatrixFormValues>(matrixSettingsToFormValues());
 	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
 	let appriseBaseline = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
@@ -135,6 +143,7 @@
 	const ntfyHasChanges = $derived(JSON.stringify(ntfyValues) !== JSON.stringify(ntfyBaseline));
 	const pushoverHasChanges = $derived(JSON.stringify(pushoverValues) !== JSON.stringify(pushoverBaseline));
 	const gotifyHasChanges = $derived(JSON.stringify(gotifyValues) !== JSON.stringify(gotifyBaseline));
+	const matrixHasChanges = $derived(JSON.stringify(matrixValues) !== JSON.stringify(matrixBaseline));
 	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
 	const appriseHasChanges = $derived(JSON.stringify(appriseValues) !== JSON.stringify(appriseBaseline));
 	const hasChanges = $derived(
@@ -146,6 +155,7 @@
 			ntfyHasChanges ||
 			pushoverHasChanges ||
 			gotifyHasChanges ||
+			matrixHasChanges ||
 			genericHasChanges ||
 			appriseHasChanges
 	);
@@ -193,6 +203,9 @@
 		gotifyValues = gotifySettingsToFormValues(savedSettings.gotify ?? undefined);
 		gotifyBaseline = { ...gotifyValues };
 
+		matrixValues = matrixSettingsToFormValues(savedSettings.matrix ?? undefined);
+		matrixBaseline = { ...matrixValues };
+
 		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
 		genericBaseline = { ...genericValues };
 
@@ -216,6 +229,7 @@
 		const ntfyValid = ntfyFormRef?.isValid() ?? true;
 		const pushoverValid = pushoverFormRef?.isValid() ?? true;
 		const gotifyValid = gotifyFormRef?.isValid() ?? true;
+		const matrixValid = matrixFormRef?.isValid() ?? true;
 		const genericValid = genericFormRef?.isValid() ?? true;
 
 		if (
@@ -228,6 +242,7 @@
 				ntfyValid &&
 				pushoverValid &&
 				gotifyValid &&
+				matrixValid &&
 				genericValid
 			)
 		) {
@@ -344,6 +359,19 @@
 				}
 			}
 
+			// Save Matrix settings if changed
+			if (matrixHasChanges) {
+				try {
+					const settings = matrixFormValuesToSettings(matrixValues);
+					await notificationService.updateSettings('matrix', settings);
+					savedSettings.matrix = settings;
+					matrixBaseline = { ...matrixValues };
+				} catch (error: any) {
+					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
+					errors.push(m.notifications_saved_failed({ provider: 'Matrix', error: errorMsg }));
+				}
+			}
+
 			// Save Generic settings if changed
 			if (genericHasChanges) {
 				try {
@@ -391,6 +419,7 @@
 		ntfyValues = { ...ntfyBaseline };
 		pushoverValues = { ...pushoverBaseline };
 		gotifyValues = { ...gotifyBaseline };
+		matrixValues = { ...matrixBaseline };
 		genericValues = { ...genericBaseline };
 		appriseValues = { ...appriseBaseline };
 	}
@@ -559,6 +588,16 @@
 									disabled={isReadOnly}
 									{isTesting}
 									onTest={(testType) => testNotification('gotify', testType)}
+								/>
+							</Tabs.Content>
+
+							<Tabs.Content value="matrix" class="mt-4 space-y-4">
+								<MatrixProviderForm
+									bind:this={matrixFormRef}
+									bind:values={matrixValues}
+									disabled={isReadOnly}
+									{isTesting}
+									onTest={() => testNotification('matrix')}
 								/>
 							</Tabs.Content>
 

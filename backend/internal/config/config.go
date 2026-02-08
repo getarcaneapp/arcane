@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"reflect"
 	"strconv"
@@ -27,6 +28,7 @@ type Config struct {
 	AppUrl        string         `env:"APP_URL" default:"http://localhost:3552"`
 	DatabaseURL   string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
 	Port          string         `env:"PORT" default:"3552"`
+	Listen        string         `env:"LISTEN" default:""`
 	Environment   AppEnvironment `env:"ENVIRONMENT" default:"production"`
 	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
 	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
@@ -288,6 +290,20 @@ func (a AppEnvironment) IsProdEnvironment() bool {
 
 func (a AppEnvironment) IsTestEnvironment() bool {
 	return a == AppEnvironmentTest
+}
+
+// ListenAddr returns the effective address for the HTTP server to bind to.
+// It uses LISTEN as the host (if set) and PORT for the port.
+func (c *Config) ListenAddr() string {
+	host := strings.TrimSpace(c.Listen)
+	port := c.Port
+	if port == "" {
+		port = "3552"
+	}
+	if host == "" {
+		return ":" + port
+	}
+	return net.JoinHostPort(host, port)
 }
 
 // GetManagerBaseURL returns the base URL of the manager application.

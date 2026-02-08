@@ -59,7 +59,7 @@ var configSetCmd = &cobra.Command{
 Examples:
 	arcane config set --server-url http://localhost:3553
 	arcane config set --api-key arc_xxxxxxxxxxxxx
-	arcane auth login --username admin
+	arcane auth login
 	arcane config set --jwt-token eyJhbGciOi...`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()

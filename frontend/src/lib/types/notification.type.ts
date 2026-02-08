@@ -7,6 +7,7 @@ export type NotificationProvider =
 	| 'ntfy'
 	| 'pushover'
 	| 'gotify'
+	| 'matrix'
 	| 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 

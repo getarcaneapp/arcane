@@ -107,23 +107,15 @@ func init() {
 	rootCmd.AddCommand(configClient.ConfigCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
-
-	// Authentication
 	rootCmd.AddCommand(auth.AuthCmd)
-
-	// Core resource management
 	rootCmd.AddCommand(containers.ContainersCmd)
 	rootCmd.AddCommand(images.ImagesCmd)
 	rootCmd.AddCommand(volumes.VolumesCmd)
 	rootCmd.AddCommand(networks.NetworksCmd)
 	rootCmd.AddCommand(projects.ProjectsCmd)
-
-	// Management
 	rootCmd.AddCommand(apikeys.ApiKeysCmd)
 	rootCmd.AddCommand(environments.EnvironmentsCmd)
 	rootCmd.AddCommand(users.UsersCmd)
-
-	// Advanced features
 	rootCmd.AddCommand(registries.RegistriesCmd)
 	rootCmd.AddCommand(templates.TemplatesCmd)
 	rootCmd.AddCommand(settings.SettingsCmd)

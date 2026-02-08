@@ -27,6 +27,9 @@ const (
 	// NotificationProviderPushover is the builtin Pushover notification provider.
 	NotificationProviderPushover Provider = "pushover"
 
+	// NotificationProviderMatrix is the builtin Matrix webhook notification provider.
+	NotificationProviderMatrix Provider = "matrix"
+
 	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
 	NotificationProviderGeneric Provider = "generic"
 )
