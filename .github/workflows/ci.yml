@@ -101,7 +101,7 @@ jobs:
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.61.0
+          version: latest
           args: ${{ matrix.module.args }}
           working-directory: ${{ matrix.module.name }}
           only-new-issues: false
