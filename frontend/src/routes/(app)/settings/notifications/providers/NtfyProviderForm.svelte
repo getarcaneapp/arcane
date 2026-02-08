@@ -38,7 +38,7 @@
 			eventImageUpdate: z.boolean(),
 			eventContainerUpdate: z.boolean(),
 			eventVulnerabilityFound: z.boolean(),
-      eventPruneReport: z.boolean()
+			eventPruneReport: z.boolean()
 		})
 		.superRefine((d, ctx) => {
 			if (!d.enabled) return;
@@ -196,7 +196,7 @@
 		bind:eventImageUpdate={values.eventImageUpdate}
 		bind:eventContainerUpdate={values.eventContainerUpdate}
 		bind:eventVulnerabilityFound={values.eventVulnerabilityFound}
-    bind:eventPruneReport={values.eventPruneReport}
+		bind:eventPruneReport={values.eventPruneReport}
 		{disabled}
 	/>
 

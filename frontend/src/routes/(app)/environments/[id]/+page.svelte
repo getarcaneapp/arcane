@@ -149,7 +149,7 @@
 		scheduledPruneNetworks: z.boolean(),
 		scheduledPruneBuildCache: z.boolean(),
 		vulnerabilityScanEnabled: z.boolean(),
-    autoUpdateExcludedContainers: z.string().optional()
+		autoUpdateExcludedContainers: z.string().optional()
 	});
 
 	// Build current settings object from environment and settings data
@@ -173,7 +173,7 @@
 		scheduledPruneNetworks: settings?.scheduledPruneNetworks ?? true,
 		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
-    autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || ''
+		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || ''
 	});
 
 	// Custom save handler for environment-specific settings
@@ -204,7 +204,7 @@
 				scheduledPruneNetworks: formData.scheduledPruneNetworks,
 				scheduledPruneBuildCache: formData.scheduledPruneBuildCache,
 				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
-        autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers
+				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers
 			});
 		}
 
