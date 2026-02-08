@@ -311,6 +311,8 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 			sendErr = s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
 		default:
@@ -770,6 +772,8 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			return s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGotify:
 			return s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderMatrix:
+			return s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
 		default:
@@ -2273,6 +2277,37 @@ func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Co
 	return nil
 }
 
+func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Matrix config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &matrixConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
+	}
+	if matrixConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
+			matrixConfig.Password = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+		return fmt.Errorf("failed to send Matrix notification: %w", err)
+	}
+	return nil
+}
+
 func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
 	var genericConfig models.GenericConfig
 	configBytes, err := json.Marshal(config)
@@ -2724,6 +2759,8 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 			sendErr = s.sendPushoverPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderGotify:
 			sendErr = s.sendGotifyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixPruneNotification(ctx, result, setting.Config)
 		case models.NotificationProviderGeneric:
 			sendErr = s.sendGenericPruneNotification(ctx, result, setting.Config)
 		default:
@@ -2992,6 +3029,27 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, r
 	}
 
 	return notifications.SendGotify(ctx, gotifyConfig, message)
+}
+
+func (s *NotificationService) sendMatrixPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendMatrix(ctx, matrixConfig, message)
 }
 
 func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {

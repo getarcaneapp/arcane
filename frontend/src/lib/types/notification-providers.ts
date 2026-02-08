@@ -453,7 +453,9 @@ export function matrixSettingsToFormValues(settings?: NotificationSettings): Mat
 		password: (cfg?.password as string) || '',
 		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
 		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true
+		eventContainerUpdate: events?.container_update ?? true,
+		eventVulnerabilityFound: events?.vulnerability_found ?? true,
+		eventPruneReport: events?.prune_report ?? true
 	};
 }
 
@@ -569,7 +571,9 @@ export function matrixFormValuesToSettings(values: MatrixFormValues): Notificati
 			disableTlsVerification: values.disableTlsVerification,
 			events: {
 				image_update: values.eventImageUpdate,
-				container_update: values.eventContainerUpdate
+				container_update: values.eventContainerUpdate,
+				vulnerability_found: values.eventVulnerabilityFound,
+				prune_report: values.eventPruneReport
 			}
 		}
 	};

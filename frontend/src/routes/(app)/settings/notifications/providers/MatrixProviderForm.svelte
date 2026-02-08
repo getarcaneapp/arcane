@@ -30,7 +30,9 @@
 			password: z.string(),
 			disableTlsVerification: z.boolean(),
 			eventImageUpdate: z.boolean(),
-			eventContainerUpdate: z.boolean()
+			eventContainerUpdate: z.boolean(),
+			eventVulnerabilityFound: z.boolean(),
+			eventPruneReport: z.boolean()
 		})
 		.superRefine((d, ctx) => {
 			if (!d.enabled) return;
@@ -137,6 +139,8 @@
 		providerId="matrix"
 		bind:eventImageUpdate={values.eventImageUpdate}
 		bind:eventContainerUpdate={values.eventContainerUpdate}
+		bind:eventVulnerabilityFound={values.eventVulnerabilityFound}
+		bind:eventPruneReport={values.eventPruneReport}
 		{disabled}
 	/>
 
