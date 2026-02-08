@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -380,8 +381,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -390,7 +391,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "1200", callbackPayload["trivyScanTimeout"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
@@ -400,8 +401,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -416,9 +417,9 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "false", callbackPayload["trivyResourceLimitsEnabled"])
-	require.Equal(t, "2.5", callbackPayload["trivyCpuLimit"])
-	require.Equal(t, "3072", callbackPayload["trivyMemoryLimitMb"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyCpuLimit", Value: "2.5"})
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyMemoryLimitMb", Value: "3072"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
@@ -428,8 +429,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -438,7 +439,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "4", callbackPayload["trivyConcurrentScanContainers"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
 }
 
 func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallback(t *testing.T) {
@@ -466,8 +467,8 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 

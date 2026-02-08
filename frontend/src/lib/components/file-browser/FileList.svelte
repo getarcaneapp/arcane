@@ -32,7 +32,8 @@
 		onDelete,
 		onDownload,
 		onPreview,
-		onRestoreFromBackup
+		onRestoreFromBackup,
+		minimal = false
 	}: {
 		files: FileEntry[];
 		currentPath: string;
@@ -43,6 +44,7 @@
 		onDownload: (file: FileEntry) => Promise<void>;
 		onPreview: (file: FileEntry) => void;
 		onRestoreFromBackup?: (file: FileEntry) => void;
+		minimal?: boolean;
 	} = $props();
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
@@ -135,7 +137,7 @@
 {#snippet NameCell({ item }: { item: FileEntry })}
 	<div class="flex items-center gap-2">
 		{#if item.isDirectory}
-			<FolderOpenIcon class="size-4 text-blue-500" />
+			<FolderOpenIcon class={minimal ? 'text-muted-foreground size-4' : 'size-4 text-blue-500'} />
 			<button class="text-left font-medium hover:underline" onclick={() => onNavigate(item.path)}>
 				{item.name}
 			</button>
@@ -255,7 +257,11 @@
 	/>
 {/snippet}
 
-<div class="file-browser-table bg-card overflow-hidden rounded-lg border shadow-sm">
+<div
+	class={`file-browser-table overflow-hidden ${
+		minimal ? 'file-browser-table--minimal' : 'file-browser-table--card bg-card rounded-lg border shadow-sm'
+	}`}
+>
 	<ArcaneTable
 		{persistKey}
 		items={itemsPaginated}
@@ -276,15 +282,31 @@
 <style>
 	@reference "../../../app.css";
 
-	:global(.file-browser-table thead tr) {
+	:global(.file-browser-table--card thead tr) {
 		@apply bg-muted/30 hover:bg-muted/30;
 	}
 
-	:global(.file-browser-table tbody tr) {
+	:global(.file-browser-table--card tbody tr) {
 		@apply hover:bg-muted/50 cursor-default border-none transition-colors;
 	}
 
-	:global(.file-browser-table td) {
+	:global(.file-browser-table--card td) {
 		@apply py-2;
+	}
+
+	:global(.file-browser-table--minimal thead tr) {
+		@apply bg-transparent;
+	}
+
+	:global(.file-browser-table--minimal tbody tr) {
+		@apply border-border/40 border-b hover:bg-transparent;
+	}
+
+	:global(.file-browser-table--minimal th) {
+		@apply text-muted-foreground/80 text-[11px] font-medium tracking-[0.08em] uppercase;
+	}
+
+	:global(.file-browser-table--minimal td) {
+		@apply py-2.5;
 	}
 </style>

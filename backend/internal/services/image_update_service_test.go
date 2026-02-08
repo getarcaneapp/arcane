@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
@@ -789,7 +790,7 @@ func TestImageUpdateService_BuildCredentialMap_ExternalCredsDedupesEnabledRegist
 	// Enabled registry records used for auth fallback should be de-duplicated per host.
 	enabledByHost := make(map[string]models.ContainerRegistry, len(enabledRegs))
 	for _, reg := range enabledRegs {
-		host := svc.normalizeRegistryURL(reg.URL)
+		host := utilsregistry.NormalizeRegistryForComparison(reg.URL)
 		enabledByHost[host] = reg
 	}
 	require.Contains(t, enabledByHost, "ghcr.io")

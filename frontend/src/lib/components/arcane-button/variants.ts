@@ -21,7 +21,8 @@ import {
 	LoginIcon,
 	OpenIdIcon,
 	RedeployIcon,
-	CodeIcon
+	CodeIcon,
+	HammerIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -53,6 +54,10 @@ export const arcaneButtonVariants = tv({
 			'outline-info':
 				'bg-sky-500/5 text-foreground! border-sky-500/20 hover:bg-sky-500/10 hover:border-sky-500/40 ' +
 				'dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-build':
+				'bg-violet-500/5 text-foreground! border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 ' +
+				'dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30 dark:hover:bg-violet-500/20 ' +
 				'shadow-sm hover:shadow-md',
 
 			outline: 'bg-background border-input hover:bg-accent hover:text-accent-foreground shadow-sm',
@@ -112,6 +117,12 @@ export const actionConfigs = {
 		IconComponent: StartIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_deploying()
+	},
+	build: {
+		defaultLabel: m.build(),
+		IconComponent: HammerIcon,
+		tone: 'outline-build',
+		loadingLabel: m.starting_build()
 	},
 	stop: {
 		defaultLabel: m.common_stop(),

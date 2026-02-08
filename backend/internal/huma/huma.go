@@ -155,6 +155,8 @@ type Services struct {
 	Docker            *services.DockerClientService
 	Image             *services.ImageService
 	ImageUpdate       *services.ImageUpdateService
+	Build             *services.BuildService
+	BuildWorkspace    *services.BuildWorkspaceService
 	Volume            *services.VolumeService
 	Container         *services.ContainerService
 	Network           *services.NetworkService
@@ -315,6 +317,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	var dockerSvc *services.DockerClientService
 	var imageSvc *services.ImageService
 	var imageUpdateSvc *services.ImageUpdateService
+	var buildSvc *services.BuildService
+	var buildWorkspaceSvc *services.BuildWorkspaceService
 	var volumeSvc *services.VolumeService
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
@@ -349,6 +353,8 @@ func registerHandlers(api huma.API, svc *Services) {
 		dockerSvc = svc.Docker
 		imageSvc = svc.Image
 		imageUpdateSvc = svc.ImageUpdate
+		buildSvc = svc.Build
+		buildWorkspaceSvc = svc.BuildWorkspace
 		volumeSvc = svc.Volume
 		containerSvc = svc.Container
 		networkSvc = svc.Network
@@ -377,7 +383,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
 	handlers.RegisterTemplates(api, templateSvc)
-	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc)
+	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc)
+	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)

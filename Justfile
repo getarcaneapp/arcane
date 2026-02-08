@@ -992,6 +992,39 @@ _fix-all:
 fix target="all":
     @just "_fix-{{ target }}"
 
+# Run go mod tidy in backend module
+[group('gomod')]
+_gomod-tidy-backend:
+    cd backend && go mod tidy
+
+# Run go mod tidy in CLI module
+[group('gomod')]
+_gomod-tidy-cli:
+    cd cli && go mod tidy
+
+# Run go mod tidy in types module
+[group('gomod')]
+_gomod-tidy-types:
+    cd types && go mod tidy
+
+# Run go mod tidy in all Go modules
+[group('gomod')]
+_gomod-tidy-go: _gomod-tidy-backend _gomod-tidy-cli _gomod-tidy-types
+
+[group('gomod')]
+_gomod-tidy-all:
+    @just _gomod-tidy-go
+    go work sync
+
+[group('gomod')]
+_gomod-sync-all:
+    go work sync
+
+# Go module targets. Valid: "tidy [backend|cli|types|go|all]", "sync all".
+[group('gomod')]
+gomod action="tidy" target="all":
+    @just "_gomod-{{ action }}-{{ target }}"
+
 # Format frontend (Prettier) and Go modules (gofmt)
 [group('format')]
 _format-frontend:

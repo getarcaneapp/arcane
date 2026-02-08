@@ -9,10 +9,12 @@
 	import ProgressPopover from '$lib/components/progress-popover.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
+	import settingsStore from '$lib/stores/config-store';
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
-	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
+	import { sanitizeLogText } from '$lib/utils/log-text';
+	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	type TargetType = 'container' | 'project';
@@ -23,6 +25,7 @@
 		pull?: boolean;
 		deploy?: boolean;
 		redeploy?: boolean;
+		build?: boolean;
 		remove?: boolean;
 		validating?: boolean;
 		refresh?: boolean;
@@ -42,6 +45,7 @@
 		removeLoading = $bindable(false),
 		redeployLoading = $bindable(false),
 		refreshLoading = $bindable(false),
+		hasBuildDirective = false,
 		onRefresh
 	}: {
 		id: string;
@@ -57,6 +61,7 @@
 		removeLoading?: boolean;
 		redeployLoading?: boolean;
 		refreshLoading?: boolean;
+		hasBuildDirective?: boolean;
 		onRefresh?: () => void | Promise<void>;
 	} = $props();
 
@@ -66,6 +71,7 @@
 		restart: false,
 		remove: false,
 		pull: false,
+		build: false,
 		redeploy: false,
 		validating: false,
 		refresh: false
@@ -89,6 +95,7 @@
 		restart: !!(isLoading.restart || loading?.restart || restartLoading),
 		remove: !!(isLoading.remove || loading?.remove || removeLoading),
 		pulling: !!(isLoading.pull || loading?.pull),
+		building: !!(isLoading.build || loading?.build),
 		redeploy: !!(isLoading.redeploy || loading?.redeploy || redeployLoading),
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
@@ -146,17 +153,47 @@
 	}));
 
 	let pullPopoverOpen = $state(false);
+	let buildPopoverOpen = $state(false);
 	let deployPullPopoverOpen = $state(false);
 	let projectPulling = $state(false); // only for Project Pull button/popover
+	let projectBuilding = $state(false); // only for Project Build button/popover
 	let deployPulling = $state(false); // only for Deploy popover
 	let pullProgress = $state(0);
 	let pullStatusText = $state('');
 	let pullError = $state('');
 	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
+	let buildOutputLines = $state<string[]>([]);
+	let deployProgressPhase = $state<'pull' | 'build' | 'deploy'>('deploy');
 	let deployServiceProgress = $state<Record<string, { phase: string; health?: string; state?: string; status?: string }>>({});
 	let deployLastNonWaitingStatus = $state('');
 
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
+	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
+	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
+	const depotAvailable = $derived.by(() => {
+		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
+		const token = ($settingsStore?.depotToken ?? '').trim();
+		return Boolean($settingsStore?.depotConfigured) || (Boolean(projectId) && Boolean(token));
+	});
+	const projectBuildProvider = $derived.by<'local' | 'depot'>(() => {
+		const configuredProvider = ($settingsStore?.buildProvider as 'local' | 'depot') ?? 'local';
+		if (configuredProvider === 'depot' && !depotAvailable) {
+			return 'local';
+		}
+		return configuredProvider;
+	});
+	const deployPopoverTitle = $derived.by(() => {
+		switch (deployProgressPhase) {
+			case 'build':
+				return m.progress_building_images();
+			case 'pull':
+				return m.progress_pulling_images();
+			default:
+				return m.progress_deploying_project();
+		}
+	});
+	const deployPopoverIcon = $derived(deployProgressPhase === 'build' ? HammerIcon : DownloadIcon);
+	const deployPopoverLayers = $derived.by(() => (deployProgressPhase === 'pull' ? layerProgress : {}));
 
 	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
 	// (which would duplicate portaled popovers when the same `open` state is bound twice).
@@ -199,8 +236,24 @@
 		pullStatusText = '';
 		pullError = '';
 		layerProgress = {};
+		buildOutputLines = [];
+		deployProgressPhase = 'deploy';
 		deployServiceProgress = {};
 		deployLastNonWaitingStatus = '';
+	}
+
+	function appendBuildOutputLine(rawStatus: unknown, rawService?: unknown) {
+		const status = sanitizeLogText(String(rawStatus ?? ''));
+		if (!status) return;
+
+		const service = sanitizeLogText(String(rawService ?? ''));
+		const line = service ? `[${service}] ${status}` : status;
+
+		if (buildOutputLines.length > 0 && buildOutputLines[buildOutputLines.length - 1] === line) {
+			return;
+		}
+
+		buildOutputLines = [...buildOutputLines.slice(-149), line];
 	}
 
 	function deriveDeployStatusText(): string {
@@ -210,7 +263,7 @@
 		const waiting = entries.filter(([_, v]) => v.phase === 'service_waiting_healthy').sort(([a], [b]) => a.localeCompare(b));
 		if (waiting.length > 0) {
 			const [service, v] = waiting[0];
-			const health = (v.health ?? '').trim();
+			const health = String(v.health ?? '').trim();
 			return health
 				? m.progress_deploy_waiting_for_service_with_health({ service, health })
 				: m.progress_deploy_waiting_for_service({ service });
@@ -320,36 +373,54 @@
 		let openedPopover = false;
 		let hadError = false;
 		let deployPhaseStarted = false;
+		let buildPhaseStarted = false;
 
 		// Always open the popover for deploy so we can show health-wait status even
 		// when there is nothing to pull.
 		deployPullPopoverOpen = true;
 		deployPulling = true;
+		deployProgressPhase = 'deploy';
 		pullStatusText = m.progress_deploy_starting();
 		openedPopover = true;
 
 		try {
-			await projectService.deployProject(id, (deployData) => {
+			const handleDeployLine = (deployData: any) => {
 				if (!deployData) return;
 
-				// Pull progress lines are streamed by backend /up before deploy when
-				// image policy requires pulling (missing/always/refresh).
-				if (deployData.type !== 'deploy') {
-					if (isDownloadingLine(deployData)) {
-						pullStatusText = m.images_pull_initiating();
+				if (deployData.type === 'build') {
+					deployProgressPhase = 'build';
+					if (!buildPhaseStarted) {
+						buildPhaseStarted = true;
+						pullProgress = 0;
+						layerProgress = {};
+						pullError = '';
+						deployServiceProgress = {};
+						deployLastNonWaitingStatus = '';
+					}
+
+					if (deployData.phase === 'begin') {
+						pullStatusText = m.progress_building_images_starting();
+						appendBuildOutputLine(m.build_phase_started(), deployData.service);
+					} else if (deployData.phase === 'complete') {
+						pullStatusText = m.build_completed();
+						pullProgress = 100;
+						appendBuildOutputLine(m.build_phase_completed(), deployData.service);
+					}
+
+					if (deployData.status) {
+						pullStatusText = String(deployData.status);
+						appendBuildOutputLine(deployData.status, deployData.service);
 					}
 
 					if (deployData.error) {
 						const errMsg =
-							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.images_pull_stream_error();
+							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
 						pullError = errMsg;
-						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
+						pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
 						hadError = true;
 						deployPulling = false;
 						return;
 					}
-
-					if (deployData.status) pullStatusText = deployData.status;
 
 					if (deployData.id) {
 						const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
@@ -366,9 +437,48 @@
 					return;
 				}
 
-				// First deploy status line initializes deploy-only progress state.
+				// Pull progress lines can be streamed by backend /up before deploy when
+				// image policy requires pulling (missing/always/refresh).
+				if (deployData.type !== 'deploy') {
+					if (isDownloadingLine(deployData)) {
+						deployProgressPhase = 'pull';
+						pullStatusText = m.images_pull_initiating();
+					}
+
+					if (deployData.error) {
+						const errMsg =
+							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.images_pull_stream_error();
+						pullError = errMsg;
+						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
+						hadError = true;
+						deployPulling = false;
+						return;
+					}
+
+					if (deployData.status) pullStatusText = deployData.status;
+
+					if (deployData.id) {
+						deployProgressPhase = 'pull';
+						const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
+						currentLayer.status = deployData.status || currentLayer.status;
+						if (deployData.progressDetail) {
+							const { current, total } = deployData.progressDetail;
+							if (typeof current === 'number') currentLayer.current = current;
+							if (typeof total === 'number') currentLayer.total = total;
+						}
+						layerProgress[deployData.id] = currentLayer;
+					}
+
+					if (deployProgressPhase === 'pull') {
+						updatePullProgress();
+					}
+					return;
+				}
+
+				// First deploy status line: switch UI from pull -> deploy.
 				if (!deployPhaseStarted) {
 					deployPhaseStarted = true;
+					deployProgressPhase = 'deploy';
 					pullProgress = 0;
 					layerProgress = {};
 					pullError = '';
@@ -471,7 +581,9 @@
 					deployPulling = false;
 					pullProgress = 100;
 				}
-			});
+			};
+
+			await projectService.deployProject(id, handleDeployLine);
 
 			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
 
@@ -596,6 +708,65 @@
 			}
 		}
 	}
+
+	async function handleProjectBuild() {
+		resetPullState();
+		projectBuilding = true;
+		buildPopoverOpen = true;
+		pullStatusText = m.progress_building_images_starting();
+
+		let wasSuccessful = false;
+
+		try {
+			const buildProvider = projectBuildProvider;
+			await projectService.buildProjectImages(
+				id,
+				{
+					provider: buildProvider,
+					push: buildProvider === 'depot',
+					load: buildProvider !== 'depot'
+				},
+				(data) => {
+					if (!data) return;
+
+					if (data.error) {
+						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.build_failed();
+						pullError = errMsg;
+						pullStatusText = m.build_failed_with_error({ error: errMsg });
+						return;
+					}
+
+					if (data.status) {
+						pullStatusText = data.status;
+						appendBuildOutputLine(data.status, data.service);
+					}
+				}
+			);
+
+			if (pullError) throw new Error(pullError);
+
+			wasSuccessful = true;
+			pullProgress = 100;
+			pullStatusText = m.build_completed();
+			toast.success(m.build_completed());
+			await invalidateAll();
+
+			setTimeout(() => {
+				buildPopoverOpen = false;
+				projectBuilding = false;
+				resetPullState();
+			}, 2000);
+		} catch (error: any) {
+			const message = error?.message || m.build_failed();
+			pullError = message;
+			pullStatusText = m.build_failed_with_error({ error: message });
+			toast.error(message);
+		} finally {
+			if (!wasSuccessful) {
+				projectBuilding = false;
+			}
+		}
+	}
 </script>
 
 {#if desktopVariant === 'adaptive'}
@@ -617,18 +788,20 @@
 							bind:open={deployPullPopoverOpen}
 							bind:progress={pullProgress}
 							mode="generic"
-							title={m.progress_deploying_project()}
+							title={deployPopoverTitle}
 							completeTitle={m.progress_deploy_completed()}
 							statusText={pullStatusText}
 							error={pullError}
 							loading={deployPulling}
-							icon={DownloadIcon}
-							layers={layerProgress}
+							icon={deployPopoverIcon}
+							layers={deployPopoverLayers}
+							outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 						>
 							<ArcaneButton
 								action="deploy"
 								size={adaptiveIconOnly ? 'icon' : 'default'}
 								showLabel={!adaptiveIconOnly}
+								customLabel={deployButtonLabel}
 								onclick={() => handleDeploy()}
 								loading={uiLoading.start}
 							/>
@@ -672,6 +845,29 @@
 					/>
 
 					{#if type === 'project'}
+						{#if projectHasBuildDirective}
+							<ProgressPopover
+								bind:open={buildPopoverOpen}
+								bind:progress={pullProgress}
+								mode="generic"
+								title={m.build_output()}
+								completeTitle={m.build_completed()}
+								statusText={pullStatusText}
+								error={pullError}
+								loading={projectBuilding}
+								icon={HammerIcon}
+								outputLines={buildOutputLines}
+							>
+								<ArcaneButton
+									action="build"
+									size={adaptiveIconOnly ? 'icon' : 'default'}
+									showLabel={!adaptiveIconOnly}
+									onclick={() => handleProjectBuild()}
+									loading={projectBuilding}
+								/>
+							</ProgressPopover>
+						{/if}
+
 						<ProgressPopover
 							bind:open={pullPopoverOpen}
 							bind:progress={pullProgress}
@@ -732,7 +928,7 @@
 									</DropdownMenu.Item>
 								{:else}
 									<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
-										{m.common_up()}
+										{deployButtonLabel}
 									</DropdownMenu.Item>
 								{/if}
 							{:else}
@@ -754,6 +950,11 @@
 								</DropdownMenu.Item>
 
 								{#if type === 'project'}
+									{#if projectHasBuildDirective}
+										<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+											{m.build()}
+										</DropdownMenu.Item>
+									{/if}
 									<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
 										{m.images_pull()}
 									</DropdownMenu.Item>
@@ -778,13 +979,30 @@
 						bind:open={deployPullPopoverOpen}
 						bind:progress={pullProgress}
 						mode="generic"
-						title={m.progress_deploying_project()}
+						title={deployPopoverTitle}
 						completeTitle={m.progress_deploy_completed()}
 						statusText={pullStatusText}
 						error={pullError}
 						loading={deployPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
+						icon={deployPopoverIcon}
+						layers={deployPopoverLayers}
+						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
+						triggerClass="hidden"
+					>
+						<span class="hidden"></span>
+					</ProgressPopover>
+
+					<ProgressPopover
+						bind:open={buildPopoverOpen}
+						bind:progress={pullProgress}
+						mode="generic"
+						title={m.build_output()}
+						completeTitle={m.build_completed()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectBuilding}
+						icon={HammerIcon}
+						outputLines={buildOutputLines}
 						triggerClass="hidden"
 					>
 						<span class="hidden"></span>
@@ -817,14 +1035,22 @@
 					<ProgressPopover
 						bind:open={deployPullPopoverOpen}
 						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
+						mode="generic"
+						title={deployPopoverTitle}
+						completeTitle={m.progress_deploy_completed()}
 						statusText={pullStatusText}
 						error={pullError}
 						loading={deployPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
+						icon={deployPopoverIcon}
+						layers={deployPopoverLayers}
+						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 					>
-						<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
+						<ArcaneButton
+							action="deploy"
+							customLabel={deployButtonLabel}
+							onclick={() => handleDeploy()}
+							loading={uiLoading.start}
+						/>
 					</ProgressPopover>
 				{/if}
 			{/if}
@@ -845,6 +1071,23 @@
 				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
 
 				{#if type === 'project'}
+					{#if projectHasBuildDirective}
+						<ProgressPopover
+							bind:open={buildPopoverOpen}
+							bind:progress={pullProgress}
+							mode="generic"
+							title={m.build_output()}
+							completeTitle={m.build_completed()}
+							statusText={pullStatusText}
+							error={pullError}
+							loading={projectBuilding}
+							icon={HammerIcon}
+							outputLines={buildOutputLines}
+						>
+							<ArcaneButton action="build" onclick={() => handleProjectBuild()} loading={projectBuilding} />
+						</ProgressPopover>
+					{/if}
+
 					<ProgressPopover
 						bind:open={pullPopoverOpen}
 						bind:progress={pullProgress}
@@ -891,7 +1134,7 @@
 								</DropdownMenu.Item>
 							{:else}
 								<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
-									{m.common_up()}
+									{deployButtonLabel}
 								</DropdownMenu.Item>
 							{/if}
 						{:else}
@@ -913,6 +1156,11 @@
 							</DropdownMenu.Item>
 
 							{#if type === 'project'}
+								{#if projectHasBuildDirective}
+									<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+										{m.build()}
+									</DropdownMenu.Item>
+								{/if}
 								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
 									{m.images_pull()}
 								</DropdownMenu.Item>

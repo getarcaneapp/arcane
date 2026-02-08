@@ -350,4 +350,29 @@ type Update struct {
 	//
 	// Required: false
 	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
+
+	// BuildProvider is the default build provider (local|depot).
+	//
+	// Required: false
+	BuildProvider *string `json:"buildProvider,omitempty"`
+
+	// BuildsDirectory is the root directory for manual build workspaces.
+	//
+	// Required: false
+	BuildsDirectory *string `json:"buildsDirectory,omitempty"`
+
+	// BuildTimeout is the timeout for BuildKit builds in seconds.
+	//
+	// Required: false
+	BuildTimeout *string `json:"buildTimeout,omitempty"`
+
+	// DepotProjectId is the Depot project identifier.
+	//
+	// Required: false
+	DepotProjectId *string `json:"depotProjectId,omitempty"`
+
+	// DepotToken is the Depot API token.
+	//
+	// Required: false
+	DepotToken *string `json:"depotToken,omitempty"`
 }

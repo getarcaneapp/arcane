@@ -9,6 +9,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { sanitizeLogText } from '$lib/utils/log-text';
 	import {
 		type LayerProgress,
 		type PullPhase,
@@ -40,6 +41,7 @@
 		preventCloseWhileLoading?: boolean;
 		onCancel?: () => void;
 		layers?: Record<string, LayerProgress>;
+		outputLines?: string[];
 		triggerClass?: string;
 		children: Snippet;
 	}
@@ -62,9 +64,20 @@
 		preventCloseWhileLoading = true,
 		onCancel,
 		layers = {},
+		outputLines = [],
 		triggerClass,
 		children
 	}: Props = $props();
+
+	let outputContainer = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		if (!open || !outputContainer || outputLines.length === 0) return;
+		queueMicrotask(() => {
+			if (!outputContainer) return;
+			outputContainer.scrollTop = outputContainer.scrollHeight;
+		});
+	});
 
 	const isMobile = new IsMobile();
 
@@ -91,16 +104,17 @@
 	// Check if we're in an indeterminate phase (extracting with no byte progress)
 	const isIndeterminate = $derived(isIndeterminatePhase(layers, progress));
 	const isIndeterminateGeneric = $derived(mode !== 'pull' && loading && !isComplete && !error);
+	const cleanStatusText = $derived(sanitizeLogText(statusText));
 
 	// Derive aggregate status for display
-	const aggregateStatus = $derived(getAggregateStatus(layers, statusText, hasReachedComplete || isComplete));
+	const aggregateStatus = $derived(getAggregateStatus(layers, cleanStatusText, hasReachedComplete || isComplete));
 
 	// Derive the current phase from status text using utility (pull-mode only)
 	const currentPhase = $derived.by((): PullPhase => {
 		if (Object.keys(layers).length > 0) {
 			return getAggregatePullPhase(layers, hasReachedComplete || isComplete, !!error);
 		}
-		return getPullPhase(statusText, hasReachedComplete || isComplete, !!error);
+		return getPullPhase(cleanStatusText, hasReachedComplete || isComplete, !!error);
 	});
 
 	// Get localized title based on phase
@@ -210,7 +224,8 @@
 			<Collapsible.Content>
 				<div class="mt-2 max-h-48 space-y-1.5 overflow-y-auto">
 					{#each Object.entries(layers) as [id, layer] (id)}
-						{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layer.status)}
+						{@const layerStatus = sanitizeLogText(layer.status || '')}
+						{@const phase = hasReachedComplete ? 'complete' : getLayerPhase(layerStatus)}
 						{@const layerPercent =
 							phase === 'complete' ? 100 : layer.total > 0 ? Math.round((layer.current / layer.total) * 100) : 0}
 						<div class="bg-muted/30 rounded-md px-2 py-1.5">
@@ -229,7 +244,7 @@
 									{:else if layer.total > 0}
 										{layerPercent}%
 									{:else}
-										{layer.status}
+										{layerStatus}
 									{/if}
 								</span>
 							</div>
@@ -239,6 +254,20 @@
 				</div>
 			</Collapsible.Content>
 		</Collapsible.Root>
+	{/if}
+
+	{#if outputLines.length > 0 && !error}
+		<div class="mt-2 overflow-hidden rounded-md border border-white/10 bg-black/80">
+			<div class="flex items-center justify-between border-b border-white/10 px-2 py-1">
+				<span class="text-[10px] font-medium tracking-wide text-emerald-300/80 uppercase">{m.build_output()}</span>
+				<span class="text-[10px] text-emerald-300/60">{outputLines.length}</span>
+			</div>
+			<pre
+				bind:this={outputContainer}
+				class="max-h-40 overflow-y-auto px-2 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-emerald-200">{#each outputLines as line, i (i)}<span
+						class="block break-words">{line}</span
+					>{/each}</pre>
+		</div>
 	{/if}
 {/snippet}
 

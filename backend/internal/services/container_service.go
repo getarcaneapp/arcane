@@ -14,6 +14,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
@@ -219,10 +220,10 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 		defer func() { _ = reader.Close() }()
 
-		_, copyErr := io.Copy(io.Discard, reader)
-		if copyErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", copyErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
-			return nil, fmt.Errorf("failed to complete image pull: %w", copyErr)
+		streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+		if streamErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
+			return nil, fmt.Errorf("failed to complete image pull: %w", streamErr)
 		}
 	}
 

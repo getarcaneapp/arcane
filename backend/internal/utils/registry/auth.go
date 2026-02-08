@@ -22,14 +22,22 @@ type Credentials struct {
 }
 
 func (c *Client) GetRegistryURL(registry string) string {
-	switch registry {
-	case DefaultRegistry, "docker.io":
+	registry = strings.TrimSpace(registry)
+
+	if strings.HasPrefix(registry, "http://") || strings.HasPrefix(registry, "https://") {
+		if parsed, err := url.Parse(registry); err == nil && parsed.Host != "" {
+			if NormalizeRegistryForComparison(parsed.Host) == "docker.io" {
+				return "https://index.docker.io"
+			}
+		}
+		return strings.TrimSuffix(registry, "/")
+	}
+
+	switch NormalizeRegistryForComparison(registry) {
+	case "docker.io":
 		return "https://index.docker.io"
 	default:
-		if !strings.HasPrefix(registry, "http") {
-			return "https://" + registry
-		}
-		return registry
+		return "https://" + NormalizeRegistryForComparison(registry)
 	}
 }
 
@@ -217,16 +225,12 @@ func AcquireTokenViaChallenge(
 // Helpers (formerly in check.go)
 
 func normalizeHost(u string) string {
-	u = strings.TrimSpace(u)
-	u = strings.TrimPrefix(u, "https://")
-	u = strings.TrimPrefix(u, "http://")
-	u = strings.TrimSuffix(u, "/")
-	return strings.ToLower(u)
+	return NormalizeRegistryForComparison(u)
 }
 
 func normalizeRepositoryForDockerIO(registryHost, repo string) string {
 	r := normalizeHost(registryHost)
-	if r == "docker.io" || r == DefaultRegistry || r == "index.docker.io" {
+	if r == "docker.io" {
 		if !strings.Contains(repo, "/") {
 			return "library/" + repo
 		}

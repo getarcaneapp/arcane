@@ -28,6 +28,7 @@ export interface ServiceVolume {
 export interface ProjectService {
 	name?: string;
 	image?: string;
+	build?: string | Record<string, any>;
 	container_name?: string;
 	command?: string[] | string | null;
 	entrypoint?: string[] | string | null;
@@ -78,6 +79,7 @@ export interface Project {
 	gitOpsManagedBy?: string;
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
+	hasBuildDirective?: boolean;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;

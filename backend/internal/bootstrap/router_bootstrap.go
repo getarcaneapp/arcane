@@ -140,6 +140,8 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Docker:            appServices.Docker,
 		Image:             appServices.Image,
 		ImageUpdate:       appServices.ImageUpdate,
+		Build:             appServices.Build,
+		BuildWorkspace:    appServices.BuildWorkspace,
 		Volume:            appServices.Volume,
 		Container:         appServices.Container,
 		Network:           appServices.Network,

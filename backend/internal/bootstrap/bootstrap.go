@@ -124,6 +124,10 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
 	}
 
+	if err := appServices.Settings.NormalizeBuildsDirectory(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to normalize builds directory", "error", err)
+	}
+
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}

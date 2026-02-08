@@ -248,7 +248,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	}
 
 	// Extract registry
-	registry := ref.Domain(named)
+	registryHost := ref.Domain(named)
 
 	// Extract repository (path without registry)
 	repository := ref.Path(named)
@@ -263,7 +263,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 	}
 
 	return &ImageParts{
-		Registry:   registry,
+		Registry:   registry.NormalizeRegistryForComparison(registryHost),
 		Repository: repository,
 		Tag:        tag,
 	}
@@ -326,7 +326,7 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 			}
 		}
 	}
-	return &ImageParts{Registry: registryHost, Repository: repository, Tag: tag}
+	return &ImageParts{Registry: registry.NormalizeRegistryForComparison(registryHost), Repository: repository, Tag: tag}
 }
 
 func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
@@ -444,7 +444,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 
 // Returns all enabled credentials whose URL matches the image registry domain (normalized)
 func (s *ImageUpdateService) getRegistriesForImage(ctx context.Context, regHost string) []models.ContainerRegistry {
-	normalizedDomain := s.normalizeRegistryURL(regHost)
+	normalizedDomain := registry.NormalizeRegistryForComparison(regHost)
 
 	registries, err := s.registryService.GetAllRegistries(ctx)
 	if err != nil {
@@ -457,38 +457,19 @@ func (s *ImageUpdateService) getRegistriesForImage(ctx context.Context, regHost 
 		if !reg.Enabled {
 			continue
 		}
-		normalizedRegURL := s.normalizeRegistryURL(reg.URL)
+		normalizedRegURL := registry.NormalizeRegistryForComparison(reg.URL)
 		if normalizedRegURL == normalizedDomain {
 			matches = append(matches, reg)
 		}
 	}
 
-	slog.DebugContext(ctx, "Matched registry credentials for image",
-		"registry", regHost,
-		"normalizedDomain", normalizedDomain,
-		"matchCount", len(matches))
+	slog.DebugContext(ctx, "Matched registry credentials for image", "registry", regHost, "normalizedDomain", normalizedDomain, "matchCount", len(matches))
 
 	for i, reg := range matches {
-		slog.DebugContext(ctx, "Matched credential",
-			"index", i,
-			"registryURL", reg.URL,
-			"username", reg.Username)
+		slog.DebugContext(ctx, "Matched credential", "index", i, "registryURL", reg.URL, "username", reg.Username)
 	}
 
 	return matches
-}
-
-func (s *ImageUpdateService) normalizeRegistryURL(url string) string {
-	url = strings.TrimSpace(strings.ToLower(url))
-	url = strings.TrimPrefix(url, "https://")
-	url = strings.TrimPrefix(url, "http://")
-	url = strings.TrimSuffix(url, "/")
-
-	switch url {
-	case "docker.io", "registry-1.docker.io", "index.docker.io":
-		return "docker.io"
-	}
-	return url
 }
 
 func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
@@ -756,20 +737,13 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 	var enabledRegs []models.ContainerRegistry
 	credMap := make(map[string]batchCred)
 
-	normalizeHost := func(u string) string {
-		u = strings.TrimSpace(u)
-		u = strings.TrimPrefix(u, "https://")
-		u = strings.TrimPrefix(u, "http://")
-		return strings.TrimSuffix(u, "/")
-	}
-
 	if len(externalCreds) > 0 {
 		enabledRegHosts := make(map[string]struct{})
 		for _, c := range externalCreds {
 			if !c.Enabled || c.Username == "" || c.Token == "" {
 				continue
 			}
-			host := normalizeHost(c.URL)
+			host := registry.NormalizeRegistryForComparison(c.URL)
 			if host == "" {
 				continue
 			}
@@ -807,7 +781,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 		if r.Username == "" || r.Token == "" {
 			continue
 		}
-		host := normalizeHost(r.URL)
+		host := registry.NormalizeRegistryForComparison(r.URL)
 		if host == "" {
 			continue
 		}
@@ -825,12 +799,6 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 
 func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *registry.Client, regRepos map[string]map[string]struct{}, credMap map[string]batchCred) map[string]regAuth {
 	regAuthMap := make(map[string]regAuth, len(regRepos))
-	normalizeHost := func(u string) string {
-		u = strings.TrimSpace(u)
-		u = strings.TrimPrefix(u, "https://")
-		u = strings.TrimPrefix(u, "http://")
-		return strings.TrimSuffix(u, "/")
-	}
 
 	slog.DebugContext(ctx, "Building registry auth map",
 		"registryCount", len(regRepos),
@@ -868,7 +836,7 @@ func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *regis
 		}
 
 		// Credential attempt first (if available)
-		host := normalizeHost(regHost)
+		host := registry.NormalizeRegistryForComparison(regHost)
 		slog.DebugContext(ctx, "Looking up credentials for registry",
 			"registry", regHost,
 			"normalizedHost", host,
