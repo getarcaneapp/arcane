@@ -1,4 +1,5 @@
 <script lang="ts">
+// Force update to resolve CI conflict markers
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
