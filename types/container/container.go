@@ -726,6 +726,11 @@ type Created struct {
 
 // NewSummary creates a Summary from a docker container.Summary.
 func NewSummary(c container.Summary) Summary {
+	names := make([]string, 0, len(c.Names))
+	for _, name := range c.Names {
+		names = append(names, strings.TrimPrefix(name, "/"))
+	}
+
 	ports := make([]Port, 0, len(c.Ports))
 	for _, p := range c.Ports {
 		ports = append(ports, Port{
@@ -759,7 +764,7 @@ func NewSummary(c container.Summary) Summary {
 
 	return Summary{
 		ID:      c.ID,
-		Names:   c.Names,
+		Names:   names,
 		Image:   c.Image,
 		ImageID: c.ImageID,
 		Command: c.Command,

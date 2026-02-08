@@ -202,6 +202,50 @@ func TestConfig_OptionsToLower(t *testing.T) {
 	})
 }
 
+func TestConfig_ListenAddr(t *testing.T) {
+	tests := []struct {
+		name     string
+		listen   string
+		port     string
+		expected string
+	}{
+		{
+			name:     "empty listen uses all interfaces",
+			listen:   "",
+			port:     "3553",
+			expected: ":3553",
+		},
+		{
+			name:     "ipv4 listen",
+			listen:   "127.0.0.1",
+			port:     "3553",
+			expected: "127.0.0.1:3553",
+		},
+		{
+			name:     "ipv6 listen",
+			listen:   "::1",
+			port:     "3553",
+			expected: "[::1]:3553",
+		},
+		{
+			name:     "empty port falls back to default",
+			listen:   "127.0.0.1",
+			port:     "",
+			expected: "127.0.0.1:3552",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := &Config{
+				Listen: testCase.listen,
+				Port:   testCase.port,
+			}
+			assert.Equal(t, testCase.expected, cfg.ListenAddr())
+		})
+	}
+}
+
 func restoreEnv(key, value string) {
 	if value == "" {
 		os.Unsetenv(key)

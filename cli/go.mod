@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	github.com/charmbracelet/fang v0.4.4
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.18.0
 	github.com/getarcaneapp/arcane/types v0.0.0-20260110011808-8759100aa57c
 	github.com/mattn/go-runewidth v0.0.19
@@ -11,7 +12,6 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	go.withmatt.com/size v0.0.0-20250220224316-11aee5773e67
-	golang.org/x/term v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -21,7 +21,6 @@ require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20251106190538-99ea45596692 // indirect
 	github.com/charmbracelet/x/ansi v0.11.0 // indirect
 	github.com/charmbracelet/x/exp/charmtone v0.0.0-20250603201427-c31516f43444 // indirect
-	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.4.1 // indirect
@@ -57,6 +56,7 @@ require (
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/term v0.39.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

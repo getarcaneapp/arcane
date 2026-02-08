@@ -30,7 +30,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
 	newScheduler.RegisterJob(eventCleanupJob)
 
-	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings)
+	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
 	newScheduler.RegisterJob(scheduledPruneJob)
 
 	fsWatcherJob, err := pkg_scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings)

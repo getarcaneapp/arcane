@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/system"
 )
 
 const logoURLPath = "/api/app-images/logo-email"
@@ -2687,4 +2688,405 @@ func (s *NotificationService) MigrateDiscordWebhookUrlToFields(ctx context.Conte
 
 	slog.InfoContext(ctx, "Successfully migrated Discord config")
 	return nil
+}
+
+func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	var errors []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+
+		if !s.isEventEnabled(setting.Config, models.NotificationEventPruneReport) {
+			continue
+		}
+
+		var sendErr error
+		switch setting.Provider {
+		case models.NotificationProviderDiscord:
+			sendErr = s.sendDiscordPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderEmail:
+			sendErr = s.sendEmailPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericPruneNotification(ctx, result, setting.Config)
+		default:
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		status := "success"
+		var errMsg *string
+		if sendErr != nil {
+			status = "failed"
+			msg := sendErr.Error()
+			errMsg = &msg
+			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		}
+
+		s.logNotification(ctx, setting.Provider, "System Prune Report", status, errMsg, models.JSON{
+			"spaceReclaimed": result.SpaceReclaimed,
+			"eventType":      string(models.NotificationEventPruneReport),
+		})
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+func (s *NotificationService) formatBytesInternal(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var discordConfig models.DiscordConfig
+	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
+		return err
+	}
+
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
+	}
+
+	s.decryptDiscordTokenInternal(&discordConfig)
+
+	message := fmt.Sprintf("**🧹 System Prune Report**\n\n"+
+		"**Total Space Reclaimed:** %s\n\n"+
+		"**Breakdown:**\n"+
+		"- 📦 **Containers:** %s\n"+
+		"- 🖼️ **Images:** %s\n"+
+		"- 💾 **Volumes:** %s\n"+
+		"- 🏗️ **Build Cache:** %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
+		return err
+	}
+
+	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("telegram bot token or chat IDs not configured")
+	}
+
+	s.decryptTelegramTokenInternal(&telegramConfig)
+
+	message := fmt.Sprintf("🧹 <b>System Prune Report</b>\n\n"+
+		"<b>Total Space Reclaimed:</b> %s\n\n"+
+		"<b>Breakdown:</b>\n"+
+		"- 📦 <b>Containers:</b> %s\n"+
+		"- 🖼️ <b>Images:</b> %s\n"+
+		"- 💾 <b>Volumes:</b> %s\n"+
+		"- 🏗️ <b>Build Cache:</b> %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var emailConfig models.EmailConfig
+	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
+		return err
+	}
+
+	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
+		return err
+	}
+
+	s.decryptEmailPasswordInternal(&emailConfig)
+
+	htmlBody, _, err := s.renderPruneReportEmailTemplate(result)
+	if err != nil {
+		return fmt.Errorf("failed to render email template: %w", err)
+	}
+
+	subject := fmt.Sprintf("System Prune Report: %s Reclaimed", s.formatBytesInternal(result.SpaceReclaimed))
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) renderPruneReportEmailTemplate(result *system.PruneAllResult) (string, string, error) {
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
+	data := map[string]interface{}{
+		"LogoURL":                  logoURL,
+		"AppURL":                   appURL,
+		"TotalSpaceReclaimed":      s.formatBytesInternal(result.SpaceReclaimed),
+		"ContainerSpaceReclaimed":  s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		"ImageSpaceReclaimed":      s.formatBytesInternal(result.ImageSpaceReclaimed),
+		"VolumeSpaceReclaimed":     s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		"BuildCacheSpaceReclaimed": s.formatBytesInternal(result.BuildCacheSpaceReclaimed),
+		"Time":                     time.Now().Format(time.RFC1123),
+	}
+
+	return s.renderTemplatesInternal("prune-report", data)
+}
+
+func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("🧹 System Prune Report\n\n"+
+		"Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"- Containers: %s\n"+
+		"- Images: %s\n"+
+		"- Volumes: %s\n"+
+		"- Build Cache: %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendSignal(ctx, signalConfig, message)
+}
+
+func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("*🧹 System Prune Report*\n\n"+
+		"*Total Space Reclaimed:* %s\n\n"+
+		"*Breakdown:*\n"+
+		"- 📦 *Containers:* %s\n"+
+		"- 🖼️ *Images:* %s\n"+
+		"- 💾 *Volumes:* %s\n"+
+		"- 🏗️ *Build Cache:* %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendSlack(ctx, slackConfig, message)
+}
+
+func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	// Ntfy sends the title as part of the message or needs a separate header not currently in config
+	// For now, we omit the title attribute as it is not in the struct
+
+	return notifications.SendNtfy(ctx, ntfyConfig, message)
+}
+
+func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if pushoverConfig.Title == "" {
+		pushoverConfig.Title = "System Prune Report"
+	}
+
+	return notifications.SendPushover(ctx, pushoverConfig, message)
+}
+
+func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if gotifyConfig.Title == "" {
+		gotifyConfig.Title = "System Prune Report"
+	}
+
+	return notifications.SendGotify(ctx, gotifyConfig, message)
+}
+
+func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("System Prune Report\n"+
+		"Total Space Reclaimed: %s\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendGenericWithTitle(ctx, genericConfig, "System Prune Report", message)
+}
+
+// Helper methods to reduce code duplication
+func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest interface{}) error {
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, dest); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
+	if config.SMTPHost == "" || config.SMTPPort == 0 {
+		return fmt.Errorf("SMTP host or port not configured")
+	}
+	if len(config.ToAddresses) == 0 {
+		return fmt.Errorf("no recipient email addresses configured")
+	}
+	return nil
+}
+
+func (s *NotificationService) decryptDiscordTokenInternal(config *models.DiscordConfig) {
+	if config.Token != "" {
+		if decrypted, err := crypto.Decrypt(config.Token); err == nil {
+			config.Token = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) decryptTelegramTokenInternal(config *models.TelegramConfig) {
+	if config.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(config.BotToken); err == nil {
+			config.BotToken = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailConfig) {
+	if config.SMTPPassword != "" {
+		if decrypted, err := crypto.Decrypt(config.SMTPPassword); err == nil {
+			config.SMTPPassword = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) renderTemplatesInternal(name string, data interface{}) (string, string, error) {
+	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+	}
+
+	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+	}
+
+	var htmlBuf bytes.Buffer
+	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+	}
+
+	textContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_text.tmpl", name))
+	if err == nil {
+		textTmpl, err := template.New("text").Parse(string(textContent))
+		if err == nil {
+			var textBuf bytes.Buffer
+			if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err == nil {
+				return htmlBuf.String(), textBuf.String(), nil
+			}
+		}
+	}
+
+	return htmlBuf.String(), "", nil
 }
