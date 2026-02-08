@@ -180,6 +180,9 @@
 	"scheduled_prune_networks_description": "Ta bort oanvända nätverk",
 	"scheduled_prune_build_cache_label": "Rensa Bygg Cache",
 	"scheduled_prune_build_cache_description": "Ta bort cachen för Docker",
+	"auto_update_select_containers": "Välj behållare...",
+	"auto_update_containers_excluded_one": "1 behållare exkluderad",
+	"auto_update_containers_excluded_many": "{count} behållare exkluderade",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
@@ -1956,5 +1959,7 @@
 	"environments_agent_address_description": "The URL where your agent will be accessible",
 	"environments_generate_config": "Generate Agent Configuration",
 	"project_files": "Project Files",
-	"project_includes": "Inkluderar"
+	"project_includes": "Inkluderar",
+	"notifications_event_prune_report_label": "Rapport om systembeskärning",
+	"notifications_event_prune_report_description": "Få en sammanfattande rapport när en schemalagd beskärningsåtgärd slutför"
 }
