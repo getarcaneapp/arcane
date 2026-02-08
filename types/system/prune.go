@@ -60,6 +60,26 @@ type PruneAllResult struct {
 	// Required: true
 	SpaceReclaimed uint64 `json:"spaceReclaimed"`
 
+	// ContainerSpaceReclaimed is the amount of space reclaimed from containers in bytes.
+	//
+	// Required: false
+	ContainerSpaceReclaimed uint64 `json:"containerSpaceReclaimed,omitempty"`
+
+	// ImageSpaceReclaimed is the amount of space reclaimed from images in bytes.
+	//
+	// Required: false
+	ImageSpaceReclaimed uint64 `json:"imageSpaceReclaimed,omitempty"`
+
+	// VolumeSpaceReclaimed is the amount of space reclaimed from volumes in bytes.
+	//
+	// Required: false
+	VolumeSpaceReclaimed uint64 `json:"volumeSpaceReclaimed,omitempty"`
+
+	// BuildCacheSpaceReclaimed is the amount of space reclaimed from build cache in bytes.
+	//
+	// Required: false
+	BuildCacheSpaceReclaimed uint64 `json:"buildCacheSpaceReclaimed,omitempty"`
+
 	// Success indicates if the prune operation was successful.
 	//
 	// Required: true

@@ -31,6 +31,7 @@ package images
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +48,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
+	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/image"
 	"github.com/schollz/progressbar/v3"
@@ -61,6 +63,8 @@ var (
 	imagesOrder  string
 	imagesSearch string
 )
+
+const maxPromptOptions = 20
 
 // ImagesCmd is the parent command for image operations
 var ImagesCmd = &cobra.Command{
@@ -165,8 +169,8 @@ var imagesListCmd = &cobra.Command{
 }
 
 var imagesGetCmd = &cobra.Command{
-	Use:          "get [IMAGE_ID]",
-	Short:        "Get image details by ID",
+	Use:          "get <image-id|name>",
+	Short:        "Get image details by ID or name",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -176,7 +180,13 @@ var imagesGetCmd = &cobra.Command{
 			return err
 		}
 
-		imageID := args[0]
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+		allowPrompt := !jsonOutput && prompt.IsInteractive()
+
+		imageID, err := resolveImageID(cmd.Context(), c, args[0], allowPrompt)
+		if err != nil {
+			return err
+		}
 		path := types.Endpoints.Image(c.EnvID(), imageID)
 
 		log.Debugf("Getting image details from: %s", path)
@@ -194,7 +204,7 @@ var imagesGetCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(body))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonOutput {
 			fmt.Println(string(body))
 			return nil
 		}
@@ -259,7 +269,7 @@ var (
 )
 
 var imagesRemoveCmd = &cobra.Command{
-	Use:          "remove [IMAGE_ID]",
+	Use:          "remove <image-id|name>",
 	Aliases:      []string{"rm", "delete"},
 	Short:        "Remove an image",
 	Args:         cobra.ExactArgs(1),
@@ -271,7 +281,10 @@ var imagesRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		imageID := args[0]
+		imageID, err := resolveImageID(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
 		path := types.Endpoints.Image(c.EnvID(), imageID)
 
 		if removeForce {
@@ -740,4 +753,208 @@ func init() {
 	ImagesCmd.AddCommand(imagesCountsCmd)
 
 	ImagesCmd.AddCommand(imagesUploadCmd)
+}
+
+func resolveImageID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, error) {
+	trimmed := strings.TrimSpace(identifier)
+	if trimmed == "" {
+		return "", fmt.Errorf("image identifier is required")
+	}
+
+	resolvedID, found, err := resolveImageByID(ctx, c, trimmed)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return resolvedID, nil
+	}
+
+	terms := buildImageSearchTerms(trimmed)
+	seenTerms := make(map[string]struct{}, len(terms))
+	for _, term := range terms {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		if _, ok := seenTerms[term]; ok {
+			continue
+		}
+		seenTerms[term] = struct{}{}
+
+		matches, err := searchImageMatches(ctx, c, term, trimmed)
+		if err != nil {
+			return "", err
+		}
+
+		selectedID, resolved, err := selectImageMatchID(matches, trimmed, allowPrompt)
+		if err != nil {
+			return "", err
+		}
+		if resolved {
+			return selectedID, nil
+		}
+	}
+
+	return "", fmt.Errorf("image %q not found; use the image ID or run `arcane images list`", trimmed)
+}
+
+func resolveImageByID(ctx context.Context, c *client.Client, identifier string) (string, bool, error) {
+	resp, err := c.Get(ctx, types.Endpoints.Image(c.EnvID(), identifier))
+	if err != nil {
+		return "", false, fmt.Errorf("failed to resolve image %q: %w", identifier, err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read image response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		var result struct {
+			Success bool                `json:"success"`
+			Data    image.DetailSummary `json:"data"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return "", false, fmt.Errorf("failed to parse image response: %w", err)
+		}
+		if result.Data.ID == "" {
+			return "", false, fmt.Errorf("image lookup for %q returned empty ID", identifier)
+		}
+		return result.Data.ID, true, nil
+	}
+
+	if resp.StatusCode != http.StatusNotFound {
+		return "", false, fmt.Errorf("failed to resolve image %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	return "", false, nil
+}
+
+func buildImageSearchTerms(trimmed string) []string {
+	terms := []string{trimmed}
+	identifierLower := strings.ToLower(trimmed)
+	if strings.Contains(trimmed, "@") {
+		if repo, _, ok := strings.Cut(trimmed, "@"); ok && repo != "" {
+			terms = append(terms, repo)
+		}
+		return terms
+	}
+	if strings.Contains(trimmed, ":") && !strings.HasPrefix(identifierLower, "sha256:") {
+		if repo, _, ok := strings.Cut(trimmed, ":"); ok && repo != "" {
+			terms = append(terms, repo)
+		}
+	}
+	return terms
+}
+
+func searchImageMatches(ctx context.Context, c *client.Client, term, trimmed string) ([]image.Summary, error) {
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Images(c.EnvID()), url.QueryEscape(term), 200)
+	searchResp, err := c.Get(ctx, searchPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search images: %w", err)
+	}
+
+	searchBody, err := io.ReadAll(searchResp.Body)
+	_ = searchResp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read images response: %w", err)
+	}
+
+	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
+		return nil, fmt.Errorf("failed to search images (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
+	}
+
+	var result struct {
+		Success bool            `json:"success"`
+		Data    []image.Summary `json:"data"`
+	}
+	if err := json.Unmarshal(searchBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse images response: %w", err)
+	}
+
+	return filterImageMatches(result.Data, trimmed), nil
+}
+
+func filterImageMatches(items []image.Summary, trimmed string) []image.Summary {
+	identifierLower := strings.ToLower(trimmed)
+	hasSeparator := strings.Contains(trimmed, ":") || strings.Contains(trimmed, "@")
+	matches := make([]image.Summary, 0)
+	for _, item := range items {
+		if imageMatches(item, trimmed, identifierLower, hasSeparator) {
+			matches = append(matches, item)
+		}
+	}
+	return matches
+}
+
+func imageMatches(item image.Summary, trimmed, identifierLower string, hasSeparator bool) bool {
+	idLower := strings.ToLower(item.ID)
+	if idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower)) {
+		return true
+	}
+
+	if !hasSeparator && strings.Contains(strings.ToLower(item.Repo), identifierLower) {
+		return true
+	}
+
+	for _, tag := range item.RepoTags {
+		tagLower := strings.ToLower(tag)
+		if (!hasSeparator && strings.Contains(tagLower, identifierLower)) || strings.EqualFold(tag, trimmed) {
+			return true
+		}
+	}
+
+	if item.Repo != "" && item.Tag != "" {
+		combined := item.Repo + ":" + item.Tag
+		combinedLower := strings.ToLower(combined)
+		if strings.EqualFold(combined, trimmed) || (hasSeparator && strings.Contains(combinedLower, identifierLower)) {
+			return true
+		}
+	}
+
+	for _, digest := range item.RepoDigests {
+		digestLower := strings.ToLower(digest)
+		if strings.EqualFold(digest, trimmed) || strings.Contains(digestLower, identifierLower) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func selectImageMatchID(matches []image.Summary, trimmed string, allowPrompt bool) (string, bool, error) {
+	if len(matches) == 1 {
+		return matches[0].ID, true, nil
+	}
+	if len(matches) == 0 {
+		return "", false, nil
+	}
+
+	if !allowPrompt {
+		return "", false, fmt.Errorf("multiple images match %q; use the image ID or run `arcane images list`", trimmed)
+	}
+	if len(matches) > maxPromptOptions {
+		return "", false, fmt.Errorf("multiple images match %q (%d results); refine your query or use the image ID", trimmed, len(matches))
+	}
+
+	options := make([]string, 0, len(matches))
+	for _, match := range matches {
+		options = append(options, formatImageMatchOption(match))
+	}
+	choice, err := prompt.Select("image", options)
+	if err != nil {
+		return "", false, err
+	}
+	return matches[choice].ID, true, nil
+}
+
+func formatImageMatchOption(match image.Summary) string {
+	label := match.ID
+	if len(match.RepoTags) > 0 {
+		label = match.RepoTags[0]
+	} else if match.Repo != "" && match.Tag != "" {
+		label = match.Repo + ":" + match.Tag
+	}
+	return fmt.Sprintf("%s (%s)", label, match.ID)
 }

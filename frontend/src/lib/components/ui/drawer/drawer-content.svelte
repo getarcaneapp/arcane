@@ -20,7 +20,7 @@
 		bind:ref
 		data-slot="drawer-content"
 		class={cn(
-			'group/drawer-content text-foreground bg-white/10 dark:bg-surface/10 backdrop-blur-md fixed z-50 flex h-auto flex-col border-white/80 dark:border-surface/80',
+			'group/drawer-content text-foreground dark:bg-surface/10 dark:border-surface/80 fixed z-50 flex h-auto flex-col border-white/80 bg-white/10 backdrop-blur-md',
 			'data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b',
 			'data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t',
 			'data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-3/4 data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-sm',
@@ -30,7 +30,7 @@
 		{...restProps}
 	>
 		<div
-			class="mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full bg-foreground/25 dark:bg-surface/60 group-data-[vaul-drawer-direction=bottom]/drawer-content:block"
+			class="bg-foreground/25 dark:bg-surface/60 mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block"
 		></div>
 		{@render children?.()}
 	</DrawerPrimitive.Content>

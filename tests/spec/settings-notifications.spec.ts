@@ -91,7 +91,8 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('Enter webhook ID').fill('123456789');
     await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -111,7 +112,8 @@ test.describe('Notification settings', () => {
     // Slack OAuth token (xoxb- or xoxp- format)
     await page.getByPlaceholder('xoxb-... or xoxp-...').fill('xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -132,7 +134,8 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11').fill('123456:TEST-TOKEN');
     await page.getByPlaceholder('@channel, 123456789, @another_channel').fill('123456789');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -151,7 +154,8 @@ test.describe('Notification settings', () => {
 
     await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -173,7 +177,8 @@ test.describe('Notification settings', () => {
     await page.getByRole('textbox', { name: '+' }).fill('+1234567890');
     await page.getByRole('textbox', { name: 'Recipients' }).fill('+1987654321');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -193,7 +198,8 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('ntfy.sh').fill('ntfy.sh');
     await page.getByPlaceholder('my-updates').fill('arcane-updates');
 
-    await page.getByRole('button', { name: 'Test Provider' }).click();
+    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {

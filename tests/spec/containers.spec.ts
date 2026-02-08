@@ -31,7 +31,7 @@ test.describe('Containers Page', () => {
     const stopped = containersData.data.filter((c) => c.state !== 'running').length;
 
     await expect(page.getByText(`${total} Total`)).toBeVisible();
-    await expect(page.getByText(`${running} Running`)).toBeVisible();
+    await expect(page.getByText(`${running} Running`, { exact: true })).toBeVisible();
     await expect(page.getByText(`${stopped} Stopped`)).toBeVisible();
   });
 

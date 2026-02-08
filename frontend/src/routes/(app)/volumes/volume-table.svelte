@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -17,7 +17,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import bytes from 'bytes';
-	import { TrashIcon, EllipsisIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
+	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';
 
@@ -142,6 +142,7 @@
 	] satisfies ColumnSpec<VolumeSummaryDto>[];
 
 	const mobileFields = [
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
@@ -267,16 +268,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -285,6 +280,9 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
+
+				<DropdownMenu.Separator />
+
 				<DropdownMenu.Item
 					variant="destructive"
 					onclick={() => handleRemoveVolumeConfirm(item.name)}

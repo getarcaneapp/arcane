@@ -476,7 +476,7 @@
 						<Tabs.Root bind:value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
 							<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
 								{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-									<Tabs.Trigger value={provider} class="flex-shrink-0">
+									<Tabs.Trigger value={provider} class="shrink-0">
 										{provider.charAt(0).toUpperCase() + provider.slice(1)}
 									</Tabs.Trigger>
 								{/each}
@@ -498,7 +498,7 @@
 									bind:values={discordValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('discord')}
+									onTest={(testType) => testNotification('discord', testType)}
 								/>
 							</Tabs.Content>
 
@@ -508,7 +508,7 @@
 									bind:values={telegramValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('telegram')}
+									onTest={(testType) => testNotification('telegram', testType)}
 								/>
 							</Tabs.Content>
 
@@ -518,7 +518,7 @@
 									bind:values={signalValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('signal')}
+									onTest={(testType) => testNotification('signal', testType)}
 								/>
 							</Tabs.Content>
 
@@ -528,7 +528,7 @@
 									bind:values={slackValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('slack')}
+									onTest={(testType) => testNotification('slack', testType)}
 								/>
 							</Tabs.Content>
 
@@ -538,7 +538,7 @@
 									bind:values={ntfyValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('ntfy')}
+									onTest={(testType) => testNotification('ntfy', testType)}
 								/>
 							</Tabs.Content>
 
@@ -548,7 +548,7 @@
 									bind:values={pushoverValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('pushover')}
+									onTest={(testType) => testNotification('pushover', testType)}
 								/>
 							</Tabs.Content>
 
@@ -558,7 +558,7 @@
 									bind:values={gotifyValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('gotify')}
+									onTest={(testType) => testNotification('gotify', testType)}
 								/>
 							</Tabs.Content>
 
@@ -568,7 +568,7 @@
 									bind:values={genericValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('generic')}
+									onTest={(testType) => testNotification('generic', testType)}
 								/>
 							</Tabs.Content>
 						</Tabs.Root>

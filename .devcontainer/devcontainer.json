@@ -39,6 +39,16 @@
       ]
     }
   },
+  "mounts": [
+   "source=node_modules,target=/workspace/node_modules,type=volume",
+   "source=pnpm_store,target=/workspace/.pnpm-store,type=volume"
+  ],
   "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
-  "remoteUser": "vscode"
+  "remoteUser": "root",
+  "containerEnv": {
+    "TZ": "Pacific/Auckland"
+  },
+  "remoteEnv": {
+    "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"
+  }
 }

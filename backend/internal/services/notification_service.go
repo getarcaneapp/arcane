@@ -21,9 +21,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/system"
 )
 
 const logoURLPath = "/api/app-images/logo-email"
+
+// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
+// Only vulnerabilities with a fixed version should trigger this notification.
+type VulnerabilityNotificationPayload struct {
+	CVEID            string // e.g. CVE-2024-1234
+	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
+	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+	ImageName        string // e.g. nginx:latest
+	FixedVersion     string
+	PkgName          string // optional
+	InstalledVersion string // optional
+}
 
 type NotificationService struct {
 	db             *database.DB
@@ -256,6 +269,71 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
 	}
 
+	return nil
+}
+
+// SendVulnerabilityNotification notifies all enabled providers that have vulnerability_found event enabled.
+// Call this for each vulnerability that has a fixed version (so users can upgrade).
+func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload) error {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	var errors []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+		if !s.isEventEnabled(setting.Config, models.NotificationEventVulnerabilityFound) {
+			continue
+		}
+
+		var sendErr error
+		switch setting.Provider {
+		case models.NotificationProviderDiscord:
+			sendErr = s.sendDiscordVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderEmail:
+			sendErr = s.sendEmailVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		status := "success"
+		var errMsg *string
+		if sendErr != nil {
+			status = "failed"
+			msg := sendErr.Error()
+			errMsg = &msg
+			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		}
+
+		s.logNotification(ctx, setting.Provider, payload.ImageName, status, errMsg, models.JSON{
+			"cveId":        payload.CVEID,
+			"severity":     payload.Severity,
+			"fixedVersion": payload.FixedVersion,
+			"eventType":    string(models.NotificationEventVulnerabilityFound),
+		})
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+	}
 	return nil
 }
 
@@ -658,6 +736,41 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if err != nil {
 		return fmt.Errorf("please save your %s settings before testing", provider)
+	}
+
+	// Test vulnerability notification (all providers)
+	if testType == "vulnerability-found" {
+		payload := VulnerabilityNotificationPayload{
+			CVEID:            "CVE-2024-1234",
+			CVELink:          "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+			Severity:         "HIGH",
+			ImageName:        "nginx:latest",
+			FixedVersion:     "1.25.1-1",
+			PkgName:          "libssl3",
+			InstalledVersion: "3.0.0-1",
+		}
+		switch provider {
+		case models.NotificationProviderDiscord:
+			return s.sendDiscordVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderEmail:
+			return s.sendEmailVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderTelegram:
+			return s.sendTelegramVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSignal:
+			return s.sendSignalVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderSlack:
+			return s.sendSlackVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderNtfy:
+			return s.sendNtfyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderPushover:
+			return s.sendPushoverVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGotify:
+			return s.sendGotifyVulnerabilityNotification(ctx, payload, setting.Config)
+		case models.NotificationProviderGeneric:
+			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			return fmt.Errorf("unknown provider: %s", provider)
+		}
 	}
 
 	testUpdate := &imageupdate.Response{
@@ -1807,6 +1920,381 @@ func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context
 	return nil
 }
 
+func (s *NotificationService) renderVulnerabilityEmailTemplate(payload VulnerabilityNotificationPayload) (string, string, error) {
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
+	data := map[string]interface{}{
+		"LogoURL":          logoURL,
+		"AppURL":           appURL,
+		"CVEID":            payload.CVEID,
+		"CVELink":          payload.CVELink,
+		"Severity":         payload.Severity,
+		"ImageName":        payload.ImageName,
+		"FixedVersion":     payload.FixedVersion,
+		"PkgName":          payload.PkgName,
+		"InstalledVersion": payload.InstalledVersion,
+	}
+
+	htmlContent, err := resources.FS.ReadFile("email-templates/vulnerability-found_html.tmpl")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+	}
+	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+	}
+	var htmlBuf bytes.Buffer
+	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+	}
+
+	textContent, err := resources.FS.ReadFile("email-templates/vulnerability-found_text.tmpl")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read text template: %w", err)
+	}
+	textTmpl, err := template.New("text").Parse(string(textContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse text template: %w", err)
+	}
+	var textBuf bytes.Buffer
+	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute text template: %w", err)
+	}
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var emailConfig models.EmailConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal email config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal email config: %w", err)
+	}
+	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
+		return fmt.Errorf("SMTP host or port not configured")
+	}
+	if len(emailConfig.ToAddresses) == 0 {
+		return fmt.Errorf("no recipient email addresses configured")
+	}
+	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
+		return fmt.Errorf("invalid from address: %w", err)
+	}
+	for _, addr := range emailConfig.ToAddresses {
+		if _, err := mail.ParseAddress(addr); err != nil {
+			return fmt.Errorf("invalid to address %s: %w", addr, err)
+		}
+	}
+	if emailConfig.SMTPPassword != "" {
+		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
+			emailConfig.SMTPPassword = decrypted
+		} else {
+			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	htmlBody, _, err := s.renderVulnerabilityEmailTemplate(payload)
+	if err != nil {
+		return fmt.Errorf("failed to render email template: %w", err)
+	}
+	subject := fmt.Sprintf("Vulnerability %s (fix available): %s", payload.CVEID, notifications.SanitizeForEmail(payload.ImageName))
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var discordConfig models.DiscordConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Discord config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
+	}
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
+	}
+	if discordConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+			discordConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ **Vulnerability Found (Fix Available)**\n\n"+
+		"**CVE:** %s\n"+
+		"**Severity:** %s\n"+
+		"**Image:** %s\n"+
+		"**Fixed version:** %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("**Link:** %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("**Package:** %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("**Installed version:** %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Telegram config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
+	}
+	if telegramConfig.BotToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+	if len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("no telegram chat IDs configured")
+	}
+	if telegramConfig.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+			telegramConfig.BotToken = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ <b>Vulnerability Found (Fix Available)</b>\n\n"+
+		"<b>CVE:</b> %s\n"+
+		"<b>Severity:</b> %s\n"+
+		"<b>Image:</b> %s\n"+
+		"<b>Fixed version:</b> %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("<b>Link:</b> %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("<b>Package:</b> %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("<b>Installed version:</b> <code>%s</code>\n", payload.InstalledVersion)
+	}
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Signal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
+	}
+	if signalConfig.Host == "" || signalConfig.Port == 0 || signalConfig.Source == "" || len(signalConfig.Recipients) == 0 {
+		return fmt.Errorf("signal not fully configured")
+	}
+	if signalConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
+			signalConfig.Password = decrypted
+		}
+	}
+	if signalConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
+			signalConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+		return fmt.Errorf("failed to send Signal notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Slack config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &slackConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Slack config: %w", err)
+	}
+	if slackConfig.Token == "" {
+		return fmt.Errorf("slack token not configured")
+	}
+	if slackConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+			slackConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
+	message := fmt.Sprintf("⚠️ *Vulnerability Found (Fix Available)*\n\n"+
+		"*CVE:* %s\n*Severity:* %s\n*Image:* %s\n*Fixed version:* %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("*Link:* %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("*Package:* %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("*Installed version:* `%s`\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+		return fmt.Errorf("failed to send Slack notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Ntfy config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &ntfyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Ntfy config: %w", err)
+	}
+	if ntfyConfig.Topic == "" {
+		return fmt.Errorf("ntfy topic is required")
+	}
+	if ntfyConfig.Password != "" {
+		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
+			ntfyConfig.Password = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Ntfy notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Pushover config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &pushoverConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Pushover config: %w", err)
+	}
+	if pushoverConfig.Token == "" || pushoverConfig.User == "" {
+		return fmt.Errorf("pushover token or user not configured")
+	}
+	if pushoverConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
+			pushoverConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+		return fmt.Errorf("failed to send Pushover notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Gotify config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &gotifyConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Gotify config: %w", err)
+	}
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		}
+	}
+	message := fmt.Sprintf("⚠️ Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+		return fmt.Errorf("failed to send Gotify notification: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Generic config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
+	}
+	if genericConfig.WebhookURL == "" {
+		return fmt.Errorf("webhook URL not configured")
+	}
+	message := fmt.Sprintf("Vulnerability Found (Fix Available)\n\nCVE: %s\nSeverity: %s\nImage: %s\nFixed version: %s\n",
+		payload.CVEID, payload.Severity, payload.ImageName, payload.FixedVersion)
+	if payload.CVELink != "" {
+		message += fmt.Sprintf("Link: %s\n", payload.CVELink)
+	}
+	if payload.PkgName != "" {
+		message += fmt.Sprintf("Package: %s\n", payload.PkgName)
+	}
+	if payload.InstalledVersion != "" {
+		message += fmt.Sprintf("Installed version: %s\n", payload.InstalledVersion)
+	}
+	title := fmt.Sprintf("Vulnerability %s: %s", payload.CVEID, payload.ImageName)
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
+	}
+	return nil
+}
+
 func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, updates map[string]*imageupdate.Response, config models.JSON) error {
 	var genericConfig models.GenericConfig
 	configBytes, err := json.Marshal(config)
@@ -2070,4 +2558,405 @@ func (s *NotificationService) MigrateDiscordWebhookUrlToFields(ctx context.Conte
 
 	slog.InfoContext(ctx, "Successfully migrated Discord config")
 	return nil
+}
+
+func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	var errors []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+
+		if !s.isEventEnabled(setting.Config, models.NotificationEventPruneReport) {
+			continue
+		}
+
+		var sendErr error
+		switch setting.Provider {
+		case models.NotificationProviderDiscord:
+			sendErr = s.sendDiscordPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderEmail:
+			sendErr = s.sendEmailPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyPruneNotification(ctx, result, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericPruneNotification(ctx, result, setting.Config)
+		default:
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		status := "success"
+		var errMsg *string
+		if sendErr != nil {
+			status = "failed"
+			msg := sendErr.Error()
+			errMsg = &msg
+			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		}
+
+		s.logNotification(ctx, setting.Provider, "System Prune Report", status, errMsg, models.JSON{
+			"spaceReclaimed": result.SpaceReclaimed,
+			"eventType":      string(models.NotificationEventPruneReport),
+		})
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+func (s *NotificationService) formatBytesInternal(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var discordConfig models.DiscordConfig
+	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
+		return err
+	}
+
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
+	}
+
+	s.decryptDiscordTokenInternal(&discordConfig)
+
+	message := fmt.Sprintf("**🧹 System Prune Report**\n\n"+
+		"**Total Space Reclaimed:** %s\n\n"+
+		"**Breakdown:**\n"+
+		"- 📦 **Containers:** %s\n"+
+		"- 🖼️ **Images:** %s\n"+
+		"- 💾 **Volumes:** %s\n"+
+		"- 🏗️ **Build Cache:** %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
+		return err
+	}
+
+	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("telegram bot token or chat IDs not configured")
+	}
+
+	s.decryptTelegramTokenInternal(&telegramConfig)
+
+	message := fmt.Sprintf("🧹 <b>System Prune Report</b>\n\n"+
+		"<b>Total Space Reclaimed:</b> %s\n\n"+
+		"<b>Breakdown:</b>\n"+
+		"- 📦 <b>Containers:</b> %s\n"+
+		"- 🖼️ <b>Images:</b> %s\n"+
+		"- 💾 <b>Volumes:</b> %s\n"+
+		"- 🏗️ <b>Build Cache:</b> %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+
+	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var emailConfig models.EmailConfig
+	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
+		return err
+	}
+
+	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
+		return err
+	}
+
+	s.decryptEmailPasswordInternal(&emailConfig)
+
+	htmlBody, _, err := s.renderPruneReportEmailTemplate(result)
+	if err != nil {
+		return fmt.Errorf("failed to render email template: %w", err)
+	}
+
+	subject := fmt.Sprintf("System Prune Report: %s Reclaimed", s.formatBytesInternal(result.SpaceReclaimed))
+	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	return nil
+}
+
+func (s *NotificationService) renderPruneReportEmailTemplate(result *system.PruneAllResult) (string, string, error) {
+	appURL := s.config.GetAppURL()
+	logoURL := appURL + logoURLPath
+	data := map[string]interface{}{
+		"LogoURL":                  logoURL,
+		"AppURL":                   appURL,
+		"TotalSpaceReclaimed":      s.formatBytesInternal(result.SpaceReclaimed),
+		"ContainerSpaceReclaimed":  s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		"ImageSpaceReclaimed":      s.formatBytesInternal(result.ImageSpaceReclaimed),
+		"VolumeSpaceReclaimed":     s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		"BuildCacheSpaceReclaimed": s.formatBytesInternal(result.BuildCacheSpaceReclaimed),
+		"Time":                     time.Now().Format(time.RFC1123),
+	}
+
+	return s.renderTemplatesInternal("prune-report", data)
+}
+
+func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("🧹 System Prune Report\n\n"+
+		"Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"- Containers: %s\n"+
+		"- Images: %s\n"+
+		"- Volumes: %s\n"+
+		"- Build Cache: %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendSignal(ctx, signalConfig, message)
+}
+
+func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("*🧹 System Prune Report*\n\n"+
+		"*Total Space Reclaimed:* %s\n\n"+
+		"*Breakdown:*\n"+
+		"- 📦 *Containers:* %s\n"+
+		"- 🖼️ *Images:* %s\n"+
+		"- 💾 *Volumes:* %s\n"+
+		"- 🏗️ *Build Cache:* %s\n",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendSlack(ctx, slackConfig, message)
+}
+
+func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	// Ntfy sends the title as part of the message or needs a separate header not currently in config
+	// For now, we omit the title attribute as it is not in the struct
+
+	return notifications.SendNtfy(ctx, ntfyConfig, message)
+}
+
+func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if pushoverConfig.Title == "" {
+		pushoverConfig.Title = "System Prune Report"
+	}
+
+	return notifications.SendPushover(ctx, pushoverConfig, message)
+}
+
+func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Total Space Reclaimed: %s\n"+
+		"Breakdown:\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	if gotifyConfig.Title == "" {
+		gotifyConfig.Title = "System Prune Report"
+	}
+
+	return notifications.SendGotify(ctx, gotifyConfig, message)
+}
+
+func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, result *system.PruneAllResult, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("System Prune Report\n"+
+		"Total Space Reclaimed: %s\n"+
+		"Containers: %s\n"+
+		"Images: %s\n"+
+		"Volumes: %s\n"+
+		"Build Cache: %s",
+		s.formatBytesInternal(result.SpaceReclaimed),
+		s.formatBytesInternal(result.ContainerSpaceReclaimed),
+		s.formatBytesInternal(result.ImageSpaceReclaimed),
+		s.formatBytesInternal(result.VolumeSpaceReclaimed),
+		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
+
+	return notifications.SendGenericWithTitle(ctx, genericConfig, "System Prune Report", message)
+}
+
+// Helper methods to reduce code duplication
+func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest interface{}) error {
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, dest); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	return nil
+}
+
+func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
+	if config.SMTPHost == "" || config.SMTPPort == 0 {
+		return fmt.Errorf("SMTP host or port not configured")
+	}
+	if len(config.ToAddresses) == 0 {
+		return fmt.Errorf("no recipient email addresses configured")
+	}
+	return nil
+}
+
+func (s *NotificationService) decryptDiscordTokenInternal(config *models.DiscordConfig) {
+	if config.Token != "" {
+		if decrypted, err := crypto.Decrypt(config.Token); err == nil {
+			config.Token = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) decryptTelegramTokenInternal(config *models.TelegramConfig) {
+	if config.BotToken != "" {
+		if decrypted, err := crypto.Decrypt(config.BotToken); err == nil {
+			config.BotToken = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailConfig) {
+	if config.SMTPPassword != "" {
+		if decrypted, err := crypto.Decrypt(config.SMTPPassword); err == nil {
+			config.SMTPPassword = decrypted
+		}
+	}
+}
+
+func (s *NotificationService) renderTemplatesInternal(name string, data interface{}) (string, string, error) {
+	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
+	}
+
+	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
+	}
+
+	var htmlBuf bytes.Buffer
+	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
+		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
+	}
+
+	textContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_text.tmpl", name))
+	if err == nil {
+		textTmpl, err := template.New("text").Parse(string(textContent))
+		if err == nil {
+			var textBuf bytes.Buffer
+			if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err == nil {
+				return htmlBuf.String(), textBuf.String(), nil
+			}
+		}
+	}
+
+	return htmlBuf.String(), "", nil
 }

@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"log/slog"
-	"runtime"
 	"sync"
 )
 
@@ -49,23 +48,8 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[c] = struct{}{}
 			h.mu.Unlock()
 		case c := <-h.unregister:
+			// remove() handles the onEmpty callback when the last client disconnects.
 			h.remove(c)
-			if h.ClientCount() == 0 {
-				// Run onEmpty callback in a separate goroutine to avoid blocking the hub
-				go func() {
-					// Yield to allow other goroutines to run
-					runtime.Gosched()
-
-					h.mu.RLock()
-					empty := len(h.clients) == 0
-					onEmpty := h.onEmpty
-					h.mu.RUnlock()
-
-					if empty && onEmpty != nil {
-						onEmpty()
-					}
-				}()
-			}
 		case msg := <-h.broadcast:
 			h.mu.RLock()
 			var slowClients []*Client
@@ -99,12 +83,24 @@ func (h *Hub) Broadcast(msg []byte) {
 
 func (h *Hub) remove(c *Client) {
 	h.mu.Lock()
-	if _, ok := h.clients[c]; ok {
+	_, exists := h.clients[c]
+	if exists {
 		delete(h.clients, c)
 		close(c.send)
 		_ = c.conn.Close()
 	}
+	// Capture onEmpty under the lock so we can call it outside.
+	var onEmpty func()
+	if exists && len(h.clients) == 0 && h.onEmpty != nil {
+		onEmpty = h.onEmpty
+	}
 	h.mu.Unlock()
+
+	// Call outside the lock to avoid holding the mutex during cancel().
+	if onEmpty != nil {
+		slog.Debug("websocket hub empty after client removal, triggering cleanup")
+		onEmpty()
+	}
 }
 
 func (h *Hub) closeAll() {

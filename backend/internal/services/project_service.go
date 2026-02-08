@@ -25,9 +25,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/projects"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
-	libproject "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/project"
 	"gorm.io/gorm"
@@ -216,7 +215,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
-	meta, metaErr := libproject.ParseArcaneComposeMetadata(composeFileFullPath)
+	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath)
 	if metaErr != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
@@ -305,7 +304,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.EnvContent = envContent
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
-	meta := s.getProjectMetadataFromComposeContent(ctx, composeContent)
+	meta := s.getProjectMetadataFromPath(ctx, proj.Path)
 	resp.IconURL = meta.ProjectIconURL
 	resp.URLs = meta.ProjectURLS
 
@@ -1389,24 +1388,7 @@ func (s *ProjectService) listProjectsByStatus(
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	paginationResp := pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
 }
@@ -1552,30 +1534,16 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	return resp
 }
 
-func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, projectPath string) libproject.ArcaneComposeMetadata {
+func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, projectPath string) projects.ArcaneComposeMetadata {
 	composeFile, err := projects.DetectComposeFile(projectPath)
 	if err != nil {
-		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
 
-	meta, err := libproject.ParseArcaneComposeMetadata(composeFile)
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
-		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
-	}
-
-	return meta
-}
-
-func (s *ProjectService) getProjectMetadataFromComposeContent(ctx context.Context, composeContent string) libproject.ArcaneComposeMetadata {
-	if composeContent == "" {
-		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
-	}
-
-	meta, err := libproject.ParseArcaneComposeMetadataFromContent([]byte(composeContent))
-	if err != nil {
-		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "error", err)
-		return libproject.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
 
 	return meta

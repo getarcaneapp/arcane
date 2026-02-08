@@ -176,12 +176,12 @@
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (images = await imageService.getImages(options))}
-				withoutSearch={true}
-				selectionDisabled={true}
-				withoutPagination={true}
-				unstyled={true}
 				{columns}
 				mobileCard={DashImageMobileCard}
+				withoutSearch
+				selectionDisabled
+				withoutPagination
+				unstyled
 			/>
 		</Card.Content>
 		{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}

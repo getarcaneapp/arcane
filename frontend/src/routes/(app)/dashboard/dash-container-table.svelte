@@ -155,7 +155,7 @@
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
-						<h2>{m.containers_title()}</h2>
+						<h2><a class="hover:underline" href="/containers">{m.containers_title()}</a></h2>
 					</Card.Title>
 					<Card.Description>{m.containers_recent()}</Card.Description>
 				</div>
@@ -171,12 +171,12 @@
 				bind:requestOptions
 				bind:selectedIds
 				onRefresh={async (options) => (containers = await containerService.getContainers(options))}
-				withoutSearch={true}
-				withoutPagination={true}
-				selectionDisabled={true}
-				unstyled={true}
 				{columns}
 				mobileCard={DashContainerMobileCard}
+				withoutSearch
+				withoutPagination
+				selectionDisabled
+				unstyled
 			/>
 		</Card.Content>
 		{#if containers.data.length >= calculatedLimit && containers.pagination.totalItems > calculatedLimit}

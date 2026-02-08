@@ -39,6 +39,19 @@ func DetectComposeFile(dir string) (string, error) {
 }
 
 func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, error) {
+	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil)
+}
+
+func loadComposeProjectInternal(
+	ctx context.Context,
+	composeFile string,
+	projectName string,
+	projectsDirectory string,
+	autoInjectEnv bool,
+	pathMapper *pathmapper.PathMapper,
+	envOverride EnvMap,
+	configureLoader func(*loader.Options),
+) (*composetypes.Project, error) {
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -52,6 +65,10 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load environment", "error", err)
+	}
+
+	for k, v := range envOverride {
+		fullEnvMap[k] = v
 	}
 
 	// Set PWD
@@ -72,7 +89,12 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	}
 
 	project, err := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
-		opts.SetProjectName(projectName, true)
+		if projectName != "" {
+			opts.SetProjectName(projectName, true)
+		}
+		if configureLoader != nil {
+			configureLoader(opts)
+		}
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load compose project: %w", err)

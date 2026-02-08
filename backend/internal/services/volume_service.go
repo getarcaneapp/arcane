@@ -1699,10 +1699,6 @@ func (s *VolumeService) calculateVolumeUsageCountsInternal(items []volumetypes.V
 	return counts
 }
 
-func (s *VolumeService) buildPaginationResponseInternal(result pagination.FilterResult[volumetypes.Volume], params pagination.QueryParams) pagination.Response {
-	return s.buildPaginationResponseFromCountsInternal(result.TotalCount, result.TotalAvailable, params)
-}
-
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit)
 	dockerClient, err := s.dockerService.GetClient()
@@ -1777,7 +1773,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	config := s.buildVolumePaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 	counts := s.calculateVolumeUsageCountsInternal(items)
-	paginationResp := s.buildPaginationResponseInternal(result, params)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, counts, nil
 }

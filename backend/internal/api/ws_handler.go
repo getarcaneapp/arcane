@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
+	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -37,31 +38,113 @@ const (
 	gpuCacheDuration = 30 * time.Second
 )
 
-// GPUStats represents statistics for a single GPU
-type GPUStats struct {
-	Name        string  `json:"name"`
-	Index       int     `json:"index"`
-	MemoryUsed  float64 `json:"memoryUsed"`
-	MemoryTotal float64 `json:"memoryTotal"`
-}
-
-// SystemStats represents system resource statistics for WebSocket streaming.
-type SystemStats struct {
-	CPUUsage     float64    `json:"cpuUsage"`
-	MemoryUsage  uint64     `json:"memoryUsage"`
-	MemoryTotal  uint64     `json:"memoryTotal"`
-	DiskUsage    uint64     `json:"diskUsage,omitempty"`
-	DiskTotal    uint64     `json:"diskTotal,omitempty"`
-	CPUCount     int        `json:"cpuCount"`
-	Architecture string     `json:"architecture"`
-	Platform     string     `json:"platform"`
-	Hostname     string     `json:"hostname,omitempty"`
-	GPUCount     int        `json:"gpuCount"`
-	GPUs         []GPUStats `json:"gpus,omitempty"`
-}
-
 // amdGPUSysfsPath is the base path for AMD GPU sysfs entries
 const amdGPUSysfsPath = "/sys/class/drm"
+
+// ============================================================================
+// WebSocket Metrics
+// ============================================================================
+
+// WebSocketMetrics tracks active WebSocket connections and their counts.
+type WebSocketMetrics struct {
+	projectLogsActive   atomic.Int64
+	containerLogsActive atomic.Int64
+	containerStats      atomic.Int64
+	containerExec       atomic.Int64
+	systemStats         atomic.Int64
+	seq                 atomic.Uint64
+	mu                  sync.RWMutex
+	connections         map[string]systemtypes.WebSocketConnectionInfo
+}
+
+// NewWebSocketMetrics creates a new WebSocketMetrics instance.
+func NewWebSocketMetrics() *WebSocketMetrics {
+	return &WebSocketMetrics{
+		connections: make(map[string]systemtypes.WebSocketConnectionInfo),
+	}
+}
+
+// Snapshot returns a point-in-time copy of the active connection counts.
+func (m *WebSocketMetrics) Snapshot() systemtypes.WebSocketMetricsSnapshot {
+	return systemtypes.WebSocketMetricsSnapshot{
+		ProjectLogsActive:   m.projectLogsActive.Load(),
+		ContainerLogsActive: m.containerLogsActive.Load(),
+		ContainerStats:      m.containerStats.Load(),
+		ContainerExec:       m.containerExec.Load(),
+		SystemStats:         m.systemStats.Load(),
+	}
+}
+
+// Connections returns a snapshot of all tracked WebSocket connections.
+func (m *WebSocketMetrics) Connections() []systemtypes.WebSocketConnectionInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]systemtypes.WebSocketConnectionInfo, 0, len(m.connections))
+	for _, info := range m.connections {
+		result = append(result, info)
+	}
+	return result
+}
+
+// RegisterConnection adds a connection to the tracker and increments the
+// appropriate kind counter. Returns the assigned connection ID.
+func (m *WebSocketMetrics) RegisterConnection(info systemtypes.WebSocketConnectionInfo) string {
+	if info.ID == "" {
+		info.ID = "ws-" + strconv.FormatUint(m.seq.Add(1), 10)
+	}
+	if info.StartedAt.IsZero() {
+		info.StartedAt = time.Now().UTC()
+	}
+	m.mu.Lock()
+	m.connections[info.ID] = info
+	m.mu.Unlock()
+	m.applyDelta(info.Kind, 1)
+	return info.ID
+}
+
+// UnregisterConnection removes a connection from the tracker and decrements
+// the appropriate kind counter.
+func (m *WebSocketMetrics) UnregisterConnection(id string) {
+	if id == "" {
+		return
+	}
+	var info systemtypes.WebSocketConnectionInfo
+	m.mu.Lock()
+	if existing, ok := m.connections[id]; ok {
+		info = existing
+		delete(m.connections, id)
+	}
+	m.mu.Unlock()
+	if info.Kind != "" {
+		m.applyDelta(info.Kind, -1)
+	}
+}
+
+func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
+	switch kind {
+	case systemtypes.WSKindProjectLogs:
+		m.projectLogsActive.Add(delta)
+	case systemtypes.WSKindContainerLogs:
+		m.containerLogsActive.Add(delta)
+	case systemtypes.WSKindContainerStats:
+		m.containerStats.Add(delta)
+	case systemtypes.WSKindContainerExec:
+		m.containerExec.Add(delta)
+	case systemtypes.WSKindSystemStats:
+		m.systemStats.Add(delta)
+	}
+}
+
+var defaultWebSocketMetrics = NewWebSocketMetrics()
+
+// DefaultWebSocketMetrics returns the package-level WebSocketMetrics singleton.
+func DefaultWebSocketMetrics() *WebSocketMetrics {
+	return defaultWebSocketMetrics
+}
+
+// ============================================================================
+// WebSocket Handler
+// ============================================================================
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
@@ -70,6 +153,7 @@ type WebSocketHandler struct {
 	containerService  *services.ContainerService
 	systemService     *services.SystemService
 	wsUpgrader        websocket.Upgrader
+	wsMetrics         *WebSocketMetrics
 	activeConnections sync.Map
 	cpuCache          struct {
 		sync.RWMutex
@@ -101,6 +185,26 @@ type wsLogStream struct {
 	seq    atomic.Uint64
 }
 
+func getContextUserIDInternal(c *gin.Context) string {
+	if val, ok := c.Get("userID"); ok {
+		if userID, ok := val.(string); ok {
+			return userID
+		}
+	}
+	return ""
+}
+
+func buildWSConnectionInfoInternal(c *gin.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
+	return systemtypes.WebSocketConnectionInfo{
+		Kind:       kind,
+		EnvID:      c.Param("id"),
+		ResourceID: resourceID,
+		ClientIP:   c.ClientIP(),
+		UserID:     getContextUserIDInternal(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+	}
+}
+
 func NewWebSocketHandler(
 	group *gin.RouterGroup,
 	projectService *services.ProjectService,
@@ -113,6 +217,7 @@ func NewWebSocketHandler(
 		projectService:       projectService,
 		containerService:     containerService,
 		systemService:        systemService,
+		wsMetrics:            defaultWebSocketMetrics,
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
 		wsUpgrader: websocket.Upgrader{
@@ -177,14 +282,17 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 		return
 	}
 
-	hub := h.startProjectLogHub(projectID, format, batched, follow, tail, since, timestamps)
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindProjectLogs, projectID))
+	hub := h.startProjectLogHub(projectID, format, batched, follow, tail, since, timestamps, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+	})
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
-func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched, follow bool, tail, since string, timestamps bool) *ws.Hub {
+func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func()) *ws.Hub {
 	ls := &wsLogStream{
 		hub:    ws.NewHub(1024),
 		format: format,
@@ -194,6 +302,9 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 	ls.cancel = cancel
 
 	ls.hub.SetOnEmpty(func() {
+		if onEmptyHook != nil {
+			onEmptyHook()
+		}
 		slog.Debug("client disconnected, cleaning up project log hub", "projectID", projectID)
 		cancel()
 	})
@@ -289,14 +400,17 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 		return
 	}
 
-	hub := h.startContainerLogHub(containerID, format, batched, follow, tail, since, timestamps)
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerLogs, containerID))
+	hub := h.startContainerLogHub(containerID, format, batched, follow, tail, since, timestamps, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+	})
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
-func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batched, follow bool, tail, since string, timestamps bool) *ws.Hub {
+func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func()) *ws.Hub {
 	ls := &wsLogStream{
 		hub:    ws.NewHub(1024),
 		format: format,
@@ -306,6 +420,9 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 	ls.cancel = cancel
 
 	ls.hub.SetOnEmpty(func() {
+		if onEmptyHook != nil {
+			onEmptyHook()
+		}
 		slog.Debug("client disconnected, cleaning up container log hub", "containerID", containerID)
 		cancel()
 	})
@@ -369,19 +486,25 @@ func (h *WebSocketHandler) ContainerStats(c *gin.Context) {
 		return
 	}
 
-	hub := h.startContainerStatsHub(containerID)
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
+	hub := h.startContainerStatsHub(containerID, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+	})
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
 	ws.ServeClient(context.Background(), hub, conn)
 }
 
-func (h *WebSocketHandler) startContainerStatsHub(containerID string) *ws.Hub {
+func (h *WebSocketHandler) startContainerStatsHub(containerID string, onEmptyHook func()) *ws.Hub {
 	hub := ws.NewHub(64)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	hub.SetOnEmpty(func() {
+		if onEmptyHook != nil {
+			onEmptyHook()
+		}
 		slog.Debug("client disconnected, cleaning up container stats hub", "containerID", containerID)
 		cancel()
 	})
@@ -435,6 +558,8 @@ func (h *WebSocketHandler) ContainerExec(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerExec, containerID))
+	defer h.wsMetrics.UnregisterConnection(connID)
 	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
@@ -583,7 +708,7 @@ func (h *WebSocketHandler) startCPUSampler(ctx context.Context, ticker *time.Tic
 }
 
 // collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
 	h.cpuCache.RLock()
 	cpuUsage := h.cpuCache.value
 	h.cpuCache.RUnlock()
@@ -595,7 +720,7 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) SystemStats {
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)
 
-	return SystemStats{
+	return systemtypes.SystemStats{
 		CPUUsage:     cpuUsage,
 		MemoryUsage:  memUsed,
 		MemoryTotal:  memTotal,
@@ -675,7 +800,7 @@ func (h *WebSocketHandler) getHostname() string {
 }
 
 // getGPUInfo returns GPU statistics if monitoring is enabled.
-func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]GPUStats, int) {
+func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUStats, int) {
 	if !h.gpuMonitoringEnabled {
 		return nil, 0
 	}
@@ -720,6 +845,8 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindSystemStats, ""))
+	defer h.wsMetrics.UnregisterConnection(connID)
 	defer conn.Close()
 
 	interval, _ := httputil.GetIntQueryParam(c, "interval", false)
@@ -727,14 +854,31 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 		interval = 2
 	}
 
+	const (
+		statsPongWait      = 60 * time.Second
+		statsPingWriteWait = 1 * time.Second
+	)
+	statsPingPeriod := statsPongWait * 9 / 10
+
+	conn.SetReadLimit(512)
+	_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
+		return nil
+	})
+
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
+	pingTicker := time.NewTicker(statsPingPeriod)
+	defer pingTicker.Stop()
 
 	cpuUpdateTicker := time.NewTicker(1 * time.Second)
 	defer cpuUpdateTicker.Stop()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+
+	go h.readSystemStatsPumpInternal(ctx, cancel, conn)
 
 	h.startCPUSampler(ctx, cpuUpdateTicker)
 
@@ -752,10 +896,31 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 
 	for {
 		select {
-		case <-c.Request.Context().Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			if err := send(); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(statsPingWriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// readSystemStatsPumpInternal is the single reader for the SystemStats websocket.
+// Do not add additional readers for this connection.
+func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if _, _, err := conn.ReadMessage(); err != nil {
+				cancel()
 				return
 			}
 		}
@@ -792,7 +957,7 @@ func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
 // ============================================================================
 
 // getGPUStats collects and returns GPU statistics for all available GPUs
-func (h *WebSocketHandler) getGPUStats(ctx context.Context) ([]GPUStats, error) {
+func (h *WebSocketHandler) getGPUStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	h.detectionMutex.Lock()
 	done := h.detectionDone
 	h.detectionMutex.Unlock()
@@ -934,7 +1099,7 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 }
 
 // getNvidiaStats collects NVIDIA GPU statistics using nvidia-smi
-func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, error) {
+func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -957,7 +1122,7 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, erro
 		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
 	}
 
-	var stats []GPUStats
+	var stats []systemtypes.GPUStats
 	for _, record := range records {
 		if len(record) < 4 {
 			continue
@@ -983,7 +1148,7 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, erro
 			continue
 		}
 
-		stats = append(stats, GPUStats{
+		stats = append(stats, systemtypes.GPUStats{
 			Name:        name,
 			Index:       index,
 			MemoryUsed:  memUsed * 1024 * 1024,
@@ -1000,8 +1165,8 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]GPUStats, erro
 }
 
 // getAMDStats collects AMD GPU statistics using sysfs
-func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) {
-	var stats []GPUStats
+func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
+	var stats []systemtypes.GPUStats
 
 	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
 	entries, err := os.ReadDir(amdGPUSysfsPath)
@@ -1040,7 +1205,7 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]GPUStats, error) 
 			continue
 		}
 
-		stats = append(stats, GPUStats{
+		stats = append(stats, systemtypes.GPUStats{
 			Name:        fmt.Sprintf("AMD GPU %d", index),
 			Index:       index,
 			MemoryUsed:  float64(memUsedBytes),
@@ -1095,8 +1260,8 @@ func hasAMDGPUInternal() bool {
 }
 
 // getIntelStats collects Intel GPU statistics using intel_gpu_top
-func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]GPUStats, error) {
-	stats := []GPUStats{
+func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
+	stats := []systemtypes.GPUStats{
 		{
 			Name:        "Intel GPU",
 			Index:       0,

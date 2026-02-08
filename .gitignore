@@ -44,3 +44,9 @@ tests/package-lock.json
 .fast-check
 *.out
 arcane-devcli
+
+
+# btca
+.btca
+
+cli/arcane-cli

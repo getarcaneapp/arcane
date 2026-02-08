@@ -8,10 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
-
-	"log/slog"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -22,26 +21,29 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	"github.com/getarcaneapp/arcane/types/vulnerability"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
 type ImageService struct {
-	db                 *database.DB
-	dockerService      *DockerClientService
-	imageUpdateService *ImageUpdateService
-	registryService    *ContainerRegistryService
-	eventService       *EventService
+	db                   *database.DB
+	dockerService        *DockerClientService
+	imageUpdateService   *ImageUpdateService
+	registryService      *ContainerRegistryService
+	vulnerabilityService *VulnerabilityService
+	eventService         *EventService
 }
 
-func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, eventService *EventService) *ImageService {
+func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, vulnerabilityService *VulnerabilityService, eventService *EventService) *ImageService {
 	return &ImageService{
-		db:                 db,
-		dockerService:      dockerService,
-		registryService:    registryService,
-		imageUpdateService: imageUpdateService,
-		eventService:       eventService,
+		db:                   db,
+		dockerService:        dockerService,
+		registryService:      registryService,
+		imageUpdateService:   imageUpdateService,
+		vulnerabilityService: vulnerabilityService,
+		eventService:         eventService,
 	}
 }
 
@@ -90,6 +92,13 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 			return tx.Delete(&models.ImageUpdateRecord{}, "id = ?", id).Error
 		}); err != nil {
 			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
+		}
+	}
+
+	// Clean up vulnerability scan records for the deleted image
+	if s.vulnerabilityService != nil {
+		if err := s.vulnerabilityService.DeleteScanResult(ctx, id); err != nil {
+			slog.WarnContext(ctx, "failed to delete vulnerability scan record", "id", id, "error", err)
 		}
 	}
 
@@ -385,6 +394,15 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 			}); err != nil {
 				slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
 			}
+
+			// Clean up vulnerability scan records for pruned images
+			if s.vulnerabilityService != nil {
+				for _, imgID := range idsToDelete {
+					if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
+						slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
+					}
+				}
+			}
 		}
 	}
 
@@ -428,9 +446,10 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	}
 
 	var (
-		dockerImages  []image.Summary
-		containers    []container.Summary
-		updateRecords []models.ImageUpdateRecord
+		dockerImages     []image.Summary
+		containers       []container.Summary
+		updateRecords    []models.ImageUpdateRecord
+		vulnerabilityMap map[string]*vulnerability.ScanSummary
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -467,32 +486,27 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, err
 	}
 
+	if s.vulnerabilityService != nil {
+		imageIDs := make([]string, 0, len(dockerImages))
+		for _, img := range dockerImages {
+			imageIDs = append(imageIDs, img.ID)
+		}
+		var err error
+		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
+		}
+	}
+
 	inUseMap := buildInUseMap(containers)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := mapDockerImagesToDTOs(dockerImages, inUseMap, updateMap)
+	items := mapDockerImagesToDTOs(dockerImages, inUseMap, updateMap, vulnerabilityMap)
 
 	config := s.getImagePaginationConfig()
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	paginationResp := pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
-	}
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
 }
@@ -614,7 +628,7 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 	}
 }
 
-func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord) []imagetypes.Summary {
+func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerability.ScanSummary) []imagetypes.Summary {
 	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)
@@ -634,6 +648,12 @@ func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]boo
 
 		if updateRecord, exists := updateMap[di.ID]; exists {
 			imageDto.UpdateInfo = buildUpdateInfo(updateRecord)
+		}
+
+		if vulnerabilityMap != nil {
+			if summary, exists := vulnerabilityMap[di.ID]; exists {
+				imageDto.VulnerabilityScan = summary
+			}
 		}
 
 		items = append(items, imageDto)
@@ -720,14 +740,23 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			{
 				Key: "updates",
 				Fn: func(i imagetypes.Summary, filterValue string) bool {
-					hasUpdate := i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
-					if filterValue == "true" {
-						return hasUpdate
+					switch filterValue {
+					case "has_update":
+						return i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
+					case "up_to_date":
+						return i.UpdateInfo != nil && !i.UpdateInfo.HasUpdate && i.UpdateInfo.Error == ""
+					case "error":
+						return i.UpdateInfo != nil && i.UpdateInfo.Error != ""
+					case "unknown":
+						return i.UpdateInfo == nil
+					// Legacy boolean support
+					case "true":
+						return i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
+					case "false":
+						return i.UpdateInfo == nil || !i.UpdateInfo.HasUpdate
+					default:
+						return true
 					}
-					if filterValue == "false" {
-						return !hasUpdate
-					}
-					return true
 				},
 			},
 		},

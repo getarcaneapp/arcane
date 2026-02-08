@@ -180,6 +180,49 @@
 			'liga' 0,
 			'clig' 0;
 	}
+
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+	}
+
+	*:hover {
+		scrollbar-color: var(--muted-foreground) transparent;
+	}
+
+	*::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+
+	*::-webkit-scrollbar-track {
+		background: transparent;
+		border-radius: 4px;
+	}
+
+	*::-webkit-scrollbar-thumb {
+		background: transparent;
+		border-radius: 4px;
+		border: 2px solid transparent;
+		background-clip: content-box;
+		transition: background 0.2s ease;
+	}
+
+	*:hover::-webkit-scrollbar-thumb {
+		background: var(--muted-foreground);
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+
+	*::-webkit-scrollbar-thumb:hover {
+		background: var(--foreground) !important;
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+
+	*::-webkit-scrollbar-corner {
+		background: transparent;
+	}
 }
 
 body.glass-enabled {

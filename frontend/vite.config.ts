@@ -4,7 +4,6 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
-import { codecovSvelteKitPlugin } from '@codecov/sveltekit-plugin';
 
 export default defineConfig({
 	resolve: {
@@ -31,13 +30,6 @@ export default defineConfig({
 		Icons({
 			compiler: 'svelte',
 			autoInstall: true
-		}),
-		codecovSvelteKitPlugin({
-			enableBundleAnalysis: true,
-			bundleName: 'arcane-frontend',
-			oidc: {
-				useGitHubOIDC: true
-			}
 		})
 	],
 	build: {

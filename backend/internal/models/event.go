@@ -18,11 +18,12 @@ const (
 	EventTypeContainerUpdate  EventType = "container.update"
 	EventTypeContainerError   EventType = "container.error"
 
-	EventTypeImagePull   EventType = "image.pull"
-	EventTypeImageLoad   EventType = "image.load"
-	EventTypeImageDelete EventType = "image.delete"
-	EventTypeImageScan   EventType = "image.scan"
-	EventTypeImageError  EventType = "image.error"
+	EventTypeImagePull              EventType = "image.pull"
+	EventTypeImageLoad              EventType = "image.load"
+	EventTypeImageDelete            EventType = "image.delete"
+	EventTypeImageScan              EventType = "image.scan"
+	EventTypeImageError             EventType = "image.error"
+	EventTypeImageVulnerabilityScan EventType = "image.vulnerability_scan"
 
 	EventTypeProjectDeploy EventType = "project.deploy"
 	EventTypeProjectDelete EventType = "project.delete"

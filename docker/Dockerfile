@@ -21,6 +21,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install -r --offline
 
 ENV BUILD_PATH=dist
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm -C frontend build
 
 # Stage 2: Build Backend

@@ -17,6 +17,12 @@ This module lives inside the main Arcane repo. To build the CLI locally:
 
 - `go install github.com/getarcaneapp/arcane/cli@latest`
 
+## Versions
+
+CLI versions are tagged as `cli/vX.Y.Z` in the main repo. Use module tags to pin a specific release:
+
+- `go install github.com/getarcaneapp/arcane/cli@cli/vX.Y.Z`
+
 ## Configure
 
 The CLI stores config in `~/.config/arcanecli.yml`.
@@ -27,7 +33,7 @@ Set the Arcane server URL:
 
 ### Authenticate (choose one)
 
-#### Option A: JWT login
+#### Option A: Device code (OIDC must be enabled for this method, as it uses your external provider.)
 
 - `arcane auth login`
 

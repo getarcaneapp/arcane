@@ -192,16 +192,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -211,7 +205,10 @@
 						<EditIcon class="size-4" />
 						{m.common_edit()}
 					</DropdownMenu.Item>
+
+					<DropdownMenu.Separator />
 				{/if}
+
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteUser(item.id, item.username)}>
 					<TrashIcon class="size-4" />
 					{m.common_delete()}

@@ -965,6 +965,16 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: scanning containers for matching images", "containers", len(list), "oldIDMatches", len(oldIDToNewRef), "oldRefMatches", len(oldRefToNewRef))
 
+	// Parse excluded containers settings
+	excludedSetting := s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	excludedContainers := make(map[string]bool)
+	if excludedSetting != "" {
+		parts := strings.Split(excludedSetting, ",")
+		for _, p := range parts {
+			excludedContainers[strings.TrimSpace(p)] = true
+		}
+	}
+
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
 		updatedNorm[s.normalizeRef(oldRef)] = nr
@@ -987,6 +997,20 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	targetImageIDs := map[string][]string{}
 
 	for _, c := range list {
+		// Check exclusions first by container name(s)
+		isExcluded := false
+		for _, name := range c.Names {
+			cleanName := strings.TrimPrefix(name, "/")
+			if excludedContainers[cleanName] {
+				isExcluded = true
+				break
+			}
+		}
+		if isExcluded {
+			slog.DebugContext(ctx, "restartContainersUsingOldIDs: skipping excluded container", "containerId", c.ID, "names", c.Names)
+			continue
+		}
+
 		inspect, err := dcli.ContainerInspect(ctx, c.ID)
 		if err != nil {
 			continue

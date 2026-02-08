@@ -2,11 +2,11 @@
 	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -420,16 +420,10 @@
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
+				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon class="size-4" />
+				</ArcaneButton>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
@@ -453,6 +447,8 @@
 					</DropdownMenu.Item>
 				{/if}
 
+				<DropdownMenu.Separator />
+
 				{#if item.status !== 'running'}
 					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
 						{#if isLoading.start}
@@ -463,6 +459,15 @@
 						{m.common_up()}
 					</DropdownMenu.Item>
 				{:else}
+					<DropdownMenu.Item onclick={() => performProjectAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
+						{#if isLoading.stop}
+							<Spinner class="size-4" />
+						{:else}
+							<StopIcon class="size-4" />
+						{/if}
+						{m.common_down()}
+					</DropdownMenu.Item>
+
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('restart', item.id)}
 						disabled={isLoading.restart || isAnyLoading}
@@ -473,15 +478,6 @@
 							<RestartIcon class="size-4" />
 						{/if}
 						{m.common_restart()}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Item onclick={() => performProjectAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
-						{#if isLoading.stop}
-							<Spinner class="size-4" />
-						{:else}
-							<StopIcon class="size-4" />
-						{/if}
-						{m.common_down()}
 					</DropdownMenu.Item>
 				{/if}
 
