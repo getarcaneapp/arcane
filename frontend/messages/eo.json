@@ -180,6 +180,9 @@
 	"scheduled_prune_networks_description": "Elpurigi neuzatajn retojn",
 	"scheduled_prune_build_cache_label": "Elpurigi kunmetaĵajn kaŝdosierojn",
 	"scheduled_prune_build_cache_description": "Forigi Docker-kaŝdosierojn",
+	"auto_update_select_containers": "Select containers...",
+	"auto_update_containers_excluded_one": "1 container excluded",
+	"auto_update_containers_excluded_many": "{count} containers excluded",
 	"_comment_common_actions": "=== KOMUNA - AGAJ STATOJ ===",
 	"common_action_creating": "Kreante…",
 	"common_action_deleting": "Forigante…",
@@ -1956,5 +1959,7 @@
 	"environments_agent_address_description": "The URL where your agent will be accessible",
 	"environments_generate_config": "Generate Agent Configuration",
 	"project_files": "Project Files",
-	"project_includes": "Includes"
+	"project_includes": "Includes",
+	"notifications_event_prune_report_label": "System Prune Report",
+	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes"
 }
