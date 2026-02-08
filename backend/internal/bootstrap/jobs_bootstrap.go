@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	pkg_scheduler "github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 )
 
@@ -190,14 +191,14 @@ func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, new
 
 	// Only set up timeout sync callback on main instance (not in agent mode)
 	if !appConfig.AgentMode {
-		appServices.Settings.OnTimeoutSettingsChanged = func(ctx context.Context, timeoutSettings map[string]string) {
+		appServices.Settings.OnTimeoutSettingsChanged = func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate) {
 			go syncTimeoutSettingsToAgentsInternal(context.WithoutCancel(ctx), appServices, timeoutSettings)
 		}
 	}
 }
 
 // syncTimeoutSettingsToAgentsInternal syncs timeout settings to all connected remote environments
-func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *Services, timeoutSettings map[string]string) {
+func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *Services, timeoutSettings []libarcane.SettingUpdate) {
 	envs, err := appServices.Environment.ListRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for timeout sync", "error", err)
@@ -209,13 +210,19 @@ func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *Servi
 	}
 
 	// Build the settings update payload
-	body, err := json.Marshal(timeoutSettings)
+	settingsMap := make(map[string]string, len(timeoutSettings))
+	keys := make([]string, 0, len(timeoutSettings))
+	for _, update := range timeoutSettings {
+		settingsMap[update.Key] = update.Value
+		keys = append(keys, update.Key)
+	}
+	body, err := json.Marshal(settingsMap)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "error", err)
 		return
 	}
 
-	slog.InfoContext(ctx, "Syncing timeout settings to remote environments", "count", len(envs), "settings", timeoutSettings)
+	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", keys)
 
 	for _, env := range envs {
 		_, statusCode, err := appServices.Environment.ProxyRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)

@@ -226,6 +226,78 @@ type LoadResult struct {
 	Stream string `json:"stream"`
 }
 
+// ProgressDetail provides byte progress information for stream events.
+type ProgressDetail struct {
+	Current int64 `json:"current,omitempty"`
+	Total   int64 `json:"total,omitempty"`
+}
+
+// ProgressEvent is the standardized NDJSON envelope for pull/build/deploy streams.
+type ProgressEvent struct {
+	Type           string          `json:"type,omitempty"`  // pull|build|deploy
+	Phase          string          `json:"phase,omitempty"` // begin|complete|... (optional)
+	Service        string          `json:"service,omitempty"`
+	Status         string          `json:"status,omitempty"`
+	ID             string          `json:"id,omitempty"`
+	ProgressDetail *ProgressDetail `json:"progressDetail,omitempty"`
+	Error          string          `json:"error,omitempty"`
+}
+
+// BuildRequest contains options for building an image with BuildKit.
+type BuildRequest struct {
+	// ContextDir is the build context directory on the server.
+	//
+	// Required: true
+	ContextDir string `json:"contextDir" minLength:"1" doc:"Build context directory"`
+
+	// Dockerfile is the path to the Dockerfile (relative to context or absolute).
+	//
+	// Required: false
+	Dockerfile string `json:"dockerfile,omitempty" doc:"Dockerfile path"`
+
+	// Tags are image tags to apply.
+	//
+	// Required: false
+	Tags []string `json:"tags,omitempty" doc:"Image tags"`
+
+	// Target is the Dockerfile target stage.
+	//
+	// Required: false
+	Target string `json:"target,omitempty" doc:"Target stage"`
+
+	// BuildArgs are build arguments to pass to the Dockerfile.
+	//
+	// Required: false
+	BuildArgs map[string]string `json:"buildArgs,omitempty" doc:"Build arguments"`
+
+	// Platforms are target platforms (e.g., linux/amd64,linux/arm64).
+	//
+	// Required: false
+	Platforms []string `json:"platforms,omitempty" doc:"Target platforms"`
+
+	// Push controls whether the image should be pushed to a registry.
+	//
+	// Required: false
+	Push bool `json:"push,omitempty" doc:"Push image"`
+
+	// Load controls whether the image should be loaded into the local Docker daemon.
+	//
+	// Required: false
+	Load bool `json:"load,omitempty" doc:"Load image into local Docker"`
+
+	// Provider overrides the build provider (local|depot).
+	//
+	// Required: false
+	Provider string `json:"provider,omitempty" doc:"Build provider override"`
+}
+
+// BuildResult provides basic build output metadata.
+type BuildResult struct {
+	Provider string   `json:"provider"`
+	Tags     []string `json:"tags,omitempty"`
+	Digest   string   `json:"digest,omitempty"`
+}
+
 type DetailSummary struct {
 	// ID is the unique identifier of the image.
 	//

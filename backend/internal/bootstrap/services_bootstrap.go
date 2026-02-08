@@ -22,6 +22,8 @@ type Services struct {
 	CustomizeSearch   *services.CustomizeSearchService
 	Container         *services.ContainerService
 	Image             *services.ImageService
+	Build             *services.BuildService
+	BuildWorkspace    *services.BuildWorkspaceService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
 	ImageUpdate       *services.ImageUpdateService
@@ -66,7 +68,9 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Vulnerability, svcs.Event)
-	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
+	svcs.Build = services.NewBuildService(db, svcs.Settings, svcs.Docker, svcs.ContainerRegistry)
+	svcs.BuildWorkspace = services.NewBuildWorkspaceService(svcs.Settings)
+	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker, svcs.Build)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings)
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)

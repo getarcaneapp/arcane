@@ -5,6 +5,7 @@
 	import { ReconnectingWebSocket } from '$lib/utils/ws';
 	import { cn } from '$lib/utils';
 	import { ansiToHtml } from '$lib/utils/ansi';
+	import { stripAnsi } from '$lib/utils/log-text';
 	import { onDestroy } from 'svelte';
 	import StructuredLogEntry from './structured-log-entry.svelte';
 
@@ -365,7 +366,7 @@
 	}
 
 	function tryParseJson(message: string): { isJson: boolean; parsed?: any } {
-		const trimmed = message.trim();
+		const trimmed = stripAnsi(message).trim();
 		if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
 			return { isJson: false };
 		}

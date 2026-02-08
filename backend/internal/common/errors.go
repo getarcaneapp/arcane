@@ -94,6 +94,22 @@ func (e *ImageRetrievalError) Error() string {
 	return "Failed to retrieve image"
 }
 
+type BuildHistoryListError struct {
+	Err error
+}
+
+func (e *BuildHistoryListError) Error() string {
+	return "Failed to list build history"
+}
+
+type BuildHistoryRetrievalError struct {
+	Err error
+}
+
+func (e *BuildHistoryRetrievalError) Error() string {
+	return "Failed to retrieve build history"
+}
+
 type ContainerIDRequiredError struct{}
 
 func (e *ContainerIDRequiredError) Error() string {

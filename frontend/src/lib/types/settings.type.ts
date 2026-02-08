@@ -58,6 +58,12 @@ export type Settings = {
 	httpClientTimeout: number;
 	registryTimeout: number;
 	proxyRequestTimeout: number;
+	buildProvider: 'local' | 'depot';
+	buildsDirectory: string;
+	buildTimeout: number;
+	depotProjectId: string;
+	depotToken?: string;
+	depotConfigured?: boolean;
 
 	registryCredentials: RegistryCredential[];
 	templateRegistries: TemplateRegistryConfig[];

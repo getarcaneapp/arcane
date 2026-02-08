@@ -49,6 +49,7 @@ services:
       - ${HOST_PROJECT_ROOT:-..}/backend/.air.toml:/app/backend/.air.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - arcane-dev-data:/app/backend/data
+      - arcane-builds:/builds
       - go-build-cache:/go/cache
       - go-mod-cache:/go/pkg/mod
     environment:
@@ -102,6 +103,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-dev-data:/app/backend/data
+      - arcane-builds:/builds
       - ${HOST_PROJECT_ROOT:-..}/go.work:/app/go.work:ro
       - ${HOST_PROJECT_ROOT:-..}/types:/app/types:cached
       - ${HOST_PROJECT_ROOT:-..}/cli:/app/cli:cached
@@ -144,3 +146,6 @@ volumes:
 
   pnpm-cache:
     name: arcane-pnpm-cache
+
+  arcane-builds:
+    name: arcane-builds
