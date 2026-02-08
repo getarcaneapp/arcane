@@ -23,7 +23,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
-	import { startVulnerabilityScanPolling } from '$lib/utils/vulnerability-scan.util';
 	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon, ScanIcon } from '$lib/icons';
 
 	let {
@@ -45,8 +44,9 @@
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
-
-	const scanPollers = new Map<string, () => void>();
+	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
+	let scanPollInFlight = false;
+	const SCAN_POLL_INTERVAL_MS = 4000;
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids || ids.length === 0) return;
@@ -169,7 +169,7 @@
 					return;
 				}
 
-				startScanPolling(imageId, true);
+				startBatchScanPolling();
 			}
 		});
 
@@ -193,54 +193,90 @@
 		}
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
 			await onImageUpdated?.();
+		} else if (newScanSummary.status === 'scanning' || newScanSummary.status === 'pending') {
+			startBatchScanPolling();
 		}
 	}
 
-	function stopScanPolling(imageId: string) {
-		const cancel = scanPollers.get(imageId);
-		if (cancel) {
-			cancel();
-			scanPollers.delete(imageId);
+	function stopBatchScanPolling() {
+		if (scanPollTimeout) {
+			clearTimeout(scanPollTimeout);
+			scanPollTimeout = null;
 		}
 	}
 
-	function startScanPolling(imageId: string, showToast: boolean) {
-		if (scanPollers.has(imageId)) return;
+	function getScanningImageIds(): string[] {
+		return (images.data ?? [])
+			.filter((item) => item.vulnerabilityScan?.status === 'scanning' || item.vulnerabilityScan?.status === 'pending')
+			.map((item) => item.id);
+	}
 
-		const cancel = startVulnerabilityScanPolling(imageId, (id) => vulnerabilityService.getScanSummary(id), {
-			onUpdate: (summary) => {
-				void handleVulnerabilityScanChanged(imageId, summary);
-			},
-			onComplete: (summary) => {
-				void handleVulnerabilityScanChanged(imageId, summary);
-				stopScanPolling(imageId);
-				if (showToast) {
-					if (summary.status === 'completed') {
-						toast.success(m.vuln_scan_completed());
-					} else {
-						toast.error(summary.error || m.vuln_scan_failed());
+	async function pollBatchScanSummaries() {
+		const imageIds = getScanningImageIds();
+		if (imageIds.length === 0) {
+			stopBatchScanPolling();
+			return;
+		}
+
+		if (scanPollInFlight) {
+			scheduleBatchScanPolling();
+			return;
+		}
+
+		scanPollInFlight = true;
+		try {
+			const response = await vulnerabilityService.getScanSummaries(imageIds);
+			const summaries = response?.summaries ?? {};
+
+			if (Object.keys(summaries).length > 0 && images.data?.length) {
+				let changed = false;
+				let completed = false;
+				const nextData = images.data.map((img) => {
+					const summary = summaries[img.id];
+					if (!summary) return img;
+					changed = true;
+					if (summary.status === 'completed' || summary.status === 'failed') {
+						completed = true;
 					}
+					return { ...img, vulnerabilityScan: summary };
+				});
+				if (changed) {
+					images = { ...images, data: nextData };
 				}
-			},
-			onError: () => {}
-		});
+				if (completed) {
+					await onImageUpdated?.();
+				}
+			}
+		} catch (error) {
+			console.error('Failed to poll vulnerability summaries:', error);
+		} finally {
+			scanPollInFlight = false;
+			if (getScanningImageIds().length > 0) {
+				scheduleBatchScanPolling();
+			}
+		}
+	}
 
-		scanPollers.set(imageId, cancel);
+	function scheduleBatchScanPolling() {
+		stopBatchScanPolling();
+		scanPollTimeout = setTimeout(() => void pollBatchScanSummaries(), SCAN_POLL_INTERVAL_MS);
+	}
+
+	function startBatchScanPolling() {
+		if (scanPollTimeout) return;
+		void pollBatchScanSummaries();
 	}
 
 	$effect(() => {
-		for (const item of images.data ?? []) {
-			if (item.vulnerabilityScan?.status === 'scanning' || item.vulnerabilityScan?.status === 'pending') {
-				startScanPolling(item.id, false);
-			}
+		if (getScanningImageIds().length > 0) {
+			startBatchScanPolling();
+		} else {
+			stopBatchScanPolling();
 		}
 	});
 
 	onDestroy(() => {
-		for (const cancel of scanPollers.values()) {
-			cancel();
-		}
-		scanPollers.clear();
+		stopBatchScanPolling();
 	});
 
 	const columns = [
@@ -375,6 +411,7 @@
 		<VulnerabilityScanItem
 			scanSummary={item.vulnerabilityScan}
 			imageId={item.id}
+			pollingEnabled={false}
 			onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
 		/>
 	</div>

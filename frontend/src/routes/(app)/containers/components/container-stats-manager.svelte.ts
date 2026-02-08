@@ -99,7 +99,6 @@ export class ContainerStatsManager {
 	private syncConnections(): void {
 		if (!this.currentEnvId) return;
 		const connectedIds = new SvelteSet(this.connections.keys());
-
 		for (const id of this.desiredIds) {
 			if (!connectedIds.has(id)) {
 				this.connect(id, this.currentEnvId);
