@@ -142,6 +142,7 @@ var loginCmd = &cobra.Command{
 				return fmt.Errorf("failed to load config: %w", err)
 			}
 			cfg.JWTToken = tokenResult.Token
+			cfg.RefreshToken = tokenResult.RefreshToken
 			cfg.APIKey = ""
 			if err := config.Save(cfg); err != nil {
 				return fmt.Errorf("failed to save token: %w", err)
@@ -177,6 +178,7 @@ var logoutCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 		cfg.JWTToken = ""
+		cfg.RefreshToken = ""
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("failed to clear token: %w", err)
 		}
@@ -308,6 +310,14 @@ var refreshCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		refreshToken, _ := cmd.Flags().GetString("refresh-token")
 
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if refreshToken == "" {
+			refreshToken = cfg.RefreshToken
+		}
 		if refreshToken == "" {
 			fmt.Print("Refresh token: ")
 			if _, err := fmt.Scanln(&refreshToken); err != nil {
@@ -350,11 +360,11 @@ var refreshCmd = &cobra.Command{
 		}
 
 		// Save new JWT token to config
-		cfg, err := config.Load()
-		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
-		}
 		cfg.JWTToken = result.Data.Token
+		cfg.APIKey = ""
+		if result.Data.RefreshToken != "" {
+			cfg.RefreshToken = result.Data.RefreshToken
+		}
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save token: %w", err)
 		}

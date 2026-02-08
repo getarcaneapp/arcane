@@ -38,6 +38,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Server URL:          %s\n", maskIfEmpty(cfg.ServerURL, "(not set)"))
 		fmt.Printf("API Key:             %s\n", maskAPIKey(cfg.APIKey))
 		fmt.Printf("JWT Token:           %s\n", maskAPIKey(cfg.JWTToken))
+		fmt.Printf("Refresh Token:       %s\n", maskAPIKey(cfg.RefreshToken))
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
 
@@ -79,6 +80,7 @@ Examples:
 			cfg.APIKey = setAPIKey
 			// If switching to API key auth, clear any existing JWT token.
 			cfg.JWTToken = ""
+			cfg.RefreshToken = ""
 			fmt.Printf("Set api_key = %s\n", maskAPIKey(setAPIKey))
 			updated = true
 		}
@@ -87,6 +89,7 @@ Examples:
 			cfg.JWTToken = setJWTToken
 			// If switching to JWT auth, clear any existing API key.
 			cfg.APIKey = ""
+			cfg.RefreshToken = ""
 			fmt.Printf("Set jwt_token = %s\n", maskAPIKey(setJWTToken))
 			updated = true
 		}

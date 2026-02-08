@@ -17,16 +17,28 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/fatih/color"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
+const arcanePurple = lipgloss.Color("#6d28d9")
+
 var (
-	successColor = color.New(color.FgGreen).SprintFunc()
-	errorColor   = color.New(color.FgRed).SprintFunc()
-	warnColor    = color.New(color.FgYellow).SprintFunc()
-	infoColor    = color.New(color.FgCyan).SprintFunc()
-	headerColor  = color.New(color.FgHiWhite, color.Bold).SprintFunc()
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	infoStyle    = lipgloss.NewStyle().Foreground(arcanePurple)
+	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(arcanePurple)
+	keyStyle     = lipgloss.NewStyle().Bold(true)
+	valueStyle   = lipgloss.NewStyle().Foreground(arcanePurple)
+	columnStyle  = lipgloss.NewStyle().Foreground(arcanePurple)
+	columnHeader = lipgloss.NewStyle().Bold(true).Foreground(arcanePurple)
+
+	statusOnlineStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	statusOfflineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
+	statusWarnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))
+	statusMutedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
+	enabledStyle       = lipgloss.NewStyle().Foreground(arcanePurple)
 )
 
 var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
@@ -35,35 +47,35 @@ var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Success(format string, a ...interface{}) {
-	fmt.Printf("\n%s\n", successColor(fmt.Sprintf(format, a...)))
+	fmt.Printf("\n%s\n", successStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Error prints an error message in red.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Error(format string, a ...interface{}) {
-	fmt.Printf("\n%s\n", errorColor(fmt.Sprintf(format, a...)))
+	fmt.Printf("\n%s\n", errorStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Warning prints a warning message in yellow.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Warning(format string, a ...interface{}) {
-	fmt.Printf("\n%s\n", warnColor(fmt.Sprintf(format, a...)))
+	fmt.Printf("\n%s\n", warnStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Info prints an info message in cyan.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Info(format string, a ...interface{}) {
-	fmt.Printf("\n%s\n", infoColor(fmt.Sprintf(format, a...)))
+	fmt.Printf("\n%s\n", infoStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Header prints a header message in bold white.
 // Use this to introduce sections of output. The message is prefixed
 // with a newline for visual separation.
 func Header(format string, a ...interface{}) {
-	fmt.Printf("\n%s\n", headerColor(fmt.Sprintf(format, a...)))
+	fmt.Printf("\n%s\n", headerStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Print prints a standard message without color formatting.
@@ -76,7 +88,7 @@ func Print(format string, a ...interface{}) {
 // This is useful for displaying structured information like image details
 // or configuration values.
 func KeyValue(key string, value interface{}) {
-	fmt.Printf("%s: %v\n", color.New(color.Bold).Sprint(key), color.New(color.FgBlue).Sprint(value))
+	fmt.Printf("%s: %v\n", keyStyle.Render(key), valueStyle.Render(fmt.Sprint(value)))
 }
 
 func stripAnsi(s string) string {
@@ -84,6 +96,84 @@ func stripAnsi(s string) string {
 		return s
 	}
 	return ansiRegexp.ReplaceAllString(s, "")
+}
+
+func hasAnsi(s string) bool {
+	if s == "" {
+		return false
+	}
+	return ansiRegexp.MatchString(s)
+}
+
+// TintStatus applies semantic status coloring to a value.
+func TintStatus(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || hasAnsi(trimmed) {
+		return value
+	}
+	lower := strings.ToLower(trimmed)
+
+	switch {
+	case lower == "online" || lower == "running" || lower == "healthy" || lower == "active" || strings.HasPrefix(lower, "up"):
+		return statusOnlineStyle.Render(trimmed)
+	case lower == "offline" || lower == "stopped" || lower == "exited" || lower == "dead" || lower == "unhealthy" || lower == "failed" || strings.HasPrefix(lower, "down"):
+		return statusOfflineStyle.Render(trimmed)
+	case lower == "paused" || lower == "restarting" || lower == "starting" || lower == "created" || lower == "degraded":
+		return statusWarnStyle.Render(trimmed)
+	default:
+		return statusMutedStyle.Render(trimmed)
+	}
+}
+
+// TintEnabled applies tints for enabled/disabled values.
+func TintEnabled(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || hasAnsi(trimmed) {
+		return value
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "true", "yes", "enabled", "on":
+		return enabledStyle.Render(trimmed)
+	case "false", "no", "disabled", "off":
+		return statusMutedStyle.Render(trimmed)
+	default:
+		return value
+	}
+}
+
+// TintYesNo applies tints for yes/no style values.
+func TintYesNo(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || hasAnsi(trimmed) {
+		return value
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "true", "yes", "y", "in use":
+		return statusOnlineStyle.Render(trimmed)
+	case "false", "no", "n":
+		return statusMutedStyle.Render(trimmed)
+	default:
+		return value
+	}
+}
+
+// TintInsecure applies warning tints for insecure values.
+func TintInsecure(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || hasAnsi(trimmed) {
+		return value
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "true", "yes", "y", "insecure":
+		return statusWarnStyle.Render(trimmed)
+	case "false", "no", "n":
+		return statusMutedStyle.Render(trimmed)
+	default:
+		return value
+	}
 }
 
 // Table prints a formatted table with headers and rows.
@@ -97,11 +187,44 @@ func Table(headers []string, rows [][]string) {
 		return
 	}
 
+	rows = tintTableRows(headers, rows)
+
 	widths := computeWidths(headers, rows)
 	printHeader(headers, widths)
 	for _, row := range rows {
 		printRow(row, widths, n)
 	}
+}
+
+func tintTableRows(headers []string, rows [][]string) [][]string {
+	if len(rows) == 0 {
+		return rows
+	}
+
+	result := make([][]string, len(rows))
+	for i, row := range rows {
+		if len(row) == 0 {
+			result[i] = row
+			continue
+		}
+		styled := make([]string, len(row))
+		copy(styled, row)
+		for col := 0; col < len(row) && col < len(headers); col++ {
+			header := strings.ToUpper(strings.TrimSpace(headers[col]))
+			switch header {
+			case "STATUS", "STATE":
+				styled[col] = TintStatus(row[col])
+			case "ENABLED":
+				styled[col] = TintEnabled(row[col])
+			case "IN USE":
+				styled[col] = TintYesNo(row[col])
+			case "INSECURE":
+				styled[col] = TintInsecure(row[col])
+			}
+		}
+		result[i] = styled
+	}
+	return result
 }
 
 func computeWidths(headers []string, rows [][]string) []int {
@@ -129,12 +252,11 @@ func computeWidths(headers []string, rows [][]string) []int {
 }
 
 func printHeader(headers []string, widths []int) {
-	headerFmt := color.New(color.Bold, color.FgHiCyan).SprintFunc()
 	sep := "  "
 	n := len(headers)
 	for i, h := range headers {
 		visible := stripAnsi(h)
-		colored := headerFmt(h)
+		colored := columnHeader.Render(h)
 		padLen := widths[i] - runewidth.StringWidth(visible)
 		if padLen < 0 {
 			padLen = 0
@@ -150,7 +272,6 @@ func printHeader(headers []string, widths []int) {
 
 func printRow(row []string, widths []int, n int) {
 	sep := "  "
-	columnFmt := color.New(color.FgYellow).SprintFunc()
 
 	// Prepare lines per column
 	cellLines := make([][]string, n)
@@ -176,7 +297,7 @@ func printRow(row []string, widths []int, n int) {
 
 			var rendered string
 			if i == 0 {
-				rendered = columnFmt(val)
+				rendered = columnStyle.Render(val)
 			} else {
 				rendered = fmt.Sprint(val)
 			}

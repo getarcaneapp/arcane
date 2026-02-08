@@ -7,8 +7,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/category"
-	"github.com/getarcaneapp/arcane/types/search"
 	"github.com/getarcaneapp/arcane/types/settings"
 	"github.com/spf13/cobra"
 )
@@ -18,13 +16,14 @@ var jsonOutput bool
 // SettingsCmd is the parent command for settings operations
 var SettingsCmd = &cobra.Command{
 	Use:     "settings",
-	Aliases: []string{"setting", "config"},
+	Aliases: []string{"setting"},
 	Short:   "Manage settings",
 }
 
-var getCmd = &cobra.Command{
-	Use:          "get",
-	Short:        "Get environment settings",
+var listCmd = &cobra.Command{
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Short:        "List environment settings",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -68,106 +67,8 @@ var getCmd = &cobra.Command{
 	},
 }
 
-var categoriesCmd = &cobra.Command{
-	Use:          "categories",
-	Short:        "List setting categories",
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Get(cmd.Context(), types.Endpoints.SettingsCategories())
-		if err != nil {
-			return fmt.Errorf("failed to get categories: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result []category.Category
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "TITLE", "DESCRIPTION"}
-		rows := make([][]string, len(result))
-		for i, cat := range result {
-			rows[i] = []string{
-				cat.ID,
-				cat.Title,
-				cat.Description,
-			}
-		}
-
-		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d categories\n", len(result))
-		return nil
-	},
-}
-
-var searchCmd = &cobra.Command{
-	Use:          "search <query>",
-	Short:        "Search settings",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		reqBody, err := json.Marshal(search.Request{Query: args[0]})
-		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SettingsSearch(), reqBody)
-		if err != nil {
-			return fmt.Errorf("failed to search settings: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result search.Response
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Header("Search Results")
-		fmt.Printf("Query: %s\n", result.Query)
-		fmt.Printf("Found: %d results\n\n", result.Count)
-
-		for _, cat := range result.Results {
-			output.KeyValue(cat.Title, cat.Description)
-		}
-
-		return nil
-	},
-}
-
 func init() {
-	SettingsCmd.AddCommand(getCmd)
-	SettingsCmd.AddCommand(categoriesCmd)
-	SettingsCmd.AddCommand(searchCmd)
+	SettingsCmd.AddCommand(listCmd)
 
-	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	categoriesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	searchCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

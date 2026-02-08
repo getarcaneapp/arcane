@@ -30,10 +30,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/types/base"
 )
 
 const (
@@ -47,11 +50,12 @@ const (
 // HTTP requests to various API endpoints. The client automatically includes
 // authentication headers and handles JSON serialization.
 type Client struct {
-	baseURL    string
-	apiKey     string
-	jwtToken   string
-	envID      string
-	httpClient *http.Client
+	baseURL      string
+	apiKey       string
+	jwtToken     string
+	refreshToken string
+	envID        string
+	httpClient   *http.Client
 }
 
 // New creates a new API client from the provided configuration.
@@ -69,11 +73,12 @@ func New(cfg *types.Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:    cfg.ServerURL,
-		apiKey:     cfg.APIKey,
-		jwtToken:   cfg.JWTToken,
-		envID:      envID,
-		httpClient: newHTTPClientInternal(),
+		baseURL:      cfg.ServerURL,
+		apiKey:       cfg.APIKey,
+		jwtToken:     cfg.JWTToken,
+		refreshToken: cfg.RefreshToken,
+		envID:        envID,
+		httpClient:   newHTTPClientInternal(),
 	}, nil
 }
 
@@ -90,9 +95,10 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:    cfg.ServerURL,
-		envID:      envID,
-		httpClient: newHTTPClientInternal(),
+		baseURL:      cfg.ServerURL,
+		envID:        envID,
+		refreshToken: cfg.RefreshToken,
+		httpClient:   newHTTPClientInternal(),
 	}, nil
 }
 
@@ -188,42 +194,37 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 
 	fullURL := u.ResolveReference(rel).String()
 
-	var bodyReader io.Reader
+	var bodyBytes []byte
 	if body != nil {
 		switch v := body.(type) {
 		case []byte:
-			// Callers commonly pre-marshal JSON and pass the raw bytes.
-			// Treat as already-encoded JSON to avoid double-marshalling.
-			bodyReader = bytes.NewReader(v)
+			bodyBytes = v
 		case json.RawMessage:
-			bodyReader = bytes.NewReader(v)
+			bodyBytes = v
 		case io.Reader:
-			// Allow streaming bodies when needed.
-			bodyReader = v
+			// Streaming bodies cannot be replayed, so skip auto-refresh.
+			req, err := http.NewRequestWithContext(ctx, method, fullURL, v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create request: %w", err)
+			}
+			c.applyAuth(req)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json")
+			resp, err := c.httpClient.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("request failed: %w", err)
+			}
+			return resp, nil
 		default:
 			jsonBody, err := json.Marshal(body)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal request body: %w", err)
 			}
-			bodyReader = bytes.NewReader(jsonBody)
+			bodyBytes = jsonBody
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.applyAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	return resp, nil
+	return c.doRequest(ctx, method, fullURL, bodyBytes, true)
 }
 
 // RequestRaw makes an HTTP request with a raw body and custom headers.
@@ -263,6 +264,37 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 	return resp, nil
 }
 
+func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyBytes []byte, allowRefresh bool) (*http.Response, error) {
+	var bodyReader io.Reader
+	if bodyBytes != nil {
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.applyAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized && allowRefresh && c.jwtToken != "" && c.refreshToken != "" {
+		_ = resp.Body.Close()
+		if err := c.refreshAccessToken(ctx); err != nil {
+			return nil, err
+		}
+		return c.doRequest(ctx, method, fullURL, bodyBytes, false)
+	}
+
+	return resp, nil
+}
+
 func (c *Client) applyAuth(req *http.Request) {
 	// Prefer JWT bearer token if present.
 	if c.jwtToken != "" {
@@ -272,6 +304,75 @@ func (c *Client) applyAuth(req *http.Request) {
 	if c.apiKey != "" {
 		req.Header.Set(headerAPIKey, c.apiKey)
 	}
+}
+
+func (c *Client) refreshAccessToken(ctx context.Context) error {
+	if c.refreshToken == "" {
+		return fmt.Errorf("refresh token not configured; run `arcane auth login`")
+	}
+
+	refreshReq := auth.Refresh{RefreshToken: c.refreshToken}
+	bodyBytes, err := json.Marshal(refreshReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal refresh request: %w", err)
+	}
+
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	refreshURL := u.ResolveReference(&url.URL{Path: types.Endpoints.AuthRefresh()}).String()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("token refresh failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read refresh response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("token refresh failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var result base.ApiResponse[auth.TokenRefreshResponse]
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("failed to parse refresh response: %w", err)
+	}
+	if !result.Success || result.Data.Token == "" {
+		return fmt.Errorf("token refresh failed: unexpected response from server")
+	}
+
+	newRefresh := result.Data.RefreshToken
+	if newRefresh == "" {
+		newRefresh = c.refreshToken
+	}
+
+	c.jwtToken = result.Data.Token
+	c.refreshToken = newRefresh
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	cfg.JWTToken = result.Data.Token
+	cfg.APIKey = ""
+	cfg.RefreshToken = newRefresh
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save refreshed token: %w", err)
+	}
+
+	return nil
 }
 
 // Get makes a GET request to the specified path.

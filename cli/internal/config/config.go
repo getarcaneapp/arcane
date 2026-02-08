@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"gopkg.in/yaml.v3"
@@ -38,6 +39,8 @@ var (
 const (
 	configFileName = "arcanecli.yml"
 )
+
+var customConfigPath string
 
 // DefaultConfig returns a Config with sensible default values.
 // The defaults are:
@@ -56,12 +59,43 @@ func DefaultConfig() *types.Config {
 // The config file is located at ~/.config/arcanecli.yml.
 // Returns an error if the user's home directory cannot be determined.
 func ConfigPath() (string, error) {
+	if customConfigPath != "" {
+		return customConfigPath, nil
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	return filepath.Join(home, ".config", configFileName), nil
+}
+
+// SetConfigPath overrides the default configuration file location.
+// Accepts absolute or relative paths and expands a leading ~ to the home directory.
+func SetConfigPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		customConfigPath = ""
+		return nil
+	}
+
+	path = strings.TrimSpace(path)
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to expand config path: %w", err)
+		}
+		rel := strings.TrimPrefix(path, "~")
+		path = filepath.Join(home, strings.TrimPrefix(rel, string(os.PathSeparator)))
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve config path: %w", err)
+	}
+
+	customConfigPath = absPath
+	return nil
 }
 
 // Load reads the configuration from disk and returns it.
