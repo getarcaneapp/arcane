@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Stapelbild-Updates E-Mail",
 	"notifications_email_test_vulnerability_found": "Schwachstelle E-Mail gefunden",
 	"notifications_test_vulnerability_notification": "Schwachstellen-Benachrichtigung testen",
+	"notifications_test_prune_report_notification": "Prune-Meldung testen",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Apprise-API für einheitliche Benachrichtigungen für mehrere Dienste konfigurieren",
 	"notifications_apprise_enabled_label": "Apprise aktivieren",
