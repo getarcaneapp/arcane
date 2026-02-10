@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Email de Actualizaciones de Imagen Lote",
 	"notifications_email_test_vulnerability_found": "Vulnerabilidad encontrada Email",
 	"notifications_test_vulnerability_notification": "Probar Notificación de vulnerabilidad",
+	"notifications_test_prune_report_notification": "Notificación de informe de borrado de prueba",
 	"notifications_apprise_title": "Integración rapaz",
 	"notifications_apprise_description": "Configurar API de Apple para notificaciones unificadas a través de múltiples servicios",
 	"notifications_apprise_enabled_label": "Habilitar aviso",
