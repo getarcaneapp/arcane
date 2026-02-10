@@ -103,7 +103,6 @@ export interface GotifyFormValues extends BaseProviderFormValues {
 	disableTls: boolean;
 }
 
-
 export interface MatrixFormValues extends BaseProviderFormValues {
 	host: string;
 	port: number;

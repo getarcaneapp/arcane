@@ -180,6 +180,9 @@
 	"scheduled_prune_networks_description": "Nicht genutzte Netzwerke entfernen",
 	"scheduled_prune_build_cache_label": "Build-Cache entfernen",
 	"scheduled_prune_build_cache_description": "Docker Build-Cache entfernen",
+	"auto_update_select_containers": "Container auswählen...",
+	"auto_update_containers_excluded_one": "1 Container ausgeschlossen",
+	"auto_update_containers_excluded_many": "{count} Container ausgeschlossen",
 	"_comment_common_actions": "=== Allgemein – Aktionszustände ===",
 	"common_action_creating": "Wird erstellt…",
 	"common_action_deleting": "Wird gelöscht…",
@@ -595,7 +598,7 @@
 	"images_remove_success_many": "{count} Images erfolgreich entfernt",
 	"images_remove_failed_one": "Fehler beim Entfernen des Image",
 	"images_remove_failed_many": "Fehler beim Entfernen der {count} Images",
-	"_comment_vulnerabilities": "=== VULNERABILITIEN ===",
+	"_comment_vulnerabilities": "=== SCHWACHSTELLEN ===",
 	"vuln_title": "Schwachstellen",
 	"vuln_scan": "Scannen",
 	"vuln_rescan": "Re-Scan",
@@ -1975,5 +1978,7 @@
 	"environments_agent_address_description": "Die URL, auf die Ihr Agent zugreifen wird",
 	"environments_generate_config": "Generiere Agenten-Konfiguration",
 	"project_files": "Projektdateien",
-	"project_includes": "Beinhaltet"
+	"project_includes": "Beinhaltet",
+	"notifications_event_prune_report_label": "System Prune Bericht",
+	"notifications_event_prune_report_description": "Erhalte einen Zusammenfassungsbericht, wenn ein geplanter prune Vorgang abgeschlossen ist"
 }
