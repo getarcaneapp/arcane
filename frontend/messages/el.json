@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Email Ενημερώσεων Εικόνας Παρτίδας",
 	"notifications_email_test_vulnerability_found": "Ηλεκτρονικό Ταχυδρομείο Βρέθηκε Ευπάθεια",
 	"notifications_test_vulnerability_notification": "Δοκιμή Ειδοποίησης Ευθύνης",
+	"notifications_test_prune_report_notification": "Δοκιμή Ειδοποίησης Αναφοράς Prune",
 	"notifications_apprise_title": "Ενσωμάτωση Apprise",
 	"notifications_apprise_description": "Ρύθμιση του Apprise API για ενοποιημένες ειδοποιήσεις σε πολλαπλές υπηρεσίες",
 	"notifications_apprise_enabled_label": "Ενεργοποίηση Apprise",
