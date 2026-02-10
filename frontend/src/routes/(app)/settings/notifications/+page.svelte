@@ -597,7 +597,7 @@
 									bind:values={matrixValues}
 									disabled={isReadOnly}
 									{isTesting}
-									onTest={() => testNotification('matrix')}
+									onTest={(testType) => testNotification('matrix', testType)}
 								/>
 							</Tabs.Content>
 
