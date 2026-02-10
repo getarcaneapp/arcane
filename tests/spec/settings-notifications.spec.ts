@@ -69,7 +69,7 @@ test.describe('Notification settings', () => {
 
     // Trigger test
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test' }).click();
-    await page.getByRole('menuitem', { name: 'Simple Test Email', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     // Handle Save & Test if needed
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -92,7 +92,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -113,7 +113,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('xoxb-... or xoxp-...').fill('xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -135,7 +135,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('@channel, 123456789, @another_channel').fill('123456789');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -155,7 +155,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -174,11 +174,11 @@ test.describe('Notification settings', () => {
 
     await page.getByPlaceholder('localhost').fill('signal-api.example.com');
     await page.getByPlaceholder('8080').fill('8080');
-    await page.getByRole('textbox', { name: '+' }).fill('+1234567890');
-    await page.getByRole('textbox', { name: 'Recipients' }).fill('+1987654321');
+    await page.locator('#signal-source').fill('+1234567890');
+    await page.locator('#signal-recipients').fill('+1987654321');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -199,7 +199,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('my-updates').fill('arcane-updates');
 
     await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
-    await page.getByRole('menuitem', { name: 'Test Provider', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
     if (await saveAndTestButton.isVisible().catch(() => false)) {

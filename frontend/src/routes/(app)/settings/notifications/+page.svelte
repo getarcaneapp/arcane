@@ -48,19 +48,7 @@
 		appriseFormValuesToSettings
 	} from '$lib/types/notification-providers';
 	import { NotificationsIcon } from '$lib/icons';
-	import {
-		EmailProviderForm,
-		DiscordProviderForm,
-		TelegramProviderForm,
-		SignalProviderForm,
-		SlackProviderForm,
-		NtfyProviderForm,
-		PushoverProviderForm,
-		GotifyProviderForm,
-		MatrixProviderForm,
-		GenericProviderForm,
-		AppriseProviderForm
-	} from './providers';
+	import { BuiltInProviderForm, AppriseProviderForm } from './providers';
 
 	let { data } = $props();
 
@@ -83,16 +71,16 @@
 	}
 
 	// Provider form references for validation
-	let emailFormRef: EmailProviderForm;
-	let discordFormRef: DiscordProviderForm;
-	let telegramFormRef: TelegramProviderForm;
-	let signalFormRef: SignalProviderForm;
-	let slackFormRef: SlackProviderForm;
-	let ntfyFormRef: NtfyProviderForm;
-	let pushoverFormRef: PushoverProviderForm;
-	let gotifyFormRef: GotifyProviderForm;
-	let matrixFormRef: MatrixProviderForm;
-	let genericFormRef: GenericProviderForm;
+	let emailFormRef: BuiltInProviderForm;
+	let discordFormRef: BuiltInProviderForm;
+	let telegramFormRef: BuiltInProviderForm;
+	let signalFormRef: BuiltInProviderForm;
+	let slackFormRef: BuiltInProviderForm;
+	let ntfyFormRef: BuiltInProviderForm;
+	let pushoverFormRef: BuiltInProviderForm;
+	let gotifyFormRef: BuiltInProviderForm;
+	let matrixFormRef: BuiltInProviderForm;
+	let genericFormRef: BuiltInProviderForm;
 
 	// Saved settings from server (used to detect if settings exist)
 	let savedSettings = $state<Record<NotificationProviderKey, NotificationSettings | null>>({
@@ -446,19 +434,19 @@
 		}
 	}
 
-	async function testAppriseNotification() {
+	async function testAppriseNotification(testType: string = 'simple') {
 		if (hasChanges) {
-			pendingTestAction = executeAppriseTest;
+			pendingTestAction = () => executeAppriseTest(testType);
 			showUnsavedDialog = true;
 			return;
 		}
-		await executeAppriseTest();
+		await executeAppriseTest(testType);
 	}
 
-	async function executeAppriseTest() {
+	async function executeAppriseTest(testType: string = 'simple') {
 		isTesting = true;
 		try {
-			await notificationService.testAppriseNotification();
+			await notificationService.testAppriseNotification(testType);
 			toast.success(m.notifications_test_success({ provider: 'Apprise' }));
 		} catch (error: any) {
 			const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
@@ -512,8 +500,9 @@
 							</Tabs.List>
 
 							<Tabs.Content value="email" class="mt-4 space-y-4">
-								<EmailProviderForm
+								<BuiltInProviderForm
 									bind:this={emailFormRef}
+									provider="email"
 									bind:values={emailValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -522,8 +511,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="discord" class="mt-4 space-y-4">
-								<DiscordProviderForm
+								<BuiltInProviderForm
 									bind:this={discordFormRef}
+									provider="discord"
 									bind:values={discordValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -532,8 +522,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="telegram" class="mt-4 space-y-4">
-								<TelegramProviderForm
+								<BuiltInProviderForm
 									bind:this={telegramFormRef}
+									provider="telegram"
 									bind:values={telegramValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -542,8 +533,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="signal" class="mt-4 space-y-4">
-								<SignalProviderForm
+								<BuiltInProviderForm
 									bind:this={signalFormRef}
+									provider="signal"
 									bind:values={signalValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -552,8 +544,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="slack" class="mt-4 space-y-4">
-								<SlackProviderForm
+								<BuiltInProviderForm
 									bind:this={slackFormRef}
+									provider="slack"
 									bind:values={slackValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -562,8 +555,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="ntfy" class="mt-4 space-y-4">
-								<NtfyProviderForm
+								<BuiltInProviderForm
 									bind:this={ntfyFormRef}
+									provider="ntfy"
 									bind:values={ntfyValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -572,8 +566,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="pushover" class="mt-4 space-y-4">
-								<PushoverProviderForm
+								<BuiltInProviderForm
 									bind:this={pushoverFormRef}
+									provider="pushover"
 									bind:values={pushoverValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -582,8 +577,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="gotify" class="mt-4 space-y-4">
-								<GotifyProviderForm
+								<BuiltInProviderForm
 									bind:this={gotifyFormRef}
+									provider="gotify"
 									bind:values={gotifyValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -592,8 +588,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="matrix" class="mt-4 space-y-4">
-								<MatrixProviderForm
+								<BuiltInProviderForm
 									bind:this={matrixFormRef}
+									provider="matrix"
 									bind:values={matrixValues}
 									disabled={isReadOnly}
 									{isTesting}
@@ -602,8 +599,9 @@
 							</Tabs.Content>
 
 							<Tabs.Content value="generic" class="mt-4 space-y-4">
-								<GenericProviderForm
+								<BuiltInProviderForm
 									bind:this={genericFormRef}
+									provider="generic"
 									bind:values={genericValues}
 									disabled={isReadOnly}
 									{isTesting}
