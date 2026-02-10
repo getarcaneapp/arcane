@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Email cập nhật Image hàng loạt",
 	"notifications_email_test_vulnerability_found": "Vulnerability Found Email",
 	"notifications_test_vulnerability_notification": "Test Vulnerability Notification",
+	"notifications_test_prune_report_notification": "Test Prune Report Notification",
 	"notifications_apprise_title": "Tích hợp Apprise",
 	"notifications_apprise_description": "Cấu hình Apprise API để hợp nhất thông báo trên nhiều dịch vụ",
 	"notifications_apprise_enabled_label": "Bật Apprise",
