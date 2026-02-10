@@ -211,8 +211,62 @@ func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, u
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
 }
 
-func (s *AppriseService) TestNotification(ctx context.Context) error {
-	title := "Test Notification from Arcane"
-	body := "If you're reading this, your Apprise integration is working correctly!"
-	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
+func (s *AppriseService) TestNotification(ctx context.Context, testType string) error {
+	switch testType {
+	case "vulnerability-found":
+		title := "Vulnerability Summary Notification"
+		body := fmt.Sprintf(
+			"Summary Date: %s\nCritical: 1\nHigh: 3\nMedium: 2\nLow: 1\nUnknown: 0\nFixable vulnerabilities: 7\nExamples: CVE-2025-1234, CVE-2025-5678, CVE-2026-0001",
+			time.Now().UTC().Format("2006-01-02"),
+		)
+		return s.SendNotification(ctx, title, body, "text", models.NotificationEventVulnerabilityFound)
+	case "prune-report":
+		title := "System Prune Report"
+		body := "Containers pruned: 2\nImages deleted: 1\nVolumes deleted: 1\nNetworks deleted: 1\nSpace reclaimed: 3.56 GB"
+		return s.SendNotification(ctx, title, body, "text", models.NotificationEventPruneReport)
+	case "image-update":
+		testUpdate := &imageupdate.Response{
+			HasUpdate:      true,
+			UpdateType:     "digest",
+			CurrentDigest:  "sha256:abc123def456789012345678901234567890",
+			LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
+			CheckTime:      time.Now(),
+			ResponseTimeMs: 100,
+		}
+		return s.SendImageUpdateNotification(ctx, "nginx:latest", testUpdate)
+	case "batch-image-update":
+		testUpdates := map[string]*imageupdate.Response{
+			"nginx:latest": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:abc123def456789012345678901234567890",
+				LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 100,
+			},
+			"postgres:16-alpine": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:def456abc123789012345678901234567890",
+				LatestDigest:   "sha256:ghi789xyz012345678901234567890123456",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 120,
+			},
+			"redis:7.2-alpine": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:123456789abc012345678901234567890def",
+				LatestDigest:   "sha256:456789012def345678901234567890123abc",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 95,
+			},
+		}
+		return s.SendBatchImageUpdateNotification(ctx, testUpdates)
+	case "simple", "":
+		title := "Test Notification from Arcane"
+		body := "If you're reading this, your Apprise integration is working correctly!"
+		return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
+	default:
+		return fmt.Errorf("unsupported apprise test type: %s", testType)
+	}
 }

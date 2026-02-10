@@ -1,13 +1,6 @@
-export { default as EmailProviderForm } from './EmailProviderForm.svelte';
-export { default as DiscordProviderForm } from './DiscordProviderForm.svelte';
-export { default as TelegramProviderForm } from './TelegramProviderForm.svelte';
-export { default as SignalProviderForm } from './SignalProviderForm.svelte';
-export { default as SlackProviderForm } from './SlackProviderForm.svelte';
 export { default as AppriseProviderForm } from './AppriseProviderForm.svelte';
+export { default as BuiltInProviderForm } from './BuiltInProviderForm.svelte';
 export { default as ProviderFormWrapper } from './ProviderFormWrapper.svelte';
 export { default as EventSubscriptions } from './EventSubscriptions.svelte';
-export { default as NtfyProviderForm } from './NtfyProviderForm.svelte';
-export { default as PushoverProviderForm } from './PushoverProviderForm.svelte';
-export { default as GotifyProviderForm } from './GotifyProviderForm.svelte';
-export { default as MatrixProviderForm } from './MatrixProviderForm.svelte';
-export { default as GenericProviderForm } from './GenericProviderForm.svelte';
+export { default as DynamicProviderFormBuilder } from './DynamicProviderFormBuilder.svelte';
+export { default as NotificationProviderTestMenu } from './NotificationProviderTestMenu.svelte';

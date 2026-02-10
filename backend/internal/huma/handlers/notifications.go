@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -81,10 +82,32 @@ type CreateOrUpdateAppriseSettingsOutput struct {
 
 type TestAppriseNotificationInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Type          string `query:"type" default:"simple"`
 }
 
 type TestAppriseNotificationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
+}
+
+var supportedNotificationTestTypes = map[string]struct{}{
+	"simple":              {},
+	"image-update":        {},
+	"batch-image-update":  {},
+	"vulnerability-found": {},
+	"prune-report":        {},
+}
+
+func normalizeNotificationTestType(testType string) string {
+	normalized := strings.TrimSpace(testType)
+	if normalized == "" {
+		return "simple"
+	}
+	return normalized
+}
+
+func isSupportedNotificationTestType(testType string) bool {
+	_, ok := supportedNotificationTestTypes[testType]
+	return ok
 }
 
 // RegisterNotifications registers notification endpoints.
@@ -264,8 +287,12 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 		return nil, err
 	}
 	provider := models.NotificationProvider(input.Provider)
+	testType := normalizeNotificationTestType(input.Type)
+	if !isSupportedNotificationTestType(testType) {
+		return nil, huma.Error400BadRequest("invalid notification test type")
+	}
 
-	if err := h.notificationService.TestNotification(ctx, provider, input.Type); err != nil {
+	if err := h.notificationService.TestNotification(ctx, provider, testType); err != nil {
 		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
 	}
 
@@ -334,7 +361,11 @@ func (h *NotificationHandler) TestAppriseNotification(ctx context.Context, input
 	if err := checkAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if err := h.appriseService.TestNotification(ctx); err != nil {
+	testType := normalizeNotificationTestType(input.Type)
+	if !isSupportedNotificationTestType(testType) {
+		return nil, huma.Error400BadRequest("invalid notification test type")
+	}
+	if err := h.appriseService.TestNotification(ctx, testType); err != nil {
 		return nil, huma.Error500InternalServerError((&common.AppriseTestError{Err: err}).Error())
 	}
 
