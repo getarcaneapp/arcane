@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "批次映像檔更新電子郵件",
 	"notifications_email_test_vulnerability_found": "Vulnerability Found Email",
 	"notifications_test_vulnerability_notification": "Test Vulnerability Notification",
+	"notifications_test_prune_report_notification": "Test Prune Report Notification",
 	"notifications_apprise_title": "Apprise 整合",
 	"notifications_apprise_description": "設定 Apprise API 以使用跨多個服務的通一通知",
 	"notifications_apprise_enabled_label": "啟用 Apprise",
