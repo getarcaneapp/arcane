@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Email de mise à jour d'images par lots",
 	"notifications_email_test_vulnerability_found": "Email de vulnérabilité trouvé",
 	"notifications_test_vulnerability_notification": "Test de la notification de vulnérabilité",
+	"notifications_test_prune_report_notification": "Notification de rapport d'effacement de test",
 	"notifications_apprise_title": "Intégration Apprise",
 	"notifications_apprise_description": "Configurer l'API Apprise pour des notifications unifiées à travers plusieurs services",
 	"notifications_apprise_enabled_label": "Activer l'Apprise",
