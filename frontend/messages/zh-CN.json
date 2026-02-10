@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "合并镜像更新电子邮件",
 	"notifications_email_test_vulnerability_found": "找到易受伤害的电子邮件",
 	"notifications_test_vulnerability_notification": "测试脆弱性通知",
+	"notifications_test_prune_report_notification": "测试精简报告通知",
 	"notifications_apprise_title": "应用集成",
 	"notifications_apprise_description": "配置 Apprise API 以实现多个服务的统一通知",
 	"notifications_apprise_enabled_label": "启用 Apprise",
