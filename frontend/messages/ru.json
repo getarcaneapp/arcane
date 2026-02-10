@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Тестовое письмо с изображениями",
 	"notifications_email_test_vulnerability_found": "Найдена уязвимость по электронной почте",
 	"notifications_test_vulnerability_notification": "Тестовое уведомление об уязвимости",
+	"notifications_test_prune_report_notification": "Тестировать уведомление о очистке отчета",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
