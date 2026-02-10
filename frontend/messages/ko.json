@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "일괄 이미지 업데이트 이메일",
 	"notifications_email_test_vulnerability_found": "Vulnerability Found Email",
 	"notifications_test_vulnerability_notification": "Test Vulnerability Notification",
+	"notifications_test_prune_report_notification": "Test Prune Report Notification",
 	"notifications_apprise_title": "Apprise 통합",
 	"notifications_apprise_description": "여러 서비스에 대한 통합 알림을 위해 Apprise API를 구성합니다",
 	"notifications_apprise_enabled_label": "Apprise 활성화",
