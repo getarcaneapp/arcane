@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "バッチ画像の更新メール",
 	"notifications_email_test_vulnerability_found": "脆弱性が見つかりました",
 	"notifications_test_vulnerability_notification": "脆弱性通知のテスト",
+	"notifications_test_prune_report_notification": "プルーンレポートの通知をテストする",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
