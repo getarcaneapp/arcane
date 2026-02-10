@@ -1682,6 +1682,7 @@
 	"notifications_email_test_batch_image_update": "Email Aggiornamenti Immagine Batch",
 	"notifications_email_test_vulnerability_found": "Email Vulnerabilità Trovata",
 	"notifications_test_vulnerability_notification": "Prova Notifica Vulnerabilità",
+	"notifications_test_prune_report_notification": "Notifica Report Prune Test",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
