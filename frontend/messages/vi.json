@@ -1461,7 +1461,7 @@
 	"progress_deploy_completed": "Triển khai hoàn tất",
 	"progress_deploy_failed": "Triển khai thất bại",
 	"progress_deploy_failed_with_error": "Triển khai thất bại: {error}",
-	"progress_deploy_failed_to_start": "Triển khai dự án thất bại {{status}}",
+	"progress_deploy_failed_to_start": "Triển khai dự án thất bại ({status})",
 	"progress_deploy_waiting_for_service": "Đang chờ {service} hoạt động bình thường trở lại",
 	"progress_deploy_waiting_for_service_with_health": "",
 	"progress_deploy_service_healthy": "{service} đang hoạt động bình thường",

@@ -74,7 +74,7 @@ async function buildTemplateFile(Component: any, templateName: string, isPlainTe
   const maxLen = isPlainText ? 78 : 998; // RFC-safe
   const safe = tagAwareWrap(normalized, maxLen);
 
-  const goTemplate = `{{define "root"}}${safe}{{end}}`;
+  const goTemplate = `{{define "root"}}${safe}{{end}}\n`;
   const suffix = isPlainText ? '_text.tmpl' : '_html.tmpl';
   const templatePath = path.join(outputDir, `${templateName}${suffix}`);
 

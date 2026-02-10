@@ -1,9 +1,9 @@
-import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
 import { m } from '$lib/paraglide/messages';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
+import { transformPaginationParams } from '$lib/utils/params.util';
+import BaseAPIService from './api-service';
 
 export class ProjectService extends BaseAPIService {
 	async getProjects(options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
@@ -20,8 +20,9 @@ export class ProjectService extends BaseAPIService {
 		const url = `/api/environments/${envId}/projects/${projectId}/up`;
 
 		const res = await fetch(url, { method: 'POST' });
+		const status = String(res.status);
 		if (!res.ok || !res.body) {
-			throw new Error(m.progress_deploy_failed_to_start({ status: String(res.status) }));
+			throw new Error(m.progress_deploy_failed_to_start({ status }));
 		}
 
 		const reader = res.body.getReader();

@@ -233,6 +233,10 @@
 						<SendEmailIcon class="size-4" />
 						{m.notifications_email_test_vulnerability_found()}
 					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => onTest('prune-report')}>
+						<SendEmailIcon class="size-4" />
+						{m.notifications_test_prune_report_notification()}
+					</DropdownMenu.Item>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
