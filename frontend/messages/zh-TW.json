@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "選擇容器…",
 	"auto_update_containers_excluded_one": "已排除 1 個容器",
 	"auto_update_containers_excluded_many": "已排除 {count} 個容器",
+	"auto_update_exclude_description": "Select containers to exclude from automatic updates.",
+	"auto_update_excluded_containers": "Excluded Containers",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "正在建立…",
 	"common_action_deleting": "正在刪除…",
