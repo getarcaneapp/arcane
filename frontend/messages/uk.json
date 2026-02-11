@@ -572,6 +572,7 @@
 	"images_has_updates": "Has Updates",
 	"images_no_updates": "No Updates",
 	"images_tags_description": "Repository tags associated with this image",
+	"images_env_vars_description": "Змінні оточення, визначені в цьому зображенні",
 	"images_pull_description": "Enter the image reference you want to pull from a registry.",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Автоматичний вхід увімкнено",
+	"security_auto_login_enabled_description": "Автовхід в даний час увімкнено через змінні середовища. Налаштування аутентифікації вимкнено, оскільки користувачі автоматично увійшли в систему із попередньо налаштованими обліковими даними. Щоб змінити налаштування автентичності, вимкніть авто-вхід в конфігурації Вашого сервера.",
 	"security_scan_all": "Scan all images",
 	"security_scanning": "Scanning",
 	"security_no_images_to_scan": "No images available to scan",
@@ -1983,5 +1986,6 @@
 	"project_files": "Project Files",
 	"project_includes": "Includes",
 	"notifications_event_prune_report_label": "System Prune Report",
-	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes"
+	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes",
+	"version_info_build_features": "Збірка функцій"
 }
