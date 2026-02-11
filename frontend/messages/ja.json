@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "コンテナを選択...",
 	"auto_update_containers_excluded_one": "1つのコンテナを除外しました",
 	"auto_update_containers_excluded_many": "{count} コンテナを除外しました",
+	"auto_update_exclude_description": "自動更新から除外するコンテナを選択します。",
+	"auto_update_excluded_containers": "除外コンテナ",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
