@@ -572,6 +572,7 @@
 	"images_has_updates": "有更新",
 	"images_no_updates": "沒有更新",
 	"images_tags_description": "與此映像檔關聯的儲存庫標籤",
+	"images_env_vars_description": "Environment variables defined in this image",
 	"images_pull_description": "請輸入要從儲存庫拉取的映像檔。",
 	"images_image_name_label": "映像檔名稱 *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "設定儲存成功。",
 	"security_local_enabled_info": "已啟用本地身分驗證以確保至少一個提供者作用中。",
 	"security_settings_save_failed": "儲存安全性設定時失敗",
+	"security_auto_login_enabled_title": "Auto-Login Enabled",
+	"security_auto_login_enabled_description": "Auto-login is currently enabled via environment variables. Authentication settings are disabled because users are automatically logged in with pre-configured credentials. To modify authentication settings, disable auto-login in your server configuration.",
 	"security_scan_all": "掃描所有映像檔",
 	"security_scanning": "正在掃描",
 	"security_no_images_to_scan": "沒有可掃描的映像檔",
@@ -1983,5 +1986,6 @@
 	"project_files": "專案檔案",
 	"project_includes": "包含",
 	"notifications_event_prune_report_label": "系統修剪報告",
-	"notifications_event_prune_report_description": "排程修剪完程式接收摘要報告"
+	"notifications_event_prune_report_description": "排程修剪完程式接收摘要報告",
+	"version_info_build_features": "Build Features"
 }
