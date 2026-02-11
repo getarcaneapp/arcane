@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Container auswählen...",
 	"auto_update_containers_excluded_one": "1 Container ausgeschlossen",
 	"auto_update_containers_excluded_many": "{count} Container ausgeschlossen",
+	"auto_update_exclude_description": "Wählen Sie Container aus, die von automatischen Updates ausgeschlossen werden sollen.",
+	"auto_update_excluded_containers": "Ausgeschlossene Container",
 	"_comment_common_actions": "=== Allgemein – Aktionszustände ===",
 	"common_action_creating": "Wird erstellt…",
 	"common_action_deleting": "Wird gelöscht…",
