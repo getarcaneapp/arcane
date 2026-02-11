@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Selecteer containers...",
 	"auto_update_containers_excluded_one": "1 container uitgesloten",
 	"auto_update_containers_excluded_many": "{count} containers uitgesloten",
+	"auto_update_exclude_description": "Selecteer containers om uit te sluiten van automatische updates.",
+	"auto_update_excluded_containers": "Uitgesloten containers",
 	"_comment_common_actions": "=== COMMON - ACTIE STATIST===",
 	"common_action_creating": "Maken…",
 	"common_action_deleting": "Verwijderenchar@@0",
