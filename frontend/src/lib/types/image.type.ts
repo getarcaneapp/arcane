@@ -23,6 +23,12 @@ export interface ImageUsageCounts {
 	totalImageSize: number;
 }
 
+export interface ImageUsedByDto {
+	type: 'project' | 'container';
+	name: string;
+	id?: string;
+}
+
 export interface ImageSummaryDto {
 	id: string;
 	repoTags: string[];
@@ -32,6 +38,7 @@ export interface ImageSummaryDto {
 	virtualSize: number;
 	labels: Record<string, unknown> | null;
 	inUse: boolean;
+	usedBy?: ImageUsedByDto[];
 	repo: string;
 	tag: string;
 	updateInfo?: ImageUpdateInfoDto;

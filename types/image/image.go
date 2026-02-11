@@ -77,6 +77,23 @@ type UpdateInfo struct {
 	UsedCredential bool `json:"usedCredential,omitempty"`
 }
 
+type UsedBy struct {
+	// Type indicates the usage source (e.g., project, container).
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Name is the project or container name.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// ID is the identifier of the project or container (if available).
+	//
+	// Required: false
+	ID string `json:"id,omitempty"`
+}
+
 type Summary struct {
 	// ID is the unique identifier of the image.
 	//
@@ -117,6 +134,11 @@ type Summary struct {
 	//
 	// Required: true
 	InUse bool `json:"inUse" sortable:"true"`
+
+	// UsedBy lists projects or containers currently using this image.
+	//
+	// Required: false
+	UsedBy []UsedBy `json:"usedBy,omitempty"`
 
 	// Repo is the repository name of the image.
 	//

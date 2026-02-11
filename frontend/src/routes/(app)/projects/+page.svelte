@@ -59,17 +59,24 @@
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
-	const isRefreshing = $derived(
-		(projectsQuery.isFetching && !projectsQuery.isPending) ||
-			(projectStatusCountsQuery.isFetching && !projectStatusCountsQuery.isPending)
-	);
+	let isManualRefreshing = $state(false);
+	const isProjectsQueryRefreshing = $derived(projectsQuery.isFetching && !projectsQuery.isPending);
+	const isStatusCountsQueryRefreshing = $derived(projectStatusCountsQuery.isFetching && !projectStatusCountsQuery.isPending);
+	const isQueryRefreshing = $derived(isProjectsQueryRefreshing || isStatusCountsQueryRefreshing);
+	const isRefreshBlocked = $derived(isManualRefreshing || isQueryRefreshing);
 
 	async function handleCheckForUpdates() {
 		await checkUpdatesMutation.mutateAsync();
 	}
 
 	async function refreshCompose() {
-		await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+		if (isRefreshBlocked) return;
+		isManualRefreshing = true;
+		try {
+			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+		} finally {
+			isManualRefreshing = false;
+		}
 	}
 
 	const actionButtons: ActionButton[] = $derived([
@@ -92,8 +99,8 @@
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshCompose,
-			loading: isRefreshing,
-			disabled: isRefreshing
+			loading: isManualRefreshing,
+			disabled: isRefreshBlocked
 		}
 	]);
 

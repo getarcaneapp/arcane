@@ -438,7 +438,7 @@
 {#if effectiveUpdateInfo}
 	<ArcaneTooltip.Root bind:open={isOpen}>
 		<ArcaneTooltip.Trigger>
-			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle">
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
 				{#if hasError}
 					<AlertIcon class="size-4 text-red-500" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
@@ -467,7 +467,7 @@
 {:else if isLoadingInBackground || isChecking}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
-			<span class="mr-2 inline-flex size-4 items-center justify-center">
+			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 				<Spinner class="size-4 text-blue-400" />
 			</span>
 		</ArcaneTooltip.Trigger>
@@ -480,7 +480,7 @@
 {:else}
 	<ArcaneTooltip.Root interactive>
 		<ArcaneTooltip.Trigger>
-			<span class="mr-2 inline-flex size-4 items-center justify-center">
+			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 				{#if canCheckUpdate}
 					<button
 						onclick={checkImageUpdate}

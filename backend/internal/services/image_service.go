@@ -498,10 +498,11 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		}
 	}
 
-	inUseMap := buildInUseMap(containers)
+	projectIDByName := buildProjectIDMapInternal(ctx, s.db, containers)
+	usageMap := buildUsageMapInternal(containers, projectIDByName)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := mapDockerImagesToDTOs(dockerImages, inUseMap, updateMap, vulnerabilityMap)
+	items := mapDockerImagesToDTOs(dockerImages, usageMap, updateMap, vulnerabilityMap)
 
 	config := s.getImagePaginationConfig()
 
@@ -541,12 +542,98 @@ func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
-func buildInUseMap(containers []container.Summary) map[string]bool {
-	inUseMap := make(map[string]bool)
-	for _, c := range containers {
-		inUseMap[c.ImageID] = true
+func buildProjectIDMapInternal(ctx context.Context, db *database.DB, containers []container.Summary) map[string]string {
+	projectIDs := make(map[string]string)
+	if db == nil {
+		return projectIDs
 	}
-	return inUseMap
+
+	projectNameSet := make(map[string]struct{})
+	for _, c := range containers {
+		if c.Labels == nil {
+			continue
+		}
+		if projectName := c.Labels["com.docker.compose.project"]; projectName != "" {
+			projectNameSet[projectName] = struct{}{}
+		}
+	}
+	if len(projectNameSet) == 0 {
+		return projectIDs
+	}
+
+	projectNames := make([]string, 0, len(projectNameSet))
+	for name := range projectNameSet {
+		projectNames = append(projectNames, name)
+	}
+
+	var projects []models.Project
+	if err := db.WithContext(ctx).Where("name IN ?", projectNames).Find(&projects).Error; err != nil {
+		slog.WarnContext(ctx, "failed to resolve project IDs for image usage", "error", err)
+		return projectIDs
+	}
+	for _, project := range projects {
+		projectIDs[project.Name] = project.ID
+	}
+
+	return projectIDs
+}
+
+func buildUsageMapInternal(containers []container.Summary, projectIDByName map[string]string) map[string][]imagetypes.UsedBy {
+	usageMap := make(map[string][]imagetypes.UsedBy)
+	projectSeen := make(map[string]map[string]bool)
+	containerSeen := make(map[string]map[string]bool)
+
+	for _, c := range containers {
+		if c.ImageID == "" {
+			continue
+		}
+
+		projectName := ""
+		if c.Labels != nil {
+			projectName = c.Labels["com.docker.compose.project"]
+		}
+
+		if projectName != "" {
+			projectID := projectIDByName[projectName]
+			if projectSeen[c.ImageID] == nil {
+				projectSeen[c.ImageID] = make(map[string]bool)
+			}
+			if !projectSeen[c.ImageID][projectName] {
+				usedBy := imagetypes.UsedBy{
+					Type: "project",
+					Name: projectName,
+				}
+				if projectID != "" {
+					usedBy.ID = projectID
+				}
+				usageMap[c.ImageID] = append(usageMap[c.ImageID], usedBy)
+				projectSeen[c.ImageID][projectName] = true
+			}
+			continue
+		}
+
+		containerName := ""
+		if len(c.Names) > 0 {
+			containerName = strings.TrimPrefix(c.Names[0], "/")
+		}
+		if containerName == "" {
+			containerName = c.ID
+		}
+
+		if containerSeen[c.ImageID] == nil {
+			containerSeen[c.ImageID] = make(map[string]bool)
+		}
+		if !containerSeen[c.ImageID][c.ID] {
+			usageMap[c.ImageID] = append(usageMap[c.ImageID], imagetypes.UsedBy{
+				Type: "container",
+				Name: containerName,
+				ID:   c.ID,
+			})
+			containerSeen[c.ImageID][c.ID] = true
+		}
+	}
+
+	return usageMap
 }
 
 func buildUpdateMap(records []models.ImageUpdateRecord) map[string]*models.ImageUpdateRecord {
@@ -628,11 +715,12 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 	}
 }
 
-func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]bool, updateMap map[string]*models.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerability.ScanSummary) []imagetypes.Summary {
+func mapDockerImagesToDTOs(dockerImages []image.Summary, usageMap map[string][]imagetypes.UsedBy, updateMap map[string]*models.ImageUpdateRecord, vulnerabilityMap map[string]*vulnerability.ScanSummary) []imagetypes.Summary {
 	items := make([]imagetypes.Summary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repo, tag := determineRepoAndTag(di)
 
+		usedBy := usageMap[di.ID]
 		imageDto := imagetypes.Summary{
 			ID:          di.ID,
 			Repo:        repo,
@@ -643,7 +731,8 @@ func mapDockerImagesToDTOs(dockerImages []image.Summary, inUseMap map[string]boo
 			Size:        di.Size,
 			VirtualSize: di.SharedSize,
 			Labels:      convertLabels(di.Labels),
-			InUse:       inUseMap[di.ID],
+			InUse:       len(usedBy) > 0,
+			UsedBy:      usedBy,
 		}
 
 		if updateRecord, exists := updateMap[di.ID]; exists {

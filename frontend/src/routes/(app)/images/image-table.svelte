@@ -15,6 +15,7 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
 	import type { VulnerabilityScanSummary } from '$lib/types/vulnerability.type';
@@ -23,7 +24,18 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
-	import { DownloadIcon, TrashIcon, InspectIcon, ImagesIcon, VolumesIcon, ClockIcon, EllipsisIcon, ScanIcon } from '$lib/icons';
+	import {
+		DownloadIcon,
+		TrashIcon,
+		InspectIcon,
+		ImagesIcon,
+		VolumesIcon,
+		ClockIcon,
+		EllipsisIcon,
+		ScanIcon,
+		ProjectsIcon,
+		ContainersIcon
+	} from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -300,6 +312,11 @@
 			cell: StatusCell
 		},
 		{
+			id: 'usedBy',
+			title: m.images_used_by(),
+			cell: UsedByCell
+		},
+		{
 			id: 'updates',
 			accessorFn: (row) => {
 				if (row.updateInfo?.hasUpdate) return 'has_update';
@@ -341,6 +358,7 @@
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
+		{ id: 'usedBy', label: m.images_used_by(), defaultVisible: false },
 		{ id: 'updates', label: m.images_updates(), defaultVisible: false },
 		{ id: 'vulnerabilities', label: m.vuln_title(), defaultVisible: false },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
@@ -401,6 +419,119 @@
 		<StatusBadge text={m.common_in_use()} variant="green" />
 	{:else}
 		<StatusBadge text={m.common_unused()} variant="amber" />
+	{/if}
+{/snippet}
+
+{#snippet UsedByCell({ item }: { item: ImageSummaryDto })}
+	{#if item.usedBy && item.usedBy.length > 0}
+		{@const maxVisible = 3}
+		{@const hasOverflow = item.usedBy.length > maxVisible}
+		{@const visibleUsage = hasOverflow ? item.usedBy.slice(0, maxVisible) : item.usedBy}
+		{@const overflowUsage = hasOverflow ? item.usedBy.slice(maxVisible) : []}
+		<div class="flex flex-wrap gap-1.5">
+			{#each visibleUsage as usage}
+				{#if usage.type === 'project'}
+					{#if usage.id}
+						<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
+							<Badge
+								variant="outline"
+								class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+							>
+								<ProjectsIcon class="size-3" />
+								<span>{usage.name}</span>
+							</Badge>
+						</a>
+					{:else}
+						<Badge
+							variant="outline"
+							class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+						>
+							<ProjectsIcon class="size-3" />
+							<span>{usage.name}</span>
+						</Badge>
+					{/if}
+				{:else if usage.id}
+					<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
+						<Badge
+							variant="outline"
+							class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+						>
+							<ContainersIcon class="size-3" />
+							<span>{usage.name}</span>
+						</Badge>
+					</a>
+				{:else}
+					<Badge
+						variant="outline"
+						class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+					>
+						<ContainersIcon class="size-3" />
+						<span>{usage.name}</span>
+					</Badge>
+				{/if}
+			{/each}
+			{#if hasOverflow}
+				<Tooltip.Provider>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<Badge
+								variant="outline"
+								class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center rounded-md text-xs transition-colors focus-visible:ring-2"
+							>
+								+{overflowUsage.length}
+							</Badge>
+						</Tooltip.Trigger>
+						<Tooltip.Content class="pointer-events-auto">
+							<div class="flex max-w-xs flex-wrap gap-1.5">
+								{#each overflowUsage as usage}
+									{#if usage.type === 'project'}
+										{#if usage.id}
+											<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
+												<Badge
+													variant="outline"
+													class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+												>
+													<ProjectsIcon class="size-3" />
+													<span>{usage.name}</span>
+												</Badge>
+											</a>
+										{:else}
+											<Badge
+												variant="outline"
+												class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+											>
+												<ProjectsIcon class="size-3" />
+												<span>{usage.name}</span>
+											</Badge>
+										{/if}
+									{:else if usage.id}
+										<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
+											<Badge
+												variant="outline"
+												class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+											>
+												<ContainersIcon class="size-3" />
+												<span>{usage.name}</span>
+											</Badge>
+										</a>
+									{:else}
+										<Badge
+											variant="outline"
+											class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+										>
+											<ContainersIcon class="size-3" />
+											<span>{usage.name}</span>
+										</Badge>
+									{/if}
+								{/each}
+							</div>
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			{/if}
+		</div>
+	{:else}
+		<span class="text-muted-foreground">—</span>
 	{/if}
 {/snippet}
 
@@ -481,6 +612,13 @@
 				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility.repoTags ?? true
+			},
+			{
+				label: m.images_used_by(),
+				getValue: (item: ImageSummaryDto) => item.usedBy?.map((usage) => usage.name).join(', ') || '—',
+				icon: ImagesIcon,
+				iconVariant: 'purple' as const,
+				show: mobileFieldVisibility.usedBy ?? false
 			}
 		]}
 		footer={(mobileFieldVisibility.created ?? true)
