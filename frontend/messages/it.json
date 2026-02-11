@@ -572,6 +572,7 @@
 	"images_has_updates": "Has Updates",
 	"images_no_updates": "No Updates",
 	"images_tags_description": "Repository tags associated with this image",
+	"images_env_vars_description": "Variabili di ambiente definite in questa immagine",
 	"images_pull_description": "Enter the image reference you want to pull from a registry.",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Accesso Automatico Abilitato",
+	"security_auto_login_enabled_description": "Il login automatico è attualmente abilitato tramite variabili d'ambiente. Le impostazioni di autenticazione sono disabilitate perché gli utenti sono automaticamente connessi con le credenziali pre-configurate. Per modificare le impostazioni di autenticazione, disabilitare il login automatico nella configurazione del server.",
 	"security_scan_all": "Scansiona tutte le immagini",
 	"security_scanning": "Scansione",
 	"security_no_images_to_scan": "Nessuna immagine disponibile per la scansione",
@@ -1983,5 +1986,6 @@
 	"project_files": "File Progetto",
 	"project_includes": "Include",
 	"notifications_event_prune_report_label": "Report Prune Di Sistema",
-	"notifications_event_prune_report_description": "Ricevi un report di riepilogo quando viene completata un'operazione di potatura pianificata"
+	"notifications_event_prune_report_description": "Ricevi un report di riepilogo quando viene completata un'operazione di potatura pianificata",
+	"version_info_build_features": "Funzioni Di Build"
 }
