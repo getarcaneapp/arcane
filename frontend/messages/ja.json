@@ -572,6 +572,7 @@
 	"images_has_updates": "Has Updates",
 	"images_no_updates": "No Updates",
 	"images_tags_description": "Repository tags associated with this image",
+	"images_env_vars_description": "この画像で定義されている環境変数",
 	"images_pull_description": "Enter the image reference you want to pull from a registry.",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "自動ログインが有効です",
+	"security_auto_login_enabled_description": "自動ログインは現在環境変数を介して有効になっています。事前設定された資格情報でユーザーが自動的にログインするため、認証設定は無効になります。 認証設定を変更するには、サーバー設定で自動ログインを無効にします。",
 	"security_scan_all": "すべての画像をスキャン",
 	"security_scanning": "スキャン中",
 	"security_no_images_to_scan": "スキャン可能な画像がありません",
@@ -1983,5 +1986,6 @@
 	"project_files": "プロジェクトファイル",
 	"project_includes": "含む",
 	"notifications_event_prune_report_label": "システム削除レポート",
-	"notifications_event_prune_report_description": "スケジュールされたプルーン操作が完了したときに概要レポートを受信する"
+	"notifications_event_prune_report_description": "スケジュールされたプルーン操作が完了したときに概要レポートを受信する",
+	"version_info_build_features": "機能をビルドする"
 }
