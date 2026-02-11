@@ -572,6 +572,7 @@
 	"images_has_updates": "Has Updates",
 	"images_no_updates": "No Updates",
 	"images_tags_description": "Étiquettes de dépôt associées à cette image",
+	"images_env_vars_description": "Variables d'environnement définies dans cette image",
 	"images_pull_description": "Enter the image reference you want to pull from a registry.",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Les paramètres ont été enregistrés avec succès.",
 	"security_local_enabled_info": "L'authentification locale activée pour s'assurer qu'au moins un moyen est actif.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Connexion automatique activée",
+	"security_auto_login_enabled_description": "La connexion automatique est actuellement activée via des variables d'environnement. Les paramètres d'authentification sont désactivés car les utilisateurs sont automatiquement connectés avec les identifiants préconfigurés. Pour modifier les paramètres d'authentification, désactivez la connexion automatique dans la configuration de votre serveur.",
 	"security_scan_all": "Analyser toutes les images",
 	"security_scanning": "Analyse en cours",
 	"security_no_images_to_scan": "Aucune image disponible à scanner",
@@ -1983,5 +1986,6 @@
 	"project_files": "Fichiers du projet",
 	"project_includes": "Inclut",
 	"notifications_event_prune_report_label": "Rapport de suppression du système",
-	"notifications_event_prune_report_description": "Recevoir un rapport récapitulatif lorsqu'une opération planifiée de nettoyage se termine"
+	"notifications_event_prune_report_description": "Recevoir un rapport récapitulatif lorsqu'une opération planifiée de nettoyage se termine",
+	"version_info_build_features": "Fonctionnalités de compilation"
 }
