@@ -572,6 +572,7 @@
 	"images_has_updates": "Havas ĝisdatigojn",
 	"images_no_updates": "Neniuj ĝisdatigoj",
 	"images_tags_description": "Deponejaj etikedoj asociitaj kun ĉi tiu prakopio",
+	"images_env_vars_description": "Environment variables defined in this image",
 	"images_pull_description": "Enigu la referencon de la prakopio, kiun vi volas elŝuti el deponejo.",
 	"images_image_name_label": "Prakopia nomo *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, ktp.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Auto-Login Enabled",
+	"security_auto_login_enabled_description": "Auto-login is currently enabled via environment variables. Authentication settings are disabled because users are automatically logged in with pre-configured credentials. To modify authentication settings, disable auto-login in your server configuration.",
 	"security_scan_all": "Scan all images",
 	"security_scanning": "Scanning",
 	"security_no_images_to_scan": "No images available to scan",
@@ -1983,5 +1986,6 @@
 	"project_files": "Project Files",
 	"project_includes": "Includes",
 	"notifications_event_prune_report_label": "System Prune Report",
-	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes"
+	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes",
+	"version_info_build_features": "Build Features"
 }
