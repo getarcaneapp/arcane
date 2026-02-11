@@ -11,6 +11,7 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { authService } from '$lib/services/auth-service';
 import { tryCatch } from '$lib/utils/try-catch';
 import { QueryClient } from '@tanstack/svelte-query';
+import { queryKeys } from '$lib/query/query-keys';
 
 export const ssr = false;
 
@@ -34,7 +35,10 @@ export const load = async () => {
 
 	// Step 1.5: Check auto-login config (and attempt auto-login if enabled)
 	if (browser) {
-		const autoLoginConfig = await authService.getAutoLoginConfig();
+		const autoLoginConfig = await queryClient.fetchQuery({
+			queryKey: queryKeys.auth.autoLoginConfig(),
+			queryFn: () => authService.getAutoLoginConfig()
+		});
 
 		if (autoLoginConfig) {
 			if (autoLoginConfig.enabled) {
@@ -42,7 +46,10 @@ export const load = async () => {
 				settingsStore.autoLoginEnabled.clearDisabledCache();
 				if (!user) {
 					// Attempt auto-login using server-configured credentials
-					user = await authService.attemptAutoLogin();
+					user = await queryClient.fetchQuery({
+						queryKey: queryKeys.auth.autoLoginAttempt(),
+						queryFn: () => authService.attemptAutoLogin()
+					});
 				}
 			} else {
 				settingsStore.autoLoginEnabled.set(false);

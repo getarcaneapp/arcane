@@ -43,11 +43,11 @@
 
 			{@render infoRow(m.version_info_go_version(), versionInfo.goVersion || '-')}
 
-				{@render infoRow(m.version_info_build_features(), enabledFeatures)}
+			{@render infoRow(m.version_info_build_features(), enabledFeatures)}
 
-				{#if versionInfo.buildTime && versionInfo.buildTime !== 'unknown'}
-					{@render infoRow(m.version_info_build_time(), versionInfo.buildTime, false)}
-				{/if}
+			{#if versionInfo.buildTime && versionInfo.buildTime !== 'unknown'}
+				{@render infoRow(m.version_info_build_time(), versionInfo.buildTime, false)}
+			{/if}
 
 			{#if versionInfo.currentDigest}
 				{@render infoRowWithCopy(m.version_info_digest(), shortDigest, versionInfo.currentDigest)}

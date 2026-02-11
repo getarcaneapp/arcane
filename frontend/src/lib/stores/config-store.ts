@@ -1,7 +1,7 @@
 import { settingsService } from '$lib/services/settings-service';
 import type { Settings } from '$lib/types/settings.type';
 import { applyAccentColor } from '$lib/utils/accent-color-util';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 
 const settingsStore = writable<Settings>();
 
