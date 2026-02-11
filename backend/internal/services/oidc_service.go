@@ -418,7 +418,7 @@ func (s *OidcService) fetchUserInfoClaims(ctx context.Context, cfg *models.OidcC
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("userinfo endpoint returned status %d", resp.StatusCode)
@@ -721,7 +721,7 @@ func (s *OidcService) makeDeviceAuthRequest(ctx context.Context, endpoint string
 		slog.Error("makeDeviceAuthRequest: request failed", "error", err)
 		return nil, fmt.Errorf("device authorization request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errorResp map[string]any
@@ -830,7 +830,7 @@ func (s *OidcService) makeTokenRequest(ctx context.Context, endpoint string, par
 		slog.Error("makeTokenRequest: request failed", "error", err)
 		return nil, fmt.Errorf("token request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {

@@ -7,10 +7,9 @@
     "typescript": true
   },
   "typescript.tsdk": "frontend/node_modules/typescript/lib",
-  "go.buildTags": "playwright",
+  "go.buildTags": "playwright,buildables",
   "prettier.documentSelectors": ["**/*.svelte"],
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,
-  "findUnusedExports.detectCircularImports": true,
   "github.copilot.chat.summarizeAgentConversationHistory.enabled": false
 }

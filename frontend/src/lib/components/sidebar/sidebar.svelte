@@ -16,6 +16,7 @@
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
 	import userStore from '$lib/stores/user-store';
+	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
@@ -34,6 +35,12 @@
 		versionInformation: AppVersionInformation;
 		user?: User | null;
 	} = $props();
+
+	let autoLoginEnabled = $state(false);
+	$effect(() => {
+		const unsub = settingsStore.autoLoginEnabled.subscribe((v) => (autoLoginEnabled = v));
+		return unsub;
+	});
 
 	const sidebar = useSidebar();
 
@@ -111,18 +118,20 @@
 				<div class="px-3 pb-2">
 					<div class="flex items-center gap-2">
 						<SidebarUser {isCollapsed} user={effectiveUser} />
-						<form action="/logout" method="POST" class="ml-auto">
-							<ArcaneButton
-								action="base"
-								tone="ghost"
-								title={m.common_logout()}
-								type="submit"
-								class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
-								icon={LogoutIcon}
-								showLabel={false}
-								customLabel={m.common_logout()}
-							/>
-						</form>
+						{#if !autoLoginEnabled}
+							<form action="/logout" method="POST" class="ml-auto">
+								<ArcaneButton
+									action="base"
+									tone="ghost"
+									title={m.common_logout()}
+									type="submit"
+									class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
+									icon={LogoutIcon}
+									showLabel={false}
+									customLabel={m.common_logout()}
+								/>
+							</form>
+						{/if}
 					</div>
 				</div>
 			{/if}

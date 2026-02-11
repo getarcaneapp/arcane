@@ -8,8 +8,10 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import userStore from '$lib/stores/user-store';
 import { type AppVersionInformation } from '$lib/types/application-configuration';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { authService } from '$lib/services/auth-service';
 import { tryCatch } from '$lib/utils/try-catch';
 import { QueryClient } from '@tanstack/svelte-query';
+import { queryKeys } from '$lib/query/query-keys';
 
 export const ssr = false;
 
@@ -29,7 +31,33 @@ export const load = async () => {
 	});
 
 	// Step 1: Check authentication first
-	const user = await userService.getCurrentUser().catch(() => null);
+	let user = await userService.getCurrentUser().catch(() => null);
+
+	// Step 1.5: Check auto-login config (and attempt auto-login if enabled)
+	if (browser) {
+		const autoLoginConfig = await queryClient.fetchQuery({
+			queryKey: queryKeys.auth.autoLoginConfig(),
+			queryFn: () => authService.getAutoLoginConfig()
+		});
+
+		if (autoLoginConfig) {
+			if (autoLoginConfig.enabled) {
+				settingsStore.autoLoginEnabled.set(true);
+				settingsStore.autoLoginEnabled.clearDisabledCache();
+				if (!user) {
+					// Attempt auto-login using server-configured credentials
+					user = await queryClient.fetchQuery({
+						queryKey: queryKeys.auth.autoLoginAttempt(),
+						queryFn: () => authService.attemptAutoLogin()
+					});
+				}
+			} else {
+				settingsStore.autoLoginEnabled.set(false);
+				// Cache that auto-login is disabled to avoid checking on every page load
+				settingsStore.autoLoginEnabled.cacheDisabled();
+			}
+		}
+	}
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
@@ -77,6 +105,7 @@ export const load = async () => {
 		revision: 'unknown',
 		shortRevision: 'unknown',
 		goVersion: 'unknown',
+		enabledFeatures: [],
 		isSemverVersion: false
 	};
 
@@ -90,6 +119,7 @@ export const load = async () => {
 			revision: info.revision,
 			shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
 			goVersion: info.goVersion || 'unknown',
+			enabledFeatures: info.enabledFeatures ?? [],
 			buildTime: info.buildTime,
 			isSemverVersion: info.isSemverVersion,
 			newestVersion: info.newestVersion,

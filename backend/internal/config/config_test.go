@@ -25,8 +25,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	}()
 
 	t.Run("Default permissions", func(t *testing.T) {
-		os.Unsetenv("FILE_PERM")
-		os.Unsetenv("DIR_PERM")
+		unsetEnv(t, "FILE_PERM")
+		unsetEnv(t, "DIR_PERM")
 
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0644), cfg.FilePerm)
@@ -36,8 +36,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
-		os.Setenv("FILE_PERM", "0664")
-		os.Setenv("DIR_PERM", "0775")
+		setEnv(t, "FILE_PERM", "0664")
+		setEnv(t, "DIR_PERM", "0775")
 
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0664), cfg.FilePerm)
@@ -47,8 +47,8 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
-		os.Setenv("FILE_PERM", "0600")
-		os.Setenv("DIR_PERM", "0700")
+		setEnv(t, "FILE_PERM", "0600")
+		setEnv(t, "DIR_PERM", "0700")
 
 		cfg := Load()
 		assert.Equal(t, os.FileMode(0600), cfg.FilePerm)
@@ -85,18 +85,18 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Clear direct env var and set _FILE variant
-		os.Unsetenv("ENCRYPTION_KEY")
-		os.Unsetenv("ENCRYPTION_KEY__FILE")
-		os.Setenv("ENCRYPTION_KEY_FILE", secretFile)
+		unsetEnv(t, "ENCRYPTION_KEY")
+		unsetEnv(t, "ENCRYPTION_KEY__FILE")
+		setEnv(t, "ENCRYPTION_KEY_FILE", secretFile)
 
 		cfg := Load()
 		assert.Equal(t, secretValue, cfg.EncryptionKey)
 	})
 
 	t.Run("Falls back to default when _FILE points to non-existent file", func(t *testing.T) {
-		os.Unsetenv("ENCRYPTION_KEY")
-		os.Setenv("ENCRYPTION_KEY_FILE", "/nonexistent/path/to/secret")
-		os.Unsetenv("ENCRYPTION_KEY__FILE")
+		unsetEnv(t, "ENCRYPTION_KEY")
+		setEnv(t, "ENCRYPTION_KEY_FILE", "/nonexistent/path/to/secret")
+		unsetEnv(t, "ENCRYPTION_KEY__FILE")
 
 		cfg := Load()
 		assert.Equal(t, "arcane-dev-key-32-characters!!!", cfg.EncryptionKey)
@@ -111,9 +111,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Clear direct env var and set __FILE variant
-		os.Unsetenv("JWT_SECRET")
-		os.Unsetenv("JWT_SECRET_FILE")
-		os.Setenv("JWT_SECRET__FILE", secretFile)
+		unsetEnv(t, "JWT_SECRET")
+		unsetEnv(t, "JWT_SECRET_FILE")
+		setEnv(t, "JWT_SECRET__FILE", secretFile)
 
 		cfg := Load()
 		assert.Equal(t, testJWTValue, cfg.JWTSecret) // Should be trimmed
@@ -121,9 +121,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 	t.Run("Direct env var is used when no _FILE variant exists", func(t *testing.T) {
 		directValue := "direct-encryption-key-value-32chars!!"
-		os.Setenv("ENCRYPTION_KEY", directValue)
-		os.Unsetenv("ENCRYPTION_KEY_FILE")
-		os.Unsetenv("ENCRYPTION_KEY__FILE")
+		setEnv(t, "ENCRYPTION_KEY", directValue)
+		unsetEnv(t, "ENCRYPTION_KEY_FILE")
+		unsetEnv(t, "ENCRYPTION_KEY__FILE")
 
 		cfg := Load()
 		assert.Equal(t, directValue, cfg.EncryptionKey)
@@ -138,9 +138,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set both direct and _FILE variants
-		os.Setenv("ENCRYPTION_KEY", "direct-value-should-be-ignored!!!")
-		os.Unsetenv("ENCRYPTION_KEY__FILE")
-		os.Setenv("ENCRYPTION_KEY_FILE", secretFile)
+		setEnv(t, "ENCRYPTION_KEY", "direct-value-should-be-ignored!!!")
+		unsetEnv(t, "ENCRYPTION_KEY__FILE")
+		setEnv(t, "ENCRYPTION_KEY_FILE", secretFile)
 
 		cfg := Load()
 		assert.Equal(t, fileValue, cfg.EncryptionKey)
@@ -159,9 +159,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		err = os.WriteFile(doubleFile, []byte("double-underscore-value-32chars!!"), 0600)
 		require.NoError(t, err)
 
-		os.Unsetenv("JWT_SECRET")
-		os.Setenv("JWT_SECRET_FILE", singleFile)
-		os.Setenv("JWT_SECRET__FILE", doubleFile)
+		unsetEnv(t, "JWT_SECRET")
+		setEnv(t, "JWT_SECRET_FILE", singleFile)
+		setEnv(t, "JWT_SECRET__FILE", doubleFile)
 
 		cfg := Load()
 		assert.Equal(t, "double-underscore-value-32chars!!", cfg.JWTSecret)
@@ -175,8 +175,8 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// PORT is not marked with options:"file", so _FILE should not work
-		os.Unsetenv("PORT")
-		os.Setenv("PORT_FILE", portFile)
+		unsetEnv(t, "PORT")
+		setEnv(t, "PORT_FILE", portFile)
 
 		cfg := Load()
 		assert.Equal(t, "3552", cfg.Port) // Should use default, not file content
@@ -188,14 +188,14 @@ func TestConfig_OptionsToLower(t *testing.T) {
 	defer restoreEnv("LOG_LEVEL", origLogLevel)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
-		os.Setenv("LOG_LEVEL", "DEBUG")
+		setEnv(t, "LOG_LEVEL", "DEBUG")
 
 		cfg := Load()
 		assert.Equal(t, "debug", cfg.LogLevel)
 	})
 
 	t.Run("LogLevel mixed case is converted to lowercase", func(t *testing.T) {
-		os.Setenv("LOG_LEVEL", "WaRn")
+		setEnv(t, "LOG_LEVEL", "WaRn")
 
 		cfg := Load()
 		assert.Equal(t, "warn", cfg.LogLevel)
@@ -248,8 +248,18 @@ func TestConfig_ListenAddr(t *testing.T) {
 
 func restoreEnv(key, value string) {
 	if value == "" {
-		os.Unsetenv(key)
+		_ = os.Unsetenv(key)
 	} else {
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	}
+}
+
+func setEnv(t *testing.T, key, value string) {
+	t.Helper()
+	require.NoError(t, os.Setenv(key, value))
+}
+
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	require.NoError(t, os.Unsetenv(key))
 }

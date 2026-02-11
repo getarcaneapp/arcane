@@ -38,7 +38,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
@@ -47,7 +47,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
 
@@ -178,7 +178,7 @@ func ComposePs(ctx context.Context, proj *types.Project, services []string, all 
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all})
 }
@@ -188,7 +188,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	return c.svc.Down(ctx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
 }
@@ -198,7 +198,7 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	return c.svc.Logs(ctx, projectName, writerConsumer{out: out}, api.LogOptions{Follow: follow, Tail: tail})
 }
@@ -208,7 +208,7 @@ func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, erro
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	cli := c.dockerCli.Client()
 	filter := filters.NewArgs()

@@ -252,7 +252,7 @@ func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, 
 	if err != nil {
 		return "", fmt.Errorf("registry request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return s.fetchWithTokenAuth(ctx, repository, tag, getHeaderCaseInsensitive(resp.Header, "WWW-Authenticate"), creds)
@@ -329,7 +329,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
-	defer tokenResp.Body.Close()
+	defer func() { _ = tokenResp.Body.Close() }()
 
 	if tokenResp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token request returned status %d", tokenResp.StatusCode)
@@ -369,7 +369,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	if err != nil {
 		return "", fmt.Errorf("authenticated request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("authenticated request returned status %d", resp.StatusCode)

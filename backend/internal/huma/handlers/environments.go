@@ -997,7 +997,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))

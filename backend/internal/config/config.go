@@ -71,6 +71,9 @@ type Config struct {
 	RegistryTimeout        int    `env:"REGISTRY_TIMEOUT" default:"0"`
 	ProxyRequestTimeout    int    `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
 	BackupVolumeName       string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+
+	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
+	BuildablesConfig
 }
 
 func Load() *Config {
@@ -95,15 +98,10 @@ func applyAgentModeDefaults(cfg *Config) {
 // loadFromEnv uses reflection to load configuration from environment variables.
 func loadFromEnv(cfg *Config) {
 	v := reflect.ValueOf(cfg).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
+	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
 		envTag := fieldType.Tag.Get("env")
 		if envTag == "" {
-			continue
+			return
 		}
 
 		defaultValue := fieldType.Tag.Get("default")
@@ -115,21 +113,16 @@ func loadFromEnv(cfg *Config) {
 		}
 
 		setFieldValue(field, envValue)
-	}
+	})
 }
 
 // applyOptions processes special options for Config fields after initial load.
 func applyOptions(cfg *Config) {
 	v := reflect.ValueOf(cfg).Elem()
-	t := v.Type()
-
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
+	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
 		optionsTag := fieldType.Tag.Get("options")
 		if optionsTag == "" {
-			continue
+			return
 		}
 
 		options := strings.Split(optionsTag, ",")
@@ -147,6 +140,44 @@ func applyOptions(cfg *Config) {
 				}
 			}
 		}
+	})
+}
+
+func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructField)) {
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return
+	}
+
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldType := t.Field(i)
+
+		if fieldType.Anonymous {
+			if field.Kind() == reflect.Struct {
+				visitConfigFields(field, fn)
+				continue
+			}
+			if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Struct {
+				if field.IsNil() {
+					if field.CanSet() {
+						field.Set(reflect.New(field.Type().Elem()))
+					} else {
+						continue
+					}
+				}
+				visitConfigFields(field.Elem(), fn)
+				continue
+			}
+		}
+
+		fn(field, fieldType)
 	}
 }
 
@@ -205,37 +236,41 @@ func setFieldValue(field reflect.Value, value string) {
 		return
 	}
 
-	//nolint:exhaustive
-	switch field.Kind() {
-	case reflect.String:
+	if field.Kind() == reflect.String {
 		field.SetString(value)
+		return
+	}
 
-	case reflect.Bool:
+	if field.Kind() == reflect.Bool {
 		if b, err := strconv.ParseBool(value); err == nil {
 			field.SetBool(b)
 		}
+		return
+	}
 
-	case reflect.Uint32:
+	if field.Kind() == reflect.Uint32 {
 		// Handle os.FileMode (which is uint32)
 		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
 			field.SetUint(i)
 		}
+		return
+	}
 
-	case reflect.Int:
+	if field.Kind() == reflect.Int {
 		if i, err := strconv.Atoi(value); err == nil {
 			field.SetInt(int64(i))
 		}
+		return
+	}
 
-	default:
-		// Handle custom types based on underlying kind
-		if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
-			// String-based types like AppEnvironment
-			field.Set(reflect.ValueOf(value).Convert(field.Type()))
-		} else if field.Type() == reflect.TypeFor[os.FileMode]() {
-			// os.FileMode
-			if i, err := strconv.ParseUint(value, 8, 32); err == nil {
-				field.Set(reflect.ValueOf(os.FileMode(i)))
-			}
+	// Handle custom types based on underlying kind
+	if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
+		// String-based types like AppEnvironment
+		field.Set(reflect.ValueOf(value).Convert(field.Type()))
+	} else if field.Type() == reflect.TypeFor[os.FileMode]() {
+		// os.FileMode
+		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
+			field.Set(reflect.ValueOf(os.FileMode(i)))
 		}
 	}
 }

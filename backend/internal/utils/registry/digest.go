@@ -74,7 +74,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// If HEAD isn't supported by the registry, fall back to GET and try again.
 	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
@@ -89,7 +89,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 		if derr != nil {
 			return "", derr
 		}
-		defer getResp.Body.Close()
+		defer func() { _ = getResp.Body.Close() }()
 		resp = getResp
 	}
 

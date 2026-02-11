@@ -13,6 +13,7 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
@@ -67,7 +68,7 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("get latest release: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -216,6 +217,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		Revision:        s.revision,
 		ShortRevision:   config.ShortRevision(),
 		GoVersion:       config.GoVersion(),
+		EnabledFeatures: parseEnabledFeatures(),
 		BuildTime:       config.BuildTime,
 		IsSemverVersion: isSemver,
 		UpdateAvailable: false,
@@ -248,6 +250,28 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	}
 
 	return info
+}
+
+func parseEnabledFeatures() []string {
+	raw := strings.TrimSpace(buildables.EnabledFeatures)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	features := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		feature := strings.ToLower(strings.TrimSpace(part))
+		if feature == "" {
+			continue
+		}
+		if _, exists := seen[feature]; exists {
+			continue
+		}
+		seen[feature] = struct{}{}
+		features = append(features, feature)
+	}
+	return features
 }
 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest

@@ -12,6 +12,7 @@
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import settingsStore from '$lib/stores/config-store';
 	import { cn } from '$lib/utils';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -47,7 +48,10 @@
 			String(page.url.pathname).startsWith('/oidc')
 	);
 
-	const showPasswordChangeDialog = $derived(!!(data.user && data.user.requiresPasswordChange && !isAuthPage));
+	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
+	const showPasswordChangeDialog = $derived(
+		!!(data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
+	);
 
 	function handlePasswordChangeSuccess() {
 		invalidateAll();

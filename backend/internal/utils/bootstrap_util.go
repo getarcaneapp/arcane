@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 )
 
@@ -74,13 +75,17 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, migrateOidcFunc func(context.Context) error, migrateDiscordFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createAdminFunc func(context.Context) error, autoLoginInitFunc func(context.Context) error, migrateOidcFunc func(context.Context) error, migrateDiscordFunc func(context.Context) error) {
 	if cfg.AgentMode {
 		return
 	}
 
 	if err := createAdminFunc(ctx); err != nil {
 		slog.WarnContext(ctx, "Failed to create default admin user", "error", err.Error())
+	}
+
+	if err := autoLoginInitFunc(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to initialize auto-login", "error", err.Error())
 	}
 
 	// Migrate legacy OIDC JSON config to individual fields (runs before env sync)
@@ -96,6 +101,14 @@ func InitializeNonAgentFeatures(ctx context.Context, cfg *config.Config, createA
 			slog.WarnContext(ctx, "Failed to migrate Discord webhook config", "error", err.Error())
 		}
 	}
+}
+
+func InitializeAutoLogin(ctx context.Context, cfg *config.Config) {
+	if !buildables.HasBuildFeature("autologin") {
+		return
+	}
+	slog.WarnContext(ctx, "⚠️  AUTO-LOGIN IS ENABLED - This is a security risk! Do NOT use in production.", "username", cfg.AutoLoginUsername)
+	slog.WarnContext(ctx, "⚠️  Auto-login will automatically authenticate users without requiring credentials.")
 }
 
 func MigrateSchedulerCronValues(

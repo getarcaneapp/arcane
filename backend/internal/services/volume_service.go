@@ -353,12 +353,12 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 	tr := tar.NewReader(reader)
 	hdr, err := tr.Next()
 	if err != nil {
-		reader.Close()
+		_ = reader.Close()
 		cleanup()
 		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
 	}
 	if hdr.FileInfo().IsDir() {
-		reader.Close()
+		_ = reader.Close()
 		cleanup()
 		return nil, 0, fmt.Errorf("path is a directory")
 	}
@@ -744,10 +744,12 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		return err
 	}
 	if _, err := tw.Write(contentBytes); err != nil {
-		tw.Close()
+		_ = tw.Close()
 		return err
 	}
-	tw.Close()
+	if err := tw.Close(); err != nil {
+		return err
+	}
 
 	targetDir := path.Join("/volume", sanitizedPath)
 	err = dockerClient.CopyToContainer(ctx, containerID, targetDir, &buf, container.CopyToContainerOptions{})

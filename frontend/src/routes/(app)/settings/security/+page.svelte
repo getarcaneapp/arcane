@@ -18,10 +18,12 @@
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
+	import * as Alert from '$lib/components/ui/alert';
 
 	let { data }: { data: PageData } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
 
 	const formSchema = z
 		.object({
@@ -236,260 +238,273 @@
 			<!-- Authentication Section -->
 			<div class="space-y-4">
 				<h3 class="text-lg font-medium">{m.security_authentication_heading()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<!-- Local Auth -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.security_local_auth_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.security_local_auth_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="localAuthSwitch"
-									bind:checked={$formInputs.authLocalEnabled.value}
-									onCheckedChange={handleLocalSwitchChange}
-								/>
-								<Label for="localAuthSwitch" class="font-normal">
-									{$formInputs.authLocalEnabled.value ? m.common_enabled() : m.common_disabled()}
-								</Label>
-							</div>
-						</div>
 
-						<Separator />
-
-						<!-- OIDC Auth -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.security_oidc_auth_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.security_oidc_auth_description()}</p>
-								{#if isOidcEnvForced}
-									<div class="mt-2">
-										<span
-											class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
-										>
-											{m.security_server_configured()}
-										</span>
-									</div>
-								{/if}
-							</div>
-							<div class="space-y-4">
+				{#if isAutoLoginEnabled}
+					<!-- Auto-Login Enabled Alert -->
+					<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+						<InfoIcon class="h-4 w-4 text-amber-600 dark:text-amber-500" />
+						<Alert.Title class="text-amber-900 dark:text-amber-100">{m.security_auto_login_enabled_title()}</Alert.Title>
+						<Alert.Description class="text-amber-800 dark:text-amber-200">
+							{m.security_auto_login_enabled_description()}
+						</Alert.Description>
+					</Alert.Root>
+				{:else}
+					<!-- Authentication Cards (only shown when auto-login is disabled) -->
+					<div class="bg-card rounded-lg border shadow-sm">
+						<div class="space-y-6 p-6">
+							<!-- Local Auth -->
+							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+								<div>
+									<Label class="text-base">{m.security_local_auth_label()}</Label>
+									<p class="text-muted-foreground mt-1 text-sm">{m.security_local_auth_description()}</p>
+								</div>
 								<div class="flex items-center gap-2">
 									<Switch
-										id="oidcEnabledSwitch"
-										disabled={isOidcEnvForced}
-										bind:checked={$formInputs.oidcEnabled.value}
-										onCheckedChange={handleOidcEnabledChange}
+										id="localAuthSwitch"
+										bind:checked={$formInputs.authLocalEnabled.value}
+										onCheckedChange={handleLocalSwitchChange}
 									/>
-									<Label for="oidcEnabledSwitch" class="font-normal">
-										{m.security_oidc_enabled_label()}
+									<Label for="localAuthSwitch" class="font-normal">
+										{$formInputs.authLocalEnabled.value ? m.common_enabled() : m.common_disabled()}
 									</Label>
 								</div>
+							</div>
 
-								{#if $formInputs.oidcEnabled.value || isOidcEnvForced}
-									<div class="space-y-4 pt-2">
-										<div class="space-y-2">
-											<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>
-											<Input
-												id="oidcClientId"
-												type="text"
-												placeholder={m.oidc_client_id_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcClientId.value}
-												class="font-mono text-sm"
-											/>
-											{#if $formInputs.oidcClientId.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientId.error}</p>
-											{/if}
-										</div>
+							<Separator />
 
-										<div class="space-y-2">
-											<Label for="oidcClientSecret" class="text-sm font-medium">{m.oidc_client_secret_label()}</Label>
-											<Input
-												id="oidcClientSecret"
-												type="password"
-												placeholder={m.oidc_client_secret_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcClientSecret.value}
-												class="font-mono text-sm"
-											/>
-											<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
-											{#if $formInputs.oidcClientSecret.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
-											{/if}
+							<!-- OIDC Auth -->
+							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+								<div>
+									<Label class="text-base">{m.security_oidc_auth_label()}</Label>
+									<p class="text-muted-foreground mt-1 text-sm">{m.security_oidc_auth_description()}</p>
+									{#if isOidcEnvForced}
+										<div class="mt-2">
+											<span
+												class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
+											>
+												{m.security_server_configured()}
+											</span>
 										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcIssuerUrl" class="text-sm font-medium">{m.oidc_issuer_url_label()}</Label>
-											<Input
-												id="oidcIssuerUrl"
-												type="text"
-												placeholder={m.oidc_issuer_url_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcIssuerUrl.value}
-												class="font-mono text-sm"
-											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
-											{#if $formInputs.oidcIssuerUrl.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
-											{/if}
-										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcProviderName" class="text-sm font-medium">{m.oidc_provider_name_label()}</Label>
-											<Input
-												id="oidcProviderName"
-												type="text"
-												placeholder={m.oidc_provider_name_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcProviderName.value}
-												class="font-mono text-sm"
-											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_provider_name_description()}</p>
-											{#if $formInputs.oidcProviderName.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderName.error}</p>
-											{/if}
-										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcProviderLogoUrl" class="text-sm font-medium">{m.oidc_provider_logo_url_label()}</Label>
-											<Input
-												id="oidcProviderLogoUrl"
-												type="text"
-												placeholder={m.oidc_provider_logo_url_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcProviderLogoUrl.value}
-												class="font-mono text-sm"
-											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_provider_logo_url_description()}</p>
-											{#if $formInputs.oidcProviderLogoUrl.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderLogoUrl.error}</p>
-											{/if}
-										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
-											<Input
-												id="oidcScopes"
-												type="text"
-												placeholder={m.oidc_scopes_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcScopes.value}
-												class="font-mono text-sm"
-											/>
-											{#if $formInputs.oidcScopes.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
-											{/if}
-										</div>
-
-										<div class="border-t pt-4">
-											<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
-											<p class="text-muted-foreground mb-3 text-xs">{m.oidc_admin_role_mapping_description()}</p>
-											<div class="grid gap-3 sm:grid-cols-2">
-												<div class="space-y-2">
-													<Label for="oidcAdminClaim" class="text-sm font-medium">{m.oidc_admin_claim_label()}</Label>
-													<Input
-														id="oidcAdminClaim"
-														type="text"
-														placeholder={m.oidc_admin_claim_placeholder()}
-														disabled={isOidcEnvForced}
-														bind:value={$formInputs.oidcAdminClaim.value}
-														class="font-mono text-sm"
-													/>
-													{#if $formInputs.oidcAdminClaim.error}
-														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminClaim.error}</p>
-													{/if}
-												</div>
-												<div class="space-y-2">
-													<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
-													<Input
-														id="oidcAdminValue"
-														type="text"
-														placeholder={m.oidc_admin_value_placeholder()}
-														disabled={isOidcEnvForced}
-														bind:value={$formInputs.oidcAdminValue.value}
-														class="font-mono text-sm"
-													/>
-													<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
-													{#if $formInputs.oidcAdminValue.error}
-														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminValue.error}</p>
-													{/if}
-												</div>
-											</div>
-										</div>
-
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
-												<Switch
-													id="oidcMergeAccountsSwitch"
-													disabled={isOidcEnvForced}
-													bind:checked={$formInputs.oidcMergeAccounts.value}
-													onCheckedChange={handleMergeAccountsChange}
-												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcMergeAccountsSwitch" class="font-normal">
-														{m.security_oidc_merge_accounts_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.security_oidc_merge_accounts_description()}
-													</p>
-												</div>
-											</div>
-										</div>
-
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
-												<Switch
-													id="oidcSkipTlsVerifySwitch"
-													disabled={isOidcEnvForced}
-													bind:checked={$formInputs.oidcSkipTlsVerify.value}
-												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcSkipTlsVerifySwitch" class="font-normal">
-														{m.oidc_skip_tls_verify_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.oidc_skip_tls_verify_description()}
-													</p>
-												</div>
-											</div>
-										</div>
-
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
-												<Switch
-													id="oidcAutoRedirectSwitch"
-													disabled={isOidcEnvForced}
-													bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
-												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcAutoRedirectSwitch" class="font-normal">
-														{m.oidc_auto_redirect_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.oidc_auto_redirect_description()}
-													</p>
-												</div>
-											</div>
-										</div>
-
-										<div class="bg-muted/30 rounded-lg border p-4">
-											<div class="mb-2 flex items-center gap-2">
-												<InfoIcon class="size-4 text-blue-600" />
-												<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
-											</div>
-											<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
-											<div class="flex items-center gap-2">
-												<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
-												<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
-											</div>
-										</div>
+									{/if}
+								</div>
+								<div class="space-y-4">
+									<div class="flex items-center gap-2">
+										<Switch
+											id="oidcEnabledSwitch"
+											disabled={isOidcEnvForced}
+											bind:checked={$formInputs.oidcEnabled.value}
+											onCheckedChange={handleOidcEnabledChange}
+										/>
+										<Label for="oidcEnabledSwitch" class="font-normal">
+											{m.security_oidc_enabled_label()}
+										</Label>
 									</div>
-								{/if}
+
+									{#if $formInputs.oidcEnabled.value || isOidcEnvForced}
+										<div class="space-y-4 pt-2">
+											<div class="space-y-2">
+												<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>
+												<Input
+													id="oidcClientId"
+													type="text"
+													placeholder={m.oidc_client_id_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcClientId.value}
+													class="font-mono text-sm"
+												/>
+												{#if $formInputs.oidcClientId.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientId.error}</p>
+												{/if}
+											</div>
+
+											<div class="space-y-2">
+												<Label for="oidcClientSecret" class="text-sm font-medium">{m.oidc_client_secret_label()}</Label>
+												<Input
+													id="oidcClientSecret"
+													type="password"
+													placeholder={m.oidc_client_secret_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcClientSecret.value}
+													class="font-mono text-sm"
+												/>
+												<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
+												{#if $formInputs.oidcClientSecret.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
+												{/if}
+											</div>
+
+											<div class="space-y-2">
+												<Label for="oidcIssuerUrl" class="text-sm font-medium">{m.oidc_issuer_url_label()}</Label>
+												<Input
+													id="oidcIssuerUrl"
+													type="text"
+													placeholder={m.oidc_issuer_url_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcIssuerUrl.value}
+													class="font-mono text-sm"
+												/>
+												<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
+												{#if $formInputs.oidcIssuerUrl.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
+												{/if}
+											</div>
+
+											<div class="space-y-2">
+												<Label for="oidcProviderName" class="text-sm font-medium">{m.oidc_provider_name_label()}</Label>
+												<Input
+													id="oidcProviderName"
+													type="text"
+													placeholder={m.oidc_provider_name_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcProviderName.value}
+													class="font-mono text-sm"
+												/>
+												<p class="text-muted-foreground text-xs">{m.oidc_provider_name_description()}</p>
+												{#if $formInputs.oidcProviderName.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderName.error}</p>
+												{/if}
+											</div>
+
+											<div class="space-y-2">
+												<Label for="oidcProviderLogoUrl" class="text-sm font-medium">{m.oidc_provider_logo_url_label()}</Label>
+												<Input
+													id="oidcProviderLogoUrl"
+													type="text"
+													placeholder={m.oidc_provider_logo_url_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcProviderLogoUrl.value}
+													class="font-mono text-sm"
+												/>
+												<p class="text-muted-foreground text-xs">{m.oidc_provider_logo_url_description()}</p>
+												{#if $formInputs.oidcProviderLogoUrl.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderLogoUrl.error}</p>
+												{/if}
+											</div>
+
+											<div class="space-y-2">
+												<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
+												<Input
+													id="oidcScopes"
+													type="text"
+													placeholder={m.oidc_scopes_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcScopes.value}
+													class="font-mono text-sm"
+												/>
+												{#if $formInputs.oidcScopes.error}
+													<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
+												{/if}
+											</div>
+
+											<div class="border-t pt-4">
+												<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
+												<p class="text-muted-foreground mb-3 text-xs">{m.oidc_admin_role_mapping_description()}</p>
+												<div class="grid gap-3 sm:grid-cols-2">
+													<div class="space-y-2">
+														<Label for="oidcAdminClaim" class="text-sm font-medium">{m.oidc_admin_claim_label()}</Label>
+														<Input
+															id="oidcAdminClaim"
+															type="text"
+															placeholder={m.oidc_admin_claim_placeholder()}
+															disabled={isOidcEnvForced}
+															bind:value={$formInputs.oidcAdminClaim.value}
+															class="font-mono text-sm"
+														/>
+														{#if $formInputs.oidcAdminClaim.error}
+															<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminClaim.error}</p>
+														{/if}
+													</div>
+													<div class="space-y-2">
+														<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
+														<Input
+															id="oidcAdminValue"
+															type="text"
+															placeholder={m.oidc_admin_value_placeholder()}
+															disabled={isOidcEnvForced}
+															bind:value={$formInputs.oidcAdminValue.value}
+															class="font-mono text-sm"
+														/>
+														<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
+														{#if $formInputs.oidcAdminValue.error}
+															<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminValue.error}</p>
+														{/if}
+													</div>
+												</div>
+											</div>
+
+											<div class="border-t pt-4">
+												<div class="flex items-center gap-2">
+													<Switch
+														id="oidcMergeAccountsSwitch"
+														disabled={isOidcEnvForced}
+														bind:checked={$formInputs.oidcMergeAccounts.value}
+														onCheckedChange={handleMergeAccountsChange}
+													/>
+													<div class="grid gap-1.5 leading-none">
+														<Label for="oidcMergeAccountsSwitch" class="font-normal">
+															{m.security_oidc_merge_accounts_label()}
+														</Label>
+														<p class="text-muted-foreground text-xs">
+															{m.security_oidc_merge_accounts_description()}
+														</p>
+													</div>
+												</div>
+											</div>
+
+											<div class="border-t pt-4">
+												<div class="flex items-center gap-2">
+													<Switch
+														id="oidcSkipTlsVerifySwitch"
+														disabled={isOidcEnvForced}
+														bind:checked={$formInputs.oidcSkipTlsVerify.value}
+													/>
+													<div class="grid gap-1.5 leading-none">
+														<Label for="oidcSkipTlsVerifySwitch" class="font-normal">
+															{m.oidc_skip_tls_verify_label()}
+														</Label>
+														<p class="text-muted-foreground text-xs">
+															{m.oidc_skip_tls_verify_description()}
+														</p>
+													</div>
+												</div>
+											</div>
+
+											<div class="border-t pt-4">
+												<div class="flex items-center gap-2">
+													<Switch
+														id="oidcAutoRedirectSwitch"
+														disabled={isOidcEnvForced}
+														bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
+													/>
+													<div class="grid gap-1.5 leading-none">
+														<Label for="oidcAutoRedirectSwitch" class="font-normal">
+															{m.oidc_auto_redirect_label()}
+														</Label>
+														<p class="text-muted-foreground text-xs">
+															{m.oidc_auto_redirect_description()}
+														</p>
+													</div>
+												</div>
+											</div>
+
+											<div class="bg-muted/30 rounded-lg border p-4">
+												<div class="mb-2 flex items-center gap-2">
+													<InfoIcon class="size-4 text-blue-600" />
+													<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
+												</div>
+												<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
+												<div class="flex items-center gap-2">
+													<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
+													<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
+												</div>
+											</div>
+										</div>
+									{/if}
+								</div>
 							</div>
 						</div>
 					</div>
-				</div>
+				{/if}
 			</div>
 
 			<!-- Session Section -->

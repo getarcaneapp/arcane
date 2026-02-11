@@ -537,7 +537,7 @@ func (s *TemplateService) doGET(ctx context.Context, url string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP status %d for URL %s", resp.StatusCode, url)
@@ -569,7 +569,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
 		if fetchMeta != nil {
@@ -908,7 +908,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]env.Variabl
 	if err != nil {
 		return nil, fmt.Errorf("failed to open global variables file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	vars := []env.Variable{}
 	scanner := bufio.NewScanner(file)
@@ -1007,7 +1007,7 @@ func (s *TemplateService) ParseComposeServices(ctx context.Context, composeConte
 		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
 		return []string{}
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")

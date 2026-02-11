@@ -483,7 +483,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Load the image
 	result, err := h.imageService.LoadImageFromReader(ctx, file, fileName, *user, maxSizeBytes)

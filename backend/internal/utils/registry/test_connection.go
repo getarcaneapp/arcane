@@ -151,7 +151,7 @@ func tryBasicAuth(ctx context.Context, c *Client, reg string, creds *Credentials
 		res.AuthSuccess = false
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusOK {
 		res.AuthSuccess = true
@@ -186,7 +186,7 @@ func testCatalog(ctx context.Context, c *Client, reg, authHeader string, res *Te
 		res.CatalogSuccess = false
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusOK {
 		res.CatalogSuccess = true

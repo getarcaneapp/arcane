@@ -219,7 +219,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
 			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)
 		}
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 
 		_, copyErr := io.Copy(io.Discard, reader)
 		if copyErr != nil {
@@ -268,7 +268,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	if err != nil {
 		return fmt.Errorf("failed to start stats stream: %w", err)
 	}
-	defer stats.Body.Close()
+	defer func() { _ = stats.Body.Close() }()
 
 	decoder := json.NewDecoder(stats.Body)
 
@@ -315,7 +315,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	if err != nil {
 		return fmt.Errorf("failed to get container logs: %w", err)
 	}
-	defer logs.Close()
+	defer func() { _ = logs.Close() }()
 
 	if follow {
 		return s.streamMultiplexedLogs(ctx, logs, logsChan)
@@ -332,8 +332,8 @@ func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.Re
 
 	// Start demultiplexing in a goroutine
 	go func() {
-		defer stdoutWriter.Close()
-		defer stderrWriter.Close()
+		defer func() { _ = stdoutWriter.Close() }()
+		defer func() { _ = stderrWriter.Close() }()
 		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
 		if err != nil && !errors.Is(err, io.EOF) {
 			fmt.Printf("Error demultiplexing logs: %v\n", err)

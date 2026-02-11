@@ -102,6 +102,10 @@ func Bootstrap(ctx context.Context) error {
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,
 		appServices.User.CreateDefaultAdmin,
+		func(ctx context.Context) error {
+			utils.InitializeAutoLogin(ctx, cfg)
+			return nil
+		},
 		appServices.Settings.MigrateOidcConfigToFields,
 		appServices.Notification.MigrateDiscordWebhookUrlToFields)
 	utils.CleanupUnknownSettings(appCtx, appServices.Settings)
@@ -163,7 +167,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	if err != nil {
 		return fmt.Errorf("pairing request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 

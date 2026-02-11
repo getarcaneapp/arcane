@@ -64,7 +64,7 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := tok.SignedString(secret)
 	if err != nil {
-		t.Fatalf("sign: %v", err)
+		t.Fatalf("sign:  %v", err)
 	}
 	return signed
 }

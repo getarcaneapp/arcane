@@ -15,7 +15,9 @@ function stableSerialize(value: unknown): string {
 export const queryKeys = {
 	auth: {
 		all: ['auth'] as const,
-		logout: () => ['auth', 'logout'] as const
+		logout: () => ['auth', 'logout'] as const,
+		autoLoginConfig: () => ['auth', 'auto-login-config'] as const,
+		autoLoginAttempt: () => ['auth', 'auto-login-attempt'] as const
 	},
 	settings: {
 		all: ['settings'] as const,

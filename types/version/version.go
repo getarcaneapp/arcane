@@ -32,6 +32,11 @@ type Info struct {
 	// Required: true
 	GoVersion string `json:"goVersion"`
 
+	// EnabledFeatures is the list of build-time feature flags compiled into the binary.
+	//
+	// Required: false
+	EnabledFeatures []string `json:"enabledFeatures,omitempty"`
+
 	// BuildTime is the timestamp when the application was built.
 	//
 	// Required: false

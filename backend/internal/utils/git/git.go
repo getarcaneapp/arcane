@@ -234,7 +234,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 
 	authMethod, err := c.getAuth(auth)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", err
 	}
 
@@ -254,7 +254,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 
 	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 

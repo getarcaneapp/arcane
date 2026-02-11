@@ -31,7 +31,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Send a request to the agent
 		reqMsg := &TunnelMessage{
@@ -85,7 +85,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			mt, data, err := conn.ReadMessage()
@@ -104,7 +104,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Send WS Start
 		startMsg := &TunnelMessage{
@@ -157,7 +157,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// 1. Send request with invalid URL to trigger error
 		reqMsg := &TunnelMessage{
@@ -207,7 +207,7 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			_, _, err := conn.ReadMessage()
@@ -229,9 +229,9 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client.conn = NewTunnelConn(conn)
 

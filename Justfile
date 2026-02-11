@@ -584,12 +584,12 @@ _build-backend:
 # Build manager container image
 [group('build')]
 _build-image-manager tag="arcane:latest" flag='':
-    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile' -t "{{ tag }}" .
+    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
 # Build agent container image
 [group('build')]
 _build-image-agent tag="arcane-agent:latest" flag='':
-    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile-agent' -t "{{ tag }}" .
+    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
 # Build both frontend and backend
 [group('build')]
@@ -818,7 +818,7 @@ _test-e2e:
 # Run backend Go tests
 [group('tests')]
 _test-backend:
-    cd backend && go test -tags=exclude_frontend ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+    cd backend && go test -tags=exclude_frontend,buildables -ldflags "-X github.com/getarcaneapp/arcane/backend/buildables.EnabledFeatures=autologin" ./... -race -coverprofile=coverage.txt -covermode=atomic -v
 
 # Run CLI tests
 [group('tests')]
@@ -920,12 +920,12 @@ _lint-backend:
 # Lint Go CLI
 [group('lint')]
 _lint-cli:
-    cd cli && golangci-lint run -c ../.github/.golangci.yml  ./...
+    cd cli && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint Types
 [group('lint')]
 _lint-types:
-    cd types && golangci-lint run -c ../.github/.golangci.yml  ./...
+    cd types && golangci-lint run -c ../.github/.golangci.yml ./...
 
 # Lint all Go code
 [group('lint')]
