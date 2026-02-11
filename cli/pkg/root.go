@@ -20,9 +20,12 @@
 //
 // # Command Groups
 //
+//   - admin: Administration & platform management
+//   - auth: Authentication operations
 //   - config: Manage CLI configuration
-//   - images: Manage Docker images
 //   - containers: Manage containers
+//   - images: Manage Docker images and updates
+//   - jobs: Manage background jobs
 //   - generate: Generate secrets and tokens
 //   - version: Display version information
 package cli
@@ -36,25 +39,21 @@ import (
 	"github.com/charmbracelet/fang"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/pkg/apikeys"
+	"github.com/getarcaneapp/arcane/cli/pkg/admin"
 	"github.com/getarcaneapp/arcane/cli/pkg/auth"
 	configClient "github.com/getarcaneapp/arcane/cli/pkg/config"
 	"github.com/getarcaneapp/arcane/cli/pkg/containers"
 	"github.com/getarcaneapp/arcane/cli/pkg/environments"
-	"github.com/getarcaneapp/arcane/cli/pkg/events"
 	"github.com/getarcaneapp/arcane/cli/pkg/generate"
 	"github.com/getarcaneapp/arcane/cli/pkg/images"
-	"github.com/getarcaneapp/arcane/cli/pkg/imageupdates"
-	"github.com/getarcaneapp/arcane/cli/pkg/jobschedules"
+	"github.com/getarcaneapp/arcane/cli/pkg/jobs"
 	"github.com/getarcaneapp/arcane/cli/pkg/networks"
-	"github.com/getarcaneapp/arcane/cli/pkg/notifications"
 	"github.com/getarcaneapp/arcane/cli/pkg/projects"
 	"github.com/getarcaneapp/arcane/cli/pkg/registries"
 	"github.com/getarcaneapp/arcane/cli/pkg/settings"
 	"github.com/getarcaneapp/arcane/cli/pkg/system"
 	"github.com/getarcaneapp/arcane/cli/pkg/templates"
 	"github.com/getarcaneapp/arcane/cli/pkg/updater"
-	"github.com/getarcaneapp/arcane/cli/pkg/users"
 	"github.com/getarcaneapp/arcane/cli/pkg/version"
 	"github.com/getarcaneapp/arcane/cli/pkg/volumes"
 	"github.com/spf13/cobra"
@@ -64,12 +63,19 @@ var (
 	logLevel    string
 	jsonOutput  bool
 	showVersion bool
+	configPath  string
 )
 
 var rootCmd = &cobra.Command{
 	Use:  "arcane",
 	Long: "Arcane CLI - The official command line interface for Arcane",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if configPath != "" {
+			if err := config.SetConfigPath(configPath); err != nil {
+				return err
+			}
+		}
+
 		// Load config to check for log level setting
 		cfg, _ := config.Load()
 
@@ -79,6 +85,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		logger.Setup(logLevel, jsonOutput)
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if showVersion {
@@ -101,6 +108,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal, panic)")
+	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Log in JSON format")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print version information")
 
@@ -113,16 +121,12 @@ func init() {
 	rootCmd.AddCommand(volumes.VolumesCmd)
 	rootCmd.AddCommand(networks.NetworksCmd)
 	rootCmd.AddCommand(projects.ProjectsCmd)
-	rootCmd.AddCommand(apikeys.ApiKeysCmd)
 	rootCmd.AddCommand(environments.EnvironmentsCmd)
-	rootCmd.AddCommand(users.UsersCmd)
 	rootCmd.AddCommand(registries.RegistriesCmd)
 	rootCmd.AddCommand(templates.TemplatesCmd)
 	rootCmd.AddCommand(settings.SettingsCmd)
-	rootCmd.AddCommand(jobschedules.JobSchedulesCmd)
-	rootCmd.AddCommand(notifications.NotificationsCmd)
-	rootCmd.AddCommand(imageupdates.ImageUpdatesCmd)
+	rootCmd.AddCommand(jobs.JobsCmd)
 	rootCmd.AddCommand(system.SystemCmd)
 	rootCmd.AddCommand(updater.UpdaterCmd)
-	rootCmd.AddCommand(events.EventsCmd)
+	rootCmd.AddCommand(admin.AdminCmd)
 }

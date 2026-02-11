@@ -1,4 +1,4 @@
-package imageupdates
+package updates
 
 import (
 	"encoding/json"
@@ -14,11 +14,10 @@ import (
 
 var jsonOutput bool
 
-// ImageUpdatesCmd is the parent command for image update operations
-var ImageUpdatesCmd = &cobra.Command{
-	Use:     "image-updates",
-	Aliases: []string{"imgup", "updates"},
-	Short:   "Check for image updates",
+// UpdatesCmd is the parent command for image update operations.
+var UpdatesCmd = &cobra.Command{
+	Use:   "updates",
+	Short: "Check for image updates",
 }
 
 var checkCmd = &cobra.Command{
@@ -193,10 +192,10 @@ var summaryCmd = &cobra.Command{
 }
 
 func init() {
-	ImageUpdatesCmd.AddCommand(checkCmd)
-	ImageUpdatesCmd.AddCommand(checkAllCmd)
-	ImageUpdatesCmd.AddCommand(checkImageCmd)
-	ImageUpdatesCmd.AddCommand(summaryCmd)
+	UpdatesCmd.AddCommand(checkCmd)
+	UpdatesCmd.AddCommand(checkAllCmd)
+	UpdatesCmd.AddCommand(checkImageCmd)
+	UpdatesCmd.AddCommand(summaryCmd)
 
 	checkCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	checkAllCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

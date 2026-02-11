@@ -11,6 +11,8 @@ type Config struct {
 	APIKey string `yaml:"api_key,omitempty"`
 	// JWTToken is the JWT access token for authentication (sent as Authorization: Bearer)
 	JWTToken string `yaml:"jwt_token,omitempty"`
+	// RefreshToken is the refresh token for obtaining new access tokens
+	RefreshToken string `yaml:"refresh_token,omitempty"`
 	// DefaultEnvironment is the default environment ID to use
 	DefaultEnvironment string `yaml:"default_environment,omitempty"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)

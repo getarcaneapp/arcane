@@ -1,4 +1,4 @@
-package jobschedules
+package jobs
 
 import (
 	"encoding/json"
@@ -14,11 +14,11 @@ import (
 
 var jsonOutput bool
 
-// JobSchedulesCmd is the parent command for job schedule operations.
-var JobSchedulesCmd = &cobra.Command{
-	Use:     "job-schedules",
-	Aliases: []string{"jobs", "job-schedule", "schedules"},
-	Short:   "Manage background job schedules",
+// JobsCmd is the parent command for job schedule operations.
+var JobsCmd = &cobra.Command{
+	Use:     "jobs",
+	Aliases: []string{"job"},
+	Short:   "Manage background jobs",
 }
 
 var getCmd = &cobra.Command{
@@ -119,8 +119,8 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	JobSchedulesCmd.AddCommand(getCmd)
-	JobSchedulesCmd.AddCommand(updateCmd)
+	JobsCmd.AddCommand(getCmd)
+	JobsCmd.AddCommand(updateCmd)
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

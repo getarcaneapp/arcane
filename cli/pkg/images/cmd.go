@@ -13,6 +13,7 @@
 //   - prune: Remove unused images to reclaim disk space
 //   - counts: Display image usage statistics
 //   - upload: Upload a Docker image from a tar archive
+//   - updates: Check for image updates
 //
 // # Example Usage
 //
@@ -50,8 +51,8 @@ import (
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/pkg/images/updates"
 	"github.com/getarcaneapp/arcane/types/image"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"go.withmatt.com/size"
 )
@@ -377,7 +378,7 @@ var imagesPullCmd = &cobra.Command{
 		output.Info("Pulling image: %s", imageName)
 
 		decoder := json.NewDecoder(resp.Body)
-		var bar *progressbar.ProgressBar
+		var progressUI *output.Progress
 		var currentID string
 
 		for {
@@ -399,46 +400,30 @@ var imagesPullCmd = &cobra.Command{
 			}
 
 			if event.Error != "" {
+				if progressUI != nil {
+					progressUI.Stop()
+				}
 				return fmt.Errorf("pull error: %s", event.Error)
 			}
 
 			if event.Status == "Downloading" && event.ProgressDetail.Total > 0 {
-				if bar == nil || currentID != event.ID {
-					if bar != nil {
-						_ = bar.Finish()
-						fmt.Println()
-					}
-					currentID = event.ID
-					bar = progressbar.NewOptions64(
-						event.ProgressDetail.Total,
-						progressbar.OptionSetDescription(fmt.Sprintf("Downloading %s", event.ID)),
-						progressbar.OptionSetWriter(os.Stdout),
-						progressbar.OptionShowBytes(true),
-						progressbar.OptionSetWidth(15),
-						progressbar.OptionThrottle(65*time.Millisecond),
-						progressbar.OptionShowCount(),
-						progressbar.OptionOnCompletion(func() {
-							fmt.Println()
-						}),
-						progressbar.OptionSpinnerType(14),
-						progressbar.OptionFullWidth(),
-						progressbar.OptionSetTheme(progressbar.Theme{
-							Saucer:        "=",
-							SaucerHead:    ">",
-							SaucerPadding: " ",
-							BarStart:      "[",
-							BarEnd:        "]",
-						}),
-					)
+				if progressUI == nil {
+					progressUI = output.StartProgress("", event.ProgressDetail.Total)
 				}
-				_ = bar.Set64(event.ProgressDetail.Current)
+				if currentID != event.ID {
+					currentID = event.ID
+					progressUI.SetLabel(fmt.Sprintf("Downloading %s", event.ID))
+					progressUI.SetTotal(event.ProgressDetail.Total)
+				}
+				progressUI.SetCurrent(event.ProgressDetail.Current)
 			} else {
-				if bar != nil {
-					// If we switch from downloading to something else for the same ID, finish the bar
+				if progressUI != nil {
+					// Stop the progress bar when the current layer completes.
 					if event.ID == currentID && event.Status == "Download complete" {
-						_ = bar.Finish()
-						fmt.Println()
-						bar = nil
+						progressUI.SetCurrent(event.ProgressDetail.Total)
+						progressUI.SetLabel("Download complete")
+						progressUI.Stop()
+						progressUI = nil
 						currentID = ""
 					}
 				}
@@ -452,6 +437,10 @@ var imagesPullCmd = &cobra.Command{
 					}
 				}
 			}
+		}
+
+		if progressUI != nil {
+			progressUI.Stop()
 		}
 
 		output.Success("Image pulled successfully")
@@ -484,47 +473,16 @@ var imagesPruneCmd = &cobra.Command{
 		}
 
 		jsonOutput, _ := cmd.Flags().GetBool("json")
-		var stopSpinner func()
+		var spinner *output.Spinner
 
 		if !jsonOutput {
-			bar := progressbar.NewOptions(-1,
-				progressbar.OptionSetDescription("Pruning images..."),
-				progressbar.OptionSpinnerType(14),
-				progressbar.OptionSetWriter(os.Stdout),
-				progressbar.OptionClearOnFinish(),
-				progressbar.OptionSetWidth(10),
-				progressbar.OptionSetTheme(progressbar.Theme{
-					Saucer:        "=",
-					SaucerHead:    ">",
-					SaucerPadding: " ",
-					BarStart:      "[",
-					BarEnd:        "]",
-				}),
-			)
-
-			done := make(chan bool)
-			go func() {
-				for {
-					select {
-					case <-done:
-						return
-					case <-time.After(100 * time.Millisecond):
-						_ = bar.Add(1)
-					}
-				}
-			}()
-
-			stopSpinner = func() {
-				done <- true
-				_ = bar.Finish()
-				fmt.Println()
-			}
+			spinner = output.StartSpinner("Pruning images...")
 		}
 
 		resp, err := c.Post(cmd.Context(), path, requestBody)
 
-		if stopSpinner != nil {
-			stopSpinner()
+		if spinner != nil {
+			spinner.Stop()
 		}
 
 		if err != nil {
@@ -665,29 +623,11 @@ var imagesUploadCmd = &cobra.Command{
 		var requestBody io.Reader = body
 
 		jsonOutput, _ := cmd.Flags().GetBool("json")
+		var progressUI *output.Progress
 		if !jsonOutput {
-			bar := progressbar.NewOptions64(
-				int64(body.Len()),
-				progressbar.OptionSetDescription("Uploading"),
-				progressbar.OptionSetWriter(os.Stdout),
-				progressbar.OptionShowBytes(true),
-				progressbar.OptionSetWidth(15),
-				progressbar.OptionThrottle(65*time.Millisecond),
-				progressbar.OptionShowCount(),
-				progressbar.OptionOnCompletion(func() {
-					fmt.Println()
-				}),
-				progressbar.OptionSpinnerType(14),
-				progressbar.OptionFullWidth(),
-				progressbar.OptionSetTheme(progressbar.Theme{
-					Saucer:        "=",
-					SaucerHead:    ">",
-					SaucerPadding: " ",
-					BarStart:      "[",
-					BarEnd:        "]",
-				}),
-			)
-			requestBody = io.TeeReader(body, bar)
+			progressUI = output.StartProgress("Uploading", int64(body.Len()))
+			requestBody = output.NewProgressReader(body, progressUI)
+			defer progressUI.Stop()
 		}
 
 		// Use client.RequestRaw to make the multipart request with correct headers
@@ -751,6 +691,7 @@ func init() {
 	imagesPruneCmd.Flags().BoolVar(&pruneDangling, "dangling", false, "Only remove dangling images")
 
 	ImagesCmd.AddCommand(imagesCountsCmd)
+	ImagesCmd.AddCommand(updates.UpdatesCmd)
 
 	ImagesCmd.AddCommand(imagesUploadCmd)
 }
