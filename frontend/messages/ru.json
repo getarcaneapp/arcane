@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Выберите контейнеры...",
 	"auto_update_containers_excluded_one": "1 контейнер исключён",
 	"auto_update_containers_excluded_many": "{count} контейнеры исключены",
+	"auto_update_exclude_description": "Выберите контейнеры для исключения из автоматического обновления.",
+	"auto_update_excluded_containers": "Исключенные контейнеры",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Создание…",
 	"common_action_deleting": "Удаление…",
