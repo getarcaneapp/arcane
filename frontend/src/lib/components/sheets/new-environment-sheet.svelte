@@ -12,7 +12,9 @@
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { RemoteEnvironmentIcon, EdgeConnectionIcon } from '$lib/icons';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
@@ -20,6 +22,7 @@
 	};
 
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
+	const queryClient = useQueryClient();
 
 	type ConnectionMode = 'direct' | 'edge';
 	let connectionMode = $state<ConnectionMode>('direct');
@@ -34,8 +37,48 @@
 		dockerCompose?: string;
 	} | null>(null);
 
-	let isSubmittingNewAgent = $state(false);
 	let isLoadingSnippets = $state(false);
+	const createEnvironmentMutation = createMutation(() => ({
+		mutationFn: ({ dto, apiUrl, isEdge }: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean }) =>
+			environmentManagementService.create(dto),
+		onSuccess: async (created, variables) => {
+			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
+
+			if (created.apiKey) {
+				createdEnvironment = {
+					id: created.id,
+					apiKey: created.apiKey,
+					name: created.name,
+					apiUrl: variables.apiUrl,
+					isEdge: variables.isEdge
+				};
+
+				isLoadingSnippets = true;
+				try {
+					const snippets = await queryClient.fetchQuery({
+						queryKey: queryKeys.environments.deploymentSnippets(created.id),
+						queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
+						staleTime: 0
+					});
+					createdEnvironment.dockerRun = snippets.dockerRun;
+					createdEnvironment.dockerCompose = snippets.dockerCompose;
+				} catch (err) {
+					console.error('Failed to fetch deployment snippets:', err);
+				} finally {
+					isLoadingSnippets = false;
+				}
+
+				toast.success(m.environments_created_success());
+			} else {
+				toast.error('Failed to generate API key');
+			}
+		},
+		onError: (error) => {
+			toast.error(m.environments_create_failed());
+			console.error(error);
+		}
+	}));
+	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
 	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
 	let newAgentUrlHost = $state('');
@@ -78,89 +121,41 @@
 		$directInputs.apiUrl.value = newAgentUrlHost;
 	});
 
-	async function handleDirectSubmit() {
+	function handleDirectSubmit() {
 		const data = directForm.validate();
 		if (!data) return;
 
-		try {
-			isSubmittingNewAgent = true;
-			const fullUrl = `${newAgentUrlProtocol}://${newAgentUrlHost}`;
+		const fullUrl = `${newAgentUrlProtocol}://${newAgentUrlHost}`;
 
-			const dto: CreateEnvironmentDTO = {
-				name: data.name,
-				apiUrl: fullUrl,
-				useApiKey: true,
-				isEdge: false
-			};
+		const dto: CreateEnvironmentDTO = {
+			name: data.name,
+			apiUrl: fullUrl,
+			useApiKey: true,
+			isEdge: false
+		};
 
-			await createEnvironmentAndFetchSnippets(dto, fullUrl, false);
-		} catch (error) {
-			toast.error(m.environments_create_failed());
-			console.error(error);
-		} finally {
-			isSubmittingNewAgent = false;
-		}
+		createEnvironmentMutation.mutate({ dto, apiUrl: fullUrl, isEdge: false });
 	}
 
-	async function handleEdgeSubmit() {
+	function handleEdgeSubmit() {
 		const data = edgeForm.validate();
 		if (!data) return;
 
-		try {
-			isSubmittingNewAgent = true;
-			const edgeApiHost = data.name
-				.trim()
-				.toLowerCase()
-				.replace(/[^a-z0-9]+/g, '-')
-				.replace(/(^-|-$)+/g, '');
-			const edgeApiUrl = `edge://${edgeApiHost}`;
+		const edgeApiHost = data.name
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/(^-|-$)+/g, '');
+		const edgeApiUrl = `edge://${edgeApiHost}`;
 
-			// Edge agents don't need a URL - they connect outbound
-			// We use a placeholder URL that indicates edge mode
-			const dto: CreateEnvironmentDTO = {
-				name: data.name,
-				apiUrl: edgeApiUrl,
-				useApiKey: true,
-				isEdge: true
-			};
+		const dto: CreateEnvironmentDTO = {
+			name: data.name,
+			apiUrl: edgeApiUrl,
+			useApiKey: true,
+			isEdge: true
+		};
 
-			await createEnvironmentAndFetchSnippets(dto, '', true);
-		} catch (error) {
-			toast.error(m.environments_create_failed());
-			console.error(error);
-		} finally {
-			isSubmittingNewAgent = false;
-		}
-	}
-
-	async function createEnvironmentAndFetchSnippets(dto: CreateEnvironmentDTO, apiUrl: string, isEdge: boolean) {
-		const created = await environmentManagementService.create(dto);
-
-		if (created.apiKey) {
-			createdEnvironment = {
-				id: created.id,
-				apiKey: created.apiKey,
-				name: created.name,
-				apiUrl: apiUrl,
-				isEdge: isEdge
-			};
-
-			// Fetch deployment snippets from backend
-			isLoadingSnippets = true;
-			try {
-				const snippets = await environmentManagementService.getDeploymentSnippets(created.id);
-				createdEnvironment.dockerRun = snippets.dockerRun;
-				createdEnvironment.dockerCompose = snippets.dockerCompose;
-			} catch (err) {
-				console.error('Failed to fetch deployment snippets:', err);
-			} finally {
-				isLoadingSnippets = false;
-			}
-
-			toast.success(m.environments_created_success());
-		} else {
-			toast.error('Failed to generate API key');
-		}
+		createEnvironmentMutation.mutate({ dto, apiUrl: '', isEdge: true });
 	}
 
 	function handleDone() {

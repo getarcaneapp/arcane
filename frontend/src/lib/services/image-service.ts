@@ -6,22 +6,41 @@ import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/auto-update.t
 import { transformPaginationParams } from '$lib/utils/params.util';
 
 export class ImageService extends BaseAPIService {
+	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
+		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	}
+
 	async getImages(options?: SearchPaginationSortRequest): Promise<Paginated<ImageSummaryDto>> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId();
+		return this.getImagesForEnvironment(envId, options);
+	}
+
+	async getImagesForEnvironment(
+		environmentId: string,
+		options?: SearchPaginationSortRequest
+	): Promise<Paginated<ImageSummaryDto>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/images`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/images`, { params });
 		return res.data;
 	}
 
 	async getImageUsageCounts(): Promise<ImageUsageCounts> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/images/counts`);
+		const envId = await this.resolveEnvironmentId();
+		return this.getImageUsageCountsForEnvironment(envId);
+	}
+
+	async getImageUsageCountsForEnvironment(environmentId: string): Promise<ImageUsageCounts> {
+		const res = await this.api.get(`/environments/${environmentId}/images/counts`);
 		return res.data.data;
 	}
 
 	async getImage(imageId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/images/${imageId}`));
+		const envId = await this.resolveEnvironmentId();
+		return this.getImageForEnvironment(envId, imageId);
+	}
+
+	async getImageForEnvironment(environmentId: string, imageId: string): Promise<any> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
 	}
 
 	async pullImage(imageName: string, tag: string = 'latest', auth?: any): Promise<any> {

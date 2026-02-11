@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import type { Event } from '$lib/types/event.type';
 	import EventTable from './event-table.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { EventsIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -17,21 +17,58 @@
 	let events = $state(untrack(() => data.events));
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $state(untrack(() => data.eventRequestOptions));
-	let isLoading = $state({ refreshing: false, deleting: false });
+	const envId = $derived(environmentStore.selected?.id || '0');
+
+	const eventsQuery = createQuery(() => ({
+		queryKey: queryKeys.events.listByEnvironment(envId, requestOptions),
+		queryFn: () => eventService.getEventsForEnvironment(envId, requestOptions),
+		initialData: data.events
+	}));
+
+	const deleteSelectedMutation = createMutation(() => ({
+		mutationKey: queryKeys.events.deleteSelected(envId),
+		mutationFn: async (ids: string[]) => {
+			let successCount = 0;
+			let failureCount = 0;
+
+			for (const eventId of ids) {
+				try {
+					await eventService.delete(eventId);
+					successCount += 1;
+				} catch {
+					failureCount += 1;
+				}
+			}
+
+			return { successCount, failureCount };
+		},
+		onSuccess: async ({ successCount, failureCount }) => {
+			if (successCount > 0) {
+				toast.success(m.common_bulk_delete_success({ count: successCount, resource: m.events_title() }));
+				await eventsQuery.refetch();
+			}
+			if (failureCount > 0) {
+				toast.error(m.common_bulk_delete_failed({ count: failureCount, resource: m.events_title() }));
+			}
+			selectedIds = [];
+		}
+	}));
+
+	$effect(() => {
+		if (eventsQuery.data) {
+			events = eventsQuery.data;
+		}
+	});
 
 	const infoEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'info').length || 0);
 	const warningEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'warning').length || 0);
 	const errorEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'error').length || 0);
 	const successEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'success').length || 0);
 	const totalEvents = $derived(events?.pagination?.totalItems || 0);
+	const isRefreshing = $derived(eventsQuery.isFetching && !eventsQuery.isPending);
 
 	async function refresh() {
-		await simpleRefresh(
-			() => eventService.getEvents(requestOptions),
-			(data) => (events = data),
-			m.common_refresh_failed({ resource: m.events_title() }),
-			(v) => (isLoading.refreshing = v)
-		);
+		await eventsQuery.refetch();
 	}
 
 	async function handleDeleteSelected() {
@@ -44,32 +81,7 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
-					isLoading.deleting = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const eventId of selectedIds) {
-						const result = await tryCatch(eventService.delete(eventId));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.events_delete_item_failed({ id: eventId }),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-						if (result.error) failureCount++;
-					}
-
-					isLoading.deleting = false;
-					if (successCount > 0) {
-						toast.success(m.common_bulk_delete_success({ count: successCount, resource: m.events_title() }));
-						await refresh();
-					}
-					if (failureCount > 0) {
-						toast.error(m.common_bulk_delete_failed({ count: failureCount, resource: m.events_title() }));
-					}
-					selectedIds = [];
+					await deleteSelectedMutation.mutateAsync([...selectedIds]);
 				}
 			}
 		});
@@ -83,8 +95,8 @@
 						action: 'remove' as const,
 						label: m.events_remove_selected(),
 						onclick: handleDeleteSelected,
-						loading: isLoading.deleting,
-						disabled: isLoading.deleting
+						loading: deleteSelectedMutation.isPending,
+						disabled: deleteSelectedMutation.isPending
 					}
 				]
 			: []),
@@ -93,8 +105,8 @@
 			action: 'restart' as const,
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
+			loading: isRefreshing,
+			disabled: isRefreshing
 		}
 	]);
 
@@ -138,6 +150,14 @@
 
 <ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<EventTable bind:events bind:selectedIds bind:requestOptions />
+		<EventTable
+			bind:events
+			bind:selectedIds
+			bind:requestOptions
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await eventsQuery.refetch();
+			}}
+		/>
 	{/snippet}
 </ResourcePageLayout>

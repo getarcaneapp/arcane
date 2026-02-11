@@ -5,9 +5,9 @@
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import type { JobStatus } from '$lib/types/job-schedule.type';
+	import { createMutation } from '@tanstack/svelte-query';
 
 	let {
 		job,
@@ -23,7 +23,17 @@
 
 	let scheduleValue = $state('');
 	let error = $state<string | null>(null);
-	let isLoading = $state(false);
+	const saveMutation = createMutation(() => ({
+		mutationFn: (update: Record<string, string>) => jobScheduleService.updateJobSchedules(update, environmentId),
+		onSuccess: () => {
+			toast.success(m.jobs_schedule_updated());
+			onUpdate?.();
+		},
+		onError: (err) => {
+			toast.error(err instanceof Error ? err.message : m.jobs_schedule_update_failed());
+		}
+	}));
+	const isLoading = $derived(saveMutation.isPending);
 
 	const cronExamples = [
 		{ label: m.jobs_cron_example_every_15min(), value: '0 */15 * * * *' },
@@ -48,7 +58,7 @@
 		return true;
 	}
 
-	async function save() {
+	function save() {
 		if (!validateCron(scheduleValue)) {
 			return;
 		}
@@ -58,18 +68,8 @@
 			return;
 		}
 
-		isLoading = true;
 		const update = { [job.settingsKey]: scheduleValue };
-		const result = await tryCatch(jobScheduleService.updateJobSchedules(update, environmentId));
-		isLoading = false;
-
-		if (result.error) {
-			toast.error(result.error.message || m.jobs_schedule_update_failed());
-			return;
-		}
-
-		toast.success(m.jobs_schedule_updated());
-		onUpdate?.();
+		saveMutation.mutate(update);
 	}
 
 	function useCronExample(value: string) {

@@ -5,12 +5,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { formatDistanceToNow } from 'date-fns';
 	import type { Snippet } from 'svelte';
 	import type { JobStatus } from '$lib/types/job-schedule.type';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
+	import { createMutation } from '@tanstack/svelte-query';
 
 	let {
 		job,
@@ -30,8 +30,11 @@
 		headerAccessory?: Snippet;
 	} = $props();
 
-	let isRunning = $state(false);
 	let showScheduleDialog = $state(false);
+	const runJobMutation = createMutation(() => ({
+		mutationFn: () => jobScheduleService.runJob(job.id, environmentId)
+	}));
+	const isRunning = $derived(runJobMutation.isPending);
 
 	const nextRunText = $derived.by(() => {
 		if (!job.nextRun) return null;
@@ -45,16 +48,9 @@
 
 	const canRun = $derived(isEnabled && job.canRunManually && !isRunning && !(isAgent && job.managerOnly));
 
-	async function runJobNow() {
+	function runJobNow() {
 		if (!canRun) return;
-
-		isRunning = true;
-		const result = await tryCatch(jobScheduleService.runJob(job.id, environmentId));
-		isRunning = false;
-
-		if (result.error || !result.data?.success) {
-			return;
-		}
+		runJobMutation.mutate();
 	}
 
 	function openScheduleDialog() {

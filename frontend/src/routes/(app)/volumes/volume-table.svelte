@@ -24,16 +24,26 @@
 	let {
 		volumes = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onRefreshData
 	}: {
 		volumes: Paginated<VolumeSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({
 		removing: false
 	});
+
+	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			return;
+		}
+		volumes = await volumeService.getVolumes(options);
+	}
 
 	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
 	const isBackupVolumeName = (name?: string) => (name ?? '') === backupVolumeName;
@@ -71,7 +81,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }));
-							volumes = await volumeService.getVolumes(requestOptions);
+							await refreshVolumes();
 						}
 					});
 				}
@@ -120,7 +130,7 @@
 					if (successCount > 0) {
 						const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
 						toast.success(successMsg);
-						volumes = await volumeService.getVolumes(requestOptions);
+						await refreshVolumes();
 					}
 					if (failureCount > 0) {
 						const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
@@ -303,7 +313,11 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (volumes = await volumeService.getVolumes(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await refreshVolumes(options);
+		return volumes;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

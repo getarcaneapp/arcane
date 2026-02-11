@@ -7,12 +7,13 @@
 	import type { User } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { toast } from 'svelte-sonner';
-	import { onMount } from 'svelte';
 	import { DownloadIcon, ExternalLinkIcon } from '$lib/icons';
 	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let {
 		isCollapsed,
@@ -28,12 +29,26 @@
 
 	const sidebar = useSidebar();
 
-	let canUpgrade = $state(false);
-	let checkingUpgrade = $state(false);
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
-
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
+	const upgradeAvailabilityQuery = createQuery(() => ({
+		queryKey: queryKeys.system.upgradeAvailable('sidebar'),
+		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
+		enabled: shouldCheckUpgrade,
+		staleTime: 0
+	}));
+
+	const canUpgrade = $derived.by(() => {
+		if (debug) return true;
+		const result = upgradeAvailabilityQuery.data;
+		return !!result?.canUpgrade && !result?.error;
+	});
+	const checkingUpgrade = $derived(
+		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
+	);
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
 
 	// Determine update type and display text
@@ -73,48 +88,22 @@
 		return m.upgrade_now();
 	});
 
-	// Debug mode: force show upgrade button
-	$effect(() => {
-		if (debug) {
-			canUpgrade = true;
-		}
-	});
-
-	// Check if self-upgrade is available
-	onMount(() => {
-		if (versionInformation?.updateAvailable && isAdmin && !debug) {
-			checkUpgradeAvailability();
-		}
-	});
-
-	async function checkUpgradeAvailability() {
-		if (checkingUpgrade) return;
-
-		checkingUpgrade = true;
-		try {
-			const result = await systemUpgradeService.checkUpgradeAvailable();
-			canUpgrade = result.canUpgrade && !result.error;
-		} catch (error) {
-			canUpgrade = false;
-		} finally {
-			checkingUpgrade = false;
-		}
-	}
-
-	function handleUpgradeClick() {
-		showConfirmDialog = true;
-	}
-
-	async function handleConfirmUpgrade() {
-		try {
-			await systemUpgradeService.triggerUpgrade();
-			// Dialog will handle countdown and reload
-		} catch (error: any) {
+	const triggerUpgradeMutation = createMutation(() => ({
+		mutationFn: () => systemUpgradeService.triggerUpgrade(),
+		onError: (error: unknown) => {
 			const errorMessage = extractApiErrorMessage(error);
 			const wrappedPrefix = m.upgrade_failed({ error: '' });
 			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
 			upgrading = false;
 		}
+	}));
+
+	function handleUpgradeClick() {
+		showConfirmDialog = true;
+	}
+
+	function handleConfirmUpgrade() {
+		triggerUpgradeMutation.mutate();
 	}
 
 	// Show banner for both semver and digest-based updates

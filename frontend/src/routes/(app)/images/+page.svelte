@@ -6,66 +6,107 @@
 	import bytes from 'bytes';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import ImageTable from './image-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
+	import type { ImageUsageCounts } from '$lib/types/image.type';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon } from '$lib/icons';
 
 	let { data } = $props();
 
 	let images = $state(untrack(() => data.images));
-	let imageUsageCounts = $state(untrack(() => data.imageUsageCounts));
 	let requestOptions = $state(untrack(() => data.imageRequestOptions));
 	let selectedIds = $state<string[]>([]);
-
-	let isLoading = $state({ pulling: false, uploading: false, refreshing: false, pruning: false, checking: false });
 	let isPullDialogOpen = $state(false);
 	let isUploadDialogOpen = $state(false);
 	let isConfirmPruneDialogOpen = $state(false);
 	let uploadedFiles = $state<File[]>([]);
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const imageUsageFallback: ImageUsageCounts = {
+		imagesInuse: 0,
+		imagesUnused: 0,
+		totalImages: 0,
+		totalImageSize: 0
+	};
 
 	const maxUploadSizeMB = $derived(parseInt(String(data.settings?.maxImageUploadSize || '500'), 10));
+	const shouldPruneDangling = $derived(data.settings?.dockerPruneMode === 'dangling');
 
-	async function refresh() {
-		await parallelRefresh(
-			{
-				images: {
-					fetch: () => imageService.getImages(requestOptions),
-					onSuccess: (data) => (images = data),
-					errorMessage: m.common_refresh_failed({ resource: m.images_title() })
-				},
-				counts: {
-					fetch: () => imageService.getImageUsageCounts(),
-					onSuccess: (data) => (imageUsageCounts = data),
-					errorMessage: m.common_refresh_failed({ resource: m.images_title() })
+	const imagesQuery = createQuery(() => ({
+		queryKey: queryKeys.images.list(envId, requestOptions),
+		queryFn: () => imageService.getImagesForEnvironment(envId, requestOptions),
+		initialData: data.images
+	}));
+
+	const imageUsageCountsQuery = createQuery(() => ({
+		queryKey: queryKeys.images.usageCounts(envId),
+		queryFn: () => imageService.getImageUsageCountsForEnvironment(envId),
+		initialData: data.imageUsageCounts
+	}));
+
+	const pruneImagesMutation = createMutation(() => ({
+		mutationKey: ['images', 'prune', envId],
+		mutationFn: () => imageService.pruneImages(shouldPruneDangling),
+		onSuccess: async () => {
+			toast.success(m.images_pruned_success());
+			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+			isConfirmPruneDialogOpen = false;
+		},
+		onError: () => {
+			toast.error(m.images_prune_failed());
+		}
+	}));
+
+	const checkUpdatesMutation = createMutation(() => ({
+		mutationKey: ['images', 'check-updates', envId],
+		mutationFn: () => imageService.checkAllImages(),
+		onSuccess: async () => {
+			toast.success(m.images_update_check_completed());
+			await imagesQuery.refetch();
+		},
+		onError: () => {
+			toast.error(m.images_update_check_failed());
+		}
+	}));
+
+	const uploadImagesMutation = createMutation(() => ({
+		mutationKey: ['images', 'upload', envId],
+		mutationFn: async (files: File[]) => {
+			for (const file of files) {
+				try {
+					await imageService.uploadImage(file);
+					toast.success(m.images_upload_success());
+				} catch {
+					toast.error(m.images_upload_failed());
 				}
-			},
-			(v) => (isLoading.refreshing = v)
-		);
-	}
-
-	useEnvironmentRefresh(refresh);
-
-	async function handlePruneImages() {
-		isLoading.pruning = true;
-		const dangling = data.settings?.dockerPruneMode === 'dangling';
-		handleApiResultWithCallbacks({
-			result: await tryCatch(imageService.pruneImages(dangling)),
-			message: m.images_prune_failed(),
-			setLoadingState: (v) => (isLoading.pruning = v),
-			onSuccess: async () => {
-				toast.success(m.images_pruned_success());
-				images = await imageService.getImages(requestOptions);
-				isConfirmPruneDialogOpen = false;
 			}
-		});
-	}
+		},
+		onSuccess: async () => {
+			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+			uploadedFiles = [];
+			isUploadDialogOpen = false;
+		}
+	}));
+
+	$effect(() => {
+		if (imagesQuery.data) {
+			images = imagesQuery.data;
+		}
+	});
+
+	const imageUsageCounts = $derived(imageUsageCountsQuery.data ?? imageUsageFallback);
+
+	const isRefreshing = $derived(
+		(imagesQuery.isFetching && !imagesQuery.isPending) || (imageUsageCountsQuery.isFetching && !imageUsageCountsQuery.isPending)
+	);
+	const isUploading = $derived(uploadImagesMutation.isPending);
+	const isPruning = $derived(pruneImagesMutation.isPending);
+	const isChecking = $derived(checkUpdatesMutation.isPending);
 
 	const onUpload: FileDropZoneProps['onUpload'] = async (files) => {
 		uploadedFiles = [...uploadedFiles, ...files];
@@ -80,36 +121,19 @@
 			toast.error(m.images_upload_file_required());
 			return;
 		}
-		isLoading.uploading = true;
-		for (const file of uploadedFiles) {
-			handleApiResultWithCallbacks({
-				result: await tryCatch(imageService.uploadImage(file)),
-				message: m.images_upload_failed(),
-				setLoadingState: (v) => {
-					isLoading.uploading = v;
-				},
-				onSuccess: () => {
-					toast.success(m.images_upload_success());
-				}
-			});
-		}
-		images = await imageService.getImages(requestOptions);
-		uploadedFiles = [];
-		isUploadDialogOpen = false;
-		isLoading.uploading = false;
+		await uploadImagesMutation.mutateAsync(uploadedFiles);
 	}
 
 	async function handleTriggerBulkUpdateCheck() {
-		isLoading.checking = true;
-		try {
-			await imageService.checkAllImages();
-			toast.success(m.images_update_check_completed());
-			images = await imageService.getImages(requestOptions);
-		} catch {
-			toast.error(m.images_update_check_failed());
-		} finally {
-			isLoading.checking = false;
-		}
+		await checkUpdatesMutation.mutateAsync();
+	}
+
+	async function handlePruneImages() {
+		await pruneImagesMutation.mutateAsync();
+	}
+
+	async function refresh() {
+		await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 	}
 
 	const actionButtons: ActionButton[] = $derived([
@@ -121,16 +145,16 @@
 			label: m.images_check_updates(),
 			loadingLabel: m.common_action_checking(),
 			onclick: handleTriggerBulkUpdateCheck,
-			loading: isLoading.checking,
-			disabled: isLoading.checking
+			loading: isChecking,
+			disabled: isChecking
 		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
+			loading: isRefreshing,
+			disabled: isRefreshing
 		},
 		{
 			id: 'prune',
@@ -138,8 +162,8 @@
 			label: m.images_prune_unused(),
 			loadingLabel: m.common_action_pruning(),
 			onclick: () => (isConfirmPruneDialogOpen = true),
-			loading: isLoading.pruning,
-			disabled: isLoading.pruning
+			loading: isPruning,
+			disabled: isPruning
 		}
 	]);
 
@@ -165,8 +189,12 @@
 			bind:images
 			bind:selectedIds
 			bind:requestOptions
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+			}}
 			onImageUpdated={async () => {
-				images = await imageService.getImages(requestOptions);
+				await imagesQuery.refetch();
 			}}
 		/>
 	{/snippet}
@@ -175,7 +203,7 @@
 		<ImagePullSheet
 			bind:open={isPullDialogOpen}
 			onPullFinished={async () => {
-				images = await imageService.getImages(requestOptions);
+				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 			}}
 		/>
 
@@ -193,7 +221,7 @@
 						accept=".tar,.tar.gz,.tgz,.tar.xz"
 						maxFiles={10}
 						fileCount={uploadedFiles.length}
-						disabled={isLoading.uploading}
+						disabled={isUploading}
 					/>
 					{#if uploadedFiles.length > 0}
 						<div class="flex flex-col gap-2">
@@ -208,14 +236,14 @@
 										tone="ghost"
 										size="icon"
 										onclick={() => (uploadedFiles = [...uploadedFiles.slice(0, i), ...uploadedFiles.slice(i + 1)])}
-										disabled={isLoading.uploading}
+										disabled={isUploading}
 										icon={CloseIcon}
 									/>
 								</div>
 							{/each}
 						</div>
 					{/if}
-					{#if isLoading.uploading}
+					{#if isUploading}
 						<div class="text-muted-foreground flex items-center gap-2 text-sm">
 							<Spinner class="size-4" />{m.images_uploading()}
 						</div>
@@ -228,13 +256,13 @@
 							isUploadDialogOpen = false;
 							uploadedFiles = [];
 						}}
-						disabled={isLoading.uploading}
+						disabled={isUploading}
 					/>
 					<ArcaneButton
 						action="create"
 						onclick={handleUploadImages}
-						disabled={isLoading.uploading || uploadedFiles.length === 0}
-						loading={isLoading.uploading}
+						disabled={isUploading || uploadedFiles.length === 0}
+						loading={isUploading}
 						customLabel={m.images_upload_image()}
 					/>
 				</div>
@@ -250,12 +278,12 @@
 					>
 				</Dialog.Header>
 				<div class="flex justify-end gap-3 pt-6">
-					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isLoading.pruning} />
+					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isPruning} />
 					<ArcaneButton
 						action="remove"
 						onclick={handlePruneImages}
-						disabled={isLoading.pruning}
-						loading={isLoading.pruning}
+						disabled={isPruning}
+						loading={isPruning}
 						customLabel={m.images_prune_action()}
 						loadingLabel={m.common_action_pruning()}
 					/>

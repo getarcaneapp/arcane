@@ -1,14 +1,13 @@
 <script lang="ts">
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
 	import { getApplicationLogo } from '$lib/utils/image.util';
-	import settingsStore from '$lib/stores/config-store';
+	import { accentColorPreviewStore } from '$lib/utils/accent-color-util';
 
-	let { isCollapsed, versionInformation }: { isCollapsed: boolean; versionInformation: AppVersionInformation } = $props();
+	let { isCollapsed }: { isCollapsed: boolean } = $props();
 
-	// Make logo URL reactive to accent color changes
-	let logoUrl = $derived(getApplicationLogo(!isCollapsed));
+	const accentColor = $derived($accentColorPreviewStore);
+	const logoUrl = $derived(getApplicationLogo(!isCollapsed, accentColor, accentColor));
 </script>
 
 <div

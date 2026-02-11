@@ -1,19 +1,34 @@
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import versionService from '$lib/services/version-service';
-import { tryCatch } from '$lib/utils/try-catch';
-import userStore from '$lib/stores/user-store';
-import settingsStore from '$lib/stores/config-store';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import type { AppVersionInformation } from '$lib/types/application-configuration';
-import { userService } from '$lib/services/user-service';
-import { settingsService } from '$lib/services/settings-service';
-import { environmentManagementService } from '$lib/services/env-mgmt-service';
-import { authService } from '$lib/services/auth-service';
 import { browser } from '$app/environment';
+import { environmentManagementService } from '$lib/services/env-mgmt-service';
+import { settingsService } from '$lib/services/settings-service';
+import { userService } from '$lib/services/user-service';
+import versionService from '$lib/services/version-service';
+import settingsStore from '$lib/stores/config-store';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
+import userStore from '$lib/stores/user-store';
+import { type AppVersionInformation } from '$lib/types/application-configuration';
+import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { authService } from '$lib/services/auth-service';
+import { tryCatch } from '$lib/utils/try-catch';
+import { QueryClient } from '@tanstack/svelte-query';
 
 export const ssr = false;
 
 export const load = async () => {
+	// Tanstack Query Client
+	const queryClient = new QueryClient({
+		defaultOptions: {
+			queries: {
+				enabled: browser,
+				staleTime: 0,
+				gcTime: 60 * 1000,
+				refetchOnMount: 'always',
+				refetchOnWindowFocus: 'always',
+				refetchOnReconnect: 'always'
+			}
+		}
+	});
+
 	// Step 1: Check authentication first
 	let user = await userService.getCurrentUser().catch(() => null);
 
@@ -110,6 +125,7 @@ export const load = async () => {
 	return {
 		user,
 		settings,
-		versionInformation
+		versionInformation,
+		queryClient
 	};
 };

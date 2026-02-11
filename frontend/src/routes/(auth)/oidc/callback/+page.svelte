@@ -8,11 +8,13 @@
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { authService } from '$lib/services/auth-service';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
-	let isProcessing = $state(true);
 	let error = $state('');
+	const queryClient = useQueryClient();
 
 	const buildLoginRedirect = (errorCode: string, message?: string) => {
 		const params = new URLSearchParams({ error: errorCode });
@@ -22,8 +24,17 @@
 		return `/login?${params.toString()}`;
 	};
 
-	onMount(async () => {
-		try {
+	type CallbackFailure = {
+		code: string;
+		userMessage: string;
+	};
+
+	function failure(code: string, userMessage: string): CallbackFailure {
+		return { code, userMessage };
+	}
+
+	const callbackMutation = createMutation(() => ({
+		mutationFn: async () => {
 			const code = page.url.searchParams.get('code');
 			const stateFromUrl = page.url.searchParams.get('state');
 			const errorParam = page.url.searchParams.get('error');
@@ -34,23 +45,20 @@
 
 			if (errorParam) {
 				let userMessage = m.auth_oidc_provider_error();
+				let redirectCode = 'oidc_provider_error';
 				if (errorParam === 'access_denied') {
 					userMessage = m.auth_oidc_access_denied();
+					redirectCode = 'oidc_access_denied';
 				} else if (errorParam === 'invalid_request') {
 					userMessage = m.auth_oidc_invalid_request();
+					redirectCode = 'oidc_invalid_request';
 				}
 
-				error = errorDescription || userMessage;
-				setTimeout(() => goto(buildLoginRedirect('oidc_provider_error', error)), 3000);
-				isProcessing = false;
-				return;
+				throw failure(redirectCode, errorDescription || userMessage);
 			}
 
 			if (!code || !stateFromUrl) {
-				error = m.auth_oidc_invalid_response();
-				setTimeout(() => goto(buildLoginRedirect('oidc_invalid_response', error)), 3000);
-				isProcessing = false;
-				return;
+				throw failure('oidc_invalid_response', m.auth_oidc_invalid_response());
 			}
 
 			const authResult = await authService.handleCallback(code, stateFromUrl);
@@ -63,57 +71,72 @@
 					userMessage = m.auth_oidc_session_expired();
 				}
 
-				error = authResult.error || userMessage;
-				setTimeout(() => goto(buildLoginRedirect('oidc_auth_failed', error)), 3000);
-				isProcessing = false;
-				return;
+				throw failure('oidc_auth_failed', authResult.error || userMessage);
 			}
 
-			if (authResult.user) {
-				const user: User = {
-					id: authResult.user.sub || authResult.user.email || '',
-					username: authResult.user.preferred_username || authResult.user.email || '',
-					email: authResult.user.email,
-					displayName:
-						authResult.user.name ||
-						authResult.user.displayName ||
-						authResult.user.given_name ||
-						authResult.user.preferred_username ||
-						authResult.user.email ||
-						m.common_unknown(),
-					roles: authResult.user.groups || ['user'],
-					createdAt: new Date().toISOString()
-				};
-
-				userStore.setUser(user);
-
-				async function finalizeLogin() {
-					const settings = await settingsService.getSettings();
-					settingsStore.set(settings);
-					toast.success('Successfully logged in!');
-					goto(redirectTo, { replaceState: true });
-				}
-
-				await invalidateAll();
-				finalizeLogin();
-			} else {
-				error = m.auth_oidc_user_info_missing();
-				setTimeout(() => goto(buildLoginRedirect('oidc_user_info_missing', error)), 3000);
-				isProcessing = false;
+			if (!authResult.user) {
+				throw failure('oidc_user_info_missing', m.auth_oidc_user_info_missing());
 			}
-		} catch (err: any) {
+
+			return {
+				authResult,
+				redirectTo
+			};
+		},
+		onSuccess: async ({ authResult, redirectTo }) => {
+			const user: User = {
+				id: authResult.user!.sub || authResult.user!.email || '',
+				username: authResult.user!.preferred_username || authResult.user!.email || '',
+				email: authResult.user!.email,
+				displayName:
+					authResult.user!.name ||
+					authResult.user!.displayName ||
+					authResult.user!.given_name ||
+					authResult.user!.preferred_username ||
+					authResult.user!.email ||
+					m.common_unknown(),
+				roles: authResult.user!.groups || ['user'],
+				createdAt: new Date().toISOString()
+			};
+
+			userStore.setUser(user);
+			await invalidateAll();
+			const settings = await queryClient.fetchQuery({
+				queryKey: queryKeys.settings.global(),
+				queryFn: () => settingsService.getSettings()
+			});
+			settingsStore.set(settings);
+			toast.success('Successfully logged in!');
+			await goto(redirectTo, { replaceState: true });
+		},
+		onError: (err: unknown) => {
 			console.error('OIDC callback error:', err);
 
-			let userMessage = m.auth_oidc_callback_error();
-			if (err.message?.includes('network') || err.message?.includes('timeout')) {
-				userMessage = m.auth_oidc_network_error();
+			let redirectCode = 'oidc_callback_error';
+			let userMessage: string = String(m.auth_oidc_callback_error());
+
+			if (err && typeof err === 'object' && 'code' in err && 'userMessage' in err) {
+				redirectCode = String((err as CallbackFailure).code);
+				userMessage = String((err as CallbackFailure).userMessage);
+			} else {
+				const unknownError = err as { message?: string };
+				if (unknownError?.message?.includes('network') || unknownError?.message?.includes('timeout')) {
+					userMessage = String(m.auth_oidc_network_error());
+					redirectCode = 'oidc_network_error';
+				} else if (unknownError?.message && !unknownError.message.includes('Request failed')) {
+					userMessage = unknownError.message;
+				}
 			}
 
-			const serverMessage = err?.message && !err.message.includes('Request failed') ? err.message : '';
-			error = serverMessage || userMessage;
-			setTimeout(() => goto(buildLoginRedirect('oidc_callback_error', error)), 3000);
-			isProcessing = false;
+			error = userMessage;
+			setTimeout(() => goto(buildLoginRedirect(redirectCode, userMessage)), 3000);
 		}
+	}));
+
+	const isProcessing = $derived(callbackMutation.isPending);
+
+	onMount(() => {
+		callbackMutation.mutate();
 	});
 </script>
 

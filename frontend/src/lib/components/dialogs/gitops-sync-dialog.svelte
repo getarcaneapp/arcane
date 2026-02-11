@@ -11,8 +11,10 @@
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { m } from '$lib/paraglide/messages';
 	import { FolderOpenIcon } from '$lib/icons';
+	import { createQuery } from '@tanstack/svelte-query';
 
 	type GitOpsSyncFormProps = {
 		open: boolean;
@@ -24,10 +26,6 @@
 	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
 
 	let isEditMode = $derived(!!syncToEdit);
-	let repositories = $state<GitRepository[]>([]);
-	let branches = $state<BranchInfo[]>([]);
-	let loadingData = $state(true);
-	let loadingBranches = $state(false);
 	let showFileBrowser = $state(false);
 
 	const formSchema = z.object({
@@ -51,62 +49,48 @@
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
 	let selectedRepository = $state<{ value: string; label: string } | undefined>(undefined);
+	const repositoriesQuery = createQuery(() => ({
+		queryKey: queryKeys.gitRepositories.syncDialog(),
+		queryFn: () => gitRepositoryService.getRepositories({ pagination: { page: 1, limit: 100 } }),
+		enabled: open,
+		staleTime: 0
+	}));
+	const repositories = $derived<GitRepository[]>(repositoriesQuery.data?.data ?? []);
+	const loadingData = $derived(repositoriesQuery.isPending || repositoriesQuery.isFetching);
 
-	async function loadBranches(repositoryId: string) {
-		if (!repositoryId) return;
-
-		loadingBranches = true;
-		branches = [];
-		try {
-			const result = await gitRepositoryService.getBranches(repositoryId);
-			branches = result.branches || [];
-
-			// Auto-select default branch if not editing
-			if (!isEditMode && branches.length > 0) {
-				const defaultBranch = branches.find((b) => b.isDefault);
-				if (defaultBranch) {
-					$inputs.branch.value = defaultBranch.name;
-				}
-			}
-		} catch (error) {
-			console.error('Failed to load branches:', error);
-		} finally {
-			loadingBranches = false;
-		}
-	}
-
-	async function loadData() {
-		loadingData = true;
-		// Reset state before loading data to ensure a clean state
-		selectedRepository = undefined;
-		branches = [];
-		loadingBranches = false;
-		showFileBrowser = false;
-
-		try {
-			const reposResult = await gitRepositoryService.getRepositories({ pagination: { page: 1, limit: 100 } });
-			repositories = reposResult.data || [];
-
-			if (syncToEdit) {
-				const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
-				if (repo) {
-					selectedRepository = { value: repo.id, label: repo.name };
-					await loadBranches(repo.id);
-				}
-			}
-		} catch (error) {
-			console.error('Failed to load data:', error);
-		} finally {
-			loadingData = false;
-		}
-	}
+	const branchesQuery = createQuery(() => ({
+		queryKey: queryKeys.gitRepositories.branches(selectedRepository?.value || ''),
+		queryFn: () => gitRepositoryService.getBranches(selectedRepository?.value || ''),
+		enabled: open && !!selectedRepository?.value,
+		staleTime: 0
+	}));
+	const branches = $derived<BranchInfo[]>(branchesQuery.data?.branches ?? []);
+	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
 
 	$effect(() => {
 		if (open) {
-			loadData();
+			selectedRepository = undefined;
+			showFileBrowser = false;
 			if (!isEditMode) {
 				form.reset();
 			}
+		}
+	});
+
+	$effect(() => {
+		if (!open || !syncToEdit || repositories.length === 0) return;
+		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
+		if (repo) {
+			selectedRepository = { value: repo.id, label: repo.name };
+			$inputs.repositoryId.value = repo.id;
+		}
+	});
+
+	$effect(() => {
+		if (!open || isEditMode || branches.length === 0) return;
+		const defaultBranch = branches.find((b) => b.isDefault);
+		if (defaultBranch && !$inputs.branch.value) {
+			$inputs.branch.value = defaultBranch.name;
 		}
 	});
 
@@ -154,7 +138,6 @@
 								if (repo) {
 									selectedRepository = { value: repo.id, label: repo.name };
 									$inputs.repositoryId.value = v;
-									loadBranches(v);
 								}
 							}
 						}}

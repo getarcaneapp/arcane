@@ -3,11 +3,13 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
 	import * as m from '$lib/paraglide/messages';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { onDestroy } from 'svelte';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import { cn } from '$lib/utils';
 	import { AlertIcon, InfoIcon, SuccessIcon } from '$lib/icons';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import { useQueryClient } from '@tanstack/svelte-query';
 
 	let {
 		open = $bindable(false),
@@ -28,6 +30,7 @@
 		environmentId?: string;
 		upgrading?: boolean;
 	} = $props();
+	const queryClient = useQueryClient();
 
 	const isRemoteEnvironment = $derived(!!environmentName);
 	const targetDescription = $derived(isRemoteEnvironment ? `remote environment "${environmentName}"` : m.upgrade_this_system());
@@ -92,7 +95,11 @@
 		let delayMs = 1000;
 
 		while (!abortRef.aborted && Date.now() - startedAt < timeoutMs) {
-			const { healthy } = await systemUpgradeService.checkHealth(envId);
+			const { healthy } = await queryClient.fetchQuery({
+				queryKey: queryKeys.system.upgradeHealth(envId),
+				queryFn: () => systemUpgradeService.checkHealth(envId),
+				staleTime: 0
+			});
 			if (!healthy) {
 				log('health', { healthy, consecutiveHealthyChecks, backoffMs: delayMs });
 				consecutiveHealthyChecks = 0;
@@ -109,7 +116,11 @@
 			}
 
 			try {
-				const info = await systemUpgradeService.getVersionInfo(envId);
+				const info = await queryClient.fetchQuery({
+					queryKey: queryKeys.system.versionInfo(envId),
+					queryFn: () => systemUpgradeService.getVersionInfo(envId),
+					staleTime: 0
+				});
 				lastSeenVersionInfo = info;
 
 				const expVer = expectedVersion?.trim();
@@ -153,13 +164,20 @@
 
 	async function captureBaseline() {
 		try {
-			baselineVersionInfo = await systemUpgradeService.getVersionInfo(environmentId ?? '0');
+			baselineVersionInfo = await queryClient.fetchQuery({
+				queryKey: queryKeys.system.versionInfo(environmentId ?? '0'),
+				queryFn: () => systemUpgradeService.getVersionInfo(environmentId ?? '0'),
+				staleTime: 0
+			});
 			lastSeenVersionInfo = baselineVersionInfo;
-			log('baseline', {
-				currentVersion: baselineVersionInfo.currentVersion,
-				currentDigest: short(baselineVersionInfo.currentDigest),
+			if (!baselineVersionInfo) return;
 
-				revision: short(baselineVersionInfo.revision, 8)
+			const baseline = baselineVersionInfo;
+			log('baseline', {
+				currentVersion: baseline.currentVersion,
+				currentDigest: short(baseline.currentDigest),
+
+				revision: short(baseline.revision, 8)
 			});
 		} catch (err) {
 			log('baseline-error', err);

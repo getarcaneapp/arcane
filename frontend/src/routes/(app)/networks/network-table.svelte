@@ -24,17 +24,31 @@
 		networks = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onNetworksChange
+		onNetworksChange,
+		onRefreshData
 	}: {
 		networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onNetworksChange?: (networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>) => void;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({
 		remove: false
 	});
+
+	async function refreshNetworks(options: SearchPaginationSortRequest = requestOptions) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			if (onNetworksChange) {
+				onNetworksChange(networks);
+			}
+			return;
+		}
+		networks = await networkService.getNetworks(options);
+		onNetworksChange?.(networks);
+	}
 
 	async function handleDeleteNetwork(id: string, name: string) {
 		const safeName = name?.trim() || m.common_unknown();
@@ -55,8 +69,7 @@
 						setLoadingState: (value) => (isLoading.remove = value),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }));
-							networks = await networkService.getNetworks(requestOptions);
-							onNetworksChange?.(networks);
+							await refreshNetworks();
 						}
 					});
 				}
@@ -108,8 +121,7 @@
 					isLoading.remove = false;
 
 					if (successCount > 0) {
-						networks = await networkService.getNetworks(requestOptions);
-						onNetworksChange?.(networks);
+						await refreshNetworks();
 					}
 					selectedIds = [];
 				}
@@ -288,7 +300,11 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (networks = await networkService.getNetworks(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await refreshNetworks(options);
+		return networks;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

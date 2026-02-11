@@ -29,12 +29,14 @@
 		images = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onImageUpdated
+		onImageUpdated,
+		onRefreshData
 	}: {
 		images: Paginated<ImageSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onImageUpdated?: () => Promise<void>;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({
@@ -47,6 +49,14 @@
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
+
+	async function refreshImages(options: SearchPaginationSortRequest = requestOptions) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			return;
+		}
+		images = await imageService.getImages(options);
+	}
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids || ids.length === 0) return;
@@ -81,7 +91,7 @@
 						const msg =
 							successCount === 1 ? m.images_remove_success_one() : m.images_remove_success_many({ count: successCount });
 						toast.success(msg);
-						images = await imageService.getImages(requestOptions);
+						await refreshImages();
 					}
 					if (failureCount > 0) {
 						const msg = failureCount === 1 ? m.images_remove_failed_one() : m.images_remove_failed_many({ count: failureCount });
@@ -111,7 +121,7 @@
 						setLoadingState: () => {},
 						onSuccess: async () => {
 							toast.success(m.images_remove_success());
-							images = await imageService.getImages(requestOptions);
+							await refreshImages();
 						}
 					});
 
@@ -135,7 +145,7 @@
 			setLoadingState: () => {},
 			onSuccess: async () => {
 				toast.success(m.images_pull_success({ repoTag }));
-				images = await imageService.getImages(requestOptions);
+				await refreshImages();
 			}
 		});
 
@@ -547,7 +557,11 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (images = await imageService.getImages(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await refreshImages(options);
+		return images;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

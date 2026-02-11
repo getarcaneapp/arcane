@@ -53,11 +53,13 @@
 	let {
 		containers = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onRefreshData
 	}: {
 		containers: Paginated<ContainerSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
@@ -73,6 +75,10 @@
 	const statsManager = new ContainerStatsManager();
 
 	async function refreshContainers(options: SearchPaginationSortRequest) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			return containers;
+		}
 		const result = await containerService.getContainers(options);
 		containers = result;
 		return result;

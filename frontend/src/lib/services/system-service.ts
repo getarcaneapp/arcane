@@ -28,7 +28,11 @@ export class SystemService extends BaseAPIService {
 
 	async getDockerInfo(): Promise<DockerInfo> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/system/docker/info`));
+		return this.getDockerInfoForEnvironment(envId);
+	}
+
+	async getDockerInfoForEnvironment(environmentId: string): Promise<DockerInfo> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/docker/info`));
 	}
 
 	async convert(dockerRunCommand: string) {

@@ -5,8 +5,11 @@
 	import type { ImageUpdateData } from '$lib/types/image.type';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
+	import { queryKeys } from '$lib/query/query-keys';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Component } from 'svelte';
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
+	import { createQuery } from '@tanstack/svelte-query';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -22,7 +25,7 @@
 	}
 
 	let {
-		updateInfo = $bindable(),
+		updateInfo,
 		isLoadingInBackground = false,
 		imageId,
 		repo,
@@ -32,16 +35,54 @@
 		debugHasUpdate
 	}: Props = $props();
 
-	// If debug is enabled, override hasUpdate to true
-	const effectiveUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
-		if (!updateInfo) return undefined;
-		if (debugHasUpdate) {
-			return { ...updateInfo, hasUpdate: true, updateType: updateInfo.updateType || 'tag' };
-		}
-		return updateInfo;
+	function getCheckTimeValue(info?: ImageUpdateData): number {
+		if (!info?.checkTime) return 0;
+		const parsed = Date.parse(info.checkTime);
+		return Number.isNaN(parsed) ? 0 : parsed;
+	}
+
+	const imageUpdateQuery = createQuery<ImageUpdateData>(() => ({
+		queryKey: queryKeys.images.updateCheck(environmentStore.selected?.id || '0', imageId),
+		queryFn: () => imageService.checkImageUpdateByID(imageId),
+		enabled: false,
+		retry: false
+	}));
+
+	const errorFromQuery = $derived.by((): ImageUpdateData | undefined => {
+		if (!imageUpdateQuery.error) return undefined;
+		return {
+			hasUpdate: false,
+			updateType: 'error',
+			currentVersion: tag || '',
+			currentDigest: '',
+			latestVersion: '',
+			latestDigest: '',
+			checkTime: new Date().toISOString(),
+			responseTimeMs: 0,
+			error: imageUpdateQuery.error instanceof Error ? imageUpdateQuery.error.message : m.images_update_check_failed()
+		};
 	});
 
-	let isChecking = $state(false);
+	const resolvedUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
+		const queryInfo = imageUpdateQuery.data;
+		const propInfo = updateInfo;
+
+		if (!queryInfo) return propInfo ?? errorFromQuery;
+		if (!propInfo) return queryInfo;
+
+		return getCheckTimeValue(propInfo) > getCheckTimeValue(queryInfo) ? propInfo : queryInfo;
+	});
+
+	// If debug is enabled, override hasUpdate to true
+	const effectiveUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
+		if (!resolvedUpdateInfo) return undefined;
+		if (debugHasUpdate) {
+			return { ...resolvedUpdateInfo, hasUpdate: true, updateType: resolvedUpdateInfo.updateType || 'tag' };
+		}
+		return resolvedUpdateInfo;
+	});
+
+	const isChecking = $derived(imageUpdateQuery.isFetching);
 	let isOpen = $state(false);
 
 	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>'));
@@ -93,23 +134,39 @@
 	});
 
 	async function checkImageUpdate() {
-		if (!canCheckUpdate || isChecking) return;
+		if (!canCheckUpdate || imageUpdateQuery.isFetching) return;
 
-		isChecking = true;
 		try {
-			const result = await imageService.checkImageUpdateByID(imageId);
-			if (result) {
-				updateInfo = result;
-				onUpdated?.(result);
+			const result = await imageUpdateQuery.refetch();
+			if (result.data) {
+				onUpdated?.(result.data);
 
-				if (result.error) {
-					toast.error(result.error || m.images_update_check_failed());
+				if (result.data.error) {
+					toast.error(result.data.error || m.images_update_check_failed());
 				} else {
 					toast.success(m.images_update_check_completed());
 				}
-			} else {
-				toast.error(m.images_update_check_failed());
+				return;
 			}
+
+			if (result.error) {
+				const message = result.error instanceof Error ? result.error.message : m.images_update_check_failed();
+				onUpdated?.({
+					hasUpdate: false,
+					updateType: 'error',
+					currentVersion: tag || '',
+					currentDigest: '',
+					latestVersion: '',
+					latestDigest: '',
+					checkTime: new Date().toISOString(),
+					responseTimeMs: 0,
+					error: message
+				});
+				toast.error(message);
+				return;
+			}
+
+			toast.error(m.images_update_check_failed());
 		} catch (error) {
 			console.error('Error checking update:', error);
 			const errorInfo: ImageUpdateData = {
@@ -123,11 +180,8 @@
 				responseTimeMs: 0,
 				error: (error as Error)?.message || m.images_update_check_failed()
 			};
-			updateInfo = errorInfo;
 			onUpdated?.(errorInfo);
 			toast.error(errorInfo.error);
-		} finally {
-			isChecking = false;
 		}
 	}
 

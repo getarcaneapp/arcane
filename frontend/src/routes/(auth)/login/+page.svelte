@@ -9,22 +9,22 @@
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { getApplicationLogo } from '$lib/utils/image.util';
 	import { Motion } from 'svelte-motion';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { onMount } from 'svelte';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	let { data }: { data: PageData } = $props();
 
-	let isLoading = $state({
-		local: false,
-		oidc: false
-	});
 	let error = $state<string | null>(null);
 	let username = $state('');
 	let password = $state('');
+	const queryClient = useQueryClient();
 
-	let logoUrl = $derived(getApplicationLogo());
+	const accentColor = $derived(data.settings?.accentColor);
+	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
 
 	const oidcEnabledBySettings = $derived(data.settings?.oidcEnabled === true);
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
@@ -40,20 +40,47 @@
 		oidcProviderName ? m.auth_oidc_signin_with({ provider: oidcProviderName }) : m.auth_oidc_signin()
 	);
 
+	const oidcLoginMutation = createMutation(() => ({
+		mutationFn: async () => {
+			error = null;
+			const currentRedirect = data.redirectTo || '/dashboard';
+			await goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
+		}
+	}));
+
+	const loginMutation = createMutation(() => ({
+		mutationFn: () => authService.login({ username, password }),
+		onSuccess: async (user) => {
+			userStore.setUser(user);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+			const redirectTo = data.redirectTo || '/dashboard';
+			await goto(redirectTo, { replaceState: true });
+		},
+		onError: (err) => {
+			error = err instanceof Error ? err.message : 'Login failed';
+		}
+	}));
+
+	const isLocalLoading = $derived(loginMutation.isPending);
+	const isOidcLoading = $derived(oidcLoginMutation.isPending);
+
 	onMount(() => {
 		if (oidcAutoRedirect && oidcEnabledBySettings && !data.error) {
-			handleOidcLogin();
+			oidcLoginMutation.mutate();
 		}
 	});
 
-	async function handleOidcLogin() {
-		isLoading.oidc = true;
+	function handleOidcLogin() {
 		const currentRedirect = data.redirectTo || '/dashboard';
-		await goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
-		isLoading.oidc = false;
+		oidcLoginMutation.mutate(undefined, {
+			onError: () => {
+				// Fallback to direct navigation when mutation fails unexpectedly
+				void goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
+			}
+		});
 	}
 
-	async function handleLogin(event: Event) {
+	function handleLogin(event: Event) {
 		event.preventDefault();
 
 		if (!username || !password) {
@@ -61,19 +88,8 @@
 			return;
 		}
 
-		isLoading.local = true;
 		error = null;
-
-		try {
-			const user = await authService.login({ username, password });
-			userStore.setUser(user);
-			const redirectTo = data.redirectTo || '/dashboard';
-			await goto(redirectTo, { replaceState: true });
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Login failed';
-		} finally {
-			isLoading.local = false;
-		}
+		loginMutation.mutate();
 	}
 
 	const showDivider = $derived(showOidcLoginButton && showLocalLoginForm);
@@ -204,8 +220,8 @@
 								hoverEffect="none"
 								action="oidc_login"
 								onclick={() => handleOidcLogin()}
-								loading={isLoading.oidc}
-								disabled={isLoading.local}
+								loading={isOidcLoading}
+								disabled={isLocalLoading}
 								icon={null}
 								customLabel=""
 							>
@@ -234,7 +250,7 @@
 											required
 											bind:value={username}
 											placeholder={m.auth_username_placeholder()}
-											disabled={isLoading.local || isLoading.oidc}
+											disabled={isLocalLoading || isOidcLoading}
 										/>
 									</InputGroup.Root>
 								</div>
@@ -252,17 +268,11 @@
 											required
 											bind:value={password}
 											placeholder={m.auth_password_placeholder()}
-											disabled={isLoading.local || isLoading.oidc}
+											disabled={isLocalLoading || isOidcLoading}
 										/>
 									</InputGroup.Root>
 								</div>
-								<ArcaneButton
-									type="submit"
-									action="login"
-									loading={isLoading.local}
-									disabled={isLoading.oidc}
-									hoverEffect="none"
-								/>
+								<ArcaneButton type="submit" action="login" loading={isLocalLoading} disabled={isOidcLoading} hoverEffect="none" />
 							</form>
 
 							{#if showDivider}
@@ -283,8 +293,8 @@
 									action="oidc_login"
 									hoverEffect="none"
 									onclick={() => handleOidcLogin()}
-									loading={isLoading.oidc}
-									disabled={isLoading.local}
+									loading={isOidcLoading}
+									disabled={isLocalLoading}
 									icon={null}
 									customLabel=""
 								>

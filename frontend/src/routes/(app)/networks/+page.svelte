@@ -1,75 +1,79 @@
 <script lang="ts">
 	import { NetworksIcon, ConnectionIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import type { NetworkCreateOptions } from '$lib/types/network.type';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/network.type';
 	import CreateNetworkSheet from '$lib/components/sheets/create-network-sheet.svelte';
 	import NetworkTable from './network-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let { data } = $props();
 
 	let networks = $state(untrack(() => data.networks));
-	let networkUsageCounts = $state(untrack(() => data.networkUsageCounts));
 	let requestOptions = $state(untrack(() => data.networkRequestOptions));
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
-	let isLoading = $state({ create: false, refresh: false });
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	async function refresh() {
-		await parallelRefresh(
-			{
-				networks: {
-					fetch: () => networkService.getNetworks(requestOptions),
-					onSuccess: (data) => {
-						networks = data;
-						networkUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.networks_title() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
-		);
-	}
+	const networksQuery = createQuery(() => ({
+		queryKey: queryKeys.networks.list(envId, requestOptions),
+		queryFn: () => networkService.getNetworksForEnvironment(envId, requestOptions),
+		initialData: data.networks
+	}));
 
-	useEnvironmentRefresh(refresh);
+	const createNetworkMutation = createMutation(() => ({
+		mutationKey: ['networks', 'create', envId],
+		mutationFn: ({ name, options }: { name: string; options: NetworkCreateOptions }) =>
+			networkService.createNetwork(name, options),
+		onSuccess: async (_data, variables) => {
+			toast.success(m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }));
+			await networksQuery.refetch();
+			isCreateDialogOpen = false;
+		},
+		onError: (_error, variables) => {
+			toast.error(m.common_create_failed({ resource: `${m.resource_network()} "${variables.name}"` }));
+		}
+	}));
+
+	$effect(() => {
+		if (networksQuery.data) {
+			networks = networksQuery.data;
+		}
+	});
 
 	async function handleCreate(name: string, options: NetworkCreateOptions) {
-		isLoading.create = true;
-		handleApiResultWithCallbacks({
-			result: await tryCatch(networkService.createNetwork(name, options)),
-			message: m.common_create_failed({ resource: `${m.resource_network()} "${name}"` }),
-			setLoadingState: (v) => (isLoading.create = v),
-			onSuccess: async () => {
-				toast.success(m.common_create_success({ resource: `${m.resource_network()} "${name}"` }));
-				const data = await networkService.getNetworks(requestOptions);
-				networks = data;
-				networkUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
-				isCreateDialogOpen = false;
-			}
-		});
+		await createNetworkMutation.mutateAsync({ name, options });
 	}
+
+	async function refresh() {
+		await networksQuery.refetch();
+	}
+
+	const isRefreshing = $derived(networksQuery.isFetching && !networksQuery.isPending);
+	const networkUsageCounts = $derived(networks.counts ?? countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
 		{
 			id: 'create',
 			action: 'create',
 			label: m.common_create_button({ resource: m.resource_network_cap() }),
-			onclick: () => (isCreateDialogOpen = true)
+			onclick: () => (isCreateDialogOpen = true),
+			loading: createNetworkMutation.isPending,
+			disabled: createNetworkMutation.isPending
 		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: isRefreshing
 		}
 	]);
 
@@ -95,15 +99,14 @@
 			bind:networks
 			bind:selectedIds
 			bind:requestOptions
-			onNetworksChange={(data) => {
-				if (data.counts) {
-					networkUsageCounts = data.counts;
-				}
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await networksQuery.refetch();
 			}}
 		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<CreateNetworkSheet bind:open={isCreateDialogOpen} isLoading={isLoading.create} onSubmit={handleCreate} />
+		<CreateNetworkSheet bind:open={isCreateDialogOpen} isLoading={createNetworkMutation.isPending} onSubmit={handleCreate} />
 	{/snippet}
 </ResourcePageLayout>

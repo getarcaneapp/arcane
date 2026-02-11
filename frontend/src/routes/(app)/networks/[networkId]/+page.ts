@@ -1,12 +1,20 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { networkService } from '$lib/services/network-service';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { queryKeys } from '$lib/query/query-keys';
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = async ({ params, parent }) => {
+	const { queryClient } = await parent();
+	const envId = await environmentStore.getCurrentEnvironmentId();
+
 	const { networkId } = params;
 
 	try {
-		const network = await networkService.getNetwork(networkId);
+		const network = await queryClient.fetchQuery({
+			queryKey: queryKeys.networks.detail(envId, networkId),
+			queryFn: () => networkService.getNetworkForEnvironment(envId, networkId)
+		});
 
 		if (!network) {
 			throw error(404, 'Network not found');

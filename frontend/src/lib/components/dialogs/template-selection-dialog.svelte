@@ -23,6 +23,7 @@
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
+	import { createMutation } from '@tanstack/svelte-query';
 
 	interface Props {
 		open: boolean;
@@ -36,6 +37,12 @@
 	let loadingStates = $state<Set<string>>(new Set());
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
+	const selectTemplateMutation = createMutation(() => ({
+		mutationFn: (template: Template) => templateService.getTemplateContent(template.id)
+	}));
+	const downloadTemplateMutation = createMutation(() => ({
+		mutationFn: (template: Template) => templateService.download(template.id)
+	}));
 
 	const allTemplates = $derived(templates ?? []);
 
@@ -102,7 +109,7 @@
 		loadingStates.add(loadingKey);
 
 		try {
-			const details = await templateService.getTemplateContent(template.id);
+			const details = await selectTemplateMutation.mutateAsync(template);
 			if (!details) {
 				toast.error(m.templates_load_failed());
 				return;
@@ -130,7 +137,7 @@
 		loadingStates.add(loadingKey);
 
 		try {
-			const result = await templateService.download(template.id);
+			const result = await downloadTemplateMutation.mutateAsync(template);
 			if (result) {
 				toast.success(m.templates_downloaded_success({ name: template.name }));
 				onDownloadSuccess?.();

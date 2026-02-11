@@ -27,11 +27,13 @@
 	let {
 		projects = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onRefreshData
 	}: {
 		projects: Paginated<Project>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({
@@ -51,6 +53,14 @@
 		redeploy: false
 	});
 
+	async function refreshProjects(options: SearchPaginationSortRequest = requestOptions) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			return;
+		}
+		projects = await projectService.getProjects(options);
+	}
+
 	function getStatusTooltip(project: Project): string | undefined {
 		return project.status.toLowerCase() === 'unknown' && project.statusReason ? project.statusReason : undefined;
 	}
@@ -66,7 +76,7 @@
 					setLoadingState: (value) => (isLoading.start = value),
 					onSuccess: async () => {
 						toast.success(m.compose_start_success());
-						projects = await projectService.getProjects(requestOptions);
+						await refreshProjects();
 					}
 				});
 			} else if (action === 'stop') {
@@ -76,7 +86,7 @@
 					setLoadingState: (value) => (isLoading.stop = value),
 					onSuccess: async () => {
 						toast.success(m.compose_stop_success());
-						projects = await projectService.getProjects(requestOptions);
+						await refreshProjects();
 					}
 				});
 			} else if (action === 'restart') {
@@ -86,7 +96,7 @@
 					setLoadingState: (value) => (isLoading.restart = value),
 					onSuccess: async () => {
 						toast.success(m.compose_restart_success());
-						projects = await projectService.getProjects(requestOptions);
+						await refreshProjects();
 					}
 				});
 			} else if (action === 'redeploy') {
@@ -96,7 +106,7 @@
 					setLoadingState: (value) => (isLoading.pull = value),
 					onSuccess: async () => {
 						toast.success(m.compose_pull_success());
-						projects = await projectService.getProjects(requestOptions);
+						await refreshProjects();
 					}
 				});
 			} else if (action === 'destroy') {
@@ -128,7 +138,7 @@
 								setLoadingState: (value) => (isLoading.destroy = value),
 								onSuccess: async () => {
 									toast.success(m.compose_destroy_success());
-									projects = await projectService.getProjects(requestOptions);
+									await refreshProjects();
 								}
 							});
 						}
@@ -150,7 +160,7 @@
 			setLoadingState: (value) => (isLoading.syncing = value),
 			onSuccess: async () => {
 				toast.success(m.git_sync_success());
-				projects = await projectService.getProjects(requestOptions);
+				await refreshProjects();
 			}
 		});
 	}
@@ -182,7 +192,7 @@
 						toast.error(m.compose_start_failed());
 					}
 
-					projects = await projectService.getProjects(requestOptions);
+					await refreshProjects();
 					selectedIds = [];
 				}
 			}
@@ -216,7 +226,7 @@
 						toast.error(m.compose_stop_failed());
 					}
 
-					projects = await projectService.getProjects(requestOptions);
+					await refreshProjects();
 					selectedIds = [];
 				}
 			}
@@ -250,7 +260,7 @@
 						toast.error(m.compose_pull_failed());
 					}
 
-					projects = await projectService.getProjects(requestOptions);
+					await refreshProjects();
 					selectedIds = [];
 				}
 			}
@@ -515,7 +525,11 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => (projects = await projectService.getProjects(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await refreshProjects(options);
+		return projects;
+	}}
 	{columns}
 	{mobileFields}
 	{bulkActions}

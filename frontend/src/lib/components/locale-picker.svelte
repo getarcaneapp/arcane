@@ -5,7 +5,9 @@
 	import userStore from '$lib/stores/user-store';
 	import { setLocale } from '$lib/utils/locale.util';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { userService } from '$lib/services/user-service';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	let {
 		inline = false,
@@ -19,8 +21,9 @@
 		onOpenChange?: (open: boolean) => void;
 	} = $props();
 
-	const currentLocale = $state(getLocale());
+	let currentLocale = $state<Locale>(getLocale());
 	let isOpen = $state(false);
+	const queryClient = useQueryClient();
 
 	const locales: Record<string, string> = {
 		de: 'Deutsch',
@@ -42,15 +45,31 @@
 		'zh-TW': '繁體中文'
 	};
 
-	async function updateLocale(locale: Locale) {
-		try {
+	const updateLocaleMutation = createMutation(() => ({
+		mutationFn: async (locale: Locale) => {
 			if ($userStore) {
 				await userService.update($userStore.id, { locale });
 			}
 			await setLocale(locale);
-		} catch (err) {
+			return locale;
+		},
+		onMutate: (locale) => {
+			const previousLocale = currentLocale;
+			currentLocale = locale;
+			return { previousLocale };
+		},
+		onSuccess: async (locale) => {
+			currentLocale = locale;
+			await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+		},
+		onError: (err, _locale, context) => {
+			currentLocale = context?.previousLocale ?? getLocale();
 			console.error('Failed to update locale', err);
 		}
+	}));
+
+	function updateLocale(locale: Locale) {
+		updateLocaleMutation.mutate(locale);
 	}
 </script>
 
@@ -73,7 +92,7 @@
 				<span class="truncate">{locales[currentLocale]}</span>
 			</Select.Trigger>
 			<Select.Content class="bg-card/60 bubble-shadow max-w-70 min-w-40 rounded-xl backdrop-blur-sm">
-				{#each Object.entries(locales) as [value, label]}
+				{#each Object.entries(locales) as [value, label] (value)}
 					<Select.Item class="text-sm" {value}>{label}</Select.Item>
 				{/each}
 			</Select.Content>
@@ -102,7 +121,7 @@
 						<span class="truncate">{locales[currentLocale]}</span>
 					</Select.Trigger>
 					<Select.Content class="bg-card/60 bubble-shadow rounded-xl backdrop-blur-sm">
-						{#each Object.entries(locales) as [value, label]}
+						{#each Object.entries(locales) as [value, label] (value)}
 							<Select.Item {value}>{label}</Select.Item>
 						{/each}
 					</Select.Content>

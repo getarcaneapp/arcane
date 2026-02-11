@@ -5,6 +5,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { queryKeys } from '$lib/query/query-keys';
 	import type { Environment } from '$lib/types/environment.type';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -15,6 +16,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { tick } from 'svelte';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon } from '$lib/icons';
+	import { useQueryClient } from '@tanstack/svelte-query';
 
 	type Props = {
 		open: boolean;
@@ -22,6 +24,7 @@
 	};
 
 	let { open = $bindable(false), isAdmin = false }: Props = $props();
+	const queryClient = useQueryClient();
 
 	let searchQuery = $state('');
 	let environments = $state<Environment[]>([]);
@@ -70,7 +73,11 @@
 		}
 
 		try {
-			const result = await environmentManagementService.getEnvironments(options);
+			const result = await queryClient.fetchQuery({
+				queryKey: queryKeys.environments.switcher(options),
+				queryFn: () => environmentManagementService.getEnvironments(options),
+				staleTime: 0
+			});
 			if (requestId !== currentRequestId) return;
 
 			environments = append ? [...environments, ...result.data] : result.data;
