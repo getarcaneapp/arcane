@@ -572,6 +572,7 @@
 	"images_has_updates": "Tiene actualizaciones",
 	"images_no_updates": "No hay actualizaciones",
 	"images_tags_description": "Etiquetas de repositorio asociadas a esta imagen",
+	"images_env_vars_description": "Variables de entorno definidas en esta imagen",
 	"images_pull_description": "Introduzca la referencia de imagen que desea extraer de un registro.",
 	"images_image_name_label": "Nombre de imagen *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Configuración guardada con éxito.",
 	"security_local_enabled_info": "Autenticación local habilitada para asegurar al menos un proveedor está activo.",
 	"security_settings_save_failed": "Error al guardar la configuración de seguridad",
+	"security_auto_login_enabled_title": "Auto-Login Activado",
+	"security_auto_login_enabled_description": "El inicio de sesión automático está habilitado actualmente a través de variables de entorno. Los ajustes de autenticación están deshabilitados porque los usuarios se conectan automáticamente con credenciales preconfiguradas. Para modificar los ajustes de autenticación, deshabilite el inicio de sesión automático en la configuración de su servidor.",
 	"security_scan_all": "Escanear todas las imágenes",
 	"security_scanning": "Escaneando",
 	"security_no_images_to_scan": "No hay imágenes disponibles para escanear",
@@ -1983,5 +1986,6 @@
 	"project_files": "Archivos de proyecto",
 	"project_includes": "Incluye",
 	"notifications_event_prune_report_label": "Informe de borrado del sistema",
-	"notifications_event_prune_report_description": "Recibir un informe de resumen cuando se complete una operación de poda programada"
+	"notifications_event_prune_report_description": "Recibir un informe de resumen cuando se complete una operación de poda programada",
+	"version_info_build_features": "Construir características"
 }
