@@ -572,6 +572,7 @@
 	"images_has_updates": "Aktualisierungen verfügbar",
 	"images_no_updates": "Keine Aktualisierungen verfügbar",
 	"images_tags_description": "Repository-Tags die mit diesem Image verknüpft sind",
+	"images_env_vars_description": "Umgebungsvariablen in diesem Bild definiert",
 	"images_pull_description": "Geben Sie die Image-Referenz ein die Sie aus dem Registry laden möchten.",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Einstellungen erfolgreich gespeichert.",
 	"security_local_enabled_info": "Lokale Authentifizierung aktiviert um sicher zu stellen das mindestens ein Anbieter aktiviert ist.",
 	"security_settings_save_failed": "Fehler beim speichern der Sicherheitseinstellungen",
+	"security_auto_login_enabled_title": "Auto-Login aktiviert",
+	"security_auto_login_enabled_description": "Auto-Login ist derzeit über Umgebungsvariablen aktiviert. Authentifizierungseinstellungen sind deaktiviert, da Benutzer automatisch mit vorkonfigurierten Zugangsdaten angemeldet sind. Um die Authentifizierungseinstellungen zu ändern, deaktivieren Sie die automatische Anmeldung in Ihrer Serverkonfiguration.",
 	"security_scan_all": "Alle Bilder scannen",
 	"security_scanning": "Scannen",
 	"security_no_images_to_scan": "Keine Bilder zum Scannen verfügbar",
@@ -1983,5 +1986,6 @@
 	"project_files": "Projektdateien",
 	"project_includes": "Beinhaltet",
 	"notifications_event_prune_report_label": "System Prune Bericht",
-	"notifications_event_prune_report_description": "Erhalte einen Zusammenfassungsbericht, wenn ein geplanter prune Vorgang abgeschlossen ist"
+	"notifications_event_prune_report_description": "Erhalte einen Zusammenfassungsbericht, wenn ein geplanter prune Vorgang abgeschlossen ist",
+	"version_info_build_features": "Baue Funktionen"
 }
