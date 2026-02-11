@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Seleccionar contenedores...",
 	"auto_update_containers_excluded_one": "1 contenedor excluido",
 	"auto_update_containers_excluded_many": "Contenedores {count} excluidos",
+	"auto_update_exclude_description": "Seleccione los contenedores a excluir de las actualizaciones automáticas.",
+	"auto_update_excluded_containers": "Contenedores excluidos",
 	"_comment_common_actions": "=== COMÚN - ESTADOS DE ACCIÓN ===",
 	"common_action_creating": "Creando…",
 	"common_action_deleting": "Eliminando…",
