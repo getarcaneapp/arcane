@@ -572,6 +572,7 @@
 	"images_has_updates": "Heeft updates",
 	"images_no_updates": "Geen updates",
 	"images_tags_description": "Repository tags geassocieerd met deze afbeelding",
+	"images_env_vars_description": "Omgevingsvariabelen gedefinieerd in deze afbeelding",
 	"images_pull_description": "Voer de afbeeldingsreferentie in die u van een register wilt halen.",
 	"images_image_name_label": "Afbeeldingsnaam *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Instellingen succesvol opgeslagen.",
 	"security_local_enabled_info": "Lokale authenticatie ingeschakeld om ervoor te zorgen dat ten minste één provider actief is.",
 	"security_settings_save_failed": "Kan beveiligingsinstellingen niet opslaan",
+	"security_auto_login_enabled_title": "Auto-login ingeschakeld",
+	"security_auto_login_enabled_description": "Auto-login is momenteel ingeschakeld via omgevingsvariabelen. Verificatie-instellingen zijn uitgeschakeld omdat gebruikers automatisch zijn ingelogd met vooraf geconfigureerde inloggegevens. Om verificatie-instellingen aan te passen, schakelt u automatisch inloggen uit in uw serverconfiguratie.",
 	"security_scan_all": "Scan alle afbeeldingen",
 	"security_scanning": "Scannen",
 	"security_no_images_to_scan": "Geen afbeeldingen beschikbaar om te scannen",
@@ -1983,5 +1986,6 @@
 	"project_files": "Project bestanden",
 	"project_includes": "Includes",
 	"notifications_event_prune_report_label": "Systeem opschonen rapport",
-	"notifications_event_prune_report_description": "Ontvang een samenvatting wanneer een geplande afschrijving is voltooid"
+	"notifications_event_prune_report_description": "Ontvang een samenvatting wanneer een geplande afschrijving is voltooid",
+	"version_info_build_features": "Functies bouwen"
 }
