@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Επιλογή δοχείων...",
 	"auto_update_containers_excluded_one": "1 περιέκτης εξαιρείται",
 	"auto_update_containers_excluded_many": "{count} containers excluded",
+	"auto_update_exclude_description": "Επιλέξτε περιέκτες που θα εξαιρούνται από τις αυτόματες ενημερώσεις.",
+	"auto_update_excluded_containers": "Ολοκληρωμένα Εμπορευματοκιβώτια",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Δημιουργία…",
 	"common_action_deleting": "Διαγραφή…",
