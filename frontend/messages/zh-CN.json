@@ -572,6 +572,7 @@
 	"images_has_updates": "有更新",
 	"images_no_updates": "无更新",
 	"images_tags_description": "与该镜像相关联的仓库标签",
+	"images_env_vars_description": "在此图像中定义的环境变量",
 	"images_pull_description": "输入您想从registry仓库中拉取的引用镜像。",
 	"images_image_name_label": "Image Name *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, etc.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "设置保存成功。",
 	"security_local_enabled_info": "启用本地身份验证以确保至少有一个身份验证方法处于活动状态。",
 	"security_settings_save_failed": "保存安全设置失败",
+	"security_auto_login_enabled_title": "启用自动登录",
+	"security_auto_login_enabled_description": "当前通过环境变量启用自动登录。身份验证设置被禁用，因为用户自动登录使用预先配置的凭据。 要修改认证设置，请在您的服务器配置中禁用自动登录。",
 	"security_scan_all": "扫描所有图像",
 	"security_scanning": "正在扫描",
 	"security_no_images_to_scan": "没有图片可供扫描",
@@ -1983,5 +1986,6 @@
 	"project_files": "工程文件",
 	"project_includes": "包含",
 	"notifications_event_prune_report_label": "系统清理报告",
-	"notifications_event_prune_report_description": "在计划的修剪操作完成时收到摘要报告"
+	"notifications_event_prune_report_description": "在计划的修剪操作完成时收到摘要报告",
+	"version_info_build_features": "构建功能"
 }
