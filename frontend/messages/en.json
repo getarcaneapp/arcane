@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Select containers...",
 	"auto_update_containers_excluded_one": "1 container excluded",
 	"auto_update_containers_excluded_many": "{count} containers excluded",
+	"auto_update_exclude_description": "Select containers to exclude from automatic updates.",
+	"auto_update_excluded_containers": "Excluded Containers",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",

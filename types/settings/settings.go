@@ -286,4 +286,9 @@ type Update struct {
 	//
 	// Required: false
 	ProxyRequestTimeout *string `json:"proxyRequestTimeout,omitempty"`
+
+	// AutoUpdateExcludedContainers is a comma-separated list of container names to exclude from auto-update.
+	//
+	// Required: false
+	AutoUpdateExcludedContainers *string `json:"autoUpdateExcludedContainers,omitempty"`
 }
