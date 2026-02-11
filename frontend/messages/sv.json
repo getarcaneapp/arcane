@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "Välj behållare...",
 	"auto_update_containers_excluded_one": "1 behållare exkluderad",
 	"auto_update_containers_excluded_many": "{count} behållare exkluderade",
+	"auto_update_exclude_description": "Välj behållare för att exkludera från automatiska uppdateringar.",
+	"auto_update_excluded_containers": "Uteslutna behållare",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
