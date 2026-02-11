@@ -572,6 +572,7 @@
 	"images_has_updates": "Есть обновления",
 	"images_no_updates": "Нет обновлений",
 	"images_tags_description": "Теги репозитория, связанные с этим изображением",
+	"images_env_vars_description": "Переменные окружения, определенные в этом изображении",
 	"images_pull_description": "Введите ссылку на изображение, которое вы хотите получить из реестра.",
 	"images_image_name_label": "Имя изображения *",
 	"images_image_name_placeholder": "nginx, redis, ubuntu, и т.д.",
@@ -979,6 +980,8 @@
 	"security_settings_saved": "Settings saved successfully.",
 	"security_local_enabled_info": "Local Authentication enabled to ensure at least one provider is active.",
 	"security_settings_save_failed": "Failed to save security settings",
+	"security_auto_login_enabled_title": "Автовход включен",
+	"security_auto_login_enabled_description": "Авто-вход в настоящее время включен через переменные среды. Настройки аутентификации отключены, потому что пользователи автоматически вошли в систему с предварительно настроенными учетными данными. Чтобы изменить настройки аутентификации, отключите авто-вход в конфигурацию сервера.",
 	"security_scan_all": "Сканировать все изображения",
 	"security_scanning": "Сканирование",
 	"security_no_images_to_scan": "Нет доступных для сканирования изображений",
@@ -1983,5 +1986,6 @@
 	"project_files": "Файлы проекта",
 	"project_includes": "Включает",
 	"notifications_event_prune_report_label": "Отчёт очистки системы",
-	"notifications_event_prune_report_description": "Получать сводный отчет о завершении запланированной работы prune"
+	"notifications_event_prune_report_description": "Получать сводный отчет о завершении запланированной работы prune",
+	"version_info_build_features": "Возможности сборки"
 }
