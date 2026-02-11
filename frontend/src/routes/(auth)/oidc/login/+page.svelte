@@ -5,38 +5,48 @@
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { createMutation } from '@tanstack/svelte-query';
 
-	let isRedirecting = $state(true);
 	let error = $state('');
 
-	onMount(async () => {
-		try {
+	const oidcLoginMutation = createMutation(() => ({
+		mutationFn: async () => {
 			const redirect = page.url.searchParams.get('redirect') || '/dashboard';
 
 			const authUrl = await authService.getAuthUrl(redirect);
 			if (!authUrl) {
-				error = m.auth_oidc_url_generation_failed();
-				setTimeout(() => goto('/login?error=oidc_url_generation_failed'), 3000);
-				isRedirecting = false;
-				return;
+				throw new Error('oidc_url_generation_failed');
 			}
 
 			localStorage.setItem('oidc_redirect', redirect);
 			window.location.href = authUrl;
-		} catch (err: any) {
+		},
+		onError: (err: any) => {
 			console.error('OIDC login initiation error:', err);
 
 			let userMessage = m.auth_oidc_init_failed();
-			if (err.message?.includes('discovery')) {
+			let redirectError = 'oidc_init_failed';
+
+			if (err.message === 'oidc_url_generation_failed') {
+				userMessage = m.auth_oidc_url_generation_failed();
+				redirectError = 'oidc_url_generation_failed';
+			} else if (err.message?.includes('discovery')) {
 				userMessage = m.auth_oidc_misconfigured();
+				redirectError = 'oidc_misconfigured';
 			} else if (err.message?.includes('network') || err.message?.includes('timeout')) {
 				userMessage = m.auth_oidc_network_error();
+				redirectError = 'oidc_network_error';
 			}
 
 			error = userMessage;
-			setTimeout(() => goto('/login?error=oidc_init_failed'), 3000);
-			isRedirecting = false;
+			setTimeout(() => goto(`/login?error=${redirectError}`), 3000);
 		}
+	}));
+
+	const isRedirecting = $derived(oidcLoginMutation.isPending && !error);
+
+	onMount(() => {
+		oidcLoginMutation.mutate();
 	});
 </script>
 

@@ -3,8 +3,13 @@ import { containerService } from '$lib/services/container-service';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { PageLoad } from './$types';
 import { settingsService } from '$lib/services/settings-service';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { queryKeys } from '$lib/query/query-keys';
 
-export const load: PageLoad = async () => {
+export const load: PageLoad = async ({ parent }) => {
+	const { queryClient } = await parent();
+	const envId = await environmentStore.getCurrentEnvironmentId();
+
 	const containerRequestOptions = resolveInitialTableRequest('arcane-container-table', {
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'created', direction: 'desc' }
@@ -12,8 +17,14 @@ export const load: PageLoad = async () => {
 
 	// containers includes counts, settings is separate
 	const [containers, settings] = await Promise.all([
-		containerService.getContainers(containerRequestOptions),
-		settingsService.getSettings()
+		queryClient.fetchQuery({
+			queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+			queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.settings.byEnvironment(envId),
+			queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
+		})
 	]);
 
 	return {

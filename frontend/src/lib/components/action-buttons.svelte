@@ -13,6 +13,7 @@
 	import { projectService } from '$lib/services/project-service';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
+	import { createMutation } from '@tanstack/svelte-query';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -92,6 +93,57 @@
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
 	});
+
+	const startMutation = createMutation(() => ({
+		mutationKey: ['action', 'start', type, id],
+		mutationFn: () => tryCatch(type === 'container' ? containerService.startContainer(id) : projectService.deployProject(id)),
+		onMutate: () => setLoading('start', true),
+		onSettled: () => {
+			if (!deployPulling) {
+				setLoading('start', false);
+			}
+		}
+	}));
+
+	const stopMutation = createMutation(() => ({
+		mutationKey: ['action', 'stop', type, id],
+		mutationFn: () => tryCatch(type === 'container' ? containerService.stopContainer(id) : projectService.downProject(id)),
+		onMutate: () => setLoading('stop', true),
+		onSettled: () => setLoading('stop', false)
+	}));
+
+	const restartMutation = createMutation(() => ({
+		mutationKey: ['action', 'restart', type, id],
+		mutationFn: () => tryCatch(type === 'container' ? containerService.restartContainer(id) : projectService.restartProject(id)),
+		onMutate: () => setLoading('restart', true),
+		onSettled: () => setLoading('restart', false)
+	}));
+
+	const redeployMutation = createMutation(() => ({
+		mutationKey: ['action', 'redeploy', id],
+		mutationFn: () => tryCatch(projectService.redeployProject(id)),
+		onMutate: () => setLoading('redeploy', true),
+		onSettled: () => setLoading('redeploy', false)
+	}));
+
+	const removeMutation = createMutation(() => ({
+		mutationKey: ['action', 'remove', type, id],
+		mutationFn: ({ removeFiles, removeVolumes }: { removeFiles: boolean; removeVolumes: boolean }) =>
+			tryCatch(
+				type === 'container'
+					? containerService.deleteContainer(id, { volumes: removeVolumes })
+					: projectService.destroyProject(id, removeVolumes, removeFiles)
+			),
+		onMutate: () => setLoading('remove', true),
+		onSettled: () => setLoading('remove', false)
+	}));
+
+	const refreshMutation = createMutation(() => ({
+		mutationKey: ['action', 'refresh', id],
+		mutationFn: () => tryCatch(Promise.resolve(onRefresh?.())),
+		onMutate: () => setLoading('refresh', true),
+		onSettled: () => setLoading('refresh', false)
+	}));
 
 	let pullPopoverOpen = $state(false);
 	let deployPullPopoverOpen = $state(false);
@@ -181,12 +233,7 @@
 
 	async function handleRefresh() {
 		if (!onRefresh) return;
-		setLoading('refresh', true);
-		try {
-			await onRefresh();
-		} finally {
-			setLoading('refresh', false);
-		}
+		await refreshMutation.mutateAsync();
 	}
 
 	function confirmAction(action: string) {
@@ -204,18 +251,13 @@
 						const removeFiles = checkboxStates['removeFiles'] === true;
 						const removeVolumes = checkboxStates['removeVolumes'] === true;
 
-						setLoading('remove', true);
+						const result = await removeMutation.mutateAsync({ removeFiles, removeVolumes });
 						handleApiResultWithCallbacks({
-							result: await tryCatch(
-								type === 'container'
-									? containerService.deleteContainer(id, { volumes: removeVolumes })
-									: projectService.destroyProject(id, removeVolumes, removeFiles)
-							),
+							result,
 							message: m.common_action_failed_with_type({
 								action: type === 'project' ? m.compose_destroy() : m.common_remove(),
 								type: type
 							}),
-							setLoadingState: (value) => setLoading('remove', value),
 							onSuccess: async () => {
 								toast.success(
 									type === 'project'
@@ -244,11 +286,10 @@
 				confirm: {
 					label: m.common_redeploy(),
 					action: async () => {
-						setLoading('redeploy', true);
+						const result = await redeployMutation.mutateAsync();
 						handleApiResultWithCallbacks({
-							result: await tryCatch(projectService.redeployProject(id)),
+							result,
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
-							setLoadingState: (value) => setLoading('redeploy', value),
 							onSuccess: async () => {
 								toast.success(m.common_redeploy_success({ type: name || type }));
 								onActionComplete('running');
@@ -261,11 +302,10 @@
 	}
 
 	async function handleStart() {
-		setLoading('start', true);
+		const result = await startMutation.mutateAsync();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(type === 'container' ? containerService.startContainer(id) : projectService.deployProject(id)),
+			result,
 			message: m.common_action_failed_with_type({ action: m.common_start(), type }),
-			setLoadingState: (value) => setLoading('start', value),
 			onSuccess: async () => {
 				itemState = 'running';
 				toast.success(m.common_started_success({ type: name || type }));
@@ -466,11 +506,10 @@
 	}
 
 	async function handleStop() {
-		setLoading('stop', true);
+		const result = await stopMutation.mutateAsync();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(type === 'container' ? containerService.stopContainer(id) : projectService.downProject(id)),
+			result,
 			message: m.common_action_failed_with_type({ action: m.common_stop(), type }),
-			setLoadingState: (value) => setLoading('stop', value),
 			onSuccess: async () => {
 				itemState = 'stopped';
 				toast.success(m.common_stopped_success({ type: name || type }));
@@ -480,11 +519,10 @@
 	}
 
 	async function handleRestart() {
-		setLoading('restart', true);
+		const result = await restartMutation.mutateAsync();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(type === 'container' ? containerService.restartContainer(id) : projectService.restartProject(id)),
+			result,
 			message: m.common_action_failed_with_type({ action: m.common_restart(), type }),
-			setLoadingState: (value) => setLoading('restart', value),
 			onSuccess: async () => {
 				itemState = 'running';
 				toast.success(m.common_restarted_success({ type: name || type }));

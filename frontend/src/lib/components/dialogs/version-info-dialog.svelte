@@ -5,6 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { getApplicationLogo } from '$lib/utils/image.util';
+	import { accentColorPreviewStore } from '$lib/utils/accent-color-util';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '$lib/icons';
 
 	interface Props {
@@ -17,7 +18,8 @@
 
 	const shortCommit = $derived(versionInfo.shortRevision || versionInfo.revision?.slice(0, 8) || '-');
 	const shortDigest = $derived(versionInfo.currentDigest?.slice(0, 19) || '-');
-	const logoUrl = $derived(getApplicationLogo(false));
+	const accentColor = $derived($accentColorPreviewStore);
+	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
 </script>
 
 <ResponsiveDialog bind:open {onOpenChange} description={m.version_info_description()} contentClass="sm:max-w-md">
@@ -28,29 +30,27 @@
 		</div>
 	{/snippet}
 
-	{#snippet children()}
-		<div class="flex flex-col gap-6 pt-4">
-			<div class="space-y-1.5 rounded-lg border p-3">
-				{@render infoRow(m.version_info_version(), versionInfo.displayVersion || versionInfo.currentVersion)}
+	<div class="flex flex-col gap-6 pt-4">
+		<div class="space-y-1.5 rounded-lg border p-3">
+			{@render infoRow(m.version_info_version(), versionInfo.displayVersion || versionInfo.currentVersion)}
 
-				{#if versionInfo.currentTag}
-					{@render infoRow(m.version_info_tag(), versionInfo.currentTag)}
-				{/if}
+			{#if versionInfo.currentTag}
+				{@render infoRow(m.version_info_tag(), versionInfo.currentTag)}
+			{/if}
 
-				{@render infoRowWithCopy(m.version_info_full_commit(), shortCommit, versionInfo.revision)}
+			{@render infoRowWithCopy(m.version_info_full_commit(), shortCommit, versionInfo.revision)}
 
-				{@render infoRow(m.version_info_go_version(), versionInfo.goVersion || '-')}
+			{@render infoRow(m.version_info_go_version(), versionInfo.goVersion || '-')}
 
-				{#if versionInfo.buildTime && versionInfo.buildTime !== 'unknown'}
-					{@render infoRow(m.version_info_build_time(), versionInfo.buildTime, false)}
-				{/if}
+			{#if versionInfo.buildTime && versionInfo.buildTime !== 'unknown'}
+				{@render infoRow(m.version_info_build_time(), versionInfo.buildTime, false)}
+			{/if}
 
-				{#if versionInfo.currentDigest}
-					{@render infoRowWithCopy(m.version_info_digest(), shortDigest, versionInfo.currentDigest)}
-				{/if}
-			</div>
+			{#if versionInfo.currentDigest}
+				{@render infoRowWithCopy(m.version_info_digest(), shortDigest, versionInfo.currentDigest)}
+			{/if}
 		</div>
-	{/snippet}
+	</div>
 
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">

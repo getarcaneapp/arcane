@@ -14,16 +14,31 @@ import { transformPaginationParams } from '$lib/utils/params.util';
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
 export class VolumeService extends BaseAPIService {
+	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
+		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	}
+
 	async getVolumes(options?: SearchPaginationSortRequest): Promise<VolumesPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId();
+		return this.getVolumesForEnvironment(envId, options);
+	}
+
+	async getVolumesForEnvironment(
+		environmentId: string,
+		options?: SearchPaginationSortRequest
+	): Promise<VolumesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/volumes`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/volumes`, { params });
 		return res.data;
 	}
 
 	async getVolume(volumeName: string): Promise<VolumeDetailDto> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}`)) as Promise<VolumeDetailDto>;
+		const envId = await this.resolveEnvironmentId();
+		return this.getVolumeForEnvironment(envId, volumeName);
+	}
+
+	async getVolumeForEnvironment(environmentId: string, volumeName: string): Promise<VolumeDetailDto> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<VolumeDetailDto>;
 	}
 
 	async getVolumeUsage(volumeName: string): Promise<VolumeUsageDto> {

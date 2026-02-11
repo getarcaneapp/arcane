@@ -21,16 +21,26 @@
 	let {
 		events = $bindable(),
 		selectedIds = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onRefreshData
 	}: {
 		events: Paginated<Event>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({ removing: false });
 	let detailsOpen = $state(false);
 	let detailsEvent = $state<Event | null>(null);
+
+	async function refreshEvents(options: SearchPaginationSortRequest = requestOptions) {
+		if (onRefreshData) {
+			await onRefreshData(options);
+			return;
+		}
+		events = await eventService.getEvents(options);
+	}
 
 	function getSeverityBadgeVariant(severity: string) {
 		switch (severity) {
@@ -75,7 +85,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.events_delete_success({ title: safeTitle }));
-							events = await eventService.getEvents(requestOptions);
+							await refreshEvents();
 						}
 					});
 				}
@@ -252,7 +262,11 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => (events = await eventService.getEvents(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await refreshEvents(options);
+		return events;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

@@ -10,6 +10,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
 	import { AlertIcon } from '$lib/icons';
+	import { createMutation } from '@tanstack/svelte-query';
 
 	type TemplateRegistryFormProps = {
 		open: boolean;
@@ -32,31 +33,33 @@
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
 	let submitError = $state<string | null>(null);
+	const validateRegistryMutation = createMutation(() => ({
+		mutationFn: ({ url }: { url: string; enabled: boolean }) => templateService.fetchRegistry(url),
+		onSuccess: (registryData, variables) => {
+			if (!registryData.name || !registryData.templates || !Array.isArray(registryData.templates)) {
+				submitError = m.templates_registry_invalid_format();
+				return;
+			}
 
-	async function handleSubmit() {
+			onSubmit({
+				name: registryData.name,
+				url: variables.url,
+				description: registryData.description || '',
+				enabled: variables.enabled
+			});
+		},
+		onError: (error) => {
+			submitError = error instanceof Error ? error.message : m.templates_registry_validate_failed();
+		}
+	}));
+	const isValidating = $derived(validateRegistryMutation.isPending);
+
+	function handleSubmit() {
 		submitError = null;
 
 		const data = form.validate();
 		if (!data) return;
-
-		try {
-			const registryData = await templateService.fetchRegistry(data.url);
-
-			if (!registryData.name || !registryData.templates || !Array.isArray(registryData.templates)) {
-				throw new Error(m.templates_registry_invalid_format());
-			}
-
-			const registryPayload = {
-				name: registryData.name,
-				url: data.url,
-				description: registryData.description || '',
-				enabled: data.enabled
-			};
-
-			onSubmit(registryPayload);
-		} catch (error) {
-			submitError = error instanceof Error ? error.message : m.templates_registry_validate_failed();
-		}
+		validateRegistryMutation.mutate({ url: data.url, enabled: data.enabled });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
@@ -110,14 +113,14 @@
 				type="button"
 				class="flex-1"
 				onclick={() => (open = false)}
-				disabled={isLoading}
+				disabled={isLoading || isValidating}
 			/>
 			<ArcaneButton
 				action="create"
 				type="submit"
 				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
+				disabled={isLoading || isValidating}
+				loading={isLoading || isValidating}
 				onclick={handleSubmit}
 				customLabel={m.templates_add_registry_button()}
 			/>

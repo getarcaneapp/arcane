@@ -121,10 +121,10 @@ func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) 
 		return nil, huma.Error500InternalServerError((&common.ImageRetrievalError{Err: err}).Error())
 	}
 
-	// If color override is provided, don't cache (for preview purposes)
-	// Otherwise cache for 15 minutes with stale-while-revalidate for 24 hours
+	// Always disable logo caching so theme/logo updates are reflected immediately.
+	// Keep cache for static app images that do not change at runtime.
 	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
-	if colorOverride != "" {
+	if name == "logo" || name == "logo-full" || colorOverride != "" {
 		cacheControl = "no-cache, no-store, must-revalidate"
 	}
 

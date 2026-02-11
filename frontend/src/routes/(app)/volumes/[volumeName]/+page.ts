@@ -2,19 +2,30 @@ import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { volumeService } from '$lib/services/volume-service';
 import { containerService } from '$lib/services/container-service';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { queryKeys } from '$lib/query/query-keys';
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = async ({ params, parent }) => {
+	const { queryClient } = await parent();
+	const envId = await environmentStore.getCurrentEnvironmentId();
+
 	const { volumeName } = params;
 
 	try {
-		const volume = await volumeService.getVolume(volumeName);
+		const volume = await queryClient.fetchQuery({
+			queryKey: queryKeys.volumes.detail(envId, volumeName),
+			queryFn: () => volumeService.getVolumeForEnvironment(envId, volumeName)
+		});
 
 		let containersDetailed: { id: string; name: string }[] = [];
 		if (volume.containers && volume.containers.length > 0) {
 			containersDetailed = await Promise.all(
 				volume.containers.map(async (id: string) => {
 					try {
-						const c = await containerService.getContainer(id);
+						const c = await queryClient.fetchQuery({
+							queryKey: queryKeys.containers.detail(envId, id),
+							queryFn: () => containerService.getContainerForEnvironment(envId, id)
+						});
 						const idVal = (c?.id || c?.Id || id) as string;
 						const nameVal = (c?.name ||
 							c?.Name ||

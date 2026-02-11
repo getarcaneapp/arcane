@@ -26,7 +26,7 @@
 		<Component {...props} />
 	{:else if result instanceof RenderSnippetConfig}
 		{@const { snippet, params } = result}
-		{@render snippet(params)}
+		{@render snippet?.(params)}
 	{:else}
 		{result}
 	{/if}

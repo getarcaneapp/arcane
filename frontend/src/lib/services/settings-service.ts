@@ -10,9 +10,12 @@ export default class SettingsService extends BaseAPIService {
 		// Wait for environment store to be initialized before fetching settings
 		await environmentStore.ready;
 		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.getSettingsForEnvironmentMerged(envId);
+	}
 
+	async getSettingsForEnvironmentMerged(environmentId: string): Promise<Settings> {
 		// If we're on environment 0, just get all settings normally
-		if (envId === '0') {
+		if (environmentId === '0') {
 			const res = await this.api.get(`/environments/0/settings`);
 			return this.normalize(res.data);
 		}
@@ -22,7 +25,7 @@ export default class SettingsService extends BaseAPIService {
 		// - Environment-specific settings from current environment
 		const [mainSettings, envSettings] = await Promise.all([
 			this.api.get('/environments/0/settings'),
-			this.api.get(`/environments/${envId}/settings`)
+			this.api.get(`/environments/${environmentId}/settings`)
 		]);
 
 		const mainNormalized = this.normalize(mainSettings.data);

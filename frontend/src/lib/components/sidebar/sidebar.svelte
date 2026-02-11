@@ -21,6 +21,7 @@
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
 	import { LogoutIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { fromStore } from 'svelte/store';
 
 	let {
 		ref = $bindable(null),
@@ -36,14 +37,9 @@
 
 	const sidebar = useSidebar();
 
-	let storeUser: User | null = $state(null);
+	const storeUser = fromStore(userStore);
 	let showVersionDialog = $state(false);
-
-	$effect(() => {
-		const unsub = userStore.subscribe((u) => (storeUser = u));
-		return unsub;
-	});
-	const effectiveUser = $derived(user ?? storeUser);
+	const effectiveUser = $derived(user ?? storeUser.current);
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
@@ -79,7 +75,7 @@
 			</div>
 		{/if}
 		<div class="relative">
-			<SidebarLogo {isCollapsed} {versionInformation} />
+			<SidebarLogo {isCollapsed} />
 			{#if !isCollapsed}
 				<div class="absolute top-0 right-0 -mt-1 -mr-1">
 					<SidebarPinButton />

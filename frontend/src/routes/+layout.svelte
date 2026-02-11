@@ -1,23 +1,25 @@
 <script lang="ts">
-	import '../app.css';
-	import { ModeWatcher } from 'mode-watcher';
-	import { Toaster } from '$lib/components/ui/sonner/index.js';
+	import { browser, dev } from '$app/environment';
+	import { invalidateAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import ConfirmDialog from '$lib/components/confirm-dialog/confirm-dialog.svelte';
-	import LoadingIndicator from '$lib/components/loading-indicator.svelte';
-	import type { LayoutData } from './$types';
-	import type { Snippet } from 'svelte';
+	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
 	import Error from '$lib/components/error.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import LoadingIndicator from '$lib/components/loading-indicator.svelte';
+	import { Toaster } from '$lib/components/ui/sonner/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { browser, dev } from '$app/environment';
-	import { onMount } from 'svelte';
-	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
-	import { invalidateAll } from '$app/navigation';
-	import { cn } from '$lib/utils';
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { cn } from '$lib/utils';
+	import { QueryClientProvider } from '@tanstack/svelte-query';
+	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
+	import { ModeWatcher } from 'mode-watcher';
+	import type { Snippet } from 'svelte';
+	import { onMount } from 'svelte';
+	import '../app.css';
+	import type { LayoutData } from './$types';
 
 	let {
 		data,
@@ -45,15 +47,7 @@
 			String(page.url.pathname).startsWith('/oidc')
 	);
 
-	let showPasswordChangeDialog = $state(false);
-
-	$effect(() => {
-		if (data.user && data.user.requiresPasswordChange && !isAuthPage) {
-			showPasswordChangeDialog = true;
-		} else {
-			showPasswordChangeDialog = false;
-		}
-	});
+	const showPasswordChangeDialog = $derived(!!(data.user && data.user.requiresPasswordChange && !isAuthPage));
 
 	function handlePasswordChangeSuccess() {
 		invalidateAll();
@@ -71,7 +65,13 @@
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}
 		<Tooltip.Provider>
-			{@render children()}
+			<QueryClientProvider client={data.queryClient}>
+				{@render children()}
+				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
+				{#if dev}
+					<SvelteQueryDevtools />
+				{/if}
+			</QueryClientProvider>
 		</Tooltip.Provider>
 	{/if}
 </div>
@@ -92,4 +92,3 @@
 />
 <ConfirmDialog />
 <LoadingIndicator active={isNavigating} thickness="h-1.5" />
-<FirstLoginPasswordDialog bind:open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />

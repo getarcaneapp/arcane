@@ -1,87 +1,76 @@
 <script lang="ts">
 	import { ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import ProjectsTable from './projects-table.svelte';
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
+	import type { ProjectStatusCounts } from '$lib/types/project.type';
 	import { untrack } from 'svelte';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 
 	let { data } = $props();
 
 	let projects = $state(untrack(() => data.projects));
-	let projectStatusCounts = $state(untrack(() => data.projectStatusCounts));
 	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions));
 	let selectedIds = $state<string[]>([]);
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const countsFallback: ProjectStatusCounts = {
+		runningProjects: 0,
+		stoppedProjects: 0,
+		totalProjects: 0
+	};
 
-	let isLoading = $state({
-		updating: false,
-		refreshing: false
+	const projectsQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.list(envId, projectRequestOptions),
+		queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions),
+		initialData: data.projects
+	}));
+
+	const projectStatusCountsQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.statusCounts(envId),
+		queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId),
+		initialData: data.projectStatusCounts
+	}));
+
+	const checkUpdatesMutation = createMutation(() => ({
+		mutationKey: ['projects', 'check-updates', envId],
+		mutationFn: () => imageService.runAutoUpdate(),
+		onSuccess: async () => {
+			toast.success(m.compose_update_success());
+			await projectsQuery.refetch();
+		},
+		onError: () => {
+			toast.error(m.containers_check_updates_failed());
+		}
+	}));
+
+	$effect(() => {
+		if (projectsQuery.data) {
+			projects = projectsQuery.data;
+		}
 	});
 
+	const projectStatusCounts = $derived(projectStatusCountsQuery.data ?? countsFallback);
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
+	const isRefreshing = $derived(
+		(projectsQuery.isFetching && !projectsQuery.isPending) ||
+			(projectStatusCountsQuery.isFetching && !projectStatusCountsQuery.isPending)
+	);
 
 	async function handleCheckForUpdates() {
-		isLoading.updating = true;
-		handleApiResultWithCallbacks({
-			result: await tryCatch(imageService.runAutoUpdate()),
-			message: m.containers_check_updates_failed(),
-			setLoadingState: (value) => (isLoading.updating = value),
-			async onSuccess() {
-				toast.success(m.compose_update_success());
-				projects = await projectService.getProjects(projectRequestOptions);
-			}
-		});
+		await checkUpdatesMutation.mutateAsync();
 	}
 
 	async function refreshCompose() {
-		isLoading.refreshing = true;
-		let refreshingProjectList = true;
-		let refreshingProjectCounts = true;
-		handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.getProjects(projectRequestOptions)),
-			message: m.common_refresh_failed({ resource: m.projects_title() }),
-			setLoadingState: (v) => {
-				refreshingProjectList = v;
-				isLoading.refreshing = refreshingProjectCounts || refreshingProjectList;
-			},
-			async onSuccess(newProjects) {
-				projects = newProjects;
-			}
-		});
-		handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.getProjectStatusCounts()),
-			message: m.common_refresh_failed({ resource: m.projects_title() }),
-			setLoadingState: (v) => {
-				refreshingProjectCounts = v;
-				isLoading.refreshing = refreshingProjectCounts || refreshingProjectList;
-			},
-			async onSuccess(newProjectCounts) {
-				projectStatusCounts = newProjectCounts;
-			}
-		});
+		await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 	}
-
-	let lastEnvId: string | null = null;
-	$effect(() => {
-		const env = environmentStore.selected;
-		if (!env) return;
-		if (lastEnvId === null) {
-			lastEnvId = env.id;
-			return;
-		}
-		if (env.id !== lastEnvId) {
-			lastEnvId = env.id;
-			refreshCompose();
-		}
-	});
 
 	const actionButtons: ActionButton[] = $derived([
 		{
@@ -95,16 +84,16 @@
 			action: 'update',
 			label: m.compose_update_projects(),
 			onclick: handleCheckForUpdates,
-			loading: isLoading.updating,
-			disabled: isLoading.updating
+			loading: checkUpdatesMutation.isPending,
+			disabled: checkUpdatesMutation.isPending
 		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshCompose,
-			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
+			loading: isRefreshing,
+			disabled: isRefreshing
 		}
 	]);
 
@@ -132,6 +121,14 @@
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<ProjectsTable bind:projects bind:selectedIds bind:requestOptions={projectRequestOptions} />
+		<ProjectsTable
+			bind:projects
+			bind:selectedIds
+			bind:requestOptions={projectRequestOptions}
+			onRefreshData={async (options) => {
+				projectRequestOptions = options;
+				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			}}
+		/>
 	{/snippet}
 </ResourcePageLayout>

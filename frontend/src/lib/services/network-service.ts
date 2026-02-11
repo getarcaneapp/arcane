@@ -13,10 +13,21 @@ import { transformPaginationParams } from '$lib/utils/params.util';
 export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
 export class NetworkService extends BaseAPIService {
+	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
+		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	}
+
 	async getNetworks(options?: SearchPaginationSortRequest): Promise<NetworksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId();
+		return this.getNetworksForEnvironment(envId, options);
+	}
+
+	async getNetworksForEnvironment(
+		environmentId: string,
+		options?: SearchPaginationSortRequest
+	): Promise<NetworksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/networks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/networks`, { params });
 		return res.data;
 	}
 
@@ -27,9 +38,17 @@ export class NetworkService extends BaseAPIService {
 	}
 
 	async getNetwork(networkId: string, options?: SearchPaginationSortRequest): Promise<NetworkInspectDto> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId();
+		return this.getNetworkForEnvironment(envId, networkId, options);
+	}
+
+	async getNetworkForEnvironment(
+		environmentId: string,
+		networkId: string,
+		options?: SearchPaginationSortRequest
+	): Promise<NetworkInspectDto> {
 		const params = transformPaginationParams(options);
-		return this.handleResponse(this.api.get(`/environments/${envId}/networks/${networkId}`, { params }));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/${networkId}`, { params }));
 	}
 
 	async createNetwork(name: string, options: NetworkCreateOptions): Promise<any> {

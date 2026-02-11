@@ -1,57 +1,79 @@
 <script lang="ts">
 	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { containerService } from '$lib/services/container-service';
 	import ContainerTable from './container-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/container.type';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { BoxIcon } from '$lib/icons';
+	import { queryKeys } from '$lib/query/query-keys';
 
 	let { data } = $props();
 
-	let containers = $state(untrack(() => data.containers));
-	let containerStatusCounts = $state(untrack(() => data.containerStatusCounts));
 	let requestOptions = $state(untrack(() => data.containerRequestOptions));
-	let selectedIds = $state([]);
+	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
-	let isLoading = $state({ checking: false, create: false, refreshing: false });
+	let containers = $state(untrack(() => data.containers));
+	const envId = $derived(environmentStore.selected?.id || '0');
 
-	async function refresh() {
-		await parallelRefresh(
-			{
-				containers: {
-					fetch: () => containerService.getContainers(requestOptions),
-					onSuccess: (data) => {
-						containers = data;
-						containerStatusCounts = data.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 };
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.containers_title() })
-				}
-			},
-			(v) => (isLoading.refreshing = v)
-		);
-	}
+	const countsFallback: ContainerStatusCounts = {
+		runningContainers: 0,
+		stoppedContainers: 0,
+		totalContainers: 0
+	};
 
-	useEnvironmentRefresh(refresh);
+	const containersQuery = createQuery(() => ({
+		queryKey: queryKeys.containers.list(envId, requestOptions),
+		queryFn: () => containerService.getContainersForEnvironment(envId, requestOptions),
+		initialData: data.containers
+	}));
+
+	const checkUpdatesMutation = createMutation(() => ({
+		mutationKey: queryKeys.containers.checkUpdates(envId),
+		mutationFn: () => imageService.runAutoUpdate(),
+		onSuccess: async () => {
+			toast.success(m.containers_check_updates_success());
+			await containersQuery.refetch();
+		},
+		onError: () => {
+			toast.error(m.containers_check_updates_failed());
+		}
+	}));
+
+	const createContainerMutation = createMutation(() => ({
+		mutationKey: queryKeys.containers.create(envId),
+		mutationFn: (options: ContainerCreateRequest) => containerService.createContainer(options),
+		onSuccess: async () => {
+			toast.success(m.common_create_success({ resource: m.resource_container() }));
+			await containersQuery.refetch();
+			isCreateDialogOpen = false;
+		},
+		onError: () => {
+			toast.error(m.containers_create_failed());
+		}
+	}));
+
+	$effect(() => {
+		if (containersQuery.data) {
+			containers = containersQuery.data;
+		}
+	});
 
 	async function handleCheckForUpdates() {
-		isLoading.checking = true;
-		handleApiResultWithCallbacks({
-			result: await tryCatch(imageService.runAutoUpdate()),
-			message: m.containers_check_updates_failed(),
-			setLoadingState: (v) => (isLoading.checking = v),
-			onSuccess: async () => {
-				toast.success(m.containers_check_updates_success());
-				containers = await containerService.getContainers(requestOptions);
-			}
-		});
+		await checkUpdatesMutation.mutateAsync();
 	}
+
+	async function refresh() {
+		await containersQuery.refetch();
+	}
+
+	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
+	const containerStatusCounts = $derived(containers.counts ?? countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
 		{
@@ -59,24 +81,24 @@
 			action: 'create',
 			label: m.common_create_button({ resource: m.resource_container_cap() }),
 			onclick: () => (isCreateDialogOpen = true),
-			loading: isLoading.create,
-			disabled: isLoading.create
+			loading: createContainerMutation.isPending,
+			disabled: createContainerMutation.isPending
 		},
 		{
 			id: 'check-updates',
 			action: 'update',
 			label: m.containers_check_updates(),
 			onclick: handleCheckForUpdates,
-			loading: isLoading.checking,
-			disabled: isLoading.checking
+			loading: checkUpdatesMutation.isPending,
+			disabled: checkUpdatesMutation.isPending
 		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refreshing,
-			disabled: isLoading.refreshing
+			loading: isRefreshing,
+			disabled: isRefreshing
 		}
 	]);
 
@@ -104,26 +126,22 @@
 
 <ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<ContainerTable bind:containers bind:selectedIds bind:requestOptions />
+		<ContainerTable
+			bind:containers
+			bind:selectedIds
+			bind:requestOptions
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await containersQuery.refetch();
+			}}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
 		<CreateContainerDialog
 			bind:open={isCreateDialogOpen}
-			isLoading={isLoading.create}
-			onSubmit={async (options) => {
-				isLoading.create = true;
-				handleApiResultWithCallbacks({
-					result: await tryCatch(containerService.createContainer(options)),
-					message: m.containers_create_failed(),
-					setLoadingState: (v) => (isLoading.create = v),
-					onSuccess: async () => {
-						toast.success(m.common_create_success({ resource: m.resource_container() }));
-						containers = await containerService.getContainers(requestOptions);
-						isCreateDialogOpen = false;
-					}
-				});
-			}}
+			isLoading={createContainerMutation.isPending}
+			onSubmit={(options) => createContainerMutation.mutate(options)}
 		/>
 	{/snippet}
 </ResourcePageLayout>

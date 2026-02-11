@@ -1,4 +1,17 @@
+import { writable } from 'svelte/store';
+
+const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
+
+export const accentColorPreviewStore = writable<string>(DEFAULT_ACCENT_COLOR);
+
 export function applyAccentColor(accentValue: string) {
+	const resolvedAccent = accentValue === 'default' ? DEFAULT_ACCENT_COLOR : accentValue;
+	accentColorPreviewStore.set(resolvedAccent);
+
+	if (typeof document === 'undefined') {
+		return;
+	}
+
 	if (accentValue === 'default') {
 		document.documentElement.style.removeProperty('--primary');
 		document.documentElement.style.removeProperty('--primary-foreground');
@@ -7,14 +20,14 @@ export function applyAccentColor(accentValue: string) {
 		return;
 	}
 
-	document.documentElement.style.setProperty('--primary', accentValue);
+	document.documentElement.style.setProperty('--primary', resolvedAccent);
 
 	// Smart foreground color selection based on brightness
-	const foregroundColor = getContrastingForeground(accentValue);
+	const foregroundColor = getContrastingForeground(resolvedAccent);
 	document.documentElement.style.setProperty('--primary-foreground', foregroundColor);
 
 	// Create proper ring colors based on input format
-	const ringColor = `color-mix(in srgb, ${accentValue} 50%, transparent)`;
+	const ringColor = `color-mix(in srgb, ${resolvedAccent} 50%, transparent)`;
 	document.documentElement.style.setProperty('--ring', ringColor);
 	document.documentElement.style.setProperty('--sidebar-ring', ringColor);
 }

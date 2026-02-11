@@ -1,60 +1,63 @@
 <script lang="ts">
-	import { VolumesIcon, VolumeUnusedIcon, VolumeUsedIcon } from '$lib/icons';
+	import { VolumesIcon, VolumeUnusedIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import CreateVolumeSheet from '$lib/components/sheets/create-volume-sheet.svelte';
-	import type { VolumeCreateRequest } from '$lib/types/volume.type';
+	import type { VolumeCreateRequest, VolumeUsageCounts } from '$lib/types/volume.type';
 	import VolumeTable from './volume-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let { data } = $props();
 
 	let volumes = $state(untrack(() => data.volumes));
-	let volumeUsageCounts = $state(untrack(() => data.volumeUsageCounts));
 	let requestOptions = $state(untrack(() => data.volumeRequestOptions));
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
-	let isLoading = $state({ creating: false, refresh: false });
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	async function refresh() {
-		await parallelRefresh(
-			{
-				volumes: {
-					fetch: () => volumeService.getVolumes(requestOptions),
-					onSuccess: (data) => {
-						volumes = data;
-						// Extract counts from the response - they're included in the list endpoint
-						volumeUsageCounts = data.counts ?? { inuse: 0, unused: 0, total: 0 };
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.volumes_title() })
-				}
-			},
-			(v) => (isLoading.refresh = v)
-		);
-	}
+	const volumesQuery = createQuery(() => ({
+		queryKey: queryKeys.volumes.table(envId, requestOptions),
+		queryFn: () => volumeService.getVolumesForEnvironment(envId, requestOptions),
+		initialData: data.volumes
+	}));
 
-	useEnvironmentRefresh(refresh);
+	const createVolumeMutation = createMutation(() => ({
+		mutationKey: ['volumes', 'create', envId],
+		mutationFn: (options: VolumeCreateRequest) => volumeService.createVolume(options),
+		onSuccess: async (_data, options) => {
+			const name = options.name?.trim() || m.common_unknown();
+			toast.success(m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }));
+			await volumesQuery.refetch();
+			isCreateDialogOpen = false;
+		},
+		onError: (_error, options) => {
+			const name = options.name?.trim() || m.common_unknown();
+			toast.error(m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }));
+		}
+	}));
+
+	$effect(() => {
+		if (volumesQuery.data) {
+			volumes = volumesQuery.data;
+		}
+	});
 
 	async function handleCreate(options: VolumeCreateRequest) {
-		isLoading.creating = true;
-		const name = options.name?.trim() || m.common_unknown();
-		handleApiResultWithCallbacks({
-			result: await tryCatch(volumeService.createVolume(options)),
-			message: m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }),
-			setLoadingState: (v) => (isLoading.creating = v),
-			onSuccess: async () => {
-				toast.success(m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }));
-				volumes = await volumeService.getVolumes(requestOptions);
-				isCreateDialogOpen = false;
-			}
-		});
+		await createVolumeMutation.mutateAsync(options);
 	}
+
+	async function refresh() {
+		await volumesQuery.refetch();
+	}
+
+	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
+	const volumeUsageCounts = $derived(volumes.counts ?? countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
 		{
@@ -62,16 +65,16 @@
 			action: 'create',
 			label: m.common_create_button({ resource: m.resource_volume_cap() }),
 			onclick: () => (isCreateDialogOpen = true),
-			loading: isLoading.creating,
-			disabled: isLoading.creating
+			loading: createVolumeMutation.isPending,
+			disabled: createVolumeMutation.isPending
 		},
 		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: isRefreshing
 		}
 	]);
 
@@ -93,10 +96,18 @@
 
 <ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<VolumeTable bind:volumes bind:selectedIds bind:requestOptions />
+		<VolumeTable
+			bind:volumes
+			bind:selectedIds
+			bind:requestOptions
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await volumesQuery.refetch();
+			}}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<CreateVolumeSheet bind:open={isCreateDialogOpen} isLoading={isLoading.creating} onSubmit={handleCreate} />
+		<CreateVolumeSheet bind:open={isCreateDialogOpen} isLoading={createVolumeMutation.isPending} onSubmit={handleCreate} />
 	{/snippet}
 </ResourcePageLayout>
