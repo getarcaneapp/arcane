@@ -183,6 +183,8 @@
 	"auto_update_select_containers": "选择容器...",
 	"auto_update_containers_excluded_one": "不包括1个容器",
 	"auto_update_containers_excluded_many": "{count} containers excluded",
+	"auto_update_exclude_description": "选择容器从自动更新中排除.",
+	"auto_update_excluded_containers": "排除容器",
 	"_comment_common_actions": "=== 通用 - 运行状态===",
 	"common_action_creating": "创建中…",
 	"common_action_deleting": "正在删除…",
