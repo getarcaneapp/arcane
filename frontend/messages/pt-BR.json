@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Cannot pull image without repository tag",
 	"images_untagged": "Sem marcação",
 	"images_repository": "Repositório",
+	"images_used_by": "Usado por",
 	"images_updates": "Atualizações",
 	"images_os": "SO",
 	"images_tag": "Marcação",
