@@ -2,7 +2,7 @@
 ARG VERSION="dev"
 ARG REVISION="unknown"
 
-FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS agent-builder
+FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS agent-builder
 ARG TARGETARCH
 ARG BUILD_TAGS="exclude_frontend"
 ARG VERSION="dev"
