@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "无法拉取没有仓库标签的镜像",
 	"images_untagged": "无标签",
 	"images_repository": "资源库",
+	"images_used_by": "使用",
 	"images_updates": "更新",
 	"images_os": "操作系统",
 	"images_tag": "标签",
