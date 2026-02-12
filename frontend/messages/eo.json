@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Ne eblas elŝuti prakopion sen deponeja etikedo",
 	"images_untagged": "Neetikeditaj",
 	"images_repository": "Deponejo",
+	"images_used_by": "Used By",
 	"images_updates": "Ĝisdatigoj",
 	"images_os": "OS",
 	"images_tag": "Etikedo",
