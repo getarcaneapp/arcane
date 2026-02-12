@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Cannot pull image without repository tag",
 	"images_untagged": "Χωρίς ετικέτα",
 	"images_repository": "Repository",
+	"images_used_by": "Χρησιμοποιείται Από",
 	"images_updates": "Ενημερώσεις",
 	"images_os": "OS",
 	"images_tag": "Ετικέτα",
