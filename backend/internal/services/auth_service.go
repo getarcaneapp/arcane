@@ -110,6 +110,8 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 }
 
 func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.OidcStatusInfo, error) {
+	oidcEnvForced := s.settingsService != nil && s.settingsService.isEnvOverrideActiveInternal("oidcEnabled")
+
 	mergeAccounts := false
 	providerName := ""
 	providerLogoUrl := ""
@@ -128,12 +130,12 @@ func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.Oid
 	}
 
 	status := &auth.OidcStatusInfo{
-		EnvForced:       s.config.OidcEnabled,
+		EnvForced:       oidcEnvForced,
 		MergeAccounts:   mergeAccounts,
 		ProviderName:    providerName,
 		ProviderLogoUrl: providerLogoUrl,
 	}
-	if s.config.OidcEnabled {
+	if oidcEnvForced {
 		status.EnvConfigured = s.config.OidcClientID != "" && s.config.OidcIssuerURL != ""
 		if status.ProviderName == "" {
 			status.ProviderName = s.config.OidcProviderName

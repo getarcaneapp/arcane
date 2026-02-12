@@ -254,7 +254,19 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 		t.Errorf("expected mergeAccounts=false, got true")
 	}
 
+	// Explicit env override to false should still be treated as forced
+	t.Setenv("OIDC_ENABLED", "false")
+	s.config.OidcEnabled = false
+	status, err = s.GetOidcConfigurationStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetOidcConfigurationStatus error: %v", err)
+	}
+	if !status.EnvForced || status.EnvConfigured {
+		t.Errorf("expected forced=false-override and not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
+	}
+
 	// Enabled but missing fields
+	t.Setenv("OIDC_ENABLED", "true")
 	s.config.OidcEnabled = true
 	status, err = s.GetOidcConfigurationStatus(context.Background())
 	if err != nil {

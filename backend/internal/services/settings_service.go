@@ -283,6 +283,34 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 	}
 }
 
+// isEnvOverrideActiveInternal returns true when the given setting key has an envOverride tag
+// and its corresponding environment variable is currently set to a non-empty value.
+func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
+	rt := reflect.TypeOf(models.Settings{})
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		tagValue := field.Tag.Get("key")
+		if tagValue == "" {
+			continue
+		}
+
+		tagParts := strings.Split(tagValue, ",")
+		if len(tagParts) == 0 || tagParts[0] != key {
+			continue
+		}
+
+		if !slices.Contains(tagParts[1:], "envOverride") {
+			return false
+		}
+
+		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		val, ok := os.LookupEnv(envVarName)
+		return ok && val != ""
+	}
+
+	return false
+}
+
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
 	var settingVars []models.SettingVariable
 	err := s.db.WithContext(ctx).Find(&settingVars).Error

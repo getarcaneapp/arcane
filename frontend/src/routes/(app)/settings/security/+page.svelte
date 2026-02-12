@@ -49,7 +49,8 @@
 			oidcProviderLogoUrl: z.string()
 		})
 		.superRefine((formData, ctx) => {
-			if (data.oidcStatus.envForced || formData.oidcEnabled) return;
+			const oidcEnabledForAuthValidation = data.oidcStatus.envForced ? currentSettings.oidcEnabled : formData.oidcEnabled;
+			if (oidcEnabledForAuthValidation) return;
 			if (!formData.authLocalEnabled) {
 				ctx.addIssue({
 					code: 'custom',
@@ -129,6 +130,12 @@
 
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
 	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
+	const isOidcForcedEnabled = $derived(isOidcEnvForced && currentSettings.oidcEnabled);
+	const isOidcForcedDisabled = $derived(isOidcEnvForced && !currentSettings.oidcEnabled);
+	const isOidcEnabledForAuthValidation = $derived.by(() =>
+		isOidcEnvForced ? currentSettings.oidcEnabled : $formInputs.oidcEnabled.value
+	);
+	const showOidcDetails = $derived($formInputs.oidcEnabled.value || isOidcForcedEnabled);
 
 	async function customSubmit() {
 		const formData = form.validate();
@@ -181,7 +188,7 @@
 	}
 
 	function handleLocalSwitchChange(checked: boolean) {
-		if (!checked && !$formInputs.oidcEnabled.value && !data.oidcStatus.envForced) {
+		if (!checked && !isOidcEnabledForAuthValidation) {
 			$formInputs.authLocalEnabled.value = true;
 			toast.error(m.security_enable_one_provider_error());
 			return;
@@ -190,7 +197,7 @@
 	}
 
 	function handleOidcEnabledChange(checked: boolean) {
-		if (!checked && !$formInputs.authLocalEnabled.value && !data.oidcStatus.envForced) {
+		if (!checked && !$formInputs.authLocalEnabled.value && !isOidcEnvForced) {
 			$formInputs.authLocalEnabled.value = true;
 			toast.info(m.security_local_enabled_info());
 		}
@@ -279,11 +286,26 @@
 									<p class="text-muted-foreground mt-1 text-sm">{m.security_oidc_auth_description()}</p>
 									{#if isOidcEnvForced}
 										<div class="mt-2">
-											<span
-												class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
-											>
-												{m.security_server_configured()}
-											</span>
+											<ArcaneTooltip.Root>
+												<ArcaneTooltip.Trigger>
+													<span
+														class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
+													>
+														{#if isOidcForcedDisabled}
+															{m.security_server_disabled_via_server()}
+														{:else}
+															{m.security_server_configured()}
+														{/if}
+													</span>
+												</ArcaneTooltip.Trigger>
+												<ArcaneTooltip.Content side="top">
+													{#if isOidcForcedDisabled}
+														{m.security_oidc_forced_disabled_tooltip()}
+													{:else}
+														{m.security_oidc_forced_managed_tooltip()}
+													{/if}
+												</ArcaneTooltip.Content>
+											</ArcaneTooltip.Root>
 										</div>
 									{/if}
 								</div>
@@ -300,7 +322,7 @@
 										</Label>
 									</div>
 
-									{#if $formInputs.oidcEnabled.value || isOidcEnvForced}
+									{#if showOidcDetails}
 										<div class="space-y-4 pt-2">
 											<div class="space-y-2">
 												<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>

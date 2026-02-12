@@ -108,6 +108,28 @@ func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T)
 	require.True(t, settings2.OidcMergeAccounts.IsTrue())
 }
 
+func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// Not set => not forced
+	require.False(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
+
+	// Explicit false still counts as active env override
+	t.Setenv("OIDC_ENABLED", "false")
+	require.True(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
+
+	// Empty value should not be treated as active (matches applyEnvOverrides behavior)
+	t.Setenv("OIDC_ENABLED", "")
+	require.False(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
+
+	// Non-envOverride keys should never be forced via this helper
+	t.Setenv("AUTH_SESSION_TIMEOUT", "120")
+	require.False(t, svc.isEnvOverrideActiveInternal("authSessionTimeout"))
+}
+
 func TestSettingsService_GetSetHelpers(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
