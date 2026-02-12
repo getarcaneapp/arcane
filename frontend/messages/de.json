@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Kann Image nicht ohne Repository-Tag laden",
 	"images_untagged": "Untagged",
 	"images_repository": "Repository",
+	"images_used_by": "Verwendet von",
 	"images_updates": "Updates",
 	"images_os": "OS",
 	"images_tag": "Tag",
