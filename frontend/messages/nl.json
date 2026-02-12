@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Kan geen afbeelding verwijderen zonder repository tag",
 	"images_untagged": "Niet-getagd",
 	"images_repository": "Bewaarplaats",
+	"images_used_by": "Gebruikt door",
 	"images_updates": "Bijwerken",
 	"images_os": "Besturingssysteem",
 	"images_tag": "Tagnaam",
