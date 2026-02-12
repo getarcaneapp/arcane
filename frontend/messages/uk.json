@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Cannot pull image without repository tag",
 	"images_untagged": "Untagged",
 	"images_repository": "Repository",
+	"images_used_by": "Використовується",
 	"images_updates": "Updates",
 	"images_os": "OS",
 	"images_tag": "Tag",
