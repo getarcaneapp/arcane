@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Không thể pull Image nếu không có repository tag",
 	"images_untagged": "Chưa gắn tag",
 	"images_repository": "Repository",
+	"images_used_by": "Used By",
 	"images_updates": "Cập nhật",
 	"images_os": "Hệ điều hành",
 	"images_tag": "Tag",
