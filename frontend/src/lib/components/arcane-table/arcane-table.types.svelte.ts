@@ -8,6 +8,9 @@ export type FieldSpec = {
 };
 
 export type MobileFieldVisibility = Record<string, boolean>;
+export type SortDirection = 'asc' | 'desc';
+export type SortPreference = [string, SortDirection];
+export type SortState = { column: string; direction: SortDirection };
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
@@ -36,6 +39,8 @@ export type CompactTablePrefs = {
 	f?: [string, unknown][];
 	// g: global filter string
 	g?: string;
+	// s: sort as [column, direction]
+	s?: SortPreference;
 	// l: page size (limit)
 	l?: number;
 	// m: list of hidden mobile field ids
@@ -65,6 +70,19 @@ export function encodeFilters(filters: ColumnFiltersState): [string, unknown][] 
 export function decodeFilters(pairs?: [string, unknown][]): ColumnFiltersState {
 	if (!pairs?.length) return [];
 	return pairs.map(([id, value]) => ({ id, value }));
+}
+
+export function encodeSort(sort?: SortState): SortPreference | undefined {
+	if (!sort?.column) return undefined;
+	return [sort.column, sort.direction];
+}
+
+export function decodeSort(value: unknown): SortState | undefined {
+	if (!Array.isArray(value) || value.length !== 2) return undefined;
+	const [column, direction] = value;
+	if (typeof column !== 'string') return undefined;
+	if (direction !== 'asc' && direction !== 'desc') return undefined;
+	return { column, direction };
 }
 
 export function encodeMobileVisibility(visibility: Record<string, boolean>): string[] {

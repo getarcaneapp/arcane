@@ -27,6 +27,7 @@
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
+		encodeSort,
 		encodeMobileVisibility,
 		buildMobileVisibility,
 		type BulkAction
@@ -194,6 +195,19 @@
 		if (persistedLimit !== currentLimit) {
 			requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
 			shouldRefresh = true;
+		}
+
+		const persistedSort = snapshot.sort;
+		const currentSort = requestOptions?.sort;
+		if (persistedSort) {
+			if (currentSort?.column !== persistedSort.column || currentSort?.direction !== persistedSort.direction) {
+				requestOptions = {
+					...requestOptions,
+					sort: persistedSort,
+					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
+				};
+				shouldRefresh = true;
+			}
 		}
 		if (shouldRefresh) onRefresh(requestOptions);
 
@@ -406,10 +420,19 @@
 			const next = typeof updater === 'function' ? updater(sorting) : updater;
 			sorting = next;
 			const first = next[0];
-			if (first) {
+			const sortState = first
+				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
+				: undefined;
+			if (enablePersist && prefs) {
+				prefs.current = {
+					...prefs.current,
+					s: encodeSort(sortState)
+				};
+			}
+			if (sortState) {
 				requestOptions = {
 					...requestOptions,
-					sort: { column: String(first.id), direction: first.desc ? 'desc' : 'asc' },
+					sort: sortState,
 					pagination: {
 						page: 1,
 						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10

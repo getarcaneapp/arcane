@@ -1,13 +1,14 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
 import type { FilterMap } from '$lib/types/pagination.type';
 import type { CompactTablePrefs } from './arcane-table.types.svelte';
-import { decodeFilters } from './arcane-table.types.svelte';
+import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 
 export type PersistedPreferencesSnapshot = {
 	hiddenColumns: string[];
 	restoredFilters: ColumnFiltersState;
 	filtersMap: FilterMap;
 	search: string;
+	sort?: { column: string; direction: 'asc' | 'desc' };
 	limit: number;
 	mobileVisibility?: string[];
 	customSettings?: Record<string, unknown>;
@@ -65,6 +66,7 @@ export function extractPersistedPreferences(
 	const restoredFilters = decodeFilters(prefs.f);
 	const filtersMap = toFilterMap(restoredFilters);
 	const search = (prefs.g ?? '').trim();
+	const sort = decodeSort(prefs.s);
 	const limit = prefs.l ?? fallbackLimit;
 
 	return {
@@ -72,6 +74,7 @@ export function extractPersistedPreferences(
 		restoredFilters,
 		filtersMap,
 		search,
+		sort,
 		limit,
 		mobileVisibility: prefs.m,
 		customSettings: prefs.c

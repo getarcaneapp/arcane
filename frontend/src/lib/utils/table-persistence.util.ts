@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import { PersistedState } from 'runed';
-import type { CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
+import { decodeSort, type CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 
 const DEFAULT_LIMIT = 20;
@@ -102,6 +102,11 @@ export function resolveInitialTableRequest(
 		const limit = normalizeLimit(current.l);
 		if (limit !== undefined && base.pagination?.limit !== limit) {
 			base.pagination = { page: 1, limit };
+		}
+
+		const sort = decodeSort(current.s);
+		if (sort) {
+			base.sort = sort;
 		}
 	} catch (error) {
 		return base;
