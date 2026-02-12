@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "No se puede extraer imagen sin etiqueta de repositorio",
 	"images_untagged": "Sin etiquetar",
 	"images_repository": "Repositorio",
+	"images_used_by": "Usado por",
 	"images_updates": "Actualizaciones",
 	"images_os": "SO",
 	"images_tag": "Etiqueta",
