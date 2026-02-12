@@ -30,6 +30,7 @@
 	} = $props();
 
 	let isEditing = $state(false);
+	let wrapperClass = $derived(cn('group', variant === 'block' ? 'w-full' : 'min-w-0', className));
 
 	async function beginEdit() {
 		if (!canEdit) return;
@@ -39,7 +40,7 @@
 	}
 </script>
 
-<div class={cn('group w-full', className)}>
+<div class={wrapperClass}>
 	{#if isEditing}
 		{#if variant === 'block'}
 			<Input
