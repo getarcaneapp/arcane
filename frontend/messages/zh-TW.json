@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "無法拉取沒有儲存庫標籤的映像檔",
 	"images_untagged": "無標籤",
 	"images_repository": "儲存庫",
+	"images_used_by": "Used By",
 	"images_updates": "更新",
 	"images_os": "作業系統",
 	"images_tag": "標籤",
