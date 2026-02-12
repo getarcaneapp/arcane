@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "리포지토리 태그 없이 이미지를 가져올 수 없습니다",
 	"images_untagged": "태그 없음(Untagged)",
 	"images_repository": "리포지토리",
+	"images_used_by": "Used By",
 	"images_updates": "업데이트",
 	"images_os": "OS",
 	"images_tag": "태그",
