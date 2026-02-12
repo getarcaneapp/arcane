@@ -564,6 +564,7 @@
 	"images_pull_no_tag": "Не удается получить изображение без тега репозитория",
 	"images_untagged": "Без тега",
 	"images_repository": "Репозиторий",
+	"images_used_by": "Использовано",
 	"images_updates": "Обновления",
 	"images_os": "OS",
 	"images_tag": "Теги",
