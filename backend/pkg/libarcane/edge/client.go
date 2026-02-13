@@ -3,19 +3,28 @@ package edge
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/proto/tunnel/v1"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -48,8 +57,9 @@ type TunnelClient struct {
 	reconnectInterval time.Duration
 	heartbeatInterval time.Duration
 	managerURL        string
+	managerGRPCAddr   string
 	localPort         string // Port the agent is running on locally
-	conn              *TunnelConn
+	conn              TunnelConnection
 	stopCh            chan struct{}
 	requestTimeout    time.Duration
 	activeStreams     sync.Map // map[string]*activeWSStream
@@ -62,9 +72,12 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 		reconnectInterval = 5 * time.Second
 	}
 
-	managerURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/")
-	// Convert HTTP to WebSocket URL
-	managerURL = remenv.HTTPToWebSocketURL(managerURL) + "/api/tunnel/connect"
+	managerURL := ""
+	if managerBaseURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/"); managerBaseURL != "" {
+		// Convert HTTP to WebSocket URL
+		managerURL = remenv.HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
+	}
+	managerGRPCAddr := cfg.GetManagerGRPCAddr()
 
 	// Get local port for WebSocket dialing
 	localPort := cfg.Port
@@ -78,6 +91,7 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 		reconnectInterval: reconnectInterval,
 		heartbeatInterval: DefaultHeartbeatInterval,
 		managerURL:        managerURL,
+		managerGRPCAddr:   managerGRPCAddr,
 		localPort:         localPort,
 		stopCh:            make(chan struct{}),
 		requestTimeout:    DefaultRequestTimeout,
@@ -86,7 +100,16 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 
 // StartWithErrorChan runs the tunnel client and optionally emits connection errors.
 func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
-	slog.InfoContext(ctx, "Starting edge tunnel client", "manager_url", c.managerURL)
+	transport := EdgeTransportWebSocket
+	if UseGRPCEdgeTransport(c.cfg) {
+		transport = EdgeTransportGRPC
+	} else {
+		slog.WarnContext(ctx, "WebSocket edge tunnel transport is deprecated; set EDGE_TRANSPORT=grpc")
+	}
+	slog.InfoContext(ctx, "Starting edge tunnel client",
+		"transport", transport,
+		"manager_url", c.managerURL,
+	)
 	if errCh != nil {
 		defer close(errCh)
 	}
@@ -126,6 +149,20 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 
 // connectAndServe establishes a connection and handles messages
 func (c *TunnelClient) connectAndServe(ctx context.Context) error {
+	if UseGRPCEdgeTransport(c.cfg) {
+		return c.connectAndServeGRPC(ctx)
+	}
+	return c.connectAndServeWebSocket(ctx)
+}
+
+// connectAndServeWebSocket establishes and serves the legacy WebSocket transport.
+//
+// Deprecated: WebSocket tunnel transport is deprecated. Use gRPC transport.
+func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
+	if strings.TrimSpace(c.managerURL) == "" {
+		return fmt.Errorf("manager WebSocket URL is empty")
+	}
+
 	dialer := websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
 		HandshakeTimeout: 30 * time.Second,
@@ -159,6 +196,84 @@ func (c *TunnelClient) connectAndServe(ctx context.Context) error {
 
 	// Process incoming messages
 	return c.messageLoop(ctx)
+}
+
+func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
+	managerAddr := strings.TrimSpace(c.managerGRPCAddr)
+	if managerAddr == "" {
+		return fmt.Errorf("manager gRPC address is empty")
+	}
+
+	dialOpts := []grpc.DialOption{
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  1 * time.Second,
+				Multiplier: 1.6,
+				Jitter:     0.2,
+				MaxDelay:   30 * time.Second,
+			},
+			MinConnectTimeout: 10 * time.Second,
+		}),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                30 * time.Second,
+			Timeout:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	}
+
+	if c.useTLSForManagerGRPC() {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{ //nolint:gosec
+			MinVersion: tls.VersionTLS12,
+		})))
+	} else {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	slog.DebugContext(ctx, "Dialing manager for gRPC edge tunnel", "addr", managerAddr)
+
+	conn, err := grpc.NewClient(managerAddr, dialOpts...)
+	if err != nil {
+		return fmt.Errorf("failed to dial manager gRPC endpoint: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := tunnelpb.NewTunnelServiceClient(conn)
+	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		strings.ToLower(remenv.HeaderAgentToken), c.cfg.AgentToken,
+		strings.ToLower(remenv.HeaderAPIKey), c.cfg.AgentToken,
+	))
+	stream, err := client.Connect(streamCtx)
+	if err != nil {
+		return fmt.Errorf("failed to open tunnel stream: %w", err)
+	}
+
+	c.conn = NewGRPCAgentTunnelConn(stream)
+	if err := c.conn.Send(&TunnelMessage{
+		Type:       MessageTypeRegister,
+		AgentToken: c.cfg.AgentToken,
+	}); err != nil {
+		return fmt.Errorf("failed to send register message: %w", err)
+	}
+
+	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
+	defer heartbeatCancel()
+	go c.heartbeatLoop(heartbeatCtx)
+
+	return c.messageLoop(ctx)
+}
+
+func (c *TunnelClient) useTLSForManagerGRPC() bool {
+	baseURL := strings.TrimSpace(c.cfg.GetManagerBaseURL())
+	if baseURL == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Scheme, "https")
 }
 
 // heartbeatLoop sends periodic heartbeats
@@ -214,6 +329,16 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 				slog.DebugContext(ctx, "Ignoring message type on agent", "type", msg.Type)
 			case MessageTypeHeartbeatAck:
 				slog.DebugContext(ctx, "Received heartbeat ack")
+			case MessageTypeRegisterResponse:
+				if !msg.Accepted {
+					return fmt.Errorf("manager rejected tunnel registration: %s", msg.Error)
+				}
+				slog.InfoContext(ctx, "Edge gRPC tunnel connected to manager",
+					"manager_addr", c.managerGRPCAddr,
+					"environment_id", msg.EnvironmentID,
+				)
+			case MessageTypeRegister:
+				slog.DebugContext(ctx, "Ignoring register message on agent")
 			default:
 				slog.WarnContext(ctx, "Unknown message type", "type", msg.Type)
 			}
@@ -223,6 +348,11 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 
 // handleRequest processes an incoming request and sends back a response
 func (c *TunnelClient) handleRequest(ctx context.Context, msg *TunnelMessage) {
+	if UseGRPCEdgeTransport(c.cfg) {
+		c.handleRequestStreaming(ctx, msg)
+		return
+	}
+
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 
@@ -287,6 +417,48 @@ func (c *TunnelClient) handleRequest(ctx context.Context, msg *TunnelMessage) {
 		slog.ErrorContext(reqCtx, "Failed to send response", "id", msg.ID, "error", err)
 	} else {
 		slog.DebugContext(reqCtx, "Sent tunneled response", "id", msg.ID, "status", rw.statusCode)
+	}
+}
+
+func (c *TunnelClient) handleRequestStreaming(ctx context.Context, msg *TunnelMessage) {
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
+
+	slog.DebugContext(reqCtx, "Processing tunneled request (streaming)", "id", msg.ID, "method", msg.Method, "path", msg.Path)
+
+	var body io.Reader
+	var bodyBytes []byte
+	if len(msg.Body) > 0 {
+		bodyBytes = msg.Body
+		body = bytes.NewReader(bodyBytes)
+	}
+
+	path := msg.Path
+	if msg.Query != "" {
+		path = path + "?" + msg.Query
+	}
+
+	req, err := http.NewRequestWithContext(reqCtx, msg.Method, path, body)
+	if err != nil {
+		c.sendErrorResponse(msg.ID, http.StatusInternalServerError, fmt.Sprintf("failed to create request: %v", err))
+		return
+	}
+
+	if bodyBytes != nil {
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+	}
+
+	for k, v := range msg.Headers {
+		req.Header.Set(k, v)
+	}
+
+	recorder := newStreamingResponseRecorder(msg.ID, c.conn)
+	c.handler.ServeHTTP(recorder, req)
+
+	if err := recorder.Close(); err != nil {
+		slog.WarnContext(reqCtx, "Failed to finalize streamed response", "id", msg.ID, "error", err)
 	}
 }
 
@@ -532,13 +704,133 @@ func (r *responseRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 }
 
+type streamingResponseRecorder struct {
+	requestID   string
+	conn        TunnelConnection
+	headers     http.Header
+	statusCode  int
+	wroteHeader bool
+	closed      bool
+	mu          sync.Mutex
+}
+
+func newStreamingResponseRecorder(requestID string, conn TunnelConnection) *streamingResponseRecorder {
+	return &streamingResponseRecorder{
+		requestID:  requestID,
+		conn:       conn,
+		headers:    make(http.Header),
+		statusCode: http.StatusOK,
+	}
+}
+
+func (r *streamingResponseRecorder) Header() http.Header {
+	return r.headers
+}
+
+func (r *streamingResponseRecorder) Write(b []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.wroteHeader {
+		if err := r.writeHeaderLocked(r.statusCode); err != nil {
+			return 0, err
+		}
+	}
+
+	if len(b) == 0 {
+		return 0, nil
+	}
+
+	if err := r.conn.Send(&TunnelMessage{
+		ID:   r.requestID,
+		Type: MessageTypeStreamData,
+		Body: append([]byte(nil), b...),
+	}); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (r *streamingResponseRecorder) WriteHeader(statusCode int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.statusCode = statusCode
+	if r.wroteHeader {
+		return
+	}
+	if err := r.writeHeaderLocked(statusCode); err != nil {
+		return
+	}
+}
+
+func (r *streamingResponseRecorder) Flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.wroteHeader {
+		_ = r.writeHeaderLocked(r.statusCode)
+	}
+}
+
+func (r *streamingResponseRecorder) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+
+	if !r.wroteHeader {
+		if err := r.writeHeaderLocked(r.statusCode); err != nil {
+			return err
+		}
+	}
+
+	if err := r.conn.Send(&TunnelMessage{
+		ID:   r.requestID,
+		Type: MessageTypeStreamEnd,
+	}); err != nil {
+		return err
+	}
+
+	r.closed = true
+	return nil
+}
+
+func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
+	respHeaders := make(map[string]string)
+	for k, v := range r.headers {
+		if len(v) > 0 {
+			respHeaders[k] = v[0]
+		}
+	}
+	respHeaders["X-Arcane-Tunnel-Stream"] = "1"
+
+	if err := r.conn.Send(&TunnelMessage{
+		ID:      r.requestID,
+		Type:    MessageTypeResponse,
+		Status:  statusCode,
+		Headers: respHeaders,
+	}); err != nil {
+		return err
+	}
+	r.wroteHeader = true
+	return nil
+}
+
 // StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.
+// When EDGE_TRANSPORT=websocket this uses the legacy WebSocket transport path.
 func StartTunnelClientWithErrors(ctx context.Context, cfg *config.Config, handler http.Handler) (<-chan error, error) {
 	if !cfg.EdgeAgent {
 		return nil, fmt.Errorf("edge tunnel disabled")
 	}
 
-	if cfg.ManagerApiUrl == "" {
+	if UseGRPCEdgeTransport(cfg) {
+		if cfg.GetManagerGRPCAddr() == "" {
+			return nil, fmt.Errorf("MANAGER_API_URL with a valid host is required for gRPC transport")
+		}
+	} else if cfg.ManagerApiUrl == "" {
 		return nil, fmt.Errorf("MANAGER_API_URL is required")
 	}
 

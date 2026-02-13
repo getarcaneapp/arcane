@@ -18,9 +18,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	edgews "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/websocket"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/proto/tunnel/v1"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -129,10 +134,18 @@ func Bootstrap(ctx context.Context) error {
 
 	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
 
-	// Start edge tunnel client if running as an edge agent
-	if cfg.EdgeAgent && cfg.ManagerApiUrl != "" && cfg.AgentToken != "" {
-		slog.InfoContext(appCtx, "Starting edge tunnel client", "manager_url", cfg.ManagerApiUrl)
-		errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)
+	// Start edge tunnel client if running as an edge agent.
+	managerEndpointConfigured := cfg.ManagerApiUrl != ""
+	if cfg.EdgeAgent && managerEndpointConfigured && cfg.AgentToken != "" {
+		slog.InfoContext(appCtx, "Starting edge tunnel client",
+			"transport", edge.NormalizeEdgeTransport(cfg.EdgeTransport),
+			"manager_url", cfg.ManagerApiUrl,
+		)
+		startTunnelClient := edge.StartTunnelClientWithErrors
+		if !edge.UseGRPCEdgeTransport(cfg) {
+			startTunnelClient = edgews.StartTunnelClientWithErrors
+		}
+		errCh, err := startTunnelClient(appCtx, cfg, router)
 		if err != nil {
 			slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
 		} else {
@@ -213,9 +226,26 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	}
 
 	listenAddr := cfg.ListenAddr()
+	httpHandler := router
+
+	var grpcServer *grpc.Server
+	if !cfg.AgentMode && tunnelServer != nil && edge.UseGRPCEdgeTransport(cfg) {
+		grpcServer = grpc.NewServer()
+		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
+
+		httpHandler = h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+				grpcServer.ServeHTTP(w, r)
+				return
+			}
+			router.ServeHTTP(w, r)
+		}), &http2.Server{})
+		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
+	}
+
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           router,
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -243,6 +273,10 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
 		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", "error", err) //nolint:contextcheck
 		return err
+	}
+
+	if grpcServer != nil {
+		grpcServer.GracefulStop()
 	}
 
 	// Wait for tunnel cleanup loop to finish

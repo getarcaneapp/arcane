@@ -11,19 +11,26 @@ import (
 // AgentTunnel represents an active tunnel connection from an edge agent
 type AgentTunnel struct {
 	EnvironmentID string
-	Conn          *TunnelConn
+	Conn          TunnelConnection
 	Pending       sync.Map // map[string]*PendingRequest
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
 	mu            sync.RWMutex
 }
 
-// NewAgentTunnel creates a new agent tunnel
+// NewAgentTunnel creates a new agent tunnel.
+//
+// Deprecated: This constructor is for legacy WebSocket transport.
 func NewAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
+	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
+}
+
+// NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection.
+func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
 	now := time.Now()
 	return &AgentTunnel{
 		EnvironmentID: envID,
-		Conn:          NewTunnelConn(conn),
+		Conn:          conn,
 		ConnectedAt:   now,
 		LastHeartbeat: now,
 	}

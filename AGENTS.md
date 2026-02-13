@@ -329,7 +329,7 @@ ARCANE_MANAGER_API_URL=https://manager.example.com
 ARCANE_AGENT_TOKEN=<api-key>
 ```
 
-**Message types** (see [tunnel.go](backend/internal/utils/edge/tunnel.go)):
+**Message types** (see [tunnel.go](backend/pkg/libarcane/edge/tunnel.go)):
 - `request` / `response`: HTTP request/response proxying
 - `heartbeat` / `heartbeat_ack`: Connection keepalive
 - `ws_start` / `ws_data` / `ws_close`: WebSocket streaming (logs, stats)

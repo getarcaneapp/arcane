@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	edgews "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/websocket"
 	"github.com/gin-gonic/gin"
 )
 
@@ -151,7 +152,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		proxyPath := m.buildProxyPath(c, envID)
 		if m.isWebSocketUpgrade(c) {
 			// Route WebSocket through the edge tunnel
-			edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+			edgews.ProxyWebSocketRequest(c, tunnel, proxyPath)
 		} else {
 			edge.ProxyHTTPRequest(c, tunnel, proxyPath)
 		}

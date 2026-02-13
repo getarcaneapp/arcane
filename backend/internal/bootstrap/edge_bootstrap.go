@@ -5,15 +5,17 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	edgews "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/websocket"
 	"github.com/gin-gonic/gin"
 )
 
-// registerEdgeTunnelRoutes registers the edge tunnel WebSocket endpoint on the manager.
-// This allows edge agents to connect and establish a tunnel for proxied requests.
+// registerEdgeTunnelRoutes configures the manager-side edge tunnel server.
+// It registers WebSocket routes for websocket transport and prepares gRPC service state for grpc transport.
 // Returns the TunnelServer for graceful shutdown.
-func registerEdgeTunnelRoutes(ctx context.Context, apiGroup *gin.RouterGroup, appServices *Services) *edge.TunnelServer {
+func registerEdgeTunnelRoutes(ctx context.Context, cfg *config.Config, apiGroup *gin.RouterGroup, appServices *Services) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
 	resolver := func(ctx context.Context, token string) (string, error) {
 		// Use the ApiKeyService which properly validates the key hash
@@ -51,5 +53,12 @@ func registerEdgeTunnelRoutes(ctx context.Context, apiGroup *gin.RouterGroup, ap
 		}
 	}
 
-	return edge.RegisterTunnelRoutes(ctx, apiGroup, resolver, statusCallback)
+	if edge.UseGRPCEdgeTransport(cfg) {
+		server := edge.NewTunnelServer(resolver, statusCallback)
+		go server.StartCleanupLoop(ctx)
+		slog.InfoContext(ctx, "Configured edge tunnel server for gRPC transport on shared HTTP listener")
+		return server
+	}
+
+	return edgews.RegisterTunnelRoutes(ctx, apiGroup, resolver, statusCallback)
 }

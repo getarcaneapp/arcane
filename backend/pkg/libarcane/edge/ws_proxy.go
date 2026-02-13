@@ -19,6 +19,8 @@ var wsUpgraderForProxy = websocket.Upgrader{
 
 // ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel
 // This handles logs, stats, and other streaming endpoints
+//
+// Deprecated: Legacy WebSocket tunnel transport helpers are deprecated.
 func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 	ctx := c.Request.Context()
 
@@ -141,7 +143,7 @@ func handleAgentMessage(ctx context.Context, clientWS *websocket.Conn, msg *Tunn
 	case MessageTypeWebSocketClose, MessageTypeStreamEnd:
 		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID)
 		return true, nil
-	case MessageTypeRequest, MessageTypeResponse, MessageTypeHeartbeat, MessageTypeHeartbeatAck, MessageTypeStreamData, MessageTypeWebSocketStart:
+	case MessageTypeRequest, MessageTypeResponse, MessageTypeHeartbeat, MessageTypeHeartbeatAck, MessageTypeStreamData, MessageTypeWebSocketStart, MessageTypeRegister, MessageTypeRegisterResponse:
 		slog.DebugContext(ctx, "Ignoring tunnel message", "type", msg.Type, "stream_id", streamID)
 		return false, nil
 	default:

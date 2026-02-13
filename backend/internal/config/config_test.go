@@ -185,7 +185,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 func TestConfig_OptionsToLower(t *testing.T) {
 	origLogLevel := os.Getenv("LOG_LEVEL")
+	origEdgeTransport := os.Getenv("EDGE_TRANSPORT")
 	defer restoreEnv("LOG_LEVEL", origLogLevel)
+	defer restoreEnv("EDGE_TRANSPORT", origEdgeTransport)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
 		setEnv(t, "LOG_LEVEL", "DEBUG")
@@ -199,6 +201,20 @@ func TestConfig_OptionsToLower(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, "warn", cfg.LogLevel)
+	})
+
+	t.Run("EdgeTransport is converted to lowercase", func(t *testing.T) {
+		setEnv(t, "EDGE_TRANSPORT", "GRPC")
+
+		cfg := Load()
+		assert.Equal(t, "grpc", cfg.EdgeTransport)
+	})
+
+	t.Run("EdgeTransport defaults to grpc", func(t *testing.T) {
+		unsetEnv(t, "EDGE_TRANSPORT")
+
+		cfg := Load()
+		assert.Equal(t, "grpc", cfg.EdgeTransport)
 	})
 }
 
@@ -244,6 +260,29 @@ func TestConfig_ListenAddr(t *testing.T) {
 			assert.Equal(t, testCase.expected, cfg.ListenAddr())
 		})
 	}
+}
+
+func TestConfig_GetManagerGRPCAddr(t *testing.T) {
+	t.Run("uses manager api url explicit port when present", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com:8443/api",
+		}
+		assert.Equal(t, "manager.example.com:8443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("defaults to manager api https port when port is not set", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com/api",
+		}
+		assert.Equal(t, "manager.example.com:443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("defaults to manager api http port when port is not set", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "http://manager.example.com/api",
+		}
+		assert.Equal(t, "manager.example.com:80", cfg.GetManagerGRPCAddr())
+	})
 }
 
 func restoreEnv(key, value string) {
