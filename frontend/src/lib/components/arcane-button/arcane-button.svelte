@@ -12,6 +12,7 @@
 		hoverEffect?: ArcaneButtonHoverEffect;
 		loading?: boolean;
 		showLabel?: boolean;
+		tooltipContent?: string;
 		customLabel?: string;
 		loadingLabel?: string;
 		icon?: IconType | null;
@@ -40,6 +41,7 @@
 </script>
 
 <script lang="ts">
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { cn } from '$lib/utils';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { arcaneButtonVariants, actionConfigs } from './variants';
@@ -56,6 +58,7 @@
 		loading = false,
 		disabled = false,
 		showLabel = true,
+		tooltipContent = undefined,
 		customLabel = undefined,
 		loadingLabel = undefined,
 		icon = undefined,
@@ -77,43 +80,58 @@
 	let hasChildren = $derived(!!children);
 </script>
 
-<svelte:element
-	this={href ? 'a' : 'button'}
-	{...rest}
-	data-slot="arcane-button"
-	type={href ? undefined : type}
-	href={href && !disabled ? href : undefined}
-	disabled={href ? undefined : disabled || loading}
-	aria-disabled={href ? disabled : undefined}
-	role={href && disabled ? 'link' : undefined}
-	tabindex={href && disabled ? -1 : tabindex}
-	class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
-	aria-label={hasChildren ? undefined : isIconOnlyButton ? displayLabel : undefined}
-	bind:this={ref}
-	onclick={async (e: any) => {
-		onclick?.(e);
-		if (type === undefined) return;
-		if (onClickPromise) {
-			loading = true;
-			await onClickPromise(e);
-			loading = false;
-		}
-	}}
->
-	{#if type !== undefined && loading}
-		<div class="bg-background/30 absolute inset-0 flex items-center justify-center rounded-[inherit] backdrop-blur-[1px]">
-			<Spinner class="size-4" />
-		</div>
-		<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>
-	{/if}
+{#snippet ButtonElement()}
+	<svelte:element
+		this={href ? 'a' : 'button'}
+		{...rest}
+		data-slot="arcane-button"
+		type={href ? undefined : type}
+		href={href && !disabled ? href : undefined}
+		disabled={href ? undefined : disabled || loading}
+		aria-disabled={href ? disabled : undefined}
+		role={href && disabled ? 'link' : undefined}
+		tabindex={href && disabled ? -1 : tabindex}
+		class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
+		aria-label={hasChildren ? undefined : isIconOnlyButton ? displayLabel : undefined}
+		bind:this={ref}
+		onclick={async (e: any) => {
+			onclick?.(e);
+			if (type === undefined) return;
+			if (onClickPromise) {
+				loading = true;
+				await onClickPromise(e);
+				loading = false;
+			}
+		}}
+	>
+		{#if type !== undefined && loading}
+			<div class="bg-background/30 absolute inset-0 flex items-center justify-center rounded-[inherit] backdrop-blur-[1px]">
+				<Spinner class="size-4" />
+			</div>
+			<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>
+		{/if}
 
-	<span class={cn('flex items-center gap-2', loading && 'opacity-0')}>
-		{#if IconComponent}
-			<IconComponent class="size-4" />
-		{/if}
-		{#if !isIconOnlyButton && displayLabel}
-			{displayLabel}
-		{/if}
-		{@render children?.()}
-	</span>
-</svelte:element>
+		<span class={cn('flex items-center gap-2', loading && 'opacity-0')}>
+			{#if IconComponent}
+				<IconComponent class="size-4" />
+			{/if}
+			{#if !isIconOnlyButton && displayLabel}
+				{displayLabel}
+			{/if}
+			{@render children?.()}
+		</span>
+	</svelte:element>
+{/snippet}
+
+{#if tooltipContent}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			{@render ButtonElement()}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content sideOffset={6}>
+			{tooltipContent}
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{:else}
+	{@render ButtonElement()}
+{/if}

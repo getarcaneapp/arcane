@@ -16,6 +16,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	projecttypes "github.com/getarcaneapp/arcane/types/project"
 )
 
 func setupProjectTestDB(t *testing.T) *database.DB {
@@ -475,4 +476,127 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
+func TestNormalizeDeployOptions(t *testing.T) {
+	tests := []struct {
+		name             string
+		input            *projecttypes.UpRequest
+		wantPullPolicy   deployPullPolicy
+		wantForceCreate  bool
+		wantError        bool
+		wantErrorContain string
+	}{
+		{
+			name:            "nil uses defaults",
+			input:           nil,
+			wantPullPolicy:  deployPullPolicyMissing,
+			wantForceCreate: false,
+		},
+		{
+			name: "empty pull policy uses default",
+			input: &projecttypes.UpRequest{
+				PullPolicy: "",
+			},
+			wantPullPolicy:  deployPullPolicyMissing,
+			wantForceCreate: false,
+		},
+		{
+			name: "missing pull policy",
+			input: &projecttypes.UpRequest{
+				PullPolicy: projecttypes.UpPullPolicyMissing,
+			},
+			wantPullPolicy:  deployPullPolicyMissing,
+			wantForceCreate: false,
+		},
+		{
+			name: "always with force recreate",
+			input: &projecttypes.UpRequest{
+				PullPolicy:    projecttypes.UpPullPolicyAlways,
+				ForceRecreate: true,
+			},
+			wantPullPolicy:  deployPullPolicyAlways,
+			wantForceCreate: true,
+		},
+		{
+			name: "invalid pull policy",
+			input: &projecttypes.UpRequest{
+				PullPolicy: "latest",
+			},
+			wantError:        true,
+			wantErrorContain: "invalid pull policy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeDeployOptions(tt.input)
+			if tt.wantError {
+				require.Error(t, err)
+				if tt.wantErrorContain != "" {
+					assert.Contains(t, err.Error(), tt.wantErrorContain)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPullPolicy, got.pullPolicy)
+			assert.Equal(t, tt.wantForceCreate, got.forceRecreate)
+		})
+	}
+}
+
+func TestHasComposePullPolicyOverride(t *testing.T) {
+	tests := []struct {
+		name string
+		proj *composetypes.Project
+		want bool
+	}{
+		{
+			name: "nil project",
+			proj: nil,
+			want: false,
+		},
+		{
+			name: "no services",
+			proj: &composetypes.Project{},
+			want: false,
+		},
+		{
+			name: "services without pull policy",
+			proj: &composetypes.Project{
+				Services: composetypes.Services{
+					"web": {Name: "web", Image: "nginx:latest"},
+					"db":  {Name: "db", Image: "postgres:16"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "single service with pull policy",
+			proj: &composetypes.Project{
+				Services: composetypes.Services{
+					"web": {Name: "web", Image: "nginx:latest", PullPolicy: "always"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "mixed services where one has pull policy",
+			proj: &composetypes.Project{
+				Services: composetypes.Services{
+					"web": {Name: "web", Image: "nginx:latest"},
+					"api": {Name: "api", Image: "ghcr.io/acme/api:latest", PullPolicy: "missing"},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasComposePullPolicyOverride(tt.proj)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

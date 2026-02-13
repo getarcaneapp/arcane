@@ -59,6 +59,8 @@ export type Settings = {
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
 	keyboardShortcutsEnabled: boolean;
+	projectUpDefaultPullPolicy: 'missing' | 'always';
+	projectUpDefaultForceRecreate: boolean;
 
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;

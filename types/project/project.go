@@ -72,6 +72,29 @@ type UpdateIncludeFile struct {
 	Content string `json:"content" binding:"required"`
 }
 
+// UpPullPolicy controls image pull behavior for project up operations.
+type UpPullPolicy string
+
+const (
+	// UpPullPolicyMissing pulls only missing images before deploy.
+	UpPullPolicyMissing UpPullPolicy = "missing"
+	// UpPullPolicyAlways pulls latest images before deploy.
+	UpPullPolicyAlways UpPullPolicy = "always"
+)
+
+// UpRequest defines optional behavior for project up operations.
+type UpRequest struct {
+	// PullPolicy determines image pull strategy. Supported values: "missing", "always".
+	//
+	// Required: false
+	PullPolicy UpPullPolicy `json:"pullPolicy,omitempty"`
+
+	// ForceRecreate forces container recreation during compose up.
+	//
+	// Required: false
+	ForceRecreate bool `json:"forceRecreate,omitempty"`
+}
+
 // RuntimeService contains live container status information for a service.
 type RuntimeService struct {
 	// Name is the service name from the compose file.
