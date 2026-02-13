@@ -72,13 +72,7 @@ export class VolumeBackupService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const formData = new FormData();
 		formData.append('file', file);
-		return this.handleResponse(
-			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/upload`, formData, {
-				headers: {
-					'Content-Type': 'multipart/form-data'
-				}
-			})
-		);
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/upload`, formData));
 	}
 }
 

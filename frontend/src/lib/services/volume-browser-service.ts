@@ -43,10 +43,7 @@ export class VolumeBrowserService extends BaseAPIService {
 		formData.append('file', file);
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/volumes/${volumeName}/browse/upload`, formData, {
-				params: { path },
-				headers: {
-					'Content-Type': 'multipart/form-data'
-				}
+				params: { path }
 			})
 		);
 	}

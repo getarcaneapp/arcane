@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"path"
 
@@ -178,10 +179,10 @@ type DownloadFileOutput struct {
 }
 
 type UploadFileInput struct {
-	EnvironmentID string        `path:"id" doc:"Environment ID"`
-	VolumeName    string        `path:"volumeName" doc:"Volume name"`
-	Path          string        `query:"path" default:"/" doc:"Destination path"`
-	File          huma.FormFile `form:"file" doc:"File to upload"`
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	Path          string         `query:"path" default:"/" doc:"Destination path"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
 type CreateDirectoryInput struct {
@@ -294,9 +295,9 @@ type DownloadBackupOutput struct {
 }
 
 type UploadAndRestoreInput struct {
-	EnvironmentID string        `path:"id" doc:"Environment ID"`
-	VolumeName    string        `path:"volumeName" doc:"Volume name"`
-	File          huma.FormFile `form:"file" doc:"Backup archive (tar.gz)"`
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
 type UploadAndRestoreOutput struct {
@@ -462,6 +463,23 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		RequestBody: &huma.RequestBody{
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"file": {
+								Type:        "string",
+								Format:      "binary",
+								Description: "File to upload",
+							},
+						},
+						Required: []string{"file"},
+					},
+				},
+			},
+		},
 	}, h.UploadFile)
 
 	huma.Register(api, huma.Operation{
@@ -595,6 +613,23 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
+		},
+		RequestBody: &huma.RequestBody{
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"file": {
+								Type:        "string",
+								Format:      "binary",
+								Description: "Backup archive (tar.gz)",
+							},
+						},
+						Required: []string{"file"},
+					},
+				},
+			},
 		},
 	}, h.UploadAndRestore)
 }
@@ -886,8 +921,20 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
+	}
+
+	fileHeader := files[0]
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+	}
+	defer func() { _ = file.Close() }()
+
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	err := h.volumeService.UploadFile(ctx, input.VolumeName, input.Path, input.File, input.File.Filename, user)
+	err = h.volumeService.UploadFile(ctx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -1131,7 +1178,19 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	err := h.volumeService.UploadAndRestore(ctx, input.VolumeName, input.File, input.File.Filename, *user)
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
+	}
+
+	fileHeader := files[0]
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+	}
+	defer func() { _ = file.Close() }()
+
+	err = h.volumeService.UploadAndRestore(ctx, input.VolumeName, file, fileHeader.Filename, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
