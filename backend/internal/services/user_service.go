@@ -227,7 +227,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 		}
 
 		// Link subject
-		u.OidcSubjectId = &subject
+		u.OidcSubjectId = new(subject)
 
 		if updateFn != nil {
 			updateFn(&u)
@@ -271,8 +271,8 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		displayName := "Arcane Admin"
 		userModel := &models.User{
 			Username:               "arcane",
-			Email:                  &email,
-			DisplayName:            &displayName,
+			Email:                  new(email),
+			DisplayName:            new(displayName),
 			PasswordHash:           hashedPassword,
 			Roles:                  models.StringSlice{"admin"},
 			RequiresPasswordChange: true,

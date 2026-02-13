@@ -385,12 +385,12 @@ func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
 	}
 
 	_, err = s.UpdateSettings(ctx, settings.Update{
-		OidcClientId:     &oidcConfig.ClientID,
-		OidcClientSecret: &oidcConfig.ClientSecret,
-		OidcIssuerUrl:    &oidcConfig.IssuerURL,
-		OidcScopes:       &scopes,
-		OidcAdminClaim:   &oidcConfig.AdminClaim,
-		OidcAdminValue:   &oidcConfig.AdminValue,
+		OidcClientId:     new(oidcConfig.ClientID),
+		OidcClientSecret: new(oidcConfig.ClientSecret),
+		OidcIssuerUrl:    new(oidcConfig.IssuerURL),
+		OidcScopes:       new(scopes),
+		OidcAdminClaim:   new(oidcConfig.AdminClaim),
+		OidcAdminValue:   new(oidcConfig.AdminValue),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to migrate OIDC config: %w", err)

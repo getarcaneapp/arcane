@@ -238,7 +238,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	for _, c := range containers {
 		var health *string
 		if c.Health != "" {
-			health = &c.Health
+			health = new(c.Health)
 		}
 
 		var svcConfig *composetypes.ServiceConfig
@@ -262,14 +262,13 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 
 	for _, svc := range project.Services {
 		if !have[svc.Name] {
-			svcCopy := svc
 			services = append(services, ProjectServiceInfo{
 				Name:          svc.Name,
 				Image:         svc.Image,
 				Status:        "stopped",
 				Ports:         []string{},
 				IconURL:       meta.ServiceIcons[svc.Name],
-				ServiceConfig: &svcCopy,
+				ServiceConfig: new(svc),
 			})
 		}
 	}
@@ -457,10 +456,10 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		reason := "Project discovered from filesystem, status pending Docker service query"
 		proj := &models.Project{
 			Name:         dirName,
-			DirName:      &dirName,
+			DirName:      new(dirName),
 			Path:         dirPath,
 			Status:       models.ProjectStatusUnknown,
-			StatusReason: &reason,
+			StatusReason: new(reason),
 			ServiceCount: 0,
 			RunningCount: 0,
 		}
@@ -1455,14 +1454,11 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 		statusLower := strings.ToLower(c.Status)
 		switch {
 		case strings.Contains(statusLower, "(healthy)"):
-			h := "healthy"
-			health = &h
+			health = new("healthy")
 		case strings.Contains(statusLower, "(unhealthy)"):
-			h := "unhealthy"
-			health = &h
+			health = new("unhealthy")
 		case strings.Contains(statusLower, "(starting)"):
-			h := "starting"
-			health = &h
+			health = new("starting")
 		}
 
 		containerName := ""

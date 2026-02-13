@@ -450,7 +450,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 			Success: true,
 			Data: EnvironmentWithApiKey{
 				Environment: out,
-				ApiKey:      &apiKeyDto.Key,
+				ApiKey:      new(apiKeyDto.Key),
 			},
 		},
 	}, nil
@@ -479,15 +479,13 @@ func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *m
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
 			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
-				slog.WarnContext(bgCtx, "Failed to sync registries to new environment",
-					"environmentID", envID, "environmentName", envName, "error", err.Error())
+				slog.WarnContext(bgCtx, "Failed to sync registries to new environment", "environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(created.ID, created.Name)
 		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
 			bgCtx := context.Background()
 			if err := h.environmentService.SyncRepositoriesToEnvironment(bgCtx, envID); err != nil {
-				slog.WarnContext(bgCtx, "Failed to sync git repositories to new environment",
-					"environmentID", envID, "environmentName", envName, "error", err.Error())
+				slog.WarnContext(bgCtx, "Failed to sync git repositories to new environment", "environmentID", envID, "environmentName", envName, "error", err.Error())
 			}
 		}(created.ID, created.Name)
 	}
@@ -552,8 +550,8 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
-		userID = &user.ID
-		username = &user.Username
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
 	if updateErr != nil {
@@ -608,7 +606,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 		}
 
-		newApiKey = &apiKeyDto.Key
+		newApiKey = new(apiKeyDto.Key)
 	}
 
 	// Set the API key on the response if regenerated
@@ -639,8 +637,8 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
-		userID = &user.ID
-		username = &user.Username
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 	if err := h.environmentService.DeleteEnvironment(ctx, input.ID, userID, username); err != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentDeletionError{Err: err}).Error())
