@@ -757,9 +757,10 @@ release *args:
         git commit -m "release: $NEW_VERSION"
 
         # Create Git tags with the new version
-        git tag "v$NEW_VERSION"
-        git tag "cli/v$NEW_VERSION"
-        git tag "types/v$NEW_VERSION"
+        TAG_MESSAGE="$NEW_VERSION"
+        git tag -a "v$NEW_VERSION" -m "$TAG_MESSAGE"
+        git tag -a "cli/v$NEW_VERSION" -m "$TAG_MESSAGE"
+        git tag -a "types/v$NEW_VERSION" -m "$TAG_MESSAGE"
 
         # Push the commit and the tags to the repository
         git push
