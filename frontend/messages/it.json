@@ -409,7 +409,7 @@
 	"containers_bulk_restart_success": "Contenitore {count} riavviato con successo",
 	"containers_bulk_restart_partial": "Riavvio {success} di {total} contenitore(i). {failed} non riuscito.",
 	"containers_bulk_remove_success": "Eliminato con successo il contenitore {count}",
-	"containers_bulk_remove_partial": "Removed {success} of {total} container(s). {failed} failed.",
+	"containers_bulk_remove_partial": "Rimossi {success} di {total} container. {failed} non riuscito.",
 	"containers_group_by_project": "Group by Project",
 	"containers_nav_metrics": "Metrics",
 	"containers_nav_logs": "Logs",
