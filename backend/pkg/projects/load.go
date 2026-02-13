@@ -18,6 +18,8 @@ var ComposeFileCandidates = []string{
 	"compose.yml",
 	"docker-compose.yaml",
 	"docker-compose.yml",
+	"podman-compose.yaml",
+	"podman-compose.yml",
 }
 
 func locateComposeFile(dir string) string {

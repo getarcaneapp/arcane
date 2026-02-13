@@ -13,6 +13,8 @@ var composeFileCandidates = []string{
 	"compose.yml",
 	"docker-compose.yaml",
 	"docker-compose.yml",
+    "podman-compose.yaml",
+    "podman-compose.yml",
 }
 
 // detectExistingComposeFile finds an existing compose file in the directory
