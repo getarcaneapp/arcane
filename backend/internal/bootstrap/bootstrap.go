@@ -31,6 +31,11 @@ func Bootstrap(ctx context.Context) error {
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
+	certPool, err := utils.InitializeCustomCertPool(ctx, cfg.CustomCertsDir)
+	if err != nil {
+		return err
+	}
+
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
@@ -47,12 +52,12 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}(appCtx)
 
-	httpClient := httputils.NewHTTPClient()
+	httpClient := httputils.NewHTTPClientWithCertPool(certPool)
 	if cfg.HTTPClientTimeout > 0 {
-		httpClient = httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+		httpClient = httputils.NewHTTPClientWithTimeoutAndCertPool(time.Duration(cfg.HTTPClientTimeout)*time.Second, certPool)
 	}
 
-	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
+	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient, certPool)
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}

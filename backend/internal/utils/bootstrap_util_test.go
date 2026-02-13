@@ -3,11 +3,14 @@ package utils
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockSettingsManager struct {
@@ -104,6 +107,33 @@ func TestLoadAgentToken(t *testing.T) {
 		LoadAgentToken(ctx, cfg, getSettingFunc)
 
 		assert.Empty(t, cfg.AgentToken)
+	})
+}
+
+func TestInitializeCustomCertPool(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns system pool when path empty", func(t *testing.T) {
+		pool, err := InitializeCustomCertPool(ctx, "")
+		require.NoError(t, err)
+		assert.NotNil(t, pool)
+	})
+
+	t.Run("falls back to system pool when directory missing", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "missing-certs-dir")
+		pool, err := InitializeCustomCertPool(ctx, missing)
+		require.NoError(t, err)
+		assert.NotNil(t, pool)
+	})
+
+	t.Run("returns error when path is not a directory", func(t *testing.T) {
+		filePath := filepath.Join(t.TempDir(), "cert.pem")
+		writeErr := os.WriteFile(filePath, []byte("not-a-cert"), 0o600)
+		require.NoError(t, writeErr)
+
+		pool, err := InitializeCustomCertPool(ctx, filePath)
+		assert.Nil(t, pool)
+		assert.Error(t, err)
 	})
 }
 
