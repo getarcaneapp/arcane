@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -24,8 +25,8 @@ type TestResult struct {
 	Errors         []string  `json:"errors"`
 }
 
-func TestRegistryConnection(ctx context.Context, registryURL string, creds *Credentials) (*TestResult, error) {
-	c := NewClient()
+func TestRegistryConnection(ctx context.Context, registryURL string, creds *Credentials, certPool *x509.CertPool, insecure bool) (*TestResult, error) {
+	c := NewClientWithInsecure(certPool, insecure)
 	res := &TestResult{
 		URL:       registryURL,
 		Domain:    registryURL,

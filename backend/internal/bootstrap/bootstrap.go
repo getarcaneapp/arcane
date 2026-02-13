@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,11 @@ func Bootstrap(ctx context.Context) error {
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
+	certPool, err := utils.InitializeCustomCertPool(ctx, cfg.CustomCertsDir)
+	if err != nil {
+		return err
+	}
+
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
@@ -52,9 +58,9 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}(appCtx)
 
-	httpClient := newConfiguredHTTPClient(cfg)
+	httpClient := newConfiguredHTTPClient(cfg, certPool)
 
-	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
+	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient, certPool)
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}
@@ -87,11 +93,11 @@ func Bootstrap(ctx context.Context) error {
 	return nil
 }
 
-func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
+func newConfiguredHTTPClient(cfg *config.Config, certPool *x509.CertPool) *http.Client {
 	if cfg.HTTPClientTimeout > 0 {
-		return httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
+		return httputils.NewHTTPClientWithTimeoutAndCertPool(time.Duration(cfg.HTTPClientTimeout)*time.Second, certPool)
 	}
-	return httputils.NewHTTPClient()
+	return httputils.NewHTTPClientWithCertPool(certPool)
 }
 
 func initializeStartupState(appCtx context.Context, cfg *config.Config, appServices *Services, dockerClientService *services.DockerClientService, httpClient *http.Client) {

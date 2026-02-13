@@ -417,7 +417,7 @@ func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, regi
 		}
 	}
 
-	testResult, err := registry.TestRegistryConnection(ctx, registryModel.URL, creds)
+	testResult, err := registry.TestRegistryConnection(ctx, registryModel.URL, creds, h.registryService.GetCertPool(), registryModel.Insecure)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -160,6 +161,7 @@ func AcquireTokenViaChallenge(
 	repository string,
 	challengeHeader string,
 	enabledRegs []models.ContainerRegistry,
+	certPool *x509.CertPool,
 ) (string, string, string, error) {
 	// Normalize challenge to start at Bearer
 	ch := strings.TrimSpace(challengeHeader)
@@ -169,7 +171,7 @@ func AcquireTokenViaChallenge(
 	}
 
 	// Extract (realm, service)
-	c := NewClient()
+	c := NewClientWithInsecure(certPool, isRegistryMarkedInsecure(registryHost, enabledRegs))
 	realm, service := c.ParseAuthChallenge(ch)
 	if realm == "" {
 		return "", "", "", fmt.Errorf("invalid challenge")
@@ -264,7 +266,17 @@ func GetChallengeURL(imageRef string) (url.URL, error) {
 // GetAuthHeaderForImage performs the /v2/ challenge for an image and returns a usable Authorization header.
 // It supports Basic and Bearer challenges. For Bearer, it reuses AcquireTokenViaChallenge which
 // looks up credentials from the database (enabledRegs) when needed.
-func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []models.ContainerRegistry) (string, error) {
+func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []models.ContainerRegistry, certPool *x509.CertPool) (string, error) {
+	named, err := ref.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return "", err
+	}
+
+	host, err := GetRegistryAddress(named.Name())
+	if err != nil {
+		return "", err
+	}
+
 	chURL, err := GetChallengeURL(imageRef)
 	if err != nil {
 		return "", err
@@ -281,7 +293,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 		return "", err
 	}
 
-	c := NewClient()
+	c := NewClientWithInsecure(certPool, isRegistryMarkedInsecure(host, enabledRegs))
 	resp, err := c.http.Do(req) //nolint:gosec // intentional /v2/ challenge request to resolved registry host
 	if err != nil {
 		return "", err
@@ -302,14 +314,6 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 
 	chLower := strings.ToLower(strings.TrimSpace(ch))
 
-	named, err := ref.ParseNormalizedNamed(imageRef)
-	if err != nil {
-		return "", err
-	}
-	host, err := GetRegistryAddress(named.Name())
-	if err != nil {
-		return "", err
-	}
 	repo := ref.Path(named)
 
 	switch {
@@ -332,7 +336,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 		return "", fmt.Errorf("no credentials available for basic auth at %s", host)
 
 	case strings.HasPrefix(chLower, "bearer"):
-		token, _, _, err := AcquireTokenViaChallenge(ctx, host, repo, ch, enabledRegs)
+		token, _, _, err := AcquireTokenViaChallenge(ctx, host, repo, ch, enabledRegs, certPool)
 		if err != nil {
 			return "", err
 		}
@@ -346,7 +350,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 	}
 }
 
-func ResolveAuthHeaderForRepository(ctx context.Context, host, repository, tag string, enabledRegs []models.ContainerRegistry) (string, string, string, error) {
+func ResolveAuthHeaderForRepository(ctx context.Context, host, repository, tag string, enabledRegs []models.ContainerRegistry, certPool *x509.CertPool) (string, string, string, error) {
 	var imageRef string
 	if tag != "" {
 		imageRef = fmt.Sprintf("%s/%s:%s", host, repository, tag)
@@ -354,7 +358,7 @@ func ResolveAuthHeaderForRepository(ctx context.Context, host, repository, tag s
 		imageRef = fmt.Sprintf("%s/%s", host, repository)
 	}
 
-	hdr, err := GetAuthHeaderForImage(ctx, imageRef, enabledRegs)
+	hdr, err := GetAuthHeaderForImage(ctx, imageRef, enabledRegs, certPool)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -370,4 +374,17 @@ func ResolveAuthHeaderForRepository(ctx context.Context, host, repository, tag s
 	default:
 		return hdr, "unknown", "", nil
 	}
+}
+
+func isRegistryMarkedInsecure(registryHost string, regs []models.ContainerRegistry) bool {
+	host := normalizeHost(registryHost)
+	for _, reg := range regs {
+		if !reg.Enabled {
+			continue
+		}
+		if normalizeHost(reg.URL) == host && reg.Insecure {
+			return true
+		}
+	}
+	return false
 }

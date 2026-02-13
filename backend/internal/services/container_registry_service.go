@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,7 +30,7 @@ const (
 	registryCacheTTL     = 30 * time.Minute
 )
 
-func getHeaderCaseInsensitive(h http.Header, key string) string {
+func getHeaderCaseInsensitiveInternal(h http.Header, key string) string {
 	for k, v := range h {
 		if strings.EqualFold(k, key) && len(v) > 0 {
 			return v[0]
@@ -40,13 +42,20 @@ func getHeaderCaseInsensitive(h http.Header, key string) string {
 type ContainerRegistryService struct {
 	db         *database.DB
 	httpClient *http.Client
+	certPool   *x509.CertPool
 	cache      map[string]*cache.Cache[string] // imageRef -> digest cache
 	cacheMu    sync.RWMutex
 }
 
-func NewContainerRegistryService(db *database.DB) *ContainerRegistryService {
+func NewContainerRegistryService(db *database.DB, certPool *x509.CertPool) *ContainerRegistryService {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyFromEnvironment
+	if certPool != nil {
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    certPool,
+		}
+	}
 
 	return &ContainerRegistryService{
 		db: db,
@@ -54,8 +63,16 @@ func NewContainerRegistryService(db *database.DB) *ContainerRegistryService {
 			Timeout:   registryCheckTimeout,
 			Transport: transport,
 		},
-		cache: make(map[string]*cache.Cache[string]),
+		certPool: certPool,
+		cache:    make(map[string]*cache.Cache[string]),
 	}
+}
+
+func (s *ContainerRegistryService) GetCertPool() *x509.CertPool {
+	if s == nil {
+		return nil
+	}
+	return s.certPool
 }
 
 func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
@@ -193,7 +210,7 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 // GetImageDigest fetches the current digest for an image:tag from the registry
 // This is used for digest-based update detection for non-semver tags
 func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef string) (string, error) {
-	repository, tag := parseImageReference(imageRef)
+	repository, tag := parseImageReferenceInternal(imageRef)
 	if repository == "" || tag == "" {
 		return "", fmt.Errorf("invalid image reference: %s", imageRef)
 	}
@@ -216,7 +233,7 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 	}
 
 	digest, err := imageCache.GetOrFetch(ctx, func(ctx context.Context) (string, error) {
-		return s.fetchDigestFromRegistry(ctx, repository, tag)
+		return s.fetchDigestFromRegistryInternal(ctx, repository, tag)
 	})
 
 	var staleErr *cache.ErrStale
@@ -228,8 +245,8 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 }
 
 // fetchDigestFromRegistry queries the Docker registry API for the image digest
-func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, repository, tag string) (string, error) {
-	registryURL, repoPath := parseRegistryAndRepo(repository)
+func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, repository, tag string) (string, error) {
+	registryURL, repoPath := parseRegistryAndRepoInternal(repository)
 	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repoPath, tag)
 
 	reqCtx, cancel := context.WithTimeout(ctx, registryCheckTimeout)
@@ -243,19 +260,21 @@ func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, 
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json")
 
 	// Try to find stored credentials for this registry
-	creds := s.findCredentialsForRegistry(ctx, registryURL)
+	creds, insecure := s.findCredentialsForRegistryInternal(ctx, registryURL)
 	if creds != nil {
 		req.SetBasicAuth(creds.Username, creds.Token)
 	}
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
+	client := s.getRegistryHTTPClientInternal(insecure)
+
+	resp, err := client.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
 	if err != nil {
 		return "", fmt.Errorf("registry request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return s.fetchWithTokenAuth(ctx, repository, tag, getHeaderCaseInsensitive(resp.Header, "WWW-Authenticate"), creds)
+		return s.fetchWithTokenAuthInternal(ctx, repository, tag, getHeaderCaseInsensitiveInternal(resp.Header, "WWW-Authenticate"), creds, insecure)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -275,41 +294,49 @@ func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, 
 }
 
 // findCredentialsForRegistry finds stored credentials for a registry URL
-func (s *ContainerRegistryService) findCredentialsForRegistry(ctx context.Context, registryURL string) *struct{ Username, Token string } {
+func (s *ContainerRegistryService) findCredentialsForRegistryInternal(ctx context.Context, registryURL string) (*struct{ Username, Token string }, bool) {
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 
 	// Normalize registry URL for comparison
 	normalizedURL := strings.TrimPrefix(registryURL, "https://")
 	normalizedURL = strings.TrimPrefix(normalizedURL, "http://")
 
+	insecureForAnonymous := false
+
 	for _, reg := range registries {
 		regURL := strings.TrimPrefix(reg.URL, "https://")
 		regURL = strings.TrimPrefix(regURL, "http://")
 
 		if strings.Contains(normalizedURL, regURL) || strings.Contains(regURL, normalizedURL) {
+			insecureForAnonymous = insecureForAnonymous || reg.Insecure
+
 			token, err := crypto.Decrypt(reg.Token)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to decrypt registry token", "registry", reg.URL, "error", err)
 				continue
 			}
-			return &struct{ Username, Token string }{Username: reg.Username, Token: token}
+
+			// Use the insecure flag from the registry that provided credentials.
+			return &struct{ Username, Token string }{Username: reg.Username, Token: token}, reg.Insecure
 		}
 	}
 
-	return nil
+	return nil, insecureForAnonymous
 }
 
 // fetchWithTokenAuth handles token-based authentication for registries
-func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repository, tag, wwwAuth string, creds *struct{ Username, Token string }) (string, error) {
-	realm, service := parseWWWAuth(wwwAuth)
+func (s *ContainerRegistryService) fetchWithTokenAuthInternal(ctx context.Context, repository, tag, wwwAuth string, creds *struct{ Username, Token string }, insecure bool) (string, error) {
+	realm, service := parseWWWAuthInternal(wwwAuth, s.certPool)
 	if realm == "" {
 		return "", fmt.Errorf("no auth realm found")
 	}
 
-	registryURL, repoPath := parseRegistryAndRepo(repository)
+	client := s.getRegistryHTTPClientInternal(insecure)
+
+	registryURL, repoPath := parseRegistryAndRepoInternal(repository)
 
 	tokenURL := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, repoPath)
 
@@ -325,7 +352,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 		tokenReq.SetBasicAuth(creds.Username, creds.Token)
 	}
 
-	tokenResp, err := s.httpClient.Do(tokenReq) //nolint:gosec // intentional request to auth realm provided by registry challenge
+	tokenResp, err := client.Do(tokenReq)
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
@@ -365,7 +392,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json")
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("authenticated request failed: %w", err)
 	}
@@ -385,6 +412,34 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	}
 
 	return digest, nil
+}
+
+func (s *ContainerRegistryService) getRegistryHTTPClientInternal(insecure bool) *http.Client {
+	if !insecure {
+		return s.httpClient
+	}
+
+	var transport *http.Transport
+	if baseTransport, ok := s.httpClient.Transport.(*http.Transport); ok {
+		transport = baseTransport.Clone()
+	} else if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{}
+	}
+
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	if transport.TLSClientConfig.MinVersion < tls.VersionTLS12 {
+		transport.TLSClientConfig.MinVersion = tls.VersionTLS12
+	}
+	transport.TLSClientConfig.InsecureSkipVerify = true // #nosec G402 - this is optional and controlled by explicit insecure-registry setting
+
+	return &http.Client{
+		Timeout:   s.httpClient.Timeout,
+		Transport: transport,
+	}
 }
 
 // SyncRegistries syncs registries from a manager to this agent instance
@@ -501,7 +556,7 @@ func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, e
 }
 
 // parseImageReference splits an image reference into repository and tag using distribution/reference
-func parseImageReference(imageRef string) (repository, tag string) {
+func parseImageReferenceInternal(imageRef string) (repository, tag string) {
 	named, err := ref.ParseNormalizedNamed(imageRef)
 	if err != nil {
 		return imageRef, "latest"
@@ -518,7 +573,7 @@ func parseImageReference(imageRef string) (repository, tag string) {
 }
 
 // parseRegistryAndRepo splits a repository into registry URL and repo path using distribution/reference
-func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
+func parseRegistryAndRepoInternal(repository string) (registryURL, repoPath string) {
 	named, err := ref.ParseNormalizedNamed(repository)
 	if err != nil {
 		return "https://registry-1.docker.io", "library/" + repository
@@ -538,7 +593,7 @@ func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
 }
 
 // parseWWWAuth parses the WWW-Authenticate header using the registry client
-func parseWWWAuth(header string) (realm, service string) {
-	c := registry.NewClient()
+func parseWWWAuthInternal(header string, certPool *x509.CertPool) (realm, service string) {
+	c := registry.NewClient(certPool)
 	return c.ParseAuthChallenge(header)
 }

@@ -48,6 +48,7 @@ type Config struct {
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
+	CustomCertsDir          string `env:"CUSTOM_CERTS" default:""`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
 	LogJson                 bool   `env:"LOG_JSON" default:"false"`
 	LogLevel                string `env:"LOG_LEVEL" default:"info" options:"toLower"`

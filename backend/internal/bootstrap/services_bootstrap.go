@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 
@@ -44,7 +45,7 @@ type Services struct {
 	Vulnerability     *services.VulnerabilityService
 }
 
-func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
+func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client, certPool *x509.CertPool) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
 	svcs = &Services{}
 
 	svcs.Event = services.NewEventService(db, cfg, httpClient)
@@ -60,11 +61,11 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
-	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
+	svcs.ContainerRegistry = services.NewContainerRegistryService(db, certPool)
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
-	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
+	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, certPool, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Vulnerability, svcs.Event)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings)
@@ -78,7 +79,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
-	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
+	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, certPool, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
 
