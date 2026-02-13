@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { PortBadge } from '$lib/components/badges';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { format, formatDistanceToNow } from 'date-fns';
@@ -10,9 +9,10 @@
 	interface Props {
 		container: ContainerDetailsDto;
 		primaryIpAddress: string;
+		onViewPortMappings?: () => void;
 	}
 
-	let { container, primaryIpAddress }: Props = $props();
+	let { container, primaryIpAddress, onViewPortMappings }: Props = $props();
 
 	function parseDockerDate(input: string | Date | undefined | null): Date | null {
 		if (!input) return null;
@@ -256,6 +256,11 @@
 							{m.containers_ports_exposed({ exposed: uniquePorts.exposed })}
 						{/if}
 					</div>
+					{#if onViewPortMappings && uniquePorts.total > 0}
+						<button type="button" class="text-primary w-fit text-xs font-medium hover:underline" onclick={onViewPortMappings}>
+							{m.common_view_details()} → {m.containers_nav_networks()}
+						</button>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
@@ -345,14 +350,5 @@
 				</Card.Root>
 			{/if}
 		</div>
-
-		{#if container.ports && container.ports.length > 0}
-			<div class="mt-6">
-				<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-					{m.common_port_mappings()}
-				</div>
-				<PortBadge ports={container.ports} />
-			</div>
-		{/if}
 	</Card.Content>
 </Card.Root>

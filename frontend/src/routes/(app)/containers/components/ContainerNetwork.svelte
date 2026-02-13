@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import { PortBadge } from '$lib/components/badges';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { NetworksIcon } from '$lib/icons';
@@ -22,6 +23,27 @@
 </script>
 
 <div class="space-y-6">
+	<Card.Root id="container-port-mappings">
+		<Card.Header icon={NetworksIcon}>
+			<div class="flex flex-col space-y-1.5">
+				<Card.Title>
+					<h2>
+						{m.common_port_mappings()}
+					</h2>
+				</Card.Title>
+			</div>
+		</Card.Header>
+		<Card.Content class="p-4">
+			{#if container.ports && container.ports.length > 0}
+				<PortBadge ports={container.ports} />
+			{:else}
+				<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+					<div class="text-sm">{m.containers_no_ports()}</div>
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
+
 	<Card.Root>
 		<Card.Header icon={NetworksIcon}>
 			<div class="flex flex-col space-y-1.5">
@@ -141,7 +163,7 @@
 													{m.containers_aliases()}
 												</div>
 												<div class="text-foreground space-y-1 text-sm font-medium">
-													{#each rawNetworkConfig.aliases as alias}
+													{#each rawNetworkConfig.aliases as alias, index (index)}
 														<div class="cursor-pointer font-mono break-all select-all" title="Click to select">
 															{alias}
 														</div>

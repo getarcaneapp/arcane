@@ -4,7 +4,7 @@
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import bytes from 'bytes';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import type {
 		ContainerDetailsDto,
@@ -213,11 +213,12 @@
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
 	const hasLabels = $derived(!!(container?.labels && Object.keys(container.labels).length > 0));
-	const showConfiguration = $derived(hasEnvVars || hasPorts || hasLabels);
+	const showConfiguration = $derived(hasEnvVars || hasLabels);
 
 	const hasNetworks = $derived(
 		!!(container?.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0)
 	);
+	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
@@ -228,7 +229,7 @@
 		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
-		...(hasNetworks ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
+		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
 	]);
 
@@ -240,6 +241,17 @@
 
 	function onTabChange(value: string) {
 		selectedTab = value;
+	}
+
+	async function navigateToNetworkPortMappings() {
+		if (!showNetworkTab) return;
+
+		selectedTab = 'network';
+		await tick();
+
+		requestAnimationFrame(() => {
+			document.getElementById('container-port-mappings')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		});
 	}
 
 	function parseDockerDate(input: string | Date | undefined | null): Date | null {
@@ -310,7 +322,11 @@
 
 		{#snippet tabContent(activeTab)}
 			<Tabs.Content value="overview" class="h-full">
-				<ContainerOverview {container} {primaryIpAddress} />
+				<ContainerOverview
+					{container}
+					{primaryIpAddress}
+					onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
+				/>
 			</Tabs.Content>
 
 			{#if showStats}
@@ -357,7 +373,7 @@
 				</Tabs.Content>
 			{/if}
 
-			{#if hasNetworks}
+			{#if showNetworkTab}
 				<Tabs.Content value="network" class="h-full">
 					<ContainerNetwork {container} />
 				</Tabs.Content>
