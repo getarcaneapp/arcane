@@ -217,8 +217,8 @@ func IsProjectFile(filename string) bool {
 		"compose.yml",
 		"docker-compose.yaml",
 		"docker-compose.yml",
-        "podman-compose.yaml",
-        "podman-compose.yml",
+		"podman-compose.yaml",
+		"podman-compose.yml",
 		".env",
 	}
 

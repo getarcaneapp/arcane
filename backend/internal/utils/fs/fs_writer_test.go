@@ -101,3 +101,39 @@ func TestWriteProjectFiles(t *testing.T) {
 		assert.Equal(t, newContent, string(content))
 	})
 }
+
+func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fileName string
+	}{
+		{name: "podman-compose.yaml", fileName: "podman-compose.yaml"},
+		{name: "podman-compose.yml", fileName: "podman-compose.yml"},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			projectsRoot := tmpDir
+			projectDir := filepath.Join(tmpDir, "test-project")
+			require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+			existingComposePath := filepath.Join(projectDir, tc.fileName)
+			require.NoError(t, os.WriteFile(existingComposePath, []byte("services: {}"), 0o600))
+
+			expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
+			err := WriteComposeFile(projectsRoot, projectDir, expectedContent)
+			require.NoError(t, err)
+
+			actualContent, err := os.ReadFile(existingComposePath)
+			require.NoError(t, err)
+			assert.Equal(t, expectedContent, string(actualContent))
+
+			_, err = os.Stat(filepath.Join(projectDir, "compose.yaml"))
+			assert.True(t, os.IsNotExist(err), "compose.yaml should not be created when existing podman-compose file is present")
+		})
+	}
+}
