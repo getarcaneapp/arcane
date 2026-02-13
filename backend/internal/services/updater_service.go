@@ -1253,17 +1253,13 @@ func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeve
 		title = "Auto-update run completed"
 	}
 
-	resourceType := "system"
-	resourceName := "auto_updater"
-	environmentID := "0"
-
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          models.EventTypeSystemAutoUpdate,
 		Severity:      sev,
 		Title:         title,
-		ResourceType:  &resourceType,
-		ResourceName:  &resourceName,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("system"),
+		ResourceName:  new("auto_updater"),
+		EnvironmentID: new("0"),
 		Metadata:      metadata,
 	})
 }

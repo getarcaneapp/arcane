@@ -552,7 +552,7 @@ func stringToPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
-	return &s
+	return new(s)
 }
 
 func stringPtrToString(s *string) string {

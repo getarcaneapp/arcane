@@ -122,11 +122,11 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 
 	ak := &models.ApiKey{
 		Name:          name,
-		Description:   &description,
+		Description:   new(description),
 		KeyHash:       keyHash,
 		KeyPrefix:     keyPrefix,
 		UserID:        userID,
-		EnvironmentID: &environmentID,
+		EnvironmentID: new(environmentID),
 	}
 
 	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
