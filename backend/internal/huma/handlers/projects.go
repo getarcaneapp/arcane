@@ -59,6 +59,7 @@ type GetProjectStatusCountsOutput struct {
 type DeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *project.UpRequest
 }
 
 type DeployProjectOutput struct {
@@ -404,6 +405,24 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
 
+	deployOptions := &project.UpRequest{
+		PullPolicy:    project.UpPullPolicyMissing,
+		ForceRecreate: false,
+	}
+
+	if input.Body != nil {
+		deployOptions.ForceRecreate = input.Body.ForceRecreate
+
+		switch input.Body.PullPolicy {
+		case "", project.UpPullPolicyMissing:
+			deployOptions.PullPolicy = project.UpPullPolicyMissing
+		case project.UpPullPolicyAlways:
+			deployOptions.PullPolicy = project.UpPullPolicyAlways
+		default:
+			return nil, huma.Error400BadRequest("invalid pullPolicy, expected one of: missing, always")
+		}
+	}
+
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
@@ -424,7 +443,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 			}
 
 			deployCtx := context.WithValue(humaCtx.Context(), projects.ProgressWriterKey{}, writer)
-			if err := h.projectService.DeployProject(deployCtx, input.ProjectID, *user); err != nil {
+			if err := h.projectService.DeployProjectWithOptions(deployCtx, input.ProjectID, *user, deployOptions); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()

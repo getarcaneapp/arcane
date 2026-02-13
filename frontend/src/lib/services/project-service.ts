@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
+import type { Project, ProjectStatusCounts, ProjectUpOptions } from '$lib/types/project.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 import BaseAPIService from './api-service';
 
@@ -23,11 +23,27 @@ export class ProjectService extends BaseAPIService {
 
 	deployProject(projectId: string): Promise<Project>;
 	deployProject(projectId: string, onLine: (data: any) => void): Promise<Project>;
-	async deployProject(projectId: string, onLine?: (data: any) => void): Promise<Project> {
+	deployProject(projectId: string, options: ProjectUpOptions): Promise<Project>;
+	deployProject(projectId: string, options: ProjectUpOptions, onLine: (data: any) => void): Promise<Project>;
+	async deployProject(
+		projectId: string,
+		optionsOrOnLine?: ProjectUpOptions | ((data: any) => void),
+		onLineMaybe?: (data: any) => void
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/up`;
+		const onLine = typeof optionsOrOnLine === 'function' ? optionsOrOnLine : onLineMaybe;
+		const options = typeof optionsOrOnLine === 'function' ? undefined : optionsOrOnLine;
 
-		const res = await fetch(url, { method: 'POST' });
+		const requestInit: RequestInit = { method: 'POST' };
+		if (options !== undefined) {
+			requestInit.headers = {
+				'Content-Type': 'application/json'
+			};
+			requestInit.body = JSON.stringify(options);
+		}
+
+		const res = await fetch(url, requestInit);
 		const status = String(res.status);
 		if (!res.ok || !res.body) {
 			throw new Error(m.progress_deploy_failed_to_start({ status }));

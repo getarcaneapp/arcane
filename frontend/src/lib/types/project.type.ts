@@ -90,3 +90,10 @@ export interface ProjectStatusCounts {
 	stoppedProjects: number;
 	totalProjects: number;
 }
+
+export type ProjectUpPullPolicy = 'missing' | 'always';
+
+export interface ProjectUpOptions {
+	pullPolicy?: ProjectUpPullPolicy;
+	forceRecreate?: boolean;
+}

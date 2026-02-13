@@ -8,6 +8,19 @@
 	import { DockerBrandIcon } from '$lib/icons';
 
 	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions, pruneModeDescription, pruneModeOptions } = $props();
+
+	const upPullPolicyOptions = [
+		{
+			value: 'missing',
+			label: 'Only pull missing images',
+			description: m.projects_up_options_defaults_help()
+		},
+		{
+			value: 'always',
+			label: m.projects_up_option_pull_latest(),
+			description: 'Pull the latest image tags before bringing the project up.'
+		}
+	];
 </script>
 
 <Card.Root class="flex flex-col">
@@ -69,6 +82,39 @@
 						<div class="text-muted-foreground text-xs">{m.docker_auto_inject_env_description()}</div>
 					</div>
 					<Switch id="auto-inject-env" bind:checked={$formInputs.autoInjectEnv.value} />
+				</div>
+			</div>
+
+			<div class="space-y-4 rounded-lg border p-4 sm:col-span-2">
+				<div class="space-y-0.5">
+					<Label class="text-sm font-medium">{m.projects_up_options_title()}</Label>
+					<div class="text-muted-foreground text-xs">
+						Default behavior for project Up in this environment. Right-click the Up button to run one-time overrides.
+					</div>
+				</div>
+
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="space-y-2">
+						<SelectWithLabel
+							id="projectUpDefaultPullPolicy"
+							name="projectUpDefaultPullPolicy"
+							bind:value={$formInputs.projectUpDefaultPullPolicy.value}
+							label="Default Pull Policy"
+							description="Choose how images are pulled when using Up by default."
+							options={upPullPolicyOptions}
+							onValueChange={(v) => ($formInputs.projectUpDefaultPullPolicy.value = v as 'missing' | 'always')}
+						/>
+					</div>
+
+					<div class="flex items-center justify-between rounded-lg border p-3">
+						<div class="space-y-0.5">
+							<Label for="project-up-default-force-recreate" class="text-sm font-medium">
+								{m.projects_up_option_recreate_containers()}
+							</Label>
+							<div class="text-muted-foreground text-xs">Enable to force container recreation on default Up actions.</div>
+						</div>
+						<Switch id="project-up-default-force-recreate" bind:checked={$formInputs.projectUpDefaultForceRecreate.value} />
+					</div>
 				</div>
 			</div>
 		</div>
