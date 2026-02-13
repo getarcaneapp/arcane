@@ -121,6 +121,12 @@ type Environment struct {
 	// Required: false
 	IsEdge bool `json:"isEdge"`
 
+	// EdgeTransport indicates the active tunnel transport for an edge environment.
+	// Values are "grpc" or "websocket" when connected.
+	//
+	// Required: false
+	EdgeTransport *string `json:"edgeTransport,omitempty"`
+
 	// ApiKey is returned only when creating or regenerating
 	//
 	// Required: false

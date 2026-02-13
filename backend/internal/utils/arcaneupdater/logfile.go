@@ -170,14 +170,14 @@ func SetupMessageOnlyLogFile(dataDir string, filePrefix string, minLevel slog.Le
 		filePrefix = "arcane-upgrade"
 	}
 
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
 	logFileName := fmt.Sprintf("%s-%d.log", filePrefix, time.Now().Unix())
 	logFilePath := filepath.Join(dataDir, logFileName)
 
-	logFile, err := os.OpenFile(logFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(logFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}

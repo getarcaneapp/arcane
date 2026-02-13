@@ -4,8 +4,10 @@ import (
 	"time"
 )
 
-type EventType string
-type EventSeverity string
+type (
+	EventType     string
+	EventSeverity string
+)
 
 const (
 	// Event types

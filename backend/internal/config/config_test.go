@@ -29,10 +29,10 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		unsetEnv(t, "DIR_PERM")
 
 		cfg := Load()
-		assert.Equal(t, os.FileMode(0644), cfg.FilePerm)
-		assert.Equal(t, os.FileMode(0755), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0644), common.FilePerm)
-		assert.Equal(t, os.FileMode(0755), common.DirPerm)
+		assert.Equal(t, os.FileMode(0o644), cfg.FilePerm)
+		assert.Equal(t, os.FileMode(0o755), cfg.DirPerm)
+		assert.Equal(t, os.FileMode(0o644), common.FilePerm)
+		assert.Equal(t, os.FileMode(0o755), common.DirPerm)
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
@@ -40,10 +40,10 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		setEnv(t, "DIR_PERM", "0775")
 
 		cfg := Load()
-		assert.Equal(t, os.FileMode(0664), cfg.FilePerm)
-		assert.Equal(t, os.FileMode(0775), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0664), common.FilePerm)
-		assert.Equal(t, os.FileMode(0775), common.DirPerm)
+		assert.Equal(t, os.FileMode(0o664), cfg.FilePerm)
+		assert.Equal(t, os.FileMode(0o775), cfg.DirPerm)
+		assert.Equal(t, os.FileMode(0o664), common.FilePerm)
+		assert.Equal(t, os.FileMode(0o775), common.DirPerm)
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
@@ -51,10 +51,10 @@ func TestConfig_LoadPermissions(t *testing.T) {
 		setEnv(t, "DIR_PERM", "0700")
 
 		cfg := Load()
-		assert.Equal(t, os.FileMode(0600), cfg.FilePerm)
-		assert.Equal(t, os.FileMode(0700), cfg.DirPerm)
-		assert.Equal(t, os.FileMode(0600), common.FilePerm)
-		assert.Equal(t, os.FileMode(0700), common.DirPerm)
+		assert.Equal(t, os.FileMode(0o600), cfg.FilePerm)
+		assert.Equal(t, os.FileMode(0o700), cfg.DirPerm)
+		assert.Equal(t, os.FileMode(0o600), common.FilePerm)
+		assert.Equal(t, os.FileMode(0o700), common.DirPerm)
 	})
 }
 
@@ -81,7 +81,7 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "encryption_key")
 		secretValue := "my-super-secret-encryption-key-32chars!"
-		err := os.WriteFile(secretFile, []byte(secretValue), 0600)
+		err := os.WriteFile(secretFile, []byte(secretValue), 0o600)
 		require.NoError(t, err)
 
 		// Clear direct env var and set _FILE variant
@@ -107,7 +107,7 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "jwt_secret")
 		testJWTValue := "test-jwt-stored-in-file"
-		err := os.WriteFile(secretFile, []byte(testJWTValue+"\n"), 0600) // Include trailing newline
+		err := os.WriteFile(secretFile, []byte(testJWTValue+"\n"), 0o600) // Include trailing newline
 		require.NoError(t, err)
 
 		// Clear direct env var and set __FILE variant
@@ -134,7 +134,7 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "encryption_key")
 		fileValue := "value-from-file-takes-precedence!!"
-		err := os.WriteFile(secretFile, []byte(fileValue), 0600)
+		err := os.WriteFile(secretFile, []byte(fileValue), 0o600)
 		require.NoError(t, err)
 
 		// Set both direct and _FILE variants
@@ -151,12 +151,12 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 		// Create single underscore file
 		singleFile := filepath.Join(tmpDir, "single")
-		err := os.WriteFile(singleFile, []byte("single-underscore-value-32chars!!"), 0600)
+		err := os.WriteFile(singleFile, []byte("single-underscore-value-32chars!!"), 0o600)
 		require.NoError(t, err)
 
 		// Create double underscore file
 		doubleFile := filepath.Join(tmpDir, "double")
-		err = os.WriteFile(doubleFile, []byte("double-underscore-value-32chars!!"), 0600)
+		err = os.WriteFile(doubleFile, []byte("double-underscore-value-32chars!!"), 0o600)
 		require.NoError(t, err)
 
 		unsetEnv(t, "JWT_SECRET")
@@ -171,7 +171,7 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		// Create a temp file
 		tmpDir := t.TempDir()
 		portFile := filepath.Join(tmpDir, "port")
-		err := os.WriteFile(portFile, []byte("9999"), 0600)
+		err := os.WriteFile(portFile, []byte("9999"), 0o600)
 		require.NoError(t, err)
 
 		// PORT is not marked with options:"file", so _FILE should not work
@@ -185,7 +185,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 func TestConfig_OptionsToLower(t *testing.T) {
 	origLogLevel := os.Getenv("LOG_LEVEL")
+	origEdgeTransport := os.Getenv("EDGE_TRANSPORT")
 	defer restoreEnv("LOG_LEVEL", origLogLevel)
+	defer restoreEnv("EDGE_TRANSPORT", origEdgeTransport)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
 		setEnv(t, "LOG_LEVEL", "DEBUG")
@@ -199,6 +201,20 @@ func TestConfig_OptionsToLower(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, "warn", cfg.LogLevel)
+	})
+
+	t.Run("EdgeTransport is converted to lowercase", func(t *testing.T) {
+		setEnv(t, "EDGE_TRANSPORT", "GRPC")
+
+		cfg := Load()
+		assert.Equal(t, "grpc", cfg.EdgeTransport)
+	})
+
+	t.Run("EdgeTransport defaults to auto", func(t *testing.T) {
+		unsetEnv(t, "EDGE_TRANSPORT")
+
+		cfg := Load()
+		assert.Equal(t, "auto", cfg.EdgeTransport)
 	})
 }
 
@@ -244,6 +260,66 @@ func TestConfig_ListenAddr(t *testing.T) {
 			assert.Equal(t, testCase.expected, cfg.ListenAddr())
 		})
 	}
+}
+
+func TestConfig_GetManagerGRPCAddr(t *testing.T) {
+	t.Run("uses manager api url explicit port when present", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com:8443/api",
+		}
+		assert.Equal(t, "manager.example.com:8443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("defaults to manager api https port when port is not set", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com/api",
+		}
+		assert.Equal(t, "manager.example.com:443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("defaults to manager api http port when port is not set", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "http://manager.example.com/api",
+		}
+		assert.Equal(t, "manager.example.com:80", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("supports reverse-proxy path prefixes", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com/arcane/api/",
+		}
+		assert.Equal(t, "manager.example.com:443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("supports ipv6 hosts behind reverse proxies", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://[2001:db8::1]/arcane/api",
+		}
+		assert.Equal(t, "[2001:db8::1]:443", cfg.GetManagerGRPCAddr())
+	})
+
+	t.Run("returns empty for invalid manager url", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "://bad-url",
+		}
+		assert.Equal(t, "", cfg.GetManagerGRPCAddr())
+	})
+}
+
+func TestConfig_GetManagerBaseURL(t *testing.T) {
+	t.Run("strips trailing slash and api suffix", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com/api/",
+		}
+		assert.Equal(t, "https://manager.example.com", cfg.GetManagerBaseURL())
+	})
+
+	t.Run("keeps reverse-proxy path prefix", func(t *testing.T) {
+		cfg := &Config{
+			ManagerApiUrl: "https://manager.example.com/arcane/api/",
+		}
+		assert.Equal(t, "https://manager.example.com/arcane", cfg.GetManagerBaseURL())
+	})
 }
 
 func restoreEnv(key, value string) {

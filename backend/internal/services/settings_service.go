@@ -955,7 +955,6 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		}
 		return nil
 	})
-
 	if err != nil {
 		return "", err
 	}

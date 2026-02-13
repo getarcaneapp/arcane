@@ -41,7 +41,7 @@ var openapiCmd = &cobra.Command{
 
 		// Write to file or stdout
 		if outputFile != "" {
-			if err := os.WriteFile(outputFile, output, 0600); err != nil {
+			if err := os.WriteFile(outputFile, output, 0o600); err != nil {
 				fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 				os.Exit(1)
 			}

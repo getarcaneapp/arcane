@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -59,6 +60,7 @@ type Config struct {
 	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
 	GPUType                 string `env:"GPU_TYPE" default:"auto"`
 	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
+	EdgeTransport           string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
 	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
 
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
@@ -339,6 +341,35 @@ func (c *Config) GetManagerBaseURL() string {
 	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
 	managerURL = strings.TrimSuffix(managerURL, "/api")
 	return managerURL
+}
+
+// GetManagerGRPCAddr returns the manager gRPC address in host:port form.
+func (c *Config) GetManagerGRPCAddr() string {
+	baseURL := c.GetManagerBaseURL()
+	if baseURL == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	port := parsed.Port()
+	if port == "" {
+		if strings.EqualFold(parsed.Scheme, "https") {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	return net.JoinHostPort(host, port)
 }
 
 // GetAppURL returns the effective application URL.

@@ -34,7 +34,6 @@ func TestClient_UsesAPIKeyHeader(t *testing.T) {
 
 	resp, err := c.Get(context.Background(), "/api/version")
 	if err != nil {
-
 		t.Fatalf("Get() error: %v", err)
 	}
 	_ = resp.Body.Close()

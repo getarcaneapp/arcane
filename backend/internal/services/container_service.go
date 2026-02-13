@@ -59,7 +59,6 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 	}
 
 	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
-
 	if err != nil {
 		fmt.Printf("Could not log container start action: %s\n", err)
 	}

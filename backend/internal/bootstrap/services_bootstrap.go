@@ -47,7 +47,7 @@ type Services struct {
 func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
 	svcs = &Services{}
 
-	svcs.Event = services.NewEventService(db)
+	svcs.Event = services.NewEventService(db, cfg, httpClient)
 	svcs.Settings, err = services.NewSettingsService(ctx, db)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to settings service: %w", err)

@@ -750,7 +750,6 @@ func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remot
 		resultTemplate = localTemplate
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}

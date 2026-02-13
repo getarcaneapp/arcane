@@ -84,7 +84,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest) (*models.GitRepository, error) {
+func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest, actor models.User) (*models.GitRepository, error) {
 	repository := models.GitRepository{
 		Name:                   req.Name,
 		URL:                    req.URL,
@@ -134,12 +134,14 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 		ResourceType: new("git_repository"),
 		ResourceID:   new(repository.ID),
 		ResourceName: new(repository.Name),
+		UserID:       new(actor.ID),
+		Username:     new(actor.Username),
 	})
 
 	return &repository, nil
 }
 
-func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req models.UpdateGitRepositoryRequest) (*models.GitRepository, error) {
+func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, req models.UpdateGitRepositoryRequest, actor models.User) (*models.GitRepository, error) {
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -207,13 +209,15 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 			ResourceType: new("git_repository"),
 			ResourceID:   new(repository.ID),
 			ResourceName: new(repository.Name),
+			UserID:       new(actor.ID),
+			Username:     new(actor.Username),
 		})
 	}
 
 	return s.GetRepositoryByID(ctx, id)
 }
 
-func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string) error {
+func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor models.User) error {
 	// Check if repository is used by any syncs
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("repository_id = ?", id).Count(&count).Error; err != nil {
@@ -243,11 +247,14 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string) 
 		ResourceType: new("git_repository"),
 		ResourceID:   new(repository.ID),
 		ResourceName: new(repository.Name),
+		UserID:       new(actor.ID),
+		Username:     new(actor.Username),
 	})
 
 	return nil
 }
-func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string) error {
+
+func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string, actor models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	ctx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
 	defer cancel()
@@ -273,6 +280,8 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 			ResourceType: new("git_repository"),
 			ResourceID:   new(repository.ID),
 			ResourceName: new(repository.Name),
+			UserID:       new(actor.ID),
+			Username:     new(actor.Username),
 		})
 		return err
 	}
@@ -286,6 +295,8 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 		ResourceType: new("git_repository"),
 		ResourceID:   new(repository.ID),
 		ResourceName: new(repository.Name),
+		UserID:       new(actor.ID),
+		Username:     new(actor.Username),
 	})
 
 	return nil

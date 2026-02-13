@@ -11,19 +11,24 @@ import (
 // AgentTunnel represents an active tunnel connection from an edge agent
 type AgentTunnel struct {
 	EnvironmentID string
-	Conn          *TunnelConn
+	Conn          TunnelConnection
 	Pending       sync.Map // map[string]*PendingRequest
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
 	mu            sync.RWMutex
 }
 
-// NewAgentTunnel creates a new agent tunnel
+// NewAgentTunnel creates a new agent tunnel.
 func NewAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
+	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
+}
+
+// NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection.
+func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
 	now := time.Now()
 	return &AgentTunnel{
 		EnvironmentID: envID,
-		Conn:          NewTunnelConn(conn),
+		Conn:          conn,
 		ConnectedAt:   now,
 		LastHeartbeat: now,
 	}
@@ -116,14 +121,26 @@ func (r *TunnelRegistry) CleanupStale(maxAge time.Duration) int {
 	return removed
 }
 
-// Global registry instance
-var globalRegistry *TunnelRegistry
-var registryOnce sync.Once
+var (
+	defaultRegistryMu sync.RWMutex
+	defaultRegistry   = NewTunnelRegistry()
+)
 
 // GetRegistry returns the global tunnel registry
 func GetRegistry() *TunnelRegistry {
-	registryOnce.Do(func() {
-		globalRegistry = NewTunnelRegistry()
-	})
-	return globalRegistry
+	defaultRegistryMu.RLock()
+	registry := defaultRegistry
+	defaultRegistryMu.RUnlock()
+	return registry
+}
+
+// SetDefaultRegistry replaces the process-wide default tunnel registry.
+func SetDefaultRegistry(registry *TunnelRegistry) {
+	if registry == nil {
+		registry = NewTunnelRegistry()
+	}
+
+	defaultRegistryMu.Lock()
+	defaultRegistry = registry
+	defaultRegistryMu.Unlock()
 }

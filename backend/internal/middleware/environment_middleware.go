@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -31,6 +32,9 @@ const (
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
 	proxyTimeout = 30 * time.Minute
+
+	edgeTunnelWaitTimeout = 2 * time.Second
+	edgeTunnelPollEvery   = 100 * time.Millisecond
 )
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
@@ -63,6 +67,7 @@ type EnvironmentMiddleware struct {
 	authValidator AuthValidator
 	envService    *services.EnvironmentService
 	httpClient    *http.Client
+	registry      *edge.TunnelRegistry
 }
 
 // NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
@@ -72,6 +77,22 @@ type EnvironmentMiddleware struct {
 // - envService: environment service for additional lookups
 // - authValidator: function to validate authentication before proxying (required for security)
 func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService, authValidator AuthValidator) gin.HandlerFunc {
+	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, envService, authValidator, edge.GetRegistry())
+}
+
+// NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
+func NewEnvProxyMiddlewareWithParamAndRegistry(
+	localID,
+	paramName string,
+	resolver EnvResolver,
+	envService *services.EnvironmentService,
+	authValidator AuthValidator,
+	registry *edge.TunnelRegistry,
+) gin.HandlerFunc {
+	if registry == nil {
+		registry = edge.NewTunnelRegistry()
+	}
+
 	m := &EnvironmentMiddleware{
 		localID:       localID,
 		paramName:     paramName,
@@ -79,6 +100,7 @@ func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResol
 		authValidator: authValidator,
 		envService:    envService,
 		httpClient:    &http.Client{Timeout: proxyTimeout},
+		registry:      registry,
 	}
 	return m.Handle
 }
@@ -138,7 +160,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	target := m.buildTargetURL(c, envID, apiURL)
 
 	// Check if this environment has an active edge tunnel
-	if tunnel, ok := edge.GetRegistry().Get(envID); ok && !tunnel.Conn.IsClosed() {
+	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
 		slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
 
 		// Inject agent token into request headers before proxying through the tunnel.
@@ -158,6 +180,37 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		} else {
 			edge.ProxyHTTPRequest(c, tunnel, proxyPath)
 		}
+		c.Abort()
+		return
+	}
+
+	if isEdgeEnvironmentURLInternal(apiURL) {
+		tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edgeTunnelWaitTimeout)
+		if ok {
+			slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
+			// Inject agent token headers for the recovered tunnel path.
+			if accessToken != nil && *accessToken != "" {
+				c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
+				c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
+			}
+
+			proxyPath := m.buildProxyPath(c, envID)
+			if m.isWebSocketUpgrade(c) {
+				edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+			} else {
+				edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+			}
+			c.Abort()
+			return
+		}
+
+		slog.WarnContext(c.Request.Context(), "No active edge tunnel for environment", "environment_id", envID)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"success": false,
+			"data": gin.H{
+				"error": "Edge agent is not connected",
+			},
+		})
 		c.Abort()
 		return
 	}
@@ -233,8 +286,60 @@ func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) str
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
 func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
+	if websocket.IsWebSocketUpgrade(c.Request) {
+		return true
+	}
 	return strings.EqualFold(c.GetHeader(remenv.HeaderUpgrade), "websocket") ||
-		strings.Contains(strings.ToLower(c.GetHeader(remenv.HeaderConnection)), remenv.ConnectionUpgradeToken)
+		strings.Contains(strings.ToLower(c.GetHeader(remenv.HeaderConnection)), remenv.ConnectionUpgradeToken) ||
+		c.GetHeader("Sec-Websocket-Key") != ""
+}
+
+func isEdgeEnvironmentURLInternal(apiURL string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(apiURL))
+	return strings.HasPrefix(normalized, "edge://")
+}
+
+func (m *EnvironmentMiddleware) getActiveEdgeTunnelInternal(envID string) (*edge.AgentTunnel, bool) {
+	if m.registry == nil {
+		return nil, false
+	}
+
+	tunnel, ok := m.registry.Get(envID)
+	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+		return nil, false
+	}
+	return tunnel, true
+}
+
+func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Context, envID string, timeout time.Duration) (*edge.AgentTunnel, bool) {
+	if timeout <= 0 {
+		return m.getActiveEdgeTunnelInternal(envID)
+	}
+
+	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
+		return tunnel, true
+	}
+
+	waitCtx := ctx
+	cancel := func() {}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		waitCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	ticker := time.NewTicker(edgeTunnelPollEvery)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-waitCtx.Done():
+			return nil, false
+		case <-ticker.C:
+			if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
+				return tunnel, true
+			}
+		}
+	}
 }
 
 // proxyWebSocket handles WebSocket proxy requests.

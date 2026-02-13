@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
@@ -291,6 +290,22 @@ func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo,
 	return user, tokenPair, nil
 }
 
+func (s *AuthService) LogLogout(ctx context.Context, user *models.User) {
+	if s.eventService == nil || user == nil {
+		return
+	}
+
+	metadata := models.JSON{
+		"action": "logout",
+	}
+
+	userID := user.ID
+	username := user.Username
+	s.runInBackground(ctx, "log_user_logout", func(ctx context.Context) error {
+		return s.eventService.LogUserEvent(ctx, models.EventTypeUserLogout, userID, username, metadata)
+	})
+}
+
 func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, bool, error) {
 	user, err := s.userService.GetUserByOidcSubjectId(ctx, userInfo.Subject)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
@@ -552,7 +567,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*T
 		func(t *jwt.Token) (any, error) {
 			return s.jwtSecret, nil
 		})
-
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
@@ -593,7 +607,6 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		func(t *jwt.Token) (any, error) {
 			return s.jwtSecret, nil
 		})
-
 	if err != nil {
 		if strings.Contains(err.Error(), "token is expired") {
 			return nil, ErrExpiredToken
@@ -746,47 +759,4 @@ func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(
 			slog.ErrorContext(taskCtx, "Background task failed", "task", name, "error", err)
 		}
 	}()
-}
-
-// GetAutoLoginConfig returns the auto-login configuration for the frontend.
-// The password is never returned. Auto-login is disabled if local auth is disabled.
-func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*auth.AutoLoginConfig, error) {
-	if !buildables.HasBuildFeature("autologin") {
-		return &auth.AutoLoginConfig{
-			Enabled:  false,
-			Username: "",
-		}, nil
-	}
-
-	localEnabled, err := s.IsLocalAuthEnabled(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to check local auth status for auto-login", "error", err)
-		return &auth.AutoLoginConfig{
-			Enabled:  false,
-			Username: "",
-		}, nil
-	}
-
-	if !localEnabled {
-		slog.DebugContext(ctx, "Auto-login disabled because local auth is disabled")
-		return &auth.AutoLoginConfig{
-			Enabled:  false,
-			Username: "",
-		}, nil
-	}
-
-	return &auth.AutoLoginConfig{
-		Enabled:  true,
-		Username: s.config.AutoLoginUsername,
-	}, nil
-}
-
-// GetAutoLoginPassword returns the auto-login password for internal use only.
-// This should only be called by the login handler to validate auto-login credentials.
-// WARNING: Never expose this value through any API response!
-func (s *AuthService) GetAutoLoginPassword() string {
-	if !buildables.HasBuildFeature("autologin") {
-		return ""
-	}
-	return s.config.AutoLoginPassword
 }

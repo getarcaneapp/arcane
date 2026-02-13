@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -167,3 +168,53 @@ func TestTunnelConn_SendRequest(t *testing.T) {
 	assert.Equal(t, MessageTypeResponse, resp.Type)
 	assert.Equal(t, []byte("response"), resp.Body)
 }
+
+func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
+	baseCtx := t.Context()
+
+	stream := &blockingGRPCManagerStream{
+		ctx:         baseCtx,
+		recvStarted: make(chan struct{}, 1),
+	}
+	conn := NewGRPCManagerTunnelConn(stream)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := conn.Receive()
+		errCh <- err
+	}()
+
+	select {
+	case <-stream.recvStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for stream recv start")
+	}
+
+	require.NoError(t, conn.Close())
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for receive to unblock")
+	}
+}
+
+type blockingGRPCManagerStream struct {
+	ctx         context.Context
+	recvStarted chan struct{}
+}
+
+func (b *blockingGRPCManagerStream) Send(*tunnelpb.ManagerMessage) error { return nil }
+
+func (b *blockingGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
+	select {
+	case b.recvStarted <- struct{}{}:
+	default:
+	}
+	<-b.ctx.Done()
+	return nil, b.ctx.Err()
+}
+
+func (b *blockingGRPCManagerStream) Context() context.Context { return b.ctx }

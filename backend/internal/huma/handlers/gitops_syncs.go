@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
@@ -281,7 +282,12 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncCreationError{Err: err}).Error())
@@ -306,7 +312,12 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body, actor)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -350,7 +361,12 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncUpdateError{Err: err}).Error())
@@ -375,7 +391,12 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID); err != nil {
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncDeletionError{Err: err}).Error())
 	}
@@ -396,7 +417,12 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncPerformError{Err: err}).Error())

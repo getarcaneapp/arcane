@@ -25,8 +25,8 @@ func TestWriteFilesPermissions(t *testing.T) {
 	projectDir := filepath.Join(tmpDir, "test-project")
 
 	t.Run("WriteComposeFile uses custom permissions", func(t *testing.T) {
-		common.FilePerm = 0600
-		common.DirPerm = 0700
+		common.FilePerm = 0o600
+		common.DirPerm = 0o700
 
 		err := WriteComposeFile(projectsRoot, projectDir, "services: {}")
 		require.NoError(t, err)
@@ -36,17 +36,17 @@ func TestWriteFilesPermissions(t *testing.T) {
 		require.NoError(t, err)
 
 		if runtime.GOOS != "windows" {
-			assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
 			dirInfo, err := os.Stat(projectDir)
 			require.NoError(t, err)
-			assert.Equal(t, os.FileMode(0700), dirInfo.Mode().Perm())
+			assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 		}
 	})
 
 	t.Run("WriteEnvFile uses custom permissions", func(t *testing.T) {
-		common.FilePerm = 0600
-		common.DirPerm = 0700
+		common.FilePerm = 0o600
+		common.DirPerm = 0o700
 
 		err := WriteEnvFile(projectsRoot, projectDir, "VAR=VAL")
 		require.NoError(t, err)
@@ -56,7 +56,7 @@ func TestWriteFilesPermissions(t *testing.T) {
 		require.NoError(t, err)
 
 		if runtime.GOOS != "windows" {
-			assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 		}
 	})
 }
@@ -79,7 +79,7 @@ func TestWriteProjectFiles(t *testing.T) {
 	t.Run("preserves existing env when envContent is nil", func(t *testing.T) {
 		envPath := filepath.Join(projectDir, ".env")
 		expected := "EXISTING=true"
-		err := os.WriteFile(envPath, []byte(expected), 0600)
+		err := os.WriteFile(envPath, []byte(expected), 0o600)
 		require.NoError(t, err)
 
 		err = WriteProjectFiles(projectsRoot, projectDir, "services: { updated: true }", nil)

@@ -16,6 +16,7 @@
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
@@ -117,6 +118,11 @@
 			cell: ResourceCell
 		},
 		{
+			id: 'environment',
+			title: m.events_environment_label(),
+			cell: EnvironmentCell
+		},
+		{
 			accessorKey: 'username',
 			title: m.common_user(),
 			sortable: true,
@@ -134,6 +140,7 @@
 		{ id: 'severity', label: m.events_col_severity(), defaultVisible: true },
 		{ id: 'type', label: m.common_type(), defaultVisible: true },
 		{ id: 'resource', label: m.events_col_resource(), defaultVisible: true },
+		{ id: 'environment', label: m.events_environment_label(), defaultVisible: true },
 		{ id: 'username', label: m.common_user(), defaultVisible: true },
 		{ id: 'timestamp', label: m.events_col_time(), defaultVisible: true }
 	];
@@ -157,6 +164,16 @@
 				<p class="text-muted-foreground text-xs">{item.resourceName}</p>
 			{/if}
 		</div>
+	{:else}
+		-
+	{/if}
+{/snippet}
+
+{#snippet EnvironmentCell({ item }: { item: Event })}
+	{#if item.environmentId}
+		<Badge variant="outline"
+			>{environmentStore.available.find((e) => e.id === item.environmentId)?.name || item.environmentId}</Badge
+		>
 	{:else}
 		-
 	{/if}
@@ -211,6 +228,16 @@
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.resource ?? true) && (!!item.resourceType || !!item.resourceName)
+			},
+			{
+				label: m.events_environment_label(),
+				getValue: (item: Event) => {
+					if (!item.environmentId) return null;
+					return environmentStore.available.find((e) => e.id === item.environmentId)?.name || item.environmentId;
+				},
+				icon: EnvironmentsIcon,
+				iconVariant: 'gray' as const,
+				show: (mobileFieldVisibility.environment ?? true) && !!item.environmentId
 			},
 			{
 				label: m.common_user(),

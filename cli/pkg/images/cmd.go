@@ -265,9 +265,7 @@ var imagesGetCmd = &cobra.Command{
 	},
 }
 
-var (
-	removeForce bool
-)
+var removeForce bool
 
 var imagesRemoveCmd = &cobra.Command{
 	Use:          "remove <image-id|name>",
@@ -449,9 +447,7 @@ var imagesPullCmd = &cobra.Command{
 	},
 }
 
-var (
-	pruneDangling bool
-)
+var pruneDangling bool
 
 var imagesPruneCmd = &cobra.Command{
 	Use:          "prune",

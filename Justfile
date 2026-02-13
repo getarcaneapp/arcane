@@ -1,5 +1,7 @@
 set working-directory := './'
 
+edge_proto_dir := 'backend/pkg/libarcane/edge/proto'
+
 _default:
     @just --list
 
@@ -34,6 +36,25 @@ _dev-logs:
 [group('dev')]
 dev target="docker":
     @just "_dev-{{ target }}"
+
+# Generate edge tunnel protobuf/gRPC code.
+[group('proto')]
+proto-backend:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@v1.65.0 generate
+
+# Benchmark edge tunnel transport performance (gRPC vs WebSocket) with allocations.
+
+# Usage: just bench-edge-tunnel [count] [benchtime]
+[group('bench')]
+bench-edge-tunnel count="3" benchtime="2s":
+    cd backend && go test -run '^$' -bench '^BenchmarkEdgeTunnelProxyRequest$' -benchmem -count={{ count }} -benchtime={{ benchtime }} ./pkg/libarcane/edge
+
+# Benchmark edge tunnel transport and write memory profile.
+
+# Usage: just bench-edge-tunnel-mem [profile] [benchtime]
+[group('bench')]
+bench-edge-tunnel-mem profile="edge_tunnel.mem.out" benchtime="5s":
+    cd backend && go test -run '^$' -bench '^BenchmarkEdgeTunnelProxyRequest$' -benchmem -benchtime={{ benchtime }} -memprofile={{ profile }} ./pkg/libarcane/edge
 
 # Add a new i18n locale. Example:
 

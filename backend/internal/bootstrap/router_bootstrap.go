@@ -15,12 +15,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types"
 )
 
-var registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)
-var registerBuildableRoutes []func(apiGroup *gin.RouterGroup, services *Services)
+var (
+	registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)
+	registerBuildableRoutes  []func(apiGroup *gin.RouterGroup, services *Services)
+)
 
 var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/containers/*/logs",
@@ -101,21 +103,23 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	router.Use(corsMiddleware)
 
 	apiGroup := router.Group("/api")
+	tunnelRegistry := edge.NewTunnelRegistry()
+	edge.SetDefaultRegistry(tunnelRegistry)
+	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
+		env, err := appServices.Environment.GetEnvironmentByID(ctx, id)
+		if err != nil || env == nil {
+			return "", nil, false, err
+		}
+		return env.ApiUrl, env.AccessToken, env.Enabled, nil
+	}
 
-	envMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
+	apiGroup.Use(middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
-		func(ctx context.Context, id string) (string, *string, bool, error) {
-			env, err := appServices.Environment.GetEnvironmentByID(ctx, id)
-			if err != nil || env == nil {
-				return "", nil, false, err
-			}
-			return env.ApiUrl, env.AccessToken, env.Enabled, nil
-		},
+		envResolver,
 		appServices.Environment,
 		createAuthValidator(appServices),
-	)
-	apiGroup.Use(envMiddleware)
+	))
 
 	humaServices := &huma.Services{
 		User:              appServices.User,
@@ -166,7 +170,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, apiGroup, appServices)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, cfg, apiGroup, appServices)
 	}
 
 	if cfg.Environment != "production" {

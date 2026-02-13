@@ -15,15 +15,55 @@ async function openNewEnvironmentSheet(page: Page) {
   await expect(page.getByText("Create New Agent Environment")).toBeVisible();
 }
 
+async function switchToEdgeMode(page: Page) {
+  await page.getByRole("tab", { name: "Edge", exact: true }).click();
+  await expect(page.getByText("Agent connects outbound to the manager.")).toBeVisible();
+}
+
 test.describe("Edge Agent Environment", () => {
   test("should display the edge agent form", async ({ page }) => {
     await openNewEnvironmentSheet(page);
 
-    await page.getByRole("tab", { name: "Edge", exact: true }).click();
+    await switchToEdgeMode(page);
 
-    await expect(page.getByText("Agent connects outbound to the manager.")).toBeVisible();
     await expect(page.getByPlaceholder("Remote Docker Host")).toBeVisible();
     await expect(page.getByRole("button", { name: "Generate Agent Configuration", exact: true })).toBeVisible();
+  });
+
+  test("should switch between direct and edge connection modes", async ({ page }) => {
+    await openNewEnvironmentSheet(page);
+
+    await expect(page.locator("#new-agent-api-url")).toBeVisible();
+    await expect(page.getByPlaceholder("Remote Docker Host")).toBeHidden();
+
+    await switchToEdgeMode(page);
+    await expect(page.locator("#new-agent-api-url")).toBeHidden();
+    await expect(page.getByPlaceholder("Remote Docker Host")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Direct", exact: true }).click();
+    await expect(page.locator("#new-agent-api-url")).toBeVisible();
+    await expect(page.getByPlaceholder("Remote Docker Host")).toBeHidden();
+  });
+
+  test("should validate required fields for edge and direct modes", async ({ page }) => {
+    await openNewEnvironmentSheet(page);
+    let createRequests = 0;
+
+    await page.route("**/api/environments", async (route) => {
+      if (route.request().method() === "POST") {
+        createRequests += 1;
+      }
+      await route.continue();
+    });
+
+    // Direct mode: missing name and URL
+    await page.getByRole("button", { name: "Generate Agent Configuration", exact: true }).click();
+    await expect.poll(() => createRequests).toBe(0);
+
+    // Edge mode: missing name
+    await switchToEdgeMode(page);
+    await page.getByRole("button", { name: "Generate Agent Configuration", exact: true }).click();
+    await expect.poll(() => createRequests).toBe(0);
   });
 
   test("should create an edge agent environment and show deployment snippets", async ({ page }) => {
@@ -54,7 +94,7 @@ test.describe("Edge Agent Environment", () => {
 
     try {
       await openNewEnvironmentSheet(page);
-      await page.getByRole("tab", { name: "Edge", exact: true }).click();
+      await switchToEdgeMode(page);
 
       await page.getByPlaceholder("Remote Docker Host").fill(environmentName);
       const submitButton = page.getByRole("button", { name: "Generate Agent Configuration", exact: true });
@@ -81,6 +121,15 @@ test.describe("Edge Agent Environment", () => {
         has: page.getByRole("button", { name: environmentName, exact: true }),
       });
       await expect(environmentRow.getByText("edge://edge-agent-").first()).toBeVisible();
+      await expect(environmentRow.getByText("gRPC", { exact: true })).toBeVisible();
+
+      await page.getByRole("button", { name: environmentName, exact: true }).click();
+      if (createdEnvironmentId) {
+        await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
+      }
+
+      await expect(page.locator("#api-url")).toHaveValue(/edge:\/\/edge-agent-/);
+      await expect(page.getByText("gRPC", { exact: true }).first()).toBeVisible();
     } finally {
       if (createdEnvironmentId) {
         await page.request.delete(`/api/environments/${createdEnvironmentId}`);

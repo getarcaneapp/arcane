@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-var (
-	// Docker's RFC3339 timestamp when timestamps=true
-	dockerTimestamp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+`)
-)
+// Docker's RFC3339 timestamp when timestamps=true
+var dockerTimestamp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+`)
 
 // NormalizeContainerLine parses a raw container log line into level + cleaned message.
 // It extracts Docker's timestamp if present (when timestamps=true in Docker API).

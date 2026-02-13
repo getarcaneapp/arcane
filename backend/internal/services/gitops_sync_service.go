@@ -148,7 +148,7 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id s
 	return &sync, nil
 }
 
-func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest, actor models.User) (*models.GitOpsSync, error) {
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentID", environmentID, "name", req.Name, "repositoryID", req.RepositoryID)
 
 	// Validate repository exists
@@ -192,18 +192,19 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
-		Type:         models.EventTypeGitSyncCreate,
-		Severity:     models.EventSeveritySuccess,
-		Title:        "Git sync created",
-		Description:  fmt.Sprintf("Created git sync configuration '%s'", sync.Name),
-		ResourceType: new("git_sync"),
-		ResourceID:   new(sync.ID),
-		ResourceName: new(sync.Name),
-		UserID:       new(systemUser.ID),
-		Username:     new(systemUser.Username),
+		Type:          models.EventTypeGitSyncCreate,
+		Severity:      models.EventSeveritySuccess,
+		Title:         "Git sync created",
+		Description:   fmt.Sprintf("Created git sync configuration '%s'", sync.Name),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
 	})
 
-	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
+	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID, actor); err != nil {
 		slog.ErrorContext(ctx, "Failed to perform initial sync after creation", "syncId", sync.ID, "error", err)
 		// Don't fail the entire creation - the sync config exists and can be retried
 	}
@@ -211,7 +212,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	return s.GetSyncByID(ctx, "", sync.ID)
 }
 
-func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest) (*models.GitOpsSync, error) {
+func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id string, req gitops.UpdateSyncRequest, actor models.User) (*models.GitOpsSync, error) {
 	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
@@ -253,20 +254,23 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 
 		// Log event
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
-			Type:         models.EventTypeGitSyncUpdate,
-			Severity:     models.EventSeveritySuccess,
-			Title:        "Git sync updated",
-			Description:  fmt.Sprintf("Updated git sync configuration '%s'", sync.Name),
-			ResourceType: new("git_sync"),
-			ResourceID:   new(sync.ID),
-			ResourceName: new(sync.Name),
+			Type:          models.EventTypeGitSyncUpdate,
+			Severity:      models.EventSeveritySuccess,
+			Title:         "Git sync updated",
+			Description:   fmt.Sprintf("Updated git sync configuration '%s'", sync.Name),
+			ResourceType:  new("git_sync"),
+			ResourceID:    new(sync.ID),
+			ResourceName:  new(sync.Name),
+			UserID:        new(actor.ID),
+			Username:      new(actor.Username),
+			EnvironmentID: new(sync.EnvironmentID),
 		})
 	}
 
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor models.User) error {
 	// Get sync info before deleting
 	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
@@ -293,21 +297,22 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
-		Type:         models.EventTypeGitSyncDelete,
-		Severity:     models.EventSeverityInfo,
-		Title:        "Git sync deleted",
-		Description:  fmt.Sprintf("Deleted git sync configuration '%s'", sync.Name),
-		ResourceType: new("git_sync"),
-		ResourceID:   new(sync.ID),
-		ResourceName: new(sync.Name),
-		UserID:       new(systemUser.ID),
-		Username:     new(systemUser.Username),
+		Type:          models.EventTypeGitSyncDelete,
+		Severity:      models.EventSeverityInfo,
+		Title:         "Git sync deleted",
+		Description:   fmt.Sprintf("Deleted git sync configuration '%s'", sync.Name),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
 	})
 
 	return nil
 }
 
-func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor models.User) (*gitops.SyncResult, error) {
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -324,18 +329,18 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	// Get repository and auth config
 	repository := sync.Repository
 	if repository == nil {
-		return result, s.failSync(syncCtx, id, result, sync, "Repository not found", "repository not found")
+		return result, s.failSync(syncCtx, id, result, sync, actor, "Repository not found", "repository not found")
 	}
 
 	authConfig, err := s.repoService.GetAuthConfig(syncCtx, repository)
 	if err != nil {
-		return result, s.failSync(syncCtx, id, result, sync, "Failed to get authentication config", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, actor, "Failed to get authentication config", err.Error())
 	}
 
 	// Clone the repository
 	repoPath, err := s.repoService.gitClient.Clone(syncCtx, repository.URL, sync.Branch, authConfig)
 	if err != nil {
-		return result, s.failSync(syncCtx, id, result, sync, "Failed to clone repository", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, actor, "Failed to clone repository", err.Error())
 	}
 	defer func() {
 		if cleanupErr := s.repoService.gitClient.Cleanup(repoPath); cleanupErr != nil {
@@ -353,13 +358,13 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	// Check if compose file exists
 	if !s.repoService.gitClient.FileExists(syncCtx, repoPath, sync.ComposePath) {
 		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
-		return result, s.failSync(syncCtx, id, result, sync, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
+		return result, s.failSync(syncCtx, id, result, sync, actor, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
 	}
 
 	// Read compose file content
 	composeContent, err := s.repoService.gitClient.ReadFile(syncCtx, repoPath, sync.ComposePath)
 	if err != nil {
-		return result, s.failSync(syncCtx, id, result, sync, "Failed to read compose file", err.Error())
+		return result, s.failSync(syncCtx, id, result, sync, actor, "Failed to read compose file", err.Error())
 	}
 
 	// Try to read .env file from the same directory as the compose file
@@ -375,7 +380,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	}
 
 	// Get or create project
-	project, err := s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result)
+	project, err := s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result, actor)
 	if err != nil {
 		return result, err
 	}
@@ -388,15 +393,16 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 	// Log success event
 	_, _ = s.eventService.CreateEvent(syncCtx, CreateEventRequest{
-		Type:         models.EventTypeGitSyncRun,
-		Severity:     models.EventSeveritySuccess,
-		Title:        "Git sync completed",
-		Description:  fmt.Sprintf("Successfully synced '%s' to project '%s'", sync.Name, project.Name),
-		ResourceType: new("git_sync"),
-		ResourceID:   new(sync.ID),
-		ResourceName: new(sync.Name),
-		UserID:       new(systemUser.ID),
-		Username:     new(systemUser.Username),
+		Type:          models.EventTypeGitSyncRun,
+		Severity:      models.EventSeveritySuccess,
+		Title:         "Git sync completed",
+		Description:   fmt.Sprintf("Successfully synced '%s' to project '%s'", sync.Name, project.Name),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
 	})
 
 	slog.InfoContext(syncCtx, "GitOps sync completed", "syncId", id, "project", project.Name)
@@ -470,7 +476,7 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 		}
 
 		// Perform sync
-		result, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID)
+		result, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID, systemUser)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to sync", "syncId", sync.ID, "error", err)
 			continue
@@ -526,7 +532,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 	}, nil
 }
 
-func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest) (*gitops.ImportGitOpsSyncResponse, error) {
+func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID string, req []gitops.ImportGitOpsSyncRequest, actor models.User) (*gitops.ImportGitOpsSyncResponse, error) {
 	response := &gitops.ImportGitOpsSyncResponse{
 		SuccessCount: 0,
 		FailedCount:  0,
@@ -552,7 +558,7 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 			SyncInterval: new(importItem.SyncInterval),
 		}
 
-		_, err = s.CreateSync(ctx, environmentID, createReq)
+		_, err = s.CreateSync(ctx, environmentID, createReq, actor)
 		if err != nil {
 			response.FailedCount++
 			response.Errors = append(response.Errors, fmt.Sprintf("Stack '%s': %v", importItem.SyncName, err))
@@ -564,58 +570,59 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 	return response, nil
 }
 
-func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOpsSync, errorMsg string) {
+func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOpsSync, actor models.User, errorMsg string) {
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
-		Type:         models.EventTypeGitSyncError,
-		Severity:     models.EventSeverityError,
-		Title:        "Git sync failed",
-		Description:  fmt.Sprintf("Failed to sync '%s': %s", sync.Name, errorMsg),
-		ResourceType: new("git_sync"),
-		ResourceID:   new(sync.ID),
-		ResourceName: new(sync.Name),
-		UserID:       new(systemUser.ID),
-		Username:     new(systemUser.Username),
+		Type:          models.EventTypeGitSyncError,
+		Severity:      models.EventSeverityError,
+		Title:         "Git sync failed",
+		Description:   fmt.Sprintf("Failed to sync '%s': %s", sync.Name, errorMsg),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
 	})
 }
 
-func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, message, errMsg string) error {
+func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, actor models.User, message, errMsg string) error {
 	result.Message = message
 	result.Error = new(errMsg)
 	s.updateSyncStatus(ctx, id, "failed", errMsg, "")
-	s.logSyncError(ctx, sync, errMsg)
+	s.logSyncError(ctx, sync, actor, errMsg)
 	return fmt.Errorf("%s", errMsg)
 }
 
-func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, systemUser)
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, actor)
 	if err != nil {
-		return nil, s.failSync(ctx, id, result, sync, "Failed to create project", err.Error())
+		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to create project", err.Error())
 	}
 
 	// Update sync with project ID
 	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]any{
 		"project_id": project.ID,
 	}).Error; err != nil {
-		return nil, s.failSync(ctx, id, result, sync, "Failed to update sync with project ID", err.Error())
+		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to update sync with project ID", err.Error())
 	}
 
 	// Mark project as GitOps-managed
 	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; err != nil {
-		return nil, s.failSync(ctx, id, result, sync, "Failed to mark project as GitOps-managed", err.Error())
+		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", err.Error())
 	}
 
 	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 
 	// Deploy the project immediately after creation
 	slog.InfoContext(ctx, "Deploying project after initial Git sync", "projectName", project.Name, "projectId", project.ID)
-	if err := s.projectService.DeployProject(ctx, project.ID, systemUser); err != nil {
+	if err := s.projectService.DeployProject(ctx, project.ID, actor); err != nil {
 		slog.ErrorContext(ctx, "Failed to deploy project after initial Git sync", "error", err, "projectId", project.ID)
 	}
 
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult) (*models.Project, error) {
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	var project *models.Project
 	var err error
 
@@ -628,16 +635,16 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 	}
 
 	if project == nil {
-		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, result)
+		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, result, actor)
 	}
 
-	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, result); err != nil {
+	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, result, actor); err != nil {
 		return nil, err
 	}
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) error {
 	// Get current content to see if it changed
 	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
 	contentChanged := oldCompose != composeContent
@@ -650,9 +657,9 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	}
 
 	// Update existing project's compose and env files
-	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, envContent)
+	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, envContent, actor)
 	if err != nil {
-		return s.failSync(ctx, id, result, sync, "Failed to update project files", err.Error())
+		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
 	}
 	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID)
 
@@ -661,7 +668,7 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID)
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
-			if err := s.projectService.RedeployProject(ctx, project.ID, systemUser); err != nil {
+			if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
 			}
 		}

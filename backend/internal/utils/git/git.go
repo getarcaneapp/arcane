@@ -112,13 +112,13 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 
 	// Ensure the directory exists
 	dir := filepath.Dir(knownHostsPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
 	}
 
 	// Create the file if it doesn't exist
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0600)
+		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create known_hosts file: %w", err)
 		}
@@ -189,7 +189,7 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	defer fileLock.Unlock() //nolint:errcheck
 
 	// Append to the file
-	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open known_hosts file: %w", err)
 	}
@@ -224,7 +224,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		workDir = os.TempDir()
 	}
 	// Ensure the work directory exists
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp(workDir, "gitops-*")

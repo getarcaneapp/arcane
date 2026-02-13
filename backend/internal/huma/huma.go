@@ -346,7 +346,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterProjects(api, projectSvc)
 	handlers.RegisterUsers(api, userSvc)
 	handlers.RegisterVersion(api, versionSvc)
-	handlers.RegisterEvents(api, eventSvc)
+	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
 	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)

@@ -13,6 +13,7 @@ import (
 // EventHandler handles event management endpoints.
 type EventHandler struct {
 	eventService *services.EventService
+	apiKeySvc    *services.ApiKeyService
 }
 
 // ============================================================================
@@ -56,7 +57,8 @@ type GetEventsByEnvironmentOutput struct {
 }
 
 type CreateEventInput struct {
-	Body event.CreateEvent
+	XAPIKey string `header:"X-API-Key" doc:"API key for environment-scoped event forwarding"`
+	Body    event.CreateEvent
 }
 
 type CreateEventOutput struct {
@@ -76,8 +78,11 @@ type DeleteEventOutput struct {
 // ============================================================================
 
 // RegisterEvents registers all event management endpoints.
-func RegisterEvents(api huma.API, eventService *services.EventService) {
-	h := &EventHandler{eventService: eventService}
+func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc *services.ApiKeyService) {
+	h := &EventHandler{
+		eventService: eventService,
+		apiKeySvc:    apiKeySvc,
+	}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listEvents",
@@ -222,6 +227,17 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput) (*CreateEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if h.apiKeySvc != nil && input.XAPIKey != "" {
+		resolvedEnvironmentID, err := h.apiKeySvc.GetEnvironmentByApiKey(ctx, input.XAPIKey)
+		if err != nil {
+			return nil, huma.Error401Unauthorized("invalid environment API key")
+		}
+		if resolvedEnvironmentID != nil && *resolvedEnvironmentID != "" {
+			environmentID := *resolvedEnvironmentID
+			input.Body.EnvironmentID = &environmentID
+		}
 	}
 
 	if err := checkAdmin(ctx); err != nil {

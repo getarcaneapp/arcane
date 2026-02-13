@@ -164,7 +164,6 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		backoff.WithBackOff(backoff.NewExponentialBackOff()),
 		backoff.WithMaxTries(3),
 	)
-
 	if err != nil {
 		slog.ErrorContext(ctx, "analytics heartbeat failed", "error", err)
 		return

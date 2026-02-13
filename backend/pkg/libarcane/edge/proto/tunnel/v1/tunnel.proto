@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package tunnel.v1;
+
+option go_package = "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1;tunnelpb";
+
+// TunnelService is the reverse tunnel between an edge agent and manager.
+service TunnelService {
+  // Agent opens a persistent bidi stream to manager.
+  rpc Connect(stream AgentMessage) returns (stream ManagerMessage);
+}
+
+// Messages sent from the agent to the manager.
+message AgentMessage {
+  oneof payload {
+    HttpResponse http_response = 1;
+    HeartbeatPing heartbeat_ping = 2;
+    WebSocketData ws_data = 3;
+    WebSocketClose ws_close = 4;
+    StreamData stream_data = 5;
+    StreamEnd stream_end = 6;
+    RegisterRequest register = 7;
+    EventLog event = 8;
+  }
+}
+
+// Messages sent from the manager to the agent.
+message ManagerMessage {
+  oneof payload {
+    HttpRequest http_request = 1;
+    HeartbeatPong heartbeat_pong = 2;
+    WebSocketStart ws_start = 3;
+    WebSocketData ws_data = 4;
+    WebSocketClose ws_close = 5;
+    RegisterResponse register_response = 6;
+  }
+}
+
+message RegisterRequest {
+  string agent_token = 1;
+}
+
+message RegisterResponse {
+  bool accepted = 1;
+  string environment_id = 2;
+  string error = 3;
+}
+
+message HttpRequest {
+  string request_id = 1;
+  string method = 2;
+  string path = 3;
+  string query = 4;
+  map<string, string> headers = 5;
+  bytes body = 6;
+}
+
+message HttpResponse {
+  string request_id = 1;
+  int32 status = 2;
+  map<string, string> headers = 3;
+  bytes body = 4;
+}
+
+// StreamData carries incremental HTTP response body chunks.
+message StreamData {
+  string request_id = 1;
+  bytes data = 2;
+}
+
+message StreamEnd {
+  string request_id = 1;
+}
+
+message HeartbeatPing {}
+
+message HeartbeatPong {}
+
+message WebSocketStart {
+  string stream_id = 1;
+  string path = 2;
+  string query = 3;
+  map<string, string> headers = 4;
+}
+
+message WebSocketData {
+  string stream_id = 1;
+  bytes data = 2;
+  int32 message_type = 3;
+}
+
+message WebSocketClose {
+  string stream_id = 1;
+}
+
+// EventLog carries an event emitted on an agent and synced to manager.
+message EventLog {
+  string type = 1;
+  string severity = 2;
+  string title = 3;
+  string description = 4;
+  string resource_type = 5;
+  string resource_id = 6;
+  string resource_name = 7;
+  string user_id = 8;
+  string username = 9;
+  bytes metadata_json = 10;
+}

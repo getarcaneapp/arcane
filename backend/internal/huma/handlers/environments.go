@@ -15,10 +15,10 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/version"
@@ -355,6 +355,9 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentListError{Err: err}).Error())
 	}
+	for i := range envs {
+		h.setEdgeTransportField(&envs[i])
+	}
 
 	return &ListEnvironmentsOutput{
 		Body: EnvironmentPaginatedResponse{
@@ -444,6 +447,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
+	h.setEdgeTransportField(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -483,6 +487,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *m
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
+	h.setEdgeTransportField(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -509,6 +514,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
+	h.setEdgeTransportField(&out)
 
 	return &GetEnvironmentOutput{
 		Body: base.ApiResponse[environment.Environment]{
@@ -553,6 +559,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
+	h.setEdgeTransportField(&out)
 
 	// If regenerating API key, return the new key
 	var newApiKey *string
@@ -594,6 +601,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		if mapErr != nil {
 			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 		}
+		h.setEdgeTransportField(&out)
 
 		newApiKey = new(apiKeyDto.Key)
 	}
@@ -607,6 +615,21 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 			Data:    out,
 		},
 	}, nil
+}
+
+func (h *EnvironmentHandler) setEdgeTransportField(env *environment.Environment) {
+	if env == nil || !env.IsEdge {
+		return
+	}
+	if activeTransport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
+		env.EdgeTransport = &activeTransport
+		return
+	}
+
+	if h != nil && h.cfg != nil {
+		transport := edge.NormalizeEdgeTransport(h.cfg.EdgeTransport)
+		env.EdgeTransport = &transport
+	}
 }
 
 // DeleteEnvironment deletes an environment.

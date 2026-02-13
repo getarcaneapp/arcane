@@ -14,10 +14,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -382,6 +382,7 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 
 	return nil
 }
+
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,

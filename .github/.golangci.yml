@@ -52,6 +52,7 @@ linters:
       - legacy
       - std-error-handling
     paths:
+      - '.*\.pb\.go$'
       - third_party$
       - builtin$
       - examples$
@@ -62,6 +63,7 @@ formatters:
   exclusions:
     generated: lax
     paths:
+      - '.*\.pb\.go$'
       - third_party$
       - builtin$
       - examples$

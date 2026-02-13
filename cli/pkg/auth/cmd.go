@@ -199,6 +199,7 @@ var logoutCmd = &cobra.Command{
 		return nil
 	},
 }
+
 var meCmd = &cobra.Command{
 	Use:          "me",
 	Short:        "Get current user information",

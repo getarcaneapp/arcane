@@ -212,6 +212,12 @@
 			cell: StatusCell
 		},
 		{
+			id: 'type',
+			title: m.common_type(),
+			accessorFn: (row) => row,
+			cell: TypeCell
+		},
+		{
 			accessorKey: 'enabled',
 			title: m.common_enabled(),
 			sortable: true,
@@ -227,6 +233,7 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'type', label: m.common_type(), defaultVisible: true },
 		{ id: 'enabled', label: m.common_enabled(), defaultVisible: true },
 		{ id: 'apiUrl', label: m.environments_api_url(), defaultVisible: true }
 	];
@@ -281,6 +288,13 @@
 	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
 {/snippet}
 
+{#snippet TypeCell({ value }: { value: unknown })}
+	{@const env = value as Environment}
+	{@const typeLabel = !env.isEdge ? 'HTTP' : env.edgeTransport === 'websocket' ? 'WebSocket' : 'gRPC'}
+	{@const typeVariant = !env.isEdge ? 'gray' : env.edgeTransport === 'websocket' ? 'purple' : 'blue'}
+	<StatusBadge text={typeLabel} variant={typeVariant} />
+{/snippet}
+
 {#snippet ApiCell({ value }: { value: unknown })}
 	<span class="text-muted-foreground font-mono text-sm">{String(value)}</span>
 {/snippet}
@@ -306,6 +320,13 @@
 			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
 		]}
 		fields={[
+			{
+				label: m.common_type(),
+				getValue: (item: Environment) => (!item.isEdge ? 'HTTP' : item.edgeTransport === 'websocket' ? 'WebSocket' : 'gRPC'),
+				icon: StatsIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.type ?? true
+			},
 			{
 				label: m.environments_api_url(),
 				getValue: (item: Environment) => item.apiUrl,

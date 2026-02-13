@@ -10,7 +10,8 @@ import (
 )
 
 // EdgeAwareClient is an HTTP client that automatically routes requests
-// to edge environments through the WebSocket tunnel instead of direct HTTP.
+// to edge environments through the active edge tunnel instead of direct HTTP.
+// Works with both gRPC and WebSocket tunnel transports.
 type EdgeAwareClient struct {
 	httpClient *http.Client
 }
