@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Mobiles Aussehen",
 	"appearance_title": "Erscheinung",
 	"appearance_description": "Look-and-Feel von Arcane anpassen",
+	"appearance_language_current_user_description": "Die Spracheinstellung wird nur für den aktuellen Benutzer gespeichert.",
+	"appearance_theme_current_user_description": "Die Einstellung des Themes wird nur für den aktuellen Benutzer gespeichert.",
 	"navigation_mode_label": "Navigationsmodus",
 	"navigation_mode_description": "Wähle zwischen schwebender Navigation die sich über Inhalte legt oder angedockte Navigation die Bildschirmplatz benötigt",
 	"navigation_mode_floating": "Schwebend",
