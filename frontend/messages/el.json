@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Χρονικό όριο για λειτουργίες της λίστας Docker σε δευτερόλεπτα (προεπιλογή: 30)",
 	"docker_image_pull_timeout": "Χρονικό Όριο Λήξης Εικόνας Docker",
 	"docker_image_pull_timeout_description": "Λήξη χρονικού ορίου για την εικόνα Docker σε δευτερόλεπτα (προεπιλογή: 600 = 10 λεπτά)",
+	"trivy_scan_timeout": "Χρονικό Όριο Σάρωσης Trivy",
+	"trivy_scan_timeout_description": "Χρονικό όριο για Trivy σαρώσεις ευπάθεια στις εικόνες Docker.",
 	"git_operation_timeout": "Χρονικό Όριο Λειτουργίας Git",
 	"git_operation_timeout_description": "Χρονικό όριο για τις λειτουργίες κλώνου/ανάκτησης Git σε δευτερόλεπτα (προεπιλογή: 300 = 5 λεπτά)",
 	"http_client_timeout": "Χρονικό Όριο Πελάτη HTTP",
