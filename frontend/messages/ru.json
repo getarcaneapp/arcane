@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Тайм-аут для операций в списке Docker в секундах (по умолчанию: 30)",
 	"docker_image_pull_timeout": "Тайм-аут загрузки изображений Docker",
 	"docker_image_pull_timeout_description": "Тайм-аут для изображения Docker тянет в секундах (по умолчанию: 600 = 10 минут)",
+	"trivy_scan_timeout": "Таймаут сканирования",
+	"trivy_scan_timeout_description": "Таймаут для уязвимостей Trivy сканирует изображения Docker.",
 	"git_operation_timeout": "Таймаут операции Git",
 	"git_operation_timeout_description": "Таймаут для Git clone/fetch операций в секундах (по умолчанию: 300 = 5 минут)",
 	"http_client_timeout": "Таймаут клиента HTTP",
