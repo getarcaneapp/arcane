@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Mobile Appearance",
 	"appearance_title": "Appearance",
 	"appearance_description": "Customize the look and feel of Arcane",
+	"appearance_language_current_user_description": "Language preference is saved for the current user only.",
+	"appearance_theme_current_user_description": "Theme preference is saved for the current user only.",
 	"navigation_mode_label": "Navigation Mode",
 	"navigation_mode_description": "Choose between floating navigation that overlays content or docked navigation that takes up screen space",
 	"navigation_mode_floating": "Floating",
