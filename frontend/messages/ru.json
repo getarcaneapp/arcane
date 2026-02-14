@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Мобильный вид",
 	"appearance_title": "Оформление",
 	"appearance_description": "Настройка внешнего вида Arcane",
+	"appearance_language_current_user_description": "Настройки языка сохраняются только для текущего пользователя.",
+	"appearance_theme_current_user_description": "Настройки темы сохранены только для текущего пользователя.",
 	"navigation_mode_label": "Режим навигации",
 	"navigation_mode_description": "Выберите между плавающей навигацией, которая накладывает контент или пристыкованную навигацию, занимающую пространство экрана",
 	"navigation_mode_floating": "Плавающая",
