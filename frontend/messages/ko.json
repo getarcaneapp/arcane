@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Docker 목록 작업에 대한 타임아웃 (초, 기본값: 30)",
 	"docker_image_pull_timeout": "Docker 이미지 Pull 타임아웃",
 	"docker_image_pull_timeout_description": "Docker 이미지 Pull 작업에 대한 타임아웃 (초, 기본값: 600 = 10분)",
+	"trivy_scan_timeout": "Trivy Scan Timeout",
+	"trivy_scan_timeout_description": "Timeout for Trivy vulnerability scans on Docker images.",
 	"git_operation_timeout": "Git 작업 타임아웃",
 	"git_operation_timeout_description": "Git 클론/페치 작업에 대한 타임아웃 (초, 기본값: 300 = 5분)",
 	"http_client_timeout": "HTTP 클라이언트 타임아웃",
