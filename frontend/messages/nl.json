@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Mobiele uiterlijk",
 	"appearance_title": "Uiterlijk",
 	"appearance_description": "Uiterlijk en gevoel van Arcane aanpassen",
+	"appearance_language_current_user_description": "Voorkeur is alleen voor de huidige gebruiker opgeslagen.",
+	"appearance_theme_current_user_description": "Thema voorkeur is alleen opgeslagen voor de huidige gebruiker.",
 	"navigation_mode_label": "Navigatie modus",
 	"navigation_mode_description": "Kies tussen zwevende navigatie die overlapt met inhoud of gekoppelde navigatie die schermruimte in beslag neemt",
 	"navigation_mode_floating": "Zwevend",
