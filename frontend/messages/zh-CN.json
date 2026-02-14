@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "移动端外观",
 	"appearance_title": "外观",
 	"appearance_description": "自定义奥术的外观和感觉。",
+	"appearance_language_current_user_description": "仅为当前用户保存语言首选项。",
+	"appearance_theme_current_user_description": "主题首选项仅为当前用户保存。",
 	"navigation_mode_label": "导航模式",
 	"navigation_mode_description": "选择覆盖内容的浮动导航或占据屏幕空间的停靠导航",
 	"navigation_mode_floating": "浮动",
