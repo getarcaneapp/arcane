@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Docker list 操作的逾時秒數（預設：30）",
 	"docker_image_pull_timeout": "Docker 映像檔拉取逾時",
 	"docker_image_pull_timeout_description": "Docker 映像檔拉取的逾時秒數（預設：600 = 10 分鐘）",
+	"trivy_scan_timeout": "Trivy Scan Timeout",
+	"trivy_scan_timeout_description": "Timeout for Trivy vulnerability scans on Docker images.",
 	"git_operation_timeout": "Git 操作逾時",
 	"git_operation_timeout_description": "Git clone/fetch 操作的逾時秒數（預設：300 = 5 分鐘）",
 	"http_client_timeout": "HTTP 客戶端逾時",
