@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Docker 列表操作的超时时间（以秒为单位，默认：30）",
 	"docker_image_pull_timeout": "Docker 镜像拉取超时",
 	"docker_image_pull_timeout_description": "Docker 镜像拉取的超时时间（以秒为单位，默认：600 = 10 分钟）",
+	"trivy_scan_timeout": "修剪扫描超时",
+	"trivy_scan_timeout_description": "Docker 图像上的Trivy 脆弱性扫描超时。",
 	"git_operation_timeout": "Git 操作超时",
 	"git_operation_timeout_description": "Git 克隆/获取操作的超时时间（以秒为单位，默认：300 = 5 分钟）",
 	"http_client_timeout": "HTTP 客户端超时",
