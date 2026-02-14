@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Apparence mobile",
 	"appearance_title": "Apparence",
 	"appearance_description": "Personnaliser l'apparence des Arcanes",
+	"appearance_language_current_user_description": "La préférence de langue n'est enregistrée que pour l'utilisateur courant.",
+	"appearance_theme_current_user_description": "La préférence de thème n'est enregistrée que pour l'utilisateur actuel.",
 	"navigation_mode_label": "Mode de navigation",
 	"navigation_mode_description": "Choisissez entre la navigation flottante qui superpose le contenu ou la navigation amarrée qui prend de l'espace sur l'écran",
 	"navigation_mode_floating": "Flottant",
