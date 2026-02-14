@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Time-out voor Docker lijst operaties in seconden (standaard: 30)",
 	"docker_image_pull_timeout": "Tijdslimiet Ophalen Docker Image",
 	"docker_image_pull_timeout_description": "Tijdslimiet voor ophalen van een Docker image in seconden (standaard: 600 = 10 minuten)",
+	"trivy_scan_timeout": "Trivy Scan Timeout",
+	"trivy_scan_timeout_description": "Time-out voor Trivy kwetsbaarheid scant op de Docker afbeeldingen.",
 	"git_operation_timeout": "Tijdslimiet Git Operation",
 	"git_operation_timeout_description": "Tijdslimiet voor Git kloon/ophaal acties in seconden (standaard: 300 = 5 minuten)",
 	"http_client_timeout": "HTTP Client Tijdslimiet",
