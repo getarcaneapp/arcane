@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Dockerリスト操作のタイムアウト秒数（デフォルト：30）",
 	"docker_image_pull_timeout": "Docker Image Pull Timeout",
 	"docker_image_pull_timeout_description": "Dockerイメージのプルタイムアウト（デフォルト：600 = 10分）",
+	"trivy_scan_timeout": "トリビースキャンタイムアウト",
+	"trivy_scan_timeout_description": "Dockerイメージ上のTrivy脆弱性スキャンのタイムアウト。",
 	"git_operation_timeout": "Git 操作のタイムアウト",
 	"git_operation_timeout_description": "Gitクローン/フェッチ操作のタイムアウト（デフォルト：300 = 5分）",
 	"http_client_timeout": "HTTP クライアントのタイムアウト",
