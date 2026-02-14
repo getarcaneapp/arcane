@@ -216,10 +216,6 @@
 			{@render customToolbarActions()}
 		{/if}
 
-		{#if customToolbarActions}
-			{@render customToolbarActions()}
-		{/if}
-
 		<div class="hidden md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
 		</div>

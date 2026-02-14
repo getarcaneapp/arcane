@@ -20,6 +20,7 @@
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';
+	import { onMount } from 'svelte';
 
 	let {
 		volumes = $bindable(),
@@ -36,6 +37,10 @@
 	let isLoading = $state({
 		removing: false
 	});
+	let customSettings = $state<Record<string, unknown>>({});
+	let showInternal = $derived.by(() => {
+		return (customSettings.showInternalVolumes as boolean) ?? false;
+	});
 
 	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
 		if (onRefreshData) {
@@ -43,6 +48,25 @@
 			return;
 		}
 		volumes = await volumeService.getVolumes(options);
+	}
+
+	function getCurrentLimit() {
+		return requestOptions?.pagination?.limit ?? volumes?.pagination?.itemsPerPage ?? 20;
+	}
+
+	function setShowInternal(value: boolean) {
+		const currentSetting = (customSettings.showInternalVolumes as boolean) ?? false;
+		const currentRequest = requestOptions?.includeInternal ?? false;
+		if (value === currentSetting && value === currentRequest) return;
+
+		customSettings = { ...customSettings, showInternalVolumes: value };
+		const nextOptions: SearchPaginationSortRequest = {
+			...requestOptions,
+			includeInternal: value,
+			pagination: { page: 1, limit: getCurrentLimit() }
+		};
+		requestOptions = nextOptions;
+		refreshVolumes(nextOptions);
 	}
 
 	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
@@ -177,6 +201,14 @@
 	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+
+	onMount(() => {
+		const persistedInternal = (customSettings.showInternalVolumes as boolean) ?? false;
+		const currentInternal = requestOptions?.includeInternal ?? false;
+		if (persistedInternal !== currentInternal) {
+			setShowInternal(persistedInternal);
+		}
+	});
 </script>
 
 {#snippet NameCell({ item }: { item: VolumeSummaryDto })}
@@ -312,6 +344,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
+	bind:customSettings
 	{bulkActions}
 	onRefresh={async (options) => {
 		requestOptions = options;
@@ -322,4 +355,11 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={VolumeMobileCardSnippet}
+	customViewOptions={CustomViewOptions}
 />
+
+{#snippet CustomViewOptions()}
+	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
+		{`${m.common_show()} ${m.internal()} ${m.volumes_title()}`}
+	</DropdownMenu.CheckboxItem>
+{/snippet}

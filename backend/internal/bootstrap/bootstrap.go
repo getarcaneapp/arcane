@@ -65,6 +65,12 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}(appCtx)
 
+	if appServices.Volume != nil {
+		if err := appServices.Volume.CleanupOrphanedVolumeHelpers(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to cleanup orphaned volume helpers on startup", "error", err)
+		}
+	}
+
 	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
 	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
 	crypto.InitEncryption(cfg)

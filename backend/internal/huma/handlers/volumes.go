@@ -43,13 +43,14 @@ type VolumePaginatedResponse struct {
 }
 
 type ListVolumesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Search        string `query:"search" doc:"Search query"`
-	Sort          string `query:"sort" doc:"Column to sort by"`
-	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	Search          string `query:"search" doc:"Search query"`
+	Sort            string `query:"sort" doc:"Column to sort by"`
+	Order           string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start           int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit           int    `query:"limit" default:"20" doc:"Number of items per page"`
+	InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 }
 
 type ListVolumesOutput struct {
@@ -115,7 +116,8 @@ type GetVolumeUsageOutput struct {
 }
 
 type GetVolumeUsageCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
+	EnvironmentID   string `path:"id" doc:"Environment ID"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 }
 
 type GetVolumeUsageCountsOutput struct {
@@ -664,7 +666,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 		params.Limit = 20
 	}
 
-	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params)
+	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeListError{Err: err}).Error())
 	}
@@ -814,11 +816,11 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 
 // GetVolumeUsageCounts returns counts of volumes by usage status.
 func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*GetVolumeUsageCountsOutput, error) {
-	if h.dockerService == nil {
+	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	_, inuse, unused, total, err := h.dockerService.GetAllVolumes(ctx)
+	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeCountsError{Err: err}).Error())
 	}
@@ -827,9 +829,9 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 		Body: base.ApiResponse[VolumeUsageCountsData]{
 			Success: true,
 			Data: VolumeUsageCountsData{
-				Inuse:  inuse,
-				Unused: unused,
-				Total:  total,
+				Inuse:  counts.Inuse,
+				Unused: counts.Unused,
+				Total:  counts.Total,
 			},
 		},
 	}, nil
