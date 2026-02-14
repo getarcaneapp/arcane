@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import type {

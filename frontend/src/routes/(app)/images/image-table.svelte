@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';

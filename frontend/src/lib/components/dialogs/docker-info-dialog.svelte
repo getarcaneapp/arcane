@@ -5,7 +5,7 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 
 	interface Props {
 		open: boolean;

@@ -16,7 +16,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';

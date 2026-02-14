@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import type { GPUStats } from '$lib/types/system-stats.type';
 	import { GpuIcon } from '$lib/icons';
 

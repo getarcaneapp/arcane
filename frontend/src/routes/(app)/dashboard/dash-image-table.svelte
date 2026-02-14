@@ -5,7 +5,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 	import type { ImageSummaryDto } from '$lib/types/image.type';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';

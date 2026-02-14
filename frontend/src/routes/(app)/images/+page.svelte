@@ -3,7 +3,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import ImagePullSheet from '$lib/components/sheets/image-pull-sheet.svelte';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
 	import ImageTable from './image-table.svelte';

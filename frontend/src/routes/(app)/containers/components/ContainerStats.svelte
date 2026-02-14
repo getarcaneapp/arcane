@@ -3,7 +3,7 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '$lib/types/container.type';
 	import { StatsIcon } from '$lib/icons';
 

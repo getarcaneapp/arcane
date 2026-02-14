@@ -30,7 +30,7 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();

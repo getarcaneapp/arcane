@@ -6,7 +6,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import settingsStore from '$lib/stores/config-store';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { settingsService } from '$lib/services/settings-service';

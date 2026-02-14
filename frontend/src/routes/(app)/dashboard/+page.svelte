@@ -19,7 +19,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { CpuIcon, MemoryStickIcon } from '$lib/icons';
 
 	let { data } = $props();

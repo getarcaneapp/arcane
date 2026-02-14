@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { format } from 'date-fns';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';

@@ -20,7 +20,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import bytes from 'bytes';
+	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
 
 	let {
