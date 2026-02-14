@@ -17,6 +17,7 @@
 	const formSchema = z.object({
 		dockerApiTimeout: z.coerce.number().int().min(1).max(3600),
 		dockerImagePullTimeout: z.coerce.number().int().min(30).max(7200),
+		trivyScanTimeout: z.coerce.number().int().min(60).max(14400),
 		gitOperationTimeout: z.coerce.number().int().min(30).max(3600),
 		httpClientTimeout: z.coerce.number().int().min(5).max(300),
 		registryTimeout: z.coerce.number().int().min(5).max(300),
@@ -83,6 +84,25 @@
 										label={m.docker_image_pull_timeout()}
 										placeholder="600"
 										helpText="Timeout in seconds (30-7200)"
+										type="number"
+									/>
+								</div>
+							</div>
+						</div>
+
+						<div class="border-t pt-6">
+							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+								<div>
+									<Label class="text-base">{m.trivy_scan_timeout()}</Label>
+									<p class="text-muted-foreground mt-1 text-sm">{m.trivy_scan_timeout_description()}</p>
+								</div>
+								<div class="max-w-xs">
+									<TextInputWithLabel
+										bind:value={$formInputs.trivyScanTimeout.value}
+										error={$formInputs.trivyScanTimeout.error}
+										label={m.trivy_scan_timeout()}
+										placeholder="900"
+										helpText="Timeout in seconds (60-14400)"
 										type="number"
 									/>
 								</div>

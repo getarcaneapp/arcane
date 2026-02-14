@@ -53,6 +53,7 @@ export type Settings = {
 
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;
+	trivyScanTimeout: number;
 	gitOperationTimeout: number;
 	httpClientTimeout: number;
 	registryTimeout: number;

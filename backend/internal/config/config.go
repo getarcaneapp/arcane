@@ -66,6 +66,7 @@ type Config struct {
 
 	DockerAPITimeout       int    `env:"DOCKER_API_TIMEOUT" default:"0"`
 	DockerImagePullTimeout int    `env:"DOCKER_IMAGE_PULL_TIMEOUT" default:"0"`
+	TrivyScanTimeout       int    `env:"TRIVY_SCAN_TIMEOUT" default:"0"`
 	GitOperationTimeout    int    `env:"GIT_OPERATION_TIMEOUT" default:"0"`
 	HTTPClientTimeout      int    `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
 	RegistryTimeout        int    `env:"REGISTRY_TIMEOUT" default:"0"`

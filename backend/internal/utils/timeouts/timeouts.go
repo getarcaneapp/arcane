@@ -8,6 +8,7 @@ import (
 const (
 	DefaultDockerAPI       = 30 * time.Second
 	DefaultDockerImagePull = 10 * time.Minute
+	DefaultTrivyScan       = 15 * time.Minute
 	DefaultGitOperation    = 5 * time.Minute
 	DefaultHTTPClient      = 30 * time.Second
 	DefaultRegistry        = 30 * time.Second

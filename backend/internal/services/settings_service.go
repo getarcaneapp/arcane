@@ -138,6 +138,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
+		TrivyScanTimeout:       models.SettingVariable{Value: "900"},
 		GitOperationTimeout:    models.SettingVariable{Value: "300"},
 		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
 		RegistryTimeout:        models.SettingVariable{Value: "30"},
@@ -509,6 +510,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 var timeoutSettingKeys = []string{
 	"dockerApiTimeout",
 	"dockerImagePullTimeout",
+	"trivyScanTimeout",
 	"gitOperationTimeout",
 	"httpClientTimeout",
 	"registryTimeout",

@@ -108,6 +108,24 @@ func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T)
 	require.True(t, settings2.OidcMergeAccounts.IsTrue())
 }
 
+func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 900, settings1.TrivyScanTimeout.AsInt())
+
+	t.Setenv("TRIVY_SCAN_TIMEOUT", "1800")
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1800, settings2.TrivyScanTimeout.AsInt())
+}
+
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -291,6 +309,26 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 		}
 	}
 	require.True(t, found, "projectsDirectory setting not found in cached list")
+}
+
+func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload map[string]string
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+		callbackPayload = timeoutSettings
+	}
+
+	newTimeout := "1200"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: &newTimeout})
+	require.NoError(t, err)
+
+	require.NotNil(t, callbackPayload)
+	require.Equal(t, "1200", callbackPayload["trivyScanTimeout"])
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {

@@ -267,6 +267,11 @@ type Update struct {
 	// Required: false
 	DockerImagePullTimeout *string `json:"dockerImagePullTimeout,omitempty"`
 
+	// TrivyScanTimeout is the timeout for Trivy image vulnerability scans in seconds.
+	//
+	// Required: false
+	TrivyScanTimeout *string `json:"trivyScanTimeout,omitempty"`
+
 	// GitOperationTimeout is the timeout for Git clone/fetch operations in seconds.
 	//
 	// Required: false
