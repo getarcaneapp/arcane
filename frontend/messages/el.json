@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Mobile Appearance",
 	"appearance_title": "Εμφάνιση",
 	"appearance_description": "Προσαρμόστε την εμφάνιση και την αίσθηση του Arcane",
+	"appearance_language_current_user_description": "Οι προτιμήσεις γλώσσας αποθηκεύονται μόνο για τον τρέχοντα χρήστη.",
+	"appearance_theme_current_user_description": "Η προτίμηση του θέματος είναι αποθηκευμένη μόνο για τον τρέχοντα χρήστη.",
 	"navigation_mode_label": "Navigation Mode",
 	"navigation_mode_description": "Choose between floating navigation that overlays content or docked navigation that takes up screen space",
 	"navigation_mode_floating": "Floating",
