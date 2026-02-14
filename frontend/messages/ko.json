@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "모바일 외관",
 	"appearance_title": "외관",
 	"appearance_description": "Arcane의 모양과 느낌을 사용자 정의합니다",
+	"appearance_language_current_user_description": "Language preference is saved for the current user only.",
+	"appearance_theme_current_user_description": "Theme preference is saved for the current user only.",
 	"navigation_mode_label": "탐색 모드",
 	"navigation_mode_description": "콘텐츠 위에 겹치는 플로팅 탐색과 화면 공간을 차지하는 고정된(Docked) 탐색 중 선택하세요",
 	"navigation_mode_floating": "플로팅",
