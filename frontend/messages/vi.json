@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Giao diện di động",
 	"appearance_title": "Giao diện",
 	"appearance_description": "Tùy chỉnh giao diện của Arcane",
+	"appearance_language_current_user_description": "Language preference is saved for the current user only.",
+	"appearance_theme_current_user_description": "Theme preference is saved for the current user only.",
 	"navigation_mode_label": "Chế độ điều hướng",
 	"navigation_mode_description": "Chọn giữa điều hướng dạng nổi (overlay) hoặc điều hướng cố định (docked) chiếm không gian màn hình",
 	"navigation_mode_floating": "Nổi (Floating)",
