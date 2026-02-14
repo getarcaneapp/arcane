@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "Apariencia móvil",
 	"appearance_title": "Apariencia",
 	"appearance_description": "Personaliza la apariencia de Arcano",
+	"appearance_language_current_user_description": "Las preferencias de idioma sólo se guardan para el usuario actual.",
+	"appearance_theme_current_user_description": "Las preferencias del tema se guardan únicamente para el usuario actual.",
 	"navigation_mode_label": "Modo Navegación",
 	"navigation_mode_description": "Elija entre navegación flotante que superponga el contenido o navegación acoplada que ocupa el espacio de la pantalla",
 	"navigation_mode_floating": "Flotante",
