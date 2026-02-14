@@ -1139,6 +1139,8 @@
 	"docker_api_timeout_description": "Timeout for Docker list operations in seconds (default: 30)",
 	"docker_image_pull_timeout": "Docker Image Pull Timeout",
 	"docker_image_pull_timeout_description": "Timeout for Docker image pulls in seconds (default: 600 = 10 minutes)",
+	"trivy_scan_timeout": "Trivy Scan Timeout",
+	"trivy_scan_timeout_description": "Timeout for Trivy vulnerability scans on Docker images.",
 	"git_operation_timeout": "Git Operation Timeout",
 	"git_operation_timeout_description": "Timeout for Git clone/fetch operations in seconds (default: 300 = 5 minutes)",
 	"http_client_timeout": "HTTP Client Timeout",
