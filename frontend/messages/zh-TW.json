@@ -1100,6 +1100,8 @@
 	"navigation_mobile_appearance_title": "行動版外觀",
 	"appearance_title": "外觀",
 	"appearance_description": "自訂 Arcane 的外觀",
+	"appearance_language_current_user_description": "Language preference is saved for the current user only.",
+	"appearance_theme_current_user_description": "Theme preference is saved for the current user only.",
 	"navigation_mode_label": "導覽模式",
 	"navigation_mode_description": "選擇覆蓋在內容上的浮動導覽或佔用螢幕空間的停靠導覽",
 	"navigation_mode_floating": "浮動",
