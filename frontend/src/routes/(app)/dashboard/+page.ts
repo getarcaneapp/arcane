@@ -2,6 +2,7 @@ import { containerService } from '$lib/services/container-service';
 import { imageService } from '$lib/services/image-service';
 import { settingsService } from '$lib/services/settings-service';
 import { systemService } from '$lib/services/system-service';
+import { vulnerabilityService } from '$lib/services/vulnerability-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
@@ -47,7 +48,7 @@ export const load: PageLoad = async ({ parent }) => {
 		})
 	]);
 
-	const [dockerInfoResult, settingsResult] = await Promise.allSettled([
+	const [dockerInfoResult, settingsResult, imageUsageCountsResult, vulnerabilitySummaryResult] = await Promise.allSettled([
 		queryClient.fetchQuery({
 			queryKey: queryKeys.system.dockerInfo(envId),
 			queryFn: () => systemService.getDockerInfoForEnvironment(envId)
@@ -55,17 +56,29 @@ export const load: PageLoad = async ({ parent }) => {
 		queryClient.fetchQuery({
 			queryKey: queryKeys.settings.byEnvironment(envId),
 			queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.images.usageCounts(envId),
+			queryFn: () => imageService.getImageUsageCountsForEnvironment(envId)
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.vulnerabilities.summaryByEnvironment(envId),
+			queryFn: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(envId)
 		})
 	]);
 
 	const dockerInfo = dockerInfoResult.status === 'fulfilled' ? dockerInfoResult.value : null;
 	const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+	const imageUsageCounts = imageUsageCountsResult.status === 'fulfilled' ? imageUsageCountsResult.value : null;
+	const vulnerabilitySummary = vulnerabilitySummaryResult.status === 'fulfilled' ? vulnerabilitySummaryResult.value : null;
 
 	return {
 		dockerInfo,
 		containers,
 		images,
 		settings,
+		imageUsageCounts,
+		vulnerabilitySummary,
 		containerRequestOptions,
 		imageRequestOptions,
 		containerStatusCounts
