@@ -45,6 +45,20 @@ async function navigateToImages(page: Page) {
   await page.waitForLoadState("networkidle");
 }
 
+async function fetchImagesTotal(page: Page, updatesFilter?: string): Promise<number> {
+  const params = new URLSearchParams({ start: "0", limit: "1" });
+  if (updatesFilter) {
+    params.set("updates", updatesFilter);
+  }
+
+  const res = await page.request.get(`/api/environments/0/images?${params.toString()}`);
+  expect(res.status()).toBe(200);
+
+  const body = await res.json().catch(() => null as any);
+  const totalItems = Number(body?.pagination?.totalItems ?? 0);
+  return Number.isFinite(totalItems) ? totalItems : 0;
+}
+
 let realImages: any[] = [];
 
 test.beforeEach(async ({ page }) => {
@@ -251,6 +265,14 @@ test.describe("Image Update API Endpoints", () => {
     expect(typeof json.data.imagesWithUpdates).toBe("number");
     expect(typeof json.data.digestUpdates).toBe("number");
     expect(typeof json.data.errorsCount).toBe("number");
+
+    const [imagesTotal, hasUpdateTotal] = await Promise.all([
+      fetchImagesTotal(page),
+      fetchImagesTotal(page, "has_update"),
+    ]);
+
+    expect(json.data.totalImages).toBe(imagesTotal);
+    expect(json.data.imagesWithUpdates).toBe(hasUpdateTotal);
   });
 });
 
