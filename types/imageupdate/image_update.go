@@ -74,7 +74,7 @@ type Response struct {
 }
 
 type Summary struct {
-	// TotalImages is the total number of images checked.
+	// TotalImages is the total number of current Docker images considered.
 	//
 	// Required: true
 	TotalImages int `json:"totalImages"`
