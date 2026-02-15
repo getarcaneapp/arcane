@@ -265,10 +265,6 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 		return err
 	}
 
-	if branch == "" {
-		branch = "main"
-	}
-
 	err = s.gitClient.TestConnection(ctx, repository.URL, branch, authConfig)
 	if err != nil {
 		// Log error event

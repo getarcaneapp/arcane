@@ -75,7 +75,7 @@ type DeleteGitRepositoryOutput struct {
 
 type TestGitRepositoryInput struct {
 	ID     string `path:"id" doc:"Repository ID"`
-	Branch string `query:"branch" doc:"Branch to test (optional, defaults to main)"`
+	Branch string `query:"branch" doc:"Branch to test (optional, uses repository default branch when omitted)"`
 }
 
 type TestGitRepositoryOutput struct {
