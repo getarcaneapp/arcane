@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/image"
+	"gorm.io/gorm"
 )
 
 // ImageHandler provides Huma-based image management endpoints.
@@ -23,6 +24,7 @@ type ImageHandler struct {
 	imageService       *services.ImageService
 	imageUpdateService *services.ImageUpdateService
 	settingsService    *services.SettingsService
+	buildService       *services.BuildService
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -73,6 +75,41 @@ type PullImageInput struct {
 	Body          image.PullOptions
 }
 
+type BuildImageInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          image.BuildRequest
+}
+
+type ImageBuildPaginatedResponse struct {
+	Success    bool                    `json:"success"`
+	Data       []image.BuildRecord     `json:"data"`
+	Pagination base.PaginationResponse `json:"pagination"`
+}
+
+type ListImageBuildsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	Status        string `query:"status" doc:"Filter by status"`
+	Provider      string `query:"provider" doc:"Filter by provider"`
+}
+
+type ListImageBuildsOutput struct {
+	Body ImageBuildPaginatedResponse
+}
+
+type GetImageBuildInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	BuildID       string `path:"buildId" doc:"Build ID"`
+}
+
+type GetImageBuildOutput struct {
+	Body base.ApiResponse[image.BuildRecord]
+}
+
 type PruneImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
@@ -109,12 +146,13 @@ type UploadImageOutput struct {
 }
 
 // RegisterImages registers image management routes using Huma.
-func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService) {
+func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService) {
 	h := &ImageHandler{
 		dockerService:      dockerService,
 		imageService:       imageService,
 		imageUpdateService: imageUpdateService,
 		settingsService:    settingsService,
+		buildService:       buildService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -181,6 +219,45 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"ApiKeyAuth": {}},
 		},
 	}, h.PullImage)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "build-image",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/images/build",
+		Summary:     "Build an image",
+		Description: "Build a Docker image using BuildKit with streaming progress output",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.BuildImage)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-image-builds",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/builds",
+		Summary:     "List image builds",
+		Description: "Get a paginated list of image build history for an environment",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListImageBuilds)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-image-build",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/builds/{buildId}",
+		Summary:     "Get image build",
+		Description: "Get a single image build history entry with output",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetImageBuild)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "prune-images",
@@ -361,6 +438,109 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
+		},
+	}, nil
+}
+
+// BuildImage builds a Docker image with streaming progress.
+func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
+	if h.buildService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if strings.TrimSpace(input.Body.ContextDir) == "" {
+		return nil, huma.Error400BadRequest("contextDir is required")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := humaCtx.BodyWriter()
+			if _, err := h.buildService.BuildImage(humaCtx.Context(), input.EnvironmentID, input.Body, writer, "", user); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				return
+			}
+		},
+	}, nil
+}
+
+// ListImageBuilds returns a paginated list of image build history entries.
+func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*ListImageBuildsOutput, error) {
+	if h.buildService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.EnvironmentID == "" {
+		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
+	}
+
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if input.Status != "" {
+		params.Filters["status"] = input.Status
+	}
+	if input.Provider != "" {
+		params.Filters["provider"] = input.Provider
+	}
+
+	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.BuildHistoryListError{Err: err}).Error())
+	}
+
+	if builds == nil {
+		builds = []image.BuildRecord{}
+	}
+
+	return &ListImageBuildsOutput{
+		Body: ImageBuildPaginatedResponse{
+			Success: true,
+			Data:    builds,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
+		},
+	}, nil
+}
+
+// GetImageBuild returns a single build history entry.
+func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*GetImageBuildOutput, error) {
+	if h.buildService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.EnvironmentID == "" {
+		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
+	}
+
+	if input.BuildID == "" {
+		return nil, huma.Error400BadRequest("buildId is required")
+	}
+
+	buildRecord, err := h.buildService.GetImageBuildByID(ctx, input.EnvironmentID, input.BuildID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, huma.Error404NotFound("build not found")
+		}
+		return nil, huma.Error500InternalServerError((&common.BuildHistoryRetrievalError{Err: err}).Error())
+	}
+
+	return &GetImageBuildOutput{
+		Body: base.ApiResponse[image.BuildRecord]{
+			Success: true,
+			Data:    *buildRecord,
 		},
 	}, nil
 }

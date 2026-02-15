@@ -12,7 +12,7 @@
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
-	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
+	import { EllipsisIcon, DownloadIcon, CodeIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	type TargetType = 'container' | 'project';
@@ -23,6 +23,7 @@
 		pull?: boolean;
 		deploy?: boolean;
 		redeploy?: boolean;
+		build?: boolean;
 		remove?: boolean;
 		validating?: boolean;
 		refresh?: boolean;
@@ -66,6 +67,7 @@
 		restart: false,
 		remove: false,
 		pull: false,
+		build: false,
 		redeploy: false,
 		validating: false,
 		refresh: false
@@ -89,6 +91,7 @@
 		restart: !!(isLoading.restart || loading?.restart || restartLoading),
 		remove: !!(isLoading.remove || loading?.remove || removeLoading),
 		pulling: !!(isLoading.pull || loading?.pull),
+		building: !!(isLoading.build || loading?.build),
 		redeploy: !!(isLoading.redeploy || loading?.redeploy || redeployLoading),
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
@@ -146,8 +149,10 @@
 	}));
 
 	let pullPopoverOpen = $state(false);
+	let buildPopoverOpen = $state(false);
 	let deployPullPopoverOpen = $state(false);
 	let projectPulling = $state(false); // only for Project Pull button/popover
+	let projectBuilding = $state(false); // only for Project Build button/popover
 	let deployPulling = $state(false); // only for Deploy popover
 	let pullProgress = $state(0);
 	let pullStatusText = $state('');
@@ -320,6 +325,7 @@
 		let openedPopover = false;
 		let hadError = false;
 		let deployPhaseStarted = false;
+		let buildPhaseStarted = false;
 
 		// Always open the popover for deploy so we can show health-wait status even
 		// when there is nothing to pull.
@@ -365,6 +371,49 @@
 				(deployData) => {
 					// Handle deploy streaming - health check progress
 					if (!deployData) return;
+
+					if (deployData.type === 'build') {
+						if (!buildPhaseStarted) {
+							buildPhaseStarted = true;
+							pullProgress = 0;
+							layerProgress = {};
+							pullError = '';
+							deployServiceProgress = {};
+							deployLastNonWaitingStatus = '';
+						}
+
+						if (deployData.phase === 'begin') {
+							pullStatusText = 'Building images...';
+						} else if (deployData.phase === 'complete') {
+							pullStatusText = 'Build completed';
+							pullProgress = 100;
+						}
+
+						if (deployData.status) pullStatusText = String(deployData.status);
+
+						if (deployData.id) {
+							const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
+							currentLayer.status = deployData.status || currentLayer.status;
+							if (deployData.progressDetail) {
+								const { current, total } = deployData.progressDetail;
+								if (typeof current === 'number') currentLayer.current = current;
+								if (typeof total === 'number') currentLayer.total = total;
+							}
+							layerProgress[deployData.id] = currentLayer;
+						}
+
+						updatePullProgress();
+
+						if (deployData.error) {
+							const errMsg =
+								typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
+							pullError = errMsg;
+							pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
+							hadError = true;
+							deployPulling = false;
+						}
+						return;
+					}
 
 					// First deploy status line: switch UI from pull -> deploy.
 					if (!deployPhaseStarted) {
@@ -597,6 +646,71 @@
 			}
 		}
 	}
+
+	async function handleProjectBuild() {
+		resetPullState();
+		projectBuilding = true;
+		buildPopoverOpen = true;
+		pullStatusText = 'Building images...';
+
+		let wasSuccessful = false;
+
+		try {
+			await projectService.buildProjectImages(id, undefined, (data) => {
+				if (!data) return;
+
+				if (data.error) {
+					const errMsg = typeof data.error === 'string' ? data.error : data.error.message || 'Build failed';
+					pullError = errMsg;
+					pullStatusText = `Build failed: ${errMsg}`;
+					return;
+				}
+
+				if (data.status) pullStatusText = data.status;
+
+				if (data.id) {
+					const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
+					currentLayer.status = data.status || currentLayer.status;
+					if (data.progressDetail) {
+						const { current, total } = data.progressDetail;
+						if (typeof current === 'number') currentLayer.current = current;
+						if (typeof total === 'number') currentLayer.total = total;
+					}
+					layerProgress[data.id] = currentLayer;
+				}
+
+				updatePullProgress();
+			});
+
+			updatePullProgress();
+			if (!pullError && pullProgress < 100 && areAllLayersComplete(layerProgress)) {
+				pullProgress = 100;
+			}
+
+			if (pullError) throw new Error(pullError);
+
+			wasSuccessful = true;
+			pullProgress = 100;
+			pullStatusText = 'Build completed';
+			toast.success('Build completed');
+			await invalidateAll();
+
+			setTimeout(() => {
+				buildPopoverOpen = false;
+				projectBuilding = false;
+				resetPullState();
+			}, 2000);
+		} catch (error: any) {
+			const message = error?.message || 'Build failed';
+			pullError = message;
+			pullStatusText = `Build failed: ${message}`;
+			toast.error(message);
+		} finally {
+			if (!wasSuccessful) {
+				projectBuilding = false;
+			}
+		}
+	}
 </script>
 
 {#if desktopVariant === 'adaptive'}
@@ -673,6 +787,27 @@
 					/>
 
 					{#if type === 'project'}
+						<ProgressPopover
+							bind:open={buildPopoverOpen}
+							bind:progress={pullProgress}
+							title="Building images"
+							statusText={pullStatusText}
+							error={pullError}
+							loading={projectBuilding}
+							icon={CodeIcon}
+							layers={layerProgress}
+						>
+							<ArcaneButton
+								action="base"
+								size={adaptiveIconOnly ? 'icon' : 'default'}
+								showLabel={!adaptiveIconOnly}
+								customLabel="Build"
+								icon={CodeIcon}
+								onclick={() => handleProjectBuild()}
+								loading={projectBuilding}
+							/>
+						</ProgressPopover>
+
 						<ProgressPopover
 							bind:open={pullPopoverOpen}
 							bind:progress={pullProgress}
@@ -755,6 +890,9 @@
 								</DropdownMenu.Item>
 
 								{#if type === 'project'}
+									<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+										Build
+									</DropdownMenu.Item>
 									<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
 										{m.images_pull()}
 									</DropdownMenu.Item>
@@ -785,6 +923,20 @@
 						error={pullError}
 						loading={deployPulling}
 						icon={DownloadIcon}
+						layers={layerProgress}
+						triggerClass="hidden"
+					>
+						<span class="hidden"></span>
+					</ProgressPopover>
+
+					<ProgressPopover
+						bind:open={buildPopoverOpen}
+						bind:progress={pullProgress}
+						title="Building images"
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectBuilding}
+						icon={CodeIcon}
 						layers={layerProgress}
 						triggerClass="hidden"
 					>
@@ -846,6 +998,25 @@
 				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
 
 				{#if type === 'project'}
+					<ProgressPopover
+						bind:open={buildPopoverOpen}
+						bind:progress={pullProgress}
+						title="Building images"
+						statusText={pullStatusText}
+						error={pullError}
+						loading={projectBuilding}
+						icon={CodeIcon}
+						layers={layerProgress}
+					>
+						<ArcaneButton
+							action="base"
+							customLabel="Build"
+							icon={CodeIcon}
+							onclick={() => handleProjectBuild()}
+							loading={projectBuilding}
+						/>
+					</ProgressPopover>
+
 					<ProgressPopover
 						bind:open={pullPopoverOpen}
 						bind:progress={pullProgress}
@@ -914,6 +1085,9 @@
 							</DropdownMenu.Item>
 
 							{#if type === 'project'}
+								<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+									Build
+								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
 									{m.images_pull()}
 								</DropdownMenu.Item>

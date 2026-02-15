@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -318,8 +319,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -328,7 +329,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "1200", callbackPayload["trivyScanTimeout"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {

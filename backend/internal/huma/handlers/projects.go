@@ -145,6 +145,17 @@ type PullProjectImagesInput struct {
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
+type BuildProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *struct {
+		Services []string `json:"services,omitempty" doc:"Service names to build"`
+		Provider string   `json:"provider,omitempty" doc:"Build provider override"`
+		Push     *bool    `json:"push,omitempty" doc:"Push images"`
+		Load     *bool    `json:"load,omitempty" doc:"Load images into Docker"`
+	}
+}
+
 // PullProgressEvent represents a Docker pull progress event
 type PullProgressEvent struct {
 	Status         string `json:"status,omitempty"`
@@ -319,6 +330,19 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"ApiKeyAuth": {}},
 		},
 	}, h.PullProjectImages)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "build-project-images",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/build",
+		Summary:     "Build project images",
+		Description: "Build Docker Compose services with build directives using BuildKit",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.BuildProjectImages)
 }
 
 // ListProjects returns a paginated list of projects.
@@ -707,6 +731,58 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 			}
 
 			_, _ = writer.Write([]byte(`{"status":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		},
+	}, nil
+}
+
+// BuildProjectImages builds compose services with build directives.
+func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	options := services.ProjectBuildOptions{}
+	if input.Body != nil {
+		options.Services = input.Body.Services
+		options.Provider = input.Body.Provider
+		options.Push = input.Body.Push
+		options.Load = input.Body.Load
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := humaCtx.BodyWriter()
+			_, _ = writer.Write([]byte(`{"type":"build","phase":"begin"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			if err := h.projectService.BuildProjectServices(humaCtx.Context(), input.ProjectID, options, writer, user); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"type":"build","phase":"complete"}` + "\n"))
 			if f, ok := writer.(http.Flusher); ok {
 				f.Flush()
 			}

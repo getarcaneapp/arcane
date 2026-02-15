@@ -217,6 +217,15 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		Value: backupVolumeName,
 		Type:  "string",
 	})
+	if h.settingsService != nil {
+		cfg := h.settingsService.GetSettingsConfig()
+		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+		settingsDto = append(settingsDto, settings.PublicSetting{
+			Key:   "depotConfigured",
+			Value: strconv.FormatBool(depotConfigured),
+			Type:  "boolean",
+		})
+	}
 
 	return &GetPublicSettingsOutput{Body: settingsDto}, nil
 }
@@ -274,6 +283,15 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		Value: backupVolumeName,
 		Type:  "string",
 	})
+	if h.settingsService != nil {
+		cfg := h.settingsService.GetSettingsConfig()
+		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+		settingsDto = append(settingsDto, settings.PublicSetting{
+			Key:   "depotConfigured",
+			Value: strconv.FormatBool(depotConfigured),
+			Type:  "boolean",
+		})
+	}
 
 	return &GetSettingsOutput{Body: settingsDto}, nil
 }

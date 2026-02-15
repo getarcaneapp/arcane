@@ -83,7 +83,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 
 WORKDIR /app
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /builds
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
