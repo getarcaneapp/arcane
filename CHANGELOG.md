@@ -1,3 +1,37 @@
+## v1.15.1
+
+### Bug fixes
+
+* unable to upload files to volume browser([a13dd4b](https://github.com/getarcaneapp/arcane/commit/a13dd4b1e52f171e9c7e556b84802fa7b53c15b2) by @kmendell)
+* environment settings not saving([87d6af2](https://github.com/getarcaneapp/arcane/commit/87d6af2de3440c02681405a030f1393de8a648a0) by @kmendell)
+* add podman-compose file support ([#1728](https://github.com/getarcaneapp/arcane/pull/1728) by @bastiengrignon)
+* add language and theme selector to appearance settings([9697323](https://github.com/getarcaneapp/arcane/commit/9697323034915d48181f7664f0e5d232d5483f4d) by @kmendell)
+* add option for trivy scan timeout ([#1749](https://github.com/getarcaneapp/arcane/pull/1749) by @kmendell)
+* use temp file for trivy output ([#1751](https://github.com/getarcaneapp/arcane/pull/1751) by @kmendell)
+* incorrect markdown format for telegram([d56c2b7](https://github.com/getarcaneapp/arcane/commit/d56c2b7e8044a448b190eb5f3157f07a2abc898d) by @kmendell)
+* hide internal volumes for backups and volume browser ([#1755](https://github.com/getarcaneapp/arcane/pull/1755) by @kmendell)
+* git sync counts only showing paginated values([be8b99b](https://github.com/getarcaneapp/arcane/commit/be8b99b220130f9078583927f1645a8053e04dce) by @kmendell)
+
+### Dependencies
+
+* bump github.com/getarcaneapp/arcane/types from 0.0.0-20260110011808-8759100aa57c to 1.15.0 in /cli ([#1740](https://github.com/getarcaneapp/arcane/pull/1740) by @dependabot[bot])
+* bump svelte from 5.50.0 to 5.51.0 ([#1745](https://github.com/getarcaneapp/arcane/pull/1745) by @dependabot[bot])
+* bump golang.org/x/oauth2 from 0.34.0 to 0.35.0 in /backend ([#1734](https://github.com/getarcaneapp/arcane/pull/1734) by @dependabot[bot])
+* bump golang.org/x/text from 0.33.0 to 0.34.0 in /backend ([#1738](https://github.com/getarcaneapp/arcane/pull/1738) by @dependabot[bot])
+* bump golang.org/x/crypto from 0.47.0 to 0.48.0 in /backend ([#1735](https://github.com/getarcaneapp/arcane/pull/1735) by @dependabot[bot])
+* bump golang.org/x/mod from 0.32.0 to 0.33.0 in /backend ([#1736](https://github.com/getarcaneapp/arcane/pull/1736) by @dependabot[bot])
+* bump github.com/samber/slog-gin from 1.20.1 to 1.21.0 in /backend ([#1733](https://github.com/getarcaneapp/arcane/pull/1733) by @dependabot[bot])
+* bump github.com/charmbracelet/bubbletea from 1.3.4 to 1.3.10 in /cli ([#1737](https://github.com/getarcaneapp/arcane/pull/1737) by @dependabot[bot])
+* bump github.com/charmbracelet/bubbles from 0.21.0 to 1.0.0 in /cli ([#1741](https://github.com/getarcaneapp/arcane/pull/1741) by @dependabot[bot])
+
+### Other
+
+* remove bytes package for manual util ([#1752](https://github.com/getarcaneapp/arcane/pull/1752) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.15.0...v1.15.1
+
 ## v1.15.0
 
 ### New features
