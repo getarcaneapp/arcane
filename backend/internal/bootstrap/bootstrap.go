@@ -102,8 +102,18 @@ func Bootstrap(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		_, err = dockerClient.Ping(ctx)
-		return err
+
+		// Force version negotiation before logging effective client API version.
+		dockerClient.NegotiateAPIVersion(ctx)
+
+		version, err := dockerClient.ServerVersion(ctx)
+		if err != nil {
+			return err
+		}
+
+		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion)
+
+		return nil
 	})
 
 	utils.InitializeNonAgentFeatures(appCtx, cfg,

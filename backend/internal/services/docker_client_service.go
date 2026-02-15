@@ -50,6 +50,7 @@ func (s *DockerClientService) GetClient() (*client.Client, error) {
 
 	cli, err := client.NewClientWithOpts(
 		client.WithHost(s.config.DockerHost),
+		client.WithVersionFromEnv(),
 		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
