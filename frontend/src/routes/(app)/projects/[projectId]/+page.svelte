@@ -393,6 +393,8 @@
 					name={project.name}
 					type="project"
 					itemState={project.status}
+					runningCount={project.runningCount}
+					serviceCount={project.serviceCount}
 					desktopVariant="adaptive"
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}

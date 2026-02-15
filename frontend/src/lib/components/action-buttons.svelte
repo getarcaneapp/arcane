@@ -8,9 +8,13 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import ProgressPopover from '$lib/components/progress-popover.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as ContextMenu from '$lib/components/ui/context-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
+	import settingsStore from '$lib/stores/config-store';
+	import { settingsService } from '$lib/services/settings-service';
+	import type { ProjectUpOptions } from '$lib/types/project.type';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { EllipsisIcon, DownloadIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
@@ -28,6 +32,11 @@
 		refresh?: boolean;
 	};
 
+	type ProjectUpPreferences = {
+		pullPolicy: NonNullable<ProjectUpOptions['pullPolicy']>;
+		forceRecreate: boolean;
+	};
+
 	let {
 		id,
 		name,
@@ -42,6 +51,8 @@
 		removeLoading = $bindable(false),
 		redeployLoading = $bindable(false),
 		refreshLoading = $bindable(false),
+		runningCount,
+		serviceCount,
 		onRefresh
 	}: {
 		id: string;
@@ -57,6 +68,8 @@
 		removeLoading?: boolean;
 		redeployLoading?: boolean;
 		refreshLoading?: boolean;
+		runningCount?: number | string;
+		serviceCount?: number | string;
 		onRefresh?: () => void | Promise<void>;
 	} = $props();
 
@@ -155,8 +168,96 @@
 	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
 	let deployServiceProgress = $state<Record<string, { phase: string; health?: string; state?: string; status?: string }>>({});
 	let deployLastNonWaitingStatus = $state('');
+	let upContextMenuOpen = $state(false);
+	let upContextPullLatest = $state(false);
+	let upContextForceRecreate = $state(false);
 
-	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
+	const projectRunningCount = $derived(type === 'project' ? Number(runningCount ?? 0) || 0 : 0);
+	const projectServiceCount = $derived(type === 'project' ? Number(serviceCount ?? 0) || 0 : 0);
+	const isContainerRunning = $derived(type === 'container' && itemState === 'running');
+	const showContainerStart = $derived(type === 'container' && !isContainerRunning);
+	const showContainerRunningActions = $derived(type === 'container' && isContainerRunning);
+	const showProjectUp = $derived(type === 'project');
+	const showProjectDown = $derived(type === 'project' && projectServiceCount > 0);
+	const showProjectRestart = $derived(type === 'project' && projectRunningCount > 0);
+
+	const containerStartTooltip = $derived(`${m.common_start()} ${m.container()}.`);
+	const containerStopTooltip = $derived(`${m.common_stop()} ${m.container()}.`);
+	const containerRestartTooltip = $derived(`${m.common_restart()} ${m.container()}.`);
+	const containerRemoveTooltip = $derived(m.common_confirm_removal_message({ type: m.container() }));
+
+	const projectUpPreferences = $derived.by(
+		(): ProjectUpPreferences => ({
+			pullPolicy: $settingsStore?.projectUpDefaultPullPolicy === 'always' ? 'always' : 'missing',
+			forceRecreate: $settingsStore?.projectUpDefaultForceRecreate === true
+		})
+	);
+
+	const defaultUpOptions = $derived.by(
+		(): ProjectUpOptions => ({
+			pullPolicy: projectUpPreferences.pullPolicy,
+			forceRecreate: projectUpPreferences.forceRecreate
+		})
+	);
+
+	async function updateProjectUpPreferences(next: Partial<ProjectUpPreferences>) {
+		const merged: ProjectUpPreferences = {
+			...projectUpPreferences,
+			...next
+		};
+
+		const updated = await settingsService.updateSettings({
+			projectUpDefaultPullPolicy: merged.pullPolicy,
+			projectUpDefaultForceRecreate: merged.forceRecreate
+		});
+
+		settingsStore.set(updated);
+	}
+
+	function syncUpContextOptions() {
+		upContextPullLatest = defaultUpOptions.pullPolicy === 'always';
+		upContextForceRecreate = defaultUpOptions.forceRecreate === true;
+	}
+
+	function getContextUpOptions(): ProjectUpOptions {
+		return {
+			pullPolicy: upContextPullLatest ? 'always' : 'missing',
+			forceRecreate: upContextForceRecreate
+		};
+	}
+
+	function toggleContextCheckbox(event: Event, option: 'pullLatest' | 'forceRecreate') {
+		event.preventDefault();
+		if (option === 'pullLatest') {
+			upContextPullLatest = !upContextPullLatest;
+			return;
+		}
+
+		upContextForceRecreate = !upContextForceRecreate;
+	}
+
+	async function handleDeployWithContextOptions() {
+		await handleDeploy(getContextUpOptions());
+	}
+
+	async function handleSaveContextUpDefaults() {
+		try {
+			await updateProjectUpPreferences(getContextUpOptions());
+			toast.success(m.common_update_success({ resource: m.resource_environment() }));
+		} catch {
+			toast.error(m.common_save_failed());
+		}
+	}
+
+	const projectUpTooltip = $derived.by(() => {
+		return `${m.projects_up_options_defaults_help()} Right-click for one-time Up options.`;
+	});
+	const projectDownTooltip = $derived(`${m.common_down()} ${m.project()}.`);
+	const projectRestartTooltip = $derived(`${m.common_restart()} ${m.project()}.`);
+	const projectRedeployTooltip = $derived(m.common_confirm_redeploy_message());
+	const projectPullTooltip = $derived(m.images_pull_description());
+	const projectRefreshTooltip = $derived(`${m.common_refresh()} ${m.project()}.`);
+	const projectDestroyTooltip = $derived(m.common_confirm_destroy_message({ type: m.project() }));
 
 	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
 	// (which would duplicate portaled popovers when the same `open` state is bound twice).
@@ -301,6 +402,10 @@
 		}
 	}
 
+	async function handleProjectUpClick() {
+		await handleDeploy(defaultUpOptions);
+	}
+
 	async function handleStart() {
 		const result = await startMutation.mutateAsync();
 		await handleApiResultWithCallbacks({
@@ -314,7 +419,7 @@
 		});
 	}
 
-	async function handleDeploy() {
+	async function handleDeploy(options: ProjectUpOptions = { pullPolicy: 'missing', forceRecreate: false }) {
 		resetPullState();
 		setLoading('start', true);
 		let openedPopover = false;
@@ -329,44 +434,20 @@
 		openedPopover = true;
 
 		try {
-			const { pulled } = await projectService.deployProjectMaybePull(
-				id,
-				(data) => {
-					if (!data) return;
+			await projectService.deployProject(id, options, (streamData) => {
+				if (!streamData) return;
 
-					// Pull progress can still update the same popover.
-					if (isDownloadingLine(data)) {
-						pullStatusText = m.images_pull_initiating();
-					}
+				if (streamData.error) {
+					const errMsg =
+						typeof streamData.error === 'string' ? streamData.error : streamData.error.message || m.progress_deploy_failed();
+					pullError = errMsg;
+					pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
+					hadError = true;
+					deployPulling = false;
+					return;
+				}
 
-					if (data.error) {
-						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
-						pullError = errMsg;
-						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
-						hadError = true;
-						return;
-					}
-
-					if (data.status) pullStatusText = data.status;
-
-					if (data.id) {
-						const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
-						currentLayer.status = data.status || currentLayer.status;
-						if (data.progressDetail) {
-							const { current, total } = data.progressDetail;
-							if (typeof current === 'number') currentLayer.current = current;
-							if (typeof total === 'number') currentLayer.total = total;
-						}
-						layerProgress[data.id] = currentLayer;
-					}
-
-					updatePullProgress();
-				},
-				(deployData) => {
-					// Handle deploy streaming - health check progress
-					if (!deployData) return;
-
-					// First deploy status line: switch UI from pull -> deploy.
+				if (streamData.type === 'deploy') {
 					if (!deployPhaseStarted) {
 						deployPhaseStarted = true;
 						pullProgress = 0;
@@ -376,103 +457,99 @@
 						deployLastNonWaitingStatus = '';
 					}
 
-					// Keep the popover in "loading" state during deployment.
 					deployPulling = true;
-					if (deployData.type === 'deploy') {
-						switch (deployData.phase) {
-							case 'begin':
-								pullStatusText = m.progress_deploy_starting();
-								break;
-							case 'service_waiting_healthy': {
-								const service = String(deployData.service ?? '').trim();
-								if (service) {
-									deployServiceProgress[service] = {
-										phase: 'service_waiting_healthy',
-										health: String(deployData.health ?? '')
-									};
-									pullStatusText = deriveDeployStatusText();
-								}
-								break;
+					switch (streamData.phase) {
+						case 'begin':
+							pullStatusText = m.progress_deploy_starting();
+							break;
+						case 'service_waiting_healthy': {
+							const service = String(streamData.service ?? '').trim();
+							if (service) {
+								deployServiceProgress[service] = {
+									phase: 'service_waiting_healthy',
+									health: String(streamData.health ?? '')
+								};
+								pullStatusText = deriveDeployStatusText();
 							}
-							case 'service_healthy':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_healthy',
-											health: String(deployData.health ?? ''),
-											state: String(deployData.state ?? ''),
-											status: String(deployData.status ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'service_state':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_state',
-											state: String(deployData.state ?? ''),
-											health: String(deployData.health ?? ''),
-											status: String(deployData.status ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_state({
-											service,
-											state: String(deployData.state ?? '')
-										});
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'service_status':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_status',
-											status: String(deployData.status ?? ''),
-											state: String(deployData.state ?? ''),
-											health: String(deployData.health ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_status({
-											service,
-											status: String(deployData.status ?? '')
-										});
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'complete':
-								pullStatusText = m.progress_deploy_completed();
-								break;
-							default:
-								break;
+							break;
 						}
-					} else if (deployData.status) {
-						// fallback for unexpected payloads
-						pullStatusText = String(deployData.status);
+						case 'service_healthy': {
+							const service = String(streamData.service ?? '').trim();
+							if (service) {
+								deployServiceProgress[service] = {
+									phase: 'service_healthy',
+									health: String(streamData.health ?? ''),
+									state: String(streamData.state ?? ''),
+									status: String(streamData.status ?? '')
+								};
+								deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
+								pullStatusText = deriveDeployStatusText();
+							}
+							break;
+						}
+						case 'service_state': {
+							const service = String(streamData.service ?? '').trim();
+							if (service) {
+								deployServiceProgress[service] = {
+									phase: 'service_state',
+									state: String(streamData.state ?? ''),
+									health: String(streamData.health ?? ''),
+									status: String(streamData.status ?? '')
+								};
+								deployLastNonWaitingStatus = m.progress_deploy_service_state({
+									service,
+									state: String(streamData.state ?? '')
+								});
+								pullStatusText = deriveDeployStatusText();
+							}
+							break;
+						}
+						case 'service_status': {
+							const service = String(streamData.service ?? '').trim();
+							if (service) {
+								deployServiceProgress[service] = {
+									phase: 'service_status',
+									status: String(streamData.status ?? ''),
+									state: String(streamData.state ?? ''),
+									health: String(streamData.health ?? '')
+								};
+								deployLastNonWaitingStatus = m.progress_deploy_service_status({
+									service,
+									status: String(streamData.status ?? '')
+								});
+								pullStatusText = deriveDeployStatusText();
+							}
+							break;
+						}
+						case 'complete':
+							pullStatusText = m.progress_deploy_completed();
+							deployPulling = false;
+							pullProgress = 100;
+							break;
+						default:
+							break;
 					}
-
-					if (deployData.error) {
-						const errMsg =
-							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
-						pullError = errMsg;
-						pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
-						hadError = true;
-						deployPulling = false;
-						return;
-					}
-
-					// If we got "complete", stop the loading state
-					if (deployData.type === 'deploy' && deployData.phase === 'complete') {
-						deployPulling = false;
-						pullProgress = 100;
-					}
+					return;
 				}
-			);
+
+				if (isDownloadingLine(streamData)) {
+					pullStatusText = m.images_pull_initiating();
+				}
+
+				if (streamData.status) pullStatusText = String(streamData.status);
+
+				if (streamData.id) {
+					const currentLayer = layerProgress[streamData.id] || { current: 0, total: 0, status: '' };
+					currentLayer.status = streamData.status || currentLayer.status;
+					if (streamData.progressDetail) {
+						const { current, total } = streamData.progressDetail;
+						if (typeof current === 'number') currentLayer.current = current;
+						if (typeof total === 'number') currentLayer.total = total;
+					}
+					layerProgress[streamData.id] = currentLayer;
+					updatePullProgress();
+				}
+			});
 
 			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
 
@@ -604,45 +681,72 @@
 		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
 		{#if isLgUp}
 			<div class="flex items-center gap-2">
-				{#if !isRunning}
-					{#if type === 'container'}
-						<ArcaneButton
-							action="start"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => handleStart()}
-							loading={uiLoading.start}
-						/>
-					{:else}
-						<ProgressPopover
-							bind:open={deployPullPopoverOpen}
-							bind:progress={pullProgress}
-							mode="generic"
-							title={m.progress_deploying_project()}
-							completeTitle={m.progress_deploy_completed()}
-							statusText={pullStatusText}
-							error={pullError}
-							loading={deployPulling}
-							icon={DownloadIcon}
-							layers={layerProgress}
-						>
-							<ArcaneButton
-								action="deploy"
-								size={adaptiveIconOnly ? 'icon' : 'default'}
-								showLabel={!adaptiveIconOnly}
-								onclick={() => handleDeploy()}
-								loading={uiLoading.start}
-							/>
-						</ProgressPopover>
-					{/if}
+				{#if showContainerStart}
+					<ArcaneButton
+						action="start"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						tooltipContent={containerStartTooltip}
+						onclick={() => handleStart()}
+						loading={uiLoading.start}
+					/>
 				{/if}
 
-				{#if isRunning}
+				{#if showProjectUp}
+					<ProgressPopover
+						bind:open={deployPullPopoverOpen}
+						bind:progress={pullProgress}
+						mode="generic"
+						openOnTriggerClick={false}
+						title={m.progress_deploying_project()}
+						completeTitle={m.progress_deploy_completed()}
+						statusText={pullStatusText}
+						error={pullError}
+						loading={deployPulling}
+						icon={DownloadIcon}
+						layers={layerProgress}
+					>
+						<ContextMenu.Root bind:open={upContextMenuOpen}>
+							<ContextMenu.Trigger>
+								<ArcaneButton
+									action="deploy"
+									size={adaptiveIconOnly ? 'icon' : 'default'}
+									showLabel={!adaptiveIconOnly}
+									tooltipContent={projectUpTooltip}
+									onclick={handleProjectUpClick}
+									oncontextmenu={syncUpContextOptions}
+									loading={uiLoading.start}
+								/>
+							</ContextMenu.Trigger>
+							<ContextMenu.Content class="w-64">
+								<ContextMenu.Label>{m.projects_up_options_title()}</ContextMenu.Label>
+								<ContextMenu.Separator />
+								<ContextMenu.CheckboxItem
+									onSelect={(event) => toggleContextCheckbox(event, 'pullLatest')}
+									checked={upContextPullLatest}
+								>
+									{m.projects_up_option_pull_latest()}
+								</ContextMenu.CheckboxItem>
+								<ContextMenu.CheckboxItem
+									onSelect={(event) => toggleContextCheckbox(event, 'forceRecreate')}
+									checked={upContextForceRecreate}
+								>
+									{m.projects_up_option_recreate_containers()}
+								</ContextMenu.CheckboxItem>
+								<ContextMenu.Separator />
+								<ContextMenu.Item onclick={handleDeployWithContextOptions}>{m.common_up()}</ContextMenu.Item>
+								<ContextMenu.Item onclick={handleSaveContextUpDefaults}>Save as environment defaults</ContextMenu.Item>
+							</ContextMenu.Content>
+						</ContextMenu.Root>
+					</ProgressPopover>
+				{/if}
+
+				{#if showContainerRunningActions}
 					<ArcaneButton
 						action="stop"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
-						customLabel={type === 'project' ? m.common_down() : undefined}
+						tooltipContent={containerStopTooltip}
 						onclick={() => handleStop()}
 						loading={uiLoading.stop}
 					/>
@@ -650,6 +754,30 @@
 						action="restart"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
+						tooltipContent={containerRestartTooltip}
+						onclick={() => handleRestart()}
+						loading={uiLoading.restart}
+					/>
+				{/if}
+
+				{#if showProjectDown}
+					<ArcaneButton
+						action="stop"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						customLabel={m.common_down()}
+						tooltipContent={projectDownTooltip}
+						onclick={() => handleStop()}
+						loading={uiLoading.stop}
+					/>
+				{/if}
+
+				{#if showProjectRestart}
+					<ArcaneButton
+						action="restart"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						tooltipContent={projectRestartTooltip}
 						onclick={() => handleRestart()}
 						loading={uiLoading.restart}
 					/>
@@ -660,6 +788,7 @@
 						action="remove"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
+						tooltipContent={containerRemoveTooltip}
 						onclick={() => confirmAction('remove')}
 						loading={uiLoading.remove}
 					/>
@@ -668,6 +797,7 @@
 						action="redeploy"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
+						tooltipContent={projectRedeployTooltip}
 						onclick={() => confirmAction('redeploy')}
 						loading={uiLoading.redeploy}
 					/>
@@ -687,6 +817,7 @@
 								action="pull"
 								size={adaptiveIconOnly ? 'icon' : 'default'}
 								showLabel={!adaptiveIconOnly}
+								tooltipContent={projectPullTooltip}
 								onclick={() => handleProjectPull()}
 								loading={projectPulling}
 							/>
@@ -698,6 +829,7 @@
 							action="refresh"
 							size={adaptiveIconOnly ? 'icon' : 'default'}
 							showLabel={!adaptiveIconOnly}
+							tooltipContent={projectRefreshTooltip}
 							onclick={() => handleRefresh()}
 							loading={uiLoading.refresh}
 						/>
@@ -708,6 +840,7 @@
 						action="remove"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
+						tooltipContent={projectDestroyTooltip}
 						onclick={() => confirmAction('remove')}
 						loading={uiLoading.remove}
 					/>
@@ -726,20 +859,34 @@
 						class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 					>
 						<DropdownMenu.Group>
-							{#if !isRunning}
-								{#if type === 'container'}
-									<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-										{m.common_start()}
-									</DropdownMenu.Item>
-								{:else}
-									<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
-										{m.common_up()}
-									</DropdownMenu.Item>
-								{/if}
-							{:else}
-								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-									{type === 'project' ? m.common_down() : m.common_stop()}
+							{#if showContainerStart}
+								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+									{m.common_start()}
 								</DropdownMenu.Item>
+							{/if}
+
+							{#if showContainerRunningActions}
+								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+									{m.common_stop()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+									{m.common_restart()}
+								</DropdownMenu.Item>
+							{/if}
+
+							{#if showProjectUp}
+								<DropdownMenu.Item onclick={() => handleProjectUpClick()} disabled={uiLoading.start}>
+									{m.common_up()}
+								</DropdownMenu.Item>
+							{/if}
+
+							{#if showProjectDown}
+								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+									{m.common_down()}
+								</DropdownMenu.Item>
+							{/if}
+
+							{#if showProjectRestart}
 								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
 									{m.common_restart()}
 								</DropdownMenu.Item>
@@ -811,39 +958,104 @@
 {:else}
 	<div>
 		<div class="hidden items-center gap-2 lg:flex">
-			{#if !isRunning}
-				{#if type === 'container'}
-					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
-				{:else}
-					<ProgressPopover
-						bind:open={deployPullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={deployPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-					>
-						<ArcaneButton action="deploy" onclick={() => handleDeploy()} loading={uiLoading.start} />
-					</ProgressPopover>
-				{/if}
+			{#if showContainerStart}
+				<ArcaneButton
+					action="start"
+					tooltipContent={containerStartTooltip}
+					onclick={() => handleStart()}
+					loading={uiLoading.start}
+				/>
 			{/if}
 
-			{#if isRunning}
+			{#if showProjectUp}
+				<ProgressPopover
+					bind:open={deployPullPopoverOpen}
+					bind:progress={pullProgress}
+					openOnTriggerClick={false}
+					title={m.progress_deploying_project()}
+					completeTitle={m.progress_deploy_completed()}
+					statusText={pullStatusText}
+					error={pullError}
+					loading={deployPulling}
+					icon={DownloadIcon}
+					layers={layerProgress}
+				>
+					<ContextMenu.Root bind:open={upContextMenuOpen}>
+						<ContextMenu.Trigger>
+							<ArcaneButton
+								action="deploy"
+								tooltipContent={projectUpTooltip}
+								onclick={handleProjectUpClick}
+								oncontextmenu={syncUpContextOptions}
+								loading={uiLoading.start}
+							/>
+						</ContextMenu.Trigger>
+						<ContextMenu.Content class="w-64">
+							<ContextMenu.Label>{m.projects_up_options_title()}</ContextMenu.Label>
+							<ContextMenu.Separator />
+							<ContextMenu.CheckboxItem
+								onSelect={(event) => toggleContextCheckbox(event, 'pullLatest')}
+								checked={upContextPullLatest}
+							>
+								{m.projects_up_option_pull_latest()}
+							</ContextMenu.CheckboxItem>
+							<ContextMenu.CheckboxItem
+								onSelect={(event) => toggleContextCheckbox(event, 'forceRecreate')}
+								checked={upContextForceRecreate}
+							>
+								{m.projects_up_option_recreate_containers()}
+							</ContextMenu.CheckboxItem>
+							<ContextMenu.Separator />
+							<ContextMenu.Item onclick={handleDeployWithContextOptions}>{m.common_up()}</ContextMenu.Item>
+							<ContextMenu.Item onclick={handleSaveContextUpDefaults}>Save as environment defaults</ContextMenu.Item>
+						</ContextMenu.Content>
+					</ContextMenu.Root>
+				</ProgressPopover>
+			{/if}
+
+			{#if showContainerRunningActions}
+				<ArcaneButton action="stop" tooltipContent={containerStopTooltip} onclick={() => handleStop()} loading={uiLoading.stop} />
+				<ArcaneButton
+					action="restart"
+					tooltipContent={containerRestartTooltip}
+					onclick={() => handleRestart()}
+					loading={uiLoading.restart}
+				/>
+			{/if}
+
+			{#if showProjectDown}
 				<ArcaneButton
 					action="stop"
-					customLabel={type === 'project' ? m.common_down() : undefined}
+					customLabel={m.common_down()}
+					tooltipContent={projectDownTooltip}
 					onclick={() => handleStop()}
 					loading={uiLoading.stop}
 				/>
-				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+			{/if}
+
+			{#if showProjectRestart}
+				<ArcaneButton
+					action="restart"
+					tooltipContent={projectRestartTooltip}
+					onclick={() => handleRestart()}
+					loading={uiLoading.restart}
+				/>
 			{/if}
 
 			{#if type === 'container'}
-				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+				<ArcaneButton
+					action="remove"
+					tooltipContent={containerRemoveTooltip}
+					onclick={() => confirmAction('remove')}
+					loading={uiLoading.remove}
+				/>
 			{:else}
-				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+				<ArcaneButton
+					action="redeploy"
+					tooltipContent={projectRedeployTooltip}
+					onclick={() => confirmAction('redeploy')}
+					loading={uiLoading.redeploy}
+				/>
 
 				{#if type === 'project'}
 					<ProgressPopover
@@ -856,17 +1068,28 @@
 						icon={DownloadIcon}
 						layers={layerProgress}
 					>
-						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
+						<ArcaneButton
+							action="pull"
+							tooltipContent={projectPullTooltip}
+							onclick={() => handleProjectPull()}
+							loading={projectPulling}
+						/>
 					</ProgressPopover>
 				{/if}
 
 				{#if onRefresh}
-					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
+					<ArcaneButton
+						action="refresh"
+						tooltipContent={projectRefreshTooltip}
+						onclick={() => handleRefresh()}
+						loading={uiLoading.refresh}
+					/>
 				{/if}
 
 				<ArcaneButton
 					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
 					action="remove"
+					tooltipContent={projectDestroyTooltip}
 					onclick={() => confirmAction('remove')}
 					loading={uiLoading.remove}
 				/>
@@ -885,20 +1108,34 @@
 					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
-						{#if !isRunning}
-							{#if type === 'container'}
-								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-									{m.common_start()}
-								</DropdownMenu.Item>
-							{:else}
-								<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
-									{m.common_up()}
-								</DropdownMenu.Item>
-							{/if}
-						{:else}
-							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-								{type === 'project' ? m.common_down() : m.common_stop()}
+						{#if showContainerStart}
+							<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+								{m.common_start()}
 							</DropdownMenu.Item>
+						{/if}
+
+						{#if showContainerRunningActions}
+							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+								{m.common_stop()}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+								{m.common_restart()}
+							</DropdownMenu.Item>
+						{/if}
+
+						{#if showProjectUp}
+							<DropdownMenu.Item onclick={() => handleProjectUpClick()} disabled={uiLoading.start}>
+								{m.common_up()}
+							</DropdownMenu.Item>
+						{/if}
+
+						{#if showProjectDown}
+							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+								{m.common_down()}
+							</DropdownMenu.Item>
+						{/if}
+
+						{#if showProjectRestart}
 							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
 								{m.common_restart()}
 							</DropdownMenu.Item>
