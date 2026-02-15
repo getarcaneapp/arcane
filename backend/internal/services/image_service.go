@@ -132,6 +132,12 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		}
 	}
 
+	if s.imageUpdateService != nil {
+		if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
+			slog.WarnContext(ctx, "failed to cleanup orphaned image update records after image remove", "id", id, "error", err)
+		}
+	}
+
 	// Clean up vulnerability scan records for the deleted image
 	if s.vulnerabilityService != nil {
 		if err := s.vulnerabilityService.DeleteScanResult(ctx, id); err != nil {
@@ -414,34 +420,10 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	// Clean up database records for deleted images
-	if s.db != nil && len(report.ImagesDeleted) > 0 {
-		var idsToDelete []string
-		for _, img := range report.ImagesDeleted {
-			if img.Deleted != "" {
-				idsToDelete = append(idsToDelete, img.Deleted)
-			} else if img.Untagged != "" {
-				idsToDelete = append(idsToDelete, img.Untagged)
-			}
-		}
-
-		if len(idsToDelete) > 0 {
-			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
-			}); err != nil {
-				slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
-			}
-
-			// Clean up vulnerability scan records for pruned images
-			if s.vulnerabilityService != nil {
-				for _, imgID := range idsToDelete {
-					if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
-						slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
-					}
-				}
-			}
-		}
-	}
+	idsToDelete := getPrunedImageIDsInternal(report)
+	s.cleanupImageUpdateRecordsAfterPruneInternal(ctx, idsToDelete)
+	s.cleanupVulnerabilityRecordsAfterPruneInternal(ctx, idsToDelete)
+	s.cleanupOrphanedImageUpdatesAfterPruneInternal(ctx)
 
 	metadata := models.JSON{
 		"action":         "prune",
@@ -454,6 +436,58 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 	}
 
 	return &report, nil
+}
+
+func getPrunedImageIDsInternal(report image.PruneReport) []string {
+	if len(report.ImagesDeleted) == 0 {
+		return nil
+	}
+
+	idsToDelete := make([]string, 0, len(report.ImagesDeleted))
+	for _, img := range report.ImagesDeleted {
+		if img.Deleted != "" {
+			idsToDelete = append(idsToDelete, img.Deleted)
+			continue
+		}
+		if img.Untagged != "" {
+			idsToDelete = append(idsToDelete, img.Untagged)
+		}
+	}
+	return idsToDelete
+}
+
+func (s *ImageService) cleanupImageUpdateRecordsAfterPruneInternal(ctx context.Context, idsToDelete []string) {
+	if s.db == nil || len(idsToDelete) == 0 {
+		return
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
+	}); err != nil {
+		slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
+	}
+}
+
+func (s *ImageService) cleanupVulnerabilityRecordsAfterPruneInternal(ctx context.Context, idsToDelete []string) {
+	if s.vulnerabilityService == nil || len(idsToDelete) == 0 {
+		return
+	}
+
+	for _, imgID := range idsToDelete {
+		if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
+			slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
+		}
+	}
+}
+
+func (s *ImageService) cleanupOrphanedImageUpdatesAfterPruneInternal(ctx context.Context) {
+	if s.imageUpdateService == nil {
+		return
+	}
+
+	if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to cleanup orphaned image update records after prune", "error", err)
+	}
 }
 
 // GetUpdateInfoByImageIDs returns a map of image ID to UpdateInfo for the given image IDs.

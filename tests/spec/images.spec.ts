@@ -12,6 +12,32 @@ async function navigateToImages(page: Page) {
   await page.waitForLoadState('networkidle');
 }
 
+async function fetchAllImagesForUsage(page: Page): Promise<any[]> {
+  const limit = 200;
+  let start = 0;
+  const all: any[] = [];
+
+  while (true) {
+    const res = await page.request.get(`${ROUTES.apiImages}?start=${start}&limit=${limit}`);
+    if (!res.ok()) {
+      throw new Error(`HTTP ${res.status()}`);
+    }
+
+    const body = await res.json().catch(() => null as any);
+    const data = Array.isArray(body?.data) ? body.data : [];
+    all.push(...data);
+
+    const totalItems = Number(body?.pagination?.totalItems ?? all.length);
+    if (data.length === 0 || all.length >= totalItems) {
+      break;
+    }
+
+    start += limit;
+  }
+
+  return all;
+}
+
 let realImages: any[] = [];
 let imageCounts: ImageUsageCounts = { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 };
 
@@ -40,6 +66,18 @@ test.describe('Images Page', () => {
 
     await expect(page.getByText(`${imageCounts.totalImages} Total Images`)).toBeVisible();
     await expect(page.getByText(/Total Size/i)).toBeVisible();
+  });
+
+  test('should align /images/counts with usage derived from /images list', async ({ page }) => {
+    await navigateToImages(page);
+
+    const allImages = await fetchAllImagesForUsage(page);
+    const derivedInUse = allImages.filter((img) => !!img.inUse).length;
+    const derivedUnused = allImages.length - derivedInUse;
+
+    expect(imageCounts.totalImages).toBe(allImages.length);
+    expect(imageCounts.imagesInuse).toBe(derivedInUse);
+    expect(imageCounts.imagesUnused).toBe(derivedUnused);
   });
 
   test('should display the image table when images exist', async ({ page }) => {
