@@ -191,17 +191,16 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	slog.InfoContext(ctx, "GitOps sync created successfully", "syncID", sync.ID, "name", sync.Name)
 
 	// Log event
-	resourceType := "git_sync"
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:         models.EventTypeGitSyncCreate,
 		Severity:     models.EventSeveritySuccess,
 		Title:        "Git sync created",
 		Description:  fmt.Sprintf("Created git sync configuration '%s'", sync.Name),
-		ResourceType: &resourceType,
-		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name,
-		UserID:       &systemUser.ID,
-		Username:     &systemUser.Username,
+		ResourceType: new("git_sync"),
+		ResourceID:   new(sync.ID),
+		ResourceName: new(sync.Name),
+		UserID:       new(systemUser.ID),
+		Username:     new(systemUser.Username),
 	})
 
 	if _, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID); err != nil {
@@ -253,15 +252,14 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		}
 
 		// Log event
-		resourceType := "git_sync"
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:         models.EventTypeGitSyncUpdate,
 			Severity:     models.EventSeveritySuccess,
 			Title:        "Git sync updated",
 			Description:  fmt.Sprintf("Updated git sync configuration '%s'", sync.Name),
-			ResourceType: &resourceType,
-			ResourceID:   &sync.ID,
-			ResourceName: &sync.Name,
+			ResourceType: new("git_sync"),
+			ResourceID:   new(sync.ID),
+			ResourceName: new(sync.Name),
 		})
 	}
 
@@ -294,16 +292,17 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	}
 
 	// Log event
-	resourceType := "git_sync"
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:         models.EventTypeGitSyncDelete,
 		Severity:     models.EventSeverityInfo,
 		Title:        "Git sync deleted",
 		Description:  fmt.Sprintf("Deleted git sync configuration '%s'", sync.Name),
-		ResourceType: &resourceType,
-		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name, UserID: &systemUser.ID,
-		Username: &systemUser.Username})
+		ResourceType: new("git_sync"),
+		ResourceID:   new(sync.ID),
+		ResourceName: new(sync.Name),
+		UserID:       new(systemUser.ID),
+		Username:     new(systemUser.Username),
+	})
 
 	return nil
 }
@@ -388,17 +387,16 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
 
 	// Log success event
-	resourceType := "git_sync"
 	_, _ = s.eventService.CreateEvent(syncCtx, CreateEventRequest{
 		Type:         models.EventTypeGitSyncRun,
 		Severity:     models.EventSeveritySuccess,
 		Title:        "Git sync completed",
 		Description:  fmt.Sprintf("Successfully synced '%s' to project '%s'", sync.Name, project.Name),
-		ResourceType: &resourceType,
-		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name,
-		UserID:       &systemUser.ID,
-		Username:     &systemUser.Username,
+		ResourceType: new("git_sync"),
+		ResourceID:   new(sync.ID),
+		ResourceName: new(sync.Name),
+		UserID:       new(systemUser.ID),
+		Username:     new(systemUser.Username),
 	})
 
 	slog.InfoContext(syncCtx, "GitOps sync completed", "syncId", id, "project", project.Name)
@@ -445,8 +443,7 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 
 	// Calculate next sync time
 	if sync.AutoSync && sync.LastSyncAt != nil {
-		nextSync := sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute)
-		status.NextSyncAt = &nextSync
+		status.NextSyncAt = new(sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute))
 	}
 
 	return status, nil
@@ -551,8 +548,8 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 			Branch:       importItem.Branch,
 			ComposePath:  importItem.DockerComposePath,
 			ProjectName:  importItem.SyncName,
-			AutoSync:     &importItem.AutoSync,
-			SyncInterval: &importItem.SyncInterval,
+			AutoSync:     new(importItem.AutoSync),
+			SyncInterval: new(importItem.SyncInterval),
 		}
 
 		_, err = s.CreateSync(ctx, environmentID, createReq)
@@ -568,21 +565,22 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 }
 
 func (s *GitOpsSyncService) logSyncError(ctx context.Context, sync *models.GitOpsSync, errorMsg string) {
-	resourceType := "git_sync"
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:         models.EventTypeGitSyncError,
 		Severity:     models.EventSeverityError,
 		Title:        "Git sync failed",
 		Description:  fmt.Sprintf("Failed to sync '%s': %s", sync.Name, errorMsg),
-		ResourceType: &resourceType,
-		ResourceID:   &sync.ID,
-		ResourceName: &sync.Name, UserID: &systemUser.ID,
-		Username: &systemUser.Username})
+		ResourceType: new("git_sync"),
+		ResourceID:   new(sync.ID),
+		ResourceName: new(sync.Name),
+		UserID:       new(systemUser.ID),
+		Username:     new(systemUser.Username),
+	})
 }
 
 func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, message, errMsg string) error {
 	result.Message = message
-	result.Error = &errMsg
+	result.Error = new(errMsg)
 	s.updateSyncStatus(ctx, id, "failed", errMsg, "")
 	s.logSyncError(ctx, sync, errMsg)
 	return fmt.Errorf("%s", errMsg)

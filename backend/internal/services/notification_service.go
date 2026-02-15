@@ -174,7 +174,7 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 
@@ -273,7 +273,7 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 
@@ -442,7 +442,7 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 
@@ -1210,7 +1210,7 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 
@@ -2866,7 +2866,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 

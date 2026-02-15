@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
@@ -228,12 +227,11 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 		})
 	}
 
-	now := time.Now()
-	user.LastLogin = &now
+	user.LastLogin = new(time.Now())
 
 	// Run last login update in background
-	// Use utils.Ptr to create a safe copy of the user struct to avoid data race
-	userCopy := utils.Ptr(*user)
+	// Use new(*user) to create a safe copy of the user struct to avoid data race
+	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
 		if _, err := s.userService.UpdateUser(ctx, userCopy); err != nil {
 			return fmt.Errorf("failed to update user's last login time: %w", err)
@@ -374,8 +372,6 @@ func (s *AuthService) validateMergeEmailVerification(userInfo auth.OidcUserInfo)
 }
 
 func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, error) {
-	now := time.Now()
-
 	var username string
 	if userInfo.PreferredUsername == "" {
 		username = generateUsernameFromEmail(userInfo.Email, userInfo.Subject)
@@ -383,31 +379,29 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 		username = userInfo.PreferredUsername
 	}
 
-	var displayName string
-	switch {
-	case userInfo.Name != "":
-		displayName = userInfo.Name
-	case userInfo.GivenName != "" || userInfo.FamilyName != "":
-		displayName = strings.TrimSpace(fmt.Sprintf("%s %s", userInfo.GivenName, userInfo.FamilyName))
-	default:
-		displayName = username
-	}
-
-	email := userInfo.Email
-
 	roles := models.StringSlice{"user"}
 	if s.isAdminFromOidc(ctx, userInfo, tokenResp) {
 		roles = append(roles, "admin")
 	}
 
+	var displayName *string
+	switch {
+	case userInfo.Name != "":
+		displayName = new(userInfo.Name)
+	case userInfo.GivenName != "" || userInfo.FamilyName != "":
+		displayName = new(strings.TrimSpace(fmt.Sprintf("%s %s", userInfo.GivenName, userInfo.FamilyName)))
+	default:
+		displayName = new(username)
+	}
+
 	user := &models.User{
 		BaseModel:     models.BaseModel{ID: uuid.NewString()},
 		Username:      username,
-		DisplayName:   &displayName,
-		Email:         &email,
+		DisplayName:   displayName,
+		Email:         new(userInfo.Email),
 		Roles:         roles,
-		OidcSubjectId: &userInfo.Subject,
-		LastLogin:     &now,
+		OidcSubjectId: new(userInfo.Subject),
+		LastLogin:     new(time.Now()),
 	}
 
 	s.persistOidcTokens(user, tokenResp)
@@ -420,10 +414,10 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 
 func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
 	if userInfo.Name != "" && user.DisplayName == nil {
-		user.DisplayName = &userInfo.Name
+		user.DisplayName = new(userInfo.Name)
 	}
 	if userInfo.Email != "" && user.Email == nil {
-		user.Email = &userInfo.Email
+		user.Email = new(userInfo.Email)
 	}
 
 	wantAdmin := s.isAdminFromOidc(ctx, userInfo, tokenResp)
@@ -437,8 +431,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, use
 
 	s.persistOidcTokens(user, tokenResp)
 
-	now := time.Now()
-	user.LastLogin = &now
+	user.LastLogin = new(time.Now())
 	_, err := s.userService.UpdateUser(ctx, user)
 	return err
 }
@@ -448,7 +441,7 @@ func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, user *model
 	_, err := s.userService.AttachOidcSubjectTransactional(ctx, user.ID, userInfo.Subject, func(u *models.User) {
 		// Update display name if not set
 		if userInfo.Name != "" && u.DisplayName == nil {
-			u.DisplayName = &userInfo.Name
+			u.DisplayName = new(userInfo.Name)
 		}
 
 		// Update admin role based on OIDC claims
@@ -464,8 +457,7 @@ func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, user *model
 		// Persist OIDC tokens
 		s.persistOidcTokens(u, tokenResp)
 
-		now := time.Now()
-		u.LastLogin = &now
+		u.LastLogin = new(time.Now())
 	})
 	return err
 }
@@ -545,14 +537,13 @@ func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *auth.OidcT
 		return
 	}
 	if tokenResp.AccessToken != "" {
-		user.OidcAccessToken = &tokenResp.AccessToken
+		user.OidcAccessToken = new(tokenResp.AccessToken)
 	}
 	if tokenResp.RefreshToken != "" {
-		user.OidcRefreshToken = &tokenResp.RefreshToken
+		user.OidcRefreshToken = new(tokenResp.RefreshToken)
 	}
 	if tokenResp.ExpiresIn > 0 {
-		expiresAt := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-		user.OidcAccessTokenExpiresAt = &expiresAt
+		user.OidcAccessTokenExpiresAt = new(time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second))
 	}
 }
 

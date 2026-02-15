@@ -200,18 +200,17 @@ func (s *EventService) LogContainerEvent(ctx context.Context, eventType models.E
 	description := s.generateEventDescription(eventType, "container", containerName)
 	severity := s.getEventSeverity(eventType)
 
-	resourceType := "container"
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &containerID,
-		ResourceName:  &containerName,
-		UserID:        &userID,
-		Username:      &username,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("container"),
+		ResourceID:    new(containerID),
+		ResourceName:  new(containerName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
 		Metadata:      metadata,
 	})
 	return err
@@ -222,18 +221,17 @@ func (s *EventService) LogImageEvent(ctx context.Context, eventType models.Event
 	description := s.generateEventDescription(eventType, "image", imageName)
 	severity := s.getEventSeverity(eventType)
 
-	resourceType := "image"
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &imageID,
-		ResourceName:  &imageName,
-		UserID:        &userID,
-		Username:      &username,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("image"),
+		ResourceID:    new(imageID),
+		ResourceName:  new(imageName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
 		Metadata:      metadata,
 	})
 	return err
@@ -244,18 +242,17 @@ func (s *EventService) LogProjectEvent(ctx context.Context, eventType models.Eve
 	description := s.generateEventDescription(eventType, "project", projectName)
 	severity := s.getEventSeverity(eventType)
 
-	resourceType := "project"
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &projectID,
-		ResourceName:  &projectName,
-		UserID:        &userID,
-		Username:      &username,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("project"),
+		ResourceID:    new(projectID),
+		ResourceName:  new(projectName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
 		Metadata:      metadata,
 	})
 	return err
@@ -271,8 +268,8 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType models.EventT
 		Severity:    severity,
 		Title:       title,
 		Description: description,
-		UserID:      &userID,
-		Username:    &username,
+		UserID:      new(userID),
+		Username:    new(username),
 		Metadata:    metadata,
 	})
 	return err
@@ -283,18 +280,17 @@ func (s *EventService) LogVolumeEvent(ctx context.Context, eventType models.Even
 	description := s.generateEventDescription(eventType, "volume", volumeName)
 	severity := s.getEventSeverity(eventType)
 
-	resourceType := "volume"
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &volumeID,
-		ResourceName:  &volumeName,
-		UserID:        &userID,
-		Username:      &username,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("volume"),
+		ResourceID:    new(volumeID),
+		ResourceName:  new(volumeName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
 		Metadata:      metadata,
 	})
 	return err
@@ -305,18 +301,17 @@ func (s *EventService) LogNetworkEvent(ctx context.Context, eventType models.Eve
 	description := s.generateEventDescription(eventType, "network", networkName)
 	severity := s.getEventSeverity(eventType)
 
-	resourceType := "network"
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &networkID,
-		ResourceName:  &networkName,
-		UserID:        &userID,
-		Username:      &username,
-		EnvironmentID: &environmentID,
+		ResourceType:  new("network"),
+		ResourceID:    new(networkID),
+		ResourceName:  new(networkName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
 		Metadata:      metadata,
 	})
 	return err
@@ -353,12 +348,12 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.Event
 			Severity:      models.EventSeverityError,
 			Title:         title,
 			Description:   description,
-			ResourceType:  &resourceType,
-			ResourceID:    &resourceID,
-			ResourceName:  &resourceName,
-			UserID:        &userID,
-			Username:      &username,
-			EnvironmentID: &environmentID,
+			ResourceType:  new(resourceType),
+			ResourceID:    new(resourceID),
+			ResourceName:  new(resourceName),
+			UserID:        new(userID),
+			Username:      new(username),
+			EnvironmentID: new(environmentID),
 			Metadata:      metadata,
 		})
 		if logErr != nil {

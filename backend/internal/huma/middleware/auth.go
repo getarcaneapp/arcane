@@ -140,7 +140,7 @@ func createAgentSudoUser() *models.User {
 	email := "agent@getarcane.app"
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
-		Email:     &email,
+		Email:     new(email),
 		Roles:     []string{"admin"},
 	}
 }
