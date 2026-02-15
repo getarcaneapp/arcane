@@ -12,6 +12,7 @@
 	import type { ComponentProps } from 'svelte';
 	import type { User } from '$lib/types/user.type';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
@@ -30,10 +31,12 @@
 		variant = 'floating',
 		user,
 		versionInformation,
+		dockerInfo = null,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
 		versionInformation: AppVersionInformation;
 		user?: User | null;
+		dockerInfo?: DockerInfo | null;
 	} = $props();
 
 	let autoLoginEnabled = $state(false);
@@ -64,6 +67,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItems = $derived(getManagementItems(currentEnvId));
+	const swarmEnabled = $derived(dockerInfo?.Swarm?.LocalNodeState === 'active');
 </script>
 
 <VersionInfoDialog
@@ -100,6 +104,9 @@
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
+		{#if swarmEnabled}
+			<SidebarItemGroup label={m.swarm_title()} items={navigationItems.swarmItems} />
+		{/if}
 		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
