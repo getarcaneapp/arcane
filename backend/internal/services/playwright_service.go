@@ -36,7 +36,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 	for i := 0; i < count; i++ {
 		req := apikey.CreateApiKey{
 			Name:        fmt.Sprintf("test-api-key-%d", i+1),
-			Description: stringPtr(fmt.Sprintf("Test API key %d for Playwright tests", i+1)),
+			Description: new(fmt.Sprintf("Test API key %d for Playwright tests", i+1)),
 		}
 
 		apiKey, err := ps.apiKeyService.CreateApiKey(ctx, user.ID, req)
@@ -78,8 +78,4 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	slog.Info("Playwright: Test API keys deleted", "count", len(apiKeys))
 	return nil
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

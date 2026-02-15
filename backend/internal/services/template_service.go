@@ -629,15 +629,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 		EnvContent:  nil,
 		IsCustom:    false,
 		IsRemote:    true,
-		RegistryID:  &registry.ID,
+		RegistryID:  new(registry.ID),
 		Registry:    registry,
 		Metadata: &models.ComposeTemplateMetadata{
-			Version:          &remote.Version,
-			Author:           &remote.Author,
+			Version:          new(remote.Version),
+			Author:           new(remote.Author),
 			Tags:             remote.Tags,
-			RemoteURL:        &remote.ComposeURL,
-			EnvURL:           &remote.EnvURL,
-			DocumentationURL: &remote.DocumentationURL,
+			RemoteURL:        new(remote.ComposeURL),
+			EnvURL:           new(remote.EnvURL),
+			DocumentationURL: new(remote.DocumentationURL),
 		},
 	}
 }

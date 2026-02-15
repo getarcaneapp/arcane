@@ -73,7 +73,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		BaseModel: models.BaseModel{
 			ID:        localEnvID,
 			CreatedAt: now,
-			UpdatedAt: &now,
+			UpdatedAt: new(now),
 		},
 		Name:    "Local Docker",
 		ApiUrl:  appUrl,
@@ -99,7 +99,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 
 	now := time.Now()
 	environment.CreatedAt = now
-	environment.UpdatedAt = &now
+	environment.UpdatedAt = new(now)
 
 	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
 		return nil, fmt.Errorf("failed to create environment: %w", err)
@@ -337,7 +337,7 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ? 
 		AND (last_seen IS NULL OR last_seen < ?)
-	`, &now, string(models.EnvironmentStatusOnline), &now, id, now.Add(-30*time.Second))
+	`, new(now), string(models.EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
@@ -346,20 +346,17 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	return nil
 }
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
-	resourceType := "environment"
-	resourceID := envID
-	resourceName := envName
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
-		ResourceID:    &resourceID,
-		ResourceName:  &resourceName,
+		ResourceType:  new("environment"),
+		ResourceID:    new(envID),
+		ResourceName:  new(envName),
 		UserID:        userID,
 		Username:      username,
-		EnvironmentID: &envID,
+		EnvironmentID: new(envID),
 	})
 }
 
@@ -377,7 +374,7 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	}
 
 	// Create event log in background
-	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, &userID, &username)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, new(userID), new(username))
 
 	return nil
 }
