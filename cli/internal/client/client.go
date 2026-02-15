@@ -334,10 +334,7 @@ func (c *Client) resolveURL(path string) (string, error) {
 }
 
 func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyBytes []byte, allowRefresh bool) (*http.Response, error) {
-	attempts := c.maxAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
+	attempts := max(c.maxAttempts, 1)
 
 	for attempt := 1; attempt <= attempts; attempt++ {
 		var bodyReader io.Reader
