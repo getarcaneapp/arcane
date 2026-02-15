@@ -55,6 +55,7 @@ services:
       - GIN_MODE=debug
       - ENVIRONMENT=development
       - PORT=3552
+      - EDGE_TRANSPORT=websocket
       - LOG_LEVEL=debug
       - APP_URL=http://localhost:3000
       - PUID=1000
@@ -96,6 +97,7 @@ services:
       - AGENT_MODE=true
       - AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       - MANAGER_API_URL=http://backend:3552
+      - EDGE_TRANSPORT=websocket
       - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
       - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
       - DATABASE_URL=file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate

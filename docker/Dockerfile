@@ -86,6 +86,7 @@ WORKDIR /app
 RUN mkdir -p /app/data
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
+EXPOSE 3553
 VOLUME ["/app/data"]
 
 LABEL com.getarcaneapp.arcane="true"

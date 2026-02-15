@@ -2,11 +2,13 @@ services:
   arcane-edge-agent:
     image: ghcr.io/getarcaneapp/arcane-headless:latest
     container_name: arcane-edge-agent
-    # No ports exposed - agent connects outbound to manager via WebSocket tunnel
+    # No ports exposed - agent connects outbound to manager tunnel transport
     environment:
       - EDGE_AGENT=true
       - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
       - MANAGER_API_URL=https://your-manager.example.com
+      # Set to grpc to enable protobuf transport over the manager API port.
+      - EDGE_TRANSPORT=websocket
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-data:/app/data

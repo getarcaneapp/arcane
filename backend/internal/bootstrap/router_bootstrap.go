@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types"
 )
 
@@ -167,7 +167,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, apiGroup, appServices)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, cfg, apiGroup, appServices)
 	}
 
 	if cfg.Environment != "production" {
