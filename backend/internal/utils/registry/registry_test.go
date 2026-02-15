@@ -24,7 +24,7 @@ func TestCheckAuthParsesRealmAndService(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient()
+	c := NewClient(nil)
 	got, err := c.CheckAuth(context.Background(), srv.URL)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -50,7 +50,7 @@ func TestGetTokenMultiScopes(t *testing.T) {
 	u, _ := url.Parse(srv.URL)
 	authURL := fmt.Sprintf("%s/auth?service=test.local", u.String())
 
-	c := NewClient()
+	c := NewClient(nil)
 	tok, err := c.GetTokenMulti(context.Background(), authURL, []string{"library/a", "library/b"}, nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -77,7 +77,7 @@ func TestGetLatestDigestLowerCaseHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient()
+	c := NewClient(nil)
 	d, err := c.GetLatestDigest(context.Background(), srv.URL, "org/repo", "latest", "")
 	if err != nil {
 		t.Fatalf("err: %v", err)

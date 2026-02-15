@@ -2,15 +2,36 @@ package utils
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	certutils "github.com/getarcaneapp/arcane/backend/internal/utils/certs"
 )
+
+func InitializeCustomCertPool(ctx context.Context, customCertsDir string) (*x509.CertPool, error) {
+	certPool, err := certutils.LoadCustomCertPool(customCertsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && strings.TrimSpace(customCertsDir) != "" {
+			slog.WarnContext(ctx, "Custom certs directory not found, continuing with system cert pool", "directory", customCertsDir, "error", err)
+			fallbackPool, fallbackErr := certutils.LoadCustomCertPool("")
+			if fallbackErr != nil {
+				return nil, fmt.Errorf("failed to initialize system cert pool after custom cert fallback: %w", fallbackErr)
+			}
+			return fallbackPool, nil
+		}
+		return nil, fmt.Errorf("failed to load custom certs: %w", err)
+	}
+
+	return certPool, nil
+}
 
 func LoadAgentToken(ctx context.Context, cfg *config.Config, getSettingFunc func(context.Context, string, string) string) {
 	if cfg.AgentMode && cfg.AgentToken == "" {

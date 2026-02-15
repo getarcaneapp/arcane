@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,7 @@ type UpdaterService struct {
 	projectService      *ProjectService
 	imageUpdateService  *ImageUpdateService
 	registryService     *ContainerRegistryService
+	certPool            *x509.CertPool
 	eventService        *EventService
 	imageService        *ImageService
 	notificationService *NotificationService
@@ -44,6 +46,7 @@ func NewUpdaterService(
 	projects *ProjectService,
 	imageUpdates *ImageUpdateService,
 	registries *ContainerRegistryService,
+	certPool *x509.CertPool,
 	events *EventService,
 	imageSvc *ImageService,
 	notifications *NotificationService,
@@ -56,6 +59,7 @@ func NewUpdaterService(
 		projectService:      projects,
 		imageUpdateService:  imageUpdates,
 		registryService:     registries,
+		certPool:            certPool,
 		eventService:        events,
 		imageService:        imageSvc,
 		notificationService: notifications,
@@ -140,7 +144,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
-	registryClient := arcRegistry.NewClient()
+	registryClient := arcRegistry.NewClient(s.certPool)
 	digestChecker := arcaneupdater.NewDigestChecker(dcli, registryClient)
 
 	enabledRegs := []models.ContainerRegistry{}
@@ -185,7 +189,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		// This also prevents unnecessary restarts when the update record is stale.
 		normNew := s.normalizeRef(p.newRef)
 		host, repo, tag := s.parseNormalizedRef(normNew)
-		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs)
+		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs, s.certPool)
 		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew, authHeader)
 		skipPull := false
 
@@ -459,7 +463,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Compare with pulled image to avoid unnecessary restart
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient(s.certPool))
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
 	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
 		"containerID", containerID,
@@ -943,7 +947,7 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 		return nil, err
 	}
 
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient(s.certPool))
 	ids, err := checker.GetImageIDsForRef(ctx, ref)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -24,6 +25,7 @@ type ImageUpdateService struct {
 	db                  *database.DB
 	settingsService     *SettingsService
 	registryService     *ContainerRegistryService
+	certPool            *x509.CertPool
 	dockerService       *DockerClientService
 	eventService        *EventService
 	notificationService *NotificationService
@@ -35,11 +37,12 @@ type ImageParts struct {
 	Tag        string
 }
 
-func NewImageUpdateService(db *database.DB, settingsService *SettingsService, registryService *ContainerRegistryService, dockerService *DockerClientService, eventService *EventService, notificationService *NotificationService) *ImageUpdateService {
+func NewImageUpdateService(db *database.DB, settingsService *SettingsService, registryService *ContainerRegistryService, certPool *x509.CertPool, dockerService *DockerClientService, eventService *EventService, notificationService *NotificationService) *ImageUpdateService {
 	return &ImageUpdateService{
 		db:                  db,
 		settingsService:     settingsService,
 		registryService:     registryService,
+		certPool:            certPool,
 		dockerService:       dockerService,
 		eventService:        eventService,
 		notificationService: notificationService,
@@ -118,7 +121,7 @@ type authDetails struct {
 // Try anonymous first, then each matching registry credential (decrypting token)
 // until one returns a token. If auth is not required, returns empty token.
 func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repository string, regs []models.ContainerRegistry) (string, *authDetails, error) {
-	rc := registry.NewClient()
+	rc := registry.NewClientWithInsecure(s.certPool, s.hasInsecureRegistry(regHost, regs))
 
 	slog.DebugContext(ctx, "Checking registry auth", "registry", regHost, "repository", repository)
 
@@ -169,7 +172,7 @@ func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repo
 }
 
 func (s *ImageUpdateService) checkDigestUpdate(ctx context.Context, parts *ImageParts, registries []models.ContainerRegistry) (*imageupdate.Response, error) {
-	rc := registry.NewClient()
+	rc := registry.NewClientWithInsecure(s.certPool, s.hasInsecureRegistry(parts.Registry, registries))
 
 	token, auth, err := s.getRegistryToken(ctx, parts.Registry, parts.Repository, registries)
 	if err != nil {
@@ -183,7 +186,7 @@ func (s *ImageUpdateService) checkDigestUpdate(ctx context.Context, parts *Image
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
 		// Attempt to resolve auth header via registry helpers and retry once
 		enabledRegs, _ := s.registryService.GetEnabledRegistries(ctx)
-		authHeader, _, _, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs)
+		authHeader, _, _, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs, s.certPool)
 		if resolveErr == nil && authHeader != "" {
 			remoteDigest, _, err = rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, authHeader)
 		}
@@ -773,7 +776,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 	return credMap, enabledRegs
 }
 
-func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *registry.Client, regRepos map[string]map[string]struct{}, credMap map[string]batchCred) map[string]regAuth {
+func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, regRepos map[string]map[string]struct{}, credMap map[string]batchCred, enabledRegs []models.ContainerRegistry) map[string]regAuth {
 	regAuthMap := make(map[string]regAuth, len(regRepos))
 	normalizeHost := func(u string) string {
 		u = strings.TrimSpace(u)
@@ -804,6 +807,8 @@ func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *regis
 		for r := range set {
 			repos = append(repos, r)
 		}
+
+		rc := registry.NewClientWithInsecure(s.certPool, s.hasInsecureRegistry(regHost, enabledRegs))
 
 		authURL, err := rc.CheckAuth(ctx, regHost)
 		if err != nil {
@@ -860,7 +865,6 @@ func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *regis
 
 func (s *ImageUpdateService) checkSingleImageInBatch(
 	ctx context.Context,
-	rc *registry.Client,
 	authMap map[string]regAuth,
 	enabledRegs []models.ContainerRegistry,
 	parts *ImageParts,
@@ -871,10 +875,11 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	token := authInfo.token
 	auth := authInfo.auth
 	normalizedRepo := s.normalizeRepository(parts.Registry, parts.Repository)
+	rc := registry.NewClientWithInsecure(s.certPool, s.hasInsecureRegistry(parts.Registry, enabledRegs))
 
 	remoteDigest, _, digestErr := rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, token)
 	if digestErr != nil && strings.Contains(strings.ToLower(digestErr.Error()), "unauthorized") {
-		authHeader, method, username, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs)
+		authHeader, method, username, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs, s.certPool)
 		if resolveErr == nil && authHeader != "" {
 			remoteDigest, _, digestErr = rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, authHeader)
 			if digestErr == nil {
@@ -939,8 +944,6 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
-	rc := registry.NewClient()
-
 	regRepos, initialResults, images := s.parseAndGroupImages(imageRefs)
 	for k, v := range initialResults {
 		results[k] = v
@@ -950,7 +953,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	slog.DebugContext(ctx, "Built credential map", "credMapSize", len(credMap), "enabledRegsCount", len(enabledRegs))
 
-	regAuthMap := s.buildRegistryAuthMap(ctx, rc, regRepos, credMap)
+	regAuthMap := s.buildRegistryAuthMap(ctx, regRepos, credMap, enabledRegs)
 
 	var mu sync.Mutex
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -958,7 +961,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	for _, img := range images {
 		g.Go(func() error {
-			res := s.checkSingleImageInBatch(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
+			res := s.checkSingleImageInBatch(groupCtx, regAuthMap, enabledRegs, img.parts)
 
 			mu.Lock()
 			results[img.ref] = res
@@ -1126,4 +1129,17 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 		DigestUpdates:     int(digestUpdates),
 		ErrorsCount:       int(errorsCount),
 	}, nil
+}
+
+func (s *ImageUpdateService) hasInsecureRegistry(registryHost string, regs []models.ContainerRegistry) bool {
+	host := s.normalizeRegistryURL(registryHost)
+	for _, reg := range regs {
+		if !reg.Enabled {
+			continue
+		}
+		if s.normalizeRegistryURL(reg.URL) == host && reg.Insecure {
+			return true
+		}
+	}
+	return false
 }
