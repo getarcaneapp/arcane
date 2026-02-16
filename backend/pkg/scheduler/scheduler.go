@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/robfig/cron/v3"
@@ -14,15 +15,24 @@ type JobScheduler struct {
 	jobsByID map[string]schedulertypes.Job
 	entryIDs map[string]cron.EntryID
 	context  context.Context
+	location *time.Location
 }
 
-func NewJobScheduler(ctx context.Context) *JobScheduler {
+// NewJobScheduler creates a new job scheduler with the specified timezone location.
+// The location is used for interpreting cron expressions.
+// If location is nil, UTC is used.
+func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler {
+	if location == nil {
+		location = time.UTC
+	}
+	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
 	return &JobScheduler{
-		cron:     cron.New(cron.WithSeconds()),
+		cron:     cron.New(cron.WithSeconds(), cron.WithLocation(location)),
 		jobs:     []schedulertypes.Job{},
 		jobsByID: make(map[string]schedulertypes.Job),
 		entryIDs: make(map[string]cron.EntryID),
 		context:  ctx,
+		location: location,
 	}
 }
 
@@ -76,6 +86,11 @@ func (js *JobScheduler) RescheduleJob(ctx context.Context, job schedulertypes.Jo
 
 	js.entryIDs[job.Name()] = entryID
 	return nil
+}
+
+// GetLocation returns the timezone location used by the scheduler for cron expressions.
+func (js *JobScheduler) GetLocation() *time.Location {
+	return js.location
 }
 
 func (js *JobScheduler) Run(ctx context.Context) error {

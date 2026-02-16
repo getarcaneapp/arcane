@@ -133,7 +133,8 @@ func Bootstrap(ctx context.Context) error {
 		}
 	}
 
-	scheduler := scheduler.NewJobScheduler(appCtx)
+	cronLocation := cfg.GetLocation()
+	scheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
 	appServices.JobSchedule.SetScheduler(scheduler)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 

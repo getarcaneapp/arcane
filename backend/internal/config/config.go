@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
@@ -72,6 +73,10 @@ type Config struct {
 	RegistryTimeout        int    `env:"REGISTRY_TIMEOUT" default:"0"`
 	ProxyRequestTimeout    int    `env:"PROXY_REQUEST_TIMEOUT" default:"0"`
 	BackupVolumeName       string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+
+	// Timezone for cron job scheduling. Uses IANA timezone names (e.g., "America/New_York", "Europe/London").
+	// "Local" uses the system's local timezone, "UTC" for Coordinated Universal Time.
+	Timezone string `env:"TZ" default:"Local"`
 
 	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
 	BuildablesConfig
@@ -305,6 +310,24 @@ func (c *Config) ListenAddr() string {
 		return ":" + port
 	}
 	return net.JoinHostPort(host, port)
+}
+
+// GetLocation returns the timezone location for cron scheduling.
+// It parses the Timezone config (TZ env var) into a *time.Location.
+// Returns the system's local timezone if Timezone is "Local".
+// Defaults to UTC if not set or if the timezone cannot be loaded.
+func (c *Config) GetLocation() *time.Location {
+	tz := strings.TrimSpace(c.Timezone)
+	if tz == "" {
+		return time.UTC
+	}
+
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		slog.Warn("Failed to load timezone, falling back to UTC", "timezone", tz, "error", err)
+		return time.UTC
+	}
+	return loc
 }
 
 // GetManagerBaseURL returns the base URL of the manager application.

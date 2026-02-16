@@ -33,12 +33,18 @@ type JobService struct {
 	settings  *SettingsService
 	cfg       *config.Config
 	scheduler JobRunner
+	location  *time.Location // Timezone for cron schedule calculations
 
 	OnJobSchedulesChanged func(ctx context.Context, changedKeys []string)
 }
 
 func NewJobService(db *database.DB, settings *SettingsService, cfg *config.Config) *JobService {
-	return &JobService{db: db, settings: settings, cfg: cfg}
+	return &JobService{
+		db:       db,
+		settings: settings,
+		cfg:      cfg,
+		location: cfg.GetLocation(),
+	}
 }
 
 func (s *JobService) SetScheduler(scheduler JobRunner) {
@@ -266,12 +272,24 @@ func (s *JobService) calculateNextRunInternal(schedule string) *time.Time {
 		return nil
 	}
 
+	// Parse schedule and force it to use the same timezone as the scheduler.
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	sched, err := parser.Parse(schedule)
 	if err != nil {
 		return nil
 	}
 
-	nextRun := sched.Next(time.Now())
+	location := time.UTC
+	if s != nil && s.location != nil {
+		location = s.location
+	}
+
+	if specSchedule, ok := sched.(*cron.SpecSchedule); ok {
+		specSchedule.Location = location
+	}
+
+	// Calculate next run using the configured timezone.
+	now := time.Now().In(location)
+	nextRun := sched.Next(now)
 	return &nextRun
 }
