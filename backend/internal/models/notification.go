@@ -44,6 +44,7 @@ const (
 	NotificationEventContainerUpdate    NotificationEventType = "container_update"
 	NotificationEventVulnerabilityFound NotificationEventType = "vulnerability_found"
 	NotificationEventPruneReport        NotificationEventType = "prune_report"
+	NotificationEventAutoHeal           NotificationEventType = "auto_heal"
 )
 
 type EmailTLSMode string

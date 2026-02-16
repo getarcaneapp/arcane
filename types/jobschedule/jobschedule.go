@@ -15,6 +15,7 @@ type Config struct {
 	ScheduledPruneInterval     string `json:"scheduledPruneInterval"`
 	GitopsSyncInterval         string `json:"gitopsSyncInterval"`
 	VulnerabilityScanInterval  string `json:"vulnerabilityScanInterval"`
+	AutoHealInterval           string `json:"autoHealInterval"`
 }
 
 // Update is used to update job schedule intervals (in minutes).
@@ -29,6 +30,7 @@ type Update struct {
 	ScheduledPruneInterval     *string `json:"scheduledPruneInterval,omitempty"`
 	GitopsSyncInterval         *string `json:"gitopsSyncInterval,omitempty"`
 	VulnerabilityScanInterval  *string `json:"vulnerabilityScanInterval,omitempty"`
+	AutoHealInterval           *string `json:"autoHealInterval,omitempty"`
 }
 
 // JobStatus represents the current status and metadata for a background job.

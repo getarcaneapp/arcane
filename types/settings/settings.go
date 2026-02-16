@@ -313,4 +313,29 @@ type Update struct {
 	//
 	// Required: false
 	AutoUpdateExcludedContainers *string `json:"autoUpdateExcludedContainers,omitempty"`
+
+	// AutoHealEnabled indicates if automatic container healing is enabled.
+	//
+	// Required: false
+	AutoHealEnabled *string `json:"autoHealEnabled,omitempty"`
+
+	// AutoHealInterval is the cron expression for how often to check container health.
+	//
+	// Required: false
+	AutoHealInterval *string `json:"autoHealInterval,omitempty"`
+
+	// AutoHealExcludedContainers is a comma-separated list of container names to exclude from auto-heal.
+	//
+	// Required: false
+	AutoHealExcludedContainers *string `json:"autoHealExcludedContainers,omitempty"`
+
+	// AutoHealMaxRestarts is the maximum number of auto-heal restarts per container within the restart window.
+	//
+	// Required: false
+	AutoHealMaxRestarts *string `json:"autoHealMaxRestarts,omitempty"`
+
+	// AutoHealRestartWindow is the time window in minutes for counting auto-heal restarts.
+	//
+	// Required: false
+	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
 }

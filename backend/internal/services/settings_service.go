@@ -38,6 +38,7 @@ type SettingsService struct {
 	OnProjectsDirectoryChanged         func(ctx context.Context)
 	OnScheduledPruneSettingsChanged    func(ctx context.Context)
 	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
+	OnAutoHealSettingsChanged          func(ctx context.Context)
 	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings map[string]string)
 }
 
@@ -103,6 +104,11 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		ScheduledPruneVolumes:        models.SettingVariable{Value: "false"},
 		ScheduledPruneNetworks:       models.SettingVariable{Value: "true"},
 		ScheduledPruneBuildCache:     models.SettingVariable{Value: "false"},
+		AutoHealEnabled:              models.SettingVariable{Value: "false"},
+		AutoHealInterval:             models.SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealExcludedContainers:   models.SettingVariable{Value: ""},
+		AutoHealMaxRestarts:          models.SettingVariable{Value: "5"},
+		AutoHealRestartWindow:        models.SettingVariable{Value: "30"},
 		BaseServerURL:                models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:               models.SettingVariable{Value: "true"},
 		DefaultShell:                 models.SettingVariable{Value: "/bin/sh"},
@@ -468,7 +474,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, fmt.Errorf("failed to load current settings: %w", err)
 	}
 
-	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -502,6 +508,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedVulnerabilityScan && s.OnVulnerabilityScanSettingsChanged != nil {
 		s.OnVulnerabilityScanSettingsChanged(ctx)
 	}
+	if changedAutoHeal && s.OnAutoHealSettingsChanged != nil {
+		s.OnAutoHealSettingsChanged(ctx)
+	}
 	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
@@ -527,7 +536,7 @@ var timeoutSettingKeys = []string{
 	"trivyMemoryLimitMb",
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, map[string]string, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, map[string]string, error) {
 	rt := reflect.TypeOf(updates)
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
@@ -536,6 +545,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedAutoUpdate := false
 	changedScheduledPrune := false
 	changedVulnerabilityScan := false
+	changedAutoHeal := false
 	changedTimeouts := make(map[string]string)
 
 	for i := 0; i < rt.NumField(); i++ {
@@ -553,10 +563,10 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		// Validate cron settings
-		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval"}
+		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval", "autoHealInterval"}
 		if slices.Contains(cronFields, key) && value != "" {
 			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
-				return nil, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
+				return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 			}
 		}
 
@@ -575,7 +585,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
 		} else if err != nil {
-			return nil, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
@@ -592,6 +602,8 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedScheduledPrune = true
 		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb":
 			changedVulnerabilityScan = true
+		case "autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow":
+			changedAutoHeal = true
 		}
 
 		// Track timeout setting changes
@@ -600,7 +612,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 	}
 
-	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedTimeouts, nil
+	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, nil
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
