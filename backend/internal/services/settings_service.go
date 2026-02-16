@@ -113,6 +113,9 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		VulnerabilityScanEnabled:     models.SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:    models.SettingVariable{Value: "0 0 0 * * *"},
 		TrivyImage:                   models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
+		TrivyResourceLimitsEnabled:   models.SettingVariable{Value: "true"},
+		TrivyCpuLimit:                models.SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:           models.SettingVariable{Value: "0"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -509,7 +512,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-// timeoutSettingKeys defines the keys for timeout settings that should be synced to agents
+// timeoutSettingKeys defines settings keys that should be synced to agents.
+// This currently includes timeout settings and Trivy runtime resource limits.
 var timeoutSettingKeys = []string{
 	"dockerApiTimeout",
 	"dockerImagePullTimeout",
@@ -518,6 +522,9 @@ var timeoutSettingKeys = []string{
 	"httpClientTimeout",
 	"registryTimeout",
 	"proxyRequestTimeout",
+	"trivyResourceLimitsEnabled",
+	"trivyCpuLimit",
+	"trivyMemoryLimitMb",
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, map[string]string, error) {
@@ -583,7 +590,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval":
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb":
 			changedVulnerabilityScan = true
 		}
 

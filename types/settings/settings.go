@@ -182,6 +182,23 @@ type Update struct {
 	// Required: false
 	TrivyImage *string `json:"trivyImage,omitempty"`
 
+	// TrivyResourceLimitsEnabled controls whether CPU and memory limits are applied to Trivy scan containers.
+	//
+	// Required: false
+	TrivyResourceLimitsEnabled *string `json:"trivyResourceLimitsEnabled,omitempty"`
+
+	// TrivyCpuLimit is the CPU limit in cores for Trivy scan containers.
+	// Supports decimals (for example: "1.5"). Set to "0" to disable the CPU limit.
+	//
+	// Required: false
+	TrivyCpuLimit *string `json:"trivyCpuLimit,omitempty"`
+
+	// TrivyMemoryLimitMb is the memory limit in megabytes for Trivy scan containers.
+	// Set to "0" to disable the memory limit.
+	//
+	// Required: false
+	TrivyMemoryLimitMb *string `json:"trivyMemoryLimitMb,omitempty"`
+
 	// AuthOidcConfig is deprecated and will be removed in a future release.
 	//
 	// Required: false

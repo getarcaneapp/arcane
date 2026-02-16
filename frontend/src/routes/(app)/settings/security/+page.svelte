@@ -35,6 +35,9 @@
 				.max(1440, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			trivyImage: z.string(),
+			trivyResourceLimitsEnabled: z.boolean(),
+			trivyCpuLimit: z.coerce.number().nonnegative(),
+			trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
@@ -67,6 +70,9 @@
 		authSessionTimeout: currentSettings.authSessionTimeout,
 		authPasswordPolicy: currentSettings.authPasswordPolicy,
 		trivyImage: currentSettings.trivyImage,
+		trivyResourceLimitsEnabled: currentSettings.trivyResourceLimitsEnabled ?? true,
+		trivyCpuLimit: currentSettings.trivyCpuLimit ?? 1,
+		trivyMemoryLimitMb: currentSettings.trivyMemoryLimitMb ?? 0,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
@@ -91,6 +97,9 @@
 				authSessionTimeout: ($settingsStore || data.settings!).authSessionTimeout,
 				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
 				trivyImage: ($settingsStore || data.settings!).trivyImage,
+				trivyResourceLimitsEnabled: ($settingsStore || data.settings!).trivyResourceLimitsEnabled ?? true,
+				trivyCpuLimit: ($settingsStore || data.settings!).trivyCpuLimit ?? 1,
+				trivyMemoryLimitMb: ($settingsStore || data.settings!).trivyMemoryLimitMb ?? 0,
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
@@ -114,6 +123,9 @@
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
 			$formInputs.trivyImage.value !== currentSettings.trivyImage ||
+			$formInputs.trivyResourceLimitsEnabled.value !== (currentSettings.trivyResourceLimitsEnabled ?? true) ||
+			$formInputs.trivyCpuLimit.value !== (currentSettings.trivyCpuLimit ?? 1) ||
+			$formInputs.trivyMemoryLimitMb.value !== (currentSettings.trivyMemoryLimitMb ?? 0) ||
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
@@ -144,6 +156,9 @@
 			return;
 		}
 
+		const trivyCpuLimit = formData.trivyResourceLimitsEnabled ? formData.trivyCpuLimit : 0;
+		const trivyMemoryLimitMb = formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0;
+
 		if (formData.oidcEnabled && !isOidcEnvForced) {
 			if (!formData.oidcClientId || !formData.oidcIssuerUrl) {
 				toast.error(m.security_oidc_required_fields());
@@ -159,6 +174,9 @@
 				authSessionTimeout: formData.authSessionTimeout,
 				authPasswordPolicy: formData.authPasswordPolicy,
 				trivyImage: formData.trivyImage,
+				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
+				trivyCpuLimit,
+				trivyMemoryLimitMb,
 				oidcEnabled: formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
 				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
@@ -209,6 +227,14 @@
 			showMergeAccountsAlert = true;
 		} else {
 			$formInputs.oidcMergeAccounts.value = checked;
+		}
+	}
+
+	function handleTrivyResourceLimitsChange(checked: boolean) {
+		$formInputs.trivyResourceLimitsEnabled.value = checked;
+		if (!checked) {
+			$formInputs.trivyCpuLimit.value = 0;
+			$formInputs.trivyMemoryLimitMb.value = 0;
 		}
 	}
 
@@ -636,6 +662,44 @@
 									placeholder="ghcr.io/aquasecurity/trivy:latest"
 									type="text"
 								/>
+							</div>
+						</div>
+
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.security_trivy_resource_limits_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.security_trivy_resource_limits_description()}</p>
+								<p class="text-muted-foreground mt-2 text-xs">{m.security_trivy_resource_limits_note()}</p>
+							</div>
+							<div class="space-y-4">
+								<div class="flex items-center gap-2">
+									<Switch
+										id="trivyResourceLimitsEnabledSwitch"
+										bind:checked={$formInputs.trivyResourceLimitsEnabled.value}
+										onCheckedChange={handleTrivyResourceLimitsChange}
+									/>
+									<Label for="trivyResourceLimitsEnabledSwitch" class="font-normal">
+										{$formInputs.trivyResourceLimitsEnabled.value ? m.common_enabled() : m.common_disabled()}
+									</Label>
+								</div>
+								<div class="grid gap-4 sm:grid-cols-2">
+									<TextInputWithLabel
+										bind:value={$formInputs.trivyCpuLimit.value}
+										error={$formInputs.trivyCpuLimit.error}
+										disabled={!$formInputs.trivyResourceLimitsEnabled.value}
+										label={m.security_trivy_cpu_limit_label()}
+										helpText={m.security_trivy_cpu_limit_help()}
+										type="number"
+									/>
+									<TextInputWithLabel
+										bind:value={$formInputs.trivyMemoryLimitMb.value}
+										error={$formInputs.trivyMemoryLimitMb.error}
+										disabled={!$formInputs.trivyResourceLimitsEnabled.value}
+										label={m.security_trivy_memory_limit_label()}
+										reserveHelpTextSpace={true}
+										type="number"
+									/>
+								</div>
 							</div>
 						</div>
 					</div>

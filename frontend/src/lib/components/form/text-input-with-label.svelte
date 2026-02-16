@@ -10,6 +10,7 @@
 		placeholder = '',
 		description,
 		helpText,
+		reserveHelpTextSpace = false,
 		error,
 		disabled = false,
 		type = 'text',
@@ -24,6 +25,7 @@
 		placeholder?: string;
 		description?: string;
 		helpText?: string;
+		reserveHelpTextSpace?: boolean;
 		error?: string | null;
 		disabled?: boolean;
 		type?: 'text' | 'email' | 'password' | 'number' | 'url';
@@ -69,7 +71,7 @@
 	{#if description}
 		<p class="text-muted-foreground text-[0.8rem]">{description}</p>
 	{/if}
-	{#if helpText}
-		<p class="text-muted-foreground text-[0.7rem]">{helpText}</p>
+	{#if helpText || reserveHelpTextSpace}
+		<p class="text-muted-foreground min-h-[1rem] text-[0.7rem]">{helpText}</p>
 	{/if}
 </div>

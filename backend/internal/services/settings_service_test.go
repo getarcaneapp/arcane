@@ -43,7 +43,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -55,6 +55,12 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanInterval":
 			require.Equal(t, "0 0 0 * * *", sv.Value)
+		case "trivyResourceLimitsEnabled":
+			require.Equal(t, "true", sv.Value)
+		case "trivyCpuLimit":
+			require.Equal(t, "1", sv.Value)
+		case "trivyMemoryLimitMb":
+			require.Equal(t, "0", sv.Value)
 		}
 	}
 }
@@ -133,6 +139,31 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) 
 	settings2, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1800, settings2.TrivyScanTimeout.AsInt())
+}
+
+func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.True(t, settings1.TrivyResourceLimitsEnabled.IsTrue())
+	require.Equal(t, "1", settings1.TrivyCpuLimit.Value)
+	require.Equal(t, 0, settings1.TrivyMemoryLimitMb.AsInt())
+
+	t.Setenv("TRIVY_RESOURCE_LIMITS_ENABLED", "false")
+	t.Setenv("TRIVY_CPU_LIMIT", "2.5")
+	t.Setenv("TRIVY_MEMORY_LIMIT_MB", "2048")
+
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.False(t, settings2.TrivyResourceLimitsEnabled.IsTrue())
+	require.Equal(t, "2.5", settings2.TrivyCpuLimit.Value)
+	require.Equal(t, 2048, settings2.TrivyMemoryLimitMb.AsInt())
 }
 
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
@@ -338,6 +369,34 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 
 	require.NotNil(t, callbackPayload)
 	require.Equal(t, "1200", callbackPayload["trivyScanTimeout"])
+}
+
+func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload map[string]string
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+		callbackPayload = timeoutSettings
+	}
+
+	limitsEnabled := "false"
+	cpuLimit := "2.5"
+	memoryLimit := "3072"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyResourceLimitsEnabled: &limitsEnabled,
+		TrivyCpuLimit:              &cpuLimit,
+		TrivyMemoryLimitMb:         &memoryLimit,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, callbackPayload)
+	require.Equal(t, "false", callbackPayload["trivyResourceLimitsEnabled"])
+	require.Equal(t, "2.5", callbackPayload["trivyCpuLimit"])
+	require.Equal(t, "3072", callbackPayload["trivyMemoryLimitMb"])
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {
