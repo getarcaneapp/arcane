@@ -85,38 +85,39 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:            models.SettingVariable{Value: "/app/data/projects"},
-		DiskUsagePath:                models.SettingVariable{Value: "/app/data/projects"},
-		AutoUpdate:                   models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:           models.SettingVariable{Value: "0 0 0 * * *"},
-		AutoUpdateExcludedContainers: models.SettingVariable{Value: ""},
-		PollingEnabled:               models.SettingVariable{Value: "true"},
-		PollingInterval:              models.SettingVariable{Value: "0 0 * * * *"},
-		EventCleanupInterval:         models.SettingVariable{Value: "0 0 */6 * * *"},
-		AnalyticsHeartbeatInterval:   models.SettingVariable{Value: "0 0 0 * * *"},
-		AutoInjectEnv:                models.SettingVariable{Value: "false"},
-		PruneMode:                    models.SettingVariable{Value: "dangling"},
-		ScheduledPruneEnabled:        models.SettingVariable{Value: "false"},
-		ScheduledPruneInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
-		ScheduledPruneContainers:     models.SettingVariable{Value: "true"},
-		ScheduledPruneImages:         models.SettingVariable{Value: "true"},
-		ScheduledPruneVolumes:        models.SettingVariable{Value: "false"},
-		ScheduledPruneNetworks:       models.SettingVariable{Value: "true"},
-		ScheduledPruneBuildCache:     models.SettingVariable{Value: "false"},
-		GitopsSyncInterval:           models.SettingVariable{Value: "0 */1 * * * *"},
-		BaseServerURL:                models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:               models.SettingVariable{Value: "true"},
-		DefaultShell:                 models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:                   models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		AuthLocalEnabled:             models.SettingVariable{Value: "true"},
-		AuthSessionTimeout:           models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:           models.SettingVariable{Value: "strong"},
-		VulnerabilityScanEnabled:     models.SettingVariable{Value: "false"},
-		VulnerabilityScanInterval:    models.SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                   models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
-		TrivyResourceLimitsEnabled:   models.SettingVariable{Value: "true"},
-		TrivyCpuLimit:                models.SettingVariable{Value: "1"},
-		TrivyMemoryLimitMb:           models.SettingVariable{Value: "0"},
+		ProjectsDirectory:             models.SettingVariable{Value: "/app/data/projects"},
+		DiskUsagePath:                 models.SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                    models.SettingVariable{Value: "false"},
+		AutoUpdateInterval:            models.SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateExcludedContainers:  models.SettingVariable{Value: ""},
+		PollingEnabled:                models.SettingVariable{Value: "true"},
+		PollingInterval:               models.SettingVariable{Value: "0 0 * * * *"},
+		EventCleanupInterval:          models.SettingVariable{Value: "0 0 */6 * * *"},
+		AnalyticsHeartbeatInterval:    models.SettingVariable{Value: "0 0 0 * * *"},
+		AutoInjectEnv:                 models.SettingVariable{Value: "false"},
+		PruneMode:                     models.SettingVariable{Value: "dangling"},
+		ScheduledPruneEnabled:         models.SettingVariable{Value: "false"},
+		ScheduledPruneInterval:        models.SettingVariable{Value: "0 0 0 * * *"},
+		ScheduledPruneContainers:      models.SettingVariable{Value: "true"},
+		ScheduledPruneImages:          models.SettingVariable{Value: "true"},
+		ScheduledPruneVolumes:         models.SettingVariable{Value: "false"},
+		ScheduledPruneNetworks:        models.SettingVariable{Value: "true"},
+		ScheduledPruneBuildCache:      models.SettingVariable{Value: "false"},
+		GitopsSyncInterval:            models.SettingVariable{Value: "0 */1 * * * *"},
+		BaseServerURL:                 models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:                models.SettingVariable{Value: "true"},
+		DefaultShell:                  models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:                    models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		AuthLocalEnabled:              models.SettingVariable{Value: "true"},
+		AuthSessionTimeout:            models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:            models.SettingVariable{Value: "strong"},
+		VulnerabilityScanEnabled:      models.SettingVariable{Value: "false"},
+		VulnerabilityScanInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
+		TrivyImage:                    models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
+		TrivyResourceLimitsEnabled:    models.SettingVariable{Value: "true"},
+		TrivyCpuLimit:                 models.SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:            models.SettingVariable{Value: "0"},
+		TrivyConcurrentScanContainers: models.SettingVariable{Value: "1"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -513,6 +514,7 @@ var timeoutSettingKeys = []string{
 	"trivyResourceLimitsEnabled",
 	"trivyCpuLimit",
 	"trivyMemoryLimitMb",
+	"trivyConcurrentScanContainers",
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, map[string]string, error) {
@@ -578,7 +580,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb":
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
 		}
 

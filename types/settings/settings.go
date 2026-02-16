@@ -199,6 +199,12 @@ type Update struct {
 	// Required: false
 	TrivyMemoryLimitMb *string `json:"trivyMemoryLimitMb,omitempty"`
 
+	// TrivyConcurrentScanContainers is the maximum number of concurrent Trivy scan containers.
+	// Applies to manual and scheduled scans. Minimum value is "1".
+	//
+	// Required: false
+	TrivyConcurrentScanContainers *string `json:"trivyConcurrentScanContainers,omitempty"`
+
 	// AuthOidcConfig is deprecated and will be removed in a future release.
 	//
 	// Required: false

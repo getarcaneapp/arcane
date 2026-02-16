@@ -13,7 +13,11 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
-	import { startVulnerabilityScanPolling } from '$lib/utils/vulnerability-scan.util';
+	import {
+		startVulnerabilityScanPolling,
+		stabilizeFailedVulnerabilitySummary,
+		isVulnerabilityScanInProgress
+	} from '$lib/utils/vulnerability-scan.util';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
@@ -32,6 +36,7 @@
 	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
 	let hasLoadedVulnerabilities = $state(false);
 	let stopScanPolling: (() => void) | null = $state(null);
+	let lastScanRequestedAt = $state<string | null>(null);
 
 	// Load vulnerability scan data when image changes
 	$effect(() => {
@@ -45,6 +50,7 @@
 		try {
 			const result = await vulnerabilityService.getScanResult(image.id);
 			vulnerabilityScan = result;
+			lastScanRequestedAt = result.scanTime || lastScanRequestedAt;
 		} catch {
 			// No scan data found, that's okay
 			vulnerabilityScan = null;
@@ -58,6 +64,7 @@
 		try {
 			const result = await vulnerabilityService.scanImage(image.id);
 			vulnerabilityScan = result;
+			lastScanRequestedAt = result.scanTime || new Date().toISOString();
 			if (result.status === 'completed') {
 				toast.success(m.vuln_scan_completed());
 			} else if (result.status === 'failed') {
@@ -89,22 +96,59 @@
 					imageId: summary.imageId,
 					scanTime: summary.scanTime,
 					status: summary.status,
+					scanPhase: summary.scanPhase,
 					summary: summary.summary,
 					error: summary.error
 				} as VulnerabilityScanResult;
 			},
 			onComplete: async (summary) => {
+				let resolvedSummary = summary;
+				try {
+					resolvedSummary = await stabilizeFailedVulnerabilitySummary(
+						summary.imageId,
+						summary,
+						(id) => vulnerabilityService.getScanSummary(id),
+						{ scanRequestedAt: lastScanRequestedAt ?? vulnerabilityScan?.scanTime }
+					);
+				} catch {
+					// Keep original summary when stabilization check fails.
+				}
+
+				if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
+					vulnerabilityScan = {
+						...(vulnerabilityScan ?? {}),
+						imageId: resolvedSummary.imageId,
+						scanTime: resolvedSummary.scanTime,
+						status: resolvedSummary.status,
+						scanPhase: resolvedSummary.scanPhase,
+						summary: resolvedSummary.summary,
+						error: resolvedSummary.error
+					} as VulnerabilityScanResult;
+					stopPolling();
+					beginScanPolling(false);
+					return;
+				}
+
 				stopPolling();
 				try {
-					vulnerabilityScan = await vulnerabilityService.getScanResult(summary.imageId);
+					vulnerabilityScan = await vulnerabilityService.getScanResult(resolvedSummary.imageId);
 				} catch (error) {
 					console.error('Failed to load scan result:', error);
+					vulnerabilityScan = {
+						...(vulnerabilityScan ?? {}),
+						imageId: resolvedSummary.imageId,
+						scanTime: resolvedSummary.scanTime,
+						status: resolvedSummary.status,
+						scanPhase: resolvedSummary.scanPhase,
+						summary: resolvedSummary.summary,
+						error: resolvedSummary.error
+					} as VulnerabilityScanResult;
 				}
 				if (showToast) {
-					if (summary.status === 'completed') {
+					if (resolvedSummary.status === 'completed') {
 						toast.success(m.vuln_scan_completed());
 					} else {
-						toast.error(summary.error || m.vuln_scan_failed());
+						toast.error(resolvedSummary.error || m.vuln_scan_failed());
 					}
 				}
 			},
@@ -115,7 +159,10 @@
 	}
 
 	$effect(() => {
-		const scanning = vulnerabilityScan?.status === 'scanning' || vulnerabilityScan?.status === 'pending';
+		if (!lastScanRequestedAt && vulnerabilityScan?.scanTime) {
+			lastScanRequestedAt = vulnerabilityScan.scanTime;
+		}
+		const scanning = isVulnerabilityScanInProgress(vulnerabilityScan?.status);
 		if (scanning) {
 			beginScanPolling(false);
 		} else {
