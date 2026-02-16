@@ -1,0 +1,3 @@
+BEGIN;
+-- No-op: data backfill migration cannot be safely reversed.
+COMMIT;

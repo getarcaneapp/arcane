@@ -42,11 +42,20 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.NoError(t, svc.db.WithContext(ctx).Model(&models.SettingVariable{}).Count(&count2).Error)
 	require.Equal(t, count1, count2)
 
-	// Spot-check a couple keys exist
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory"} {
+	// Spot-check core and automation defaults exist with correct values
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
+
+		switch key {
+		case "autoUpdateExcludedContainers":
+			require.Equal(t, "", sv.Value)
+		case "vulnerabilityScanEnabled":
+			require.Equal(t, "false", sv.Value)
+		case "vulnerabilityScanInterval":
+			require.Equal(t, "0 0 0 * * *", sv.Value)
+		}
 	}
 }
 
