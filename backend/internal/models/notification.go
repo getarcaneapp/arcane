@@ -70,7 +70,7 @@ func (NotificationSettings) TableName() string {
 type NotificationLog struct {
 	ID        uint                 `json:"id" gorm:"primaryKey"`
 	Provider  NotificationProvider `json:"provider" gorm:"not null;index;type:varchar(50)"`
-	ImageRef  string               `json:"imageRef" gorm:"not null"`
+	ImageRef  string               `json:"imageRef" gorm:"not null;type:text"`
 	Status    string               `json:"status" gorm:"not null"`
 	Error     *string              `json:"error,omitempty"`
 	Metadata  JSON                 `json:"metadata" gorm:"type:jsonb"`

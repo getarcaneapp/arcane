@@ -1,0 +1,3 @@
+-- SQLite doesn't enforce VARCHAR length, but we recreate the table for consistency
+-- SQLite treats VARCHAR(255) and TEXT the same, so this is a no-op for existing data
+-- but documents the intended schema change
