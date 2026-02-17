@@ -140,7 +140,7 @@
 		}
 	});
 
-	const imageSize = $derived.by(() => bytes.format(image?.size || 0) || '0 B');
+	const imageSize = $derived.by(() => bytes.format(Number(image?.size ?? 0)) || '0 B');
 	const architecture = $derived.by(() => image?.architecture || m.common_na());
 	const osName = $derived.by(() => image?.os || m.common_na());
 	const repoTags = $derived.by(() => image?.repoTags ?? []);

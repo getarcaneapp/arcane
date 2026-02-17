@@ -289,17 +289,15 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	img, err := h.imageService.GetImageByID(ctx, input.ImageID)
+	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.ImageNotFoundError{Err: err}).Error())
 	}
 
-	out := image.NewDetailSummary(img)
-
 	return &GetImageOutput{
 		Body: base.ApiResponse[image.DetailSummary]{
 			Success: true,
-			Data:    out,
+			Data:    *out,
 		},
 	}, nil
 }
