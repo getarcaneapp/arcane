@@ -47,18 +47,55 @@ func NewImageService(db *database.DB, dockerService *DockerClientService, regist
 	}
 }
 
-func (s *ImageService) GetImageByID(ctx context.Context, id string) (*image.InspectResponse, error) {
+// GetImageDetail returns a DetailSummary for the given image ID. It fetches ImageInspect
+// and ImageList concurrently so the size field reflects the same metric shown in the
+// image table (docker image ls / docker system df).
+func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	inspect, err := dockerClient.ImageInspect(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("inspect not found: %w", err)
+	var (
+		inspect  image.InspectResponse
+		listSize int64
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		inspect, err = dockerClient.ImageInspect(gctx, id)
+		if err != nil {
+			return fmt.Errorf("inspect not found: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		imgs, err := dockerClient.ImageList(gctx, image.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to list images: %w", err)
+		}
+		for _, img := range imgs {
+			if img.ID == id {
+				listSize = img.Size
+				break
+			}
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	return &inspect, nil
+	out := imagetypes.NewDetailSummary(new(inspect))
+	if listSize > 0 {
+		out.Size = listSize
+		out.Descriptor.Size = listSize
+	}
+	return &out, nil
 }
 
 func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user models.User) error {
