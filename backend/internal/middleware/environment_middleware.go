@@ -276,7 +276,7 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, ac
 	headers := remenv.BuildWebSocketHeaders(c, accessToken)
 
 	if err := wsutil.ProxyHTTP(c.Writer, c.Request, wsTarget, headers); err != nil {
-		slog.Error("websocket proxy failed", "env_id", envID, "target", wsTarget, "err", err)
+		slog.Error("websocket proxy failed", "err", err)
 	}
 	c.Abort()
 }
@@ -293,7 +293,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 		return
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req) //nolint:gosec // intentional proxy request to resolved remote environment URL
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"success": false,

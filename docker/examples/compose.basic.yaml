@@ -11,6 +11,9 @@ services:
     environment:
       - ENCRYPTION_KEY=xxxxxxxxxxxxxxxxxxxxxx
       - JWT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxx
+      # Timezone for cron job scheduling (e.g., America/New_York, Europe/London, UTC)
+      # See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+      - TZ=UTC
     # Use host cgroup namespace for better container self-detection
     # This allows Arcane to detect its own container ID more reliably
     cgroup: host

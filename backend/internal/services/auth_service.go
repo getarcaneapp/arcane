@@ -27,9 +27,9 @@ var (
 	ErrOidcAuthDisabled     = errors.New("OIDC authentication is disabled")
 )
 
-type TokenPair struct {
+type TokenPair struct { //nolint:gosec // API response contract intentionally includes token fields
 	AccessToken  string    `json:"accessToken"`
-	RefreshToken string    `json:"refreshToken"`
+	RefreshToken string    `json:"refreshToken"` //nolint:gosec // API response contract requires refreshToken field
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 

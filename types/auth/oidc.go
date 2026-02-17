@@ -70,7 +70,7 @@ type OidcTokenResponse struct {
 	// AccessToken is the OAuth 2.0 access token.
 	//
 	// Required: true
-	AccessToken string `json:"access_token"`
+	AccessToken string `json:"access_token"` //nolint:gosec // OAuth/OIDC schema requires access_token field name
 
 	// TokenType specifies the type of the access token (typically "Bearer").
 	//
@@ -80,7 +80,7 @@ type OidcTokenResponse struct {
 	// RefreshToken is the OAuth 2.0 refresh token.
 	//
 	// Required: false
-	RefreshToken string `json:"refresh_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"` //nolint:gosec // OAuth/OIDC schema requires refresh_token field name
 
 	// ExpiresIn is the lifetime of the access token in seconds.
 	//
@@ -208,7 +208,7 @@ type OidcCallbackResponse struct {
 	// RefreshToken is the refresh token for obtaining new access tokens.
 	//
 	// Required: true
-	RefreshToken string `json:"refreshToken"`
+	RefreshToken string `json:"refreshToken"` //nolint:gosec // API schema requires refreshToken field name
 
 	// ExpiresAt is the expiration time of the access token.
 	//
@@ -285,7 +285,7 @@ type OidcDeviceTokenResponse struct {
 	// RefreshToken is the refresh token for obtaining new access tokens.
 	//
 	// Required: true
-	RefreshToken string `json:"refreshToken"`
+	RefreshToken string `json:"refreshToken"` //nolint:gosec // API schema requires refreshToken field name
 
 	// ExpiresAt is the expiration time of the access token.
 	//

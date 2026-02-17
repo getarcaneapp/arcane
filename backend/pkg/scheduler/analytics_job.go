@@ -134,7 +134,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 			}
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := j.httpClient.Do(req)
+			resp, err := j.httpClient.Do(req) //nolint:gosec // intentional request to configured analytics heartbeat endpoint
 			if err != nil {
 				return struct{}{}, fmt.Errorf("failed to send request: %w", err)
 			}

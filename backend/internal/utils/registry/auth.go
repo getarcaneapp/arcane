@@ -78,7 +78,7 @@ func (c *Client) CheckAuth(ctx context.Context, registry string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
 	if err != nil {
 		return "", err
 	}
@@ -129,7 +129,7 @@ func (c *Client) GetTokenMulti(ctx context.Context, authURL string, repositories
 	if creds != nil && creds.Username != "" && creds.Token != "" {
 		req.SetBasicAuth(creds.Username, creds.Token)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional token request to registry auth realm from challenge
 	if err != nil {
 		return "", err
 	}
@@ -282,7 +282,7 @@ func GetAuthHeaderForImage(ctx context.Context, imageRef string, enabledRegs []m
 	}
 
 	c := NewClient()
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional /v2/ challenge request to resolved registry host
 	if err != nil {
 		return "", err
 	}

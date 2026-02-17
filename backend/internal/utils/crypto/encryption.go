@@ -136,12 +136,12 @@ func atomicWriteHexFile(path string, key []byte, mode os.FileMode) error {
 	}
 	if err := tmp.Sync(); err != nil {
 		// proceed, but return error if rename fails later
-		slog.Warn("Failed to sync agent key temp file; key may not be fully persisted", "tmp", tmpPath, "err", err)
+		slog.Warn("Failed to sync agent key temp file; key may not be fully persisted", "err", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec // destination path is internally derived from app-controlled config directory
 		return err
 	}
 	if err := os.Chmod(path, mode); err != nil {

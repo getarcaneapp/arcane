@@ -70,7 +70,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 	}
 
 	start := time.Now()
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
 	if err != nil {
 		return "", err
 	}
@@ -85,7 +85,7 @@ func (c *Client) GetLatestDigest(ctx context.Context, registry, repository, tag,
 			return "", rerr
 		}
 		getReq.Header = req.Header.Clone()
-		getResp, derr := c.http.Do(getReq)
+		getResp, derr := c.http.Do(getReq) //nolint:gosec // intentional fallback request to same user-configured registry endpoint
 		if derr != nil {
 			return "", derr
 		}

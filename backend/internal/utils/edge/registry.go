@@ -76,12 +76,12 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 
 	// Close existing tunnel if any
 	if existing, ok := r.tunnels[envID]; ok {
-		slog.Info("Replacing existing edge tunnel", "environment_id", envID)
+		slog.Info("Replacing existing edge tunnel")
 		_ = existing.Close()
 	}
 
 	r.tunnels[envID] = tunnel
-	slog.Info("Edge agent tunnel registered", "environment_id", envID)
+	slog.Info("Edge agent tunnel registered")
 }
 
 // Unregister removes a tunnel from the registry
@@ -92,7 +92,7 @@ func (r *TunnelRegistry) Unregister(envID string) {
 	if tunnel, ok := r.tunnels[envID]; ok {
 		_ = tunnel.Close()
 		delete(r.tunnels, envID)
-		slog.Info("Edge agent tunnel unregistered", "environment_id", envID)
+		slog.Info("Edge agent tunnel unregistered")
 	}
 }
 
@@ -106,7 +106,7 @@ func (r *TunnelRegistry) CleanupStale(maxAge time.Duration) int {
 
 	for envID, tunnel := range r.tunnels {
 		if now.Sub(tunnel.GetLastHeartbeat()) > maxAge {
-			slog.Warn("Removing stale edge tunnel", "environment_id", envID, "last_heartbeat", tunnel.GetLastHeartbeat())
+			slog.Warn("Removing stale edge tunnel", "last_heartbeat", tunnel.GetLastHeartbeat())
 			_ = tunnel.Close()
 			delete(r.tunnels, envID)
 			removed++

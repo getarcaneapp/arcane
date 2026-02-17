@@ -145,7 +145,7 @@ func tryBasicAuth(ctx context.Context, c *Client, reg string, creds *Credentials
 	}
 
 	req.SetBasicAuth(creds.Username, creds.Token)
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional request to user-provided registry for connection test
 	if err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("Auth request failed: %v", err))
 		res.AuthSuccess = false
@@ -180,7 +180,7 @@ func testCatalog(ctx context.Context, c *Client, reg, authHeader string, res *Te
 		req.Header.Set("Authorization", authHeader)
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // intentional request to user-provided registry for connection test
 	if err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("Catalog request failed: %v", err))
 		res.CatalogSuccess = false

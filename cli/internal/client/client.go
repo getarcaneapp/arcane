@@ -210,7 +210,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			c.applyAuth(req)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Accept", "application/json")
-			resp, err := c.httpClient.Do(req)
+			resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 			if err != nil {
 				return nil, fmt.Errorf("request failed: %w", err)
 			}
@@ -256,7 +256,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -279,7 +279,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -330,7 +330,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 	if err != nil {
 		return fmt.Errorf("token refresh failed: %w", err)
 	}

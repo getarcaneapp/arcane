@@ -264,5 +264,5 @@ func ensureSQLiteDirectory(connString string) error {
 	if dir == "" || dir == "." {
 		return nil
 	}
-	return os.MkdirAll(dir, 0o755)
+	return os.MkdirAll(dir, 0o755) //nolint:gosec // directory path is intentionally derived from configured SQLite DSN
 }

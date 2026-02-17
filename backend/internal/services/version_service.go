@@ -64,7 +64,7 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("create GitHub request: %w", err)
 		}
 
-		resp, err := s.httpClient.Do(req)
+		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to fixed GitHub releases API endpoint
 		if err != nil {
 			return "", fmt.Errorf("get latest release: %w", err)
 		}

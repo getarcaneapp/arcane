@@ -178,9 +178,11 @@ type PruneReport struct {
 // combining both types into a single list and converting space reclaimed to int64.
 func NewPruneReport(src image.PruneReport) PruneReport {
 	// Safely convert uint64 to int64, capping at MaxInt64 to prevent overflow
-	spaceReclaimed := int64(src.SpaceReclaimed)
-	if src.SpaceReclaimed > math.MaxInt64 {
+	spaceReclaimed := int64(0)
+	if src.SpaceReclaimed > uint64(math.MaxInt64) {
 		spaceReclaimed = math.MaxInt64
+	} else {
+		spaceReclaimed = int64(src.SpaceReclaimed)
 	}
 
 	out := PruneReport{
