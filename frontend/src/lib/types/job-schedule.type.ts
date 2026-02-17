@@ -7,6 +7,7 @@ export type JobSchedules = {
 	scheduledPruneInterval: string;
 	gitopsSyncInterval: string;
 	vulnerabilityScanInterval: string;
+	autoHealInterval: string;
 };
 
 export type JobSchedulesUpdate = Partial<JobSchedules>;

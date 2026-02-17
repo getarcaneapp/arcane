@@ -22,6 +22,7 @@ export interface BaseProviderFormValues {
 	eventContainerUpdate: boolean;
 	eventVulnerabilityFound: boolean;
 	eventPruneReport: boolean;
+	eventAutoHeal: boolean;
 }
 
 // Provider-specific form value types
@@ -177,7 +178,8 @@ export function discordSettingsToFormValues(settings?: NotificationSettings): Di
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -196,7 +198,8 @@ export function emailSettingsToFormValues(settings?: NotificationSettings): Emai
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -213,7 +216,8 @@ export function telegramSettingsToFormValues(settings?: NotificationSettings): T
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -233,7 +237,8 @@ export function signalSettingsToFormValues(settings?: NotificationSettings): Sig
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -252,7 +257,8 @@ export function slackSettingsToFormValues(settings?: NotificationSettings): Slac
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -279,7 +285,8 @@ export function discordFormValuesToSettings(values: DiscordFormValues): Notifica
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -304,7 +311,8 @@ export function emailFormValuesToSettings(values: EmailFormValues): Notification
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -327,7 +335,8 @@ export function telegramFormValuesToSettings(values: TelegramFormValues): Notifi
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -353,7 +362,8 @@ export function signalFormValuesToSettings(values: SignalFormValues): Notificati
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -375,7 +385,8 @@ export function slackFormValuesToSettings(values: SlackFormValues): Notification
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -400,7 +411,8 @@ export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyF
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -417,7 +429,8 @@ export function pushoverSettingsToFormValues(settings?: NotificationSettings): P
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -436,7 +449,8 @@ export function gotifySettingsToFormValues(settings?: NotificationSettings): Got
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -454,7 +468,8 @@ export function matrixSettingsToFormValues(settings?: NotificationSettings): Mat
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -479,7 +494,8 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 		eventImageUpdate: events?.image_update ?? true,
 		eventContainerUpdate: events?.container_update ?? true,
 		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true
+		eventPruneReport: events?.prune_report ?? true,
+		eventAutoHeal: events?.auto_heal ?? true
 	};
 }
 
@@ -506,7 +522,8 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -529,7 +546,8 @@ export function pushoverFormValuesToSettings(values: PushoverFormValues): Notifi
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -551,7 +569,8 @@ export function gotifyFormValuesToSettings(values: GotifyFormValues): Notificati
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -572,7 +591,8 @@ export function matrixFormValuesToSettings(values: MatrixFormValues): Notificati
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};
@@ -608,7 +628,8 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,
 				vulnerability_found: values.eventVulnerabilityFound,
-				prune_report: values.eventPruneReport
+				prune_report: values.eventPruneReport,
+				auto_heal: values.eventAutoHeal
 			}
 		}
 	};

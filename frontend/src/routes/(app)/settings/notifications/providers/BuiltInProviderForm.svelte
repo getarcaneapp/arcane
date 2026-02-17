@@ -99,7 +99,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -123,7 +124,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -174,7 +176,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -203,7 +206,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -256,7 +260,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -281,7 +286,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -303,7 +309,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -327,7 +334,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -350,7 +358,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -370,7 +379,8 @@
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
-				eventPruneReport: z.boolean()
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -1088,6 +1098,7 @@
 		bind:eventContainerUpdate={values.eventContainerUpdate}
 		bind:eventVulnerabilityFound={values.eventVulnerabilityFound}
 		bind:eventPruneReport={values.eventPruneReport}
+		bind:eventAutoHeal={values.eventAutoHeal}
 		{disabled}
 	/>
 

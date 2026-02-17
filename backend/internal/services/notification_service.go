@@ -3233,7 +3233,7 @@ func (s *NotificationService) SendAutoHealNotification(ctx context.Context, cont
 		if sendErr != nil {
 			status = "failed"
 			msg := sendErr.Error()
-			errMsg = &msg
+			errMsg = new(msg)
 			errs = append(errs, fmt.Sprintf("%s: %s", setting.Provider, msg))
 		}
 

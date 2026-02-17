@@ -112,6 +112,9 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 
 	case models.NotificationEventVulnerabilityFound:
 		// No dedicated tag in AppriseSettings; notification is sent without a tag
+
+	case models.NotificationEventAutoHeal:
+		// No dedicated tag in AppriseSettings; notification is sent without a tag
 	}
 
 	payload := AppriseNotificationPayload{

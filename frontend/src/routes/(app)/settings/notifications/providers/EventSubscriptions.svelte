@@ -9,6 +9,7 @@
 		eventContainerUpdate: boolean;
 		eventVulnerabilityFound: boolean;
 		eventPruneReport: boolean;
+		eventAutoHeal: boolean;
 		disabled?: boolean;
 	}
 
@@ -18,6 +19,7 @@
 		eventContainerUpdate = $bindable(),
 		eventVulnerabilityFound = $bindable(),
 		eventPruneReport = $bindable(),
+		eventAutoHeal = $bindable(),
 		disabled = false
 	}: Props = $props();
 </script>
@@ -53,6 +55,13 @@
 			{disabled}
 			label={m.notifications_event_vulnerability_found_label()}
 			description={m.notifications_event_vulnerability_found_description()}
+		/>
+		<SwitchWithLabel
+			id="{providerId}-event-auto-heal"
+			bind:checked={eventAutoHeal}
+			{disabled}
+			label={m.notifications_event_auto_heal_label()}
+			description={m.notifications_event_auto_heal_description()}
 		/>
 	</div>
 </div>

@@ -19,6 +19,10 @@ export type Settings = {
 	scheduledPruneBuildCache?: boolean;
 	vulnerabilityScanEnabled?: boolean;
 	vulnerabilityScanInterval?: number;
+	autoHealEnabled?: boolean;
+	autoHealExcludedContainers?: string;
+	autoHealMaxRestarts?: number;
+	autoHealRestartWindow?: number;
 	maxImageUploadSize: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
