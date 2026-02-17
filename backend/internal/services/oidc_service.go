@@ -414,7 +414,7 @@ func (s *OidcService) fetchUserInfoClaims(ctx context.Context, cfg *models.OidcC
 	request.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClient(cfg.SkipTlsVerify)
-	resp, err := client.Do(request)
+	resp, err := client.Do(request) //nolint:gosec // intentional request to configured OIDC userinfo endpoint
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +716,7 @@ func (s *OidcService) makeDeviceAuthRequest(ctx context.Context, endpoint string
 	req.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClient(skipTls)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured OIDC device authorization endpoint
 	if err != nil {
 		slog.Error("makeDeviceAuthRequest: request failed", "error", err)
 		return nil, fmt.Errorf("device authorization request failed: %w", err)
@@ -825,7 +825,7 @@ func (s *OidcService) makeTokenRequest(ctx context.Context, endpoint string, par
 	req.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClient(skipTls)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured OIDC token endpoint
 	if err != nil {
 		slog.Error("makeTokenRequest: request failed", "error", err)
 		return nil, fmt.Errorf("token request failed: %w", err)

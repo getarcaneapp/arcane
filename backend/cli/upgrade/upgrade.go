@@ -59,10 +59,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	} else if logFile != nil {
 		defer func() {
 			if err := logFile.Close(); err != nil {
-				slog.Warn("Failed to close upgrade log file", "error", err, "path", logFile.Name())
+				slog.Warn("Failed to close upgrade log file", "error", err)
 			}
 		}()
-		slog.Info("Upgrade log file created", "path", logFile.Name())
+		slog.Info("Upgrade log file created")
 	}
 
 	// Connect to Docker

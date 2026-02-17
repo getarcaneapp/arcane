@@ -164,7 +164,7 @@ type ArcaneApiEndpoints struct {
 }
 
 // Endpoints contains the defined API endpoints
-var Endpoints = ArcaneApiEndpoints{
+var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; auth-related names are not credentials
 	// Version & Health
 	AppVersionEndpoint: "/api/app-version",
 	VersionEndpoint:    "/api/version",

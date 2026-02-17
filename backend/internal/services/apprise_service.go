@@ -136,7 +136,7 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // intentional request to user-configured Apprise API endpoint
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
 	}

@@ -8,11 +8,11 @@ type Config struct {
 	// ServerURL is the base URL of the Arcane server (e.g., http://localhost:3552)
 	ServerURL string `yaml:"server_url"`
 	// APIKey is the API key for authentication (sent as X-API-KEY)
-	APIKey string `yaml:"api_key,omitempty"`
+	APIKey string `yaml:"api_key,omitempty"` //nolint:gosec // persisted config schema requires this field name
 	// JWTToken is the JWT access token for authentication (sent as Authorization: Bearer)
-	JWTToken string `yaml:"jwt_token,omitempty"`
+	JWTToken string `yaml:"jwt_token,omitempty"` //nolint:gosec // persisted config schema requires this field name
 	// RefreshToken is the refresh token for obtaining new access tokens
-	RefreshToken string `yaml:"refresh_token,omitempty"`
+	RefreshToken string `yaml:"refresh_token,omitempty"` //nolint:gosec // persisted config schema requires this field name
 	// DefaultEnvironment is the default environment ID to use
 	DefaultEnvironment string `yaml:"default_environment,omitempty"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)

@@ -116,7 +116,7 @@ type SignalConfig struct {
 	Host       string                         `json:"host"`
 	Port       int                            `json:"port"`
 	User       string                         `json:"user,omitempty"`
-	Password   string                         `json:"password,omitempty"`
+	Password   string                         `json:"password,omitempty"` //nolint:gosec // JSON schema compatibility with external provider config
 	Token      string                         `json:"token,omitempty"`
 	Source     string                         `json:"source"`
 	Recipients []string                       `json:"recipients"`
@@ -140,7 +140,7 @@ type NtfyConfig struct {
 	Port                   int                            `json:"port"`
 	Topic                  string                         `json:"topic"`
 	Username               string                         `json:"username,omitempty"`
-	Password               string                         `json:"password,omitempty"`
+	Password               string                         `json:"password,omitempty"` //nolint:gosec // JSON schema compatibility with external provider config
 	Priority               string                         `json:"priority,omitempty"`
 	Tags                   []string                       `json:"tags,omitempty"`
 	Icon                   string                         `json:"icon,omitempty"`
@@ -175,7 +175,7 @@ type MatrixConfig struct {
 	Port                   int                            `json:"port,omitempty"`
 	Rooms                  string                         `json:"rooms"`
 	Username               string                         `json:"username,omitempty"`
-	Password               string                         `json:"password,omitempty"`
+	Password               string                         `json:"password,omitempty"` //nolint:gosec // JSON schema compatibility with external provider config
 	DisableTLSVerification bool                           `json:"disableTlsVerification"`
 	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }

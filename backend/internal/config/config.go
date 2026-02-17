@@ -31,7 +31,7 @@ type Config struct {
 	Port          string         `env:"PORT" default:"3552"`
 	Listen        string         `env:"LISTEN" default:""`
 	Environment   AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
+	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
 	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 
 	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
@@ -217,16 +217,16 @@ func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructFi
 		return
 	}
 
-	fileContent, err := os.ReadFile(filePath)
+	fileContent, err := os.ReadFile(filePath) //nolint:gosec // file path intentionally comes from *_FILE env vars for Docker secrets
 	if err != nil {
 		slog.Warn("Failed to read secret from file, falling back to direct env var",
-			"env_var", envTag+"_FILE", "file_path", filePath, "error", err)
+			"error", err)
 		return
 	}
 
 	// Log when file value overrides a direct env var
 	if os.Getenv(envTag) != "" {
-		slog.Debug("Using secret from file, overriding direct env var", "env_var", envTag, "file_path", filePath)
+		slog.Debug("Using secret from file, overriding direct env var")
 	}
 
 	if isString {

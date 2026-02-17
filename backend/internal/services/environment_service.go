@@ -233,7 +233,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		}
 		return "offline", fmt.Errorf("failed to create request: %w", err)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
@@ -389,7 +389,7 @@ func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl,
 	}
 	req.Header.Set("X-Arcane-Agent-Bootstrap", bootstrapToken)
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}

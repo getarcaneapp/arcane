@@ -64,7 +64,7 @@ type CreateEnvironmentInput struct {
 
 type EnvironmentWithApiKey struct {
 	environment.Environment
-	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"`
+	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"` //nolint:gosec // response schema requires apiKey naming
 }
 
 type CreateEnvironmentOutput struct {
@@ -991,7 +991,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		}
 
 		client := &http.Client{Timeout: 15 * time.Second}
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
 		}

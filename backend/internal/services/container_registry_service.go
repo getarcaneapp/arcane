@@ -248,7 +248,7 @@ func (s *ContainerRegistryService) fetchDigestFromRegistry(ctx context.Context, 
 		req.SetBasicAuth(creds.Username, creds.Token)
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
 	if err != nil {
 		return "", fmt.Errorf("registry request failed: %w", err)
 	}
@@ -325,7 +325,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 		tokenReq.SetBasicAuth(creds.Username, creds.Token)
 	}
 
-	tokenResp, err := s.httpClient.Do(tokenReq)
+	tokenResp, err := s.httpClient.Do(tokenReq) //nolint:gosec // intentional request to auth realm provided by registry challenge
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
@@ -336,8 +336,8 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	}
 
 	var tokenData struct {
-		Token       string `json:"token"`
-		AccessToken string `json:"access_token"`
+		Token  string `json:"token"`
+		Legacy string `json:"access_token"` //nolint:gosec // JSON compatibility with registry token response schema
 	}
 	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
 		return "", fmt.Errorf("decode token response: %w", err)
@@ -345,7 +345,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 
 	token := tokenData.Token
 	if token == "" {
-		token = tokenData.AccessToken
+		token = tokenData.Legacy
 	}
 	if token == "" {
 		return "", fmt.Errorf("no token in response")
@@ -365,7 +365,7 @@ func (s *ContainerRegistryService) fetchWithTokenAuth(ctx context.Context, repos
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to user-configured registry endpoint
 	if err != nil {
 		return "", fmt.Errorf("authenticated request failed: %w", err)
 	}

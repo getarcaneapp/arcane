@@ -119,7 +119,7 @@ func (c *EdgeAwareClient) doDirectHTTP(
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured environment URL in non-edge mode
 	if err != nil {
 		return nil, err
 	}

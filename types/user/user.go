@@ -3,7 +3,7 @@ package user
 // CreateUser represents the request body for creating a new user.
 type CreateUser struct {
 	Username    string   `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"johndoe"`
-	Password    string   `json:"password" minLength:"8" doc:"Password of the user"`
+	Password    string   `json:"password" minLength:"8" doc:"Password of the user"` //nolint:gosec // API schema requires password field name
 	DisplayName *string  `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe"`
 	Email       *string  `json:"email,omitempty" format:"email" doc:"Email address of the user" example:"john@example.com"`
 	Roles       []string `json:"roles,omitempty" doc:"Roles assigned to the user" example:"[\"user\"]"`
@@ -16,7 +16,7 @@ type UpdateUser struct {
 	Email       *string  `json:"email,omitempty" format:"email" doc:"Email address of the user"`
 	Roles       []string `json:"roles,omitempty" doc:"Roles assigned to the user"`
 	Locale      *string  `json:"locale,omitempty" doc:"Locale preference of the user"`
-	Password    *string  `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
+	Password    *string  `json:"password,omitempty" minLength:"8" doc:"New password for the user"` //nolint:gosec // API schema requires password field name
 }
 
 // User represents a user in API responses.

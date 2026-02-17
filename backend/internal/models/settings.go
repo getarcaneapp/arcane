@@ -278,7 +278,7 @@ func (e SettingSensitiveForbiddenError) Is(target error) bool {
 
 type OidcConfig struct {
 	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
+	ClientSecret string `json:"clientSecret"` //nolint:gosec // OIDC schema compatibility requires this field name
 	IssuerURL    string `json:"issuerUrl"`
 	Scopes       string `json:"scopes"`
 

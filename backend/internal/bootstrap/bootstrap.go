@@ -180,7 +180,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 	req.Header.Set("X-API-Key", cfg.AgentToken)
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // intentional request to configured manager pairing endpoint
 	if err != nil {
 		return fmt.Errorf("pairing request failed: %w", err)
 	}

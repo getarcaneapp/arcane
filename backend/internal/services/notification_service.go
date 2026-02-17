@@ -308,19 +308,19 @@ func vulnerabilitySummaryBodyPlainInternal(payload VulnerabilityNotificationPayl
 	var sb strings.Builder
 	sb.WriteString("Daily Vulnerability Summary\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
-		sb.WriteString(fmt.Sprintf("Summary: %s\n", payload.CVEID))
+		_, _ = fmt.Fprintf(&sb, "Summary: %s\n", payload.CVEID)
 	}
 	if strings.TrimSpace(payload.ImageName) != "" {
-		sb.WriteString(fmt.Sprintf("Overview: %s\n", payload.ImageName))
+		_, _ = fmt.Fprintf(&sb, "Overview: %s\n", payload.ImageName)
 	}
 	if strings.TrimSpace(payload.FixedVersion) != "" {
-		sb.WriteString(fmt.Sprintf("Fixable vulnerabilities: %s\n", payload.FixedVersion))
+		_, _ = fmt.Fprintf(&sb, "Fixable vulnerabilities: %s\n", payload.FixedVersion)
 	}
 	if strings.TrimSpace(payload.Severity) != "" {
-		sb.WriteString(fmt.Sprintf("Severity breakdown: %s\n", payload.Severity))
+		_, _ = fmt.Fprintf(&sb, "Severity breakdown: %s\n", payload.Severity)
 	}
 	if strings.TrimSpace(payload.PkgName) != "" {
-		sb.WriteString(fmt.Sprintf("Sample CVEs: %s\n", payload.PkgName))
+		_, _ = fmt.Fprintf(&sb, "Sample CVEs: %s\n", payload.PkgName)
 	}
 	return sb.String()
 }
@@ -329,19 +329,19 @@ func vulnerabilitySummaryBodyMarkdownInternal(payload VulnerabilityNotificationP
 	var sb strings.Builder
 	sb.WriteString("📊 **Daily Vulnerability Summary**\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
-		sb.WriteString(fmt.Sprintf("**Summary:** %s\n", payload.CVEID))
+		_, _ = fmt.Fprintf(&sb, "**Summary:** %s\n", payload.CVEID)
 	}
 	if strings.TrimSpace(payload.ImageName) != "" {
-		sb.WriteString(fmt.Sprintf("**Overview:** %s\n", payload.ImageName))
+		_, _ = fmt.Fprintf(&sb, "**Overview:** %s\n", payload.ImageName)
 	}
 	if strings.TrimSpace(payload.FixedVersion) != "" {
-		sb.WriteString(fmt.Sprintf("**Fixable vulnerabilities:** %s\n", payload.FixedVersion))
+		_, _ = fmt.Fprintf(&sb, "**Fixable vulnerabilities:** %s\n", payload.FixedVersion)
 	}
 	if strings.TrimSpace(payload.Severity) != "" {
-		sb.WriteString(fmt.Sprintf("**Severity breakdown:** %s\n", payload.Severity))
+		_, _ = fmt.Fprintf(&sb, "**Severity breakdown:** %s\n", payload.Severity)
 	}
 	if strings.TrimSpace(payload.PkgName) != "" {
-		sb.WriteString(fmt.Sprintf("**Sample CVEs:** %s\n", payload.PkgName))
+		_, _ = fmt.Fprintf(&sb, "**Sample CVEs:** %s\n", payload.PkgName)
 	}
 	return sb.String()
 }
@@ -350,19 +350,19 @@ func vulnerabilitySummaryBodySlackInternal(payload VulnerabilityNotificationPayl
 	var sb strings.Builder
 	sb.WriteString("📊 *Daily Vulnerability Summary*\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
-		sb.WriteString(fmt.Sprintf("*Summary:* %s\n", payload.CVEID))
+		_, _ = fmt.Fprintf(&sb, "*Summary:* %s\n", payload.CVEID)
 	}
 	if strings.TrimSpace(payload.ImageName) != "" {
-		sb.WriteString(fmt.Sprintf("*Overview:* %s\n", payload.ImageName))
+		_, _ = fmt.Fprintf(&sb, "*Overview:* %s\n", payload.ImageName)
 	}
 	if strings.TrimSpace(payload.FixedVersion) != "" {
-		sb.WriteString(fmt.Sprintf("*Fixable vulnerabilities:* %s\n", payload.FixedVersion))
+		_, _ = fmt.Fprintf(&sb, "*Fixable vulnerabilities:* %s\n", payload.FixedVersion)
 	}
 	if strings.TrimSpace(payload.Severity) != "" {
-		sb.WriteString(fmt.Sprintf("*Severity breakdown:* %s\n", payload.Severity))
+		_, _ = fmt.Fprintf(&sb, "*Severity breakdown:* %s\n", payload.Severity)
 	}
 	if strings.TrimSpace(payload.PkgName) != "" {
-		sb.WriteString(fmt.Sprintf("*Sample CVEs:* %s\n", payload.PkgName))
+		_, _ = fmt.Fprintf(&sb, "*Sample CVEs:* %s\n", payload.PkgName)
 	}
 	return sb.String()
 }
@@ -371,19 +371,19 @@ func vulnerabilitySummaryBodyHTMLInternal(payload VulnerabilityNotificationPaylo
 	var sb strings.Builder
 	sb.WriteString("📊 <b>Daily Vulnerability Summary</b>\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
-		sb.WriteString(fmt.Sprintf("<b>Summary:</b> %s\n", payload.CVEID))
+		_, _ = fmt.Fprintf(&sb, "<b>Summary:</b> %s\n", payload.CVEID)
 	}
 	if strings.TrimSpace(payload.ImageName) != "" {
-		sb.WriteString(fmt.Sprintf("<b>Overview:</b> %s\n", payload.ImageName))
+		_, _ = fmt.Fprintf(&sb, "<b>Overview:</b> %s\n", payload.ImageName)
 	}
 	if strings.TrimSpace(payload.FixedVersion) != "" {
-		sb.WriteString(fmt.Sprintf("<b>Fixable vulnerabilities:</b> %s\n", payload.FixedVersion))
+		_, _ = fmt.Fprintf(&sb, "<b>Fixable vulnerabilities:</b> %s\n", payload.FixedVersion)
 	}
 	if strings.TrimSpace(payload.Severity) != "" {
-		sb.WriteString(fmt.Sprintf("<b>Severity breakdown:</b> %s\n", payload.Severity))
+		_, _ = fmt.Fprintf(&sb, "<b>Severity breakdown:</b> %s\n", payload.Severity)
 	}
 	if strings.TrimSpace(payload.PkgName) != "" {
-		sb.WriteString(fmt.Sprintf("<b>Sample CVEs:</b> %s\n", payload.PkgName))
+		_, _ = fmt.Fprintf(&sb, "<b>Sample CVEs:</b> %s\n", payload.PkgName)
 	}
 	return sb.String()
 }

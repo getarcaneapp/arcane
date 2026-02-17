@@ -533,7 +533,7 @@ func (s *TemplateService) doGET(ctx context.Context, url string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
@@ -565,7 +565,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 		req.Header.Set("If-Modified-Since", fetchMeta.LastModified)
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -981,7 +981,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 			value = fmt.Sprintf(`"%s"`, strings.ReplaceAll(value, `"`, `\"`))
 		}
 
-		builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
+		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
 	if err := appfs.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
