@@ -95,6 +95,7 @@ var supportedNotificationTestTypes = map[string]struct{}{
 	"batch-image-update":  {},
 	"vulnerability-found": {},
 	"prune-report":        {},
+	"auto-heal":           {},
 }
 
 func normalizeNotificationTestType(testType string) string {

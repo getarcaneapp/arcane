@@ -299,3 +299,22 @@ func TestNotificationService_MigrateDiscordWebhookUrlToFields_PreservesAllFields
 	require.False(t, discordConfig.Events[models.NotificationEventImageUpdate])
 	require.True(t, discordConfig.Events[models.NotificationEventContainerUpdate])
 }
+
+func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {
+	expected := []string{
+		notificationTestTypeSimple,
+		notificationTestTypeImageUpdate,
+		notificationTestTypeBatchImageUpdate,
+		notificationTestTypeVulnerability,
+		notificationTestTypePruneReport,
+		notificationTestTypeAutoHeal,
+	}
+
+	for _, tt := range expected {
+		_, ok := supportedNotificationTestTypes[tt]
+		require.True(t, ok, "expected %q to be in supportedNotificationTestTypes", tt)
+	}
+
+	require.Equal(t, len(expected), len(supportedNotificationTestTypes),
+		"supportedNotificationTestTypes has unexpected entries")
+}

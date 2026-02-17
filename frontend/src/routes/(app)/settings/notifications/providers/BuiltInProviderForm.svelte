@@ -1067,7 +1067,8 @@
 		{ label: m.notifications_email_test_image_update(), testType: 'image-update' },
 		{ label: m.notifications_email_test_batch_image_update(), testType: 'batch-image-update' },
 		{ label: m.notifications_test_vulnerability_notification(), testType: 'vulnerability-found' },
-		{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' }
+		{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' },
+		{ label: m.notifications_test_auto_heal_notification(), testType: 'auto-heal' }
 	];
 
 	const validation = $derived.by(() => providerSchemas[provider].safeParse(values));

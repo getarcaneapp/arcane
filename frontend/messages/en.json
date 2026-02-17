@@ -1708,6 +1708,7 @@
 	"notifications_email_test_vulnerability_found": "Vulnerability Found Notification",
 	"notifications_test_vulnerability_notification": "Test Vulnerability Notification",
 	"notifications_test_prune_report_notification": "Test Prune Report Notification",
+	"notifications_test_auto_heal_notification": "Test Auto-Heal Notification",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",

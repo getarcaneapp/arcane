@@ -32,6 +32,7 @@ const (
 	notificationTestTypeBatchImageUpdate = "batch-image-update"
 	notificationTestTypeVulnerability    = "vulnerability-found"
 	notificationTestTypePruneReport      = "prune-report"
+	notificationTestTypeAutoHeal         = "auto-heal"
 )
 
 var supportedNotificationTestTypes = map[string]struct{}{
@@ -40,6 +41,7 @@ var supportedNotificationTestTypes = map[string]struct{}{
 	notificationTestTypeBatchImageUpdate: {},
 	notificationTestTypeVulnerability:    {},
 	notificationTestTypePruneReport:      {},
+	notificationTestTypeAutoHeal:         {},
 }
 
 // VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
@@ -898,6 +900,34 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			return s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			return fmt.Errorf("unknown provider: %s", provider)
+		}
+	}
+
+	if testType == notificationTestTypeAutoHeal {
+		testContainerName := "test-container"
+		switch provider {
+		case models.NotificationProviderDiscord:
+			return s.sendDiscordAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderEmail:
+			return s.sendEmailAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderTelegram:
+			return s.sendTelegramAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderSignal:
+			return s.sendSignalAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderSlack:
+			return s.sendSlackAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderNtfy:
+			return s.sendNtfyAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderPushover:
+			return s.sendPushoverAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderGotify:
+			return s.sendGotifyAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderMatrix:
+			return s.sendMatrixAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderGeneric:
+			return s.sendGenericAutoHealNotification(ctx, testContainerName, setting.Config)
 		default:
 			return fmt.Errorf("unknown provider: %s", provider)
 		}
