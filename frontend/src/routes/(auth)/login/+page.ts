@@ -3,11 +3,13 @@ import { redirect } from '@sveltejs/kit';
 export const load = async ({ parent, url }) => {
 	const data = await parent();
 
-	if (data.user) {
-		throw redirect(302, '/dashboard');
-	}
+	const rawRedirect = url.searchParams.get('redirect') || '/dashboard';
+	// Guard against open redirects — only allow same-origin relative paths
+	const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/dashboard';
 
-	const redirectTo = url.searchParams.get('redirect') || '/dashboard';
+	if (data.user) {
+		throw redirect(302, redirectTo);
+	}
 
 	const error = url.searchParams.get('error');
 	const errorMessage =

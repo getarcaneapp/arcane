@@ -71,7 +71,6 @@ abstract class BaseAPIService {
 						'/auth/oidc',
 						'/auth/oidc/login',
 						'/auth/oidc/callback',
-						'/auth/me',
 						'/auth/auto-login',
 						'/auth/auto-login-config',
 						'/settings/public'
@@ -85,25 +84,27 @@ abstract class BaseAPIService {
 						pathname.startsWith('/oidc') ||
 						pathname.startsWith('/auth/oidc');
 
-					if (!isAuthApi && !isOnAuthPage && !isVersionMismatch && BaseAPIService.tokenRefreshHandler) {
+					if (!isAuthApi && !isOnAuthPage && BaseAPIService.tokenRefreshHandler) {
 						try {
-							const newToken = await BaseAPIService.tokenRefreshHandler();
-
-							if (newToken) {
-								return this.api(originalRequest);
+							// Always try to refresh first — even on version mismatch, because the refresh
+							// token is not version-tagged and will return a new access token with the
+							// current app version embedded, keeping the user logged in after an update.
+							// Auth is cookie-based, so we just need the refresh to succeed (not throw);
+							// the Set-Cookie on the refresh response is what re-authorises future requests.
+							await BaseAPIService.tokenRefreshHandler();
+							return this.api(originalRequest);
+						} catch {
+							// Refresh failed (expired, missing, or server error) — redirect to login
+							if (isVersionMismatch) {
+								toast.info('Application has been updated. Please log in again.');
 							}
-						} catch (refreshError) {
-							console.error('Token refresh failed in interceptor:', refreshError);
-						}
-
-						// If we reach here, refresh failed - redirect to login
-						if (!isOnAuthPage) {
 							const redirectTo = encodeURIComponent(pathname);
 							window.location.replace(`/login?redirect=${redirectTo}`);
 							return new Promise(() => {});
 						}
 					}
 
+					// No refresh handler available — version mismatch must force login
 					if (!isAuthApi && !isOnAuthPage && isVersionMismatch) {
 						toast.info('Application has been updated. Please log in again.');
 						const redirectTo = encodeURIComponent(pathname);
