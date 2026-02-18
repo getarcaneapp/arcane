@@ -170,8 +170,8 @@ github.com/fvbommel/sortorder v1.1.0 h1:fUmoe+HLsBTctBDoaBwpQo5N+nrCp8g/BjKb/6ZQ
 github.com/fvbommel/sortorder v1.1.0/go.mod h1:uk88iVf1ovNn1iLfgUVU2F9o5eO30ui720w+kxuqRs0=
 github.com/gabriel-vasile/mimetype v1.4.10 h1:zyueNbySn/z8mJZHLt6IPw0KoZsiQNszIpU+bX4+ZK0=
 github.com/gabriel-vasile/mimetype v1.4.10/go.mod h1:d+9Oxyo1wTzWdyVUPMmXFvp4F9tea18J8ufA774AB3s=
-github.com/getarcaneapp/arcane/types v0.0.0-20260209233421-0952125a149f h1:epSME0WIaUDxnLO96IN+v3ZKsmhZQmax0nJBrjz6ZIw=
-github.com/getarcaneapp/arcane/types v0.0.0-20260209233421-0952125a149f/go.mod h1:oTa9ugCyTbytH0YTl8Wzlh1mtlMSTT8s4exVzd7zaUo=
+github.com/getarcaneapp/arcane/types v1.15.2 h1:+rFSv0TPmTlTcR2azcumS7/imnXCic5JKSr0K0IPW8k=
+github.com/getarcaneapp/arcane/types v1.15.2/go.mod h1:kqkuqZZ9TkfWOvAuzCKq5UTX/11NO77lyPg5ECJrMXo=
 github.com/gin-contrib/cors v1.7.6 h1:3gQ8GMzs1Ylpf70y8bMw4fVpycXIeX1ZemuSQIsnQQY=
 github.com/gin-contrib/cors v1.7.6/go.mod h1:Ulcl+xN4jel9t1Ry8vqph23a60FwH9xVLd+3ykmTjOk=
 github.com/gin-contrib/sse v1.1.0 h1:n0w2GMuUpWDVp7qSpvze6fAu9iRxJY4Hmj6AmBOU05w=
