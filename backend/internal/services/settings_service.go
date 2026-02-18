@@ -109,6 +109,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AutoHealExcludedContainers:   models.SettingVariable{Value: ""},
 		AutoHealMaxRestarts:          models.SettingVariable{Value: "5"},
 		AutoHealRestartWindow:        models.SettingVariable{Value: "30"},
+		GitopsSyncInterval:           models.SettingVariable{Value: "0 */1 * * * *"},
 		BaseServerURL:                models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:               models.SettingVariable{Value: "true"},
 		DefaultShell:                 models.SettingVariable{Value: "/bin/sh"},
@@ -563,7 +564,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		// Validate cron settings
-		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval", "autoHealInterval"}
+		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval", "gitopsSyncInterval", "autoHealInterval"}
 		if slices.Contains(cronFields, key) && value != "" {
 			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
 				return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)

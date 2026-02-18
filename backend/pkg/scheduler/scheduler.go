@@ -85,6 +85,7 @@ func (js *JobScheduler) RescheduleJob(ctx context.Context, job schedulertypes.Jo
 	}
 
 	js.entryIDs[job.Name()] = entryID
+	slog.DebugContext(ctx, "Job rescheduled", "name", job.Name(), "schedule", schedule, "contextCanceled", ctx.Err() != nil)
 	return nil
 }
 

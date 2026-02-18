@@ -48,6 +48,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	newScheduler.RegisterJob(autoHealJob)
 
 	setupJobScheduleCallbacks(
+		appCtx,
 		appServices,
 		appConfig,
 		newScheduler,
@@ -61,10 +62,11 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		vulnerabilityScanJob,
 		autoHealJob,
 	)
-	setupSettingsCallbacks(appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob, autoHealJob)
+	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob, autoHealJob)
 }
 
 func setupJobScheduleCallbacks(
+	lifecycleCtx context.Context,
 	appServices *Services,
 	appConfig *config.Config,
 	newScheduler *pkg_scheduler.JobScheduler,
@@ -84,8 +86,9 @@ func setupJobScheduleCallbacks(
 
 	appServices.JobSchedule.OnJobSchedulesChanged = func(ctx context.Context, changedKeys []string) {
 		for _, key := range changedKeys {
+			slog.DebugContext(lifecycleCtx, "Processing job schedule change", "key", key, "triggerContextCanceled", ctx.Err() != nil)
 			handleJobScheduleChangeInternal(
-				ctx,
+				lifecycleCtx,
 				key,
 				appConfig,
 				newScheduler,
@@ -161,41 +164,41 @@ func handleJobScheduleChangeInternal(
 	}
 }
 
-func setupSettingsCallbacks(appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob, autoHealJob *pkg_scheduler.AutoHealJob) {
-	appServices.Settings.OnImagePollingSettingsChanged = func(ctx context.Context) {
-		if err := newScheduler.RescheduleJob(ctx, imagePollingJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule image-polling job", "error", err)
+func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob, autoHealJob *pkg_scheduler.AutoHealJob) {
+	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, imagePollingJob); err != nil {
+			slog.WarnContext(lifecycleCtx, "Failed to reschedule image-polling job", "error", err)
 		}
-		if err := newScheduler.RescheduleJob(ctx, autoUpdateJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
+		if err := newScheduler.RescheduleJob(lifecycleCtx, autoUpdateJob); err != nil {
+			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 		if !appConfig.AgentMode {
-			if err := newScheduler.RescheduleJob(ctx, environmentHealthJob); err != nil {
-				slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
+			if err := newScheduler.RescheduleJob(lifecycleCtx, environmentHealthJob); err != nil {
+				slog.WarnContext(lifecycleCtx, "Failed to reschedule environment-health job", "error", err)
 			}
 		}
 	}
 	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
-		slog.DebugContext(ctx, "AutoUpdateSettingsChanged callback triggered")
-		if err := newScheduler.RescheduleJob(ctx, autoUpdateJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
+		slog.DebugContext(lifecycleCtx, "AutoUpdateSettingsChanged callback triggered", "triggerContextCanceled", ctx.Err() != nil)
+		if err := newScheduler.RescheduleJob(lifecycleCtx, autoUpdateJob); err != nil {
+			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 	}
-	appServices.Settings.OnProjectsDirectoryChanged = func(ctx context.Context) {
+	appServices.Settings.OnProjectsDirectoryChanged = func(_ context.Context) {
 		if fsWatcherJob != nil {
-			if err := fsWatcherJob.RestartProjectsWatcher(ctx); err != nil {
-				slog.WarnContext(ctx, "Failed to restart projects filesystem watcher", "error", err)
+			if err := fsWatcherJob.RestartProjectsWatcher(lifecycleCtx); err != nil {
+				slog.WarnContext(lifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			}
 		}
 	}
-	appServices.Settings.OnScheduledPruneSettingsChanged = func(ctx context.Context) {
-		if err := newScheduler.RescheduleJob(ctx, scheduledPruneJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule scheduled-prune job", "error", err)
+	appServices.Settings.OnScheduledPruneSettingsChanged = func(_ context.Context) {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, scheduledPruneJob); err != nil {
+			slog.WarnContext(lifecycleCtx, "Failed to reschedule scheduled-prune job", "error", err)
 		}
 	}
-	appServices.Settings.OnVulnerabilityScanSettingsChanged = func(ctx context.Context) {
-		if err := newScheduler.RescheduleJob(ctx, vulnerabilityScanJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule vulnerability-scan job", "error", err)
+	appServices.Settings.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, vulnerabilityScanJob); err != nil {
+			slog.WarnContext(lifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
 		}
 	}
 	appServices.Settings.OnAutoHealSettingsChanged = func(ctx context.Context) {
