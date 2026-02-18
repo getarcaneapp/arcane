@@ -32,7 +32,7 @@ func (m *BaseModel) BeforeUpdate(_ *gorm.DB) (err error) {
 }
 
 // nolint:recvcheck
-type JSON map[string]interface{}
+type JSON map[string]any
 
 func (j JSON) Value() (driver.Value, error) {
 	if j == nil {
@@ -41,7 +41,7 @@ func (j JSON) Value() (driver.Value, error) {
 	return json.Marshal(j)
 }
 
-func (j *JSON) Scan(value interface{}) error {
+func (j *JSON) Scan(value any) error {
 	if value == nil {
 		*j = nil
 		return nil
@@ -66,7 +66,7 @@ func (s StringSlice) Value() (driver.Value, error) {
 	return json.Marshal(s)
 }
 
-func (s *StringSlice) Scan(value interface{}) error {
+func (s *StringSlice) Scan(value any) error {
 	if value == nil {
 		*s = nil
 		return nil

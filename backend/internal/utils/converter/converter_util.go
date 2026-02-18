@@ -130,8 +130,8 @@ func parseUnknownFlag(token string, tokens []string, index int, result *models.D
 }
 
 func parseCombinedFlags(token string, result *models.DockerRunCommand) {
-	flags := strings.Split(token[1:], "")
-	for _, flag := range flags {
+	flags := strings.SplitSeq(token[1:], "")
+	for flag := range flags {
 		switch flag {
 		case "d":
 			result.Detached = true

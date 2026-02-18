@@ -387,10 +387,7 @@ func tryConvertSecondStep(sec, min, hour, day, month, weekday string) (int, bool
 	}
 
 	if min == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
-		minutes := (step + 59) / 60
-		if minutes < 1 {
-			minutes = 1
-		}
+		minutes := max((step+59)/60, 1)
 		warn := ""
 		if step%60 != 0 {
 			warn = "scheduler interval rounded up to minutes"

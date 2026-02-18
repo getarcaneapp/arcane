@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -132,13 +133,7 @@ func (s *OidcService) getInsecureHttpClient() *http.Client {
 }
 
 func (s *OidcService) ensureOpenIDScope(scopes []string) []string {
-	hasOpenID := false
-	for _, scope := range scopes {
-		if scope == oidc.ScopeOpenID {
-			hasOpenID = true
-			break
-		}
-	}
+	hasOpenID := slices.Contains(scopes, oidc.ScopeOpenID)
 	if !hasOpenID {
 		scopes = append([]string{oidc.ScopeOpenID}, scopes...)
 	}
@@ -251,7 +246,7 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *models.Oid
 
 	// Use singleflight to prevent thundering herd. Include skipTls in key to handle toggling.
 	sfKey := fmt.Sprintf("%s|%v", issuer, skipTls)
-	v, err, _ := s.sfGroup.Do(sfKey, func() (interface{}, error) {
+	v, err, _ := s.sfGroup.Do(sfKey, func() (any, error) {
 		// Double check inside the lock/singleflight
 		s.providerMutex.RLock()
 		if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
@@ -583,10 +578,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		IDToken:      rawIDToken,
 	}
 	if !token.Expiry.IsZero() {
-		expiresIn := int(time.Until(token.Expiry).Seconds())
-		if expiresIn < 0 {
-			expiresIn = 0
-		}
+		expiresIn := max(int(time.Until(token.Expiry).Seconds()), 0)
 		tokenResp.ExpiresIn = expiresIn
 	}
 

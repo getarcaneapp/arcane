@@ -49,11 +49,11 @@ func (c *Client) ParseAuthChallenge(header string) (string, string) {
 	if !strings.HasPrefix(lower, "bearer ") {
 		return "", ""
 	}
-	idx := strings.Index(header, " ")
-	if idx == -1 {
+	_, after, ok := strings.Cut(header, " ")
+	if !ok {
 		return "", ""
 	}
-	raw := header[idx+1:]
+	raw := after
 	parts := strings.Split(raw, ",")
 	var realm, service string
 	for _, p := range parts {

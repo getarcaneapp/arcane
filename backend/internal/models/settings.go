@@ -189,10 +189,10 @@ func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, i
 }
 
 func (s *Settings) IsLocalSetting(key string) bool {
-	rt := reflect.TypeOf(s).Elem()
+	rt := reflect.TypeFor[Settings]()
 
-	for i := 0; i < rt.NumField(); i++ {
-		tagValue := strings.Split(rt.Field(i).Tag.Get("key"), ",")
+	for field := range rt.Fields() {
+		tagValue := strings.Split(field.Tag.Get("key"), ",")
 		keyFromTag := tagValue[0]
 
 		if keyFromTag == key {

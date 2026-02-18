@@ -217,7 +217,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		return nil, err
 	}
 
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -406,7 +406,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, errorMsg, commitHash string) {
 	now := time.Now()
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"last_sync_at":     now,
 		"last_sync_status": status,
 	}
@@ -593,7 +593,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	}
 
 	// Update sync with project ID
-	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]interface{}{
+	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(map[string]any{
 		"project_id": project.ID,
 	}).Error; err != nil {
 		return nil, s.failSync(ctx, id, result, sync, "Failed to update sync with project ID", err.Error())

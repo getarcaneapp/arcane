@@ -145,7 +145,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		return nil, err
 	}
 
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 
 	if req.Name != nil {
 		updates["name"] = *req.Name

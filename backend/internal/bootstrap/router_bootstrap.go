@@ -43,9 +43,8 @@ func shouldLogRequest(c *gin.Context) bool {
 		if pat == mp {
 			return false
 		}
-		if strings.HasSuffix(pat, "/*") {
-			prefix := strings.TrimSuffix(pat, "/*")
-			if strings.HasPrefix(mp, prefix) {
+		if before, ok := strings.CutSuffix(pat, "/*"); ok {
+			if strings.HasPrefix(mp, before) {
 				return false
 			}
 		}

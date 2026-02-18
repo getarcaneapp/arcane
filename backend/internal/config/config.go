@@ -131,8 +131,8 @@ func applyOptions(cfg *Config) {
 			return
 		}
 
-		options := strings.Split(optionsTag, ",")
-		for _, option := range options {
+		options := strings.SplitSeq(optionsTag, ",")
+		for option := range options {
 			switch strings.TrimSpace(option) {
 			case "file":
 				resolveFileBasedEnvVariable(field, fieldType)

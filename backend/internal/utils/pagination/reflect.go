@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (Response, error) {
+func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response, error) {
 	sortColumn := params.Sort
 	sortDirection := string(params.Order)
 
@@ -52,7 +52,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result interface{}) (
 }
 
 // paginateDBAll returns all results without pagination limits
-func paginateDBAll(query *gorm.DB, result interface{}) (Response, error) {
+func paginateDBAll(query *gorm.DB, result any) (Response, error) {
 	var totalItems int64
 	if err := query.Count(&totalItems).Error; err != nil {
 		return Response{}, err
@@ -70,7 +70,7 @@ func paginateDBAll(query *gorm.DB, result interface{}) (Response, error) {
 	}, nil
 }
 
-func paginateDB(page int, pageSize int, query *gorm.DB, result interface{}) (Response, error) {
+func paginateDB(page int, pageSize int, query *gorm.DB, result any) (Response, error) {
 	if page < 1 {
 		page = 1
 	}

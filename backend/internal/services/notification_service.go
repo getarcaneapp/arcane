@@ -201,12 +201,12 @@ func (s *NotificationService) isEventEnabled(config models.JSON, eventType model
 		return true // Default to enabled if we can't parse
 	}
 
-	var configMap map[string]interface{}
+	var configMap map[string]any
 	if err := json.Unmarshal(configBytes, &configMap); err != nil {
 		return true // Default to enabled if we can't parse
 	}
 
-	events, ok := configMap["events"].(map[string]interface{})
+	events, ok := configMap["events"].(map[string]any)
 	if !ok {
 		return true // If no events config, default to enabled
 	}
@@ -618,7 +618,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, imageRe
 func (s *NotificationService) renderEmailTemplate(imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL":       logoURL,
 		"AppURL":        appURL,
 		"Environment":   "Local Docker",
@@ -811,7 +811,7 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 func (s *NotificationService) renderContainerUpdateEmailTemplate(containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL":       logoURL,
 		"AppURL":        appURL,
 		"Environment":   "Local Docker",
@@ -1089,7 +1089,7 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, config models.J
 func (s *NotificationService) renderTestEmailTemplate() (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL": logoURL,
 		"AppURL":  appURL,
 	}
@@ -1255,10 +1255,11 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("**%s**\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "**%s**\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("**%s**\n"+
+		fmt.Fprintf(&message, "**%s**\n"+
 			"• **Type:** %s\n"+
 			"• **Current:** `%s`\n"+
 			"• **Latest:** `%s`\n\n",
@@ -1269,7 +1270,7 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		)
 	}
 
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
+	if err := notifications.SendDiscord(ctx, discordConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Discord notification: %w", err)
 	}
 
@@ -1298,10 +1299,11 @@ func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context,
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("<b>%s</b>\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "<b>%s</b>\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("<b>%s</b>\n"+
+		fmt.Fprintf(&message, "<b>%s</b>\n"+
 			"• <b>Type:</b> %s\n"+
 			"• <b>Current:</b> <code>%s</code>\n"+
 			"• <b>Latest:</b> <code>%s</code>\n\n",
@@ -1317,7 +1319,7 @@ func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context,
 		telegramConfig.ParseMode = "HTML"
 	}
 
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
+	if err := notifications.SendTelegram(ctx, telegramConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Telegram notification: %w", err)
 	}
 
@@ -1386,7 +1388,7 @@ func (s *NotificationService) renderBatchEmailTemplate(updates map[string]*image
 
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL":     logoURL,
 		"AppURL":      appURL,
 		"UpdateCount": len(updates),
@@ -1612,10 +1614,11 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, u
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -1626,7 +1629,7 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, u
 		)
 	}
 
-	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
+	if err := notifications.SendSignal(ctx, signalConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Signal notification: %w", err)
 	}
 
@@ -1749,10 +1752,11 @@ func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, up
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("*%s*\n"+
+		fmt.Fprintf(&message, "*%s*\n"+
 			"• *Type:* %s\n"+
 			"• *Current:* `%s`\n"+
 			"• *Latest:* `%s`\n\n",
@@ -1763,7 +1767,7 @@ func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, up
 		)
 	}
 
-	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
+	if err := notifications.SendSlack(ctx, slackConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Slack notification: %w", err)
 	}
 
@@ -1888,10 +1892,11 @@ func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, upd
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -1902,7 +1907,7 @@ func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, upd
 		)
 	}
 
-	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
+	if err := notifications.SendNtfy(ctx, ntfyConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Ntfy notification: %w", err)
 	}
 
@@ -2028,10 +2033,11 @@ func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context,
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -2042,7 +2048,7 @@ func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context,
 		)
 	}
 
-	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
+	if err := notifications.SendPushover(ctx, pushoverConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Pushover notification: %w", err)
 	}
 
@@ -2132,7 +2138,7 @@ func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context
 func (s *NotificationService) renderVulnerabilitySummaryEmailTemplate(payload VulnerabilityNotificationPayload) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL":           logoURL,
 		"AppURL":            appURL,
 		"SummaryLabel":      payload.CVEID,
@@ -2445,10 +2451,11 @@ func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, 
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n", description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n", description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -2459,7 +2466,7 @@ func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, 
 		)
 	}
 
-	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
+	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Generic webhook notification: %w", err)
 	}
 
@@ -2571,10 +2578,11 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, u
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -2585,7 +2593,7 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, u
 		)
 	}
 
-	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
+	if err := notifications.SendGotify(ctx, gotifyConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Gotify notification: %w", err)
 	}
 
@@ -2693,10 +2701,11 @@ func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, u
 		description = "1 container image has an update available."
 	}
 
-	message := fmt.Sprintf("%s\n\n%s\n\n", title, description)
+	var message strings.Builder
+	fmt.Fprintf(&message, "%s\n\n%s\n\n", title, description)
 
 	for imageRef, update := range updates {
-		message += fmt.Sprintf("%s\n"+
+		fmt.Fprintf(&message, "%s\n"+
 			"• Type: %s\n"+
 			"• Current: %s\n"+
 			"• Latest: %s\n\n",
@@ -2707,7 +2716,7 @@ func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, u
 		)
 	}
 
-	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
+	if err := notifications.SendMatrix(ctx, matrixConfig, message.String()); err != nil {
 		return fmt.Errorf("failed to send batch Matrix notification: %w", err)
 	}
 
@@ -3010,7 +3019,7 @@ func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, re
 func (s *NotificationService) renderPruneReportEmailTemplate(result *system.PruneAllResult) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
-	data := map[string]interface{}{
+	data := map[string]any{
 		"LogoURL":                  logoURL,
 		"AppURL":                   appURL,
 		"TotalSpaceReclaimed":      s.formatBytesInternal(result.SpaceReclaimed),
@@ -3185,7 +3194,7 @@ func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, 
 }
 
 // Helper methods to reduce code duplication
-func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest interface{}) error {
+func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest any) error {
 	configBytes, err := json.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -3230,7 +3239,7 @@ func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailC
 	}
 }
 
-func (s *NotificationService) renderTemplatesInternal(name string, data interface{}) (string, string, error) {
+func (s *NotificationService) renderTemplatesInternal(name string, data any) (string, string, error) {
 	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read HTML template: %w", err)

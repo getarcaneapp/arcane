@@ -43,9 +43,8 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 	categories := map[string][]meta.Metadata{}
 	categoryOrder := []string{} // Track order from first appearance in struct
 
-	rt := reflect.TypeOf(models.Settings{})
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+	rt := reflect.TypeFor[models.Settings]()
+	for field := range rt.Fields() {
 		keyTag := field.Tag.Get("key")
 		key, _, _ := strings.Cut(keyTag, ",")
 		if key == "" {

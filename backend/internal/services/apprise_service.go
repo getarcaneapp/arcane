@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -197,10 +198,11 @@ func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, u
 	}
 
 	title := fmt.Sprintf("%d Container Image Update(s) Available", len(updatesWithChanges))
-	body := "The following images have updates available:\n\n"
+	var body strings.Builder
+	body.WriteString("The following images have updates available:\n\n")
 
 	for imageRef, update := range updatesWithChanges {
-		body += fmt.Sprintf("• %s\n  Type: %s\n  Current: %s\n  Latest: %s\n\n",
+		fmt.Fprintf(&body, "• %s\n  Type: %s\n  Current: %s\n  Latest: %s\n\n",
 			imageRef,
 			update.UpdateType,
 			update.CurrentDigest,
@@ -208,7 +210,7 @@ func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, u
 		)
 	}
 
-	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
+	return s.SendNotification(ctx, title, body.String(), "text", models.NotificationEventImageUpdate)
 }
 
 func (s *AppriseService) TestNotification(ctx context.Context, testType string) error {

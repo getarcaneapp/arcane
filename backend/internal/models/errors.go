@@ -23,20 +23,20 @@ type APIErrorResponse struct {
 	Success bool         `json:"success"`
 	Error   string       `json:"error"`
 	Code    APIErrorCode `json:"code"`
-	Details interface{}  `json:"details,omitempty"`
+	Details any          `json:"details,omitempty"`
 }
 
 type APISuccessResponse struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Message string      `json:"message,omitempty"`
+	Success bool   `json:"success"`
+	Data    any    `json:"data,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 type APIError struct {
 	Message    string       `json:"message"`
 	Code       APIErrorCode `json:"code"`
 	StatusCode int          `json:"statusCode"`
-	Details    interface{}  `json:"details,omitempty"`
+	Details    any          `json:"details,omitempty"`
 }
 
 func (e *APIError) Error() string {
@@ -59,7 +59,7 @@ func NewAPIError(message string, code APIErrorCode, statusCode int) *APIError {
 	}
 }
 
-func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, details interface{}) *APIError {
+func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, details any) *APIError {
 	return &APIError{
 		Message:    message,
 		Code:       code,
@@ -80,7 +80,7 @@ func NewInternalServerError(message string) *APIError {
 	return NewAPIError(message, APIErrorCodeInternalServerError, http.StatusInternalServerError)
 }
 
-func NewValidationError(message string, details interface{}) *APIError {
+func NewValidationError(message string, details any) *APIError {
 	return NewAPIErrorWithDetails(message, APIErrorCodeValidationError, http.StatusBadRequest, details)
 }
 
@@ -103,7 +103,7 @@ func (e *ConflictError) Error() string {
 type DockerAPIError struct {
 	Message    string
 	StatusCode int
-	Details    interface{}
+	Details    any
 }
 
 func (e *DockerAPIError) Error() string {

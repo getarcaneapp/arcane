@@ -164,7 +164,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]mode
 	return envs, nil
 }
 
-func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]interface{}, userID, username *string) (*models.Environment, error) {
+func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
 	now := time.Now()
 	updates["updated_at"] = &now
 
@@ -316,7 +316,7 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 	}
 
 	now := time.Now()
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"status":     status,
 		"last_seen":  &now,
 		"updated_at": &now,
@@ -362,7 +362,7 @@ func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, 
 
 func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, encryptedKey string, userID, username string, envName string) error {
 	// Update environment with new API key and set to pending status
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
 		"access_token": encryptedKey,
 		"status":       string(models.EnvironmentStatusPending),

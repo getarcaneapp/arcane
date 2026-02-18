@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 )
 
 type Watcher struct {
@@ -170,7 +171,7 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 
 	// Watch for new directories, compose files, .env being manipulated.
 	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || IsProjectFile(name) {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || projects.IsProjectFile(name) {
 			return true
 		}
 	}
@@ -208,26 +209,6 @@ func (fw *Watcher) addExistingDirectories(root string) error {
 		}
 		return nil
 	})
-}
-
-// IsProjectFile checks if a filename is a common Docker Compose or environment file
-func IsProjectFile(filename string) bool {
-	composeFiles := []string{
-		"compose.yaml",
-		"compose.yml",
-		"docker-compose.yaml",
-		"docker-compose.yml",
-		"podman-compose.yaml",
-		"podman-compose.yml",
-		".env",
-	}
-
-	for _, cf := range composeFiles {
-		if filename == cf {
-			return true
-		}
-	}
-	return false
 }
 
 func (fw *Watcher) dirDepth(path string) int {

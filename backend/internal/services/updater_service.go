@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -766,8 +767,8 @@ func (s *UpdaterService) normalizeRef(ref string) string {
 }
 
 func (s *UpdaterService) stripDigest(ref string) string {
-	if i := strings.Index(ref, "@"); i != -1 {
-		return ref[:i]
+	if before, _, ok := strings.Cut(ref, "@"); ok {
+		return before
 	}
 	return ref
 }
@@ -969,8 +970,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	excludedSetting := s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
 	excludedContainers := make(map[string]bool)
 	if excludedSetting != "" {
-		parts := strings.Split(excludedSetting, ",")
-		for _, p := range parts {
+		parts := strings.SplitSeq(excludedSetting, ",")
+		for p := range parts {
 			excludedContainers[strings.TrimSpace(p)] = true
 		}
 	}
@@ -1062,14 +1063,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				targetImageIDs[newRef] = tids
 			}
 
-			for _, tid := range tids {
-				if tid == inspect.Image {
-					// Already on target image
-					slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
-						"containerId", c.ID, "containerName", dep.Name, "imageID", inspect.Image, "newRef", newRef)
-					newRef = ""
-					break
-				}
+			if slices.Contains(tids, inspect.Image) {
+				// Already on target image
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
+					"containerId", c.ID, "containerName", dep.Name, "imageID", inspect.Image, "newRef", newRef)
+				newRef = ""
 			}
 		}
 

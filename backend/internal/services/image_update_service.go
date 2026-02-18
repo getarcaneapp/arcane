@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -942,9 +943,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	rc := registry.NewClient()
 
 	regRepos, initialResults, images := s.parseAndGroupImages(imageRefs)
-	for k, v := range initialResults {
-		results[k] = v
-	}
+	maps.Copy(results, initialResults)
 
 	credMap, enabledRegs := s.buildCredentialMap(ctx, externalCreds)
 

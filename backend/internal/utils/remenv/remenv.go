@@ -142,7 +142,7 @@ func BuildHopByHopHeaders(respHeader http.Header) map[string]struct{} {
 	hop := GetHopByHopHeaders()
 
 	for _, connVal := range respHeader.Values("Connection") {
-		for _, token := range strings.Split(connVal, ",") {
+		for token := range strings.SplitSeq(connVal, ",") {
 			if t := strings.TrimSpace(token); t != "" {
 				hop[http.CanonicalHeaderKey(t)] = struct{}{}
 			}

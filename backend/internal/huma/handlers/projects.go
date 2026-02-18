@@ -153,7 +153,7 @@ type PullProgressEvent struct {
 	ProgressDetail struct {
 		Current int64 `json:"current,omitempty"`
 		Total   int64 `json:"total,omitempty"`
-	} `json:"progressDetail,omitempty"`
+	} `json:"progressDetail"`
 	Error string `json:"error,omitempty"`
 }
 

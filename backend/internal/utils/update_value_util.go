@@ -5,7 +5,7 @@ package utils
 // Supported types: *string, *bool, **string.
 // For *string and *bool targets, if the value is a pointer of the same type,
 // the update only happens if the value pointer is not nil.
-func UpdateIfChanged(target interface{}, value interface{}) bool {
+func UpdateIfChanged(target any, value any) bool {
 	switch t := target.(type) {
 	case *string:
 		if v, ok := value.(string); ok {

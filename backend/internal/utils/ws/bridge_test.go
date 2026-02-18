@@ -45,8 +45,7 @@ func drainClient(t *testing.T, c *Client, count int, timeout time.Duration) [][]
 
 func TestForwardLines(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	// Register collector BEFORE starting forwarder
@@ -68,8 +67,7 @@ func TestForwardLines(t *testing.T) {
 
 func TestForwardLines_ContextCancellation(t *testing.T) {
 	h := NewHub(100)
-	hubCtx, hubCancel := context.WithCancel(context.Background())
-	defer hubCancel()
+	hubCtx := t.Context()
 	go h.Run(hubCtx)
 
 	lines := make(chan string)
@@ -93,8 +91,7 @@ func TestForwardLines_ContextCancellation(t *testing.T) {
 
 func TestForwardLogJSON(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -120,8 +117,7 @@ func TestForwardLogJSON(t *testing.T) {
 
 func TestForwardLogJSON_FillsEmptyTimestamp(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -144,8 +140,7 @@ func TestForwardLogJSON_FillsEmptyTimestamp(t *testing.T) {
 
 func TestForwardLogJSONBatched(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -171,8 +166,7 @@ func TestForwardLogJSONBatched(t *testing.T) {
 
 func TestForwardLogJSONBatched_FlushesOnInterval(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -192,8 +186,7 @@ func TestForwardLogJSONBatched_FlushesOnInterval(t *testing.T) {
 
 func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -221,8 +214,7 @@ func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 
 func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -244,8 +236,7 @@ func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T)
 
 func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	c := registerCollector(t, h, 256)
@@ -269,8 +260,7 @@ func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 
 func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 	h := NewHub(100)
-	hubCtx, hubCancel := context.WithCancel(context.Background())
-	defer hubCancel()
+	hubCtx := t.Context()
 	go h.Run(hubCtx)
 
 	c := registerCollector(t, h, 256)

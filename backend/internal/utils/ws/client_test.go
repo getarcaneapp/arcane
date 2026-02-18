@@ -27,8 +27,7 @@ func TestNewClient(t *testing.T) {
 
 func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	// Set up a test WS server that upgrades and serves the client
@@ -71,8 +70,7 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 
 func TestServeClient_ClientDisconnect(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -107,8 +105,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 
 func TestServeClient_ContextCancellation(t *testing.T) {
 	h := NewHub(10)
-	hubCtx, hubCancel := context.WithCancel(context.Background())
-	defer hubCancel()
+	hubCtx := t.Context()
 	go h.Run(hubCtx)
 
 	clientCtx, clientCancel := context.WithCancel(context.Background())
@@ -207,8 +204,7 @@ func TestIsExpectedCloseError(t *testing.T) {
 
 func TestServeClient_MultipleMessages(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	serverReady := make(chan struct{})

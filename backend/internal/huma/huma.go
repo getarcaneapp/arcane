@@ -23,7 +23,7 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 	pkgPath := t.PkgPath()
 
 	// For pointer types, get the element's package path
-	if pkgPath == "" && t.Kind() == reflect.Ptr {
+	if pkgPath == "" && t.Kind() == reflect.Pointer {
 		pkgPath = t.Elem().PkgPath()
 	}
 
@@ -31,8 +31,8 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 	// Format: "pkgname.TypeName" - we extract the pkgname part
 	typeStr := t.String()
 	var shortPkg string
-	if dotIdx := strings.Index(typeStr, "."); dotIdx != -1 {
-		shortPkg = typeStr[:dotIdx]
+	if before, _, ok := strings.Cut(typeStr, "."); ok {
+		shortPkg = before
 	}
 
 	// For types from our types package, prefix with the package name
@@ -94,12 +94,12 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 		// "base.ApiResponse[github.com/getarcaneapp/arcane/types/volume.UsageCounts]"
 		if strings.Contains(typeName, "[") && strings.Contains(typeName, "github.com/getarcaneapp/arcane/types/") {
 			// Extract the inner package name
-			start := strings.Index(typeName, "github.com/getarcaneapp/arcane/types/")
-			if start != -1 {
-				rest := typeName[start+len("github.com/getarcaneapp/arcane/types/"):]
-				end := strings.Index(rest, ".")
-				if end != -1 {
-					innerPkg := rest[:end]
+			_, after, ok := strings.Cut(typeName, "github.com/getarcaneapp/arcane/types/")
+			if ok {
+				rest := after
+				before, _, ok := strings.Cut(rest, ".")
+				if ok {
+					innerPkg := before
 					innerPkg = strings.ToUpper(innerPkg[:1]) + innerPkg[1:]
 					// Insert the package name into the schema name
 					// BaseApiResponseUsageCounts -> BaseApiResponseVolumeUsageCounts

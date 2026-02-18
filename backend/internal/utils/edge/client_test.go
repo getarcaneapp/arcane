@@ -1,7 +1,6 @@
 package edge
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -67,8 +66,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 	client := NewTunnelClient(cfg, localHandler)
 	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Run client in background
 	go client.StartWithErrorChan(ctx, nil)
@@ -145,8 +143,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	client := NewTunnelClient(cfg, http.NotFoundHandler()) // Handler ignored for WS
 	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go client.StartWithErrorChan(ctx, nil)
 	time.Sleep(100 * time.Millisecond)
@@ -195,8 +192,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	client := NewTunnelClient(cfg, http.NotFoundHandler())
 	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go client.StartWithErrorChan(ctx, nil)
 	time.Sleep(100 * time.Millisecond)

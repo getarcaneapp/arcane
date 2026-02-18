@@ -117,10 +117,7 @@ func detectCgroupV2Limits(limits *CgroupLimits) (*CgroupLimits, error) {
 	}
 
 	if limits.CPUQuota > 0 && limits.CPUPeriod > 0 {
-		limits.CPUCount = int((limits.CPUQuota + limits.CPUPeriod - 1) / limits.CPUPeriod)
-		if limits.CPUCount < 1 {
-			limits.CPUCount = 1
-		}
+		limits.CPUCount = max(int((limits.CPUQuota+limits.CPUPeriod-1)/limits.CPUPeriod), 1)
 	}
 
 	return limits, nil
@@ -153,10 +150,7 @@ func detectCgroupV1Limits(limits *CgroupLimits) (*CgroupLimits, error) {
 	}
 
 	if limits.CPUQuota > 0 && limits.CPUPeriod > 0 {
-		limits.CPUCount = int((limits.CPUQuota + limits.CPUPeriod - 1) / limits.CPUPeriod)
-		if limits.CPUCount < 1 {
-			limits.CPUCount = 1
-		}
+		limits.CPUCount = max(int((limits.CPUQuota+limits.CPUPeriod-1)/limits.CPUPeriod), 1)
 	}
 
 	return limits, nil
@@ -332,9 +326,9 @@ func getContainerIDFromMountinfo() (string, error) {
 	}
 
 	content := string(data)
-	lines := strings.Split(content, "\n")
+	lines := strings.SplitSeq(content, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		// Look for Docker container paths in mountinfo
 		if strings.Contains(line, "/docker/containers/") {
 			parts := strings.Split(line, "/docker/containers/")

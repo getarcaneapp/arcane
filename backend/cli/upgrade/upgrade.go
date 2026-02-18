@@ -261,8 +261,8 @@ func extractImageNameFromConfig(cont container.InspectResponse) string {
 
 // stripDigest removes digest from image reference
 func stripDigest(imageName string) string {
-	if idx := strings.Index(imageName, "@"); idx != -1 {
-		return imageName[:idx]
+	if before, _, ok := strings.Cut(imageName, "@"); ok {
+		return before
 	}
 	return imageName
 }

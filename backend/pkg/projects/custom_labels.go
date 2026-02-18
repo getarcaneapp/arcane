@@ -4,6 +4,7 @@ package projects
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,9 +197,7 @@ func loadComposeEnvironment(workdir string) map[string]string {
 
 func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]string {
 	merged := make(map[string]string, len(envMap)+1)
-	for k, v := range envMap {
-		merged[k] = v
-	}
+	maps.Copy(merged, envMap)
 	if workdir == "" {
 		return merged
 	}
@@ -245,7 +244,7 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 		return nil, fmt.Errorf("read compose file: %w", err)
 	}
 
-	composeData := map[string]interface{}{}
+	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
 		return nil, fmt.Errorf("parse compose file: %w", err)
 	}
@@ -274,7 +273,7 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 		switch v := item.(type) {
 		case string:
 			paths = append(paths, v)
-		case map[string]interface{}:
+		case map[string]any:
 			if p, ok := v["path"]; ok {
 				switch pathValue := p.(type) {
 				case string:

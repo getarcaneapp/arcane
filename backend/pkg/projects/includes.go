@@ -30,7 +30,7 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 		return nil, fmt.Errorf("failed to read compose file: %w", err)
 	}
 
-	var composeData map[string]interface{}
+	var composeData map[string]any
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
 		return nil, fmt.Errorf("failed to parse compose file: %w", err)
 	}
@@ -45,7 +45,7 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	var includeFiles []IncludeFile
 
 	switch v := includes.(type) {
-	case []interface{}:
+	case []any:
 		for _, item := range v {
 			if include, err := parseIncludeItem(item, composeDir); err == nil {
 				includeFiles = append(includeFiles, include)
@@ -60,13 +60,13 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	return includeFiles, nil
 }
 
-func parseIncludeItem(item interface{}, baseDir string) (IncludeFile, error) {
+func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
 	var includePath string
 
 	switch v := item.(type) {
 	case string:
 		includePath = v
-	case map[string]interface{}:
+	case map[string]any:
 		if path, ok := v["path"].(string); ok {
 			includePath = path
 		}

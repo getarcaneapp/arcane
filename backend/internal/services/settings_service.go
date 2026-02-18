@@ -207,13 +207,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 
 		tagParts := strings.Split(field.Tag.Get("key"), ",")
 		key := tagParts[0]
-		isInternal := false
-		for _, attr := range tagParts[1:] {
-			if attr == "internal" {
-				isInternal = true
-				break
-			}
-		}
+		isInternal := slices.Contains(tagParts[1:], "internal")
 
 		if isInternal {
 			if val, ok := settingsMap[key]; ok {
@@ -270,13 +264,7 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		// Parse tag attributes (e.g., "dockerHost,public,envOverride")
 		parts := strings.Split(tagValue, ",")
 		key := parts[0]
-		hasEnvOverride := false
-		for _, attr := range parts[1:] {
-			if attr == "envOverride" {
-				hasEnvOverride = true
-				break
-			}
-		}
+		hasEnvOverride := slices.Contains(parts[1:], "envOverride")
 
 		if !hasEnvOverride {
 			continue
@@ -294,9 +282,8 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 // isEnvOverrideActiveInternal returns true when the given setting key has an envOverride tag
 // and its corresponding environment variable is currently set to a non-empty value.
 func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
-	rt := reflect.TypeOf(models.Settings{})
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+	rt := reflect.TypeFor[models.Settings]()
+	for field := range rt.Fields() {
 		tagValue := field.Tag.Get("key")
 		if tagValue == "" {
 			continue
@@ -529,7 +516,7 @@ var timeoutSettingKeys = []string{
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, map[string]string, error) {
-	rt := reflect.TypeOf(updates)
+	rt := reflect.TypeFor[settings.Update]()
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
 
@@ -543,13 +530,13 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		field := rt.Field(i)
 		fieldValue := rv.Field(i)
 
-		if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+		if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
 			continue
 		}
 
 		key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		var value string
-		if fieldValue.Kind() == reflect.Ptr {
+		if fieldValue.Kind() == reflect.Pointer {
 			value = fieldValue.Elem().String()
 		}
 
@@ -721,13 +708,12 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 }
 
 func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error {
-	rt := reflect.TypeOf(models.Settings{})
+	rt := reflect.TypeFor[models.Settings]()
 	appCfg := config.Load()
 	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for i := 0; i < rt.NumField(); i++ {
-			field := rt.Field(i)
+		for field := range rt.Fields() {
 			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
 				return err
 			}
@@ -744,9 +730,9 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 func allowedSettingKeys() map[string]struct{} {
 	allowed := make(map[string]struct{})
 
-	settingsType := reflect.TypeOf(models.Settings{})
-	for i := 0; i < settingsType.NumField(); i++ {
-		key, _, _ := strings.Cut(settingsType.Field(i).Tag.Get("key"), ",")
+	settingsType := reflect.TypeFor[models.Settings]()
+	for field := range settingsType.Fields() {
+		key, _, _ := strings.Cut(field.Tag.Get("key"), ",")
 		if key == "" {
 			continue
 		}
@@ -820,17 +806,16 @@ func (s *SettingsService) ListSettings(all bool) []models.SettingVariable {
 
 // GetSettingType returns the type from the setting metadata
 func (s *SettingsService) GetSettingType(key string) string {
-	rt := reflect.TypeOf(models.Settings{})
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+	rt := reflect.TypeFor[models.Settings]()
+	for field := range rt.Fields() {
 		keyTag := field.Tag.Get("key")
 		fieldKey, _, _ := strings.Cut(keyTag, ",")
 		if fieldKey == key {
 			metaTag := field.Tag.Get("meta")
-			parts := strings.Split(metaTag, ";")
-			for _, part := range parts {
-				if strings.HasPrefix(part, "type=") {
-					return strings.TrimPrefix(part, "type=")
+			parts := strings.SplitSeq(metaTag, ";")
+			for part := range parts {
+				if after, ok := strings.CutPrefix(part, "type="); ok {
+					return after
 				}
 			}
 			return "text" // default type

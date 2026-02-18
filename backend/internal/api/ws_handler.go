@@ -511,7 +511,7 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string, onEmptyHoo
 
 	go hub.Run(ctx)
 
-	statsChan := make(chan interface{}, 64)
+	statsChan := make(chan any, 64)
 	go func(ctx context.Context) {
 		defer close(statsChan)
 		_ = h.containerService.StreamStats(ctx, containerID, statsChan)

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -13,17 +15,26 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
 
-var ComposeFileCandidates = []string{
+var ProjectFileCandidates = []string{
 	"compose.yaml",
 	"compose.yml",
 	"docker-compose.yaml",
 	"docker-compose.yml",
 	"podman-compose.yaml",
 	"podman-compose.yml",
+	".env",
+}
+
+// IsProjectFile reports whether filename is a Compose file or an environment file.
+func IsProjectFile(filename string) bool {
+	return slices.Contains(ProjectFileCandidates, filename)
 }
 
 func locateComposeFile(dir string) string {
-	for _, filename := range ComposeFileCandidates {
+	for _, filename := range ProjectFileCandidates {
+		if filename == ".env" {
+			continue
+		}
 		fullPath := filepath.Join(dir, filename)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 			return fullPath
@@ -69,9 +80,7 @@ func loadComposeProjectInternal(
 		slog.WarnContext(ctx, "Failed to load environment", "error", err)
 	}
 
-	for k, v := range envOverride {
-		fullEnvMap[k] = v
-	}
+	maps.Copy(fullEnvMap, envOverride)
 
 	// Set PWD
 	if absWorkdir, absErr := filepath.Abs(workdir); absErr == nil {
