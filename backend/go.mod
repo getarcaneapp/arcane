@@ -27,7 +27,7 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-	github.com/lmittmann/tint v1.1.2
+	github.com/lmittmann/tint v1.1.3
 	github.com/nicholas-fedor/shoutrrr v0.13.2
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/robfig/cron/v3 v3.0.1
