@@ -154,10 +154,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
 	}
 
-	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
-	if maxAge < 0 {
-		maxAge = 0
-	}
+	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
 
 	return &LoginOutput{
@@ -232,10 +229,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 		}
 	}
 
-	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
-	if maxAge < 0 {
-		maxAge = 0
-	}
+	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
 
 	return &RefreshTokenOutput{

@@ -397,7 +397,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 // Helper Methods
 // ============================================================================
 
-func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, registryModel *models.ContainerRegistry, decryptedToken string) (map[string]interface{}, error) {
+func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, registryModel *models.ContainerRegistry, decryptedToken string) (map[string]any, error) {
 	var creds *registry.Credentials
 	if registryModel.Username != "" && decryptedToken != "" {
 		creds = &registry.Credentials{
@@ -418,7 +418,7 @@ func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, regi
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"message": "Authentication succeeded",
 	}, nil
 }

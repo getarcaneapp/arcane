@@ -35,8 +35,8 @@ func countWsWorkerGoroutines() int {
 	n := runtime.Stack(buf, true)
 	s := string(buf[:n])
 	count := 0
-	blocks := strings.Split(s, "\n\n")
-	for _, block := range blocks {
+	blocks := strings.SplitSeq(s, "\n\n")
+	for block := range blocks {
 		if block == "" || !strings.Contains(block, pkgPath) {
 			continue
 		}
@@ -425,7 +425,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 // startStatsHubForTest starts Hub.Run plus stats producer and JSON broadcaster;
 // caller must call ServeClient(ctx, hub, conn). Used by container-stats leak tests.
 func startStatsHubForTest(ctx context.Context, hub *Hub) {
-	statsChan := make(chan interface{}, 64)
+	statsChan := make(chan any, 64)
 	go func() {
 		defer close(statsChan)
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -438,7 +438,7 @@ func startStatsHubForTest(ctx context.Context, hub *Hub) {
 				select {
 				case <-ctx.Done():
 					return
-				case statsChan <- map[string]interface{}{"cpu_percent": 12.5, "memory": 1024000}:
+				case statsChan <- map[string]any{"cpu_percent": 12.5, "memory": 1024000}:
 				default:
 				}
 			}
@@ -463,7 +463,7 @@ func startStatsHubForTest(ctx context.Context, hub *Hub) {
 
 // startStatsHubRepeatedTest starts stats producer + broadcaster with 50ms ticker (for repeated cycles test).
 func startStatsHubRepeatedTest(ctx context.Context, hub *Hub) {
-	statsChan := make(chan interface{}, 64)
+	statsChan := make(chan any, 64)
 	go func() {
 		defer close(statsChan)
 		ticker := time.NewTicker(50 * time.Millisecond)
@@ -528,7 +528,7 @@ func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, raw, err := clientConn.ReadMessage()
 	require.NoError(t, err)
-	var stats map[string]interface{}
+	var stats map[string]any
 	require.NoError(t, json.Unmarshal(raw, &stats))
 	clientConn.Close()
 

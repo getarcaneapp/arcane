@@ -415,9 +415,9 @@ var eventDefinitions = map[models.EventType]struct {
 }
 
 func (s *EventService) toEventDto(e *models.Event) *event.Event {
-	var metadata map[string]interface{}
+	var metadata map[string]any
 	if e.Metadata != nil {
-		metadata = map[string]interface{}(e.Metadata)
+		metadata = map[string]any(e.Metadata)
 	}
 
 	return &event.Event{

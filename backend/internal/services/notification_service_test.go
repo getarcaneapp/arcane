@@ -38,7 +38,7 @@ func TestNotificationService_MigrateDiscordWebhookUrlToFields(t *testing.T) {
 	svc := NewNotificationService(db, cfg)
 
 	// Create legacy Discord config with webhookUrl
-	legacyConfig := map[string]interface{}{
+	legacyConfig := map[string]any{
 		"webhookUrl": "https://discord.com/api/webhooks/123456789/abcdef123456",
 		"username":   "Arcane Bot",
 		"avatarUrl":  "https://example.com/avatar.png",
@@ -182,7 +182,7 @@ func TestNotificationService_MigrateDiscordWebhookUrlToFields_InvalidWebhookUrl(
 			// Clean up before each sub-test
 			db.Exec("DELETE FROM notification_settings")
 
-			legacyConfig := map[string]interface{}{
+			legacyConfig := map[string]any{
 				"webhookUrl": tc.webhookUrl,
 			}
 
@@ -207,7 +207,7 @@ func TestNotificationService_MigrateDiscordWebhookUrlToFields_InvalidWebhookUrl(
 			var unchangedSetting models.NotificationSettings
 			require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&unchangedSetting).Error)
 
-			var resultConfig map[string]interface{}
+			var resultConfig map[string]any
 			configBytes, err = json.Marshal(unchangedSetting.Config)
 			require.NoError(t, err)
 			require.NoError(t, json.Unmarshal(configBytes, &resultConfig))
@@ -251,7 +251,7 @@ func TestNotificationService_MigrateDiscordWebhookUrlToFields_PreservesAllFields
 	svc := NewNotificationService(db, cfg)
 
 	// Create legacy config with all optional fields
-	legacyConfig := map[string]interface{}{
+	legacyConfig := map[string]any{
 		"webhookUrl": "https://discord.com/api/webhooks/111222333/token444555",
 		"username":   "Custom Bot Name",
 		"avatarUrl":  "https://cdn.example.com/bot-avatar.jpg",

@@ -1,6 +1,7 @@
 package container
 
 import (
+	"maps"
 	"strconv"
 	"strings"
 
@@ -856,9 +857,7 @@ func NewDetails(c *container.InspectResponse) Details {
 		}
 		imageName = c.Config.Image
 		if c.Config.Labels != nil {
-			for k, v := range c.Config.Labels {
-				labels[k] = v
-			}
+			maps.Copy(labels, c.Config.Labels)
 		}
 	}
 

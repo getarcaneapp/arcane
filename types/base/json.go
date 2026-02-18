@@ -10,7 +10,7 @@ import (
 // seamless database integration.
 //
 // nolint:recvcheck
-type JsonObject map[string]interface{}
+type JsonObject map[string]any
 
 // Value implements the driver.Valuer interface for database storage.
 // It marshals the JsonObject to JSON bytes for database insertion.
@@ -26,7 +26,7 @@ func (j JsonObject) Value() (driver.Value, error) {
 // It unmarshals JSON data from the database into the JsonObject.
 // Supports scanning from []byte or string values.
 // If the value is nil, the JsonObject is set to nil.
-func (j *JsonObject) Scan(value interface{}) error {
+func (j *JsonObject) Scan(value any) error {
 	if value == nil {
 		*j = nil
 		return nil

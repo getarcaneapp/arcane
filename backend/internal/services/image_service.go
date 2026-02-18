@@ -549,11 +549,11 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	return result.Items, paginationResp, nil
 }
 
-func convertLabels(labels map[string]string) map[string]interface{} {
+func convertLabels(labels map[string]string) map[string]any {
 	if labels == nil {
 		return nil
 	}
-	result := make(map[string]interface{}, len(labels))
+	result := make(map[string]any, len(labels))
 	for k, v := range labels {
 		result[k] = v
 	}

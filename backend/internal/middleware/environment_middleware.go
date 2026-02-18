@@ -22,17 +22,6 @@ const (
 	apiEnvironmentsPrefix  = "/api/environments/"
 	environmentsPathMarker = "/environments/"
 
-	managementEndpointTest           = "/test"
-	managementEndpointHeartbeat      = "/heartbeat"
-	managementEndpointSyncRegistries = "/sync-registries"
-	managementEndpointSync           = "/sync"
-	managementEndpointDeployment     = "/deployment"
-	managementEndpointAgentPair      = "/agent/pair"
-	managementEndpointVersion        = "/version"
-	managementEndpointSettings       = "/settings"
-	managementEndpointJobSchedules   = "/job-schedules"
-	managementEndpointJobs           = "/jobs"
-
 	errEnvironmentNotFound      = "Environment not found"
 	errEnvironmentDisabled      = "Environment is disabled"
 	errFailedCreateProxyRequest = "Failed to create proxy request"
@@ -43,6 +32,20 @@ const (
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
 	proxyTimeout = 30 * time.Minute
 )
+
+// managementEndpointSet contains paths handled locally and never proxied to remote environments.
+var managementEndpointSet = map[string]struct{}{
+	"/test":            {},
+	"/heartbeat":       {},
+	"/sync-registries": {},
+	"/sync":            {},
+	"/deployment":      {},
+	"/agent/pair":      {},
+	"/version":         {},
+	"/settings":        {},
+	"/job-schedules":   {},
+	"/jobs":            {},
+}
 
 // EnvResolver resolves an environment ID to its connection details.
 // Returns: apiURL, accessToken, enabled, error
@@ -166,44 +169,16 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	}
 }
 
-// hasResourcePath checks if the request has additional path segments after the environment ID.
-// Returns true for paths like /api/environments/{id}/containers (should be proxied)
-// Returns false for paths like /api/environments/{id} or management endpoints (should be handled locally)
+// hasResourcePath reports whether the request targets a proxiable resource path.
+// Returns true for paths like /api/environments/{id}/containers (should be proxied).
+// Returns false for /api/environments/{id} exactly or any management endpoint.
 func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bool {
-	path := c.Request.URL.Path
-	prefix := apiEnvironmentsPrefix + envID
-
-	// If there's content after the environment ID path, check if it's a management endpoint
-	suffix := strings.TrimPrefix(path, prefix)
-
-	// No suffix means it's exactly /api/environments/{id} - management endpoint
-	if len(suffix) <= 1 || !strings.HasPrefix(suffix, "/") {
+	suffix, ok := strings.CutPrefix(c.Request.URL.Path, apiEnvironmentsPrefix+envID)
+	if !ok || len(suffix) <= 1 || suffix[0] != '/' {
 		return false
 	}
-
-	// Check if it's a management endpoint that should NOT be proxied
-	// These are environment management operations handled by the manager
-	managementEndpoints := []string{
-		managementEndpointTest,
-		managementEndpointHeartbeat,
-		managementEndpointSyncRegistries,
-		managementEndpointSync,
-		managementEndpointDeployment,
-		managementEndpointAgentPair,
-		managementEndpointVersion,
-		managementEndpointSettings,
-		managementEndpointJobSchedules,
-		managementEndpointJobs,
-	}
-
-	for _, endpoint := range managementEndpoints {
-		if suffix == endpoint {
-			return false
-		}
-	}
-
-	// It's a resource operation (e.g., "/containers", "/images") - should be proxied
-	return true
+	_, isManagement := managementEndpointSet[suffix]
+	return !isManagement
 }
 
 // extractEnvironmentID gets the environment ID from the request.
@@ -222,46 +197,38 @@ func (m *EnvironmentMiddleware) extractEnvironmentID(c *gin.Context) string {
 	}
 
 	// Fall back to parsing the URL path
-	if idx := strings.Index(requestPath, environmentsPathMarker); idx >= 0 {
-		rest := requestPath[idx+len(environmentsPathMarker):]
-		if parts := strings.SplitN(rest, "/", 2); len(parts) > 0 && parts[0] != "" {
-			return parts[0]
+	if _, rest, ok := strings.Cut(requestPath, environmentsPathMarker); ok {
+		if envID, _, _ := strings.Cut(rest, "/"); envID != "" {
+			return envID
 		}
 	}
 
 	return ""
 }
 
-// buildTargetURL constructs the proxy target URL.
-func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL string) string {
-	// Remove the environment prefix from the path
-	prefix := apiEnvironmentsPrefix + envID
-	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
-	if suffix != "" && !strings.HasPrefix(suffix, "/") {
+// buildResourceSuffix extracts the resource path after stripping the environment ID prefix.
+func (m *EnvironmentMiddleware) buildResourceSuffix(requestPath, envID string) string {
+	suffix, _ := strings.CutPrefix(requestPath, apiEnvironmentsPrefix+envID)
+	if suffix != "" && suffix[0] != '/' {
 		suffix = "/" + suffix
 	}
+	return suffix
+}
 
-	// Build target: apiURL + /api/environments/{localID} + suffix
+// buildTargetURL constructs the full proxy target URL for a remote environment.
+func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL string) string {
+	suffix := m.buildResourceSuffix(c.Request.URL.Path, envID)
 	target := strings.TrimRight(apiURL, "/") + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-
-	// Append query string if present
 	if qs := c.Request.URL.RawQuery; qs != "" {
 		target += "?" + qs
 	}
-
 	return target
 }
 
-// buildProxyPath constructs the path to send through the edge tunnel.
-// This includes the /api/environments/{localID} prefix so the agent can route it properly.
+// buildProxyPath constructs the path sent through the edge tunnel.
+// Includes the /api/environments/{localID} prefix so the agent can route it properly.
 func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) string {
-	prefix := apiEnvironmentsPrefix + envID
-	suffix := strings.TrimPrefix(c.Request.URL.Path, prefix)
-	if suffix != "" && !strings.HasPrefix(suffix, "/") {
-		suffix = "/" + suffix
-	}
-	// Build path: /api/environments/{localID} + suffix
-	return path.Join(apiEnvironmentsPrefix, m.localID) + suffix
+	return path.Join(apiEnvironmentsPrefix, m.localID) + m.buildResourceSuffix(c.Request.URL.Path, envID)
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
@@ -310,21 +277,25 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
 func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
-	// Read the body to log it and then restore it for forwarding
 	var bodyBytes []byte
-	var err error
 	if c.Request.Body != nil {
+		var err error
 		bodyBytes, err = io.ReadAll(c.Request.Body)
+		_ = c.Request.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
-		// Restore the body for forwarding
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
 	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, bytes.NewBuffer(bodyBytes))
+	// bytes.NewReader is preferred over bytes.NewBuffer: it implements io.ReadSeeker
+	// and avoids the internal grow-buffer logic that NewBuffer carries.
+	var body io.Reader
+	if len(bodyBytes) > 0 {
+		body = bytes.NewReader(bodyBytes)
+	}
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, body)
 	if err != nil {
 		return nil, err
 	}

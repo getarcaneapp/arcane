@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 const (
@@ -217,14 +218,14 @@ func extractBearerToken(ctx huma.Context) string {
 
 // extractTokenFromCookieHeader parses the token cookie from a Cookie header string.
 func extractTokenFromCookieHeader(cookieHeader string) string {
-	cookies := strings.Split(cookieHeader, ";")
-	for _, c := range cookies {
+	cookies := strings.SplitSeq(cookieHeader, ";")
+	for c := range cookies {
 		c = strings.TrimSpace(c)
-		if strings.HasPrefix(c, "token=") {
-			return strings.TrimPrefix(c, "token=")
+		if after, ok := strings.CutPrefix(c, "token="); ok {
+			return after
 		}
-		if strings.HasPrefix(c, "__Host-token=") {
-			return strings.TrimPrefix(c, "__Host-token=")
+		if after, ok := strings.CutPrefix(c, "__Host-token="); ok {
+			return after
 		}
 	}
 	return ""
@@ -234,15 +235,6 @@ func extractTokenFromCookieHeader(cookieHeader string) string {
 func setUserInContext(ctx context.Context, user *models.User) context.Context {
 	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
 	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
-	ctx = context.WithValue(ctx, ContextKeyUserIsAdmin, userHasRole(user, "admin"))
+	ctx = context.WithValue(ctx, ContextKeyUserIsAdmin, pkgutils.UserHasRole(user.Roles, "admin"))
 	return ctx
-}
-
-func userHasRole(user *models.User, role string) bool {
-	for _, r := range user.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
 }

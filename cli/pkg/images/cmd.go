@@ -356,7 +356,7 @@ var imagesPullCmd = &cobra.Command{
 
 		log.Debugf("Pulling image from: %s", path)
 
-		requestBody := map[string]interface{}{
+		requestBody := map[string]any{
 			"imageName": imageName,
 		}
 
@@ -468,7 +468,7 @@ var imagesPruneCmd = &cobra.Command{
 
 		log.Debugf("Pruning images from: %s", path)
 
-		requestBody := map[string]interface{}{
+		requestBody := map[string]any{
 			"dangling": pruneDangling,
 		}
 

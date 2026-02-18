@@ -522,8 +522,8 @@ func (s *AuthService) getAdminClaimConfig(ctx context.Context) (claim string, va
 	if raw == "" {
 		return claim, nil
 	}
-	parts := strings.Split(raw, ",")
-	for _, p := range parts {
+	parts := strings.SplitSeq(raw, ",")
+	for p := range parts {
 		v := strings.TrimSpace(p)
 		if v != "" {
 			values = append(values, v)
@@ -549,7 +549,7 @@ func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *auth.OidcT
 
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error) {
 	token, err := jwt.ParseWithClaims(refreshToken, &jwt.RegisteredClaims{},
-		func(t *jwt.Token) (interface{}, error) {
+		func(t *jwt.Token) (any, error) {
 			return s.jwtSecret, nil
 		})
 
@@ -590,7 +590,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*T
 
 func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*models.User, error) {
 	token, err := jwt.ParseWithClaims(accessToken, &UserClaims{},
-		func(t *jwt.Token) (interface{}, error) {
+		func(t *jwt.Token) (any, error) {
 			return s.jwtSecret, nil
 		})
 

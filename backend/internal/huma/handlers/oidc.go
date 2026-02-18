@@ -264,10 +264,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}
 
 	// Calculate cookie max age
-	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
-	if maxAge < 0 {
-		maxAge = 0
-	}
+	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60 // Add 60 seconds buffer for clock skew
 
 	// Build cookies: session token + clear state cookie
@@ -351,10 +348,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
 	}
 
-	maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
-	if maxAge < 0 {
-		maxAge = 0
-	}
+	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
 
 	tokenCookie := cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken)

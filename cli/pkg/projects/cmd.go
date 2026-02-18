@@ -341,7 +341,7 @@ var countsCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[map[string]interface{}]
+		var result base.ApiResponse[map[string]any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}

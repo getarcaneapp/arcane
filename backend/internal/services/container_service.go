@@ -258,7 +258,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	return &containerJSON, nil
 }
 
-func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- interface{}) error {
+func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -277,7 +277,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 			return err
 		}
 
-		var statsData interface{}
+		var statsData any
 		if err := decoder.Decode(&statsData); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -410,8 +410,8 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 
 	// Send stdout lines
 	if stdoutBuf.Len() > 0 {
-		lines := strings.Split(strings.TrimRight(stdoutBuf.String(), "\n"), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(strings.TrimRight(stdoutBuf.String(), "\n"), "\n")
+		for line := range lines {
 			if line != "" {
 				logsChan <- line
 			}
@@ -420,8 +420,8 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 
 	// Send stderr lines with prefix
 	if stderrBuf.Len() > 0 {
-		lines := strings.Split(strings.TrimRight(stderrBuf.String(), "\n"), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(strings.TrimRight(stderrBuf.String(), "\n"), "\n")
+		for line := range lines {
 			if line != "" {
 				logsChan <- "[STDERR] " + line
 			}

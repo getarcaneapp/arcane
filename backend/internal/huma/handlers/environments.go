@@ -430,7 +430,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 	encryptedKey := apiKeyDto.Key // Store the full key
 
 	// Link API key to environment and store encrypted key for manager use
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"api_key_id":   apiKeyDto.ID,
 		"access_token": encryptedKey,
 	}
@@ -885,7 +885,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 		return nil, huma.Error400BadRequest("Environment is not in pending status")
 	}
 
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"status": string(models.EnvironmentStatusOnline),
 	}
 	_, err = h.environmentService.UpdateEnvironment(ctx, *envID, updates, nil, nil)

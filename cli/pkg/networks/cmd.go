@@ -185,7 +185,7 @@ var deleteCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
-			var result base.ApiResponse[interface{}]
+			var result base.ApiResponse[any]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}

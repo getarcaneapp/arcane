@@ -81,10 +81,7 @@ func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		width := msg.Width
-		height := msg.Height - 4
-		if height < 6 {
-			height = 6
-		}
+		height := max(msg.Height-4, 6)
 		if width < 20 {
 			width = 20
 		}

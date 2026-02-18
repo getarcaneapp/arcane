@@ -128,7 +128,7 @@ type Summary struct {
 	// Labels contains user-defined metadata for the image.
 	//
 	// Required: true
-	Labels map[string]interface{} `json:"labels"`
+	Labels map[string]any `json:"labels"`
 
 	// InUse indicates if the image is currently in use by a container.
 	//
@@ -297,7 +297,7 @@ type DetailSummary struct {
 	// Required: true
 	GraphDriver struct {
 		// Data contains driver-specific data.
-		Data interface{} `json:"data"`
+		Data any `json:"data"`
 		// Name is the name of the graph driver.
 		Name string `json:"name"`
 	} `json:"graphDriver"`

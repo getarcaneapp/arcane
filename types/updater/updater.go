@@ -64,7 +64,7 @@ type ResourceResult struct {
 	// Details contains additional details about the update operation.
 	//
 	// Required: false
-	Details map[string]interface{} `json:"details,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 // Result represents the complete result of an update operation.

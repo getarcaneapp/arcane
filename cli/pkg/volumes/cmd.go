@@ -184,7 +184,7 @@ var countsCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[interface{}]
+		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -237,7 +237,7 @@ var pruneCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[interface{}]
+		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -272,7 +272,7 @@ var sizesCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[interface{}]
+		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -319,7 +319,7 @@ var usageCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[interface{}]
+		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}

@@ -1251,7 +1251,7 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, file
 		return false, fmt.Errorf("failed to list backup contents: %s", strings.TrimSpace(stderr))
 	}
 
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		entry := strings.TrimSpace(line)
 		if entry == "" {
 			continue

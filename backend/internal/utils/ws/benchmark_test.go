@@ -293,8 +293,7 @@ func BenchmarkHub_MemoryPerClient(b *testing.B) {
 	for _, sendBuf := range []int{16, 64, 256} {
 		b.Run(fmt.Sprintf("sendBuffer_%d", sendBuf), func(b *testing.B) {
 			h := NewHub(100)
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := b.Context()
 			go h.Run(ctx)
 
 			wsURL, serverCleanup := benchWSServer(b)

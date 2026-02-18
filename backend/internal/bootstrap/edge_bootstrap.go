@@ -40,7 +40,7 @@ func registerEdgeTunnelRoutes(ctx context.Context, apiGroup *gin.RouterGroup, ap
 			status = string(models.EnvironmentStatusOffline)
 		}
 
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"status": status,
 		}
 		_, err := appServices.Environment.UpdateEnvironment(ctx, envID, updates, nil, nil)

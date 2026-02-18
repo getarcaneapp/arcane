@@ -62,7 +62,7 @@ type Event struct {
 	// Metadata contains additional key-value data associated with the event.
 	//
 	// Required: false
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 
 	// Timestamp is when the event occurred.
 	//
@@ -134,7 +134,7 @@ type CreateEvent struct {
 	// Metadata contains additional key-value data associated with the event.
 	//
 	// Required: false
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type ListReponse struct {

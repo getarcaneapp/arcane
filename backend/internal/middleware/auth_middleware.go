@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -111,7 +112,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
 	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
 		user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
 		if err == nil && user != nil {
-			isAdmin := userHasRole(user, "admin")
+			isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
 			if m.options.AdminRequired && !isAdmin {
 				c.JSON(http.StatusForbidden, models.APIError{
 					Code:    "FORBIDDEN",
@@ -174,7 +175,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
 		return
 	}
 
-	isAdmin := userHasRole(user, "admin")
+	isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
 	if m.options.AdminRequired && !isAdmin {
 		c.JSON(http.StatusForbidden, models.APIError{
 			Code:    "FORBIDDEN",
@@ -209,20 +210,11 @@ func agentSudo(c *gin.Context) {
 
 func extractBearerOrCookieToken(c *gin.Context) string {
 	authHeader := c.GetHeader("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer ")
+	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+		return after
 	}
 	if tok, err := cookie.GetTokenCookie(c); err == nil && tok != "" {
 		return tok
 	}
 	return ""
-}
-
-func userHasRole(user *models.User, role string) bool {
-	for _, r := range user.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
 }

@@ -145,7 +145,7 @@ func ExtractContainerDeps(ctx context.Context, dcli *client.Client, cnt containe
 	// Extract explicit depends-on from label
 	if inspect.Config != nil && inspect.Config.Labels != nil {
 		if deps, ok := inspect.Config.Labels[LabelDependsOn]; ok {
-			for _, dep := range strings.Split(deps, ",") {
+			for dep := range strings.SplitSeq(deps, ",") {
 				dep = strings.TrimSpace(dep)
 				if dep != "" {
 					c.DependsOn = append(c.DependsOn, dep)

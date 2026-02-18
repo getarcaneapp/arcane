@@ -190,7 +190,7 @@ var testCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		if jsonOutput {
-			var result base.ApiResponse[interface{}]
+			var result base.ApiResponse[any]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
 				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
 					fmt.Println(string(resultBytes))

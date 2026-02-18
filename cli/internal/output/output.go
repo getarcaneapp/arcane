@@ -46,48 +46,48 @@ var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 // Success prints a success message in green.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-func Success(format string, a ...interface{}) {
+func Success(format string, a ...any) {
 	fmt.Printf("\n%s\n", successStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Error prints an error message in red.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-func Error(format string, a ...interface{}) {
+func Error(format string, a ...any) {
 	fmt.Printf("\n%s\n", errorStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Warning prints a warning message in yellow.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-func Warning(format string, a ...interface{}) {
+func Warning(format string, a ...any) {
 	fmt.Printf("\n%s\n", warnStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Info prints an info message in cyan.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-func Info(format string, a ...interface{}) {
+func Info(format string, a ...any) {
 	fmt.Printf("\n%s\n", infoStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Header prints a header message in bold white.
 // Use this to introduce sections of output. The message is prefixed
 // with a newline for visual separation.
-func Header(format string, a ...interface{}) {
+func Header(format string, a ...any) {
 	fmt.Printf("\n%s\n", headerStyle.Render(fmt.Sprintf(format, a...)))
 }
 
 // Print prints a standard message without color formatting.
 // Use this for regular output that doesn't need status indication.
-func Print(format string, a ...interface{}) {
+func Print(format string, a ...any) {
 	fmt.Printf(format+"\n", a...)
 }
 
 // KeyValue prints a key-value pair with the key in bold and value in blue.
 // This is useful for displaying structured information like image details
 // or configuration values.
-func KeyValue(key string, value interface{}) {
+func KeyValue(key string, value any) {
 	fmt.Printf("%s: %v\n", keyStyle.Render(key), valueStyle.Render(fmt.Sprint(value)))
 }
 
@@ -234,13 +234,13 @@ func computeWidths(headers []string, rows [][]string) []int {
 		widths[i] = runewidth.StringWidth(stripAnsi(h))
 	}
 	for _, row := range rows {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			var cell string
 			if i < len(row) {
 				cell = row[i]
 			}
-			lines := strings.Split(cell, "\n")
-			for _, ln := range lines {
+			lines := strings.SplitSeq(cell, "\n")
+			for ln := range lines {
 				w := runewidth.StringWidth(stripAnsi(ln))
 				if w > widths[i] {
 					widths[i] = w
@@ -257,10 +257,7 @@ func printHeader(headers []string, widths []int) {
 	for i, h := range headers {
 		visible := stripAnsi(h)
 		colored := columnHeader.Render(h)
-		padLen := widths[i] - runewidth.StringWidth(visible)
-		if padLen < 0 {
-			padLen = 0
-		}
+		padLen := max(widths[i]-runewidth.StringWidth(visible), 0)
 		if i < n-1 {
 			fmt.Print(colored + strings.Repeat(" ", padLen) + sep)
 		} else {
@@ -276,7 +273,7 @@ func printRow(row []string, widths []int, n int) {
 	// Prepare lines per column
 	cellLines := make([][]string, n)
 	maxLines := 1
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var cell string
 		if i < len(row) {
 			cell = row[i]
@@ -289,7 +286,7 @@ func printRow(row []string, widths []int, n int) {
 	}
 
 	for li := 0; li < maxLines; li++ {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			var val string
 			if li < len(cellLines[i]) {
 				val = cellLines[i][li]
@@ -302,10 +299,7 @@ func printRow(row []string, widths []int, n int) {
 				rendered = fmt.Sprint(val)
 			}
 
-			padLen := widths[i] - runewidth.StringWidth(stripAnsi(val))
-			if padLen < 0 {
-				padLen = 0
-			}
+			padLen := max(widths[i]-runewidth.StringWidth(stripAnsi(val)), 0)
 
 			if i < n-1 {
 				fmt.Print(rendered + strings.Repeat(" ", padLen) + sep)

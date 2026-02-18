@@ -58,12 +58,12 @@ func TestSecretDefaultBase64(t *testing.T) {
 
 	// find ENCRYPTION_KEY= and JWT_SECRET= lines and ensure they are valid base64
 	var encVal, jwtVal string
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "ENCRYPTION_KEY=") {
-			encVal = strings.TrimPrefix(line, "ENCRYPTION_KEY=")
+	for line := range strings.SplitSeq(out, "\n") {
+		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
+			encVal = after
 		}
-		if strings.HasPrefix(line, "JWT_SECRET=") {
-			jwtVal = strings.TrimPrefix(line, "JWT_SECRET=")
+		if after, ok := strings.CutPrefix(line, "JWT_SECRET="); ok {
+			jwtVal = after
 		}
 	}
 	if encVal == "" || jwtVal == "" {
@@ -112,17 +112,17 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 
 	// verify hex values decode to 32 bytes
 	var hexEnc, hexJwt string
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "ENCRYPTION_KEY=") {
-			v := strings.TrimPrefix(line, "ENCRYPTION_KEY=")
+	for line := range strings.SplitSeq(out, "\n") {
+		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
+			v := after
 			// prefer hex if line length looks like hex (64 chars)
 			if len(v) >= 64 {
 				hexEnc = v
 				continue
 			}
 		}
-		if strings.HasPrefix(line, "JWT_SECRET=") {
-			v := strings.TrimPrefix(line, "JWT_SECRET=")
+		if after, ok := strings.CutPrefix(line, "JWT_SECRET="); ok {
+			v := after
 			if len(v) >= 64 {
 				hexJwt = v
 				continue

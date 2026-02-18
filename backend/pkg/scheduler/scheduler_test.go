@@ -30,8 +30,7 @@ func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
 
 	var once sync.Once
 	runErrCh := make(chan error, 1)
-	runCtx, cancelRunCtx := context.WithCancel(context.Background())
-	defer cancelRunCtx()
+	runCtx := t.Context()
 
 	job := &testSchedulerJob{
 		name:     "test-reschedule-provided-context",

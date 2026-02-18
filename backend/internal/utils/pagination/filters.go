@@ -75,8 +75,8 @@ func getAccessor[T any](key string, accessors []FilterAccessor[T]) *FilterAccess
 
 func matchValue[T any](item T, value string, accessor *FilterAccessor[T]) bool {
 	if strings.Contains(value, ",") {
-		values := strings.Split(value, ",")
-		for _, v := range values {
+		values := strings.SplitSeq(value, ",")
+		for v := range values {
 			v = strings.TrimSpace(v)
 			if accessor.Fn(item, v) {
 				return true

@@ -18,7 +18,7 @@ import (
 // startStatsHubPipeline starts the stats producer and JSON broadcaster goroutines
 // for benchmarks/tests that need a container-stats-style hub. Caller must run hub.Run and ServeClient.
 func startStatsHubPipeline(ctx context.Context, hub *Hub) {
-	statsChan := make(chan interface{}, 64)
+	statsChan := make(chan any, 64)
 	go func() {
 		defer close(statsChan)
 		ticker := time.NewTicker(100 * time.Millisecond)

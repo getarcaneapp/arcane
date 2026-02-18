@@ -53,8 +53,7 @@ func TestNewHub(t *testing.T) {
 
 func TestHub_RegisterAndClientCount(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	_, serverConn, cleanup := newTestWSPair(t)
@@ -71,8 +70,7 @@ func TestHub_RegisterAndClientCount(t *testing.T) {
 
 func TestHub_UnregisterClient(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	_, serverConn, cleanup := newTestWSPair(t)
@@ -94,8 +92,7 @@ func TestHub_UnregisterClient(t *testing.T) {
 
 func TestHub_Broadcast(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	_, serverConn, cleanup := newTestWSPair(t)
@@ -122,8 +119,7 @@ func TestHub_Broadcast(t *testing.T) {
 
 func TestHub_BroadcastToMultipleClients(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	const numClients = 5
@@ -161,8 +157,7 @@ func TestHub_BroadcastToMultipleClients(t *testing.T) {
 
 func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	// Create a client with a tiny send buffer so it fills up fast
@@ -189,8 +184,7 @@ func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 
 func TestHub_OnEmptyCallback(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	var called atomic.Bool
@@ -215,8 +209,7 @@ func TestHub_OnEmptyCallback(t *testing.T) {
 
 func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	var callCount atomic.Int32
@@ -291,8 +284,7 @@ func TestHub_ContextCancellation(t *testing.T) {
 func TestHub_BroadcastBufferFull(t *testing.T) {
 	// Hub with a buffer of 1
 	h := NewHub(1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Don't run the hub — the broadcast channel will fill up
 	h.broadcast <- []byte("fill")
@@ -306,8 +298,7 @@ func TestHub_BroadcastBufferFull(t *testing.T) {
 
 func TestHub_ConcurrentOperations(t *testing.T) {
 	h := NewHub(100)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	const goroutines = 10
@@ -348,8 +339,7 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 
 func TestHub_DoubleUnregister(t *testing.T) {
 	h := NewHub(10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go h.Run(ctx)
 
 	_, serverConn, cleanup := newTestWSPair(t)

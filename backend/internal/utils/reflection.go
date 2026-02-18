@@ -2,6 +2,7 @@ package utils
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -12,8 +13,8 @@ func ParseMetaTag(tag string) map[string]string {
 	if tag == "" {
 		return res
 	}
-	parts := strings.Split(tag, ";")
-	for _, p := range parts {
+	parts := strings.SplitSeq(tag, ";")
+	for p := range parts {
 		if p == "" {
 			continue
 		}
@@ -29,7 +30,7 @@ func ParseMetaTag(tag string) map[string]string {
 func ParseKeywords(keywordsStr string) []string {
 	keywords := []string{}
 	if k := strings.TrimSpace(keywordsStr); k != "" {
-		for _, kk := range strings.Split(k, ",") {
+		for kk := range strings.SplitSeq(k, ",") {
 			if t := strings.TrimSpace(kk); t != "" {
 				keywords = append(keywords, t)
 			}
@@ -40,13 +41,12 @@ func ParseKeywords(keywordsStr string) []string {
 
 // ExtractCategoryMetadata extracts category metadata from struct fields with catmeta tags
 // Returns a map of category ID to category metadata in field order
-func ExtractCategoryMetadata(model interface{}, categoryIDsInOrder []string) map[string]map[string]string {
+func ExtractCategoryMetadata(model any, categoryIDsInOrder []string) map[string]map[string]string {
 	result := make(map[string]map[string]string)
 	seenCategories := make(map[string]bool)
 
 	rt := reflect.TypeOf(model)
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+	for field := range rt.Fields() {
 		catmetaTag := field.Tag.Get("catmeta")
 		if catmetaTag == "" {
 			continue
@@ -67,10 +67,5 @@ func ExtractCategoryMetadata(model interface{}, categoryIDsInOrder []string) map
 
 // Contains checks if a string slice contains an item
 func Contains(slice []string, item string) bool {
-	for _, v := range slice {
-		if v == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }

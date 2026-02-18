@@ -159,7 +159,7 @@ func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Contex
 
 	serviceCount, runningCount := s.getServiceCounts(services)
 
-	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]interface{}{
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
 		"status":        status,
 		"service_count": serviceCount,
 		"running_count": runningCount,
@@ -173,7 +173,7 @@ func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Contex
 
 func (s *ProjectService) updateProjectStatusInternal(ctx context.Context, id string, status models.ProjectStatus) error {
 	now := time.Now()
-	res := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", id).Updates(map[string]interface{}{
+	res := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", id).Updates(map[string]any{
 		"status":     status,
 		"updated_at": now,
 	})
@@ -476,7 +476,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		return fmt.Errorf("query existing project for %q failed: %w", dirPath, err)
 	}
 
-	updates := map[string]interface{}{}
+	updates := map[string]any{}
 	if existing.Path != dirPath {
 		updates["path"] = dirPath
 	}

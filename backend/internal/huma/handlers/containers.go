@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -319,9 +320,7 @@ func buildCreateLabels(body containertypes.Create) map[string]string {
 	labels := map[string]string{
 		"com.arcane.created": "true",
 	}
-	for key, value := range body.Labels {
-		labels[key] = value
-	}
+	maps.Copy(labels, body.Labels)
 
 	return labels
 }
