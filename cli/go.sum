@@ -58,8 +58,8 @@ github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
 github.com/fatih/color v1.18.0 h1:S8gINlzdQ840/4pfAwic/ZE0djQEH3wM94VfqLTZcOM=
 github.com/fatih/color v1.18.0/go.mod h1:4FelSpRwEGDpQ12mAdzqdOukCy4u8WUtOY6lkT/6HfU=
-github.com/getarcaneapp/arcane/types v1.15.0 h1:3kgFP9EGPMm7813B5XnnzM7wEKB5KPvE0/Y5N5N6hn8=
-github.com/getarcaneapp/arcane/types v1.15.0/go.mod h1:nbOGqUeXEZuj8DhROXX4hNp4CW1I1Sp9Sbr3ce2SZCM=
+github.com/getarcaneapp/arcane/types v1.15.2 h1:+rFSv0TPmTlTcR2azcumS7/imnXCic5JKSr0K0IPW8k=
+github.com/getarcaneapp/arcane/types v1.15.2/go.mod h1:kqkuqZZ9TkfWOvAuzCKq5UTX/11NO77lyPg5ECJrMXo=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

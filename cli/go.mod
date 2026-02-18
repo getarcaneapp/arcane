@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.18.0
-	github.com/getarcaneapp/arcane/types v1.15.0
+	github.com/getarcaneapp/arcane/types v1.15.2
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
