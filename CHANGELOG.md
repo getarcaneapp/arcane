@@ -1,3 +1,33 @@
+## v1.15.2
+
+### Bug fixes
+
+* git test connection not using default branch ([#1766](https://github.com/getarcaneapp/arcane/pull/1766) by @kmendell)
+* missing settings making env settings not able to be saved ([#1775](https://github.com/getarcaneapp/arcane/pull/1775) by @kmendell)
+* change notification logs to TEXT instead of VARCHAR(255) ([#1779](https://github.com/getarcaneapp/arcane/pull/1779) by @kmendell)
+* allow trivy container limits to be configured ([#1778](https://github.com/getarcaneapp/arcane/pull/1778) by @kmendell)
+* convert cron expressions from utc into TZ var timezone ([#1781](https://github.com/getarcaneapp/arcane/pull/1781) by @kmendell)
+* image size mismatch on details page ([#1790](https://github.com/getarcaneapp/arcane/pull/1790) by @kmendell)
+* use non-http context for jobs ([#1770](https://github.com/getarcaneapp/arcane/pull/1770) by @kmendell)
+* silently refresh token on version mismatch instead of forcing logout ([#1791](https://github.com/getarcaneapp/arcane/pull/1791) by @kmendell)
+* image counts are incorrectly calculated ([#1760](https://github.com/getarcaneapp/arcane/pull/1760) by @kmendell)
+
+### Dependencies
+
+* bump pnpm to v10.30([e24173a](https://github.com/getarcaneapp/arcane/commit/e24173a9ba901177b2ab1b49df48db62dc6be347) by @kmendell)
+* require ajv 8.18.0 or higher([27b3cdb](https://github.com/getarcaneapp/arcane/commit/27b3cdbb98e3ffbba959faf2e92c149efdb1704f) by @kmendell)
+
+### Other
+
+* add logging for docker api versions([83c15a1](https://github.com/getarcaneapp/arcane/commit/83c15a1064e5a3348bb72fdd024483c9adaf4ae7) by @kmendell)
+* update pointer calls to use new() ([#1722](https://github.com/getarcaneapp/arcane/pull/1722) by @kmendell)
+* modernize backend code ([#1793](https://github.com/getarcaneapp/arcane/pull/1793) by @kmendell)
+* modernize cli and types code([bb2ae34](https://github.com/getarcaneapp/arcane/commit/bb2ae3483d2152053b1168a0f9370bbef5c5d38f) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.15.1...v1.15.2
+
 ## v1.15.1
 
 ### Bug fixes

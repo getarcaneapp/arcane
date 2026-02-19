@@ -101,20 +101,38 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 
 	images, err := dockerClient.ImageList(apiCtx, image.ListOptions{All: true})
 	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker images: %w", err)
+	}
+
+	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
+	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 
-	var inuse, unused, total int
-	for _, i := range images {
-		total++
-		if i.Containers >= 1 {
-			inuse++
-		} else {
-			unused++
-		}
-	}
+	inuse, unused, total := countImageUsageInternal(images, containers)
 
 	return images, inuse, unused, total, nil
+}
+
+func countImageUsageInternal(images []image.Summary, containers []container.Summary) (inuse int, unused int, total int) {
+	inUseImageIDs := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		if c.ImageID == "" {
+			continue
+		}
+		inUseImageIDs[c.ImageID] = struct{}{}
+	}
+
+	for _, img := range images {
+		total++
+		if _, ok := inUseImageIDs[img.ID]; ok {
+			inuse++
+			continue
+		}
+		unused++
+	}
+
+	return inuse, unused, total
 }
 
 func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, inuseNetworks int, unusedNetworks int, totalNetworks int, error error) {

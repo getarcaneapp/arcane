@@ -1043,10 +1043,23 @@ func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, exte
 		return make(map[string]*imageupdate.Response), nil
 	}
 
-	return s.CheckMultipleImages(ctx, imageRefs, externalCreds)
+	results, err := s.CheckMultipleImages(ctx, imageRefs, externalCreds)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.CleanupOrphanedRecords(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to cleanup orphaned image update records after check-all", "error", err.Error())
+	}
+
+	return results, nil
 }
 
 func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
+	if s.db == nil {
+		return nil
+	}
+
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -1089,40 +1102,67 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	dockerImages, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker images: %w", err)
+	}
+
+	liveImageIDs := make([]string, 0, len(dockerImages))
+	for _, img := range dockerImages {
+		liveImageIDs = append(liveImageIDs, img.ID)
+	}
+
+	return s.getUpdateSummaryForImageIDsInternal(ctx, liveImageIDs)
+}
+
+func (s *ImageUpdateService) getUpdateSummaryForImageIDsInternal(ctx context.Context, imageIDs []string) (*imageupdate.Summary, error) {
+	summary := &imageupdate.Summary{
+		TotalImages: len(imageIDs),
+	}
+
+	if s.db == nil || len(imageIDs) == 0 {
+		return summary, nil
+	}
+
 	var (
-		totalImages       int64
 		imagesWithUpdates int64
 		digestUpdates     int64
-		tagUpdates        int64
 		errorsCount       int64
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Count(&totalImages).Error
+		return s.db.WithContext(groupCtx).
+			Model(&models.ImageUpdateRecord{}).
+			Where("id IN ? AND has_update = ?", imageIDs, true).
+			Count(&imagesWithUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ?", true).Count(&imagesWithUpdates).Error
+		return s.db.WithContext(groupCtx).
+			Model(&models.ImageUpdateRecord{}).
+			Where("id IN ? AND has_update = ? AND update_type = ?", imageIDs, true, "digest").
+			Count(&digestUpdates).Error
 	})
 	g.Go(func() error {
-		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "digest").Count(&digestUpdates).Error
-	})
-	g.Go(func() error {
-		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("has_update = ? AND update_type = ?", true, "tag").Count(&tagUpdates).Error
-	})
-	g.Go(func() error {
-		return s.db.WithContext(groupCtx).Model(&models.ImageUpdateRecord{}).Where("last_error IS NOT NULL").Count(&errorsCount).Error
+		return s.db.WithContext(groupCtx).
+			Model(&models.ImageUpdateRecord{}).
+			Where("id IN ? AND last_error IS NOT NULL AND last_error != ''", imageIDs).
+			Count(&errorsCount).Error
 	})
 
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
-	return &imageupdate.Summary{
-		TotalImages:       int(totalImages),
-		ImagesWithUpdates: int(imagesWithUpdates),
-		DigestUpdates:     int(digestUpdates),
-		ErrorsCount:       int(errorsCount),
-	}, nil
+	summary.ImagesWithUpdates = int(imagesWithUpdates)
+	summary.DigestUpdates = int(digestUpdates)
+	summary.ErrorsCount = int(errorsCount)
+
+	return summary, nil
 }

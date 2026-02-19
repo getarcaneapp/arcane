@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -344,7 +345,8 @@ func TestStringToPtr(t *testing.T) {
 // setupImageUpdateTestDB creates an in-memory SQLite database for testing
 func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	t.Helper()
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(glsqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
 	return &database.DB{DB: db}
@@ -655,4 +657,69 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 
 	err = svc.MarkUpdatesAsNotified(ctx, nil)
 	require.NoError(t, err)
+}
+
+func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *testing.T) {
+	ctx := context.Background()
+	db := setupImageUpdateTestDB(t)
+	svc := &ImageUpdateService{db: db}
+	now := time.Now()
+
+	records := []models.ImageUpdateRecord{
+		{
+			ID:             "sha256:live-1",
+			Repository:     "docker.io/library/nginx",
+			Tag:            "latest",
+			HasUpdate:      true,
+			UpdateType:     "digest",
+			CurrentVersion: "latest",
+			CheckTime:      now,
+		},
+		{
+			ID:             "sha256:live-2",
+			Repository:     "docker.io/library/redis",
+			Tag:            "latest",
+			HasUpdate:      false,
+			UpdateType:     "digest",
+			CurrentVersion: "latest",
+			LastError:      stringToPtr("rate limited"),
+			CheckTime:      now,
+		},
+		{
+			ID:             "sha256:stale-1",
+			Repository:     "docker.io/library/postgres",
+			Tag:            "latest",
+			HasUpdate:      true,
+			UpdateType:     "digest",
+			CurrentVersion: "latest",
+			LastError:      stringToPtr("stale failure"),
+			CheckTime:      now,
+		},
+	}
+	for i := range records {
+		err := db.Create(&records[i]).Error
+		require.NoError(t, err)
+	}
+
+	summary, err := svc.getUpdateSummaryForImageIDsInternal(ctx, []string{"sha256:live-1", "sha256:live-2"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, summary.TotalImages)
+	assert.Equal(t, 1, summary.ImagesWithUpdates)
+	assert.Equal(t, 1, summary.DigestUpdates)
+	assert.Equal(t, 1, summary.ErrorsCount)
+}
+
+func TestImageUpdateService_GetUpdateSummaryForImageIDs_EmptyLiveSet(t *testing.T) {
+	ctx := context.Background()
+	db := setupImageUpdateTestDB(t)
+	svc := &ImageUpdateService{db: db}
+
+	summary, err := svc.getUpdateSummaryForImageIDsInternal(ctx, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, summary.TotalImages)
+	assert.Equal(t, 0, summary.ImagesWithUpdates)
+	assert.Equal(t, 0, summary.DigestUpdates)
+	assert.Equal(t, 0, summary.ErrorsCount)
 }

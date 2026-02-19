@@ -43,7 +43,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -61,6 +61,8 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "1", sv.Value)
 		case "trivyMemoryLimitMb":
 			require.Equal(t, "0", sv.Value)
+		case "trivyConcurrentScanContainers":
+			require.Equal(t, "1", sv.Value)
 		}
 	}
 }
@@ -397,6 +399,26 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	require.Equal(t, "false", callbackPayload["trivyResourceLimitsEnabled"])
 	require.Equal(t, "2.5", callbackPayload["trivyCpuLimit"])
 	require.Equal(t, "3072", callbackPayload["trivyMemoryLimitMb"])
+}
+
+func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload map[string]string
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+		callbackPayload = timeoutSettings
+	}
+
+	concurrentContainers := "4"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: &concurrentContainers})
+	require.NoError(t, err)
+
+	require.NotNil(t, callbackPayload)
+	require.Equal(t, "4", callbackPayload["trivyConcurrentScanContainers"])
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {

@@ -24,6 +24,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
+	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/vulnerability-scan.util';
 	import {
 		DownloadIcon,
 		TrashIcon,
@@ -58,6 +59,7 @@
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
+	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
@@ -173,10 +175,12 @@
 			message: m.vuln_scan_failed(),
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
+				scanRequestedAtByImage[imageId] = data.scanTime || new Date().toISOString();
 				const summary: VulnerabilityScanSummary = {
 					imageId: data.imageId,
 					scanTime: data.scanTime,
 					status: data.status,
+					scanPhase: data.scanPhase,
 					summary: data.summary,
 					error: data.error
 				};
@@ -214,8 +218,14 @@
 			images = { ...images, data: [...images.data] };
 		}
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
+			if (scanRequestedAtByImage[imageId]) {
+				delete scanRequestedAtByImage[imageId];
+				scanRequestedAtByImage = { ...scanRequestedAtByImage };
+			}
+		}
+		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
 			await onImageUpdated?.();
-		} else if (newScanSummary.status === 'scanning' || newScanSummary.status === 'pending') {
+		} else if (isVulnerabilityScanInProgress(newScanSummary.status)) {
 			startBatchScanPolling();
 		}
 	}
@@ -229,7 +239,7 @@
 
 	function getScanningImageIds(): string[] {
 		return (images.data ?? [])
-			.filter((item) => item.vulnerabilityScan?.status === 'scanning' || item.vulnerabilityScan?.status === 'pending')
+			.filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status))
 			.map((item) => item.id);
 	}
 
@@ -253,17 +263,29 @@
 			if (Object.keys(summaries).length > 0 && images.data?.length) {
 				let changed = false;
 				let completed = false;
+				const nextScanRequestedAtByImage = { ...scanRequestedAtByImage };
 				const nextData = images.data.map((img) => {
 					const summary = summaries[img.id];
 					if (!summary) return img;
+
+					if (
+						summary.status === 'failed' &&
+						isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[img.id]) &&
+						isVulnerabilityScanInProgress(img.vulnerabilityScan?.status)
+					) {
+						return img;
+					}
+
 					changed = true;
 					if (summary.status === 'completed' || summary.status === 'failed') {
 						completed = true;
+						delete nextScanRequestedAtByImage[img.id];
 					}
 					return { ...img, vulnerabilityScan: summary };
 				});
 				if (changed) {
 					images = { ...images, data: nextData };
+					scanRequestedAtByImage = nextScanRequestedAtByImage;
 				}
 				if (completed) {
 					await onImageUpdated?.();

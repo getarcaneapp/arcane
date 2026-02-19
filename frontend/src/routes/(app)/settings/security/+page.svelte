@@ -36,8 +36,9 @@
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			trivyImage: z.string(),
 			trivyResourceLimitsEnabled: z.boolean(),
-			trivyCpuLimit: z.coerce.number().nonnegative(),
+			trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
 			trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
+			trivyConcurrentScanContainers: z.coerce.number().int().min(1, m.security_trivy_concurrent_scan_containers_min()),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
@@ -73,6 +74,7 @@
 		trivyResourceLimitsEnabled: currentSettings.trivyResourceLimitsEnabled ?? true,
 		trivyCpuLimit: currentSettings.trivyCpuLimit ?? 1,
 		trivyMemoryLimitMb: currentSettings.trivyMemoryLimitMb ?? 0,
+		trivyConcurrentScanContainers: currentSettings.trivyConcurrentScanContainers ?? 1,
 		oidcEnabled: currentSettings.oidcEnabled,
 		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
 		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
@@ -100,6 +102,7 @@
 				trivyResourceLimitsEnabled: ($settingsStore || data.settings!).trivyResourceLimitsEnabled ?? true,
 				trivyCpuLimit: ($settingsStore || data.settings!).trivyCpuLimit ?? 1,
 				trivyMemoryLimitMb: ($settingsStore || data.settings!).trivyMemoryLimitMb ?? 0,
+				trivyConcurrentScanContainers: ($settingsStore || data.settings!).trivyConcurrentScanContainers ?? 1,
 				oidcEnabled: ($settingsStore || data.settings!).oidcEnabled,
 				oidcMergeAccounts: ($settingsStore || data.settings!).oidcMergeAccounts,
 				oidcSkipTlsVerify: ($settingsStore || data.settings!).oidcSkipTlsVerify,
@@ -126,6 +129,7 @@
 			$formInputs.trivyResourceLimitsEnabled.value !== (currentSettings.trivyResourceLimitsEnabled ?? true) ||
 			$formInputs.trivyCpuLimit.value !== (currentSettings.trivyCpuLimit ?? 1) ||
 			$formInputs.trivyMemoryLimitMb.value !== (currentSettings.trivyMemoryLimitMb ?? 0) ||
+			$formInputs.trivyConcurrentScanContainers.value !== (currentSettings.trivyConcurrentScanContainers ?? 1) ||
 			$formInputs.oidcEnabled.value !== currentSettings.oidcEnabled ||
 			$formInputs.oidcMergeAccounts.value !== currentSettings.oidcMergeAccounts ||
 			$formInputs.oidcSkipTlsVerify.value !== currentSettings.oidcSkipTlsVerify ||
@@ -177,6 +181,7 @@
 				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
 				trivyCpuLimit,
 				trivyMemoryLimitMb,
+				trivyConcurrentScanContainers: formData.trivyConcurrentScanContainers,
 				oidcEnabled: formData.oidcEnabled,
 				oidcMergeAccounts: formData.oidcMergeAccounts,
 				oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
@@ -697,6 +702,15 @@
 										disabled={!$formInputs.trivyResourceLimitsEnabled.value}
 										label={m.security_trivy_memory_limit_label()}
 										reserveHelpTextSpace={true}
+										type="number"
+									/>
+								</div>
+								<div class="max-w-xs pt-2">
+									<TextInputWithLabel
+										bind:value={$formInputs.trivyConcurrentScanContainers.value}
+										error={$formInputs.trivyConcurrentScanContainers.error}
+										label={m.security_trivy_concurrent_scan_containers_label()}
+										helpText={m.security_trivy_concurrent_scan_containers_help()}
 										type="number"
 									/>
 								</div>

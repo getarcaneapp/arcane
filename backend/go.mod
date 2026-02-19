@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/compose-spec/compose-go/v2 v2.10.1
+	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/danielgtaylor/huma/v2 v2.35.0
 	github.com/docker/cli v28.5.2+incompatible
@@ -13,7 +14,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/getarcaneapp/arcane/types v0.0.0-20260209233421-0952125a149f
+	github.com/getarcaneapp/arcane/types v1.15.2
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
@@ -27,7 +28,7 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-	github.com/lmittmann/tint v1.1.2
+	github.com/lmittmann/tint v1.1.3
 	github.com/nicholas-fedor/shoutrrr v0.13.2
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/robfig/cron/v3 v3.0.1
@@ -38,7 +39,7 @@ require (
 	go.podman.io/image/v5 v5.39.1
 	golang.org/x/crypto v0.48.0
 	golang.org/x/mod v0.33.0
-	golang.org/x/net v0.49.0
+	golang.org/x/net v0.50.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.34.0
@@ -67,7 +68,6 @@ require (
 	github.com/containerd/containerd/api v1.10.0 // indirect
 	github.com/containerd/containerd/v2 v2.2.1 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v1.0.0-rc.2 // indirect
