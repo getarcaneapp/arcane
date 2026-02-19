@@ -16,8 +16,6 @@ permissions:
 
 jobs:
     build-pr-images:
-        # Only build if the PR is from a branch within the getarcaneapp organization
-        if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
         runs-on: depot-ubuntu-24.04-32
 
         env:
@@ -117,7 +115,7 @@ jobs:
               id: fc
               with:
                   issue-number: ${{ github.event.pull_request.number }}
-                  comment-author: "getarcaneappbot"
+                  comment-author: "github-actions[bot]"
                   body-includes: Container images for this PR have been built successfully!
 
             - name: Comment PR Images
@@ -125,7 +123,7 @@ jobs:
               with:
                   comment-id: ${{ steps.fc.outputs.comment-id }}
                   issue-number: ${{ github.event.pull_request.number }}
-                  token: ${{ secrets.ARCANE_BOT_TOKEN }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
                   body: |
                       Container images for this PR have been built successfully!
 
