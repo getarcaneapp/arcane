@@ -37,6 +37,10 @@
 			.join(', ');
 	}
 
+	function formatImage(image: string): string {
+		return image.replace(/@sha256:([a-f0-9]{7})[a-f0-9]+/, '@sha256:$1');
+	}
+
 	function modeVariant(mode: string): 'green' | 'blue' | 'amber' | 'gray' {
 		if (mode === 'replicated') return 'blue';
 		if (mode === 'global') return 'green';
@@ -110,7 +114,7 @@
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true },
-		{ accessorKey: 'image', title: m.common_image(), sortable: true },
+		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
 		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true },
 		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
@@ -127,6 +131,10 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
+
+{#snippet ImageCell({ value }: { value: unknown })}
+	<span class="font-mono text-sm">{formatImage(String(value ?? ''))}</span>
+{/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
 	<StatusBadge text={String(value ?? m.common_unknown())} variant={modeVariant(String(value ?? ''))} />
@@ -158,7 +166,7 @@
 			variant: item.mode === 'global' ? 'emerald' : 'blue'
 		})}
 		title={(item: SwarmServiceSummary) => item.name}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? item.image : null)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? formatImage(item.image) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
 				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null
