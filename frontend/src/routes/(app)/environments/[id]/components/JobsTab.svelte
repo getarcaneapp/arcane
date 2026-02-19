@@ -334,7 +334,9 @@
 													<div class="border-border/20 space-y-3 border-t pt-3">
 														<div class="grid gap-3 sm:grid-cols-2">
 															<div class="space-y-1">
-																<Label for="auto-heal-max-restarts" class="text-sm font-medium">{m.auto_heal_max_restarts_label()}</Label>
+																<Label for="auto-heal-max-restarts" class="text-sm font-medium"
+																	>{m.auto_heal_max_restarts_label()}</Label
+																>
 																<p class="text-muted-foreground text-xs">{m.auto_heal_max_restarts_description()}</p>
 																<Input
 																	id="auto-heal-max-restarts"
@@ -345,7 +347,9 @@
 																/>
 															</div>
 															<div class="space-y-1">
-																<Label for="auto-heal-restart-window" class="text-sm font-medium">{m.auto_heal_restart_window_label()}</Label>
+																<Label for="auto-heal-restart-window" class="text-sm font-medium"
+																	>{m.auto_heal_restart_window_label()}</Label
+																>
 																<p class="text-muted-foreground text-xs">{m.auto_heal_restart_window_description()}</p>
 																<Input
 																	id="auto-heal-restart-window"
@@ -370,7 +374,12 @@
 														</div>
 
 														<div class="rounded-md border p-2">
-															<Input type="search" placeholder="Search containers..." class="mb-2 h-8" bind:value={autoHealSearchTerm} />
+															<Input
+																type="search"
+																placeholder="Search containers..."
+																class="mb-2 h-8"
+																bind:value={autoHealSearchTerm}
+															/>
 															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
 																<div class="space-y-2">
 																	{#await containersPromise}
@@ -380,7 +389,9 @@
 																	{:then containers}
 																		{@const allItems = containers.map(mapContainerToAutoHealItem)}
 																		{@const filteredItems = autoHealSearchTerm
-																			? allItems.filter((item) => item.label.toLowerCase().includes(autoHealSearchTerm.toLowerCase()))
+																			? allItems.filter((item) =>
+																					item.label.toLowerCase().includes(autoHealSearchTerm.toLowerCase())
+																				)
 																			: allItems}
 
 																		{#if filteredItems.length === 0}
@@ -395,10 +406,7 @@
 																						checked={container.selected}
 																						onCheckedChange={() => toggleAutoHealContainerExclusion(container.value)}
 																					/>
-																					<Label
-																						for="auto-heal-container-{container.value}"
-																						class="text-sm font-normal"
-																					>
+																					<Label for="auto-heal-container-{container.value}" class="text-sm font-normal">
 																						{container.label}
 																					</Label>
 																				</div>
