@@ -19,7 +19,7 @@ export default class ApiKeyAPIService extends BaseAPIService {
 	}
 
 	async update(id: string, apiKey: UpdateApiKey): Promise<ApiKey> {
-		return this.handleResponse(this.api.put(`/api-keys/${id}`, apiKey)) as Promise<ApiKey>;
+		return this.handleResponse(this.api.patch(`/api-keys/${id}`, apiKey)) as Promise<ApiKey>;
 	}
 
 	async delete(id: string): Promise<void> {

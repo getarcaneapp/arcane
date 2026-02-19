@@ -23,7 +23,7 @@ export default class UserAPIService extends BaseAPIService {
 	}
 
 	async update(id: string, user: Partial<User>): Promise<User> {
-		return this.handleResponse(this.api.put(`/users/${id}`, user)) as Promise<User>;
+		return this.handleResponse(this.api.patch(`/users/${id}`, user)) as Promise<User>;
 	}
 
 	async delete(id: string): Promise<void> {

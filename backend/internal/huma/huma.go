@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
+	"github.com/danielgtaylor/huma/v2/autopatch"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
@@ -219,6 +220,9 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 	// Register all Huma handlers
 	registerHandlers(api, svc)
 
+	// Generate PATCH operations for resources that have GET and PUT
+	autopatch.AutoPatch(api)
+
 	// Register Scalar API docs endpoint with dark mode
 	registerScalarDocs(apiGroup)
 
@@ -290,6 +294,9 @@ func SetupAPIForSpec() huma.API {
 
 	// Register handlers with nil services (just for schema)
 	registerHandlers(api, nil)
+
+	// Generate PATCH operations for resources that have GET and PUT
+	autopatch.AutoPatch(api)
 
 	return api
 }

@@ -7,7 +7,7 @@ class JobScheduleService extends BaseAPIService {
 	}
 
 	async updateJobSchedules(update: JobSchedulesUpdate, environmentId: string = '0'): Promise<JobSchedules> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/job-schedules`, update));
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/job-schedules`, update));
 	}
 
 	async listJobs(environmentId: string = '0'): Promise<JobListResponse> {

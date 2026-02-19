@@ -93,6 +93,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.NoRoute(middleware.NewHostlessAutoPatchNoRouteHandler(router))
 
 	router.Use(sloggin.NewWithConfig(slog.Default(), sloggin.Config{
 		Filters: []sloggin.Filter{shouldLogRequest},

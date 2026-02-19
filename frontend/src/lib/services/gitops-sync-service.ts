@@ -29,7 +29,7 @@ export default class GitOpsSyncService extends BaseAPIService {
 	}
 
 	async updateSync(environmentId: string, syncId: string, sync: GitOpsSyncUpdateDto): Promise<GitOpsSync> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/gitops-syncs/${syncId}`, sync));
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/gitops-syncs/${syncId}`, sync));
 	}
 
 	async deleteSync(environmentId: string, syncId: string): Promise<void> {

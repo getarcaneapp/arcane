@@ -26,7 +26,7 @@ export default class GitRepositoryService extends BaseAPIService {
 	}
 
 	async updateRepository(id: string, repository: GitRepositoryUpdateDto): Promise<GitRepository> {
-		return this.handleResponse(this.api.put(`/customize/git-repositories/${id}`, repository));
+		return this.handleResponse(this.api.patch(`/customize/git-repositories/${id}`, repository));
 	}
 
 	async deleteRepository(id: string): Promise<void> {

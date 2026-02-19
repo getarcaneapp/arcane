@@ -20,7 +20,7 @@ export default class ContainerRegistryService extends BaseAPIService {
 	}
 
 	async updateRegistry(id: string, registry: ContainerRegistryUpdateDto): Promise<ContainerRegistry> {
-		return this.handleResponse(this.api.put(`/container-registries/${id}`, registry));
+		return this.handleResponse(this.api.patch(`/container-registries/${id}`, registry));
 	}
 
 	async deleteRegistry(id: string): Promise<void> {

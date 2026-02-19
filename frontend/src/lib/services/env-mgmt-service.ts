@@ -23,7 +23,7 @@ export default class EnvironmentManagementService extends BaseAPIService {
 	}
 
 	async update(environmentId: string, dto: UpdateEnvironmentDTO): Promise<Environment> {
-		const res = await this.api.put(`/environments/${environmentId}`, dto);
+		const res = await this.api.patch(`/environments/${environmentId}`, dto);
 		return res.data.data as Environment;
 	}
 

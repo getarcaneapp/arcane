@@ -116,7 +116,7 @@ export class ProjectService extends BaseAPIService {
 		if (envContent !== undefined) {
 			payload.envContent = envContent;
 		}
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}`, payload));
 	}
 
 	async updateProjectIncludeFile(projectId: string, relativePath: string, content: string): Promise<Project> {

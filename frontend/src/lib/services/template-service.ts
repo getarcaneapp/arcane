@@ -104,7 +104,7 @@ export default class TemplateService extends BaseAPIService {
 	}
 
 	async updateGlobalVariables(variables: Variable[]): Promise<void> {
-		await this.api.put('/templates/variables', { variables });
+		await this.api.patch('/templates/variables', { variables });
 	}
 }
 
