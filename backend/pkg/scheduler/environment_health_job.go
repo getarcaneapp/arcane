@@ -5,19 +5,38 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"golang.org/x/sync/errgroup"
 )
+
+const (
+	defaultEnvironmentSyncConcurrency = 4
+	defaultEnvironmentSyncTimeout     = 90 * time.Second
+)
+
+type healthEnvironment struct {
+	ID      string
+	Name    string
+	Enabled bool
+}
 
 type EnvironmentHealthJob struct {
 	environmentService *services.EnvironmentService
 	settingsService    *services.SettingsService
+	syncConcurrency    int
+	syncTimeout        time.Duration
+	running            atomic.Bool
 }
 
 func NewEnvironmentHealthJob(environmentService *services.EnvironmentService, settingsService *services.SettingsService) *EnvironmentHealthJob {
 	return &EnvironmentHealthJob{
 		environmentService: environmentService,
 		settingsService:    settingsService,
+		syncConcurrency:    defaultEnvironmentSyncConcurrency,
+		syncTimeout:        defaultEnvironmentSyncTimeout,
 	}
 }
 
@@ -46,22 +65,20 @@ func (j *EnvironmentHealthJob) Schedule(ctx context.Context) string {
 }
 
 func (j *EnvironmentHealthJob) Run(ctx context.Context) {
+	if !j.running.CompareAndSwap(false, true) {
+		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress")
+		return
+	}
+	defer j.running.Store(false)
+
 	slog.InfoContext(ctx, "environment health check started")
 
 	// Get all environments using the DB directly
 	db := j.environmentService.GetDB()
-	var environments []struct {
-		ID      string
-		Name    string
-		Enabled bool
-	}
+	var environments []healthEnvironment
 
 	if err := db.WithContext(ctx).
-		Model(&struct {
-			ID      string `gorm:"column:id"`
-			Name    string `gorm:"column:name"`
-			Enabled bool   `gorm:"column:enabled"`
-		}{}).
+		Model(&healthEnvironment{}).
 		Table("environments").
 		Where("enabled = ?", true).
 		Find(&environments).Error; err != nil {
@@ -72,6 +89,8 @@ func (j *EnvironmentHealthJob) Run(ctx context.Context) {
 	checkedCount := 0
 	onlineCount := 0
 	offlineCount := 0
+	syncedRemoteCount := 0
+	var onlineRemote []healthEnvironment
 
 	for _, env := range environments {
 		checkedCount++
@@ -84,44 +103,72 @@ func (j *EnvironmentHealthJob) Run(ctx context.Context) {
 			offlineCount++
 		case status == "online":
 			onlineCount++
-			// Sync registries and git repositories to online remote environments (skip local environment ID "0")
+			// Queue sync for online remote environments (skip local environment ID "0")
 			if env.ID != "0" {
-				go func(envID, envName string) {
-					syncCtx := context.WithoutCancel(ctx)
-					if err := j.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
-						slog.WarnContext(syncCtx, "failed to sync registries during health check",
-							"environment_id", envID,
-							"environment_name", envName,
-							"error", err)
-					} else {
-						slog.DebugContext(syncCtx, "successfully synced registries during health check",
-							"environment_id", envID,
-							"environment_name", envName)
-					}
-				}(env.ID, env.Name)
-				go func(envID, envName string) {
-					syncCtx := context.WithoutCancel(ctx)
-					if err := j.environmentService.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
-						slog.WarnContext(syncCtx, "failed to sync git repositories during health check",
-							"environment_id", envID,
-							"environment_name", envName,
-							"error", err)
-					} else {
-						slog.DebugContext(syncCtx, "successfully synced git repositories during health check",
-							"environment_id", envID,
-							"environment_name", envName)
-					}
-				}(env.ID, env.Name)
+				onlineRemote = append(onlineRemote, env)
+				syncedRemoteCount++
 			}
 		default:
 			offlineCount++
 		}
 	}
 
-	slog.InfoContext(ctx, "environment health check completed", "checked", checkedCount, "online", onlineCount, "offline", offlineCount)
+	j.syncOnlineRemoteEnvironments(ctx, onlineRemote)
+	slog.InfoContext(ctx, "environment health check completed", "checked", checkedCount, "online", onlineCount, "offline", offlineCount, "remote_sync_queued", syncedRemoteCount)
 }
 
 func (j *EnvironmentHealthJob) Reschedule(ctx context.Context) error {
 	slog.InfoContext(ctx, "rescheduling environment health job in new scheduler; currently requires restart")
 	return nil
+}
+
+func (j *EnvironmentHealthJob) syncOnlineRemoteEnvironments(ctx context.Context, environments []healthEnvironment) {
+	if len(environments) == 0 {
+		return
+	}
+
+	syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), j.syncTimeout)
+	defer cancel()
+
+	g, groupCtx := errgroup.WithContext(syncCtx)
+	if j.syncConcurrency > 0 {
+		g.SetLimit(j.syncConcurrency)
+	}
+
+	for _, env := range environments {
+		g.Go(func() error {
+			if err := j.environmentService.SyncRegistriesToEnvironment(groupCtx, env.ID); err != nil {
+				slog.WarnContext(groupCtx, "failed to sync registries during health check",
+					"environment_id", env.ID,
+					"environment_name", env.Name,
+					"error", err)
+				return nil
+			}
+
+			slog.DebugContext(groupCtx, "successfully synced registries during health check",
+				"environment_id", env.ID,
+				"environment_name", env.Name)
+			return nil
+		})
+
+		g.Go(func() error {
+			if err := j.environmentService.SyncRepositoriesToEnvironment(groupCtx, env.ID); err != nil {
+				slog.WarnContext(groupCtx, "failed to sync git repositories during health check",
+					"environment_id", env.ID,
+					"environment_name", env.Name,
+					"error", err)
+				return nil
+			}
+
+			slog.DebugContext(groupCtx, "successfully synced git repositories during health check",
+				"environment_id", env.ID,
+				"environment_name", env.Name)
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+	if syncCtx.Err() != nil {
+		slog.WarnContext(ctx, "environment health sync phase timed out or canceled", "error", syncCtx.Err())
+	}
 }
