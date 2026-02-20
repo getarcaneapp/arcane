@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
@@ -271,4 +275,45 @@ func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing
 	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
 	assert.Contains(t, out, svc.normalizeRef("redis:7"))
 	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+}
+
+func setupUpdaterServiceTestDB(t *testing.T) *database.DB {
+	t.Helper()
+
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+
+	return &database.DB{DB: db}
+}
+
+func TestUpdaterService_ClearImageUpdateRecordByID_AvoidsRepoCanonicalMismatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupUpdaterServiceTestDB(t)
+
+	record := models.ImageUpdateRecord{
+		ID:             "sha256:old-image",
+		Repository:     "nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now(),
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
+
+	svc := &UpdaterService{db: db}
+
+	// Simulate the previous clear path that used normalized repo/tag.
+	require.NoError(t, svc.clearImageUpdateRecord(ctx, "docker.io/library/nginx", "latest"))
+
+	var unchanged models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&unchanged).Error)
+	assert.True(t, unchanged.HasUpdate, "repo/tag clear should not match when repository canonicalization differs")
+
+	require.NoError(t, svc.clearImageUpdateRecordByID(ctx, record.ID))
+
+	var cleared models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&cleared).Error)
+	assert.False(t, cleared.HasUpdate, "clear by image ID should always match the intended record")
 }

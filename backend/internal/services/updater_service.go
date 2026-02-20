@@ -331,11 +331,20 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			if stillUsed {
 				continue
 			}
-			repo, tag := s.parseRepoAndTag(p.oldRef)
-			if repo == "" || tag == "" {
-				continue
+
+			clearedAny := false
+			for _, oldID := range p.oldIDs {
+				if oldID == "" {
+					continue
+				}
+				if err := s.clearImageUpdateRecordByID(ctx, oldID); err != nil {
+					slog.WarnContext(ctx, "failed to clear update record by image id", "imageID", oldID, "image", p.oldRef, "err", err)
+					continue
+				}
+				clearedAny = true
 			}
-			if err := s.clearImageUpdateRecord(ctx, repo, tag); err == nil {
+
+			if clearedAny {
 				s.logAutoUpdate(ctx, models.EventSeverityInfo, models.JSON{
 					"phase":    "record_clear",
 					"imageOld": p.oldRef,
@@ -556,8 +565,19 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		})
 		out.Updated++
 
-		// Clear the update record for this image
-		if err := s.clearImageUpdateRecord(ctx, repo, tag); err != nil {
+		// Clear the update record for this exact image ID when no running container still uses it.
+		// This avoids repo-name canonicalization mismatches (e.g. "nginx" vs "docker.io/library/nginx").
+		if inspectBefore.Image != "" {
+			stillUsed, usageErr := s.anyImageIDsStillInUse(ctx, []string{inspectBefore.Image})
+			if usageErr != nil {
+				slog.WarnContext(ctx, "failed to check image usage before clearing update record", "imageID", inspectBefore.Image, "err", usageErr)
+			} else if !stillUsed {
+				if err := s.clearImageUpdateRecordByID(ctx, inspectBefore.Image); err != nil {
+					slog.WarnContext(ctx, "failed to clear update record by image id", "imageID", inspectBefore.Image, "err", err)
+				}
+			}
+		} else if err := s.clearImageUpdateRecord(ctx, repo, tag); err != nil {
+			// Fallback for unexpected cases where the old image ID is unavailable.
 			slog.WarnContext(ctx, "failed to clear update record", "repo", repo, "tag", tag, "err", err)
 		}
 	}
@@ -1388,6 +1408,13 @@ func (s *UpdaterService) clearImageUpdateRecord(ctx context.Context, repository,
 	return s.db.WithContext(ctx).
 		Model(&models.ImageUpdateRecord{}).
 		Where("repository = ? AND tag = ?", repository, tag).
+		Update("has_update", false).Error
+}
+
+func (s *UpdaterService) clearImageUpdateRecordByID(ctx context.Context, imageID string) error {
+	return s.db.WithContext(ctx).
+		Model(&models.ImageUpdateRecord{}).
+		Where("id = ?", imageID).
 		Update("has_update", false).Error
 }
 
