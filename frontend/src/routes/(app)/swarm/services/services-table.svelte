@@ -14,6 +14,7 @@
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { truncateImageDigest } from '$lib/utils/string.utils';
 	import ServiceEditorDialog from './service-editor-dialog.svelte';
 
 	let {
@@ -110,7 +111,7 @@
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true },
-		{ accessorKey: 'image', title: m.common_image(), sortable: true },
+		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
 		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true },
 		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
@@ -127,6 +128,10 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
+
+{#snippet ImageCell({ value }: { value: unknown })}
+	<span class="font-mono text-sm">{truncateImageDigest(String(value ?? ''))}</span>
+{/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
 	<StatusBadge text={String(value ?? m.common_unknown())} variant={modeVariant(String(value ?? ''))} />
@@ -158,7 +163,7 @@
 			variant: item.mode === 'global' ? 'emerald' : 'blue'
 		})}
 		title={(item: SwarmServiceSummary) => item.name}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? item.image : null)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? truncateImageDigest(item.image) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
 				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null
