@@ -11,6 +11,7 @@ export interface SwarmServiceSummary {
 	image: string;
 	mode: string;
 	replicas: number;
+	runningReplicas: number;
 	ports: SwarmServicePort[];
 	createdAt: string;
 	updatedAt: string;
