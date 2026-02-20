@@ -506,6 +506,7 @@ _utils-hotfix:
 
     git tag "cli/${NEW_TAG}"
     git tag "types/${NEW_TAG}"
+    git tag "backend/${NEW_TAG}"
 
     echo ""
     echo -e "${GREEN}✅ Hotfix release ${NEW_TAG} created successfully!${NC}"
@@ -761,10 +762,11 @@ release *args:
         git tag -a "v$NEW_VERSION" -m "$TAG_MESSAGE"
         git tag -a "cli/v$NEW_VERSION" -m "$TAG_MESSAGE"
         git tag -a "types/v$NEW_VERSION" -m "$TAG_MESSAGE"
+        git tag -a "backend/v$NEW_VERSION" -m "$TAG_MESSAGE"
 
         # Push the commit and the tags to the repository
         git push
-        git push origin "v$NEW_VERSION" "cli/v$NEW_VERSION" "types/v$NEW_VERSION"
+        git push origin "v$NEW_VERSION" "cli/v$NEW_VERSION" "types/v$NEW_VERSION" "backend/v$NEW_VERSION"
 
         # Extract the changelog content for the latest release
         echo "Extracting changelog content for version $NEW_VERSION..."
@@ -803,7 +805,7 @@ release *args:
         echo "$CHANGELOG"
         echo "----- END CHANGELOG PREVIEW -----"
         echo "Would commit: release: $NEW_VERSION"
-        echo "Would tag: v$NEW_VERSION, cli/v$NEW_VERSION, types/v$NEW_VERSION"
+        echo "Would tag: v$NEW_VERSION, cli/v$NEW_VERSION, types/v$NEW_VERSION, backend/v$NEW_VERSION"
         echo "Would push commit and tags"
         echo "Would create GitHub draft release v$NEW_VERSION"
         echo "Test mode complete. No changes were written."
