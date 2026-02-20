@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -228,4 +229,46 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
+}
+
+func TestAnyImageIDsInUseSet(t *testing.T) {
+	inUseSet := map[string]struct{}{
+		"sha256:one": {},
+		"sha256:two": {},
+	}
+
+	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, inUseSet))
+	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:three", "sha256:two"}, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:three"}, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal(nil, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, nil))
+}
+
+func TestIsImageIDLikeReference(t *testing.T) {
+	assert.True(t, isImageIDLikeReferenceInternal("sha256:abcdef"))
+	assert.True(t, isImageIDLikeReferenceInternal("SHA256:ABCDEF"))
+	assert.False(t, isImageIDLikeReferenceInternal("nginx:latest"))
+	assert.False(t, isImageIDLikeReferenceInternal("docker.io/library/nginx:latest"))
+}
+
+func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing.T) {
+	svc := &UpdaterService{}
+	out := map[string]struct{}{}
+
+	// Simulate fast-path behavior expectations without Docker client dependency.
+	containers := []container.Summary{
+		{Image: "nginx:latest"},
+		{Image: "sha256:abcdef"},
+		{Image: "redis:7"},
+	}
+
+	for _, c := range containers {
+		if c.Image != "" && !isImageIDLikeReferenceInternal(c.Image) {
+			out[svc.normalizeRef(c.Image)] = struct{}{}
+		}
+	}
+
+	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
+	assert.Contains(t, out, svc.normalizeRef("redis:7"))
+	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
 }

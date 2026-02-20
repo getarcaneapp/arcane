@@ -473,10 +473,8 @@ func (s *ImageService) cleanupVulnerabilityRecordsAfterPruneInternal(ctx context
 		return
 	}
 
-	for _, imgID := range idsToDelete {
-		if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
-			slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
-		}
+	if err := s.vulnerabilityService.DeleteScanResultsByImageIDs(ctx, idsToDelete); err != nil {
+		slog.WarnContext(ctx, "failed to delete vulnerability scan records after prune", "count", len(idsToDelete), "error", err)
 	}
 }
 
@@ -545,23 +543,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil
 	})
 
-	// Fetch update records from DB
-	g.Go(func() error {
-		if s.db != nil {
-			return s.db.WithContext(groupCtx).Find(&updateRecords).Error
-		}
-		return nil
-	})
-
 	if err := g.Wait(); err != nil {
 		return nil, pagination.Response{}, err
 	}
 
-	if s.vulnerabilityService != nil {
-		imageIDs := make([]string, 0, len(dockerImages))
-		for _, img := range dockerImages {
-			imageIDs = append(imageIDs, img.ID)
+	imageIDs := make([]string, 0, len(dockerImages))
+	for _, img := range dockerImages {
+		imageIDs = append(imageIDs, img.ID)
+	}
+
+	if s.db != nil && len(imageIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
+			return nil, pagination.Response{}, fmt.Errorf("failed to fetch image update records: %w", err)
 		}
+	}
+
+	if s.vulnerabilityService != nil {
 		var err error
 		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
 		if err != nil {
