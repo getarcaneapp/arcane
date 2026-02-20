@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	dockertypesimage "github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -512,7 +513,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, check.NotificationSent, "existing record should be marked as notified")
 
-			// Simulate comparison logic from saveUpdateResultByID
+			// Simulate comparison logic from saveUpdateResultByIDInternal
 			updateRecord := buildImageUpdateRecord(imageID, repo, tag, tt.newResult)
 
 			var existingRecord models.ImageUpdateRecord
@@ -722,4 +723,59 @@ func TestImageUpdateService_GetUpdateSummaryForImageIDs_EmptyLiveSet(t *testing.
 	assert.Equal(t, 0, summary.ImagesWithUpdates)
 	assert.Equal(t, 0, summary.DigestUpdates)
 	assert.Equal(t, 0, summary.ErrorsCount)
+}
+
+func TestImageUpdateService_ParseAndGroupImages_DedupesNormalizedRefs(t *testing.T) {
+	svc := &ImageUpdateService{}
+
+	refs := []string{
+		"nginx:latest",
+		"docker.io/library/nginx:latest",
+		"redis:7",
+		"docker.io/library/redis:7",
+	}
+
+	regRepos, initialResults, grouped := svc.parseAndGroupImagesInternal(refs)
+	require.Empty(t, initialResults)
+	require.Len(t, grouped, 2)
+	require.Contains(t, regRepos, "docker.io")
+	require.Len(t, regRepos["docker.io"], 2)
+
+	firstRefSet := map[string]struct{}{}
+	for _, ref := range grouped[0].refs {
+		firstRefSet[ref] = struct{}{}
+	}
+	secondRefSet := map[string]struct{}{}
+	for _, ref := range grouped[1].refs {
+		secondRefSet[ref] = struct{}{}
+	}
+
+	// Each normalized image should only be checked once, while retaining all aliases.
+	assert.True(t, (containsAll(firstRefSet, "nginx:latest", "docker.io/library/nginx:latest") &&
+		containsAll(secondRefSet, "redis:7", "docker.io/library/redis:7")) ||
+		(containsAll(secondRefSet, "nginx:latest", "docker.io/library/nginx:latest") &&
+			containsAll(firstRefSet, "redis:7", "docker.io/library/redis:7")))
+}
+
+func TestDedupeImageRefsFromSummaries_WithLimit(t *testing.T) {
+	summaries := []dockertypesimage.Summary{
+		{RepoTags: []string{"nginx:latest", "nginx:latest", "<none>:<none>"}},
+		{RepoTags: []string{"redis:7", "docker.io/library/nginx:latest"}},
+		{RepoTags: []string{"postgres:16"}},
+	}
+
+	refsNoLimit := dedupeImageRefsFromSummariesInternal(summaries, 0)
+	assert.Equal(t, []string{"nginx:latest", "redis:7", "docker.io/library/nginx:latest", "postgres:16"}, refsNoLimit)
+
+	refsLimited := dedupeImageRefsFromSummariesInternal(summaries, 2)
+	assert.Equal(t, []string{"nginx:latest", "redis:7"}, refsLimited)
+}
+
+func containsAll(set map[string]struct{}, refs ...string) bool {
+	for _, ref := range refs {
+		if _, ok := set[ref]; !ok {
+			return false
+		}
+	}
+	return true
 }

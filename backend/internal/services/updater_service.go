@@ -298,12 +298,21 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	// Prune old images that are no longer used (only for images that were actually updated)
+	var runningImageIDs map[string]struct{}
+	if !dryRun {
+		if inUseSet, inUseErr := s.buildRunningImageIDSetInternal(ctx); inUseErr != nil {
+			slog.Warn("failed to build running image id set; falling back to compatibility checks", "err", inUseErr)
+		} else {
+			runningImageIDs = inUseSet
+		}
+	}
+
 	if !dryRun && len(oldIDSet) > 0 {
 		ids := make([]string, 0, len(oldIDSet))
 		for id := range oldIDSet {
 			ids = append(ids, id)
 		}
-		if err := s.pruneImageIDs(ctx, ids); err != nil {
+		if err := s.pruneImageIDsWithInUseSetInternal(ctx, ids, runningImageIDs); err != nil {
 			slog.Warn("image prune failed", "err", err)
 		}
 	}
@@ -314,7 +323,11 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			if len(p.oldIDs) == 0 {
 				continue
 			}
-			stillUsed, _ := s.anyImageIDsStillInUse(ctx, p.oldIDs)
+			stillUsed, usageErr := s.anyImageIDsStillInUseWithSetInternal(ctx, p.oldIDs, runningImageIDs)
+			if usageErr != nil {
+				slog.Warn("check image usage failed for update record clear", "err", usageErr, "image", p.oldRef)
+				continue
+			}
 			if stillUsed {
 				continue
 			}
@@ -557,7 +570,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	return out, nil
 }
 
-func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error {
+func (s *UpdaterService) pruneImageIDsWithInUseSetInternal(ctx context.Context, ids []string, inUseSet map[string]struct{}) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -576,7 +589,7 @@ func (s *UpdaterService) pruneImageIDs(ctx context.Context, ids []string) error 
 
 		slog.DebugContext(ctx, "pruneImageIDs: checking image id", "imageId", id)
 
-		inUse, err := s.anyImageIDsStillInUse(ctx, []string{id})
+		inUse, err := s.anyImageIDsStillInUseWithSetInternal(ctx, []string{id}, inUseSet)
 		if err != nil {
 			slog.Warn("check image usage failed", "imageId", id, "err", err)
 			continue
@@ -773,8 +786,8 @@ func (s *UpdaterService) stripDigest(ref string) string {
 	return ref
 }
 
-// collectUsedImagesFromContainers adds normalized image tags from non-opted-out running containers.
-func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
+// collectUsedImagesFromContainersInternal adds normalized image tags from non-opted-out running containers.
+func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
 	if dcli == nil {
 		return nil
 	}
@@ -782,19 +795,26 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 	if err != nil {
 		return err
 	}
-	slog.DebugContext(ctx, "collectUsedImagesFromContainers: container list fetched", "count", len(list))
+	slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container list fetched", "count", len(list))
 	for _, c := range list {
 		if arcaneupdater.IsUpdateDisabled(c.Labels) {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container opted out by labels", "containerId", c.ID)
+			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container opted out by labels", "containerId", c.ID)
 			continue
 		}
+
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef != "" && !isImageIDLikeReferenceInternal(imageRef) {
+			out[s.normalizeRef(imageRef)] = struct{}{}
+			continue
+		}
+
 		inspect, err := dcli.ContainerInspect(ctx, c.ID)
 		if err != nil {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", c.ID, "err", err)
+			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container inspect failed", "containerId", c.ID, "err", err)
 			continue
 		}
 		if inspect.Config != nil && arcaneupdater.IsUpdateDisabled(inspect.Config.Labels) {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", c.ID)
+			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container inspect labels opted out", "containerId", c.ID)
 			continue
 		}
 		for _, t := range s.getNormalizedTagsForContainer(ctx, dcli, inspect) {
@@ -802,6 +822,11 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, dc
 		}
 	}
 	return nil
+}
+
+func isImageIDLikeReferenceInternal(ref string) bool {
+	ref = strings.ToLower(strings.TrimSpace(ref))
+	return strings.HasPrefix(ref, "sha256:")
 }
 
 // Aggregate images in use across containers and compose projects
@@ -816,7 +841,7 @@ func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]stru
 		slog.DebugContext(ctx, "collectUsedImages: docker connection not available, continuing without container list", "err", err)
 	}
 
-	_ = s.collectUsedImagesFromContainers(ctx, dcli, out)
+	_ = s.collectUsedImagesFromContainersInternal(ctx, dcli, out)
 	_ = s.collectUsedImagesFromProjects(ctx, out)
 
 	slog.DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))
@@ -1307,6 +1332,56 @@ func (s *UpdaterService) anyImageIDsStillInUse(ctx context.Context, ids []string
 	}
 	slog.DebugContext(ctx, "anyImageIDsStillInUse: no matching usage found")
 	return false, nil
+}
+
+func (s *UpdaterService) anyImageIDsStillInUseWithSetInternal(ctx context.Context, ids []string, inUseSet map[string]struct{}) (bool, error) {
+	if inUseSet != nil {
+		return anyImageIDsInUseSetInternal(ids, inUseSet), nil
+	}
+	return s.anyImageIDsStillInUse(ctx, ids)
+}
+
+func anyImageIDsInUseSetInternal(ids []string, inUseSet map[string]struct{}) bool {
+	if len(ids) == 0 || len(inUseSet) == 0 {
+		return false
+	}
+
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := inUseSet[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *UpdaterService) buildRunningImageIDSetInternal(ctx context.Context) (map[string]struct{}, error) {
+	dcli, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("docker connect: %w", err)
+	}
+
+	list, err := dcli.ContainerList(ctx, container.ListOptions{All: false})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	inUseSet := make(map[string]struct{}, len(list))
+	for _, c := range list {
+		if c.ImageID != "" {
+			inUseSet[c.ImageID] = struct{}{}
+			continue
+		}
+
+		inspect, ierr := dcli.ContainerInspect(ctx, c.ID)
+		if ierr == nil && inspect.Image != "" {
+			inUseSet[inspect.Image] = struct{}{}
+		}
+	}
+
+	return inUseSet, nil
 }
 
 func (s *UpdaterService) clearImageUpdateRecord(ctx context.Context, repository, tag string) error {
