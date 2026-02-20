@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -20,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	arcRegistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
@@ -905,28 +907,61 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 		return err
 	}
 
-	for _, p := range projs {
+	activeProjectNames := activeComposeProjectNameSetInternal(projs)
+	if len(activeProjectNames) == 0 {
+		return nil
+	}
+
+	composeContainers, err := projectspkg.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		return err
+	}
+
+	s.collectUsedImagesFromComposeContainersInternal(composeContainers, activeProjectNames, out)
+	return nil
+}
+
+func activeComposeProjectNameSetInternal(projects []models.Project) map[string]struct{} {
+	active := make(map[string]struct{})
+	for _, p := range projects {
 		// consider running and partially running projects
 		if p.Status != models.ProjectStatusRunning && p.Status != models.ProjectStatusPartiallyRunning {
 			continue
 		}
 
-		services, serr := s.projectService.GetProjectServices(ctx, p.ID)
-		if serr != nil {
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
 			continue
 		}
-		for _, svc := range services {
-			if svc.ServiceConfig != nil && arcaneupdater.IsUpdateDisabled(svc.ServiceConfig.Labels) {
-				continue
-			}
-			img := strings.TrimSpace(svc.Image)
-			if img == "" {
-				continue
-			}
-			out[s.normalizeRef(img)] = struct{}{}
+
+		active[name] = struct{}{}
+
+		if normalized := loader.NormalizeProjectName(name); normalized != "" {
+			active[normalized] = struct{}{}
 		}
 	}
-	return nil
+	return active
+}
+
+func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(composeContainers []container.Summary, activeProjectNames map[string]struct{}, out map[string]struct{}) {
+	for _, c := range composeContainers {
+		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
+		if projectName == "" {
+			continue
+		}
+		if _, isActive := activeProjectNames[projectName]; !isActive {
+			continue
+		}
+		if arcaneupdater.IsUpdateDisabled(c.Labels) {
+			continue
+		}
+
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
+			continue
+		}
+		out[s.normalizeRef(imageRef)] = struct{}{}
+	}
 }
 
 func (s *UpdaterService) getNormalizedTagsForContainer(ctx context.Context, dcli *client.Client, inspect container.InspectResponse) []string {

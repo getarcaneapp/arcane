@@ -361,3 +361,62 @@ func TestUpdaterService_ApplyPending_SkipsWhenUsedImageDiscoveryFails(t *testing
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&persisted).Error)
 	assert.True(t, persisted.HasUpdate, "record should remain pending when used-image discovery fails")
 }
+
+func TestActiveComposeProjectNameSetInternal(t *testing.T) {
+	projects := []models.Project{
+		{Name: "My-App", Status: models.ProjectStatusRunning},
+		{Name: "skip-me", Status: models.ProjectStatusStopped},
+		{Name: "another_app", Status: models.ProjectStatusPartiallyRunning},
+		{Name: "", Status: models.ProjectStatusRunning},
+	}
+
+	got := activeComposeProjectNameSetInternal(projects)
+
+	assert.Contains(t, got, "My-App")
+	assert.Contains(t, got, "my-app")
+	assert.Contains(t, got, "another_app")
+	assert.NotContains(t, got, "skip-me")
+}
+
+func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
+	svc := &UpdaterService{}
+	out := map[string]struct{}{}
+	activeProjects := map[string]struct{}{
+		"myapp": {},
+	}
+
+	composeContainers := []container.Summary{
+		{
+			Image: "nginx:latest",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+			},
+		},
+		{
+			Image: "redis:7",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+				arcaneupdater.LabelUpdater:   "false",
+			},
+		},
+		{
+			Image: "postgres:16",
+			Labels: map[string]string{
+				"com.docker.compose.project": "otherapp",
+			},
+		},
+		{
+			Image: "sha256:abcdef",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+			},
+		},
+	}
+
+	svc.collectUsedImagesFromComposeContainersInternal(composeContainers, activeProjects, out)
+
+	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
+	assert.NotContains(t, out, svc.normalizeRef("redis:7"))
+	assert.NotContains(t, out, svc.normalizeRef("postgres:16"))
+	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+}
