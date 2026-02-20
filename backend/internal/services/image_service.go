@@ -515,10 +515,9 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	}
 
 	var (
-		dockerImages     []image.Summary
-		containers       []container.Summary
-		updateRecords    []models.ImageUpdateRecord
-		vulnerabilityMap map[string]*vulnerability.ScanSummary
+		dockerImages  []image.Summary
+		containers    []container.Summary
+		updateRecords []models.ImageUpdateRecord
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -558,23 +557,25 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		}
 	}
 
-	if s.vulnerabilityService != nil {
-		var err error
-		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
-		if err != nil {
-			return nil, pagination.Response{}, err
-		}
-	}
-
 	projectIDByName := buildProjectIDMapInternal(ctx, s.db, containers)
 	usageMap := buildUsageMapInternal(containers, projectIDByName)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := mapDockerImagesToDTOs(dockerImages, usageMap, updateMap, vulnerabilityMap)
+	items := mapDockerImagesToDTOs(dockerImages, usageMap, updateMap, nil)
 
 	config := s.getImagePaginationConfig()
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
+
+	if s.vulnerabilityService != nil && len(result.Items) > 0 {
+		pageImageIDs := getImageIDsFromSummariesInternal(result.Items)
+		vulnerabilityMap, err := s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, pageImageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
+		}
+		applyVulnerabilitySummariesToItemsInternal(result.Items, vulnerabilityMap)
+	}
+
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
@@ -710,6 +711,36 @@ func buildUpdateMap(records []models.ImageUpdateRecord) map[string]*models.Image
 		updateMap[records[i].ID] = &records[i]
 	}
 	return updateMap
+}
+
+func getImageIDsFromSummariesInternal(items []imagetypes.Summary) []string {
+	seen := make(map[string]struct{}, len(items))
+	ids := make([]string, 0, len(items))
+
+	for _, item := range items {
+		if item.ID == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		ids = append(ids, item.ID)
+	}
+
+	return ids
+}
+
+func applyVulnerabilitySummariesToItemsInternal(items []imagetypes.Summary, vulnerabilityMap map[string]*vulnerability.ScanSummary) {
+	if len(items) == 0 || len(vulnerabilityMap) == 0 {
+		return
+	}
+
+	for i := range items {
+		if summary, exists := vulnerabilityMap[items[i].ID]; exists {
+			items[i].VulnerabilityScan = summary
+		}
+	}
 }
 
 func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
