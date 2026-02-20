@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -86,8 +87,14 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	// Only update images that are actually used by running resources
 	usedImages, err := s.collectUsedImages(ctx)
 	if err != nil {
-		// Non-fatal: continue without the filter
-		usedImages = map[string]struct{}{}
+		slog.WarnContext(ctx, "ApplyPending: failed to collect actively used images; skipping update run", "error", err)
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+	if len(usedImages) == 0 {
+		slog.DebugContext(ctx, "ApplyPending: no actively used images found; nothing to update")
+		out.Duration = time.Since(start).String()
+		return out, nil
 	}
 
 	// Plan updates and capture OLD image digests before pull
@@ -106,10 +113,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		oldRef := fmt.Sprintf("%s:%s", r.Repository, r.Tag)
 		oldNorm := s.normalizeRef(oldRef)
 
-		if len(usedImages) > 0 {
-			if _, ok := usedImages[oldNorm]; !ok {
-				continue
-			}
+		if _, ok := usedImages[oldNorm]; !ok {
+			continue
 		}
 
 		newRef := oldRef
@@ -852,17 +857,39 @@ func isImageIDLikeReferenceInternal(ref string) bool {
 // Aggregate images in use across containers and compose projects
 func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
+	var errs []error
+	successfulSources := 0
 
-	dcli, err := s.dockerService.GetClient()
-	if err == nil && dcli != nil {
-
-		slog.DebugContext(ctx, "collectUsedImages: docker connection created")
+	if s.dockerService == nil {
+		errs = append(errs, errors.New("docker service unavailable"))
 	} else {
-		slog.DebugContext(ctx, "collectUsedImages: docker connection not available, continuing without container list", "err", err)
+		dcli, err := s.dockerService.GetClient()
+		if err != nil || dcli == nil {
+			if err == nil {
+				err = errors.New("docker client unavailable")
+			}
+			errs = append(errs, fmt.Errorf("docker client: %w", err))
+			slog.DebugContext(ctx, "collectUsedImages: docker connection unavailable", "err", err)
+		} else if err := s.collectUsedImagesFromContainersInternal(ctx, dcli, out); err != nil {
+			errs = append(errs, fmt.Errorf("containers source: %w", err))
+			slog.DebugContext(ctx, "collectUsedImages: failed collecting from containers", "err", err)
+		} else {
+			successfulSources++
+		}
 	}
 
-	_ = s.collectUsedImagesFromContainersInternal(ctx, dcli, out)
-	_ = s.collectUsedImagesFromProjects(ctx, out)
+	if s.projectService != nil {
+		if err := s.collectUsedImagesFromProjects(ctx, out); err != nil {
+			errs = append(errs, fmt.Errorf("projects source: %w", err))
+			slog.DebugContext(ctx, "collectUsedImages: failed collecting from projects", "err", err)
+		} else {
+			successfulSources++
+		}
+	}
+
+	if successfulSources == 0 {
+		return nil, errors.Join(errs...)
+	}
 
 	slog.DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))
 	return out, nil

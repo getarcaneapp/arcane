@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -316,4 +317,47 @@ func TestUpdaterService_ClearImageUpdateRecordByID_AvoidsRepoCanonicalMismatch(t
 	var cleared models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&cleared).Error)
 	assert.False(t, cleared.HasUpdate, "clear by image ID should always match the intended record")
+}
+
+func TestUpdaterService_CollectUsedImages_NoSourcesReturnsError(t *testing.T) {
+	svc := &UpdaterService{}
+
+	used, err := svc.collectUsedImages(context.Background())
+	require.Error(t, err)
+	assert.Nil(t, used)
+}
+
+func TestUpdaterService_ApplyPending_SkipsWhenUsedImageDiscoveryFails(t *testing.T) {
+	ctx := context.Background()
+	db := setupUpdaterServiceTestDB(t)
+
+	record := models.ImageUpdateRecord{
+		ID:             "sha256:pending-image",
+		Repository:     "nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now(),
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
+
+	svc := &UpdaterService{
+		db: db,
+		dockerService: &DockerClientService{
+			config: &config.Config{DockerHost: "://bad-host"},
+		},
+	}
+
+	out, err := svc.ApplyPending(ctx, false)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Empty(t, out.Items)
+	assert.Zero(t, out.Checked)
+	assert.Zero(t, out.Updated)
+	assert.NotEmpty(t, out.Duration)
+
+	var persisted models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&persisted).Error)
+	assert.True(t, persisted.HasUpdate, "record should remain pending when used-image discovery fails")
 }
