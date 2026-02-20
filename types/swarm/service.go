@@ -52,10 +52,17 @@ type ServiceSummary struct {
 	// Required: true
 	Mode string `json:"mode"`
 
-	// Replicas is the desired replica count for replicated services.
+	// Replicas is the desired replica count.
+	// For replicated services this comes from the spec.
+	// For global services this is the number of eligible nodes (from ServiceStatus.DesiredTasks).
 	//
 	// Required: true
 	Replicas uint64 `json:"replicas"`
+
+	// RunningReplicas is the number of tasks currently in the Running state.
+	//
+	// Required: true
+	RunningReplicas uint64 `json:"runningReplicas"`
 
 	// Ports is the list of published ports for the service.
 	//
@@ -171,6 +178,7 @@ func NewServiceSummary(service swarm.Service) ServiceSummary {
 
 	mode := "unknown"
 	replicas := uint64(0)
+	runningReplicas := uint64(0)
 	if spec.Mode.Replicated != nil {
 		mode = "replicated"
 		if spec.Mode.Replicated.Replicas != nil {
@@ -178,6 +186,13 @@ func NewServiceSummary(service swarm.Service) ServiceSummary {
 		}
 	} else if spec.Mode.Global != nil {
 		mode = "global"
+		if service.ServiceStatus != nil {
+			replicas = service.ServiceStatus.DesiredTasks
+		}
+	}
+
+	if service.ServiceStatus != nil {
+		runningReplicas = service.ServiceStatus.RunningTasks
 	}
 
 	image := ""
@@ -205,16 +220,17 @@ func NewServiceSummary(service swarm.Service) ServiceSummary {
 	}
 
 	return ServiceSummary{
-		ID:        service.ID,
-		Name:      spec.Name,
-		Image:     image,
-		Mode:      mode,
-		Replicas:  replicas,
-		Ports:     ports,
-		CreatedAt: service.CreatedAt,
-		UpdatedAt: service.UpdatedAt,
-		Labels:    spec.Labels,
-		StackName: stackName,
+		ID:              service.ID,
+		Name:            spec.Name,
+		Image:           image,
+		Mode:            mode,
+		Replicas:        replicas,
+		RunningReplicas: runningReplicas,
+		Ports:           ports,
+		CreatedAt:       service.CreatedAt,
+		UpdatedAt:       service.UpdatedAt,
+		Labels:          spec.Labels,
+		StackName:       stackName,
 	}
 }
 

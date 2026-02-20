@@ -38,7 +38,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	services, err := dockerClient.ServiceList(ctx, swarm.ServiceListOptions{})
+	services, err := dockerClient.ServiceList(ctx, swarm.ServiceListOptions{Status: true})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
@@ -386,7 +386,12 @@ func (s *SwarmService) buildServicePaginationConfig() pagination.Config[swarmtyp
 			{Key: "name", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
 			{Key: "image", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Image, b.Image) }},
 			{Key: "mode", Fn: func(a, b swarmtypes.ServiceSummary) int { return strings.Compare(a.Mode, b.Mode) }},
-			{Key: "replicas", Fn: func(a, b swarmtypes.ServiceSummary) int { return compareUint64(a.Replicas, b.Replicas) }},
+			{Key: "replicas", Fn: func(a, b swarmtypes.ServiceSummary) int {
+				if cmp := compareUint64(a.Replicas, b.Replicas); cmp != 0 {
+					return cmp
+				}
+				return compareUint64(a.RunningReplicas, b.RunningReplicas)
+			}},
 			{Key: "created", Fn: func(a, b swarmtypes.ServiceSummary) int { return compareTime(a.CreatedAt, b.CreatedAt) }},
 			{Key: "updated", Fn: func(a, b swarmtypes.ServiceSummary) int { return compareTime(a.UpdatedAt, b.UpdatedAt) }},
 		},

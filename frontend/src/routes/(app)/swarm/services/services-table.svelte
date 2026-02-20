@@ -113,7 +113,7 @@
 		{ accessorKey: 'name', title: m.common_name(), sortable: true },
 		{ accessorKey: 'image', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
-		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true },
+		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true, cell: ReplicasCell },
 		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell }
 	] satisfies ColumnSpec<SwarmServiceSummary>[];
@@ -145,6 +145,10 @@
 	{/if}
 {/snippet}
 
+{#snippet ReplicasCell({ item }: { item: SwarmServiceSummary })}
+	<span class="font-mono text-sm">{item.runningReplicas} / {item.replicas}</span>
+{/snippet}
+
 {#snippet PortsCell({ value }: { value: unknown })}
 	<span class="text-sm">{formatPorts(value as SwarmServicePort[] | undefined)}</span>
 {/snippet}
@@ -171,7 +175,7 @@
 		fields={[
 			{
 				label: m.swarm_replicas(),
-				getValue: (item: SwarmServiceSummary) => String(item.replicas),
+				getValue: (item: SwarmServiceSummary) => `${item.runningReplicas} / ${item.replicas}`,
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.replicas ?? true
