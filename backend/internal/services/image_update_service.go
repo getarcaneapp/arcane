@@ -763,6 +763,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 	}
 
 	if len(externalCreds) > 0 {
+		enabledRegHosts := make(map[string]struct{})
 		for _, c := range externalCreds {
 			if !c.Enabled || c.Username == "" || c.Token == "" {
 				continue
@@ -773,6 +774,9 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 			}
 			if _, exists := credMap[host]; !exists {
 				credMap[host] = batchCred{username: c.Username, token: c.Token}
+			}
+			if _, exists := enabledRegHosts[host]; exists {
+				continue
 			}
 			encToken, encErr := crypto.Encrypt(c.Token)
 			if encErr != nil {
@@ -785,6 +789,7 @@ func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCre
 				Token:    encToken,
 				Enabled:  c.Enabled,
 			})
+			enabledRegHosts[host] = struct{}{}
 		}
 		slog.DebugContext(ctx, "Using external credentials for batch check", "credentialCount", len(credMap))
 		return credMap, enabledRegs

@@ -322,44 +322,66 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.Event
 		return
 	}
 
-	// Run error logging in background to prevent blocking the main flow
-	// Detach context to ensure logging completes even if request is canceled
-	bgCtx := context.WithoutCancel(ctx)
-	go func() {
-		// Set a timeout for the background logging
-		logCtx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
-		defer cancel()
+	// Detach cancellation but keep a bounded timeout to avoid unbounded goroutine fanout.
+	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 
-		if metadata == nil {
-			metadata = models.JSON{}
+	eventMetadata := cloneEventMetadataInternal(metadata)
+	eventMetadata["error"] = err.Error()
+
+	titleCaser := cases.Title(language.English)
+	title := fmt.Sprintf("%s error", titleCaser.String(resourceType))
+	if resourceName != "" {
+		title = fmt.Sprintf("%s error: %s", titleCaser.String(resourceType), resourceName)
+	}
+
+	description := fmt.Sprintf("Failed to perform operation on %s: %s", resourceType, err.Error())
+
+	_, logErr := s.CreateEvent(logCtx, CreateEventRequest{
+		Type:          eventType,
+		Severity:      models.EventSeverityError,
+		Title:         title,
+		Description:   description,
+		ResourceType:  new(resourceType),
+		ResourceID:    new(resourceID),
+		ResourceName:  new(resourceName),
+		UserID:        new(userID),
+		Username:      new(username),
+		EnvironmentID: new(environmentID),
+		Metadata:      eventMetadata,
+	})
+	if logErr != nil {
+		slog.ErrorContext(logCtx, "Failed to log error event", "error", logErr)
+	}
+}
+
+func cloneEventMetadataInternal(metadata models.JSON) models.JSON {
+	if metadata == nil {
+		return models.JSON{}
+	}
+
+	cloned := make(models.JSON, len(metadata))
+	for k, v := range metadata {
+		cloned[k] = cloneEventMetadataValueInternal(v)
+	}
+	return cloned
+}
+
+func cloneEventMetadataValueInternal(value any) any {
+	switch typed := value.(type) {
+	case models.JSON:
+		return cloneEventMetadataInternal(typed)
+	case map[string]any:
+		return cloneEventMetadataInternal(models.JSON(typed))
+	case []any:
+		out := make([]any, len(typed))
+		for i := range typed {
+			out[i] = cloneEventMetadataValueInternal(typed[i])
 		}
-		metadata["error"] = err.Error()
-
-		titleCaser := cases.Title(language.English)
-		title := fmt.Sprintf("%s error", titleCaser.String(resourceType))
-		if resourceName != "" {
-			title = fmt.Sprintf("%s error: %s", titleCaser.String(resourceType), resourceName)
-		}
-
-		description := fmt.Sprintf("Failed to perform operation on %s: %s", resourceType, err.Error())
-
-		_, logErr := s.CreateEvent(logCtx, CreateEventRequest{
-			Type:          eventType,
-			Severity:      models.EventSeverityError,
-			Title:         title,
-			Description:   description,
-			ResourceType:  new(resourceType),
-			ResourceID:    new(resourceID),
-			ResourceName:  new(resourceName),
-			UserID:        new(userID),
-			Username:      new(username),
-			EnvironmentID: new(environmentID),
-			Metadata:      metadata,
-		})
-		if logErr != nil {
-			slog.ErrorContext(logCtx, "Failed to log error event", "error", logErr)
-		}
-	}()
+		return out
+	default:
+		return value
+	}
 }
 
 var eventDefinitions = map[models.EventType]struct {

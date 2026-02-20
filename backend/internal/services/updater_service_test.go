@@ -473,3 +473,36 @@ func TestResolveContainerImageMatchInternal(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
+	svc := &UpdaterService{
+		updatingContainers: map[string]bool{},
+		updatingProjects:   map[string]bool{},
+	}
+
+	stopContainer := svc.beginContainerUpdateInternal("container-1")
+	stopProject := svc.beginProjectUpdateInternal("project-a")
+
+	status := svc.GetStatus()
+	assert.Equal(t, 1, status.UpdatingContainers)
+	assert.Equal(t, 1, status.UpdatingProjects)
+	assert.ElementsMatch(t, []string{"container-1"}, status.ContainerIds)
+	assert.ElementsMatch(t, []string{"project-a"}, status.ProjectIds)
+
+	stopContainer()
+	stopProject()
+
+	status = svc.GetStatus()
+	assert.Zero(t, status.UpdatingContainers)
+	assert.Zero(t, status.UpdatingProjects)
+	assert.Empty(t, status.ContainerIds)
+	assert.Empty(t, status.ProjectIds)
+}
+
+func TestComposeProjectNameFromLabelsInternal(t *testing.T) {
+	assert.Equal(t, "", composeProjectNameFromLabelsInternal(nil))
+	assert.Equal(t, "", composeProjectNameFromLabelsInternal(map[string]string{}))
+	assert.Equal(t, "my-project", composeProjectNameFromLabelsInternal(map[string]string{
+		"com.docker.compose.project": " my-project ",
+	}))
+}

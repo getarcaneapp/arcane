@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -37,6 +38,7 @@ type UpdaterService struct {
 	notificationService *NotificationService
 	upgradeService      *SystemUpgradeService
 
+	statusMu           sync.RWMutex
 	updatingContainers map[string]bool
 	updatingProjects   map[string]bool
 }
@@ -439,6 +441,11 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		"isArcane", isArcaneContainer,
 		"hasArcaneLabel", labels["com.getarcaneapp.arcane"])
 
+	endContainerStatus := s.beginContainerUpdateInternal(targetContainer.ID)
+	defer endContainerStatus()
+	endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
+	defer endProjectStatus()
+
 	if arcaneupdater.IsUpdateDisabled(labels) {
 		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
 		out.Items = append(out.Items, updater.ResourceResult{
@@ -643,23 +650,7 @@ func (s *UpdaterService) pruneImageIDsWithInUseSetInternal(ctx context.Context, 
 	return nil
 }
 
-func (s *UpdaterService) GetStatus() updater.Status {
-	containerIDs := make([]string, 0, len(s.updatingContainers))
-	for id := range s.updatingContainers {
-		containerIDs = append(containerIDs, id)
-	}
-	projectIDs := make([]string, 0, len(s.updatingProjects))
-	for id := range s.updatingProjects {
-		projectIDs = append(projectIDs, id)
-	}
-
-	return updater.Status{
-		UpdatingContainers: len(s.updatingContainers),
-		UpdatingProjects:   len(s.updatingProjects),
-		ContainerIds:       containerIDs,
-		ProjectIds:         projectIDs,
-	}
-}
+func (s *UpdaterService) GetStatus() updater.Status { return s.statusSnapshotInternal() }
 
 func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.AutoUpdateRecord, error) {
 	var rec []models.AutoUpdateRecord
@@ -1263,41 +1254,110 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 		slog.DebugContext(ctx, "restartContainersUsingOldIDs: restarting container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
 
-		// Check if this is Arcane self-update - use CLI upgrade instead
-		if arcaneupdater.IsArcaneContainer(labels) && s.upgradeService != nil {
-			slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Arcane self-update, using CLI upgrade method", "containerId", p.cnt.ID, "container", name)
+		func() {
+			endContainerStatus := s.beginContainerUpdateInternal(p.cnt.ID)
+			defer endContainerStatus()
+			endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
+			defer endProjectStatus()
 
-			if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+			// Check if this is Arcane self-update - use CLI upgrade instead
+			if arcaneupdater.IsArcaneContainer(labels) && s.upgradeService != nil {
+				slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Arcane self-update, using CLI upgrade method", "containerId", p.cnt.ID, "container", name)
+
+				if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+					res.Status = "failed"
+					res.Error = fmt.Sprintf("CLI upgrade failed: %v", err)
+					slog.WarnContext(ctx, "restartContainersUsingOldIDs: CLI upgrade failed", "containerId", p.cnt.ID, "err", err)
+				} else {
+					res.Status = "updated"
+					res.UpdateAvailable = true
+					res.UpdateApplied = true
+					slog.InfoContext(ctx, "restartContainersUsingOldIDs: CLI upgrade triggered successfully", "containerId", p.cnt.ID)
+				}
+			} else if err := s.updateContainer(ctx, p.cnt, *p.inspect, p.newRef); err != nil {
 				res.Status = "failed"
-				res.Error = fmt.Sprintf("CLI upgrade failed: %v", err)
-				slog.WarnContext(ctx, "restartContainersUsingOldIDs: CLI upgrade failed", "containerId", p.cnt.ID, "err", err)
+				res.Error = err.Error()
+				slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", p.cnt.ID, "err", err)
 			} else {
 				res.Status = "updated"
 				res.UpdateAvailable = true
 				res.UpdateApplied = true
-				slog.InfoContext(ctx, "restartContainersUsingOldIDs: CLI upgrade triggered successfully", "containerId", p.cnt.ID)
-			}
-		} else if err := s.updateContainer(ctx, p.cnt, *p.inspect, p.newRef); err != nil {
-			res.Status = "failed"
-			res.Error = err.Error()
-			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", p.cnt.ID, "err", err)
-		} else {
-			res.Status = "updated"
-			res.UpdateAvailable = true
-			res.UpdateApplied = true
-			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update succeeded", "containerId", p.cnt.ID)
+				slog.DebugContext(ctx, "restartContainersUsingOldIDs: update succeeded", "containerId", p.cnt.ID)
 
-			// Send notification after successful container update
-			if s.notificationService != nil {
-				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
-					slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+				// Send notification after successful container update
+				if s.notificationService != nil {
+					if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+						slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+					}
 				}
 			}
-		}
+		}()
 		results = append(results, res)
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: completed scanning", "results", len(results))
 	return results, nil
+}
+
+func (s *UpdaterService) beginContainerUpdateInternal(containerID string) func() {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return func() {}
+	}
+
+	s.statusMu.Lock()
+	s.updatingContainers[containerID] = true
+	s.statusMu.Unlock()
+
+	return func() {
+		s.statusMu.Lock()
+		delete(s.updatingContainers, containerID)
+		s.statusMu.Unlock()
+	}
+}
+
+func (s *UpdaterService) beginProjectUpdateInternal(projectID string) func() {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return func() {}
+	}
+
+	s.statusMu.Lock()
+	s.updatingProjects[projectID] = true
+	s.statusMu.Unlock()
+
+	return func() {
+		s.statusMu.Lock()
+		delete(s.updatingProjects, projectID)
+		s.statusMu.Unlock()
+	}
+}
+
+func composeProjectNameFromLabelsInternal(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(labels["com.docker.compose.project"])
+}
+
+func (s *UpdaterService) statusSnapshotInternal() updater.Status {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+
+	containerIDs := make([]string, 0, len(s.updatingContainers))
+	for id := range s.updatingContainers {
+		containerIDs = append(containerIDs, id)
+	}
+	projectIDs := make([]string, 0, len(s.updatingProjects))
+	for id := range s.updatingProjects {
+		projectIDs = append(projectIDs, id)
+	}
+
+	return updater.Status{
+		UpdatingContainers: len(s.updatingContainers),
+		UpdatingProjects:   len(s.updatingProjects),
+		ContainerIds:       containerIDs,
+		ProjectIds:         projectIDs,
+	}
 }
 
 func (s *UpdaterService) resolveContainerImageMatchInternal(c container.Summary, oldIDToNewRef map[string]string, updatedNorm map[string]string) (newRef, match string) {
