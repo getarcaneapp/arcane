@@ -329,150 +329,149 @@
 		openedPopover = true;
 
 		try {
-			const { pulled } = await projectService.deployProjectMaybePull(
-				id,
-				(data) => {
-					if (!data) return;
+			await projectService.deployProject(id, (deployData) => {
+				if (!deployData) return;
 
-					// Pull progress can still update the same popover.
-					if (isDownloadingLine(data)) {
+				// Pull progress lines are streamed by backend /up before deploy when
+				// image policy requires pulling (missing/always/refresh).
+				if (deployData.type !== 'deploy') {
+					if (isDownloadingLine(deployData)) {
 						pullStatusText = m.images_pull_initiating();
-					}
-
-					if (data.error) {
-						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
-						pullError = errMsg;
-						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
-						hadError = true;
-						return;
-					}
-
-					if (data.status) pullStatusText = data.status;
-
-					if (data.id) {
-						const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
-						currentLayer.status = data.status || currentLayer.status;
-						if (data.progressDetail) {
-							const { current, total } = data.progressDetail;
-							if (typeof current === 'number') currentLayer.current = current;
-							if (typeof total === 'number') currentLayer.total = total;
-						}
-						layerProgress[data.id] = currentLayer;
-					}
-
-					updatePullProgress();
-				},
-				(deployData) => {
-					// Handle deploy streaming - health check progress
-					if (!deployData) return;
-
-					// First deploy status line: switch UI from pull -> deploy.
-					if (!deployPhaseStarted) {
-						deployPhaseStarted = true;
-						pullProgress = 0;
-						layerProgress = {};
-						pullError = '';
-						deployServiceProgress = {};
-						deployLastNonWaitingStatus = '';
-					}
-
-					// Keep the popover in "loading" state during deployment.
-					deployPulling = true;
-					if (deployData.type === 'deploy') {
-						switch (deployData.phase) {
-							case 'begin':
-								pullStatusText = m.progress_deploy_starting();
-								break;
-							case 'service_waiting_healthy': {
-								const service = String(deployData.service ?? '').trim();
-								if (service) {
-									deployServiceProgress[service] = {
-										phase: 'service_waiting_healthy',
-										health: String(deployData.health ?? '')
-									};
-									pullStatusText = deriveDeployStatusText();
-								}
-								break;
-							}
-							case 'service_healthy':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_healthy',
-											health: String(deployData.health ?? ''),
-											state: String(deployData.state ?? ''),
-											status: String(deployData.status ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'service_state':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_state',
-											state: String(deployData.state ?? ''),
-											health: String(deployData.health ?? ''),
-											status: String(deployData.status ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_state({
-											service,
-											state: String(deployData.state ?? '')
-										});
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'service_status':
-								{
-									const service = String(deployData.service ?? '').trim();
-									if (service) {
-										deployServiceProgress[service] = {
-											phase: 'service_status',
-											status: String(deployData.status ?? ''),
-											state: String(deployData.state ?? ''),
-											health: String(deployData.health ?? '')
-										};
-										deployLastNonWaitingStatus = m.progress_deploy_service_status({
-											service,
-											status: String(deployData.status ?? '')
-										});
-										pullStatusText = deriveDeployStatusText();
-									}
-								}
-								break;
-							case 'complete':
-								pullStatusText = m.progress_deploy_completed();
-								break;
-							default:
-								break;
-						}
-					} else if (deployData.status) {
-						// fallback for unexpected payloads
-						pullStatusText = String(deployData.status);
 					}
 
 					if (deployData.error) {
 						const errMsg =
-							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
+							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.images_pull_stream_error();
 						pullError = errMsg;
-						pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
+						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
 						hadError = true;
 						deployPulling = false;
 						return;
 					}
 
-					// If we got "complete", stop the loading state
-					if (deployData.type === 'deploy' && deployData.phase === 'complete') {
-						deployPulling = false;
-						pullProgress = 100;
+					if (deployData.status) pullStatusText = deployData.status;
+
+					if (deployData.id) {
+						const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
+						currentLayer.status = deployData.status || currentLayer.status;
+						if (deployData.progressDetail) {
+							const { current, total } = deployData.progressDetail;
+							if (typeof current === 'number') currentLayer.current = current;
+							if (typeof total === 'number') currentLayer.total = total;
+						}
+						layerProgress[deployData.id] = currentLayer;
 					}
+
+					updatePullProgress();
+					return;
 				}
-			);
+
+				// First deploy status line initializes deploy-only progress state.
+				if (!deployPhaseStarted) {
+					deployPhaseStarted = true;
+					pullProgress = 0;
+					layerProgress = {};
+					pullError = '';
+					deployServiceProgress = {};
+					deployLastNonWaitingStatus = '';
+				}
+
+				// Keep the popover in "loading" state during deployment.
+				deployPulling = true;
+				if (deployData.type === 'deploy') {
+					switch (deployData.phase) {
+						case 'begin':
+							pullStatusText = m.progress_deploy_starting();
+							break;
+						case 'service_waiting_healthy': {
+							const service = String(deployData.service ?? '').trim();
+							if (service) {
+								deployServiceProgress[service] = {
+									phase: 'service_waiting_healthy',
+									health: String(deployData.health ?? '')
+								};
+								pullStatusText = deriveDeployStatusText();
+							}
+							break;
+						}
+						case 'service_healthy':
+							{
+								const service = String(deployData.service ?? '').trim();
+								if (service) {
+									deployServiceProgress[service] = {
+										phase: 'service_healthy',
+										health: String(deployData.health ?? ''),
+										state: String(deployData.state ?? ''),
+										status: String(deployData.status ?? '')
+									};
+									deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
+									pullStatusText = deriveDeployStatusText();
+								}
+							}
+							break;
+						case 'service_state':
+							{
+								const service = String(deployData.service ?? '').trim();
+								if (service) {
+									deployServiceProgress[service] = {
+										phase: 'service_state',
+										state: String(deployData.state ?? ''),
+										health: String(deployData.health ?? ''),
+										status: String(deployData.status ?? '')
+									};
+									deployLastNonWaitingStatus = m.progress_deploy_service_state({
+										service,
+										state: String(deployData.state ?? '')
+									});
+									pullStatusText = deriveDeployStatusText();
+								}
+							}
+							break;
+						case 'service_status':
+							{
+								const service = String(deployData.service ?? '').trim();
+								if (service) {
+									deployServiceProgress[service] = {
+										phase: 'service_status',
+										status: String(deployData.status ?? ''),
+										state: String(deployData.state ?? ''),
+										health: String(deployData.health ?? '')
+									};
+									deployLastNonWaitingStatus = m.progress_deploy_service_status({
+										service,
+										status: String(deployData.status ?? '')
+									});
+									pullStatusText = deriveDeployStatusText();
+								}
+							}
+							break;
+						case 'complete':
+							pullStatusText = m.progress_deploy_completed();
+							break;
+						default:
+							break;
+					}
+				} else if (deployData.status) {
+					// fallback for unexpected payloads
+					pullStatusText = String(deployData.status);
+				}
+
+				if (deployData.error) {
+					const errMsg =
+						typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
+					pullError = errMsg;
+					pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
+					hadError = true;
+					deployPulling = false;
+					return;
+				}
+
+				// If we got "complete", stop the loading state
+				if (deployData.type === 'deploy' && deployData.phase === 'complete') {
+					deployPulling = false;
+					pullProgress = 100;
+				}
+			});
 
 			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
 

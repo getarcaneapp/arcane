@@ -138,19 +138,7 @@ export class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/redeploy`));
 	}
 
-	private isDownloadingStatus(status?: string): boolean {
-		if (!status) return false;
-		const s = status.toLowerCase();
-		return (
-			s.includes('downloading') ||
-			s.includes('extracting') ||
-			s.includes('pull complete') ||
-			s.includes('download complete') ||
-			s.includes('pulling fs layer')
-		);
-	}
-
-	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<boolean> {
+	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
 
@@ -162,7 +150,6 @@ export class ProjectService extends BaseAPIService {
 		const reader = res.body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = '';
-		let pulled = false;
 
 		while (true) {
 			const { value, done } = await reader.read();
@@ -177,39 +164,18 @@ export class ProjectService extends BaseAPIService {
 				if (!trimmed) continue;
 				try {
 					const obj = JSON.parse(trimmed);
-
-					// Detect if any actual download happened
-					if (!pulled) {
-						const status = obj?.status as string | undefined;
-						const total = obj?.progressDetail?.total as number | undefined;
-						if (this.isDownloadingStatus(status) || (typeof total === 'number' && total > 0)) {
-							pulled = true;
-						}
-					}
-
 					onLine?.(obj);
 				} catch {
 					// ignore malformed line
 				}
 			}
 		}
-		return pulled;
 	}
 
 	pullProjectImages(projectId: string): Promise<void>;
 	pullProjectImages(projectId: string, onLine: (data: any) => void): Promise<void>;
 	async pullProjectImages(projectId: string, onLine?: (data: any) => void): Promise<void> {
 		await this.streamProjectPull(projectId, onLine);
-	}
-
-	async deployProjectMaybePull(
-		projectId: string,
-		onPullLine?: (data: any) => void,
-		onDeployLine?: (data: any) => void
-	): Promise<{ pulled: boolean; project: Project }> {
-		const pulled = await this.streamProjectPull(projectId, onPullLine);
-		const project = onDeployLine ? await this.deployProject(projectId, onDeployLine) : await this.deployProject(projectId);
-		return { pulled, project };
 	}
 
 	async destroyProject(projectName: string, removeVolumes = false, removeFiles = false): Promise<void> {

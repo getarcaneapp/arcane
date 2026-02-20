@@ -114,6 +114,66 @@ type ProjectServiceInfo struct {
 	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
 }
 
+type imagePullMode int
+
+const (
+	imagePullModeNever imagePullMode = iota
+	imagePullModeIfMissing
+	imagePullModeAlways
+)
+
+func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
+	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
+	switch {
+	case rawPolicy == composetypes.PullPolicyNever:
+		return imagePullModeNever
+	case rawPolicy == composetypes.PullPolicyAlways:
+		return imagePullModeAlways
+	case rawPolicy == composetypes.PullPolicyRefresh,
+		rawPolicy == "daily",
+		rawPolicy == "weekly",
+		strings.HasPrefix(rawPolicy, "every_"):
+		return imagePullModeAlways
+	case rawPolicy == composetypes.PullPolicyMissing,
+		rawPolicy == composetypes.PullPolicyIfNotPresent,
+		rawPolicy == composetypes.PullPolicyBuild,
+		rawPolicy == "":
+		return imagePullModeIfMissing
+	}
+
+	policy, _, err := svc.GetPullPolicy()
+	if err != nil {
+		slog.Warn("failed to parse service pull_policy, defaulting to missing", "service", svc.Name, "pull_policy", svc.PullPolicy, "error", err)
+		return imagePullModeIfMissing
+	}
+
+	switch policy {
+	case composetypes.PullPolicyNever:
+		return imagePullModeNever
+	case composetypes.PullPolicyAlways, composetypes.PullPolicyRefresh:
+		return imagePullModeAlways
+	case composetypes.PullPolicyMissing, composetypes.PullPolicyIfNotPresent, composetypes.PullPolicyBuild:
+		return imagePullModeIfMissing
+	default:
+		return imagePullModeIfMissing
+	}
+}
+
+func buildProjectImagePullPlan(services composetypes.Services) map[string]imagePullMode {
+	plan := map[string]imagePullMode{}
+	for _, svc := range services {
+		img := strings.TrimSpace(svc.Image)
+		if img == "" {
+			continue
+		}
+		mode := resolveServiceImagePullMode(svc)
+		if existing, exists := plan[img]; !exists || mode > existing {
+			plan[img] = mode
+		}
+	}
+	return plan
+}
+
 func normalizeComposeProjectName(name string) string {
 	if name == "" {
 		return ""
@@ -731,7 +791,12 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	if perr := s.EnsureProjectImagesPresent(ctx, projectID, io.Discard, nil); perr != nil {
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if progressWriter == nil {
+		progressWriter = io.Discard
+	}
+
+	if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, nil); perr != nil {
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
@@ -997,7 +1062,10 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 }
 
 // EnsureProjectImagesPresent checks all compose service images for the project and
-// only pulls images that are not already available locally.
+// pulls based on service pull policy:
+// - always/refresh: always pull
+// - missing/if_not_present/default: pull only if local image is missing
+// - never: never pull (fails early if image is missing locally)
 func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -1023,27 +1091,34 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
-	images := map[string]struct{}{}
-	for _, svc := range compProj.Services {
-		img := strings.TrimSpace(svc.Image)
-		if img == "" {
-			continue
-		}
-		images[img] = struct{}{}
-	}
+	pullPlan := buildProjectImagePullPlan(compProj.Services)
 
 	settings := s.settingsService.GetSettingsConfig()
 
-	for img := range images {
+	for img, mode := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
-		if ierr != nil {
+		if ierr != nil && mode != imagePullModeAlways {
 			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
 			// Non-fatal: attempt to pull to be safe
 		}
-		if exists {
+
+		if mode == imagePullModeNever {
+			if ierr != nil {
+				slog.WarnContext(ctx, "pull_policy is 'never' but image presence check failed; continuing without pull", "image", img, "error", ierr)
+				continue
+			}
+			if !exists {
+				return fmt.Errorf("image %s is not available locally and pull_policy is 'never'", img)
+			}
+			slog.DebugContext(ctx, "pull_policy is 'never'; using local image without pull", "image", img)
+			continue
+		}
+
+		if mode == imagePullModeIfMissing && exists {
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
+
 		err := func() error {
 			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 			defer pullCancel()
@@ -1051,7 +1126,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
 				}
-				return fmt.Errorf("failed to pull missing image %s: %w", img, err)
+				return fmt.Errorf("failed to pull image %s: %w", img, err)
 			}
 			return nil
 		}()
