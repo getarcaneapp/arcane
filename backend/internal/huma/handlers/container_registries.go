@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -17,7 +18,8 @@ import (
 
 // ContainerRegistryHandler handles container registry management endpoints.
 type ContainerRegistryHandler struct {
-	registryService *services.ContainerRegistryService
+	registryService    *services.ContainerRegistryService
+	environmentService *services.EnvironmentService
 }
 
 // ============================================================================
@@ -97,8 +99,11 @@ type SyncContainerRegistriesOutput struct {
 // ============================================================================
 
 // RegisterContainerRegistries registers all container registry endpoints.
-func RegisterContainerRegistries(api huma.API, registryService *services.ContainerRegistryService) {
-	h := &ContainerRegistryHandler{registryService: registryService}
+func RegisterContainerRegistries(api huma.API, registryService *services.ContainerRegistryService, environmentService *services.EnvironmentService) {
+	h := &ContainerRegistryHandler{
+		registryService:    registryService,
+		environmentService: environmentService,
+	}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listContainerRegistries",
@@ -240,6 +245,8 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryCreationError{Err: err}).Error())
 	}
 
+	h.triggerRemoteRegistrySync(ctx, "registry creation")
+
 	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.ContainerRegistry](reg)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.RegistryMappingError{Err: mapErr}).Error())
@@ -294,6 +301,8 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryUpdateError{Err: err}).Error())
 	}
 
+	h.triggerRemoteRegistrySync(ctx, "registry update")
+
 	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.ContainerRegistry](reg)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.RegistryMappingError{Err: mapErr}).Error())
@@ -321,6 +330,8 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryDeletionError{Err: err}).Error())
 	}
+
+	h.triggerRemoteRegistrySync(ctx, "registry deletion")
 
 	return &DeleteContainerRegistryOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
@@ -421,4 +432,18 @@ func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, regi
 	return map[string]any{
 		"message": "Authentication succeeded",
 	}, nil
+}
+
+func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) { //nolint:contextcheck // intentionally spawns background sync
+	if h.environmentService == nil {
+		return
+	}
+
+	detachedCtx := context.WithoutCancel(ctx)
+
+	go func(syncCtx context.Context, syncReason string) {
+		if err := h.environmentService.SyncRegistriesToRemoteEnvironments(syncCtx); err != nil {
+			slog.WarnContext(syncCtx, "Failed to fan out registry sync to remote environments", "reason", syncReason, "error", err.Error())
+		}
+	}(detachedCtx, reason)
 }
