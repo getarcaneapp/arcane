@@ -14,6 +14,7 @@
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { stripImageDigest } from '$lib/utils/string.utils';
 	import ServiceEditorDialog from './service-editor-dialog.svelte';
 
 	let {
@@ -35,10 +36,6 @@
 				return `${port.targetPort}/${protocol}`;
 			})
 			.join(', ');
-	}
-
-	function formatImage(image: string): string {
-		return image.replace(/@sha256:([a-f0-9]{7})[a-f0-9]+/, '@sha256:$1');
 	}
 
 	function modeVariant(mode: string): 'green' | 'blue' | 'amber' | 'gray' {
@@ -133,7 +130,7 @@
 </script>
 
 {#snippet ImageCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm">{formatImage(String(value ?? ''))}</span>
+	<span class="font-mono text-sm">{stripImageDigest(String(value ?? ''))}</span>
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
@@ -166,7 +163,7 @@
 			variant: item.mode === 'global' ? 'emerald' : 'blue'
 		})}
 		title={(item: SwarmServiceSummary) => item.name}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? formatImage(item.image) : null)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.image ?? true) ? stripImageDigest(item.image) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
 				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null

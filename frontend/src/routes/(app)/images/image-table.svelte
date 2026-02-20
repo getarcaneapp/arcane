@@ -25,6 +25,7 @@
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/vulnerability-scan.util';
+	import { stripImageDigest } from '$lib/utils/string.utils';
 	import {
 		DownloadIcon,
 		TrashIcon,
@@ -404,7 +405,7 @@
 
 {#snippet RepoCell({ item }: { item: ImageSummaryDto })}
 	{#if item.repo && item.repo !== '<none>'}
-		<a class="font-medium hover:underline" href="/images/{item.id}">{item.repo}</a>
+		<a class="font-medium hover:underline" href="/images/{item.id}">{stripImageDigest(item.repo)}</a>
 	{:else}
 		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 	{/if}
@@ -596,7 +597,7 @@
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item) => {
-			if (item.repo && item.repo !== '<none>') return item.repo;
+			if (item.repo && item.repo !== '<none>') return stripImageDigest(item.repo);
 			return m.images_untagged();
 		}}
 		subtitle={(item) => ((mobileFieldVisibility.id ?? false) ? item.id : null)}
