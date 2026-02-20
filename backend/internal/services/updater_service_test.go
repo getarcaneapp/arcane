@@ -420,3 +420,56 @@ func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
 	assert.NotContains(t, out, svc.normalizeRef("postgres:16"))
 	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
 }
+
+func TestResolveContainerImageMatchInternal(t *testing.T) {
+	svc := &UpdaterService{}
+	updatedNorm := map[string]string{
+		svc.normalizeRef("nginx:latest"): "nginx:latest",
+	}
+	oldIDToNewRef := map[string]string{
+		"sha256:img1": "redis:7",
+	}
+
+	tests := []struct {
+		name        string
+		container   container.Summary
+		wantRef     string
+		wantMatchID string
+	}{
+		{
+			name: "match by image id",
+			container: container.Summary{
+				ImageID: "sha256:img1",
+				Image:   "some/other:tag",
+			},
+			wantRef:     "redis:7",
+			wantMatchID: "sha256:img1",
+		},
+		{
+			name: "match by normalized image tag from summary",
+			container: container.Summary{
+				ImageID: "sha256:unknown",
+				Image:   "docker.io/library/nginx:latest",
+			},
+			wantRef:     "nginx:latest",
+			wantMatchID: svc.normalizeRef("nginx:latest"),
+		},
+		{
+			name: "image id-like summary value cannot be tag matched",
+			container: container.Summary{
+				ImageID: "sha256:unknown",
+				Image:   "sha256:abcdef",
+			},
+			wantRef:     "",
+			wantMatchID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, updatedNorm)
+			assert.Equal(t, tt.wantRef, gotRef)
+			assert.Equal(t, tt.wantMatchID, gotMatch)
+		})
+	}
+}

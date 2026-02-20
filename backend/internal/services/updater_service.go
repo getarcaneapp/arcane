@@ -1090,7 +1090,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 	type restartPlan struct {
 		cnt      container.Summary
-		inspect  container.InspectResponse
+		inspect  *container.InspectResponse
 		newRef   string
 		match    string
 		explicit bool
@@ -1119,18 +1119,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			continue
 		}
 
-		inspect, err := dcli.ContainerInspect(ctx, c.ID)
-		if err != nil {
-			continue
-		}
-
-		labels := c.Labels
-		if inspect.Config != nil && inspect.Config.Labels != nil {
-			labels = inspect.Config.Labels
-		}
-
 		// Skip containers with opt-out label
-		if arcaneupdater.IsUpdateDisabled(labels) {
+		if arcaneupdater.IsUpdateDisabled(c.Labels) {
 			continue
 		}
 
@@ -1139,28 +1129,13 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			c.Labels = map[string]string{}
 		}
 
-		dep := arcaneupdater.ExtractContainerDeps(ctx, dcli, c, inspect)
-		containersWithDeps = append(containersWithDeps, dep)
+		name := s.getContainerName(c)
+		containersWithDeps = append(containersWithDeps, arcaneupdater.ContainerWithDeps{
+			Container: c,
+			Name:      name,
+		})
 
-		var (
-			newRef string
-			match  string
-		)
-
-		// Primary: match by digest (image ID)
-		if nr, ok := oldIDToNewRef[inspect.Image]; ok {
-			newRef = nr
-			match = inspect.Image
-		} else {
-			// Fallback: resolve tags and match by tag
-			for _, t := range s.getNormalizedTagsForContainer(ctx, dcli, inspect) {
-				if nr, ok := updatedNorm[t]; ok {
-					newRef = nr
-					match = t
-					break
-				}
-			}
-		}
+		newRef, match := s.resolveContainerImageMatchInternal(c, oldIDToNewRef, updatedNorm)
 
 		if newRef != "" {
 			// Check if container is already on the target image
@@ -1170,18 +1145,36 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				targetImageIDs[newRef] = tids
 			}
 
-			if slices.Contains(tids, inspect.Image) {
+			if c.ImageID != "" && slices.Contains(tids, c.ImageID) {
 				// Already on target image
 				slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
-					"containerId", c.ID, "containerName", dep.Name, "imageID", inspect.Image, "newRef", newRef)
+					"containerId", c.ID, "containerName", name, "imageID", c.ImageID, "newRef", newRef)
 				newRef = ""
 			}
 		}
 
-		p := &restartPlan{cnt: c, inspect: inspect, newRef: newRef, match: match, explicit: newRef != ""}
-		plansByName[dep.Name] = p
+		p := &restartPlan{cnt: c, newRef: newRef, match: match, explicit: newRef != ""}
+		plansByName[name] = p
 		if p.explicit {
-			markedForRestart[dep.Name] = true
+			markedForRestart[name] = true
+		}
+	}
+
+	// Only fetch full container inspect details if there are explicit restart candidates.
+	// This avoids one inspect call per running container on runs with no matching updates.
+	if len(markedForRestart) > 0 {
+		for i := range containersWithDeps {
+			cwd := containersWithDeps[i]
+			inspect, ierr := dcli.ContainerInspect(ctx, cwd.Container.ID)
+			if ierr != nil {
+				continue
+			}
+			containersWithDeps[i] = arcaneupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, inspect)
+
+			if p, ok := plansByName[containersWithDeps[i].Name]; ok {
+				inspectCopy := inspect
+				p.inspect = &inspectCopy
+			}
 		}
 	}
 
@@ -1194,7 +1187,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		for _, name := range added {
 			if p, ok := plansByName[name]; ok {
 				if p.newRef == "" {
-					if p.inspect.Config != nil {
+					if p.inspect != nil && p.inspect.Config != nil {
 						p.newRef = strings.TrimSpace(p.inspect.Config.Image)
 					}
 					if p.newRef == "" {
@@ -1232,6 +1225,22 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 		name := cd.Name
 		labels := map[string]string{}
+		if p.inspect == nil {
+			inspect, ierr := dcli.ContainerInspect(ctx, p.cnt.ID)
+			if ierr != nil {
+				res := updater.ResourceResult{
+					ResourceID:   p.cnt.ID,
+					ResourceName: name,
+					ResourceType: "container",
+					Status:       "failed",
+					Error:        fmt.Sprintf("inspect failed: %v", ierr),
+				}
+				results = append(results, res)
+				continue
+			}
+			inspectCopy := inspect
+			p.inspect = &inspectCopy
+		}
 		if p.inspect.Config != nil && p.inspect.Config.Labels != nil {
 			labels = p.inspect.Config.Labels
 		}
@@ -1268,7 +1277,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				res.UpdateApplied = true
 				slog.InfoContext(ctx, "restartContainersUsingOldIDs: CLI upgrade triggered successfully", "containerId", p.cnt.ID)
 			}
-		} else if err := s.updateContainer(ctx, p.cnt, p.inspect, p.newRef); err != nil {
+		} else if err := s.updateContainer(ctx, p.cnt, *p.inspect, p.newRef); err != nil {
 			res.Status = "failed"
 			res.Error = err.Error()
 			slog.DebugContext(ctx, "restartContainersUsingOldIDs: update failed", "containerId", p.cnt.ID, "err", err)
@@ -1289,6 +1298,26 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: completed scanning", "results", len(results))
 	return results, nil
+}
+
+func (s *UpdaterService) resolveContainerImageMatchInternal(c container.Summary, oldIDToNewRef map[string]string, updatedNorm map[string]string) (newRef, match string) {
+	if c.ImageID != "" {
+		if nr, ok := oldIDToNewRef[c.ImageID]; ok {
+			return nr, c.ImageID
+		}
+	}
+
+	imageRef := strings.TrimSpace(c.Image)
+	if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
+		return "", ""
+	}
+
+	norm := s.normalizeRef(imageRef)
+	if nr, ok := updatedNorm[norm]; ok {
+		return nr, norm
+	}
+
+	return "", ""
 }
 
 // parseNormalizedRef expects a normalized ref in the form "host/repository:tag".
