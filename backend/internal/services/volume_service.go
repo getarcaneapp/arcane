@@ -1597,14 +1597,22 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 
 func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []*volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
 	slog.Debug("volume service: enrich volumes with usage data", "volumes", len(volumes), "usage_volumes", len(usageVolumes))
+	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
+	for _, uv := range usageVolumes {
+		if uv.Name == "" || uv.UsageData == nil {
+			continue
+		}
+		// Keep first-seen value to preserve previous nested-loop behavior.
+		if _, exists := usageByName[uv.Name]; !exists {
+			usageByName[uv.Name] = uv.UsageData
+		}
+	}
+
 	result := make([]volume.Volume, 0, len(volumes))
 	for _, v := range volumes {
 		if v != nil {
-			for _, uv := range usageVolumes {
-				if uv.Name == v.Name && uv.UsageData != nil {
-					v.UsageData = uv.UsageData
-					break
-				}
+			if usageData, exists := usageByName[v.Name]; exists {
+				v.UsageData = usageData
 			}
 
 			result = append(result, *v)
