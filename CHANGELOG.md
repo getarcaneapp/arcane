@@ -1,3 +1,39 @@
+## v1.15.3
+
+### Bug fixes
+
+* use cpuset instead of cpusnano on synology devices ([#1782](https://github.com/getarcaneapp/arcane/pull/1782) by @kmendell)
+* clear image update records by image ID not just repo/tag ([#1809](https://github.com/getarcaneapp/arcane/pull/1809) by @kmendell)
+* clear update records by image ID and fail closed on used-image discovery errors ([#1810](https://github.com/getarcaneapp/arcane/pull/1810) by @kmendell)
+* bound environment health sync concurrency and prevent overlapping runs ([#1813](https://github.com/getarcaneapp/arcane/pull/1813) by @kmendell)
+* track active updates in status maps and bound error-event logging path ([#1817](https://github.com/getarcaneapp/arcane/pull/1817) by @kmendell)
+* dont force pull images on project start and respect pull policy ([#1820](https://github.com/getarcaneapp/arcane/pull/1820) by @kmendell)
+* registry syncing to environments not running on initially pairing ([#1822](https://github.com/getarcaneapp/arcane/pull/1822) by @kmendell)
+* limit container create options based on docker api ([#1823](https://github.com/getarcaneapp/arcane/pull/1823) by @kmendell)
+
+### Performance improvements
+
+* improve performance of image update, prune, and vuln actions ([#1808](https://github.com/getarcaneapp/arcane/pull/1808) by @kmendell)
+* remove N+1 project service calls in used-image collection ([#1811](https://github.com/getarcaneapp/arcane/pull/1811) by @kmendell)
+* reduce restart planning API calls by deferring container inspect ([#1812](https://github.com/getarcaneapp/arcane/pull/1812) by @kmendell)
+* fetch vulnerability summaries only for paginated image results ([#1814](https://github.com/getarcaneapp/arcane/pull/1814) by @kmendell)
+* replace nested usage enrichment loop with map lookup ([#1815](https://github.com/getarcaneapp/arcane/pull/1815) by @kmendell)
+* prefilter list-all scans and inline ignored vuln filtering ([#1816](https://github.com/getarcaneapp/arcane/pull/1816) by @kmendell)
+
+### Dependencies
+
+* bump github.com/getarcaneapp/arcane/types from 0.0.0-20260209233421-0952125a149f to 1.15.2 in /backend ([#1800](https://github.com/getarcaneapp/arcane/pull/1800) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types from 1.15.0 to 1.15.2 in /cli ([#1796](https://github.com/getarcaneapp/arcane/pull/1796) by @dependabot[bot])
+* bump golang.org/x/net from 0.49.0 to 0.50.0 in /backend ([#1797](https://github.com/getarcaneapp/arcane/pull/1797) by @dependabot[bot])
+* bump github.com/lmittmann/tint from 1.1.2 to 1.1.3 in /backend ([#1801](https://github.com/getarcaneapp/arcane/pull/1801) by @dependabot[bot])
+* bump github.com/mattn/go-runewidth from 0.0.19 to 0.0.20 in /cli ([#1798](https://github.com/getarcaneapp/arcane/pull/1798) by @dependabot[bot])
+* bump github.com/danielgtaylor/huma/v2 from 2.35.0 to 2.36.0 in /backend ([#1799](https://github.com/getarcaneapp/arcane/pull/1799) by @dependabot[bot])
+* bump svelte from 5.51.0 to 5.51.5 in the npm_and_yarn group across 1 directory ([#1805](https://github.com/getarcaneapp/arcane/pull/1805) by @dependabot[bot])
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.15.2...v1.15.3
+
 ## v1.15.2
 
 ### Bug fixes
