@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	arcRegistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
@@ -732,7 +733,25 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	var networkingConfig *network.NetworkingConfig
 	if !nm.IsContainer() {
-		networkingConfig = &network.NetworkingConfig{EndpointsConfig: inspect.NetworkSettings.Networks}
+		apiVersion := libarcane.DetectDockerAPIVersion(ctx, dcli)
+		if apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
+			slog.InfoContext(ctx,
+				"updateContainer: daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
+				"containerId", cnt.ID,
+				"containerName", name,
+				"dockerAPIVersion", apiVersion,
+				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,
+			)
+		}
+
+		var endpoints map[string]*network.EndpointSettings
+		if inspect.NetworkSettings != nil {
+			endpoints = inspect.NetworkSettings.Networks
+		}
+
+		networkingConfig = &network.NetworkingConfig{
+			EndpointsConfig: libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
+		}
 	}
 
 	// Use original name for new container

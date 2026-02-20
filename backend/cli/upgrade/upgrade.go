@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/spf13/cobra"
 )
 
@@ -367,25 +368,21 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// Build network config - preserve all network settings including IP addresses
 	var networkConfig *network.NetworkingConfig
 	if !nm.IsContainer() {
-		networkConfig = &network.NetworkingConfig{
-			EndpointsConfig: make(map[string]*network.EndpointSettings),
+		apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+		if apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
+			slog.Info("daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
+				"dockerAPIVersion", apiVersion,
+				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,
+			)
 		}
-		for networkName, networkSettings := range oldContainer.NetworkSettings.Networks {
-			networkConfig.EndpointsConfig[networkName] = &network.EndpointSettings{
-				IPAMConfig:          networkSettings.IPAMConfig,
-				Links:               networkSettings.Links,
-				Aliases:             networkSettings.Aliases,
-				NetworkID:           networkSettings.NetworkID,
-				EndpointID:          networkSettings.EndpointID,
-				Gateway:             networkSettings.Gateway,
-				IPAddress:           networkSettings.IPAddress,
-				IPPrefixLen:         networkSettings.IPPrefixLen,
-				IPv6Gateway:         networkSettings.IPv6Gateway,
-				GlobalIPv6Address:   networkSettings.GlobalIPv6Address,
-				GlobalIPv6PrefixLen: networkSettings.GlobalIPv6PrefixLen,
-				MacAddress:          networkSettings.MacAddress,
-				DriverOpts:          networkSettings.DriverOpts,
-			}
+
+		var endpoints map[string]*network.EndpointSettings
+		if oldContainer.NetworkSettings != nil {
+			endpoints = oldContainer.NetworkSettings.Networks
+		}
+
+		networkConfig = &network.NetworkingConfig{
+			EndpointsConfig: libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
 		}
 	}
 
