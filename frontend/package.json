@@ -20,7 +20,7 @@
   "dependencies": {
     "@shikijs/monaco": "^3.21.0",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/kit": "^2.53.0",
     "@tanstack/svelte-query": "^6.0.18",
     "@tanstack/table-core": "^8.21.3",
     "@xterm/addon-fit": "^0.11.0",
