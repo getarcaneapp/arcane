@@ -188,10 +188,10 @@ importers:
         version: 3.4.0
       tailwind-variants:
         specifier: ^3.2.2
-        version: 3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.1.18)
+        version: 3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.2.0)
       tailwindcss:
-        specifier: ^4.1.18
-        version: 4.1.18
+        specifier: ^4.2.0
+        version: 4.2.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -3878,6 +3878,9 @@ packages:
   tailwindcss@4.1.18:
     resolution: {integrity: sha512-4+Z+0yiYyEtUVCScyfHCxOYP06L5Ne+JiHhY2IjR2KWMIWhJOYZKLSGZaP5HkZ8+bY0cxfzwDE5uOmzFXyIwxw==}
 
+  tailwindcss@4.2.0:
+    resolution: {integrity: sha512-yYzTZ4++b7fNYxFfpnberEEKu43w44aqDMNM9MHMmcKuCH7lL8jJ4yJ7LGHv7rSwiqM0nkiobF9I6cLlpS2P7Q==}
+
   tapable@2.3.0:
     resolution: {integrity: sha512-g9ljZiwki/LfxmQADO3dEY1CbpmXT5Hm2fJ+QaGKwSXUylMybePR7/67YW7jOrrvjEgL1Fmz5kzyAjWVWLlucg==}
     engines: {node: '>=6'}
@@ -5208,7 +5211,7 @@ snapshots:
     dependencies:
       '@react-email/text': 0.1.6(react@19.2.4)
       react: 19.2.4
-      tailwindcss: 4.1.18
+      tailwindcss: 4.2.0
     optionalDependencies:
       '@react-email/body': 0.2.1(react@19.2.4)
       '@react-email/button': 0.2.1(react@19.2.4)
@@ -7509,13 +7512,15 @@ snapshots:
 
   tailwind-merge@3.4.0: {}
 
-  tailwind-variants@3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.1.18):
+  tailwind-variants@3.2.2(tailwind-merge@3.4.0)(tailwindcss@4.2.0):
     dependencies:
-      tailwindcss: 4.1.18
+      tailwindcss: 4.2.0
     optionalDependencies:
       tailwind-merge: 3.4.0
 
   tailwindcss@4.1.18: {}
+
+  tailwindcss@4.2.0: {}
 
   tapable@2.3.0: {}
 
