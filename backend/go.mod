@@ -7,7 +7,7 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.10.1
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.17.0
-	github.com/danielgtaylor/huma/v2 v2.37.0
+	github.com/danielgtaylor/huma/v2 v2.37.2
 	github.com/docker/cli v28.5.2+incompatible
 	github.com/docker/compose/v5 v5.0.2
 	github.com/docker/distribution v2.8.3+incompatible
