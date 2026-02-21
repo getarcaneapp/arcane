@@ -31,7 +31,7 @@
     "js-yaml": "^4.1.1",
     "monaco-editor": "^0.55.1",
     "prettier": "^3.8.0",
-    "prettier-plugin-svelte": "^3.4.1",
+    "prettier-plugin-svelte": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "shiki": "^3.22.0",
     "svelte": "^5.51.5",
