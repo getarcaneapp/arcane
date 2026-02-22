@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -47,8 +48,9 @@ var containersListCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Containers(c.EnvID())
-		if containersLimit > 0 {
-			path = fmt.Sprintf("%s?pageSize=%d", path, containersLimit)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "containers", "limit", containersLimit, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?pageSize=%d", path, effectiveLimit)
 		}
 		if containersAll {
 			separator := "?"
@@ -342,13 +344,11 @@ var containersDeleteCmd = &cobra.Command{
 		displayName := containerDisplayName(resolved)
 
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete container %s? (y/N): ", displayName)
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete container %s?", displayName))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}

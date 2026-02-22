@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -19,9 +20,11 @@ import (
 )
 
 var (
-	limitFlag  int
-	forceFlag  bool
-	jsonOutput bool
+	limitFlag      int
+	forceFlag      bool
+	jsonOutput     bool
+	inUseOnlyFlag  bool
+	unusedOnlyFlag bool
 )
 
 const maxPromptOptions = 20
@@ -39,14 +42,18 @@ var listCmd = &cobra.Command{
 	Short:        "List volumes",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if inUseOnlyFlag && unusedOnlyFlag {
+			return fmt.Errorf("--inuse and --unused cannot be used together")
+		}
 		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
 
 		path := types.Endpoints.Volumes(c.EnvID())
-		if limitFlag > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, limitFlag)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "volumes", "limit", limitFlag, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -59,6 +66,8 @@ var listCmd = &cobra.Command{
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
+		result.Data = filterVolumesByUsage(result.Data, inUseOnlyFlag, unusedOnlyFlag)
+		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
@@ -69,14 +78,19 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		headers := []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED"}
+		headers := []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"}
 		rows := make([][]string, len(result.Data))
 		for i, vol := range result.Data {
+			inUse := "No"
+			if vol.InUse {
+				inUse = "Yes"
+			}
 			rows[i] = []string{
 				vol.Name,
 				vol.Driver,
 				vol.Mountpoint,
 				vol.CreatedAt,
+				inUse,
 			}
 		}
 
@@ -145,13 +159,11 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete volume %s? (y/N): ", resolved.Name)
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete volume %s?", resolved.Name))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -162,6 +174,9 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete volume: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to delete volume: %w", err)
+		}
 
 		output.Success("Volume %s deleted successfully", resolved.Name)
 		return nil
@@ -214,13 +229,11 @@ var pruneCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !forceFlag {
-			fmt.Print("Are you sure you want to prune unused volumes? (y/N): ")
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, "Are you sure you want to prune unused volumes?")
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -236,6 +249,9 @@ var pruneCmd = &cobra.Command{
 			return fmt.Errorf("failed to prune volumes: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to prune volumes: %w", err)
+		}
 
 		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -355,6 +371,8 @@ func init() {
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of volumes to show")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	listCmd.Flags().BoolVar(&inUseOnlyFlag, "inuse", false, "Only show volumes currently in use")
+	listCmd.Flags().BoolVar(&unusedOnlyFlag, "unused", false, "Only show volumes not in use")
 
 	// Get command flags
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -473,4 +491,21 @@ func volumeMatches(item volume.Volume, identifierLower, original string) bool {
 		return true
 	}
 	return false
+}
+
+func filterVolumesByUsage(items []volume.Volume, inUseOnly, unusedOnly bool) []volume.Volume {
+	if !inUseOnly && !unusedOnly {
+		return items
+	}
+	filtered := make([]volume.Volume, 0, len(items))
+	for _, item := range items {
+		if inUseOnly && !item.InUse {
+			continue
+		}
+		if unusedOnly && item.InUse {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }

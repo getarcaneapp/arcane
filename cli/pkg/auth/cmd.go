@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/term"
-	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -32,7 +32,7 @@ var loginCmd = &cobra.Command{
 	Short:        "Login to Arcane using OIDC device authorization",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfigUnauthenticated()
+		c, err := cmdutil.UnauthClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -76,20 +76,23 @@ var loginCmd = &cobra.Command{
 		}
 		expiresAt := time.Now().Add(time.Duration(deviceAuth.ExpiresIn) * time.Second)
 
+		tokenReqBody, err := json.Marshal(auth.OidcDeviceTokenRequest{DeviceCode: deviceAuth.DeviceCode})
+		if err != nil {
+			return fmt.Errorf("failed to marshal token request: %w", err)
+		}
+
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
 		for {
 			if time.Now().After(expiresAt) {
 				return fmt.Errorf("device authorization expired; run login again")
 			}
 
 			select {
-			case <-time.After(pollInterval):
+			case <-ticker.C:
 			case <-cmd.Context().Done():
 				return cmd.Context().Err()
-			}
-
-			tokenReqBody, err := json.Marshal(auth.OidcDeviceTokenRequest{DeviceCode: deviceAuth.DeviceCode})
-			if err != nil {
-				return fmt.Errorf("failed to marshal token request: %w", err)
 			}
 
 			tokenResp, err := c.Post(cmd.Context(), types.Endpoints.OIDCDeviceToken(), tokenReqBody)
@@ -110,6 +113,7 @@ var loginCmd = &cobra.Command{
 					continue
 				case "slow_down":
 					pollInterval += 5 * time.Second
+					ticker.Reset(pollInterval)
 					continue
 				case "expired_token":
 					return fmt.Errorf("device authorization expired; run login again")
@@ -128,7 +132,7 @@ var loginCmd = &cobra.Command{
 				return fmt.Errorf("device token exchange failed: unexpected response from server")
 			}
 
-			if jsonOutput {
+			if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 				resultBytes, err := json.MarshalIndent(tokenResult, "", "  ")
 				if err != nil {
 					return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -161,7 +165,7 @@ var logoutCmd = &cobra.Command{
 	Short:        "Logout from Arcane",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -171,8 +175,11 @@ var logoutCmd = &cobra.Command{
 			return fmt.Errorf("logout failed: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("logout failed: %w", err)
+		}
 
-		// Clear token from config regardless of API response
+		// Clear token from config after successful API logout.
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -183,7 +190,7 @@ var logoutCmd = &cobra.Command{
 			return fmt.Errorf("failed to clear token: %w", err)
 		}
 
-		if jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			var result base.ApiResponse[any]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
 				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
@@ -205,7 +212,7 @@ var meCmd = &cobra.Command{
 	Short:        "Get current user information",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -215,13 +222,16 @@ var meCmd = &cobra.Command{
 			return fmt.Errorf("failed to get user info: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to get user info: %w", err)
+		}
 
 		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		if jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -268,7 +278,7 @@ var passwordCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -288,8 +298,11 @@ var passwordCmd = &cobra.Command{
 			return fmt.Errorf("password change failed: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("password change failed: %w", err)
+		}
 
-		if jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			var result base.ApiResponse[any]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
 				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
@@ -326,7 +339,7 @@ var refreshCmd = &cobra.Command{
 			}
 		}
 
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -345,13 +358,16 @@ var refreshCmd = &cobra.Command{
 			return fmt.Errorf("token refresh failed: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("token refresh failed: %w", err)
+		}
 
 		var result base.ApiResponse[auth.TokenRefreshResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		if jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
