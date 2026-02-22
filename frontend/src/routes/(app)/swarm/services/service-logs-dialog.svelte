@@ -46,9 +46,9 @@
 	}
 
 	$effect(() => {
-		if (open && serviceId && autoStartLogs && !hasAutoStarted) {
+		if (open && serviceId && autoStartLogs && !hasAutoStarted && viewer) {
 			hasAutoStarted = true;
-			handleStart();
+			viewer.startLogStream();
 		}
 	});
 
