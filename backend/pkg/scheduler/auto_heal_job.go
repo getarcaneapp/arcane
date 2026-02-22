@@ -213,7 +213,7 @@ func (j *AutoHealJob) parseExcludedContainers(ctx context.Context) map[string]st
 	if raw == "" {
 		return excluded
 	}
-	for _, name := range strings.Split(raw, ",") {
+	for name := range strings.SplitSeq(raw, ",") {
 		trimmed := strings.TrimSpace(name)
 		if trimmed != "" {
 			excluded[trimmed] = struct{}{}

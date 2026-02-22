@@ -172,9 +172,18 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		pullOptions = image.PullOptions{}
 	}
 
+	initialHasAuth := pullOptions.RegistryAuth != ""
+	retriedWithoutAuth := false
+
 	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
+	if err != nil && shouldRetryAnonymousPullInternal(pullOptions, err) {
+		retriedWithoutAuth = true
+		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; retrying anonymously", "image", imageName, "error", err.Error())
+		pullOptions = image.PullOptions{}
+		reader, err = dockerClient.ImagePull(ctx, imageName, pullOptions)
+	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "error", err.Error())
+		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
@@ -317,18 +326,29 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 
 	for _, reg := range registries {
 		if s.isRegistryMatch(reg.URL, registryHost) {
+			username := strings.TrimSpace(reg.Username)
+			if username == "" {
+				slog.DebugContext(ctx, "Skipping database credentials for image pull", "registry", registryHost, "configuredRegistry", reg.URL, "reason", "missing_username")
+				continue
+			}
+
 			decryptedToken, err := s.registryService.GetDecryptedToken(ctx, reg.ID)
 			if err != nil {
 				return pullOptions, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, err)
 			}
+			token := strings.TrimSpace(decryptedToken)
+			if token == "" {
+				slog.DebugContext(ctx, "Skipping database credentials for image pull", "registry", registryHost, "configuredRegistry", reg.URL, "reason", "missing_token")
+				continue
+			}
 
-			authStr, err := s.createAuthHeader(reg.Username, decryptedToken, s.normalizeRegistryURL(reg.URL))
+			authStr, err := s.createAuthHeader(username, token, s.normalizeRegistryURL(reg.URL))
 			if err != nil {
 				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
 			}
 			pullOptions.RegistryAuth = authStr
 
-			slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost, "username", reg.Username)
+			slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost, "username", username)
 			break
 		}
 	}
@@ -400,6 +420,35 @@ func (s *ImageService) normalizeRegistryURL(url string) string {
 	result = strings.TrimSuffix(result, "/")
 
 	return result
+}
+
+func shouldRetryAnonymousPullInternal(pullOptions image.PullOptions, pullErr error) bool {
+	if pullOptions.RegistryAuth == "" || pullErr == nil {
+		return false
+	}
+	return isUnauthorizedPullErrorInternal(pullErr)
+}
+
+func isUnauthorizedPullErrorInternal(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errLower := strings.ToLower(err.Error())
+	unauthorizedIndicators := []string{
+		"unauthorized",
+		"authentication required",
+		"incorrect username or password",
+		"no basic auth credentials",
+		"access denied",
+	}
+
+	for _, indicator := range unauthorizedIndicators {
+		if strings.Contains(errLower, indicator) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.PruneReport, error) {
