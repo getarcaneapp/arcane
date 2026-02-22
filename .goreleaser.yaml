@@ -287,9 +287,21 @@ blobs:
     endpoint: '{{ index .Env "R2_ENDPOINT" }}'
     region: auto
     bucket: '{{ index .Env "R2_BUCKET" }}'
-    ids:
-      - arcane-cli
     directory: bin/cli-next
+    extra_files_only: true
+    extra_files:
+      - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli
+        name_template: arcane-cli_linux_amd64
+      - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli
+        name_template: arcane-cli_linux_arm64
+      - glob: dist/arcane-cli_linux_386_sse2/arcane-cli
+        name_template: arcane-cli_linux_386
+      - glob: dist/arcane-cli_linux_arm_7/arcane-cli
+        name_template: arcane-cli_linux_armv7
+      - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
+        name_template: arcane-cli_darwin_amd64
+      - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
+        name_template: arcane-cli_darwin_arm64
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 
