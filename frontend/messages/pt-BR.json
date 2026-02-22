@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} contêineres excluídos",
 	"auto_update_exclude_description": "Selecione os recipientes para excluir das atualizações automáticas.",
 	"auto_update_excluded_containers": "Contêineres excluídos",
+	"auto_heal_excluded_containers": "Contêineres excluídos",
+	"auto_heal_exclude_description": "Selecione os contêineres para excluir do monitoramento de auto-cura.",
+	"auto_heal_max_restarts_label": "Máximo de Reiniciações",
+	"auto_heal_max_restarts_description": "Número máximo de reinícios automáticos por contêiner dentro da janela de reinicialização.",
+	"auto_heal_restart_window_label": "Reiniciar a Janela (minutos)",
+	"auto_heal_restart_window_description": "Janela de tempo em minutos para contar reinício automático. Reinicia após este período.",
 	"_comment_common_actions": "=== COMUM — ESTADOS DE AÇÃO ===",
 	"common_action_creating": "A Criar…",
 	"common_action_deleting": "A Apagar…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Notificação de vulnerabilidade encontrada",
 	"notifications_test_vulnerability_notification": "Notificação de vulnerabilidade de teste",
 	"notifications_test_prune_report_notification": "Notificação de relatório de teste",
+	"notifications_test_auto_heal_notification": "Testar Notificação de Cura Automática",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Inclui",
 	"notifications_event_prune_report_label": "Relatório de limpeza do sistema",
 	"notifications_event_prune_report_description": "Receber um relatório de resumo quando uma operação de limpeza agendada for concluída",
+	"notifications_event_auto_heal_label": "Auto-Cura Reiniciar",
+	"notifications_event_auto_heal_description": "Notificar quando um contêiner não saudável for reiniciado automaticamente",
 	"version_info_build_features": "Construir recursos"
 }
