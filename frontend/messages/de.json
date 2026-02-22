@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} Container ausgeschlossen",
 	"auto_update_exclude_description": "Wählen Sie Container aus, die von automatischen Updates ausgeschlossen werden sollen.",
 	"auto_update_excluded_containers": "Ausgeschlossene Container",
+	"auto_heal_excluded_containers": "Ausgeschlossene Container",
+	"auto_heal_exclude_description": "Wählen Sie Container aus, die von der automatischen Überwachung ausgeschlossen werden sollen.",
+	"auto_heal_max_restarts_label": "Max. Neustart",
+	"auto_heal_max_restarts_description": "Maximale Anzahl von automatischen Neustarts pro Container innerhalb des Neustartfensters.",
+	"auto_heal_restart_window_label": "Fenster neu starten (Minuten)",
+	"auto_heal_restart_window_description": "Zeitfenster in Minuten für die Zählung automatischer Neustarts wird nach diesem Zeitraum zurückgesetzt.",
 	"_comment_common_actions": "=== Allgemein – Aktionszustände ===",
 	"common_action_creating": "Wird erstellt…",
 	"common_action_deleting": "Wird gelöscht…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Schwachstelle gefunden Benachrichtigung",
 	"notifications_test_vulnerability_notification": "Schwachstellen-Benachrichtigung testen",
 	"notifications_test_prune_report_notification": "Bereinigungs-Meldung testen",
+	"notifications_test_auto_heal_notification": "Auto-Heal-Benachrichtigung testen",
 	"notifications_apprise_title": "Benachrichtigungs Integration",
 	"notifications_apprise_description": "Apprise-API für einheitliche Benachrichtigungen für mehrere Dienste konfigurieren",
 	"notifications_apprise_enabled_label": "Apprise aktivieren",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Beinhaltet",
 	"notifications_event_prune_report_label": "System Prune Bericht",
 	"notifications_event_prune_report_description": "Erhalte einen Zusammenfassungsbericht, wenn ein geplanter prune Vorgang abgeschlossen ist",
+	"notifications_event_auto_heal_label": "Auto-Heilen Neustart",
+	"notifications_event_auto_heal_description": "Benachrichtigen, wenn ein ungesunder Container automatisch neu gestartet wird",
 	"version_info_build_features": "Baue Funktionen"
 }
