@@ -72,6 +72,7 @@
 	const endpointPorts = $derived((service?.endpoint?.Ports as any[]) || []);
 	const specNetworks = $derived((spec?.TaskTemplate?.Networks as any[]) || []);
 	const virtualIPs = $derived((service?.endpoint?.VirtualIPs as any[]) || []);
+	const networkDetails = $derived(service?.networkDetails ?? {});
 
 	const hasEnvVars = $derived(envVars.length > 0);
 	const hasLabels = $derived(Object.keys(labels).length > 0);
@@ -249,7 +250,7 @@
 
 			{#if showNetworkTab}
 				<Tabs.Content value="network" class="h-full">
-					<ServiceNetwork ports={endpointPorts} networks={specNetworks} {virtualIPs} />
+					<ServiceNetwork ports={endpointPorts} networks={specNetworks} {virtualIPs} {networkDetails} />
 				</Tabs.Content>
 			{/if}
 

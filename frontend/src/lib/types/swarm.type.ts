@@ -29,6 +29,40 @@ export interface SwarmServiceSummary {
 	mounts: SwarmServiceMount[];
 }
 
+export interface ServiceNetworkIPAMConfig {
+	subnet?: string;
+	gateway?: string;
+	ipRange?: string;
+}
+
+export interface ServiceNetworkConfigDetail {
+	name: string;
+	driver: string;
+	scope: string;
+	enableIPv4: boolean;
+	enableIPv6: boolean;
+	options?: Record<string, string>;
+	ipv4Configs?: ServiceNetworkIPAMConfig[];
+	ipv6Configs?: ServiceNetworkIPAMConfig[];
+}
+
+export interface ServiceNetworkDetail {
+	id: string;
+	name: string;
+	driver: string;
+	scope: string;
+	internal: boolean;
+	attachable: boolean;
+	ingress: boolean;
+	enableIPv4: boolean;
+	enableIPv6: boolean;
+	configFrom?: string;
+	configOnly: boolean;
+	options?: Record<string, string>;
+	ipamConfigs?: ServiceNetworkIPAMConfig[];
+	configNetwork?: ServiceNetworkConfigDetail | null;
+}
+
 export interface SwarmServiceInspect {
 	id: string;
 	version: { index?: number; Index?: number };
@@ -37,6 +71,8 @@ export interface SwarmServiceInspect {
 	spec: Record<string, unknown>;
 	endpoint: Record<string, unknown>;
 	updateStatus?: Record<string, unknown> | null;
+	nodes?: string[];
+	networkDetails?: Record<string, ServiceNetworkDetail>;
 }
 
 export interface SwarmServiceCreateRequest {

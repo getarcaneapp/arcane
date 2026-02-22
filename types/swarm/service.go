@@ -155,6 +155,46 @@ type ServiceInspect struct {
 
 	// Nodes is a list of node hostnames running this service.
 	Nodes []string `json:"nodes,omitempty"`
+
+	// NetworkDetails contains enriched network information keyed by network ID.
+	NetworkDetails map[string]ServiceNetworkDetail `json:"networkDetails,omitempty"`
+}
+
+// ServiceNetworkIPAMConfig represents a single IPAM configuration entry with camelCase JSON tags.
+type ServiceNetworkIPAMConfig struct {
+	Subnet  string `json:"subnet,omitempty"`
+	Gateway string `json:"gateway,omitempty"`
+	IPRange string `json:"ipRange,omitempty"`
+}
+
+// ServiceNetworkConfigDetail holds details about a config-only network referenced by configFrom.
+type ServiceNetworkConfigDetail struct {
+	Name        string                     `json:"name"`
+	Driver      string                     `json:"driver"`
+	Scope       string                     `json:"scope"`
+	EnableIPv4  bool                       `json:"enableIPv4"`
+	EnableIPv6  bool                       `json:"enableIPv6"`
+	Options     map[string]string          `json:"options,omitempty"`
+	IPv4Configs []ServiceNetworkIPAMConfig `json:"ipv4Configs,omitempty"`
+	IPv6Configs []ServiceNetworkIPAMConfig `json:"ipv6Configs,omitempty"`
+}
+
+// ServiceNetworkDetail holds enriched network information for a service's attached network.
+type ServiceNetworkDetail struct {
+	ID            string                      `json:"id"`
+	Name          string                      `json:"name"`
+	Driver        string                      `json:"driver"`
+	Scope         string                      `json:"scope"`
+	Internal      bool                        `json:"internal"`
+	Attachable    bool                        `json:"attachable"`
+	Ingress       bool                        `json:"ingress"`
+	EnableIPv4    bool                        `json:"enableIPv4"`
+	EnableIPv6    bool                        `json:"enableIPv6"`
+	ConfigFrom    string                      `json:"configFrom,omitempty"`
+	ConfigOnly    bool                        `json:"configOnly"`
+	Options       map[string]string           `json:"options,omitempty"`
+	IPAMConfigs   []ServiceNetworkIPAMConfig  `json:"ipamConfigs,omitempty"`
+	ConfigNetwork *ServiceNetworkConfigDetail `json:"configNetwork,omitempty"`
 }
 
 type ServiceCreateRequest struct {

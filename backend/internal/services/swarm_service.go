@@ -148,6 +148,74 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 		}
 	}
 
+	// Enrich network details for each attached network
+	networkConfigs := service.Spec.TaskTemplate.Networks
+	if len(networkConfigs) > 0 {
+		inspect.NetworkDetails = make(map[string]swarmtypes.ServiceNetworkDetail, len(networkConfigs))
+		for _, nc := range networkConfigs {
+			netID := nc.Target
+			netInfo, err := dockerClient.NetworkInspect(ctx, netID, network.InspectOptions{})
+			if err != nil {
+				continue
+			}
+			detail := swarmtypes.ServiceNetworkDetail{
+				ID:         netInfo.ID,
+				Name:       netInfo.Name,
+				Driver:     netInfo.Driver,
+				Scope:      netInfo.Scope,
+				Internal:   netInfo.Internal,
+				Attachable: netInfo.Attachable,
+				Ingress:    netInfo.Ingress,
+				EnableIPv4: netInfo.EnableIPv4,
+				EnableIPv6: netInfo.EnableIPv6,
+				ConfigOnly: netInfo.ConfigOnly,
+				Options:    netInfo.Options,
+			}
+			if netInfo.ConfigFrom.Network != "" {
+				detail.ConfigFrom = netInfo.ConfigFrom.Network
+			}
+
+			// Map IPAM configs with proper camelCase
+			for _, cfg := range netInfo.IPAM.Config {
+				detail.IPAMConfigs = append(detail.IPAMConfigs, swarmtypes.ServiceNetworkIPAMConfig{
+					Subnet:  cfg.Subnet,
+					Gateway: cfg.Gateway,
+					IPRange: cfg.IPRange,
+				})
+			}
+
+			// If this network has a configFrom reference, fetch the config network for IPAM details
+			if detail.ConfigFrom != "" {
+				configNet, err := dockerClient.NetworkInspect(ctx, detail.ConfigFrom, network.InspectOptions{})
+				if err == nil {
+					configDetail := &swarmtypes.ServiceNetworkConfigDetail{
+						Name:       configNet.Name,
+						Driver:     configNet.Driver,
+						Scope:      configNet.Scope,
+						EnableIPv4: configNet.EnableIPv4,
+						EnableIPv6: configNet.EnableIPv6,
+						Options:    configNet.Options,
+					}
+					for _, cfg := range configNet.IPAM.Config {
+						ipam := swarmtypes.ServiceNetworkIPAMConfig{
+							Subnet:  cfg.Subnet,
+							Gateway: cfg.Gateway,
+							IPRange: cfg.IPRange,
+						}
+						if strings.Contains(cfg.Subnet, ":") {
+							configDetail.IPv6Configs = append(configDetail.IPv6Configs, ipam)
+						} else {
+							configDetail.IPv4Configs = append(configDetail.IPv4Configs, ipam)
+						}
+					}
+					detail.ConfigNetwork = configDetail
+				}
+			}
+
+			inspect.NetworkDetails[netID] = detail
+		}
+	}
+
 	return &inspect, nil
 }
 

@@ -2,20 +2,17 @@
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { NetworksIcon, GlobeIcon, SettingsIcon } from '$lib/icons';
-	import { networkService } from '$lib/services/network-service';
-	import type { NetworkInspectDto } from '$lib/types/network.type';
+	import { NetworksIcon, GlobeIcon } from '$lib/icons';
+	import type { ServiceNetworkDetail } from '$lib/types/swarm.type';
 
 	interface Props {
 		ports: any[];
 		networks: any[];
 		virtualIPs: any[];
+		networkDetails: Record<string, ServiceNetworkDetail>;
 	}
 
-	let { ports, networks, virtualIPs }: Props = $props();
-
-	let networkDetails = $state<Map<string, NetworkInspectDto>>(new Map());
-	let isLoadingNetworks = $state(false);
+	let { ports, networks, virtualIPs, networkDetails }: Props = $props();
 
 	function formatPort(port: any): string {
 		const protocol = port.Protocol || port.protocol || 'tcp';
@@ -47,80 +44,6 @@
 		}
 		return map;
 	});
-
-	async function loadNetworkDetails() {
-		isLoadingNetworks = true;
-		const details = new Map<string, NetworkInspectDto>();
-
-		const networkIds = networks.map((n: any) => n.Target || n.target || '').filter(Boolean);
-
-		await Promise.allSettled(
-			networkIds.map(async (id: string) => {
-				try {
-					const info = await networkService.getNetwork(id);
-					details.set(id, info);
-
-					// For macvlan/config-based networks, also fetch the config network for IPAM details
-					if (info.configFrom?.Network && (!info.ipam?.config || info.ipam.config.length === 0)) {
-						try {
-							const configInfo = await networkService.getNetwork(info.configFrom.Network);
-							details.set(`${id}:config`, configInfo);
-						} catch {
-							// Config network may not be accessible
-						}
-					}
-				} catch {
-					// Network may have been removed
-				}
-			})
-		);
-
-		networkDetails = details;
-		isLoadingNetworks = false;
-	}
-
-	$effect(() => {
-		if (networks.length > 0) {
-			loadNetworkDetails();
-		}
-	});
-
-	function getNetworkInfo(networkId: string) {
-		const info = networkDetails.get(networkId);
-		const configInfo = networkDetails.get(`${networkId}:config`);
-		const ipamSource = configInfo?.ipam?.config?.length ? configInfo : info;
-		const ipamConfigs = ipamSource?.ipam?.config ?? [];
-		const ipv4Configs = ipamConfigs.filter((c) => c.subnet && !c.subnet.includes(':'));
-		const ipv6Configs = ipamConfigs.filter((c) => c.subnet && c.subnet.includes(':'));
-
-		return {
-			name: info?.name ?? null,
-			driver: info?.driver ?? null,
-			scope: info?.scope ?? null,
-			internal: info?.internal ?? false,
-			attachable: info?.attachable ?? false,
-			ingress: info?.ingress ?? false,
-			enableIPv4: info?.enableIPv4 ?? false,
-			enableIPv6: info?.enableIPv6 ?? false,
-			configFrom: info?.configFrom?.Network ?? null,
-			configOnly: info?.configOnly ?? false,
-			ipamDriver: ipamSource?.ipam?.driver ?? null,
-			ipv4Configs,
-			ipv6Configs,
-			configNetwork: configInfo
-				? {
-						name: configInfo.name,
-						driver: configInfo.driver,
-						scope: configInfo.scope,
-						enableIPv4: configInfo.enableIPv4 ?? false,
-						enableIPv6: configInfo.enableIPv6 ?? false,
-						options: configInfo.options,
-						ipv4Configs: (configInfo.ipam?.config ?? []).filter((c) => c.subnet && !c.subnet.includes(':')),
-						ipv6Configs: (configInfo.ipam?.config ?? []).filter((c) => c.subnet && c.subnet.includes(':'))
-					}
-				: null
-		};
-	}
 </script>
 
 <div class="space-y-6">
@@ -162,7 +85,7 @@
 						{@const networkId = network.Target || network.target || ''}
 						{@const aliases = network.Aliases || network.aliases || []}
 						{@const vip = vipMap.get(networkId)}
-						{@const info = getNetworkInfo(networkId)}
+						{@const info = networkDetails[networkId]}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
 								<div class="border-border mb-4 flex items-center gap-3 border-b pb-4">
@@ -171,28 +94,28 @@
 									</div>
 									<div class="min-w-0 flex-1">
 										<div class="text-foreground text-base font-semibold break-all">
-											{info.name ?? (aliases.length > 0 ? aliases[0] : networkId.slice(0, 12))}
+											{info?.name ?? (aliases.length > 0 ? aliases[0] : networkId.slice(0, 12))}
 										</div>
 										<div class="mt-1 flex flex-wrap items-center gap-2">
-											{#if info.driver}
+											{#if info?.driver}
 												<StatusBadge text={info.driver} variant={driverVariant(info.driver)} />
 											{/if}
-											{#if info.scope}
+											{#if info?.scope}
 												<StatusBadge text={info.scope} variant="gray" />
 											{/if}
-											{#if info.internal}
+											{#if info?.internal}
 												<StatusBadge text={m.internal()} variant="blue" />
 											{/if}
-											{#if info.attachable}
+											{#if info?.attachable}
 												<StatusBadge text={m.attachable()} variant="green" />
 											{/if}
-											{#if info.ingress}
+											{#if info?.ingress}
 												<StatusBadge text={m.ingress()} variant="cyan" />
 											{/if}
-											{#if info.configOnly}
+											{#if info?.configOnly}
 												<StatusBadge text={m.config_only()} variant="pink" />
 											{/if}
-											{#if info.configFrom}
+											{#if info?.configFrom}
 												<span class="text-muted-foreground text-xs">config: {info.configFrom}</span>
 											{/if}
 										</div>
@@ -210,110 +133,6 @@
 												>
 													{vip}
 												</code>
-											</Card.Content>
-										</Card.Root>
-									{/if}
-
-									{#if info.ipv4Configs.length > 0}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-semibold">
-													IPv4
-													<StatusBadge
-														text={info.enableIPv4 ? m.common_yes() : m.common_no()}
-														variant={info.enableIPv4 ? 'indigo' : 'gray'}
-														size="sm"
-														minWidth="none"
-													/>
-												</div>
-												{#each info.ipv4Configs as cfg}
-													<div class="mb-2 space-y-1 last:mb-0">
-														<div class="flex flex-col sm:flex-row sm:items-center">
-															<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_subnet()}:</span>
-															<code
-																class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																title="Click to select"
-															>
-																{cfg.subnet}
-															</code>
-														</div>
-														{#if cfg.gateway}
-															<div class="flex flex-col sm:flex-row sm:items-center">
-																<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_gateway()}:</span
-																>
-																<code
-																	class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																	title="Click to select"
-																>
-																	{cfg.gateway}
-																</code>
-															</div>
-														{/if}
-														{#if cfg.ipRange}
-															<div class="flex flex-col sm:flex-row sm:items-center">
-																<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">Range:</span>
-																<code
-																	class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																	title="Click to select"
-																>
-																	{cfg.ipRange}
-																</code>
-															</div>
-														{/if}
-													</div>
-												{/each}
-											</Card.Content>
-										</Card.Root>
-									{/if}
-
-									{#if info.ipv6Configs.length > 0}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-semibold">
-													IPv6
-													<StatusBadge
-														text={info.enableIPv6 ? m.common_yes() : m.common_no()}
-														variant={info.enableIPv6 ? 'indigo' : 'gray'}
-														size="sm"
-														minWidth="none"
-													/>
-												</div>
-												{#each info.ipv6Configs as cfg}
-													<div class="mb-2 space-y-1 last:mb-0">
-														<div class="flex flex-col sm:flex-row sm:items-center">
-															<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_subnet()}:</span>
-															<code
-																class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																title="Click to select"
-															>
-																{cfg.subnet}
-															</code>
-														</div>
-														{#if cfg.gateway}
-															<div class="flex flex-col sm:flex-row sm:items-center">
-																<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_gateway()}:</span
-																>
-																<code
-																	class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																	title="Click to select"
-																>
-																	{cfg.gateway}
-																</code>
-															</div>
-														{/if}
-														{#if cfg.ipRange}
-															<div class="flex flex-col sm:flex-row sm:items-center">
-																<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">Range:</span>
-																<code
-																	class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:mt-0 sm:text-sm"
-																	title="Click to select"
-																>
-																	{cfg.ipRange}
-																</code>
-															</div>
-														{/if}
-													</div>
-												{/each}
 											</Card.Content>
 										</Card.Root>
 									{/if}
@@ -350,12 +169,14 @@
 										</Card.Root>
 									{/if}
 
-									{#if info.configNetwork}
+									{#if info?.configNetwork}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="p-3">
 												<div class="border-border mb-3 flex items-center justify-between border-b pb-3">
 													<div>
-														<div class="text-foreground text-sm font-semibold">{m.config_only()}: {info.configNetwork.name}</div>
+														<div class="text-foreground text-sm font-semibold">
+															{m.config_only()}: {info.configNetwork.name}
+														</div>
 														<div class="mt-1 flex flex-wrap items-center gap-1.5">
 															{#if info.configNetwork.driver}
 																<StatusBadge text={info.configNetwork.driver} variant="gray" size="sm" minWidth="none" />
@@ -384,21 +205,23 @@
 													</div>
 												</div>
 												<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-													{#if info.configNetwork.ipv4Configs.length > 0}
+													{#if info.configNetwork.ipv4Configs && info.configNetwork.ipv4Configs.length > 0}
 														{#each info.configNetwork.ipv4Configs as cfg}
 															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
 																<div class="text-muted-foreground mb-1 text-xs font-semibold">IPv4</div>
-																<div class="flex flex-col sm:flex-row sm:items-center">
-																	<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																		>{m.common_subnet()}:</span
-																	>
-																	<code
-																		class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		title="Click to select"
-																	>
-																		{cfg.subnet}
-																	</code>
-																</div>
+																{#if cfg.subnet}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																			>{m.common_subnet()}:</span
+																		>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.subnet}
+																		</code>
+																	</div>
+																{/if}
 																{#if cfg.gateway}
 																	<div class="flex flex-col sm:flex-row sm:items-center">
 																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
@@ -426,21 +249,23 @@
 															</div>
 														{/each}
 													{/if}
-													{#if info.configNetwork.ipv6Configs.length > 0}
+													{#if info.configNetwork.ipv6Configs && info.configNetwork.ipv6Configs.length > 0}
 														{#each info.configNetwork.ipv6Configs as cfg}
 															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
 																<div class="text-muted-foreground mb-1 text-xs font-semibold">IPv6</div>
-																<div class="flex flex-col sm:flex-row sm:items-center">
-																	<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																		>{m.common_subnet()}:</span
-																	>
-																	<code
-																		class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		title="Click to select"
-																	>
-																		{cfg.subnet}
-																	</code>
-																</div>
+																{#if cfg.subnet}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																			>{m.common_subnet()}:</span
+																		>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.subnet}
+																		</code>
+																	</div>
+																{/if}
 																{#if cfg.gateway}
 																	<div class="flex flex-col sm:flex-row sm:items-center">
 																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
