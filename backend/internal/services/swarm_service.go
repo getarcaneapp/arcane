@@ -216,6 +216,27 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 		}
 	}
 
+	// Enrich mount details with volume driver info and host paths
+	if service.Spec.TaskTemplate.ContainerSpec != nil {
+		for _, m := range service.Spec.TaskTemplate.ContainerSpec.Mounts {
+			mount := swarmtypes.ServiceMount{
+				Type:     string(m.Type),
+				Source:   m.Source,
+				Target:   m.Target,
+				ReadOnly: m.ReadOnly,
+			}
+			if m.Type == "volume" && m.Source != "" {
+				vol, err := dockerClient.VolumeInspect(ctx, m.Source)
+				if err == nil {
+					mount.VolumeDriver = vol.Driver
+					mount.VolumeOptions = vol.Options
+					mount.DevicePath = vol.Mountpoint
+				}
+			}
+			inspect.Mounts = append(inspect.Mounts, mount)
+		}
+	}
+
 	return &inspect, nil
 }
 

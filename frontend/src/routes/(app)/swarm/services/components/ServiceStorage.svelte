@@ -1,8 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { VolumesIcon, TerminalIcon } from '$lib/icons';
+	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '$lib/icons';
 
 	interface Props {
 		mounts: any[];
@@ -25,6 +26,26 @@
 	function getMountReadOnly(mount: any): boolean {
 		return mount.ReadOnly || mount.readOnly || false;
 	}
+
+	function isBindBackedVolume(mount: any): boolean {
+		const opts = mount.volumeOptions;
+		return opts?.type === 'none' && opts?.o === 'bind';
+	}
+
+	function getMountLabel(type: string, mount: any): string {
+		if (type === 'bind') return 'bind mount';
+		if (type === 'tmpfs') return 'tmpfs mount';
+		if (type === 'volume' && isBindBackedVolume(mount)) return 'volume (bind-backed)';
+		return 'volume mount';
+	}
+
+	function getMountIconColor(type: string, mount: any): { bg: string; text: string } {
+		if (type === 'bind' || (type === 'volume' && isBindBackedVolume(mount))) {
+			return { bg: 'bg-blue-500/10', text: 'text-blue-500' };
+		}
+		if (type === 'volume') return { bg: 'bg-purple-500/10', text: 'text-purple-500' };
+		return { bg: 'bg-amber-500/10', text: 'text-amber-500' };
+	}
 </script>
 
 <div class="space-y-6">
@@ -44,31 +65,30 @@
 						{@const source = getMountSource(mount)}
 						{@const target = getMountTarget(mount)}
 						{@const readOnly = getMountReadOnly(mount)}
+						{@const iconColor = getMountIconColor(type, mount)}
+						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
 								<div class="border-border mb-4 flex items-center justify-between border-b pb-4">
 									<div class="flex items-center gap-3">
-										<div
-											class="rounded-lg p-2 {type === 'volume'
-												? 'bg-purple-500/10'
-												: type === 'bind'
-													? 'bg-blue-500/10'
-													: 'bg-amber-500/10'}"
-										>
-											{#if type === 'volume'}
-												<VolumesIcon class="size-5 text-purple-500" />
-											{:else if type === 'bind'}
-												<VolumesIcon class="size-5 text-blue-500" />
+										<div class="rounded-lg p-2 {iconColor.bg}">
+											{#if type === 'volume' && !bindBacked}
+												<VolumesIcon class="size-5 {iconColor.text}" />
+											{:else if type === 'bind' || bindBacked}
+												<FolderOpenIcon class="size-5 {iconColor.text}" />
 											{:else}
-												<TerminalIcon class="size-5 text-amber-500" />
+												<TerminalIcon class="size-5 {iconColor.text}" />
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
 											<div class="text-foreground text-base font-semibold break-all">
 												{type === 'tmpfs' ? 'tmpfs' : source || '(anonymous)'}
 											</div>
-											<div class="text-muted-foreground text-xs">
-												{type} mount
+											<div class="mt-1 flex flex-wrap items-center gap-1.5">
+												<span class="text-muted-foreground text-xs">{getMountLabel(type, mount)}</span>
+												{#if mount.volumeDriver}
+													<StatusBadge text={mount.volumeDriver} variant="gray" size="sm" minWidth="none" />
+												{/if}
 											</div>
 										</div>
 									</div>
@@ -103,6 +123,26 @@
 													title="Click to select"
 												>
 													{source}
+												</div>
+											</Card.Content>
+										</Card.Root>
+									{/if}
+
+									{#if mount.devicePath}
+										<Card.Root variant="outlined">
+											<Card.Content class="flex flex-col p-3">
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">
+													{m.containers_mount_label_host()}
+												</div>
+												<div
+													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+													title="Click to select"
+												>
+													{#if bindBacked && mount.volumeOptions?.device}
+														{mount.volumeOptions.device}
+													{:else}
+														{mount.devicePath}
+													{/if}
 												</div>
 											</Card.Content>
 										</Card.Root>

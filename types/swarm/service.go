@@ -43,6 +43,15 @@ type ServiceMount struct {
 
 	// ReadOnly indicates if the mount is read-only.
 	ReadOnly bool `json:"readOnly,omitempty"`
+
+	// VolumeDriver is the volume driver name (only for volume mounts).
+	VolumeDriver string `json:"volumeDriver,omitempty"`
+
+	// VolumeOptions contains driver-specific options (only for volume mounts).
+	VolumeOptions map[string]string `json:"volumeOptions,omitempty"`
+
+	// DevicePath is the host device path for bind-backed volumes (driver_opts type=none, o=bind).
+	DevicePath string `json:"devicePath,omitempty"`
 }
 
 type ServiceSummary struct {
@@ -158,6 +167,9 @@ type ServiceInspect struct {
 
 	// NetworkDetails contains enriched network information keyed by network ID.
 	NetworkDetails map[string]ServiceNetworkDetail `json:"networkDetails,omitempty"`
+
+	// Mounts contains enriched mount information with volume driver details.
+	Mounts []ServiceMount `json:"mounts,omitempty"`
 }
 
 // ServiceNetworkIPAMConfig represents a single IPAM configuration entry with camelCase JSON tags.

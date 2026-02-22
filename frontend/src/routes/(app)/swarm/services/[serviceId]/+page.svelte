@@ -62,7 +62,7 @@
 
 	const envVars = $derived((containerSpec?.Env as string[]) || []);
 	const labels = $derived((spec?.Labels as Record<string, string>) || {});
-	const mounts = $derived((containerSpec?.Mounts as any[]) || []);
+	const mounts = $derived(service?.mounts ?? (containerSpec?.Mounts as any[]) ?? []);
 	const command = $derived((containerSpec?.Command as string[]) || []);
 	const args = $derived((containerSpec?.Args as string[]) || []);
 	const workingDir = $derived((containerSpec?.Dir as string) || '');
