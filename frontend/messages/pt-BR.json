@@ -1439,7 +1439,7 @@
 	"docker_info_http_proxy": "HTTP Proxy",
 	"docker_info_https_proxy": "HTTPS Proxy",
 	"docker_info_no_proxy": "No Proxy",
-	"docker_info_bridge_ip": "Bridge IP",
+	"docker_info_bridge_ip": "IP da Bridge",
 	"docker_info_plugins_section": "Plugins",
 	"docker_info_logs_plugin": "Logs",
 	"docker_info_security_options": "Security Options",
