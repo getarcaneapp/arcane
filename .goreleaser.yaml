@@ -167,7 +167,7 @@ nfpms:
 homebrew_casks:
   - name: arcane-cli
     ids:
-      - arcane-cli
+      - arcane-cli-archive
     binaries:
       - arcane-cli
     description: "Arcane CLI - Modern Docker Management, Designed for Everyone."
@@ -180,7 +180,7 @@ homebrew_casks:
 
   - name: arcane-cli-next
     ids:
-      - arcane-cli
+      - arcane-cli-archive
     binaries:
       - arcane-cli
     description: "Arcane CLI (Next) - Modern Docker Management, Designed for Everyone."
