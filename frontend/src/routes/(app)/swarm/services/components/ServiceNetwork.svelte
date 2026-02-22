@@ -106,7 +106,19 @@
 			configOnly: info?.configOnly ?? false,
 			ipamDriver: ipamSource?.ipam?.driver ?? null,
 			ipv4Configs,
-			ipv6Configs
+			ipv6Configs,
+			configNetwork: configInfo
+				? {
+						name: configInfo.name,
+						driver: configInfo.driver,
+						scope: configInfo.scope,
+						enableIPv4: configInfo.enableIPv4 ?? false,
+						enableIPv6: configInfo.enableIPv6 ?? false,
+						options: configInfo.options,
+						ipv4Configs: (configInfo.ipam?.config ?? []).filter((c) => c.subnet && !c.subnet.includes(':')),
+						ipv6Configs: (configInfo.ipam?.config ?? []).filter((c) => c.subnet && c.subnet.includes(':'))
+					}
+				: null
 		};
 	}
 </script>
@@ -333,6 +345,129 @@
 															{alias}
 														</code>
 													{/each}
+												</div>
+											</Card.Content>
+										</Card.Root>
+									{/if}
+
+									{#if info.configNetwork}
+										<Card.Root variant="outlined" class="sm:col-span-2">
+											<Card.Content class="p-3">
+												<div class="border-border mb-3 flex items-center justify-between border-b pb-3">
+													<div>
+														<div class="text-foreground text-sm font-semibold">{m.config_only()}: {info.configNetwork.name}</div>
+														<div class="mt-1 flex flex-wrap items-center gap-1.5">
+															{#if info.configNetwork.driver}
+																<StatusBadge text={info.configNetwork.driver} variant="gray" size="sm" minWidth="none" />
+															{/if}
+															{#if info.configNetwork.scope}
+																<StatusBadge text={info.configNetwork.scope} variant="gray" size="sm" minWidth="none" />
+															{/if}
+															{#if info.configNetwork.options?.parent}
+																<span class="text-muted-foreground text-xs">parent: {info.configNetwork.options.parent}</span>
+															{/if}
+														</div>
+													</div>
+													<div class="flex items-center gap-2">
+														<StatusBadge
+															text="IPv4 {info.configNetwork.enableIPv4 ? 'on' : 'off'}"
+															variant={info.configNetwork.enableIPv4 ? 'indigo' : 'gray'}
+															size="sm"
+															minWidth="none"
+														/>
+														<StatusBadge
+															text="IPv6 {info.configNetwork.enableIPv6 ? 'on' : 'off'}"
+															variant={info.configNetwork.enableIPv6 ? 'indigo' : 'gray'}
+															size="sm"
+															minWidth="none"
+														/>
+													</div>
+												</div>
+												<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+													{#if info.configNetwork.ipv4Configs.length > 0}
+														{#each info.configNetwork.ipv4Configs as cfg}
+															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
+																<div class="text-muted-foreground mb-1 text-xs font-semibold">IPv4</div>
+																<div class="flex flex-col sm:flex-row sm:items-center">
+																	<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																		>{m.common_subnet()}:</span
+																	>
+																	<code
+																		class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																		title="Click to select"
+																	>
+																		{cfg.subnet}
+																	</code>
+																</div>
+																{#if cfg.gateway}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																			>{m.common_gateway()}:</span
+																		>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.gateway}
+																		</code>
+																	</div>
+																{/if}
+																{#if cfg.ipRange}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">Range:</span>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.ipRange}
+																		</code>
+																	</div>
+																{/if}
+															</div>
+														{/each}
+													{/if}
+													{#if info.configNetwork.ipv6Configs.length > 0}
+														{#each info.configNetwork.ipv6Configs as cfg}
+															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
+																<div class="text-muted-foreground mb-1 text-xs font-semibold">IPv6</div>
+																<div class="flex flex-col sm:flex-row sm:items-center">
+																	<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																		>{m.common_subnet()}:</span
+																	>
+																	<code
+																		class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																		title="Click to select"
+																	>
+																		{cfg.subnet}
+																	</code>
+																</div>
+																{#if cfg.gateway}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
+																			>{m.common_gateway()}:</span
+																		>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.gateway}
+																		</code>
+																	</div>
+																{/if}
+																{#if cfg.ipRange}
+																	<div class="flex flex-col sm:flex-row sm:items-center">
+																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">Range:</span>
+																		<code
+																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+																			title="Click to select"
+																		>
+																			{cfg.ipRange}
+																		</code>
+																	</div>
+																{/if}
+															</div>
+														{/each}
+													{/if}
 												</div>
 											</Card.Content>
 										</Card.Root>
