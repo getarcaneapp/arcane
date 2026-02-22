@@ -137,7 +137,7 @@ type Inspect struct {
 	// IPAM contains IP address management configuration.
 	//
 	// Required: true
-	IPAM network.IPAM `json:"ipam"`
+	IPAM IPAM `json:"ipam"`
 
 	// Internal indicates if the network is internal.
 	//
