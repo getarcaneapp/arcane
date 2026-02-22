@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "Contenitori {count} esclusi",
 	"auto_update_exclude_description": "Selezionare contenitori da escludere dagli aggiornamenti automatici.",
 	"auto_update_excluded_containers": "Contenitori Esclusi",
+	"auto_heal_excluded_containers": "Contenitori Esclusi",
+	"auto_heal_exclude_description": "Selezionare i contenitori da escludere dal monitoraggio automatico.",
+	"auto_heal_max_restarts_label": "Riavvio Massimo",
+	"auto_heal_max_restarts_description": "Numero massimo di riavvii automatici per contenitore all'interno della finestra di riavvio.",
+	"auto_heal_restart_window_label": "Riavvia Finestra (minuti)",
+	"auto_heal_restart_window_description": "Finestra di tempo in minuti per il conteggio dei riavvii automatici. Ripristina dopo questo periodo.",
 	"_comment_common_actions": "=== COMUNE - STATI DI AZIONE ===",
 	"common_action_creating": "Creazione…",
 	"common_action_deleting": "Eliminazione…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Notifica Trovata Vulnerabilità",
 	"notifications_test_vulnerability_notification": "Prova Notifica Vulnerabilità",
 	"notifications_test_prune_report_notification": "Notifica Report Prune Test",
+	"notifications_test_auto_heal_notification": "Test Di Auto-Cura Notifica",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Abilita Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Include",
 	"notifications_event_prune_report_label": "Report Prune Di Sistema",
 	"notifications_event_prune_report_description": "Ricevi un report di riepilogo quando viene completata un'operazione di potatura pianificata",
+	"notifications_event_auto_heal_label": "Riavvia La Cura Automatica",
+	"notifications_event_auto_heal_description": "Notifica quando un contenitore non sano viene riavviato automaticamente",
 	"version_info_build_features": "Funzioni Di Build"
 }
