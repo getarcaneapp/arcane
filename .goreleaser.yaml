@@ -99,7 +99,7 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  - id: arcane-cli
+  - id: arcane-cli-archive
     ids:
       - arcane-cli
     formats:
@@ -298,8 +298,7 @@ blobs:
     region: auto
     bucket: '{{ index .Env "R2_BUCKET" }}'
     ids:
-      - arcane
-      - arcane-agent
+      - default
     directory: bin/arcane-next
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
