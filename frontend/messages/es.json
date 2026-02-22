@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "Contenedores {count} excluidos",
 	"auto_update_exclude_description": "Seleccione los contenedores a excluir de las actualizaciones automáticas.",
 	"auto_update_excluded_containers": "Contenedores excluidos",
+	"auto_heal_excluded_containers": "Contenedores excluidos",
+	"auto_heal_exclude_description": "Seleccione contenedores para excluir del monitoreo de autosanación.",
+	"auto_heal_max_restarts_label": "Reinicios máximos",
+	"auto_heal_max_restarts_description": "Número máximo de reinicios automáticos por contenedor dentro de la ventana de reinicio.",
+	"auto_heal_restart_window_label": "Reiniciar ventana (minutos)",
+	"auto_heal_restart_window_description": "Ventana de tiempo en minutos para contar reinicios automáticos. Se reinicia después de este período.",
 	"_comment_common_actions": "=== COMÚN - ESTADOS DE ACCIÓN ===",
 	"common_action_creating": "Creando…",
 	"common_action_deleting": "Eliminando…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Vulnerabilidad encontrada notificación",
 	"notifications_test_vulnerability_notification": "Probar Notificación de vulnerabilidad",
 	"notifications_test_prune_report_notification": "Notificación de informe de borrado de prueba",
+	"notifications_test_auto_heal_notification": "Probar notificación de curación automática",
 	"notifications_apprise_title": "Integración rapaz",
 	"notifications_apprise_description": "Configurar API de Apple para notificaciones unificadas a través de múltiples servicios",
 	"notifications_apprise_enabled_label": "Habilitar aviso",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Incluye",
 	"notifications_event_prune_report_label": "Informe de borrado del sistema",
 	"notifications_event_prune_report_description": "Recibir un informe de resumen cuando se complete una operación de poda programada",
+	"notifications_event_auto_heal_label": "Reinicio de curación automática",
+	"notifications_event_auto_heal_description": "Notificar cuando un contenedor no saludable se reinicie automáticamente",
 	"version_info_build_features": "Construir características"
 }
