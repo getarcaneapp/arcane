@@ -7,14 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"log/slog"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/net/http2"

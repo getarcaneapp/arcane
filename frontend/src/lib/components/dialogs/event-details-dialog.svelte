@@ -5,9 +5,15 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import type { Event } from '$lib/types/event.type';
 	import { m } from '$lib/paraglide/messages';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { AlertIcon, InfoIcon, EnvironmentsIcon, UserIcon, ClockIcon } from '$lib/icons';
 
 	type Severity = 'success' | 'warning' | 'error' | 'info';
+
+	type MetadataEntry = {
+		key: string;
+		value: string;
+	};
 
 	interface Props {
 		open: boolean;
@@ -16,11 +22,43 @@
 
 	let { open = $bindable(), event }: Props = $props();
 
-	const hasMetadata = $derived(!!event?.metadata && Object.keys(event.metadata ?? {}).length > 0);
+	let showRawEvent = $state(false);
+
 	const eventJson = $derived.by(() => JSON.stringify(event ?? {}, null, 2));
 	const metadataJson = $derived.by(() => JSON.stringify(event?.metadata ?? {}, null, 2));
 	const formattedTimestamp = $derived(event?.timestamp ? formatDate(event.timestamp) : null);
 	const severity = $derived((event?.severity ?? 'info') as Severity);
+	const metadataEntries = $derived.by(() => flattenMetadata(event?.metadata ?? {}));
+	const hasMetadata = $derived(metadataEntries.length > 0);
+	const environmentName = $derived.by(() => {
+		if (!event?.environmentId) {
+			return null;
+		}
+		const matchedEnvironment = environmentStore.available.find((env) => env.id === event.environmentId);
+		if (matchedEnvironment) {
+			return matchedEnvironment.name;
+		}
+		if (event.environmentId === LOCAL_DOCKER_ENVIRONMENT_ID) {
+			return m.environments_local_badge();
+		}
+		return event.environmentId;
+	});
+	const eventErrorMessage = $derived.by(() => {
+		if (!event) {
+			return null;
+		}
+		const metadataError = event.metadata?.error;
+		if (typeof metadataError === 'string' && metadataError.trim() !== '') {
+			return metadataError;
+		}
+		if (metadataError !== undefined && metadataError !== null) {
+			return stringifyForDisplay(metadataError);
+		}
+		if (event.severity === 'error' && event.description) {
+			return event.description;
+		}
+		return null;
+	});
 
 	function formatDate(timestamp: string): string {
 		try {
@@ -28,6 +66,52 @@
 		} catch {
 			return timestamp;
 		}
+	}
+
+	function stringifyForDisplay(value: unknown): string {
+		if (value === null || value === undefined) {
+			return '';
+		}
+		if (typeof value === 'string') {
+			return value;
+		}
+		if (typeof value === 'number' || typeof value === 'boolean') {
+			return String(value);
+		}
+		try {
+			return JSON.stringify(value, null, 2);
+		} catch {
+			return String(value);
+		}
+	}
+
+	function flattenMetadata(value: unknown, prefix = ''): MetadataEntry[] {
+		if (Array.isArray(value)) {
+			if (value.length === 0) {
+				return prefix ? [{ key: prefix, value: '[]' }] : [];
+			}
+			return value.flatMap((item, index) => {
+				const key = prefix ? `${prefix}[${index}]` : `[${index}]`;
+				return flattenMetadata(item, key);
+			});
+		}
+
+		if (value && typeof value === 'object') {
+			const objectValue = value as Record<string, unknown>;
+			const keys = Object.keys(objectValue).sort();
+			if (keys.length === 0) {
+				return prefix ? [{ key: prefix, value: '{}' }] : [];
+			}
+			return keys.flatMap((key) => {
+				const nextPrefix = prefix ? `${prefix}.${key}` : key;
+				return flattenMetadata(objectValue[key], nextPrefix);
+			});
+		}
+
+		if (!prefix) {
+			return [];
+		}
+		return [{ key: prefix, value: stringifyForDisplay(value) }];
 	}
 
 	function getSeverityIconClass(sev: Severity): string {
@@ -40,18 +124,12 @@
 		return baseClasses[sev];
 	}
 
-	function getSeverityBadgeClass(sev: Severity): string {
-		const baseClasses: Record<Severity, string> = {
-			success: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30 dark:text-emerald-300',
-			warning: 'bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-300',
-			error: 'bg-red-500/15 text-red-600 border-red-500/30 dark:text-red-300',
-			info: 'bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-300'
-		};
-		return baseClasses[sev];
-	}
-
 	function handleClose() {
 		open = false;
+	}
+
+	function toggleRawEvent() {
+		showRawEvent = !showRawEvent;
 	}
 </script>
 
@@ -59,6 +137,9 @@
 	{#snippet children()}
 		<div class="space-y-4 pt-4">
 			{@render headerContent()}
+			{#if eventErrorMessage}
+				{@render errorSection(eventErrorMessage)}
+			{/if}
 			{@render infoCards()}
 			{@render metadataSection()}
 			{@render rawEventSection()}
@@ -99,7 +180,7 @@
 				{#if event?.environmentId}
 					<Badge variant="outline" class="gap-1">
 						<EnvironmentsIcon class="size-3" />
-						{m.events_environment_label()}: {event.environmentId}
+						{m.events_environment_label()}: {environmentName ?? event.environmentId}
 					</Badge>
 				{/if}
 				{#if formattedTimestamp}
@@ -110,6 +191,13 @@
 				{/if}
 			</div>
 		</div>
+	</div>
+{/snippet}
+
+{#snippet errorSection(message: string)}
+	<div class="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+		<div class="text-xs font-semibold text-red-700 dark:text-red-300">{m.events_error()}</div>
+		<p class="mt-1 text-sm break-words text-red-700 dark:text-red-200">{message}</p>
 	</div>
 {/snippet}
 
@@ -147,8 +235,14 @@
 			</CopyButton>
 		</div>
 		{#if hasMetadata}
-			<pre class="bg-muted/40 max-h-[50vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{metadataJson}</code
-				></pre>
+			<div class="max-h-[50vh] overflow-auto">
+				{#each metadataEntries as entry (entry.key)}
+					<div class="grid grid-cols-[minmax(0,260px)_1fr] items-start gap-3 border-b px-3 py-2 last:border-b-0">
+						<div class="text-muted-foreground font-mono text-xs break-all">{entry.key}</div>
+						<pre class="font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">{entry.value}</pre>
+					</div>
+				{/each}
+			</div>
 		{:else}
 			<div class="text-muted-foreground p-3 text-xs">{m.events_no_metadata_provided()}</div>
 		{/if}
@@ -159,11 +253,22 @@
 	<div class="rounded-lg border">
 		<div class="flex items-center justify-between border-b px-3 py-2">
 			<h3 class="text-sm font-medium">{m.events_raw_event_title()}</h3>
-			<CopyButton text={eventJson} variant="outline" size="sm" title={m.events_copy_full_event_json_title()}>
-				{m.common_copy_json()}
-			</CopyButton>
+			<div class="flex items-center gap-2">
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					customLabel={`${showRawEvent ? m.common_hide() : m.common_show()} ${m.common_raw()}`}
+					onclick={toggleRawEvent}
+				/>
+				<CopyButton text={eventJson} variant="outline" size="sm" title={m.events_copy_full_event_json_title()}>
+					{m.common_copy_json()}
+				</CopyButton>
+			</div>
 		</div>
-		<pre class="bg-muted/40 max-h-[60vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{eventJson}</code
-			></pre>
+		{#if showRawEvent}
+			<pre class="bg-muted/40 max-h-[60vh] overflow-auto p-3 text-xs leading-relaxed"><code class="font-mono">{eventJson}</code
+				></pre>
+		{/if}
 	</div>
 {/snippet}

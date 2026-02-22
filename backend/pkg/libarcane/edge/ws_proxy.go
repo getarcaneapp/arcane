@@ -17,8 +17,8 @@ var wsUpgraderForProxy = websocket.Upgrader{
 	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
-// ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel
-// This handles logs, stats, and other streaming endpoints
+// ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel.
+// This handles logs, stats, and other streaming endpoints.
 func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 	ctx := c.Request.Context()
 
@@ -47,7 +47,7 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 	)
 
 	// Create channels for bidirectional data
-	agentDataCh := make(chan *TunnelMessage, 100)
+	agentDataCh := make(chan *TunnelMessage, 512)
 	clientDoneCh := make(chan struct{})
 
 	// Register the stream to receive data from the agent
@@ -141,7 +141,7 @@ func handleAgentMessage(ctx context.Context, clientWS *websocket.Conn, msg *Tunn
 	case MessageTypeWebSocketClose, MessageTypeStreamEnd:
 		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID)
 		return true, nil
-	case MessageTypeRequest, MessageTypeResponse, MessageTypeHeartbeat, MessageTypeHeartbeatAck, MessageTypeStreamData, MessageTypeWebSocketStart:
+	case MessageTypeRequest, MessageTypeResponse, MessageTypeHeartbeat, MessageTypeHeartbeatAck, MessageTypeStreamData, MessageTypeWebSocketStart, MessageTypeRegister, MessageTypeRegisterResponse, MessageTypeEvent:
 		slog.DebugContext(ctx, "Ignoring tunnel message", "type", msg.Type, "stream_id", streamID)
 		return false, nil
 	default:

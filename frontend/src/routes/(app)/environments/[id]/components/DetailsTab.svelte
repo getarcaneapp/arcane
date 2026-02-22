@@ -21,6 +21,26 @@
 		isTestingConnection,
 		testConnection
 	} = $props();
+
+	let transportBadge = $derived.by((): { text: string; variant: 'blue' | 'purple' | 'gray' } => {
+		if (!environment.isEdge) {
+			return { text: 'HTTP', variant: 'gray' };
+		}
+
+		if (environment.edgeTransport === 'websocket') {
+			return { text: 'WebSocket', variant: 'purple' };
+		}
+
+		return { text: 'gRPC', variant: 'blue' };
+	});
+
+	let localDisplayVersion = $derived(
+		versionInformation?.displayVersion || versionInformation?.currentTag || versionInformation?.currentVersion || 'Unknown'
+	);
+
+	let remoteDisplayVersion = $derived(
+		remoteVersion?.displayVersion || remoteVersion?.currentTag || remoteVersion?.currentVersion || ''
+	);
 </script>
 
 <Card.Root class="flex flex-col">
@@ -124,11 +144,17 @@
 					/>
 				</div>
 			</div>
+			<div>
+				<Label class="text-muted-foreground text-xs font-medium">{m.common_type()}</Label>
+				<div class="mt-1">
+					<StatusBadge text={transportBadge.text} variant={transportBadge.variant} />
+				</div>
+			</div>
 			<div class="col-span-2 border-t pt-4">
 				<Label class="text-muted-foreground text-xs font-medium">{m.version_info_version()}</Label>
 				<div class="mt-1 flex items-center gap-2">
 					{#if environment.id === '0'}
-						<span class="font-mono text-sm">{versionInformation?.currentVersion || 'Unknown'}</span>
+						<span class="font-mono text-sm">{localDisplayVersion}</span>
 						{#if versionInformation?.updateAvailable}
 							<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
 								{m.sidebar_update_available()}: {versionInformation.newestVersion}
@@ -138,7 +164,7 @@
 						<Spinner />
 						<span class="text-muted-foreground text-sm">{m.common_action_checking()}</span>
 					{:else if remoteVersion}
-						<span class="font-mono text-sm">{remoteVersion.currentVersion}</span>
+						<span class="font-mono text-sm">{remoteDisplayVersion}</span>
 						{#if remoteVersion.updateAvailable}
 							<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
 								{m.sidebar_update_available()}: {remoteVersion.newestVersion}

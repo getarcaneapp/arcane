@@ -914,7 +914,6 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(
 	enabledRegs []models.ContainerRegistry,
 	parts *ImageParts,
 ) (*imageupdate.Response, *localImageSnapshot) {
-
 	start := time.Now()
 	authInfo := authMap[parts.Registry]
 	token := authInfo.token

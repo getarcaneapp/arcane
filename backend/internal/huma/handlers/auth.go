@@ -173,6 +173,12 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 
 // Logout clears the authentication session.
 func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
+	if h.authService != nil {
+		if userModel, exists := humamw.GetCurrentUserFromContext(ctx); exists {
+			h.authService.LogLogout(ctx, userModel)
+		}
+	}
+
 	return &LogoutOutput{
 		SetCookie: cookie.BuildClearTokenCookieString(),
 		Body: base.ApiResponse[base.MessageResponse]{

@@ -14,11 +14,13 @@ type SortParams struct {
 	Order SortOrder
 }
 
-type SortOption[T any] func(a, b T) int
-type SortBinding[T any] struct {
-	Key string
-	Fn  SortOption[T]
-}
+type (
+	SortOption[T any]  func(a, b T) int
+	SortBinding[T any] struct {
+		Key string
+		Fn  SortOption[T]
+	}
+)
 
 func sortFunction[T any](items []T, params SortParams, sorts []SortBinding[T]) []T {
 	for _, sort := range sorts {

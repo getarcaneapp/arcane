@@ -1,16 +1,24 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/types/event"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -18,11 +26,22 @@ import (
 )
 
 type EventService struct {
-	db *database.DB
+	db         *database.DB
+	cfg        *config.Config
+	httpClient *http.Client
 }
 
-func NewEventService(db *database.DB) *EventService {
-	return &EventService{db: db}
+func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Timeout: 15 * time.Second,
+		}
+	}
+	return &EventService{
+		db:         db,
+		cfg:        cfg,
+		httpClient: httpClient,
+	}
 }
 
 type CreateEventRequest struct {
@@ -44,6 +63,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	if severity == "" {
 		severity = models.EventSeverityInfo
 	}
+	userID, username := normalizeEventActor(req.UserID, req.Username)
 
 	event := &models.Event{
 		Type:          req.Type,
@@ -53,8 +73,8 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		ResourceType:  req.ResourceType,
 		ResourceID:    req.ResourceID,
 		ResourceName:  req.ResourceName,
-		UserID:        req.UserID,
-		Username:      req.Username,
+		UserID:        userID,
+		Username:      username,
 		EnvironmentID: req.EnvironmentID,
 		Metadata:      req.Metadata,
 		Timestamp:     time.Now(),
@@ -69,12 +89,199 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
+	s.forwardEventToManager(ctx, event)
+
 	return event, nil
+}
+
+func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *models.Event) {
+	if eventModel == nil || s.cfg == nil || !s.cfg.AgentMode {
+		return
+	}
+
+	evt := &edge.TunnelEvent{
+		Type:        string(eventModel.Type),
+		Severity:    string(eventModel.Severity),
+		Title:       eventModel.Title,
+		Description: eventModel.Description,
+	}
+	if eventModel.ResourceType != nil {
+		evt.ResourceType = *eventModel.ResourceType
+	}
+	if eventModel.ResourceID != nil {
+		evt.ResourceID = *eventModel.ResourceID
+	}
+	if eventModel.ResourceName != nil {
+		evt.ResourceName = *eventModel.ResourceName
+	}
+	if eventModel.UserID != nil {
+		evt.UserID = *eventModel.UserID
+	}
+	if eventModel.Username != nil {
+		evt.Username = *eventModel.Username
+	}
+	if eventModel.Metadata != nil {
+		metadataBytes, err := json.Marshal(map[string]any(eventModel.Metadata))
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to marshal event metadata for edge sync", "type", eventModel.Type, "error", err)
+		} else {
+			evt.MetadataJSON = metadataBytes
+		}
+	}
+
+	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
+		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
+		defer cancel()
+
+		if err := edge.PublishEventToManager(outgoing); err != nil {
+			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {
+				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
+				return
+			}
+			if !s.canForwardEventToManagerHTTP() {
+				return
+			}
+			if httpErr := s.forwardEventToManagerHTTP(syncCtx, eventModel); httpErr != nil {
+				slog.WarnContext(syncCtx, "Failed to sync event to manager over API", "type", outgoing.Type, "error", httpErr)
+				return
+			}
+		}
+	}(ctx, evt)
+}
+
+func (s *EventService) canForwardEventToManagerHTTP() bool {
+	if s.cfg == nil {
+		return false
+	}
+	if strings.TrimSpace(s.cfg.AgentToken) == "" {
+		return false
+	}
+	return strings.TrimSpace(s.cfg.GetManagerBaseURL()) != ""
+}
+
+func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *models.Event) error {
+	if eventModel == nil {
+		return fmt.Errorf("event is required")
+	}
+	if s.cfg == nil || strings.TrimSpace(s.cfg.AgentToken) == "" {
+		return fmt.Errorf("agent token is required for manager event sync")
+	}
+
+	managerEventsURL, err := managerEventEndpointURL(s.cfg.GetManagerBaseURL())
+	if err != nil {
+		return fmt.Errorf("manager API URL is invalid for manager event sync: %w", err)
+	}
+
+	payload := event.CreateEvent{
+		Type:          string(eventModel.Type),
+		Severity:      string(eventModel.Severity),
+		Title:         eventModel.Title,
+		Description:   eventModel.Description,
+		ResourceType:  eventModel.ResourceType,
+		ResourceID:    eventModel.ResourceID,
+		ResourceName:  eventModel.ResourceName,
+		UserID:        eventModel.UserID,
+		Username:      eventModel.Username,
+		EnvironmentID: eventModel.EnvironmentID,
+	}
+
+	if len(eventModel.Metadata) > 0 {
+		payload.Metadata = map[string]any(eventModel.Metadata)
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, managerEventsURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create manager event request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", s.cfg.AgentToken)
+
+	resp, err := s.httpClient.Do(req) //nolint:gosec // managerEventsURL is validated in managerEventEndpointURL before request
+	if err != nil {
+		return fmt.Errorf("failed to send event to manager: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		return nil
+	}
+
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if readErr != nil {
+		return fmt.Errorf("manager event sync failed with status %d", resp.StatusCode)
+	}
+	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+}
+
+func managerEventEndpointURL(rawBaseURL string) (string, error) {
+	trimmed := strings.TrimSpace(rawBaseURL)
+	if trimmed == "" {
+		return "", fmt.Errorf("manager API URL is required")
+	}
+
+	baseURL, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse manager API URL: %w", err)
+	}
+	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme %q", baseURL.Scheme)
+	}
+	if baseURL.Host == "" {
+		return "", fmt.Errorf("manager API URL host is required")
+	}
+
+	baseURL.RawQuery = ""
+	baseURL.Fragment = ""
+	baseURL.Path = strings.TrimRight(baseURL.Path, "/") + "/api/events"
+	return baseURL.String(), nil
+}
+
+func normalizeEventActor(userID, username *string) (*string, *string) {
+	normalizedUserID := normalizeOptionalStringPtr(userID)
+	normalizedUsername := normalizeOptionalStringPtr(username)
+
+	if normalizedUsername == nil && normalizedUserID != nil {
+		normalizedUsername = copyOptionalStringPtr(normalizedUserID)
+	}
+	if normalizedUserID == nil && normalizedUsername != nil {
+		normalizedUserID = copyOptionalStringPtr(normalizedUsername)
+	}
+	if normalizedUserID == nil && normalizedUsername == nil {
+		systemID := "system"
+		systemName := "System"
+		normalizedUserID = &systemID
+		normalizedUsername = &systemName
+	}
+
+	return normalizedUserID, normalizedUsername
+}
+
+func normalizeOptionalStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func copyOptionalStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func (s *EventService) CreateEventFromDto(ctx context.Context, req event.CreateEvent) (*event.Event, error) {

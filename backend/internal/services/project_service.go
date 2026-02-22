@@ -796,7 +796,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		progressWriter = io.Discard
 	}
 
-	if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, nil); perr != nil {
+	if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, user, nil); perr != nil {
 		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
@@ -994,7 +994,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
-	if err := s.PullProjectImages(ctx, projectID, io.Discard, nil); err != nil {
+	if err := s.PullProjectImages(ctx, projectID, io.Discard, user, nil); err != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
 
@@ -1003,10 +1003,10 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
 	}
 
-	return s.DeployProject(ctx, projectID, systemUser)
+	return s.DeployProject(ctx, projectID, user)
 }
 
-func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
+func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1046,7 +1046,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		err := func() error {
 			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
 				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
 				}
@@ -1066,7 +1066,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 // - always/refresh: always pull
 // - missing/if_not_present/default: pull only if local image is missing
 // - never: never pull (fails early if image is missing locally)
-func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
+func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1122,7 +1122,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		err := func() error {
 			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, systemUser, credentials); err != nil {
+			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
 				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
 				}
@@ -1184,7 +1184,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
 }
 
-func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {
 	var proj models.Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1224,11 +1224,26 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, fmt.Errorf("failed to update project: %w", err)
 	}
 
+	metadata := models.JSON{
+		"action":      "update",
+		"projectID":   proj.ID,
+		"projectName": proj.Name,
+	}
+	if composeContent != nil {
+		metadata["composeUpdated"] = true
+	}
+	if envContent != nil {
+		metadata["envUpdated"] = true
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log project update action", "error", logErr)
+	}
+
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil
 }
 
-func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string) error {
+func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string, user models.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1241,6 +1256,16 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 
 	if err := projects.WriteIncludeFile(proj.Path, relativePath, content); err != nil {
 		return fmt.Errorf("failed to update include file: %w", err)
+	}
+
+	metadata := models.JSON{
+		"action":       "update_include",
+		"projectID":    proj.ID,
+		"projectName":  proj.Name,
+		"relativePath": relativePath,
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log project include update action", "error", logErr)
 	}
 
 	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)

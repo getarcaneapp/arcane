@@ -1,10 +1,14 @@
 package edge
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,6 +62,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 
 	// 3. Configure and Start Agent Client
 	cfg := &config.Config{
+		EdgeTransport:         EdgeTransportWebSocket,
 		ManagerApiUrl:         managerServer.URL,
 		AgentToken:            "test-token",
 		EdgeReconnectInterval: 1,
@@ -135,6 +140,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 
 	// 3. Configure Agent
 	cfg := &config.Config{
+		EdgeTransport: EdgeTransportWebSocket,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "test-token",
 		Port:          localPort, // Tell agent where local service is
@@ -185,6 +191,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	defer managerServer.Close()
 
 	cfg := &config.Config{
+		EdgeTransport: EdgeTransportWebSocket,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "test-token",
 	}
@@ -291,6 +298,22 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 			query:    "",
 			expected: "ws://[2001:db8::1]:3553/ws",
 		},
+		{
+			name:     "listen host and port wildcard maps to localhost",
+			listen:   "0.0.0.0:3553",
+			port:     "3553",
+			path:     "/ws",
+			query:    "",
+			expected: "ws://localhost:3553/ws",
+		},
+		{
+			name:     "listen with port only maps to localhost",
+			listen:   ":3553",
+			port:     "3553",
+			path:     "/ws",
+			query:    "",
+			expected: "ws://localhost:3553/ws",
+		},
 	}
 
 	for _, testCase := range tests {
@@ -304,7 +327,185 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 				Path:  testCase.path,
 				Query: testCase.query,
 			}
-			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURL(msg))
+			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURLInternal(msg))
 		})
 	}
+}
+
+func TestTunnelClient_GRPCConnectMethodInternal(t *testing.T) {
+	client := NewTunnelClient(&config.Config{}, http.NotFoundHandler())
+	assert.Equal(t, "/api/tunnel/connect", client.grpcConnectMethodInternal())
+}
+
+func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
+	client := NewTunnelClient(&config.Config{
+		AgentToken: "agent-token",
+	}, http.NotFoundHandler())
+
+	headers := client.buildLocalWebSocketHeadersInternal(&TunnelMessage{
+		Headers: map[string]string{
+			"sec-websocket-key":      "abc",
+			"sec-websocket-version":  "13",
+			"Sec-WebSocket-Protocol": "binary",
+			"X-Custom":               "value",
+			"X-API-Key":              "manager-token",
+		},
+	})
+
+	assert.Empty(t, headers.Get("Sec-Websocket-Key"))
+	assert.Empty(t, headers.Get("Sec-Websocket-Version"))
+	assert.Equal(t, "binary", headers.Get("Sec-Websocket-Protocol"))
+	assert.Equal(t, "value", headers.Get("X-Custom"))
+	assert.Equal(t, "agent-token", headers.Get("X-API-Key"))
+	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
+}
+
+func TestTunnelClient_IsGRPCConnectionInternal(t *testing.T) {
+	t.Run("nil connection", func(t *testing.T) {
+		client := &TunnelClient{}
+		assert.False(t, client.isGRPCConnectionInternal())
+	})
+
+	t.Run("grpc connection", func(t *testing.T) {
+		client := &TunnelClient{conn: NewGRPCAgentTunnelConn(nil)}
+		assert.True(t, client.isGRPCConnectionInternal())
+	})
+
+	t.Run("non-grpc connection", func(t *testing.T) {
+		client := &TunnelClient{conn: &fakeTunnelConnForTransportCheck{}}
+		assert.False(t, client.isGRPCConnectionInternal())
+	})
+}
+
+func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingResponse(t *testing.T) {
+	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/local/api", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+
+	client := NewTunnelClient(&config.Config{
+		EdgeTransport: EdgeTransportGRPC,
+	}, localHandler)
+	conn := &capturingTunnelConnForHandleRequest{}
+	client.conn = conn
+
+	client.handleRequest(context.Background(), &TunnelMessage{
+		ID:     "req-fallback-1",
+		Type:   MessageTypeRequest,
+		Method: http.MethodGet,
+		Path:   "/local/api",
+	})
+
+	require.Len(t, conn.sent, 1)
+	assert.Equal(t, MessageTypeResponse, conn.sent[0].Type)
+	assert.Equal(t, http.StatusOK, conn.sent[0].Status)
+	assert.Equal(t, `{"ok":true}`, string(conn.sent[0].Body))
+}
+
+func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) {
+	conn := &failingHeartbeatConn{}
+	client := &TunnelClient{
+		conn:              conn,
+		heartbeatInterval: 5 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	client.heartbeatLoop(ctx)
+	assert.True(t, conn.closeCalled)
+}
+
+type fakeTunnelConnForTransportCheck struct{}
+
+func (f *fakeTunnelConnForTransportCheck) Send(_ *TunnelMessage) error {
+	return nil
+}
+
+func (f *fakeTunnelConnForTransportCheck) Receive() (*TunnelMessage, error) {
+	return nil, nil
+}
+
+func (f *fakeTunnelConnForTransportCheck) IsExpectedReceiveError(error) bool {
+	return false
+}
+
+func (f *fakeTunnelConnForTransportCheck) Close() error {
+	return nil
+}
+
+func (f *fakeTunnelConnForTransportCheck) IsClosed() bool {
+	return false
+}
+
+func (f *fakeTunnelConnForTransportCheck) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
+	return nil, nil
+}
+
+type capturingTunnelConnForHandleRequest struct {
+	sent []*TunnelMessage
+}
+
+func (c *capturingTunnelConnForHandleRequest) Send(msg *TunnelMessage) error {
+	cloned := *msg
+	if msg.Headers != nil {
+		cloned.Headers = make(map[string]string, len(msg.Headers))
+		maps.Copy(cloned.Headers, msg.Headers)
+	}
+	if msg.Body != nil {
+		cloned.Body = append([]byte(nil), msg.Body...)
+	}
+	c.sent = append(c.sent, &cloned)
+	return nil
+}
+
+func (c *capturingTunnelConnForHandleRequest) Receive() (*TunnelMessage, error) {
+	return nil, nil
+}
+
+func (c *capturingTunnelConnForHandleRequest) IsExpectedReceiveError(error) bool {
+	return false
+}
+
+func (c *capturingTunnelConnForHandleRequest) Close() error {
+	return nil
+}
+
+func (c *capturingTunnelConnForHandleRequest) IsClosed() bool {
+	return false
+}
+
+func (c *capturingTunnelConnForHandleRequest) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
+	return nil, nil
+}
+
+type failingHeartbeatConn struct {
+	closeCalled bool
+}
+
+func (f *failingHeartbeatConn) Send(*TunnelMessage) error {
+	return errors.New("send failed")
+}
+
+func (f *failingHeartbeatConn) Receive() (*TunnelMessage, error) {
+	return nil, errors.New("receive not implemented")
+}
+
+func (f *failingHeartbeatConn) IsExpectedReceiveError(error) bool {
+	return false
+}
+
+func (f *failingHeartbeatConn) Close() error {
+	f.closeCalled = true
+	return nil
+}
+
+func (f *failingHeartbeatConn) IsClosed() bool {
+	return false
+}
+
+func (f *failingHeartbeatConn) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
 }

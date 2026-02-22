@@ -601,7 +601,12 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
 
-	if _, err := h.projectService.UpdateProject(ctx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent); err != nil {
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if _, err := h.projectService.UpdateProject(ctx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user); err != nil {
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
@@ -628,7 +633,12 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
 
-	if err := h.projectService.UpdateProjectIncludeFile(ctx, input.ProjectID, input.Body.RelativePath, input.Body.Content); err != nil {
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.UpdateProjectIncludeFile(ctx, input.ProjectID, input.Body.RelativePath, input.Body.Content, *user); err != nil {
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
@@ -684,6 +694,11 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
 
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
@@ -698,7 +713,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 				f.Flush()
 			}
 
-			if err := h.projectService.PullProjectImages(humaCtx.Context(), input.ProjectID, writer, nil); err != nil {
+			if err := h.projectService.PullProjectImages(humaCtx.Context(), input.ProjectID, writer, *user, nil); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()

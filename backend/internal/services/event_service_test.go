@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/types/event"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -72,7 +77,7 @@ func TestCreateEventRequestJSONOmitempty(t *testing.T) {
 func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	ctx := context.Background()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db)
+	svc := NewEventService(db, nil, nil)
 
 	metadata := models.JSON{"source": "test"}
 	err := svc.LogContainerEvent(ctx, models.EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
@@ -146,7 +151,7 @@ func TestCloneEventMetadataInternal(t *testing.T) {
 func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	ctx := context.Background()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db)
+	svc := NewEventService(db, nil, nil)
 
 	metadata := models.JSON{"phase": "pull"}
 	svc.LogErrorEvent(
@@ -171,4 +176,107 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	require.Equal(t, models.EventSeverityError, saved.Severity)
 	require.Equal(t, "pull", saved.Metadata["phase"])
 	require.Equal(t, "pull failed", saved.Metadata["error"])
+}
+
+func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) {
+	ctx := context.Background()
+	db := setupEventServiceTestDB(t)
+
+	requests := make(chan event.CreateEvent, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/events", r.URL.Path)
+		require.Equal(t, "test-agent-token", r.Header.Get("X-API-Key"))
+
+		defer func() { _ = r.Body.Close() }()
+		var payload event.CreateEvent
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+
+		select {
+		case requests <- payload:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		AgentMode:     true,
+		AgentToken:    "test-agent-token",
+		ManagerApiUrl: server.URL,
+	}
+	svc := NewEventService(db, cfg, server.Client())
+
+	envID := "0"
+	_, err := svc.CreateEvent(ctx, CreateEventRequest{
+		Type:          models.EventTypeContainerStart,
+		Severity:      models.EventSeverityInfo,
+		Title:         "Container started: web",
+		Description:   "Container 'web' has been started",
+		EnvironmentID: &envID,
+		Metadata:      models.JSON{"source": "test"},
+	})
+	require.NoError(t, err)
+
+	select {
+	case payload := <-requests:
+		require.Equal(t, string(models.EventTypeContainerStart), payload.Type)
+		require.Equal(t, string(models.EventSeverityInfo), payload.Severity)
+		require.Equal(t, "Container started: web", payload.Title)
+		require.NotNil(t, payload.EnvironmentID)
+		require.Equal(t, "0", *payload.EnvironmentID)
+		require.Equal(t, "test", payload.Metadata["source"])
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for manager event sync request")
+	}
+}
+
+func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
+	ctx := context.Background()
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+
+	t.Run("falls back to system when actor is missing", func(t *testing.T) {
+		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
+			Type:     models.EventTypeSystemAutoUpdate,
+			Severity: models.EventSeverityInfo,
+			Title:    "System task",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, evt.UserID)
+		require.NotNil(t, evt.Username)
+		require.Equal(t, "system", *evt.UserID)
+		require.Equal(t, "System", *evt.Username)
+	})
+
+	t.Run("copies user id to username when username is missing", func(t *testing.T) {
+		uid := "u-123"
+		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
+			Type:     models.EventTypeProjectDeploy,
+			Severity: models.EventSeverityInfo,
+			Title:    "Deploy",
+			UserID:   &uid,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, evt.UserID)
+		require.NotNil(t, evt.Username)
+		require.Equal(t, "u-123", *evt.UserID)
+		require.Equal(t, "u-123", *evt.Username)
+	})
+
+	t.Run("copies username to user id when user id is missing", func(t *testing.T) {
+		name := "kmendell"
+		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
+			Type:     models.EventTypeProjectDeploy,
+			Severity: models.EventSeverityInfo,
+			Title:    "Deploy",
+			Username: &name,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, evt.UserID)
+		require.NotNil(t, evt.Username)
+		require.Equal(t, "kmendell", *evt.UserID)
+		require.Equal(t, "kmendell", *evt.Username)
+	})
 }

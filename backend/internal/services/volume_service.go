@@ -826,7 +826,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 
 	hdr := &tar.Header{
 		Name: filename,
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(contentBytes)),
 	}
 	if err := tw.WriteHeader(hdr); err != nil {

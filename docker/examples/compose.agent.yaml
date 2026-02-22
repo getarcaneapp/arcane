@@ -8,6 +8,8 @@ services:
       - AGENT_MODE=true
       - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
       - MANAGER_API_URL=http://10.1.1.4:3552
+      # Optional gRPC tunnel setting:
+      - EDGE_TRANSPORT=websocket
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-data:/app/data

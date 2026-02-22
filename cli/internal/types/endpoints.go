@@ -348,6 +348,7 @@ func (e ArcaneApiEndpoints) User(id string) string { return fmt.Sprintf(e.UserEn
 
 // Environment endpoints
 func (e ArcaneApiEndpoints) Environments() string { return e.EnvironmentsEndpoint }
+
 func (e ArcaneApiEndpoints) Environment(id string) string {
 	return fmt.Sprintf(e.EnvironmentEndpoint, id)
 }
@@ -355,6 +356,7 @@ func (e ArcaneApiEndpoints) EnvironmentPair() string { return e.EnvironmentPairE
 func (e ArcaneApiEndpoints) EnvironmentAgent(envID string) string {
 	return fmt.Sprintf(e.EnvironmentAgentEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) EnvironmentTest(envID string) string {
 	return fmt.Sprintf(e.EnvironmentTestEndpoint, envID)
 }
@@ -363,39 +365,50 @@ func (e ArcaneApiEndpoints) EnvironmentTest(envID string) string {
 func (e ArcaneApiEndpoints) Containers(envID string) string {
 	return fmt.Sprintf(e.ContainersEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) Container(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerEndpoint, envID, containerID)
 }
+
 func (e ArcaneApiEndpoints) ContainerStart(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerStartEndpoint, envID, containerID)
 }
+
 func (e ArcaneApiEndpoints) ContainerStop(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerStopEndpoint, envID, containerID)
 }
+
 func (e ArcaneApiEndpoints) ContainerRestart(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerRestartEndpoint, envID, containerID)
 }
+
 func (e ArcaneApiEndpoints) ContainerUpdate(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerUpdateEndpoint, envID, containerID)
 }
+
 func (e ArcaneApiEndpoints) ContainersCounts(envID string) string {
 	return fmt.Sprintf(e.ContainersCountsEndpoint, envID)
 }
 
 // Image endpoints
 func (e ArcaneApiEndpoints) Images(envID string) string { return fmt.Sprintf(e.ImagesEndpoint, envID) }
+
 func (e ArcaneApiEndpoints) Image(envID, imageID string) string {
 	return fmt.Sprintf(e.ImageEndpoint, envID, imageID)
 }
+
 func (e ArcaneApiEndpoints) ImagesPull(envID string) string {
 	return fmt.Sprintf(e.ImagesPullEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImagesPrune(envID string) string {
 	return fmt.Sprintf(e.ImagesPruneEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImagesCounts(envID string) string {
 	return fmt.Sprintf(e.ImagesCountsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
 	return fmt.Sprintf(e.ImagesUploadEndpoint, envID)
 }
@@ -404,15 +417,19 @@ func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
 func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImageUpdatesCheckAll(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckAllEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImageUpdatesCheckBatch(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckBatchEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ImageUpdatesCheckById(envID, imageID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckByIdEndpoint, envID, imageID)
 }
+
 func (e ArcaneApiEndpoints) ImageUpdatesSummary(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesSummaryEndpoint, envID)
 }
@@ -421,12 +438,15 @@ func (e ArcaneApiEndpoints) ImageUpdatesSummary(envID string) string {
 func (e ArcaneApiEndpoints) Networks(envID string) string {
 	return fmt.Sprintf(e.NetworksEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) Network(envID, networkID string) string {
 	return fmt.Sprintf(e.NetworkEndpoint, envID, networkID)
 }
+
 func (e ArcaneApiEndpoints) NetworksCounts(envID string) string {
 	return fmt.Sprintf(e.NetworksCountsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) NetworksPrune(envID string) string {
 	return fmt.Sprintf(e.NetworksPruneEndpoint, envID)
 }
@@ -435,18 +455,23 @@ func (e ArcaneApiEndpoints) NetworksPrune(envID string) string {
 func (e ArcaneApiEndpoints) Volumes(envID string) string {
 	return fmt.Sprintf(e.VolumesEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) Volume(envID, volumeName string) string {
 	return fmt.Sprintf(e.VolumeEndpoint, envID, volumeName)
 }
+
 func (e ArcaneApiEndpoints) VolumesCounts(envID string) string {
 	return fmt.Sprintf(e.VolumesCountsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) VolumesPrune(envID string) string {
 	return fmt.Sprintf(e.VolumesPruneEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) VolumesSizes(envID string) string {
 	return fmt.Sprintf(e.VolumesSizesEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) VolumeUsage(envID, volumeName string) string {
 	return fmt.Sprintf(e.VolumeUsageEndpoint, envID, volumeName)
 }
@@ -455,30 +480,39 @@ func (e ArcaneApiEndpoints) VolumeUsage(envID, volumeName string) string {
 func (e ArcaneApiEndpoints) Projects(envID string) string {
 	return fmt.Sprintf(e.ProjectsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) Project(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectsCounts(envID string) string {
 	return fmt.Sprintf(e.ProjectsCountsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) ProjectDestroy(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectDestroyEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectUp(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectUpEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectDown(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectDownEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectRestart(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectRestartEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectRedeploy(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectRedeployEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectPull(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectPullEndpoint, envID, projectID)
 }
+
 func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectIncludesEndpoint, envID, projectID)
 }
@@ -487,27 +521,35 @@ func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
 func (e ArcaneApiEndpoints) SystemPrune(envID string) string {
 	return fmt.Sprintf(e.SystemPruneEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemHealth(envID string) string {
 	return fmt.Sprintf(e.SystemHealthEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemDockerInfo(envID string) string {
 	return fmt.Sprintf(e.SystemDockerInfoEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemConvert(envID string) string {
 	return fmt.Sprintf(e.SystemConvertEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemContainersStartAll(envID string) string {
 	return fmt.Sprintf(e.SystemContainersStartAllEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemContainersStopAll(envID string) string {
 	return fmt.Sprintf(e.SystemContainersStopAllEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemContainersStartStopped(envID string) string {
 	return fmt.Sprintf(e.SystemContainersStartStoppedEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemUpgradeCheck(envID string) string {
 	return fmt.Sprintf(e.SystemUpgradeCheckEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SystemUpgrade(envID string) string {
 	return fmt.Sprintf(e.SystemUpgradeEndpoint, envID)
 }
@@ -516,9 +558,11 @@ func (e ArcaneApiEndpoints) SystemUpgrade(envID string) string {
 func (e ArcaneApiEndpoints) UpdaterStatus(envID string) string {
 	return fmt.Sprintf(e.UpdaterStatusEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) UpdaterRun(envID string) string {
 	return fmt.Sprintf(e.UpdaterRunEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string {
 	return fmt.Sprintf(e.UpdaterHistoryEndpoint, envID)
 }
@@ -530,6 +574,7 @@ func (e ArcaneApiEndpoints) JobSchedules() string { return e.JobSchedulesEndpoin
 func (e ArcaneApiEndpoints) Settings(envID string) string {
 	return fmt.Sprintf(e.SettingsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) SettingsPublic(envID string) string {
 	return fmt.Sprintf(e.SettingsPublicEndpoint, envID)
 }
@@ -540,21 +585,26 @@ func (e ArcaneApiEndpoints) SettingsSearch() string     { return e.SettingsSearc
 func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
 	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
 	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
 	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) NotificationSetting(envID, provider string) string {
 	return fmt.Sprintf(e.NotificationSettingEndpoint, envID, provider)
 }
+
 func (e ArcaneApiEndpoints) NotificationTest(envID, provider string) string {
 	return fmt.Sprintf(e.NotificationTestEndpoint, envID, provider)
 }
 
 // Container Registry endpoints
 func (e ArcaneApiEndpoints) ContainerRegistries() string { return e.ContainerRegistriesEndpoint }
+
 func (e ArcaneApiEndpoints) ContainerRegistry(id string) string {
 	return fmt.Sprintf(e.ContainerRegistryEndpoint, id)
 }
@@ -562,6 +612,7 @@ func (e ArcaneApiEndpoints) ContainerRegistrySync() string { return e.ContainerR
 func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string {
 	return fmt.Sprintf(e.ContainerRegistryTestEndpoint, id)
 }
+
 func (e ArcaneApiEndpoints) EnvironmentSyncRegistries(envID string) string {
 	return fmt.Sprintf(e.EnvironmentSyncRegistriesEndpoint, envID)
 }
@@ -587,6 +638,7 @@ func (e ArcaneApiEndpoints) TemplatesVariables() string { return e.TemplatesVari
 func (e ArcaneApiEndpoints) TemplateContent(id string) string {
 	return fmt.Sprintf(e.TemplateContentEndpoint, id)
 }
+
 func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
 	return fmt.Sprintf(e.TemplateDownloadEndpoint, id)
 }
@@ -595,6 +647,7 @@ func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
 func (e ArcaneApiEndpoints) Deployment(envID string) string {
 	return fmt.Sprintf(e.DeploymentEndpoint, envID)
 }
+
 func (e ArcaneApiEndpoints) Heartbeat(envID string) string {
 	return fmt.Sprintf(e.HeartbeatEndpoint, envID)
 }

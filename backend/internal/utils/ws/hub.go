@@ -24,12 +24,6 @@ func NewHub(buffer int) *Hub {
 	}
 }
 
-func (h *Hub) ClientCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
-}
-
 func (h *Hub) SetOnEmpty(fn func()) {
 	h.mu.Lock()
 	h.onEmpty = fn

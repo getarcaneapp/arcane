@@ -28,9 +28,7 @@ type DB struct {
 	*gorm.DB
 }
 
-var (
-	customGormLogger logger.Interface
-)
+var customGormLogger logger.Interface
 
 func SetGormLogger(l logger.Interface) {
 	customGormLogger = l

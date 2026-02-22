@@ -33,13 +33,116 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 		Body:    body,
 	}
 
-	// Send request and wait for response
+	// Keep request/response flow compatibility for WebSocket transport.
+	if _, isGRPC := tunnel.Conn.(*GRPCManagerTunnelConn); !isGRPC {
+		return proxyRequestLegacy(ctx, tunnel, msg)
+	}
+
+	return proxyRequestGRPC(ctx, tunnel, method, requestID, msg)
+}
+
+func proxyRequestLegacy(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) (int, map[string]string, []byte, error) {
 	resp, err := tunnel.Conn.SendRequest(ctx, msg, &tunnel.Pending)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("tunnel request failed: %w", err)
 	}
-
 	return resp.Status, resp.Headers, resp.Body, nil
+}
+
+func proxyRequestGRPC(ctx context.Context, tunnel *AgentTunnel, method, requestID string, msg *TunnelMessage) (int, map[string]string, []byte, error) {
+	respCh := make(chan *TunnelMessage, 256)
+	tunnel.Pending.Store(requestID, &PendingRequest{
+		ResponseCh: respCh,
+		CreatedAt:  time.Now(),
+	})
+	defer tunnel.Pending.Delete(requestID)
+
+	if err := tunnel.Conn.Send(msg); err != nil {
+		return 0, nil, nil, fmt.Errorf("tunnel request failed: %w", err)
+	}
+
+	return collectGRPCResponse(ctx, method, respCh)
+}
+
+func collectGRPCResponse(ctx context.Context, method string, respCh <-chan *TunnelMessage) (int, map[string]string, []byte, error) {
+	state := &grpcResponseState{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, nil, nil, ctx.Err()
+		case incoming := <-respCh:
+			if incoming == nil {
+				continue
+			}
+
+			switch incoming.Type {
+			case MessageTypeResponse:
+				if done, status, headers, body := state.handleResponse(method, incoming); done {
+					return status, headers, body, nil
+				}
+			case MessageTypeStreamData:
+				state.handleStreamData(incoming)
+			case MessageTypeStreamEnd:
+				if done, status, headers, body := state.handleStreamEnd(); done {
+					return status, headers, body, nil
+				}
+			case MessageTypeRequest,
+				MessageTypeHeartbeat,
+				MessageTypeHeartbeatAck,
+				MessageTypeWebSocketStart,
+				MessageTypeWebSocketData,
+				MessageTypeWebSocketClose,
+				MessageTypeRegister,
+				MessageTypeRegisterResponse,
+				MessageTypeEvent:
+				continue
+			}
+		}
+	}
+}
+
+type grpcResponseState struct {
+	status      int
+	respHeaders map[string]string
+	respBody    bytes.Buffer
+	gotResponse bool
+}
+
+func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
+	if !s.gotResponse {
+		s.gotResponse = true
+		s.status = incoming.Status
+		s.respHeaders = incoming.Headers
+	}
+
+	if len(incoming.Body) > 0 {
+		s.respBody.Write(incoming.Body)
+		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
+	}
+
+	if method == http.MethodHead || s.status == http.StatusNoContent || s.status == http.StatusNotModified {
+		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), nil
+	}
+
+	return false, 0, nil, nil
+}
+
+func (s *grpcResponseState) handleStreamData(incoming *TunnelMessage) {
+	if !s.gotResponse {
+		// Ignore out-of-order stream chunks until the response envelope arrives.
+		return
+	}
+	if len(incoming.Body) > 0 {
+		s.respBody.Write(incoming.Body)
+	}
+}
+
+func (s *grpcResponseState) handleStreamEnd() (bool, int, map[string]string, []byte) {
+	if !s.gotResponse {
+		return false, 0, nil, nil
+	}
+	return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
 }
 
 // ProxyHTTPRequest is a helper that proxies a gin context through a tunnel
@@ -123,6 +226,20 @@ func isHopByHopHeader(header string) bool {
 		"Upgrade":             true,
 	}
 	return hopByHop[http.CanonicalHeaderKey(header)]
+}
+
+func stripInternalTunnelHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return headers
+	}
+	cleaned := make(map[string]string, len(headers))
+	for k, v := range headers {
+		if http.CanonicalHeaderKey(k) == "X-Arcane-Tunnel-Stream" {
+			continue
+		}
+		cleaned[k] = v
+	}
+	return cleaned
 }
 
 // HasActiveTunnel checks if an environment has an active edge tunnel

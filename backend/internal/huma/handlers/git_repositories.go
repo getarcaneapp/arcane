@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
@@ -272,7 +273,12 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	repo, err := h.repoService.CreateRepository(ctx, input.Body)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryCreationError{Err: err}).Error())
@@ -322,7 +328,12 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body)
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryUpdateError{Err: err}).Error())
@@ -347,7 +358,12 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.repoService.DeleteRepository(ctx, input.ID); err != nil {
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryDeletionError{Err: err}).Error())
 	}
@@ -368,7 +384,12 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch); err != nil {
+	actor := models.User{}
+	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+		actor = *currentUser
+	}
+
+	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
 		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
 	}
 
