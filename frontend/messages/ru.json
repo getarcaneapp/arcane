@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} контейнеров исключено",
 	"auto_update_exclude_description": "Выберите контейнеры для исключения из автоматического обновления.",
 	"auto_update_excluded_containers": "Исключенные контейнеры",
+	"auto_heal_excluded_containers": "Исключенные контейнеры",
+	"auto_heal_exclude_description": "Выберите контейнеры для исключения из режима автоматического исцеления.",
+	"auto_heal_max_restarts_label": "Макс. перезагрузок",
+	"auto_heal_max_restarts_description": "Максимальное количество автоматических перезагрузок для каждого контейнера в окне перезагрузки.",
+	"auto_heal_restart_window_label": "Перезапустить окно (в минутах)",
+	"auto_heal_restart_window_description": "Окно времени в минутах для учета автоматического перезапуска. Сбрасывается после этого периода.",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Создание…",
 	"common_action_deleting": "Удаление…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Обнаружено Уязвимость",
 	"notifications_test_vulnerability_notification": "Тестовое уведомление об уязвимости",
 	"notifications_test_prune_report_notification": "Тестировать уведомление о очистке отчета",
+	"notifications_test_auto_heal_notification": "Тестировать уведомление автоисцеления",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Включает",
 	"notifications_event_prune_report_label": "Отчёт очистки системы",
 	"notifications_event_prune_report_description": "Получать сводный отчет о завершении запланированной работы prune",
+	"notifications_event_auto_heal_label": "Авто-исцеление",
+	"notifications_event_auto_heal_description": "Уведомлять при автоматическом перезапуске неработоспособного контейнера",
 	"version_info_build_features": "Возможности сборки"
 }
