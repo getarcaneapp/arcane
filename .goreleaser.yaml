@@ -282,6 +282,28 @@ dockers_v2:
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
+blobs:
+  - provider: s3
+    endpoint: '{{ index .Env "R2_ENDPOINT" }}'
+    region: auto
+    bucket: '{{ index .Env "R2_BUCKET" }}'
+    ids:
+      - arcane-cli
+    directory: bin/cli-next
+    include_meta: false
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
+
+  - provider: s3
+    endpoint: '{{ index .Env "R2_ENDPOINT" }}'
+    region: auto
+    bucket: '{{ index .Env "R2_BUCKET" }}'
+    ids:
+      - arcane
+      - arcane-agent
+    directory: bin/arcane-next
+    include_meta: false
+    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
+
 changelog:
   disable: true
 

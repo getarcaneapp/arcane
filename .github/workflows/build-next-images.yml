@@ -80,6 +80,12 @@ jobs:
           SKIP_CHANGELOG: "true"
           GORELEASER_CURRENT_TAG: next-static-${{ steps.vars.outputs.sha_short }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
       - name: Manager image metadata
         id: manager-meta
