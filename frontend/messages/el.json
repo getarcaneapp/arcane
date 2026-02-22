@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} containers excluded",
 	"auto_update_exclude_description": "Επιλέξτε περιέκτες που θα εξαιρούνται από τις αυτόματες ενημερώσεις.",
 	"auto_update_excluded_containers": "Ολοκληρωμένα Εμπορευματοκιβώτια",
+	"auto_heal_excluded_containers": "Ολοκληρωμένα Εμπορευματοκιβώτια",
+	"auto_heal_exclude_description": "Επιλέξτε περιέκτες για να αποκλείσετε από την αυτόματη επούλωση.",
+	"auto_heal_max_restarts_label": "Μέγιστες Επανεκκινήσεις",
+	"auto_heal_max_restarts_description": "Μέγιστος αριθμός αυτόματων επανεκκινήσεων ανά περιέκτη μέσα στο παράθυρο επανεκκίνησης.",
+	"auto_heal_restart_window_label": "Επανεκκίνηση Παραθύρου (λεπτά)",
+	"auto_heal_restart_window_description": "Παράθυρο χρόνου σε λεπτά για την μέτρηση αυτόματων επανεκκινήσεων. Επαναφορά μετά από αυτή την περίοδο.",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Δημιουργία…",
 	"common_action_deleting": "Διαγραφή…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Ειδοποίηση Ευθύνης Που Βρέθηκε",
 	"notifications_test_vulnerability_notification": "Δοκιμή Ειδοποίησης Ευθύνης",
 	"notifications_test_prune_report_notification": "Δοκιμή Ειδοποίησης Αναφοράς Prune",
+	"notifications_test_auto_heal_notification": "Δοκιμή Ειδοποίησης Αυτόματης-Θεραπείας",
 	"notifications_apprise_title": "Ενσωμάτωση Apprise",
 	"notifications_apprise_description": "Ρύθμιση του Apprise API για ενοποιημένες ειδοποιήσεις σε πολλαπλές υπηρεσίες",
 	"notifications_apprise_enabled_label": "Ενεργοποίηση Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Περιλαμβάνει",
 	"notifications_event_prune_report_label": "Αναφορά Συστήματος Prune",
 	"notifications_event_prune_report_description": "Λάβετε μια συνοπτική αναφορά όταν ολοκληρωθεί μια προγραμματισμένη λειτουργία prune",
+	"notifications_event_auto_heal_label": "Αυτόματη Επανεκκίνηση Θεραπείας",
+	"notifications_event_auto_heal_description": "Ειδοποίηση όταν ένα ανθυγιεινό δοχείο επανεκκινείται αυτόματα",
 	"version_info_build_features": "Κατασκευή Χαρακτηριστικών"
 }
