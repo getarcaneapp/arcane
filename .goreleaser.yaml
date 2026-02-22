@@ -172,10 +172,26 @@ homebrew_casks:
       - arcane-cli
     description: "Arcane CLI - Modern Docker Management, Designed for Everyone."
     homepage: "https://getarcane.app"
+    skip_upload: '{{ if eq (index .Env "BUILD_NEXT") "true" }}true{{ end }}'
     repository:
       owner: getarcaneapp
       name: homebrew-tap
     commit_msg_template: "chore(brew): update {{ .ProjectName }} to {{ .Tag }}"
+
+  - name: arcane-cli-next
+    ids:
+      - arcane-cli
+    binaries:
+      - arcane-cli
+    description: "Arcane CLI (Next) - Modern Docker Management, Designed for Everyone."
+    homepage: "https://getarcane.app"
+    skip_upload: '{{ if ne (index .Env "BUILD_NEXT") "true" }}true{{ end }}'
+    conflicts:
+      - cask: arcane-cli
+    repository:
+      owner: getarcaneapp
+      name: homebrew-tap
+    commit_msg_template: "chore(brew): update {{ .ProjectName }} next to {{ .Tag }}"
 
 dockers_v2:
   - id: arcane-next
