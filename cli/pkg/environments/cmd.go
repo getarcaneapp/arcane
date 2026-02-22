@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
@@ -49,8 +50,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Environments()
-		if limitFlag > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, limitFlag)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "environments", "limit", limitFlag, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -103,13 +105,11 @@ var deleteCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete environment %s? (y/N): ", args[0])
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete environment %s?", args[0]))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -125,6 +125,9 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete environment: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to delete environment: %w", err)
+		}
 
 		output.Success("Environment deleted successfully")
 		return nil
@@ -188,6 +191,9 @@ var testCmd = &cobra.Command{
 			return fmt.Errorf("failed to test environment: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to test environment: %w", err)
+		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
@@ -211,7 +217,7 @@ var switchCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !prompt.IsInteractive() {
-			return fmt.Errorf("interactive terminal required; run `arcane config set --environment <id>` instead")
+			return fmt.Errorf("interactive terminal required; run `arcane config set environment <id>` instead")
 		}
 
 		cfg, err := config.Load()

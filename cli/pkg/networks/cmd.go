@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -19,9 +20,11 @@ import (
 )
 
 var (
-	limitFlag  int
-	forceFlag  bool
-	jsonOutput bool
+	limitFlag      int
+	forceFlag      bool
+	jsonOutput     bool
+	inUseOnlyFlag  bool
+	unusedOnlyFlag bool
 )
 
 const maxPromptOptions = 20
@@ -39,14 +42,18 @@ var listCmd = &cobra.Command{
 	Short:        "List networks",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if inUseOnlyFlag && unusedOnlyFlag {
+			return fmt.Errorf("--inuse and --unused cannot be used together")
+		}
 		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
 
 		path := types.Endpoints.Networks(c.EnvID())
-		if limitFlag > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, limitFlag)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "networks", "limit", limitFlag, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -59,6 +66,8 @@ var listCmd = &cobra.Command{
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
+		result.Data = filterNetworksByUsage(result.Data, inUseOnlyFlag, unusedOnlyFlag)
+		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
@@ -69,15 +78,20 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		headers := []string{"ID", "NAME", "DRIVER", "SCOPE", "CREATED"}
+		headers := []string{"ID", "NAME", "DRIVER", "SCOPE", "CREATED", "IN USE"}
 		rows := make([][]string, len(result.Data))
 		for i, net := range result.Data {
+			inUse := "No"
+			if net.InUse {
+				inUse = "Yes"
+			}
 			rows[i] = []string{
 				shortID(net.ID),
 				net.Name,
 				net.Driver,
 				net.Scope,
 				net.Created.Format("2006-01-02 15:04"),
+				inUse,
 			}
 		}
 
@@ -166,13 +180,11 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete network %s? (y/N): ", display)
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete network %s?", display))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -183,6 +195,9 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete network: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to delete network: %w", err)
+		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
@@ -246,13 +261,11 @@ var pruneCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !forceFlag {
-			fmt.Print("Are you sure you want to prune unused networks? (y/N): ")
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, "Are you sure you want to prune unused networks?")
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -268,6 +281,9 @@ var pruneCmd = &cobra.Command{
 			return fmt.Errorf("failed to prune networks: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to prune networks: %w", err)
+		}
 
 		var result base.ApiResponse[network.PruneReport]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -299,6 +315,8 @@ func init() {
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	listCmd.Flags().BoolVar(&inUseOnlyFlag, "inuse", false, "Only show networks currently in use")
+	listCmd.Flags().BoolVar(&unusedOnlyFlag, "unused", false, "Only show networks not in use")
 
 	// Get command flags
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -418,4 +436,21 @@ func networkMatches(item network.Summary, identifierLower, original string) bool
 		return true
 	}
 	return strings.EqualFold(item.Name, original)
+}
+
+func filterNetworksByUsage(items []network.Summary, inUseOnly, unusedOnly bool) []network.Summary {
+	if !inUseOnly && !unusedOnly {
+		return items
+	}
+	filtered := make([]network.Summary, 0, len(items))
+	for _, item := range items {
+		if inUseOnly && !item.InUse {
+			continue
+		}
+		if unusedOnly && item.InUse {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }

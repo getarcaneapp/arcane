@@ -8,7 +8,7 @@
 //
 // Configure the CLI with your server URL and API key:
 //
-//	arcane config set --server-url https://your-server.com --api-key YOUR_API_KEY
+//	arcane config set server-url https://your-server.com api-key YOUR_API_KEY
 //
 // # Global Flags
 //
@@ -35,14 +35,22 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/fang"
+	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
+	"github.com/getarcaneapp/arcane/cli/internal/output"
+	"github.com/getarcaneapp/arcane/cli/internal/runstate"
+	runtimectx "github.com/getarcaneapp/arcane/cli/internal/runtime"
 	"github.com/getarcaneapp/arcane/cli/pkg/admin"
 	"github.com/getarcaneapp/arcane/cli/pkg/auth"
+	"github.com/getarcaneapp/arcane/cli/pkg/completion"
 	configClient "github.com/getarcaneapp/arcane/cli/pkg/config"
 	"github.com/getarcaneapp/arcane/cli/pkg/containers"
+	"github.com/getarcaneapp/arcane/cli/pkg/doctor"
 	"github.com/getarcaneapp/arcane/cli/pkg/environments"
 	"github.com/getarcaneapp/arcane/cli/pkg/generate"
 	"github.com/getarcaneapp/arcane/cli/pkg/images"
@@ -60,10 +68,16 @@ import (
 )
 
 var (
-	logLevel    string
-	jsonOutput  bool
-	showVersion bool
-	configPath  string
+	logLevel       string
+	logJSONOutput  bool
+	showVersion    bool
+	configPath     string
+	outputMode     string
+	envOverride    string
+	assumeYes      bool
+	noColorOutput  bool
+	requestTimeout time.Duration
+	globalJSON     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -76,6 +90,22 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
+		if globalJSON && !cmd.Flags().Changed("output") {
+			outputMode = string(runtimectx.OutputModeJSON)
+		}
+		outputMode = strings.ToLower(strings.TrimSpace(outputMode))
+		if outputMode == "" {
+			outputMode = string(runtimectx.OutputModeText)
+		}
+		if outputMode != string(runtimectx.OutputModeText) && outputMode != string(runtimectx.OutputModeJSON) {
+			return fmt.Errorf("invalid --output value %q (expected text or json)", outputMode)
+		}
+		if outputMode == string(runtimectx.OutputModeJSON) {
+			if flag := cmd.Flags().Lookup("json"); flag != nil && !flag.Changed {
+				_ = cmd.Flags().Set("json", "true")
+			}
+		}
+
 		// Load config to check for log level setting
 		cfg, _ := config.Load()
 
@@ -84,7 +114,34 @@ var rootCmd = &cobra.Command{
 			logLevel = cfg.LogLevel
 		}
 
-		logger.Setup(logLevel, jsonOutput)
+		if noColorOutput {
+			output.SetColorEnabled(false)
+			color.NoColor = true
+		} else {
+			output.SetColorEnabled(true)
+			color.NoColor = false
+		}
+
+		logger.Setup(logLevel, logJSONOutput)
+
+		app, err := runtimectx.New(runtimectx.Options{
+			EnvOverride:    envOverride,
+			OutputMode:     runtimectx.OutputMode(outputMode),
+			AssumeYes:      assumeYes,
+			NoColor:        noColorOutput,
+			RequestTimeout: requestTimeout,
+		})
+		if err != nil {
+			return err
+		}
+		cmd.SetContext(runtimectx.WithAppContext(cmd.Context(), app))
+		runstate.Set(runstate.State{
+			EnvOverride:    envOverride,
+			OutputMode:     outputMode,
+			AssumeYes:      assumeYes,
+			NoColor:        noColorOutput,
+			RequestTimeout: requestTimeout,
+		})
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -106,13 +163,27 @@ func Execute() {
 	}
 }
 
+// RootCommand returns the configured root command.
+// Intended for integration tests and embedding.
+func RootCommand() *cobra.Command {
+	return rootCmd
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal, panic)")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
-	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Log in JSON format")
+	rootCmd.PersistentFlags().StringVar(&outputMode, "output", "text", "Output mode (text, json)")
+	rootCmd.PersistentFlags().StringVar(&envOverride, "env", "", "Override default environment ID for this invocation")
+	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "Automatic yes to prompts")
+	rootCmd.PersistentFlags().BoolVar(&noColorOutput, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().DurationVar(&requestTimeout, "request-timeout", 0, "HTTP request timeout override (e.g. 30s, 2m)")
+	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Alias for --output json")
+	rootCmd.PersistentFlags().BoolVar(&logJSONOutput, "log-json", false, "Log in JSON format")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print version information")
 
 	rootCmd.AddCommand(configClient.ConfigCmd)
+	rootCmd.AddCommand(completion.NewCommand(rootCmd))
+	rootCmd.AddCommand(doctor.DoctorCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
 	rootCmd.AddCommand(auth.AuthCmd)

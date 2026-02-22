@@ -14,68 +14,120 @@ package output
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-runewidth"
 )
 
-const arcanePurple = lipgloss.Color("#6d28d9")
+var (
+	arcanePurple = lipgloss.AdaptiveColor{
+		Light: "#6d28d9",
+		Dark:  "#a78bfa",
+	}
+	textPrimary = lipgloss.AdaptiveColor{
+		Light: "#1f2937",
+		Dark:  "#e5e7eb",
+	}
+	textMuted = lipgloss.AdaptiveColor{
+		Light: "#64748b",
+		Dark:  "#cbd5e1",
+	}
+	statusOnline = lipgloss.AdaptiveColor{
+		Light: "#15803d",
+		Dark:  "#4ade80",
+	}
+	statusOffline = lipgloss.AdaptiveColor{
+		Light: "#b91c1c",
+		Dark:  "#f87171",
+	}
+	statusWarn = lipgloss.AdaptiveColor{
+		Light: "#b45309",
+		Dark:  "#fbbf24",
+	}
+)
 
 var (
-	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	successStyle = lipgloss.NewStyle().Foreground(statusOnline)
+	errorStyle   = lipgloss.NewStyle().Foreground(statusOffline)
+	warnStyle    = lipgloss.NewStyle().Foreground(statusWarn)
 	infoStyle    = lipgloss.NewStyle().Foreground(arcanePurple)
 	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(arcanePurple)
-	keyStyle     = lipgloss.NewStyle().Bold(true)
+	keyStyle     = lipgloss.NewStyle().Bold(true).Foreground(textPrimary)
 	valueStyle   = lipgloss.NewStyle().Foreground(arcanePurple)
-	columnStyle  = lipgloss.NewStyle().Foreground(arcanePurple)
+
+	// Keep purple as accent in headers, but avoid purple body cells for readability.
+	columnStyle  = lipgloss.NewStyle().Foreground(textPrimary)
 	columnHeader = lipgloss.NewStyle().Bold(true).Foreground(arcanePurple)
 
-	statusOnlineStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
-	statusOfflineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
-	statusWarnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))
-	statusMutedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
+	statusOnlineStyle  = lipgloss.NewStyle().Foreground(statusOnline)
+	statusOfflineStyle = lipgloss.NewStyle().Foreground(statusOffline)
+	statusWarnStyle    = lipgloss.NewStyle().Foreground(statusWarn)
+	statusMutedStyle   = lipgloss.NewStyle().Foreground(textMuted)
 	enabledStyle       = lipgloss.NewStyle().Foreground(arcanePurple)
 )
 
 var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 
+var colorEnabled = true
+
+func shouldColor() bool {
+	return colorEnabled && term.IsTerminal(os.Stdout.Fd())
+}
+
+func render(style lipgloss.Style, value string) string {
+	if !shouldColor() {
+		return value
+	}
+	return style.Render(value)
+}
+
+// SetColorEnabled controls whether CLI output should render ANSI colors.
+func SetColorEnabled(enabled bool) {
+	colorEnabled = enabled
+}
+
 // Success prints a success message in green.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Success(format string, a ...any) {
-	fmt.Printf("\n%s\n", successStyle.Render(fmt.Sprintf(format, a...)))
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n%s\n", render(successStyle, msg))
 }
 
 // Error prints an error message in red.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Error(format string, a ...any) {
-	fmt.Printf("\n%s\n", errorStyle.Render(fmt.Sprintf(format, a...)))
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n%s\n", render(errorStyle, msg))
 }
 
 // Warning prints a warning message in yellow.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Warning(format string, a ...any) {
-	fmt.Printf("\n%s\n", warnStyle.Render(fmt.Sprintf(format, a...)))
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n%s\n", render(warnStyle, msg))
 }
 
 // Info prints an info message in cyan.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
 func Info(format string, a ...any) {
-	fmt.Printf("\n%s\n", infoStyle.Render(fmt.Sprintf(format, a...)))
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n%s\n", render(infoStyle, msg))
 }
 
 // Header prints a header message in bold white.
 // Use this to introduce sections of output. The message is prefixed
 // with a newline for visual separation.
 func Header(format string, a ...any) {
-	fmt.Printf("\n%s\n", headerStyle.Render(fmt.Sprintf(format, a...)))
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n%s\n", render(headerStyle, msg))
 }
 
 // Print prints a standard message without color formatting.
@@ -88,7 +140,9 @@ func Print(format string, a ...any) {
 // This is useful for displaying structured information like image details
 // or configuration values.
 func KeyValue(key string, value any) {
-	fmt.Printf("%s: %v\n", keyStyle.Render(key), valueStyle.Render(fmt.Sprint(value)))
+	keyText := key
+	valueText := fmt.Sprint(value)
+	fmt.Printf("%s: %v\n", render(keyStyle, keyText), render(valueStyle, valueText))
 }
 
 func stripAnsi(s string) string {
@@ -108,7 +162,7 @@ func hasAnsi(s string) bool {
 // TintStatus applies semantic status coloring to a value.
 func TintStatus(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) {
+	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -128,7 +182,7 @@ func TintStatus(value string) string {
 // TintEnabled applies tints for enabled/disabled values.
 func TintEnabled(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) {
+	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -145,7 +199,7 @@ func TintEnabled(value string) string {
 // TintYesNo applies tints for yes/no style values.
 func TintYesNo(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) {
+	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -162,7 +216,7 @@ func TintYesNo(value string) string {
 // TintInsecure applies warning tints for insecure values.
 func TintInsecure(value string) string {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || hasAnsi(trimmed) {
+	if trimmed == "" || hasAnsi(trimmed) || !shouldColor() {
 		return value
 	}
 	lower := strings.ToLower(trimmed)
@@ -198,6 +252,9 @@ func Table(headers []string, rows [][]string) {
 
 func tintTableRows(headers []string, rows [][]string) [][]string {
 	if len(rows) == 0 {
+		return rows
+	}
+	if !shouldColor() {
 		return rows
 	}
 
@@ -256,7 +313,7 @@ func printHeader(headers []string, widths []int) {
 	n := len(headers)
 	for i, h := range headers {
 		visible := stripAnsi(h)
-		colored := columnHeader.Render(h)
+		colored := render(columnHeader, h)
 		padLen := max(widths[i]-runewidth.StringWidth(visible), 0)
 		if i < n-1 {
 			fmt.Print(colored + strings.Repeat(" ", padLen) + sep)
@@ -294,7 +351,7 @@ func printRow(row []string, widths []int, n int) {
 
 			var rendered string
 			if i == 0 {
-				rendered = columnStyle.Render(val)
+				rendered = render(columnStyle, val)
 			} else {
 				rendered = fmt.Sprint(val)
 			}
