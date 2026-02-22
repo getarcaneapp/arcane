@@ -506,14 +506,16 @@ _utils-hotfix:
 
     git tag "cli/${NEW_TAG}"
     git tag "types/${NEW_TAG}"
+    git tag "backend/${NEW_TAG}"
 
     echo ""
     echo -e "${GREEN}✅ Hotfix release ${NEW_TAG} created successfully!${NC}"
     echo ""
 
-    # Push the commit and the tag to the repository
+    # Push the commit and tags in two steps to ensure the release workflow triggers on v* tag push
     git push
-    git push --tags
+    git push origin "$NEW_TAG"
+    git push origin "cli/${NEW_TAG}" "types/${NEW_TAG}" "backend/${NEW_TAG}"
 
     # Extract the changelog content for the latest release
     echo "Extracting changelog content for version $NEW_TAG..."
@@ -761,10 +763,12 @@ release *args:
         git tag -a "v$NEW_VERSION" -m "$TAG_MESSAGE"
         git tag -a "cli/v$NEW_VERSION" -m "$TAG_MESSAGE"
         git tag -a "types/v$NEW_VERSION" -m "$TAG_MESSAGE"
+        git tag -a "backend/v$NEW_VERSION" -m "$TAG_MESSAGE"
 
-        # Push the commit and the tags to the repository
+        # Push the commit and tags in two steps to ensure the release workflow triggers on v* tag push
         git push
-        git push origin "v$NEW_VERSION" "cli/v$NEW_VERSION" "types/v$NEW_VERSION"
+        git push origin "v$NEW_VERSION"
+        git push origin "cli/v$NEW_VERSION" "types/v$NEW_VERSION" "backend/v$NEW_VERSION"
 
         # Extract the changelog content for the latest release
         echo "Extracting changelog content for version $NEW_VERSION..."
@@ -803,8 +807,10 @@ release *args:
         echo "$CHANGELOG"
         echo "----- END CHANGELOG PREVIEW -----"
         echo "Would commit: release: $NEW_VERSION"
-        echo "Would tag: v$NEW_VERSION, cli/v$NEW_VERSION, types/v$NEW_VERSION"
-        echo "Would push commit and tags"
+        echo "Would tag: v$NEW_VERSION, cli/v$NEW_VERSION, types/v$NEW_VERSION, backend/v$NEW_VERSION"
+        echo "Would push commit"
+        echo "Would push tag: v$NEW_VERSION"
+        echo "Would push tags: cli/v$NEW_VERSION, types/v$NEW_VERSION, backend/v$NEW_VERSION"
         echo "Would create GitHub draft release v$NEW_VERSION"
         echo "Test mode complete. No changes were written."
     fi

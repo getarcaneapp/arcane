@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/docker/api/types/container"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -251,4 +252,85 @@ func TestProjectService_NormalizeComposeProjectName(t *testing.T) {
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+func TestResolveServiceImagePullMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		service  composetypes.ServiceConfig
+		expected imagePullMode
+	}{
+		{
+			name:     "default policy is missing",
+			service:  composetypes.ServiceConfig{},
+			expected: imagePullModeIfMissing,
+		},
+		{
+			name:     "always policy",
+			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyAlways},
+			expected: imagePullModeAlways,
+		},
+		{
+			name:     "refresh policy",
+			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyRefresh},
+			expected: imagePullModeAlways,
+		},
+		{
+			name:     "missing policy",
+			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyMissing},
+			expected: imagePullModeIfMissing,
+		},
+		{
+			name:     "if not present policy",
+			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyIfNotPresent},
+			expected: imagePullModeIfMissing,
+		},
+		{
+			name:     "never policy",
+			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyNever},
+			expected: imagePullModeNever,
+		},
+		{
+			name:     "invalid policy defaults to missing behavior",
+			service:  composetypes.ServiceConfig{PullPolicy: "definitely_invalid"},
+			expected: imagePullModeIfMissing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, resolveServiceImagePullMode(tt.service))
+		})
+	}
+}
+
+func TestBuildProjectImagePullPlan(t *testing.T) {
+	services := composetypes.Services{
+		"web": {
+			Name:       "web",
+			Image:      "redis:latest",
+			PullPolicy: composetypes.PullPolicyIfNotPresent,
+		},
+		"worker": {
+			Name:       "worker",
+			Image:      "redis:latest",
+			PullPolicy: composetypes.PullPolicyAlways,
+		},
+		"api": {
+			Name:       "api",
+			Image:      "nginx:latest",
+			PullPolicy: composetypes.PullPolicyNever,
+		},
+		"empty-image": {
+			Name:       "empty-image",
+			Image:      "",
+			PullPolicy: composetypes.PullPolicyAlways,
+		},
+	}
+
+	plan := buildProjectImagePullPlan(services)
+
+	assert.Len(t, plan, 2)
+	assert.Equal(t, imagePullModeAlways, plan["redis:latest"])
+	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
 }

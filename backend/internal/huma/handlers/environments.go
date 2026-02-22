@@ -476,18 +476,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *m
 
 	// Sync registries and git repositories in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
-		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
-			bgCtx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(bgCtx, envID); err != nil {
-				slog.WarnContext(bgCtx, "Failed to sync registries to new environment", "environmentID", envID, "environmentName", envName, "error", err.Error())
-			}
-		}(created.ID, created.Name)
-		go func(envID string, envName string) { //nolint:contextcheck // intentional background context for async task
-			bgCtx := context.Background()
-			if err := h.environmentService.SyncRepositoriesToEnvironment(bgCtx, envID); err != nil {
-				slog.WarnContext(bgCtx, "Failed to sync git repositories to new environment", "environmentID", envID, "environmentName", envName, "error", err.Error())
-			}
-		}(created.ID, created.Name)
+		h.triggerEnvironmentResourceSync(ctx, created.ID, created.Name, "environment creation")
 	}
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
@@ -558,7 +547,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentUpdateError{Err: updateErr}).Error())
 	}
 
-	h.triggerPostUpdateTasks(input.ID, updated, pairingSucceeded, &input.Body) //nolint:contextcheck // intentionally detached background tasks
+	h.triggerPostUpdateTasks(ctx, input.ID, updated, pairingSucceeded, &input.Body) //nolint:contextcheck // intentionally detached background tasks
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](updated)
 	if mapErr != nil {
@@ -825,34 +814,45 @@ func (h *EnvironmentHandler) handleEnvironmentPairing(ctx context.Context, envir
 	return pairingSucceeded, nil
 }
 
-func (h *EnvironmentHandler) triggerPostUpdateTasks(environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) { //nolint:contextcheck // intentionally spawns background tasks
+func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) { //nolint:contextcheck // intentionally spawns background tasks
 	if updated.Enabled {
-		go func(envID string, envName string) {
-			ctx := context.Background()
-			status, err := h.environmentService.TestConnection(ctx, envID, nil)
+		detachedCtx := context.WithoutCancel(ctx)
+		go func(syncCtx context.Context, envID string, envName string) {
+			status, err := h.environmentService.TestConnection(syncCtx, envID, nil)
 			if err != nil {
-				slog.WarnContext(ctx, "Failed to test connection after environment update",
+				slog.WarnContext(syncCtx, "Failed to test connection after environment update",
 					"environment_id", envID, "environment_name", envName, "status", status, "error", err)
 			}
-		}(environmentID, updated.Name)
+		}(detachedCtx, environmentID, updated.Name)
 	}
 
 	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
-		go func(envID string, envName string) {
-			ctx := context.Background()
-			if err := h.environmentService.SyncRegistriesToEnvironment(ctx, envID); err != nil {
-				slog.WarnContext(ctx, "Failed to sync registries after environment update",
-					"environmentID", envID, "environmentName", envName, "error", err.Error())
-			}
-		}(environmentID, updated.Name)
-		go func(envID string, envName string) {
-			ctx := context.Background()
-			if err := h.environmentService.SyncRepositoriesToEnvironment(ctx, envID); err != nil {
-				slog.WarnContext(ctx, "Failed to sync git repositories after environment update",
-					"environmentID", envID, "environmentName", envName, "error", err.Error())
-			}
-		}(environmentID, updated.Name)
+		h.triggerEnvironmentResourceSync(ctx, environmentID, updated.Name, "environment update")
 	}
+}
+
+func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context, environmentID string, environmentName string, reason string) { //nolint:contextcheck // intentionally spawns background tasks
+	detachedCtx := context.WithoutCancel(ctx)
+
+	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+		if err := h.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
+			slog.WarnContext(syncCtx, "Failed to sync registries to environment",
+				"environmentID", envID,
+				"environmentName", envName,
+				"reason", syncReason,
+				"error", err.Error())
+		}
+	}(detachedCtx, environmentID, environmentName, reason)
+
+	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+		if err := h.environmentService.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
+			slog.WarnContext(syncCtx, "Failed to sync git repositories to environment",
+				"environmentID", envID,
+				"environmentName", envName,
+				"reason", syncReason,
+				"error", err.Error())
+		}
+	}(detachedCtx, environmentID, environmentName, reason)
 }
 
 // PairEnvironment handles agent pairing callback with API key.
@@ -895,6 +895,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 	}
 
 	slog.InfoContext(ctx, "Environment pairing completed", "environmentID", *envID, "environmentName", env.Name)
+	h.triggerEnvironmentResourceSync(ctx, *envID, env.Name, "environment pairing")
 
 	return &PairEnvironmentOutput{
 		Body: base.ApiResponse[base.MessageResponse]{

@@ -164,6 +164,43 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]mode
 	return envs, nil
 }
 
+// SyncRegistriesToRemoteEnvironments syncs container registries to all eligible remote environments.
+// Eligibility requires a non-local, enabled environment with a configured access token.
+func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Context) error {
+	envs, err := s.ListRemoteEnvironments(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list remote environments for registry sync: %w", err)
+	}
+
+	if len(envs) == 0 {
+		return nil
+	}
+
+	var failedCount int
+	for _, env := range envs {
+		if env.AccessToken == nil || *env.AccessToken == "" {
+			slog.DebugContext(ctx, "Skipping registry sync for environment without access token",
+				"environmentID", env.ID,
+				"environmentName", env.Name)
+			continue
+		}
+
+		if err := s.SyncRegistriesToEnvironment(ctx, env.ID); err != nil {
+			failedCount++
+			slog.WarnContext(ctx, "Failed to sync registries to remote environment",
+				"environmentID", env.ID,
+				"environmentName", env.Name,
+				"error", err.Error())
+		}
+	}
+
+	if failedCount > 0 {
+		return fmt.Errorf("failed to sync registries to %d remote environment(s)", failedCount)
+	}
+
+	return nil
+}
+
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
 	now := time.Now()
 	updates["updated_at"] = &now

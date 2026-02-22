@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -109,4 +110,65 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	require.Equal(t, "user-2", *userEvent.UserID)
 	require.NotNil(t, userEvent.Username)
 	require.Equal(t, "arcane-user", *userEvent.Username)
+}
+
+func TestCloneEventMetadataInternal(t *testing.T) {
+	src := models.JSON{"a": "b"}
+	cloned := cloneEventMetadataInternal(src)
+
+	require.Equal(t, "b", cloned["a"])
+	cloned["a"] = "changed"
+	require.Equal(t, "b", src["a"], "clone should not mutate source metadata")
+
+	nilClone := cloneEventMetadataInternal(nil)
+	require.NotNil(t, nilClone)
+	require.Empty(t, nilClone)
+
+	nested := models.JSON{
+		"outer": map[string]any{
+			"slice": []any{
+				map[string]any{"k": "v"},
+			},
+		},
+	}
+	nestedClone := cloneEventMetadataInternal(nested)
+	require.NotNil(t, nestedClone["outer"])
+
+	outer := nested["outer"].(map[string]any)
+	outerClone := nestedClone["outer"].(models.JSON)
+	sliceOriginal := outer["slice"].([]any)
+	sliceClone := outerClone["slice"].([]any)
+
+	sliceClone[0].(models.JSON)["k"] = "changed"
+	require.Equal(t, "v", sliceOriginal[0].(map[string]any)["k"], "nested map inside slice should be deep-cloned")
+}
+
+func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db)
+
+	metadata := models.JSON{"phase": "pull"}
+	svc.LogErrorEvent(
+		ctx,
+		models.EventTypeImageScan,
+		"image",
+		"img-1",
+		"nginx:latest",
+		"user-1",
+		"arcane",
+		"0",
+		errors.New("pull failed"),
+		metadata,
+	)
+
+	_, mutated := metadata["error"]
+	require.False(t, mutated, "input metadata should not be mutated by LogErrorEvent")
+
+	var saved models.Event
+	err := db.WithContext(ctx).Where("type = ?", models.EventTypeImageScan).First(&saved).Error
+	require.NoError(t, err)
+	require.Equal(t, models.EventSeverityError, saved.Severity)
+	require.Equal(t, "pull", saved.Metadata["phase"])
+	require.Equal(t, "pull failed", saved.Metadata["error"])
 }

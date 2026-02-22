@@ -170,8 +170,8 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/gabriel-vasile/mimetype v1.4.13 h1:46nXokslUBsAJE/wMsp5gtO500a4F3Nkz9Ufpk2AcUM=
 github.com/gabriel-vasile/mimetype v1.4.13/go.mod h1:d+9Oxyo1wTzWdyVUPMmXFvp4F9tea18J8ufA774AB3s=
-github.com/getarcaneapp/arcane/types v1.15.2 h1:+rFSv0TPmTlTcR2azcumS7/imnXCic5JKSr0K0IPW8k=
-github.com/getarcaneapp/arcane/types v1.15.2/go.mod h1:kqkuqZZ9TkfWOvAuzCKq5UTX/11NO77lyPg5ECJrMXo=
+github.com/getarcaneapp/arcane/types v1.15.3 h1:UMhhWPNvy+lGVdg+5w9b47hr83aMe2KfV6dJIs4RHZY=
+github.com/getarcaneapp/arcane/types v1.15.3/go.mod h1:kqkuqZZ9TkfWOvAuzCKq5UTX/11NO77lyPg5ECJrMXo=
 github.com/gin-contrib/cors v1.7.6 h1:3gQ8GMzs1Ylpf70y8bMw4fVpycXIeX1ZemuSQIsnQQY=
 github.com/gin-contrib/cors v1.7.6/go.mod h1:Ulcl+xN4jel9t1Ry8vqph23a60FwH9xVLd+3ykmTjOk=
 github.com/gin-contrib/sse v1.1.0 h1:n0w2GMuUpWDVp7qSpvze6fAu9iRxJY4Hmj6AmBOU05w=

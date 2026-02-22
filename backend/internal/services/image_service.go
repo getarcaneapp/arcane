@@ -473,10 +473,8 @@ func (s *ImageService) cleanupVulnerabilityRecordsAfterPruneInternal(ctx context
 		return
 	}
 
-	for _, imgID := range idsToDelete {
-		if err := s.vulnerabilityService.DeleteScanResult(ctx, imgID); err != nil {
-			slog.WarnContext(ctx, "failed to delete vulnerability scan record after prune", "id", imgID, "error", err)
-		}
+	if err := s.vulnerabilityService.DeleteScanResultsByImageIDs(ctx, idsToDelete); err != nil {
+		slog.WarnContext(ctx, "failed to delete vulnerability scan records after prune", "count", len(idsToDelete), "error", err)
 	}
 }
 
@@ -517,10 +515,9 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	}
 
 	var (
-		dockerImages     []image.Summary
-		containers       []container.Summary
-		updateRecords    []models.ImageUpdateRecord
-		vulnerabilityMap map[string]*vulnerability.ScanSummary
+		dockerImages  []image.Summary
+		containers    []container.Summary
+		updateRecords []models.ImageUpdateRecord
 	)
 
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -545,27 +542,18 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil
 	})
 
-	// Fetch update records from DB
-	g.Go(func() error {
-		if s.db != nil {
-			return s.db.WithContext(groupCtx).Find(&updateRecords).Error
-		}
-		return nil
-	})
-
 	if err := g.Wait(); err != nil {
 		return nil, pagination.Response{}, err
 	}
 
-	if s.vulnerabilityService != nil {
-		imageIDs := make([]string, 0, len(dockerImages))
-		for _, img := range dockerImages {
-			imageIDs = append(imageIDs, img.ID)
-		}
-		var err error
-		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
-		if err != nil {
-			return nil, pagination.Response{}, err
+	imageIDs := make([]string, 0, len(dockerImages))
+	for _, img := range dockerImages {
+		imageIDs = append(imageIDs, img.ID)
+	}
+
+	if s.db != nil && len(imageIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
+			return nil, pagination.Response{}, fmt.Errorf("failed to fetch image update records: %w", err)
 		}
 	}
 
@@ -573,11 +561,21 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	usageMap := buildUsageMapInternal(containers, projectIDByName)
 	updateMap := buildUpdateMap(updateRecords)
 
-	items := mapDockerImagesToDTOs(dockerImages, usageMap, updateMap, vulnerabilityMap)
+	items := mapDockerImagesToDTOs(dockerImages, usageMap, updateMap, nil)
 
 	config := s.getImagePaginationConfig()
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
+
+	if s.vulnerabilityService != nil && len(result.Items) > 0 {
+		pageImageIDs := getImageIDsFromSummariesInternal(result.Items)
+		vulnerabilityMap, err := s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, pageImageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
+		}
+		applyVulnerabilitySummariesToItemsInternal(result.Items, vulnerabilityMap)
+	}
+
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
@@ -713,6 +711,36 @@ func buildUpdateMap(records []models.ImageUpdateRecord) map[string]*models.Image
 		updateMap[records[i].ID] = &records[i]
 	}
 	return updateMap
+}
+
+func getImageIDsFromSummariesInternal(items []imagetypes.Summary) []string {
+	seen := make(map[string]struct{}, len(items))
+	ids := make([]string, 0, len(items))
+
+	for _, item := range items {
+		if item.ID == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		ids = append(ids, item.ID)
+	}
+
+	return ids
+}
+
+func applyVulnerabilitySummariesToItemsInternal(items []imagetypes.Summary, vulnerabilityMap map[string]*vulnerability.ScanSummary) {
+	if len(items) == 0 || len(vulnerabilityMap) == 0 {
+		return
+	}
+
+	for i := range items {
+		if summary, exists := vulnerabilityMap[items[i].ID]; exists {
+			items[i].VulnerabilityScan = summary
+		}
+	}
 }
 
 func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {

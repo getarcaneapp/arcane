@@ -4,9 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
+	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
@@ -228,4 +234,275 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
+}
+
+func TestAnyImageIDsInUseSet(t *testing.T) {
+	inUseSet := map[string]struct{}{
+		"sha256:one": {},
+		"sha256:two": {},
+	}
+
+	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, inUseSet))
+	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:three", "sha256:two"}, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:three"}, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal(nil, inUseSet))
+	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, nil))
+}
+
+func TestIsImageIDLikeReference(t *testing.T) {
+	assert.True(t, isImageIDLikeReferenceInternal("sha256:abcdef"))
+	assert.True(t, isImageIDLikeReferenceInternal("SHA256:ABCDEF"))
+	assert.False(t, isImageIDLikeReferenceInternal("nginx:latest"))
+	assert.False(t, isImageIDLikeReferenceInternal("docker.io/library/nginx:latest"))
+}
+
+func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing.T) {
+	svc := &UpdaterService{}
+	out := map[string]struct{}{}
+
+	// Simulate fast-path behavior expectations without Docker client dependency.
+	containers := []container.Summary{
+		{Image: "nginx:latest"},
+		{Image: "sha256:abcdef"},
+		{Image: "redis:7"},
+	}
+
+	for _, c := range containers {
+		if c.Image != "" && !isImageIDLikeReferenceInternal(c.Image) {
+			out[svc.normalizeRef(c.Image)] = struct{}{}
+		}
+	}
+
+	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
+	assert.Contains(t, out, svc.normalizeRef("redis:7"))
+	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+}
+
+func setupUpdaterServiceTestDB(t *testing.T) *database.DB {
+	t.Helper()
+
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+
+	return &database.DB{DB: db}
+}
+
+func TestUpdaterService_ClearImageUpdateRecordByID_AvoidsRepoCanonicalMismatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupUpdaterServiceTestDB(t)
+
+	record := models.ImageUpdateRecord{
+		ID:             "sha256:old-image",
+		Repository:     "nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now(),
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
+
+	svc := &UpdaterService{db: db}
+
+	// Simulate the previous clear path that used normalized repo/tag.
+	require.NoError(t, svc.clearImageUpdateRecord(ctx, "docker.io/library/nginx", "latest"))
+
+	var unchanged models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&unchanged).Error)
+	assert.True(t, unchanged.HasUpdate, "repo/tag clear should not match when repository canonicalization differs")
+
+	require.NoError(t, svc.clearImageUpdateRecordByID(ctx, record.ID))
+
+	var cleared models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&cleared).Error)
+	assert.False(t, cleared.HasUpdate, "clear by image ID should always match the intended record")
+}
+
+func TestUpdaterService_CollectUsedImages_NoSourcesReturnsError(t *testing.T) {
+	svc := &UpdaterService{}
+
+	used, err := svc.collectUsedImages(context.Background())
+	require.Error(t, err)
+	assert.Nil(t, used)
+}
+
+func TestUpdaterService_ApplyPending_SkipsWhenUsedImageDiscoveryFails(t *testing.T) {
+	ctx := context.Background()
+	db := setupUpdaterServiceTestDB(t)
+
+	record := models.ImageUpdateRecord{
+		ID:             "sha256:pending-image",
+		Repository:     "nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now(),
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
+
+	svc := &UpdaterService{
+		db: db,
+		dockerService: &DockerClientService{
+			config: &config.Config{DockerHost: "://bad-host"},
+		},
+	}
+
+	out, err := svc.ApplyPending(ctx, false)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Empty(t, out.Items)
+	assert.Zero(t, out.Checked)
+	assert.Zero(t, out.Updated)
+	assert.NotEmpty(t, out.Duration)
+
+	var persisted models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&persisted).Error)
+	assert.True(t, persisted.HasUpdate, "record should remain pending when used-image discovery fails")
+}
+
+func TestActiveComposeProjectNameSetInternal(t *testing.T) {
+	projects := []models.Project{
+		{Name: "My-App", Status: models.ProjectStatusRunning},
+		{Name: "skip-me", Status: models.ProjectStatusStopped},
+		{Name: "another_app", Status: models.ProjectStatusPartiallyRunning},
+		{Name: "", Status: models.ProjectStatusRunning},
+	}
+
+	got := activeComposeProjectNameSetInternal(projects)
+
+	assert.Contains(t, got, "My-App")
+	assert.Contains(t, got, "my-app")
+	assert.Contains(t, got, "another_app")
+	assert.NotContains(t, got, "skip-me")
+}
+
+func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
+	svc := &UpdaterService{}
+	out := map[string]struct{}{}
+	activeProjects := map[string]struct{}{
+		"myapp": {},
+	}
+
+	composeContainers := []container.Summary{
+		{
+			Image: "nginx:latest",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+			},
+		},
+		{
+			Image: "redis:7",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+				arcaneupdater.LabelUpdater:   "false",
+			},
+		},
+		{
+			Image: "postgres:16",
+			Labels: map[string]string{
+				"com.docker.compose.project": "otherapp",
+			},
+		},
+		{
+			Image: "sha256:abcdef",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+			},
+		},
+	}
+
+	svc.collectUsedImagesFromComposeContainersInternal(composeContainers, activeProjects, out)
+
+	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
+	assert.NotContains(t, out, svc.normalizeRef("redis:7"))
+	assert.NotContains(t, out, svc.normalizeRef("postgres:16"))
+	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+}
+
+func TestResolveContainerImageMatchInternal(t *testing.T) {
+	svc := &UpdaterService{}
+	updatedNorm := map[string]string{
+		svc.normalizeRef("nginx:latest"): "nginx:latest",
+	}
+	oldIDToNewRef := map[string]string{
+		"sha256:img1": "redis:7",
+	}
+
+	tests := []struct {
+		name        string
+		container   container.Summary
+		wantRef     string
+		wantMatchID string
+	}{
+		{
+			name: "match by image id",
+			container: container.Summary{
+				ImageID: "sha256:img1",
+				Image:   "some/other:tag",
+			},
+			wantRef:     "redis:7",
+			wantMatchID: "sha256:img1",
+		},
+		{
+			name: "match by normalized image tag from summary",
+			container: container.Summary{
+				ImageID: "sha256:unknown",
+				Image:   "docker.io/library/nginx:latest",
+			},
+			wantRef:     "nginx:latest",
+			wantMatchID: svc.normalizeRef("nginx:latest"),
+		},
+		{
+			name: "image id-like summary value cannot be tag matched",
+			container: container.Summary{
+				ImageID: "sha256:unknown",
+				Image:   "sha256:abcdef",
+			},
+			wantRef:     "",
+			wantMatchID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, updatedNorm)
+			assert.Equal(t, tt.wantRef, gotRef)
+			assert.Equal(t, tt.wantMatchID, gotMatch)
+		})
+	}
+}
+
+func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
+	svc := &UpdaterService{
+		updatingContainers: map[string]bool{},
+		updatingProjects:   map[string]bool{},
+	}
+
+	stopContainer := svc.beginContainerUpdateInternal("container-1")
+	stopProject := svc.beginProjectUpdateInternal("project-a")
+
+	status := svc.GetStatus()
+	assert.Equal(t, 1, status.UpdatingContainers)
+	assert.Equal(t, 1, status.UpdatingProjects)
+	assert.ElementsMatch(t, []string{"container-1"}, status.ContainerIds)
+	assert.ElementsMatch(t, []string{"project-a"}, status.ProjectIds)
+
+	stopContainer()
+	stopProject()
+
+	status = svc.GetStatus()
+	assert.Zero(t, status.UpdatingContainers)
+	assert.Zero(t, status.UpdatingProjects)
+	assert.Empty(t, status.ContainerIds)
+	assert.Empty(t, status.ProjectIds)
+}
+
+func TestComposeProjectNameFromLabelsInternal(t *testing.T) {
+	assert.Equal(t, "", composeProjectNameFromLabelsInternal(nil))
+	assert.Equal(t, "", composeProjectNameFromLabelsInternal(map[string]string{}))
+	assert.Equal(t, "my-project", composeProjectNameFromLabelsInternal(map[string]string{
+		"com.docker.compose.project": " my-project ",
+	}))
 }
