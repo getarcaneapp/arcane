@@ -51,14 +51,18 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
       - arm64
+      - "386"
       - arm
     goarm:
       - "7"
     goamd64:
       - v1
+    go386:
+      - sse2
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
