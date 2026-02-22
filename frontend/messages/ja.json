@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} コンテナを除外しました",
 	"auto_update_exclude_description": "自動更新から除外するコンテナを選択します。",
 	"auto_update_excluded_containers": "除外コンテナ",
+	"auto_heal_excluded_containers": "除外コンテナ",
+	"auto_heal_exclude_description": "自動治癒監視から除外するコンテナを選択します。",
+	"auto_heal_max_restarts_label": "最大再起動数",
+	"auto_heal_max_restarts_description": "再起動ウィンドウ内のコンテナごとの自動再起動の最大数。",
+	"auto_heal_restart_window_label": "ウィンドウを再起動(分)",
+	"auto_heal_restart_window_description": "自動再起動カウントのための時間ウィンドウを分単位で設定します。この期間の後にリセットします。",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "脆弱性が見つかりました通知",
 	"notifications_test_vulnerability_notification": "脆弱性通知のテスト",
 	"notifications_test_prune_report_notification": "プルーンレポートの通知をテストする",
+	"notifications_test_auto_heal_notification": "自動治療の通知をテストする",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "含む",
 	"notifications_event_prune_report_label": "システム削除レポート",
 	"notifications_event_prune_report_description": "スケジュールされたプルーン操作が完了したときに概要レポートを受信する",
+	"notifications_event_auto_heal_label": "自動回復再起動",
+	"notifications_event_auto_heal_description": "不健康なコンテナが自動的に再起動されたときに通知します",
 	"version_info_build_features": "機能をビルドする"
 }
