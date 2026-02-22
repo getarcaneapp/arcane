@@ -115,7 +115,7 @@
 	let rowSelection = $state<RowSelectionState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let sorting = $state<SortingState>([]);
-	let globalFilter = $state<string>('');
+	let globalFilter = $state<string>(requestOptions?.search ?? '');
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
@@ -186,22 +186,15 @@
 
 		const persistedSearch = snapshot.search;
 		const currentSearch = (requestOptions?.search ?? '').trim();
-		if (persistedSearch !== globalFilter) {
-			globalFilter = persistedSearch;
+		// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
+		const effectiveSearch = currentSearch || persistedSearch;
+		if (effectiveSearch !== globalFilter) {
+			globalFilter = effectiveSearch;
 		}
-		if (persistedSearch) {
-			if (persistedSearch !== currentSearch) {
-				requestOptions = {
-					...requestOptions,
-					search: persistedSearch,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-				};
-				shouldRefresh = true;
-			}
-		} else if (currentSearch) {
+		if (effectiveSearch !== currentSearch) {
 			requestOptions = {
 				...requestOptions,
-				search: undefined,
+				search: effectiveSearch || undefined,
 				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
