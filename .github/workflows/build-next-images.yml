@@ -72,9 +72,9 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: "~> v2"
-          args: release --clean --skip=sign,announce,validate,nfpm
+          args: release --clean --skip=sign,announce,validate,nfpm,homebrew
         env:
-          GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_NEXT: "true"
           SKIP_RELEASE: "true"
           SKIP_CHANGELOG: "true"
