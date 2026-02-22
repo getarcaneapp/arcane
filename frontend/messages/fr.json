@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "Conteneurs {count} exclus",
 	"auto_update_exclude_description": "Sélectionnez les conteneurs à exclure des mises à jour automatiques.",
 	"auto_update_excluded_containers": "Conteneurs exclus",
+	"auto_heal_excluded_containers": "Conteneurs exclus",
+	"auto_heal_exclude_description": "Sélectionnez les conteneurs à exclure de la surveillance auto-guérison.",
+	"auto_heal_max_restarts_label": "Redémarrage Max",
+	"auto_heal_max_restarts_description": "Nombre maximum de redémarrage automatique par conteneur dans la fenêtre de redémarrage.",
+	"auto_heal_restart_window_label": "Redémarrer la fenêtre (minutes)",
+	"auto_heal_restart_window_description": "Fenêtre de temps en minutes pour compter les redémarrages automatiques. Réinitialisation après cette période.",
 	"_comment_common_actions": "=== COMMUN - ÉTAT D'ACTION ===",
 	"common_action_creating": "Création en cours…",
 	"common_action_deleting": "Suppression en cours…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Notification de vulnérabilité trouvée",
 	"notifications_test_vulnerability_notification": "Test de la notification de vulnérabilité",
 	"notifications_test_prune_report_notification": "Notification de rapport d'effacement de test",
+	"notifications_test_auto_heal_notification": "Notification de guérison auto test",
 	"notifications_apprise_title": "Intégration Apprise",
 	"notifications_apprise_description": "Configurer l'API Apprise pour des notifications unifiées à travers plusieurs services",
 	"notifications_apprise_enabled_label": "Activer l'Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Inclut",
 	"notifications_event_prune_report_label": "Rapport de suppression du système",
 	"notifications_event_prune_report_description": "Recevoir un rapport récapitulatif lorsqu'une opération planifiée de nettoyage se termine",
+	"notifications_event_auto_heal_label": "Redémarrage de la guérison automatique",
+	"notifications_event_auto_heal_description": "Notifier lorsqu'un conteneur malsain est automatiquement redémarré",
 	"version_info_build_features": "Fonctionnalités de compilation"
 }
