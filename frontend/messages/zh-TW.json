@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "已排除 {count} 個容器",
 	"auto_update_exclude_description": "選擇要從自動更新排除的容器。",
 	"auto_update_excluded_containers": "排除的容器",
+	"auto_heal_excluded_containers": "Excluded Containers",
+	"auto_heal_exclude_description": "Select containers to exclude from auto-heal monitoring.",
+	"auto_heal_max_restarts_label": "Max Restarts",
+	"auto_heal_max_restarts_description": "Maximum number of automatic restarts per container within the restart window.",
+	"auto_heal_restart_window_label": "Restart Window (minutes)",
+	"auto_heal_restart_window_description": "Time window in minutes for counting automatic restarts. Resets after this period.",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "正在建立…",
 	"common_action_deleting": "正在刪除…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "發現漏洞通知",
 	"notifications_test_vulnerability_notification": "測試漏洞通知",
 	"notifications_test_prune_report_notification": "測試修剪報告通知",
+	"notifications_test_auto_heal_notification": "Test Auto-Heal Notification",
 	"notifications_apprise_title": "Apprise 整合",
 	"notifications_apprise_description": "設定 Apprise API 以使用跨多個服務的通一通知",
 	"notifications_apprise_enabled_label": "啟用 Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "包含",
 	"notifications_event_prune_report_label": "系統修剪報告",
 	"notifications_event_prune_report_description": "排程修剪完程式接收摘要報告",
+	"notifications_event_auto_heal_label": "Auto-Heal Restart",
+	"notifications_event_auto_heal_description": "Notify when an unhealthy container is automatically restarted",
 	"version_info_build_features": "建置功能"
 }
