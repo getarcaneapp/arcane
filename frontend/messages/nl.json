@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} containers uitgesloten",
 	"auto_update_exclude_description": "Selecteer containers om uit te sluiten van automatische updates.",
 	"auto_update_excluded_containers": "Uitgesloten containers",
+	"auto_heal_excluded_containers": "Uitgesloten containers",
+	"auto_heal_exclude_description": "Selecteer containers om uit te sluiten van auto-genezing monitoring.",
+	"auto_heal_max_restarts_label": "Max. aantal herstart",
+	"auto_heal_max_restarts_description": "Maximum aantal automatische herstart per container binnen het herstart venster.",
+	"auto_heal_restart_window_label": "Venster herstarten (minuten)",
+	"auto_heal_restart_window_description": "Tijd venster in minuten voor het tellen van automatische herstart. Reset na deze periode.",
 	"_comment_common_actions": "=== COMMON - ACTIE STATIST===",
 	"common_action_creating": "Maken…",
 	"common_action_deleting": "Verwijderenchar@@0",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Kwetsbaarheid gevonden melding",
 	"notifications_test_vulnerability_notification": "Test kwetsbaarheid melding",
 	"notifications_test_prune_report_notification": "Test Opschonen Rapport Notificatie",
+	"notifications_test_auto_heal_notification": "Test Auto-Genees Notificatie",
 	"notifications_apprise_title": "Integratie met Apprise",
 	"notifications_apprise_description": "Configureer Apprise API voor uniforme meldingen over meerdere services",
 	"notifications_apprise_enabled_label": "Inschakelen Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Includes",
 	"notifications_event_prune_report_label": "Systeem opschonen rapport",
 	"notifications_event_prune_report_description": "Ontvang een samenvatting wanneer een geplande afschrijving is voltooid",
+	"notifications_event_auto_heal_label": "Automatisch genezen opnieuw opstarten",
+	"notifications_event_auto_heal_description": "Waarschuw wanneer een ongezonde container automatisch opnieuw wordt gestart",
 	"version_info_build_features": "Functies bouwen"
 }
