@@ -386,6 +386,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
 // It pulls the new image, stops the container, removes it, and recreates it with the new image.
+//
+//nolint:gocognit // single-container update flow is intentionally linear with explicit early exits for failure reporting
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
@@ -462,8 +464,32 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	// Get the image reference
-	imageRef := targetContainer.Image
+	// Resolve the best pullable image reference for this container.
+	configImageRef := ""
+	if inspectBefore.Config != nil {
+		configImageRef = strings.TrimSpace(inspectBefore.Config.Image)
+	}
+	imageRef, imageRefSource := resolvePullableImageRefInternal(targetContainer.Image, configImageRef, nil)
+	if imageRef == "" && inspectBefore.Image != "" {
+		if imageInspect, inspectErr := dcli.ImageInspect(ctx, inspectBefore.Image); inspectErr == nil {
+			imageRef, imageRefSource = resolvePullableImageRefInternal(targetContainer.Image, configImageRef, imageInspect.RepoTags)
+		} else {
+			slog.DebugContext(ctx, "UpdateSingleContainer: failed to inspect container image for fallback refs", "containerID", containerID, "imageID", inspectBefore.Image, "error", inspectErr)
+		}
+	}
+	if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "skipped",
+			Error:        "unable to resolve a pullable image reference for container",
+		})
+		out.Skipped++
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
 	normalizedRef := s.normalizeRef(imageRef)
 	repo, tag := s.parseRepoAndTag(normalizedRef)
 
@@ -480,7 +506,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	slog.InfoContext(ctx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef)
+	slog.InfoContext(ctx, "UpdateSingleContainer: pulling new image", "containerID", containerID, "image", normalizedRef, "imageRefSource", imageRefSource)
 
 	// Pull the latest image using the image service
 	if err := s.imageService.PullImage(ctx, normalizedRef, io.Discard, systemUser, nil); err != nil {
@@ -1394,6 +1420,26 @@ func (s *UpdaterService) resolveContainerImageMatchInternal(c container.Summary,
 	norm := s.normalizeRef(imageRef)
 	if nr, ok := updatedNorm[norm]; ok {
 		return nr, norm
+	}
+
+	return "", ""
+}
+
+func resolvePullableImageRefInternal(summaryImage, inspectConfigImage string, repoTags []string) (ref, source string) {
+	if image := strings.TrimSpace(inspectConfigImage); image != "" && !isImageIDLikeReferenceInternal(image) {
+		return image, "container_inspect_config"
+	}
+
+	if image := strings.TrimSpace(summaryImage); image != "" && !isImageIDLikeReferenceInternal(image) {
+		return image, "container_summary"
+	}
+
+	for _, tag := range repoTags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed == "" || trimmed == "<none>:<none>" || isImageIDLikeReferenceInternal(trimmed) {
+			continue
+		}
+		return trimmed, "image_repo_tag"
 	}
 
 	return "", ""

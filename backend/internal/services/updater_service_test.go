@@ -474,6 +474,56 @@ func TestResolveContainerImageMatchInternal(t *testing.T) {
 	}
 }
 
+func TestResolvePullableImageRefInternal(t *testing.T) {
+	tests := []struct {
+		name         string
+		summaryImage string
+		inspectImage string
+		repoTags     []string
+		wantRef      string
+		wantSource   string
+	}{
+		{
+			name:         "prefers inspect config image",
+			summaryImage: "portainer/portainer.ce:latest",
+			inspectImage: "ghcr.io/example/app:1.2.3",
+			wantRef:      "ghcr.io/example/app:1.2.3",
+			wantSource:   "container_inspect_config",
+		},
+		{
+			name:         "falls back to summary image when inspect image is id-like",
+			summaryImage: "portainer/portainer.ce:latest",
+			inspectImage: "sha256:abcdef",
+			wantRef:      "portainer/portainer.ce:latest",
+			wantSource:   "container_summary",
+		},
+		{
+			name:         "falls back to repo tag when summary and inspect are id-like",
+			summaryImage: "sha256:abc123",
+			inspectImage: "sha256:def456",
+			repoTags:     []string{"<none>:<none>", "docker.io/library/portainer/portainer.ce:latest"},
+			wantRef:      "docker.io/library/portainer/portainer.ce:latest",
+			wantSource:   "image_repo_tag",
+		},
+		{
+			name:         "returns empty when only id-like candidates exist",
+			summaryImage: "sha256:abc123",
+			inspectImage: "sha256:def456",
+			repoTags:     []string{"<none>:<none>", "sha256:fff"},
+			wantRef:      "",
+			wantSource:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRef, gotSource := resolvePullableImageRefInternal(tt.summaryImage, tt.inspectImage, tt.repoTags)
+			assert.Equal(t, tt.wantRef, gotRef)
+			assert.Equal(t, tt.wantSource, gotSource)
+		})
+	}
+}
+
 func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
 	svc := &UpdaterService{
 		updatingContainers: map[string]bool{},

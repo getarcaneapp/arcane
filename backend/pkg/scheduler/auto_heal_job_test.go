@@ -20,7 +20,7 @@ func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {
 	require.True(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
 
 	// Record 4 restarts (under limit of 5)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		job.RecordRestartExported("container-1")
 	}
 
@@ -31,7 +31,7 @@ func TestAutoHeal_CanRestart_AtLimit(t *testing.T) {
 	job := newTestAutoHealJob()
 
 	// Record exactly 5 restarts (at limit)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		job.RecordRestartExported("container-1")
 	}
 
@@ -43,7 +43,7 @@ func TestAutoHeal_CanRestart_WindowExpiry(t *testing.T) {
 
 	// Record 5 restarts 31 minutes ago (outside window)
 	oldTime := time.Now().Add(-31 * time.Minute)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		job.RecordRestartAtExported("container-1", oldTime)
 	}
 
@@ -56,12 +56,12 @@ func TestAutoHeal_CanRestart_MixedTimestamps(t *testing.T) {
 
 	// Record 3 old restarts (outside window)
 	oldTime := time.Now().Add(-31 * time.Minute)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		job.RecordRestartAtExported("container-1", oldTime)
 	}
 
 	// Record 4 recent restarts (inside window)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		job.RecordRestartExported("container-1")
 	}
 
@@ -79,7 +79,7 @@ func TestAutoHeal_CanRestart_DifferentContainers(t *testing.T) {
 	job := newTestAutoHealJob()
 
 	// Fill up container-1
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		job.RecordRestartExported("container-1")
 	}
 
@@ -101,7 +101,7 @@ func TestAutoHeal_ResetRestartTracking(t *testing.T) {
 	job := newTestAutoHealJob()
 
 	// Fill up container-1
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		job.RecordRestartExported("container-1")
 	}
 	require.False(t, job.CanRestartExported("container-1", 5, 30*time.Minute))
