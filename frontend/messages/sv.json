@@ -185,6 +185,12 @@
 	"auto_update_containers_excluded_many": "{count} behållare exkluderade",
 	"auto_update_exclude_description": "Välj behållare för att exkludera från automatiska uppdateringar.",
 	"auto_update_excluded_containers": "Uteslutna behållare",
+	"auto_heal_excluded_containers": "Uteslutna behållare",
+	"auto_heal_exclude_description": "Välj behållare för att utesluta från automatisk läkning övervakning.",
+	"auto_heal_max_restarts_label": "Max antal omstarter",
+	"auto_heal_max_restarts_description": "Maximalt antal automatiska omstarter per behållare i omstartsfönstret.",
+	"auto_heal_restart_window_label": "Starta om fönster (minuter)",
+	"auto_heal_restart_window_description": "Tidsfönster i minuter för att räkna automatisk omstart. Återställer efter denna period.",
 	"_comment_common_actions": "=== COMMON - ACTION STATES ===",
 	"common_action_creating": "Creating…",
 	"common_action_deleting": "Deleting…",
@@ -1705,6 +1711,7 @@
 	"notifications_email_test_vulnerability_found": "Sårbarhet Hittade notifikation",
 	"notifications_test_vulnerability_notification": "Test Sårbarhetsnotifikation",
 	"notifications_test_prune_report_notification": "Testa beskära rapport notifikation",
+	"notifications_test_auto_heal_notification": "Testa automatisk läknings avisering",
 	"notifications_apprise_title": "Apprise Integration",
 	"notifications_apprise_description": "Configure Apprise API for unified notifications across multiple services",
 	"notifications_apprise_enabled_label": "Enable Apprise",
@@ -2004,5 +2011,7 @@
 	"project_includes": "Inkluderar",
 	"notifications_event_prune_report_label": "Rapport om systembeskärning",
 	"notifications_event_prune_report_description": "Få en sammanfattande rapport när en schemalagd beskärningsåtgärd slutför",
+	"notifications_event_auto_heal_label": "Starta om automatiskt",
+	"notifications_event_auto_heal_description": "Meddela när en ohälsosam behållare automatiskt startas om",
 	"version_info_build_features": "Bygg funktioner"
 }
