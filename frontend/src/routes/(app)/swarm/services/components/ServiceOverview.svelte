@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmServiceInspect } from '$lib/types/swarm.type';
 	import { format, formatDistanceToNow } from 'date-fns';
-	import { InfoIcon } from '$lib/icons';
+	import { InfoIcon, ConnectionIcon } from '$lib/icons';
 	import { truncateImageDigest } from '$lib/utils/string.utils';
 
 	interface Props {
@@ -37,6 +37,7 @@
 	}
 
 	const stackName = $derived(labels?.['com.docker.stack.namespace'] || '');
+	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
 </script>
@@ -147,6 +148,26 @@
 					<div class="text-muted-foreground text-xs">
 						{formatDate(service.updatedAt)}
 					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.swarm_nodes_column()}
+					</div>
+					{#if nodes.length > 0}
+						<div class="flex flex-wrap gap-1.5">
+							{#each nodes as node}
+								<div class="flex items-center gap-1">
+									<ConnectionIcon class="text-muted-foreground size-3" />
+									<span class="text-foreground text-sm font-medium">{node}</span>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 

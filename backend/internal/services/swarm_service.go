@@ -120,6 +120,34 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 	}
 
 	inspect := swarmtypes.NewServiceInspect(service)
+
+	// Resolve running nodes for this service (same pattern as ListServicesPaginated)
+	nodes, err := dockerClient.NodeList(ctx, swarm.NodeListOptions{})
+	if err == nil {
+		nodeNameByID := make(map[string]string, len(nodes))
+		for _, node := range nodes {
+			nodeNameByID[node.ID] = node.Description.Hostname
+		}
+
+		tasks, err := dockerClient.TaskList(ctx, swarm.TaskListOptions{})
+		if err == nil {
+			nodeSet := make(map[string]struct{})
+			for _, task := range tasks {
+				if task.ServiceID == serviceID && string(task.Status.State) == "running" {
+					if name, ok := nodeNameByID[task.NodeID]; ok {
+						nodeSet[name] = struct{}{}
+					}
+				}
+			}
+			nodeNames := make([]string, 0, len(nodeSet))
+			for name := range nodeSet {
+				nodeNames = append(nodeNames, name)
+			}
+			sort.Strings(nodeNames)
+			inspect.Nodes = nodeNames
+		}
+	}
+
 	return &inspect, nil
 }
 

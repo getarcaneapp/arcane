@@ -152,6 +152,9 @@ type ServiceInspect struct {
 
 	// UpdateStatus is the current update status, if any.
 	UpdateStatus *swarm.UpdateStatus `json:"updateStatus,omitempty"`
+
+	// Nodes is a list of node hostnames running this service.
+	Nodes []string `json:"nodes,omitempty"`
 }
 
 type ServiceCreateRequest struct {
