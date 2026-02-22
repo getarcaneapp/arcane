@@ -128,21 +128,31 @@
 										</Card.Root>
 									{/if}
 
+									{#if bindBacked && mount.volumeOptions?.device}
+										<Card.Root variant="outlined">
+											<Card.Content class="flex flex-col p-3">
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">Device:</div>
+												<div
+													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+													title="Click to select"
+												>
+													{mount.volumeOptions.device}
+												</div>
+											</Card.Content>
+										</Card.Root>
+									{/if}
+
 									{#if mount.devicePath}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
 												<div class="text-muted-foreground mb-2 text-xs font-semibold">
-													{m.containers_mount_label_host()}
+													{bindBacked ? 'Volume Path:' : m.containers_mount_label_host()}
 												</div>
 												<div
 													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
 													title="Click to select"
 												>
-													{#if bindBacked && mount.volumeOptions?.device}
-														{mount.volumeOptions.device}
-													{:else}
-														{mount.devicePath}
-													{/if}
+													{mount.devicePath}
 												</div>
 											</Card.Content>
 										</Card.Root>
