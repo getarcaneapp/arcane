@@ -2,7 +2,19 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { DockIcon, LayersIcon, GlobeIcon, EllipsisIcon, EditIcon, TrashIcon, NetworksIcon, VolumesIcon } from '$lib/icons';
+	import {
+		DockIcon,
+		LayersIcon,
+		GlobeIcon,
+		EllipsisIcon,
+		EditIcon,
+		TrashIcon,
+		NetworksIcon,
+		VolumesIcon,
+		FileTextIcon,
+		JobsIcon,
+		RedeployIcon
+	} from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmServiceSummary, SwarmServicePort, SwarmServiceMount } from '$lib/types/swarm.type';
@@ -15,7 +27,9 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { truncateImageDigest } from '$lib/utils/string.utils';
+	import { goto } from '$app/navigation';
 	import ServiceEditorDialog from './service-editor-dialog.svelte';
+	import ServiceLogsDialog from './service-logs-dialog.svelte';
 
 	let {
 		services = $bindable(),
@@ -53,13 +67,17 @@
 		return 'gray';
 	}
 
-	let isLoading = $state({ inspect: false, update: false, remove: false });
+	let isLoading = $state({ inspect: false, update: false, remove: false, rollback: false });
 	let editOpen = $state(false);
 	let editServiceId = $state<string | null>(null);
 	let editServiceName = $state('');
 	let editSpec = $state('');
 	let editOptions = $state('');
 	let editVersion = $state(0);
+
+	let logsOpen = $state(false);
+	let logsServiceId = $state<string | null>(null);
+	let logsServiceName = $state('');
 
 	const isAnyLoading = $derived(Object.values(isLoading).some(Boolean));
 
@@ -117,10 +135,42 @@
 		});
 	}
 
+	function handleRollback(service: SwarmServiceSummary) {
+		openConfirmDialog({
+			title: m.swarm_service_rollback_title(),
+			message: m.swarm_service_rollback_confirm({ name: service.name }),
+			confirm: {
+				label: m.swarm_service_rollback(),
+				destructive: false,
+				action: async () => {
+					handleApiResultWithCallbacks({
+						result: await tryCatch(swarmService.rollbackService(service.id)),
+						message: m.swarm_service_rollback_failed({ name: service.name }),
+						setLoadingState: (v) => (isLoading.rollback = v),
+						onSuccess: async () => {
+							toast.success(m.swarm_service_rollback_success({ name: service.name }));
+							services = await swarmService.getServices(requestOptions);
+						}
+					});
+				}
+			}
+		});
+	}
+
+	function viewTasks(service: SwarmServiceSummary) {
+		goto(`/swarm/tasks?search=${encodeURIComponent(service.name)}`);
+	}
+
+	function openLogs(service: SwarmServiceSummary) {
+		logsServiceId = service.id;
+		logsServiceName = service.name;
+		logsOpen = true;
+	}
+
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
-		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'name', title: m.swarm_service(), sortable: true, cell: NameCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
 		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true, cell: ReplicasCell },
 		{ id: 'nodes', accessorFn: (item: SwarmServiceSummary) => item.nodes, title: m.swarm_nodes_column(), cell: NodesCell },
@@ -345,9 +395,21 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
+				<DropdownMenu.Item onclick={() => openLogs(item)}>
+					<FileTextIcon class="size-4" />
+					{m.common_logs()}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => viewTasks(item)}>
+					<JobsIcon class="size-4" />
+					{m.swarm_service_view_tasks()}
+				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => openEdit(item)} disabled={isAnyLoading}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => handleRollback(item)} disabled={isAnyLoading}>
+					<RedeployIcon class="size-4" />
+					{m.swarm_service_rollback()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
@@ -369,6 +431,8 @@
 	isLoading={isLoading.update}
 	onSubmit={handleUpdate}
 />
+
+<ServiceLogsDialog bind:open={logsOpen} serviceId={logsServiceId} serviceName={logsServiceName} />
 
 <ArcaneTable
 	persistKey="arcane-swarm-services-table"

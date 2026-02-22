@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +16,6 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
@@ -318,117 +316,10 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	defer func() { _ = logs.Close() }()
 
 	if follow {
-		return s.streamMultiplexedLogs(ctx, logs, logsChan)
+		return streamMultiplexedLogs(ctx, logs, logsChan)
 	}
 
-	return s.readAllLogs(logs, logsChan)
-}
-
-func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string) error {
-	// Use stdcopy to demultiplex Docker's stream format
-	// Docker multiplexes stdout and stderr in a special format
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
-	// Start demultiplexing in a goroutine
-	go func() {
-		defer func() { _ = stdoutWriter.Close() }()
-		defer func() { _ = stderrWriter.Close() }()
-		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
-		if err != nil && !errors.Is(err, io.EOF) {
-			fmt.Printf("Error demultiplexing logs: %v\n", err)
-		}
-	}()
-
-	// Read from both stdout and stderr concurrently
-	done := make(chan error, 2)
-
-	// Read stdout
-	go func() {
-		done <- s.readLogsFromReader(ctx, stdoutReader, logsChan, "stdout")
-	}()
-
-	// Read stderr
-	go func() {
-		done <- s.readLogsFromReader(ctx, stderrReader, logsChan, "stderr")
-	}()
-
-	// Wait for context cancellation or error
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		// Wait for the other goroutine or context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-			return nil
-		}
-	}
-}
-
-// readLogsFromReader reads logs line by line from a reader
-func (s *ContainerService) readLogsFromReader(ctx context.Context, reader io.Reader, logsChan chan<- string, source string) error {
-	scanner := bufio.NewScanner(reader)
-
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			line := scanner.Text()
-			if line != "" {
-				// Add source prefix for stderr logs
-				if source == "stderr" {
-					line = "[STDERR] " + line
-				}
-
-				select {
-				case logsChan <- line:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
-		}
-	}
-
-	return scanner.Err()
-}
-
-func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- string) error {
-	stdoutBuf := &strings.Builder{}
-	stderrBuf := &strings.Builder{}
-
-	_, err := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("failed to demultiplex logs: %w", err)
-	}
-
-	// Send stdout lines
-	if stdoutBuf.Len() > 0 {
-		lines := strings.SplitSeq(strings.TrimRight(stdoutBuf.String(), "\n"), "\n")
-		for line := range lines {
-			if line != "" {
-				logsChan <- line
-			}
-		}
-	}
-
-	// Send stderr lines with prefix
-	if stderrBuf.Len() > 0 {
-		lines := strings.SplitSeq(strings.TrimRight(stderrBuf.String(), "\n"), "\n")
-		for line := range lines {
-			if line != "" {
-				logsChan <- "[STDERR] " + line
-			}
-		}
-	}
-
-	return nil
+	return readAllLogs(logs, logsChan)
 }
 
 func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool, includeInternal bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {

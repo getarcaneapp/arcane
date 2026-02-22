@@ -187,7 +187,7 @@
 							<Table.Row
 								data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
 								onclick={(event) => handleRowClick(event, rowId)}
-								class={cn(hasExpand && 'cursor-pointer')}
+								class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 							>
 								{#if hasExpand}
 									<Table.Cell class="w-8 px-2" data-row-select-ignore>
@@ -226,7 +226,7 @@
 							</Table.Row>
 
 							{#if hasExpand && isExpanded && expandedRowContent}
-								<Table.Row class="bg-muted/30 hover:bg-muted/30">
+								<Table.Row class="bg-primary/10 hover:bg-primary/10">
 									<Table.Cell colspan={columnsCount} class="p-0">
 										<div transition:slide={{ duration: 200 }}>
 											<div class="px-6 py-4">
@@ -265,7 +265,7 @@
 					<Table.Row
 						data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
 						onclick={(event) => handleRowClick(event, rowId)}
-						class={cn(hasExpand && 'cursor-pointer')}
+						class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 					>
 						{#if hasExpand}
 							<Table.Cell class="w-8 px-2" data-row-select-ignore>
@@ -303,7 +303,7 @@
 					</Table.Row>
 
 					{#if hasExpand && isExpanded && expandedRowContent}
-						<Table.Row class="bg-muted/30 hover:bg-muted/30">
+						<Table.Row class="bg-primary/10 hover:bg-primary/10">
 							<Table.Cell colspan={columnsCount} class="p-0">
 								<div transition:slide={{ duration: 200 }}>
 									<div class="px-6 py-4">

@@ -161,7 +161,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, api.DefaultWebSocketMetrics()) //nolint:contextcheck
 
 	// Remaining Gin handlers (WebSocket/streaming)
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.System, authMiddleware, cfg) //nolint:contextcheck
+	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, authMiddleware, cfg) //nolint:contextcheck
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)

@@ -45,6 +45,16 @@ export class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/services/${serviceId}`, request));
 	}
 
+	async rollbackService(serviceId: string): Promise<SwarmServiceUpdateResponse> {
+		const service = await this.getService(serviceId);
+		const version = service.version?.index ?? service.version?.Index ?? 0;
+		return this.updateService(serviceId, {
+			version,
+			spec: service.spec,
+			options: { Rollback: 'previous' }
+		});
+	}
+
 	async removeService(serviceId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/services/${serviceId}`));

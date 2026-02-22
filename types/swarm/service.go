@@ -248,11 +248,15 @@ func NewServiceSummary(service swarm.Service, nodeNames []string) ServiceSummary
 		stackName = spec.Labels[StackNamespaceLabel]
 	}
 
-	// Extract networks from task template
+	// Extract networks from task template, preferring the first alias over the raw target ID
 	networkConfigs := spec.TaskTemplate.Networks
 	networks := make([]string, 0, len(networkConfigs))
 	for _, n := range networkConfigs {
-		networks = append(networks, n.Target)
+		if len(n.Aliases) > 0 {
+			networks = append(networks, n.Aliases[0])
+		} else {
+			networks = append(networks, n.Target)
+		}
 	}
 
 	// Extract mounts from container spec

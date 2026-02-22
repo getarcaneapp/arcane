@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	libswarm "github.com/getarcaneapp/arcane/backend/pkg/libarcane/swarm"
@@ -190,6 +191,38 @@ func (s *SwarmService) RemoveService(ctx context.Context, serviceID string) erro
 	}
 
 	return nil
+}
+
+func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+	if err := s.ensureSwarmManager(ctx); err != nil {
+		return err
+	}
+
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     follow,
+		Tail:       tail,
+		Since:      since,
+		Timestamps: timestamps,
+	}
+
+	logs, err := dockerClient.ServiceLogs(ctx, serviceID, options)
+	if err != nil {
+		return fmt.Errorf("failed to get service logs: %w", err)
+	}
+	defer func() { _ = logs.Close() }()
+
+	if follow {
+		return streamMultiplexedLogs(ctx, logs, logsChan)
+	}
+
+	return readAllLogs(logs, logsChan)
 }
 
 func (s *SwarmService) ListNodesPaginated(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.NodeSummary, pagination.Response, error) {

@@ -52,6 +52,7 @@ type WebSocketMetrics struct {
 	containerStats      atomic.Int64
 	containerExec       atomic.Int64
 	systemStats         atomic.Int64
+	serviceLogsActive   atomic.Int64
 	seq                 atomic.Uint64
 	mu                  sync.RWMutex
 	connections         map[string]systemtypes.WebSocketConnectionInfo
@@ -72,6 +73,7 @@ func (m *WebSocketMetrics) Snapshot() systemtypes.WebSocketMetricsSnapshot {
 		ContainerStats:      m.containerStats.Load(),
 		ContainerExec:       m.containerExec.Load(),
 		SystemStats:         m.systemStats.Load(),
+		ServiceLogsActive:   m.serviceLogsActive.Load(),
 	}
 }
 
@@ -132,6 +134,8 @@ func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
 		m.containerExec.Add(delta)
 	case systemtypes.WSKindSystemStats:
 		m.systemStats.Add(delta)
+	case systemtypes.WSKindServiceLogs:
+		m.serviceLogsActive.Add(delta)
 	}
 }
 
@@ -151,6 +155,7 @@ func DefaultWebSocketMetrics() *WebSocketMetrics {
 type WebSocketHandler struct {
 	projectService    *services.ProjectService
 	containerService  *services.ContainerService
+	swarmService      *services.SwarmService
 	systemService     *services.SystemService
 	wsUpgrader        websocket.Upgrader
 	wsMetrics         *WebSocketMetrics
@@ -209,6 +214,7 @@ func NewWebSocketHandler(
 	group *gin.RouterGroup,
 	projectService *services.ProjectService,
 	containerService *services.ContainerService,
+	swarmService *services.SwarmService,
 	systemService *services.SystemService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
@@ -216,6 +222,7 @@ func NewWebSocketHandler(
 	handler := &WebSocketHandler{
 		projectService:       projectService,
 		containerService:     containerService,
+		swarmService:         swarmService,
 		systemService:        systemService,
 		wsMetrics:            defaultWebSocketMetrics,
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
@@ -235,6 +242,7 @@ func NewWebSocketHandler(
 		wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
 		wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
 		wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
+		wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs)
 		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
 }
@@ -433,6 +441,112 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 	go func(ctx context.Context) {
 		defer close(lines)
 		_ = h.containerService.StreamLogs(ctx, containerID, lines, follow, tail, since, timestamps)
+	}(ctx)
+
+	if format == "json" {
+		msgs := make(chan ws.LogMessage, 256)
+		go func() {
+			defer close(msgs)
+			for line := range lines {
+				level, msg, ts := ws.NormalizeContainerLine(line)
+				seq := ls.seq.Add(1)
+				timestamp := ts
+				if timestamp == "" {
+					timestamp = ws.NowRFC3339()
+				}
+				msgs <- ws.LogMessage{
+					Seq:       seq,
+					Level:     level,
+					Message:   msg,
+					Timestamp: timestamp,
+				}
+			}
+		}()
+		if batched {
+			go ws.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
+		} else {
+			go ws.ForwardLogJSON(ctx, ls.hub, msgs)
+		}
+	} else {
+		go ws.ForwardLines(ctx, ls.hub, lines)
+	}
+
+	return ls.hub
+}
+
+// ============================================================================
+// Swarm Service WebSocket/Streaming Endpoints
+// ============================================================================
+
+// ServiceLogs streams swarm service logs over WebSocket.
+//
+//	@Summary		Get swarm service logs via WebSocket
+//	@Description	Stream swarm service logs over WebSocket connection
+//	@Tags			WebSocket
+//	@Param			id			path	string	true	"Environment ID"
+//	@Param			serviceId	path	string	true	"Service ID"
+//	@Param			follow		query	bool	false	"Follow log output"						default(true)
+//	@Param			tail		query	string	false	"Number of lines to show from the end"	default(100)
+//	@Param			since		query	string	false	"Show logs since timestamp"
+//	@Param			timestamps	query	bool	false	"Show timestamps"				default(false)
+//	@Param			format		query	string	false	"Output format (text or json)"	default(text)
+//	@Param			batched		query	bool	false	"Batch log messages"			default(false)
+//	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
+func (h *WebSocketHandler) ServiceLogs(c *gin.Context) {
+	serviceID := c.Param("serviceId")
+	if strings.TrimSpace(serviceID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Service ID is required"})
+		return
+	}
+
+	follow := c.DefaultQuery("follow", "true") == "true"
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
+	timestamps := c.DefaultQuery("timestamps", "false") == "true"
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
+	batched := c.DefaultQuery("batched", "false") == "true"
+
+	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindServiceLogs, serviceID))
+	hub := h.startServiceLogHub(serviceID, format, batched, follow, tail, since, timestamps, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+	})
+	ws.ServeClient(context.Background(), hub, conn)
+}
+
+func (h *WebSocketHandler) startServiceLogHub(serviceID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func()) *ws.Hub {
+	ls := &wsLogStream{
+		hub:    ws.NewHub(1024),
+		format: format,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ls.cancel = cancel
+
+	ls.hub.SetOnEmpty(func() {
+		if onEmptyHook != nil {
+			onEmptyHook()
+		}
+		slog.Debug("client disconnected, cleaning up service log hub", "serviceID", serviceID)
+		cancel()
+	})
+
+	go ls.hub.Run(ctx)
+
+	lines := make(chan string, 256)
+	go func(ctx context.Context) {
+		defer close(lines)
+		_ = h.swarmService.StreamServiceLogs(ctx, serviceID, lines, follow, tail, since, timestamps)
 	}(ctx)
 
 	if format == "json" {

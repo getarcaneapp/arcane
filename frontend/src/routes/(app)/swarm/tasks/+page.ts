@@ -3,7 +3,8 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async () => {
+export const load: PageLoad = async ({ url }) => {
+	const searchParam = url.searchParams.get('search') || '';
 	const requestOptions = resolveInitialTableRequest('arcane-swarm-tasks-table', {
 		pagination: {
 			page: 1,
@@ -14,6 +15,10 @@ export const load: PageLoad = async () => {
 			direction: 'asc'
 		}
 	} satisfies SearchPaginationSortRequest);
+
+	if (searchParam) {
+		requestOptions.search = searchParam;
+	}
 
 	const tasks = await swarmService.getTasks(requestOptions);
 
