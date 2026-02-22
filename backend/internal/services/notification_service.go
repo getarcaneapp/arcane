@@ -32,6 +32,7 @@ const (
 	notificationTestTypeBatchImageUpdate = "batch-image-update"
 	notificationTestTypeVulnerability    = "vulnerability-found"
 	notificationTestTypePruneReport      = "prune-report"
+	notificationTestTypeAutoHeal         = "auto-heal"
 )
 
 var supportedNotificationTestTypes = map[string]struct{}{
@@ -40,6 +41,7 @@ var supportedNotificationTestTypes = map[string]struct{}{
 	notificationTestTypeBatchImageUpdate: {},
 	notificationTestTypeVulnerability:    {},
 	notificationTestTypePruneReport:      {},
+	notificationTestTypeAutoHeal:         {},
 }
 
 // VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
@@ -898,6 +900,34 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider mod
 			return s.sendMatrixVulnerabilityNotification(ctx, payload, setting.Config)
 		case models.NotificationProviderGeneric:
 			return s.sendGenericVulnerabilityNotification(ctx, payload, setting.Config)
+		default:
+			return fmt.Errorf("unknown provider: %s", provider)
+		}
+	}
+
+	if testType == notificationTestTypeAutoHeal {
+		testContainerName := "test-container"
+		switch provider {
+		case models.NotificationProviderDiscord:
+			return s.sendDiscordAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderEmail:
+			return s.sendEmailAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderTelegram:
+			return s.sendTelegramAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderSignal:
+			return s.sendSignalAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderSlack:
+			return s.sendSlackAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderNtfy:
+			return s.sendNtfyAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderPushover:
+			return s.sendPushoverAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderGotify:
+			return s.sendGotifyAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderMatrix:
+			return s.sendMatrixAutoHealNotification(ctx, testContainerName, setting.Config)
+		case models.NotificationProviderGeneric:
+			return s.sendGenericAutoHealNotification(ctx, testContainerName, setting.Config)
 		default:
 			return fmt.Errorf("unknown provider: %s", provider)
 		}
@@ -3191,6 +3221,184 @@ func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, 
 		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
 	return notifications.SendGenericWithTitle(ctx, genericConfig, "System Prune Report", message)
+}
+
+// SendAutoHealNotification sends a notification when a container is auto-healed.
+func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	var errs []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+
+		if !s.isEventEnabled(setting.Config, models.NotificationEventAutoHeal) {
+			continue
+		}
+
+		var sendErr error
+		switch setting.Provider {
+		case models.NotificationProviderDiscord:
+			sendErr = s.sendDiscordAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderEmail:
+			sendErr = s.sendEmailAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderTelegram:
+			sendErr = s.sendTelegramAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderSignal:
+			sendErr = s.sendSignalAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderSlack:
+			sendErr = s.sendSlackAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderNtfy:
+			sendErr = s.sendNtfyAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderPushover:
+			sendErr = s.sendPushoverAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderGotify:
+			sendErr = s.sendGotifyAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderMatrix:
+			sendErr = s.sendMatrixAutoHealNotification(ctx, containerName, setting.Config)
+		case models.NotificationProviderGeneric:
+			sendErr = s.sendGenericAutoHealNotification(ctx, containerName, setting.Config)
+		default:
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		status := "success"
+		var errMsg *string
+		if sendErr != nil {
+			status = "failed"
+			msg := sendErr.Error()
+			errMsg = new(msg)
+			errs = append(errs, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		}
+
+		s.logNotification(ctx, setting.Provider, containerName, status, errMsg, models.JSON{
+			"containerID": containerID,
+			"eventType":   string(models.NotificationEventAutoHeal),
+		})
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
+	}
+
+	return nil
+}
+
+func (s *NotificationService) sendDiscordAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var discordConfig models.DiscordConfig
+	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
+		return err
+	}
+	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
+		return fmt.Errorf("discord webhook ID or token not configured")
+	}
+	s.decryptDiscordTokenInternal(&discordConfig)
+	message := fmt.Sprintf("**Container '%s' was automatically restarted because it was unhealthy**", containerName)
+	return notifications.SendDiscord(ctx, discordConfig, message)
+}
+
+func (s *NotificationService) sendEmailAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var emailConfig models.EmailConfig
+	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
+		return err
+	}
+	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
+		return err
+	}
+	s.decryptEmailPasswordInternal(&emailConfig)
+	subject := fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName)
+	body := fmt.Sprintf("<p>Container <strong>%s</strong> was automatically restarted because it was unhealthy.</p>", containerName)
+	return notifications.SendEmail(ctx, emailConfig, subject, body)
+}
+
+func (s *NotificationService) sendTelegramAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var telegramConfig models.TelegramConfig
+	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
+		return err
+	}
+	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
+		return fmt.Errorf("telegram bot token or chat IDs not configured")
+	}
+	s.decryptTelegramTokenInternal(&telegramConfig)
+	if telegramConfig.ParseMode == "" {
+		telegramConfig.ParseMode = "HTML"
+	}
+	message := fmt.Sprintf("<b>Auto Heal:</b> Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendTelegram(ctx, telegramConfig, message)
+}
+
+func (s *NotificationService) sendSignalAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var signalConfig models.SignalConfig
+	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("Auto Heal: Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendSignal(ctx, signalConfig, message)
+}
+
+func (s *NotificationService) sendSlackAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var slackConfig models.SlackConfig
+	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("*Auto Heal:* Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendSlack(ctx, slackConfig, message)
+}
+
+func (s *NotificationService) sendNtfyAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var ntfyConfig models.NtfyConfig
+	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendNtfy(ctx, ntfyConfig, message)
+}
+
+func (s *NotificationService) sendPushoverAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var pushoverConfig models.PushoverConfig
+	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
+		return err
+	}
+	if pushoverConfig.Title == "" {
+		pushoverConfig.Title = "Auto Heal"
+	}
+	message := fmt.Sprintf("Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendPushover(ctx, pushoverConfig, message)
+}
+
+func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var gotifyConfig models.GotifyConfig
+	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
+		return err
+	}
+	if gotifyConfig.Title == "" {
+		gotifyConfig.Title = "Auto Heal"
+	}
+	message := fmt.Sprintf("Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendGotify(ctx, gotifyConfig, message)
+}
+
+func (s *NotificationService) sendMatrixAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var matrixConfig models.MatrixConfig
+	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendMatrix(ctx, matrixConfig, message)
+}
+
+func (s *NotificationService) sendGenericAutoHealNotification(ctx context.Context, containerName string, config models.JSON) error {
+	var genericConfig models.GenericConfig
+	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("Container '%s' was automatically restarted because it was unhealthy", containerName)
+	return notifications.SendGenericWithTitle(ctx, genericConfig, "Auto Heal", message)
 }
 
 // Helper methods to reduce code duplication

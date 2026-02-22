@@ -149,7 +149,11 @@
 		scheduledPruneNetworks: z.boolean(),
 		scheduledPruneBuildCache: z.boolean(),
 		vulnerabilityScanEnabled: z.boolean(),
-		autoUpdateExcludedContainers: z.string()
+		autoUpdateExcludedContainers: z.string(),
+		autoHealEnabled: z.boolean(),
+		autoHealExcludedContainers: z.string(),
+		autoHealMaxRestarts: z.coerce.number().int().min(1),
+		autoHealRestartWindow: z.coerce.number().int().min(1)
 	});
 
 	// Build current settings object from environment and settings data
@@ -173,7 +177,11 @@
 		scheduledPruneNetworks: settings?.scheduledPruneNetworks ?? true,
 		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
-		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || ''
+		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
+		autoHealEnabled: settings?.autoHealEnabled ?? false,
+		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
+		autoHealMaxRestarts: settings?.autoHealMaxRestarts ?? 5,
+		autoHealRestartWindow: settings?.autoHealRestartWindow ?? 30
 	});
 
 	// Custom save handler for environment-specific settings
@@ -204,7 +212,11 @@
 				scheduledPruneNetworks: formData.scheduledPruneNetworks,
 				scheduledPruneBuildCache: formData.scheduledPruneBuildCache,
 				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
-				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers
+				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
+				autoHealEnabled: formData.autoHealEnabled,
+				autoHealExcludedContainers: formData.autoHealExcludedContainers,
+				autoHealMaxRestarts: formData.autoHealMaxRestarts,
+				autoHealRestartWindow: formData.autoHealRestartWindow
 			});
 		}
 

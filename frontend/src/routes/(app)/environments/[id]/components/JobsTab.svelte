@@ -43,7 +43,7 @@
 	});
 
 	const containersPromise = $derived.by(async () => {
-		if (!$formInputs.autoUpdate.value) return [];
+		if (!$formInputs.autoUpdate.value && !$formInputs.autoHealEnabled.value) return [];
 		const result = await tryCatch(containerService.getContainers({ pagination: { page: 1, limit: 100 } }));
 		if (result.error) throw result.error;
 		return result.data.data;
@@ -83,6 +83,8 @@
 				return undefined;
 			case 'vulnerabilityScanEnabled':
 				return undefined;
+			case 'autoHealEnabled':
+				return `${envBase}?tab=jobs`;
 			default:
 				return prereq.settingsUrl;
 		}
@@ -104,6 +106,46 @@
 		if ($formInputs.autoUpdateExcludedContainers) {
 			$formInputs.autoUpdateExcludedContainers.value = newValue;
 		}
+	}
+
+	const autoHealExcludedContainers = new SvelteSet<string>();
+	let autoHealSearchTerm = $state('');
+
+	$effect(() => {
+		const savedValue = $formInputs.autoHealExcludedContainers?.value || '';
+		const names = savedValue
+			.split(',')
+			.map((s: string) => normalizeContainerName(s.trim()))
+			.filter(Boolean);
+
+		const currentNames = Array.from(autoHealExcludedContainers);
+		if (names.length !== currentNames.length || names.some((n: string) => !autoHealExcludedContainers.has(n))) {
+			autoHealExcludedContainers.clear();
+			names.forEach((n: string) => autoHealExcludedContainers.add(n));
+		}
+	});
+
+	function toggleAutoHealContainerExclusion(containerName: string) {
+		const normalizedName = normalizeContainerName(containerName);
+		if (autoHealExcludedContainers.has(normalizedName)) {
+			autoHealExcludedContainers.delete(normalizedName);
+		} else {
+			autoHealExcludedContainers.add(normalizedName);
+		}
+
+		const newValue = Array.from(autoHealExcludedContainers).join(',');
+		if ($formInputs.autoHealExcludedContainers) {
+			$formInputs.autoHealExcludedContainers.value = newValue;
+		}
+	}
+
+	function mapContainerToAutoHealItem(container: ContainerSummaryDto) {
+		const name = getContainerName(container);
+		return {
+			value: name,
+			label: name,
+			selected: autoHealExcludedContainers.has(name)
+		};
 	}
 
 	const categories = [
@@ -137,6 +179,8 @@
 				return $formInputs.pollingEnabled.value;
 			case 'vulnerability-scan':
 				return $formInputs.vulnerabilityScanEnabled.value;
+			case 'auto-heal':
+				return $formInputs.autoHealEnabled.value;
 			default:
 				return undefined;
 		}
@@ -217,6 +261,8 @@
 														<Switch bind:checked={$formInputs.scheduledPruneEnabled.value} />
 													{:else if job.id === 'vulnerability-scan'}
 														<Switch bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
+													{:else if job.id === 'auto-heal'}
+														<Switch bind:checked={$formInputs.autoHealEnabled.value} />
 													{/if}
 												{/snippet}
 
@@ -269,6 +315,99 @@
 																						{#if container.hint}
 																							<span class="ml-1 text-xs opacity-70">{container.hint}</span>
 																						{/if}
+																					</Label>
+																				</div>
+																			{/each}
+																		{/if}
+																	{:catch error}
+																		<div class="text-destructive p-2 text-sm">
+																			{error.message || 'Failed to load containers'}
+																		</div>
+																	{/await}
+																</div>
+															</ScrollArea.Root>
+														</div>
+													</div>
+												{/if}
+
+												{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
+													<div class="border-border/20 space-y-3 border-t pt-3">
+														<div class="grid gap-3 sm:grid-cols-2">
+															<div class="space-y-1">
+																<Label for="auto-heal-max-restarts" class="text-sm font-medium"
+																	>{m.auto_heal_max_restarts_label()}</Label
+																>
+																<p class="text-muted-foreground text-xs">{m.auto_heal_max_restarts_description()}</p>
+																<Input
+																	id="auto-heal-max-restarts"
+																	type="number"
+																	min="1"
+																	class="h-8 w-full"
+																	bind:value={$formInputs.autoHealMaxRestarts.value}
+																/>
+															</div>
+															<div class="space-y-1">
+																<Label for="auto-heal-restart-window" class="text-sm font-medium"
+																	>{m.auto_heal_restart_window_label()}</Label
+																>
+																<p class="text-muted-foreground text-xs">{m.auto_heal_restart_window_description()}</p>
+																<Input
+																	id="auto-heal-restart-window"
+																	type="number"
+																	min="1"
+																	class="h-8 w-full"
+																	bind:value={$formInputs.autoHealRestartWindow.value}
+																/>
+															</div>
+														</div>
+
+														<div class="space-y-1">
+															<Label class="text-sm font-medium">
+																{m.auto_heal_excluded_containers()}
+																{#await containersPromise then containers}
+																	<span class="text-muted-foreground ml-1 font-normal">
+																		({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
+																	</span>
+																{/await}
+															</Label>
+															<p class="text-muted-foreground text-xs">{m.auto_heal_exclude_description()}</p>
+														</div>
+
+														<div class="rounded-md border p-2">
+															<Input
+																type="search"
+																placeholder="Search containers..."
+																class="mb-2 h-8"
+																bind:value={autoHealSearchTerm}
+															/>
+															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
+																<div class="space-y-2">
+																	{#await containersPromise}
+																		<div class="flex items-center justify-center p-4">
+																			<Spinner class="size-4" />
+																		</div>
+																	{:then containers}
+																		{@const allItems = containers.map(mapContainerToAutoHealItem)}
+																		{@const filteredItems = autoHealSearchTerm
+																			? allItems.filter((item) =>
+																					item.label.toLowerCase().includes(autoHealSearchTerm.toLowerCase())
+																				)
+																			: allItems}
+
+																		{#if filteredItems.length === 0}
+																			<p class="text-muted-foreground py-4 text-center text-sm">
+																				{m.common_no_results_found()}
+																			</p>
+																		{:else}
+																			{#each filteredItems as container (container.value)}
+																				<div class="flex items-center space-x-2">
+																					<Checkbox
+																						id="auto-heal-container-{container.value}"
+																						checked={container.selected}
+																						onCheckedChange={() => toggleAutoHealContainerExclusion(container.value)}
+																					/>
+																					<Label for="auto-heal-container-{container.value}" class="text-sm font-normal">
+																						{container.label}
 																					</Label>
 																				</div>
 																			{/each}

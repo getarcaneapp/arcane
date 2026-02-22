@@ -44,6 +44,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	vulnerabilityScanJob := pkg_scheduler.NewVulnerabilityScanJob(appServices.Vulnerability, appServices.Settings)
 	newScheduler.RegisterJob(vulnerabilityScanJob)
 
+	autoHealJob := pkg_scheduler.NewAutoHealJob(appServices.Docker, appServices.Settings, appServices.Event, appServices.Notification)
+	newScheduler.RegisterJob(autoHealJob)
+
 	setupJobScheduleCallbacks(
 		appCtx,
 		appServices,
@@ -57,8 +60,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		scheduledPruneJob,
 		gitOpsSyncJob,
 		vulnerabilityScanJob,
+		autoHealJob,
 	)
-	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob)
+	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob, autoHealJob)
 }
 
 func setupJobScheduleCallbacks(
@@ -74,6 +78,7 @@ func setupJobScheduleCallbacks(
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
 	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
+	autoHealJob *pkg_scheduler.AutoHealJob,
 ) {
 	if appServices.JobSchedule == nil {
 		return
@@ -95,6 +100,7 @@ func setupJobScheduleCallbacks(
 				scheduledPruneJob,
 				gitOpsSyncJob,
 				vulnerabilityScanJob,
+				autoHealJob,
 			)
 		}
 	}
@@ -113,6 +119,7 @@ func handleJobScheduleChangeInternal(
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
 	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
+	autoHealJob *pkg_scheduler.AutoHealJob,
 ) {
 	switch key {
 	case "pollingInterval":
@@ -150,10 +157,14 @@ func handleJobScheduleChangeInternal(
 		if err := newScheduler.RescheduleJob(ctx, vulnerabilityScanJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule vulnerability-scan job", "error", err)
 		}
+	case "autoHealInterval":
+		if err := newScheduler.RescheduleJob(ctx, autoHealJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule auto-heal job", "error", err)
+		}
 	}
 }
 
-func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob) {
+func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob, autoHealJob *pkg_scheduler.AutoHealJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
 		if err := newScheduler.RescheduleJob(lifecycleCtx, imagePollingJob); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule image-polling job", "error", err)
@@ -188,6 +199,11 @@ func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services,
 	appServices.Settings.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
 		if err := newScheduler.RescheduleJob(lifecycleCtx, vulnerabilityScanJob); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
+		}
+	}
+	appServices.Settings.OnAutoHealSettingsChanged = func(ctx context.Context) {
+		if err := newScheduler.RescheduleJob(ctx, autoHealJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule auto-heal job", "error", err)
 		}
 	}
 

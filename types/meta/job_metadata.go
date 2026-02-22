@@ -171,6 +171,24 @@ var jobMetadataRegistry = map[string]JobMetadata{
 			},
 		},
 	},
+	"auto-heal": {
+		ID:             "auto-heal",
+		Name:           "Auto Heal",
+		Description:    "Automatically restarts containers that become unhealthy",
+		Category:       "monitoring",
+		SettingsKey:    "autoHealInterval",
+		EnabledKey:     "autoHealEnabled",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites: []JobPrerequisiteMetadata{
+			{
+				SettingKey:  "autoHealEnabled",
+				Label:       "Auto heal enabled",
+				SettingsURL: "/settings/general",
+			},
+		},
+	},
 }
 
 func GetJobMetadata(jobID string) (JobMetadata, bool) {
