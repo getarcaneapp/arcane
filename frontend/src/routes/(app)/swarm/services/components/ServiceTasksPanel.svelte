@@ -17,6 +17,19 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
+	const STATE_ORDER: Record<string, number> = {
+		running: 0,
+		starting: 1,
+		pending: 2,
+		ready: 3,
+		complete: 4,
+		shutdown: 5,
+		failed: 6,
+		rejected: 7,
+		orphaned: 8,
+		remove: 9
+	};
+
 	function stateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {
 		if (state === 'running') return 'green';
 		if (state === 'pending' || state === 'starting') return 'amber';
@@ -24,15 +37,23 @@
 		return 'gray';
 	}
 
+	function sortTasks(raw: SwarmTaskSummary[]): SwarmTaskSummary[] {
+		return [...raw].sort((a, b) => {
+			const stateA = STATE_ORDER[a.currentState] ?? 99;
+			const stateB = STATE_ORDER[b.currentState] ?? 99;
+			if (stateA !== stateB) return stateA - stateB;
+			return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+		});
+	}
+
 	async function loadTasks() {
 		isLoading = true;
 		try {
 			const result = await swarmService.getTasks({
 				search: serviceName,
-				pagination: { page: 1, limit: 100 },
-				sort: { column: 'currentState', direction: 'asc' }
+				pagination: { page: 1, limit: 100 }
 			});
-			tasks = result.data ?? [];
+			tasks = sortTasks(result.data ?? []);
 		} catch (err) {
 			console.error('Failed to load tasks:', err);
 		} finally {

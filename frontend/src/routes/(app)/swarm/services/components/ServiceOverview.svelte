@@ -51,19 +51,28 @@
 		</div>
 	</Card.Header>
 	<Card.Content class="p-4">
-		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
 			<div>
 				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-					{m.common_image()}
+					{m.common_name()}
 				</div>
 				<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all" title="Click to select">
-					{truncateImageDigest(serviceImage) || m.common_na()}
+					{serviceName}
 				</div>
 			</div>
 
 			<div>
 				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-					{m.swarm_mode()}
+					{m.swarm_stack()}
+				</div>
+				<div class="text-foreground text-base font-semibold">
+					{stackName || m.common_na()}
+				</div>
+			</div>
+
+			<div>
+				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+					{m.swarm_mode()} / {m.swarm_replicas()}
 				</div>
 				<div class="flex items-center gap-2">
 					<StatusBadge
@@ -77,29 +86,31 @@
 					{/if}
 				</div>
 			</div>
-
-			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-					{m.common_version()}
-				</div>
-				<div class="text-foreground font-mono text-base font-semibold">
-					{versionIndex}
-				</div>
-			</div>
-
-			{#if stackName}
-				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-						{m.swarm_stack()}
-					</div>
-					<div class="text-foreground text-base font-semibold">
-						{stackName}
-					</div>
-				</div>
-			{/if}
 		</div>
 
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_image()}
+					</div>
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title="Click to select">
+						{truncateImageDigest(serviceImage) || m.common_na()}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_version()}
+					</div>
+					<div class="text-foreground font-mono text-sm font-medium">
+						{versionIndex}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
@@ -135,17 +146,6 @@
 					</div>
 					<div class="text-muted-foreground text-xs">
 						{formatDate(service.updatedAt)}
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-						{m.common_name()}
-					</div>
-					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title="Click to select">
-						{serviceName}
 					</div>
 				</Card.Content>
 			</Card.Root>

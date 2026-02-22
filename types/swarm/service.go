@@ -202,7 +202,7 @@ type ServiceUpdateResponse struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-func NewServiceSummary(service swarm.Service, nodeNames []string) ServiceSummary {
+func NewServiceSummary(service swarm.Service, nodeNames []string, networkNameByID map[string]string) ServiceSummary {
 	spec := service.Spec
 
 	mode := "unknown"
@@ -248,11 +248,13 @@ func NewServiceSummary(service swarm.Service, nodeNames []string) ServiceSummary
 		stackName = spec.Labels[StackNamespaceLabel]
 	}
 
-	// Extract networks from task template, preferring the first alias over the raw target ID
+	// Extract networks from task template, resolving IDs to names
 	networkConfigs := spec.TaskTemplate.Networks
 	networks := make([]string, 0, len(networkConfigs))
 	for _, n := range networkConfigs {
-		if len(n.Aliases) > 0 {
+		if name, ok := networkNameByID[n.Target]; ok {
+			networks = append(networks, name)
+		} else if len(n.Aliases) > 0 {
 			networks = append(networks, n.Aliases[0])
 		} else {
 			networks = append(networks, n.Target)

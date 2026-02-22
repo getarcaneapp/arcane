@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	libswarm "github.com/getarcaneapp/arcane/backend/pkg/libarcane/swarm"
@@ -55,6 +56,16 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 		nodeNameByID[node.ID] = node.Description.Hostname
 	}
 
+	// Fetch networks to resolve network IDs to names
+	networks, err := dockerClient.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list networks: %w", err)
+	}
+	networkNameByID := make(map[string]string, len(networks))
+	for _, n := range networks {
+		networkNameByID[n.ID] = n.Name
+	}
+
 	// Fetch tasks and group running tasks by service ID
 	tasks, err := dockerClient.TaskList(ctx, swarm.TaskListOptions{})
 	if err != nil {
@@ -83,7 +94,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 			}
 			sort.Strings(nodeNames)
 		}
-		items = append(items, swarmtypes.NewServiceSummary(service, nodeNames))
+		items = append(items, swarmtypes.NewServiceSummary(service, nodeNames, networkNameByID))
 	}
 
 	config := s.buildServicePaginationConfig()
