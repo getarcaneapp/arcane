@@ -59,6 +59,10 @@
 	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let composeHasErrors = $state(true);
+	let envHasErrors = $state(true);
+
+	let hasEditorErrors = $derived(composeHasErrors || envHasErrors);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -67,6 +71,11 @@
 	}
 
 	async function handleCreateProject() {
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) return;
 
@@ -124,6 +133,11 @@
 	}
 
 	async function handleCreateTemplate() {
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) return;
 
@@ -197,20 +211,23 @@
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
-								<ArcaneButton
-									action="create"
-									tone="ghost"
-									disabled={!$inputs.name.value ||
-										!$inputs.composeContent.value ||
-										saving ||
-										converting ||
-										isLoadingTemplateContent}
-									onclick={() => handleSubmit()}
-									class={`${templateBtnClass} gap-2 rounded-r-none`}
-									loading={saving}
-									customLabel={m.compose_create_project()}
-									loadingLabel={m.common_action_creating()}
-								/>
+								{#if !hasEditorErrors}
+									<ArcaneButton
+										action="create"
+										tone="ghost"
+										disabled={!$inputs.name.value ||
+											!$inputs.composeContent.value ||
+											hasEditorErrors ||
+											saving ||
+											converting ||
+											isLoadingTemplateContent}
+										onclick={() => handleSubmit()}
+										class={`${templateBtnClass} gap-2 rounded-r-none`}
+										loading={saving}
+										customLabel={m.compose_create_project()}
+										loadingLabel={m.common_action_creating()}
+									/>
+								{/if}
 							</span>
 						</ArcaneTooltip.Trigger>
 						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
@@ -265,6 +282,7 @@
 									class={dropdownItemClass}
 									disabled={!$inputs.name.value ||
 										!$inputs.composeContent.value ||
+										hasEditorErrors ||
 										saving ||
 										converting ||
 										creatingTemplate ||
@@ -312,6 +330,7 @@
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
 							error={$inputs.composeContent.error ?? undefined}
+							bind:hasErrors={composeHasErrors}
 						/>
 					</div>
 
@@ -322,6 +341,7 @@
 							language="env"
 							bind:value={$inputs.envContent.value}
 							error={$inputs.envContent.error ?? undefined}
+							bind:hasErrors={envHasErrors}
 						/>
 					</div>
 				</form>

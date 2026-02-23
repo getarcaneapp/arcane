@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { CodeIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 
@@ -13,7 +13,8 @@
 		value = $bindable(),
 		error,
 		autoHeight = false,
-		readOnly = false
+		readOnly = false,
+		hasErrors = $bindable(false)
 	}: {
 		title: string;
 		open: boolean;
@@ -22,6 +23,7 @@
 		error?: string;
 		autoHeight?: boolean;
 		readOnly?: boolean;
+		hasErrors?: boolean;
 	} = $props();
 
 	const isMobile = new IsMobile();
@@ -37,10 +39,10 @@
 	<Card.Content class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible p-0">
 		<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
 			{#if effectiveAutoHeight}
-				<CodeEditor bind:value {language} fontSize="13px" autoHeight={true} {readOnly} />
+				<CodeEditor bind:value {language} fontSize="13px" autoHeight={true} {readOnly} bind:hasErrors />
 			{:else}
 				<div class="absolute inset-0">
-					<CodeEditor bind:value {language} fontSize="13px" {readOnly} />
+					<CodeEditor bind:value {language} fontSize="13px" {readOnly} bind:hasErrors />
 				</div>
 			{/if}
 		</div>

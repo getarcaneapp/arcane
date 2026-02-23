@@ -3,7 +3,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
