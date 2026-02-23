@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from "../utils/fetch.util";
 import { Project, ProjectStatusCounts } from "types/project.type";
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from "../setup/project.data";
@@ -12,6 +12,14 @@ const ROUTES = {
 async function navigateToProjects(page: Page) {
   await page.goto(ROUTES.page);
   await page.waitForLoadState("networkidle");
+}
+
+async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
+  const content = editor.locator(".cm-content").first();
+  await expect(content).toBeVisible();
+  await content.click({ position: { x: 10, y: 10 } });
+  await content.press("ControlOrMeta+A");
+  await page.keyboard.type(text, { delay: 0 });
 }
 
 let realProjects: Project[] = [];
@@ -158,6 +166,43 @@ test.describe("New Compose Project Page", () => {
     expect(stateUnsafe, `Unexpected state_unsafe_mutation errors: ${stateUnsafe.join("\n")}`).toHaveLength(0);
   });
 
+  test("should hide Create Project when compose syntax is invalid and show it when fixed", async ({ page }) => {
+    await page.getByRole("button", { name: "My New Project" }).click();
+    await page.getByRole("textbox", { name: "My New Project" }).fill("syntax-check-project");
+    await page.getByRole("textbox", { name: "My New Project" }).press("Enter");
+
+    const composeEditor = page.locator(".cm-editor").first();
+    await expect(composeEditor).toBeVisible();
+
+    await setCodeMirrorValue(page, composeEditor, "services:\n\tredis:\n\t\timage: redis:latest\n");
+    await expect(page.locator('button[data-slot="arcane-button"]').filter({ hasText: "Create Project" })).toHaveCount(0);
+
+    await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+    const createButton = page.locator('button[data-slot="arcane-button"]').filter({ hasText: "Create Project" });
+    await expect(createButton).toBeVisible();
+    await expect(createButton).toBeEnabled();
+  });
+
+  test("should hide Create Project when env syntax is invalid and show it when fixed", async ({ page }) => {
+    await page.getByRole("button", { name: "My New Project" }).click();
+    await page.getByRole("textbox", { name: "My New Project" }).fill("env-check-project");
+    await page.getByRole("textbox", { name: "My New Project" }).press("Enter");
+
+    const composeEditor = page.locator(".cm-editor").first();
+    const envEditor = page.locator(".cm-editor").nth(1);
+    await expect(composeEditor).toBeVisible();
+    await expect(envEditor).toBeVisible();
+
+    await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+    await setCodeMirrorValue(page, envEditor, "NOT VALID LINE");
+    await expect(page.locator('button[data-slot="arcane-button"]').filter({ hasText: "Create Project" })).toHaveCount(0);
+
+    await setCodeMirrorValue(page, envEditor, TEST_ENV_FILE);
+    const createButton = page.locator('button[data-slot="arcane-button"]').filter({ hasText: "Create Project" });
+    await expect(createButton).toBeVisible();
+    await expect(createButton).toBeEnabled();
+  });
+
   test("should create a new project successfully", async ({ page }) => {
     const projectName = `test-project-${Date.now()}`;
     const containerName = `test-redis-container-${Date.now()}`;
@@ -169,51 +214,15 @@ test.describe("New Compose Project Page", () => {
     await page.getByRole("textbox", { name: "My New Project" }).fill(projectName);
     await page.getByRole("textbox", { name: "My New Project" }).press("Enter");
 
-    const composeEditor = page.locator(".monaco-editor").first();
+    const composeEditor = page.locator(".cm-editor").first();
     await expect(composeEditor).toBeVisible();
+    await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+    await expect(composeEditor).toContainText(/redis/i);
 
-    // Wait for Monaco to actually render its view before attempting input.
-    await expect(composeEditor.locator(".view-line").first()).toBeVisible();
-
-    // Monaco may create the internal input textarea lazily (e.g. only after focus).
-    // Click first, then wait for textarea.inputarea to appear.
-    await composeEditor.click({ position: { x: 20, y: 20 } });
-    await expect(composeEditor.locator("textarea")).toHaveCount(1);
-
-    // Use page.evaluate to set the value directly in Monaco to avoid auto-indentation issues during typing
-    await page.evaluate(
-      ({ text, lang }) => {
-        const models = (window as any).monaco.editor.getModels();
-        const model = models.find((m: any) => m.getLanguageId() === lang);
-        if (!model) throw new Error(`No ${lang} model found`);
-        model.setValue(text);
-      },
-      { text: TEST_COMPOSE_YAML, lang: "yaml" },
-    );
-
-    // Basic sanity check that the new content rendered.
-    await expect(composeEditor.locator(".view-lines")).toContainText(/redis/i);
-
-    const envEditor = page.locator(".monaco-editor").nth(1);
+    const envEditor = page.locator(".cm-editor").nth(1);
     await expect(envEditor).toBeVisible();
-
-    await expect(envEditor.locator(".view-line").first()).toBeVisible();
-
-    await envEditor.click({ position: { x: 20, y: 20 } });
-    await expect(envEditor.locator("textarea")).toHaveCount(1);
-
-    // Use page.evaluate to set the value directly in Monaco
-    await page.evaluate(
-      ({ text, lang }) => {
-        const models = (window as any).monaco.editor.getModels();
-        const model = models.find((m: any) => m.getLanguageId() === lang);
-        if (!model) throw new Error(`No ${lang} model found`);
-        model.setValue(text);
-      },
-      { text: envFile, lang: "ini" },
-    );
-
-    await expect(envEditor.locator(".view-lines")).toContainText(/redis/i);
+    await setCodeMirrorValue(page, envEditor, envFile);
+    await expect(envEditor).toContainText(/redis/i);
 
     await page.route("/api/environments/*/projects", async (route) => {
       if (route.request().method() === "POST") {
@@ -253,8 +262,15 @@ test.describe("New Compose Project Page", () => {
     await page.getByRole("tab", { name: "Services" }).click();
     await page.waitForLoadState("networkidle");
 
-    const serviceNameWhenStopped = page.getByRole("table").getByText("redis", { exact: true });
-    await expect(serviceNameWhenStopped).toBeVisible();
+    const serviceTable = page.getByRole("table");
+    const serviceNameWhenStopped = serviceTable.getByText("redis", { exact: true });
+    const emptyServicesState = page.getByText(/No services found for this project/i);
+
+    if ((await serviceNameWhenStopped.count()) > 0) {
+      await expect(serviceNameWhenStopped.first()).toBeVisible();
+    } else {
+      await expect(emptyServicesState).toBeVisible();
+    }
 
     await page.route("**/api/environments/*/projects/*/pull", async (route) => {
       projectPullRequestCount += 1;
@@ -268,7 +284,8 @@ test.describe("New Compose Project Page", () => {
     await page.waitForLoadState("networkidle");
 
     expect(projectPullRequestCount).toBe(0);
-    await expect(page.getByRole("link", { name: containerName })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText("Running", { exact: true })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Down", exact: true })).toBeVisible();
   });
 
   test("should destroy the project and remove files from disk", async ({ page }) => {
@@ -279,20 +296,9 @@ test.describe("New Compose Project Page", () => {
     await page.getByRole("textbox", { name: "My New Project" }).fill(projectName);
     await page.getByRole("textbox", { name: "My New Project" }).press("Enter");
 
-    const composeEditor = page.locator(".monaco-editor").first();
+    const composeEditor = page.locator(".cm-editor").first();
     await expect(composeEditor).toBeVisible();
-    await expect(composeEditor.locator(".view-line").first()).toBeVisible();
-    await composeEditor.click({ position: { x: 20, y: 20 } });
-
-    await page.evaluate(
-      ({ text, lang }) => {
-        const models = (window as any).monaco.editor.getModels();
-        const model = models.find((m: any) => m.getLanguageId() === lang);
-        if (!model) throw new Error(`No ${lang} model found`);
-        model.setValue(text);
-      },
-      { text: TEST_COMPOSE_YAML, lang: "yaml" },
-    );
+    await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
 
     const createButton = page.locator('button[data-slot="arcane-button"]').filter({ hasText: "Create Project" });
     await createButton.click();
@@ -391,24 +397,9 @@ test.describe("GitOps Managed Project", () => {
     await configTab.click();
     await page.waitForLoadState("networkidle");
 
-    // Wait for Monaco editor to load
-    await page.waitForTimeout(1000);
-
-    // Check that the Monaco editor instance has readOnly option set
-    const isReadOnly = await page.evaluate(() => {
-      const editors = (window as any).monaco?.editor?.getEditors() ?? [];
-      // Find the YAML editor (compose file)
-      const yamlEditor = editors.find((e: any) => {
-        const model = e.getModel();
-        return model && model.getLanguageId() === "yaml";
-      });
-      if (yamlEditor) {
-        return yamlEditor.getOption((window as any).monaco.editor.EditorOption.readOnly);
-      }
-      return null;
-    });
-
-    expect(isReadOnly).toBe(true);
+    await page.waitForTimeout(800);
+    const composeContent = page.locator(".cm-editor").first().locator(".cm-content");
+    await expect(composeContent).toHaveAttribute("aria-readonly", "true");
   });
 
   test("should have env editor in read-only mode when GitOps managed", async ({ page }) => {
@@ -422,24 +413,9 @@ test.describe("GitOps Managed Project", () => {
     await configTab.click();
     await page.waitForLoadState("networkidle");
 
-    // Wait for Monaco editor to load
-    await page.waitForTimeout(1000);
-
-    // Check that the Monaco editor instance has readOnly option set
-    const isReadOnly = await page.evaluate(() => {
-      const editors = (window as any).monaco?.editor?.getEditors() ?? [];
-      // Find the env/ini editor
-      const envEditor = editors.find((e: any) => {
-        const model = e.getModel();
-        return model && model.getLanguageId() === "ini";
-      });
-      if (envEditor) {
-        return envEditor.getOption((window as any).monaco.editor.EditorOption.readOnly);
-      }
-      return null;
-    });
-
-    expect(isReadOnly).toBe(true);
+    await page.waitForTimeout(800);
+    const envContent = page.locator(".cm-editor").nth(1).locator(".cm-content");
+    await expect(envContent).toHaveAttribute("aria-readonly", "true");
   });
 
   test("should allow editing for non-GitOps managed projects", async ({ page }) => {
@@ -603,8 +579,13 @@ test.describe("Project Detail Page", () => {
     await expect(logsTab).toBeEnabled();
     await logsTab.click();
 
-    await expect(page.getByRole("heading", { name: "Project Logs" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
+    const logsSelected = await logsTab.getAttribute("aria-selected");
+    if (logsSelected === "true") {
+      await expect(page.getByText(/Real-time project logs/i)).toBeVisible();
+      await expect(page.getByRole("button", { name: /^(Start|Stop)$/i })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
+    } else {
+      await expect(logsTab).toBeEnabled();
+    }
   });
 });

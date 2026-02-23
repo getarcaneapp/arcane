@@ -60,6 +60,9 @@
 	let originalEnvContent = $state(untrack(() => data.editorState.originalEnvContent || ''));
 	let includeFilesState = $state<Record<string, string>>({});
 	let originalIncludeFiles = $state<Record<string, string>>({});
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
 
 	const formSchema = z.object({
 		name: z
@@ -108,6 +111,24 @@
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
 
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let includeFilesHasErrors = $state<Record<string, boolean>>({});
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+	let includeFilesValidationReady = $state<Record<string, boolean>>({});
+
+	let hasAnyErrors = $derived(
+		!composeValidationReady ||
+			!envValidationReady ||
+			Object.values(includeFilesValidationReady).some((isReady) => !isReady) ||
+			composeHasErrors ||
+			envHasErrors ||
+			Object.values(includeFilesHasErrors).some((hasError) => hasError)
+	);
+
+	let canSave = $derived(hasChanges && !hasAnyErrors);
+
 	const tabItems = $derived<TabItem[]>([
 		{
 			value: 'services',
@@ -136,6 +157,7 @@
 		envOpen: boolean;
 		autoScroll: boolean;
 		layoutMode: 'classic' | 'tree';
+		selectedFile?: 'compose' | 'env' | string;
 	};
 
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
@@ -143,7 +165,8 @@
 		composeOpen: true,
 		envOpen: true,
 		autoScroll: true,
-		layoutMode: 'classic'
+		layoutMode: 'classic',
+		selectedFile: 'compose'
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
@@ -163,6 +186,7 @@
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
+		selectedFile = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 
 		// Auto-detect layout mode based on includeFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
@@ -177,6 +201,12 @@
 				if (!(file.relativePath in includeFilesPanelStates)) {
 					includeFilesPanelStates[file.relativePath] = true;
 				}
+				if (!(file.relativePath in includeFilesHasErrors)) {
+					includeFilesHasErrors[file.relativePath] = false;
+				}
+				if (!(file.relativePath in includeFilesValidationReady)) {
+					includeFilesValidationReady[file.relativePath] = true;
+				}
 			});
 			includeFilesState = newIncludeState;
 			originalIncludeFiles = { ...newIncludeState };
@@ -185,6 +215,10 @@
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
+		if (hasAnyErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
 
 		const formValues = form.data();
 		const validated = isGitOpsManaged ? formValues : form.validate();
@@ -238,9 +272,21 @@
 			composeOpen,
 			envOpen,
 			autoScroll: autoScrollStackLogs,
-			layoutMode
+			layoutMode,
+			selectedFile
 		};
 	}
+
+	$effect(() => {
+		selectedFile;
+		if (layoutMode === 'tree') {
+			persistPrefs();
+		}
+	});
+
+	const allComposeContents = $derived.by(() => {
+		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
+	});
 
 	async function refreshProjectDetails() {
 		if (!projectId) return;
@@ -366,12 +412,12 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges}
+				{#if hasChanges && !hasAnyErrors}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
 						onclick={handleSaveChanges}
-						disabled={!hasChanges}
+						disabled={!canSave}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
 						class="hidden xl:inline-flex"
@@ -382,7 +428,7 @@
 						showLabel={false}
 						loading={isLoading.saving}
 						onclick={handleSaveChanges}
-						disabled={!hasChanges}
+						disabled={!canSave}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
 						class="xl:hidden"
@@ -536,6 +582,16 @@
 											bind:value={$inputs.composeContent.value}
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
+											bind:hasErrors={composeHasErrors}
+											bind:validationReady={composeValidationReady}
+											fileId={`project:${projectId}:compose`}
+											originalValue={originalComposeContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{:else if selectedFile === 'env'}
 										<CodePanel
@@ -545,6 +601,16 @@
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
+											bind:hasErrors={envHasErrors}
+											bind:validationReady={envValidationReady}
+											fileId={`project:${projectId}:env`}
+											originalValue={originalEnvContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -554,6 +620,16 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
+												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+												originalValue={originalIncludeFiles[includeFile.relativePath]}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{/if}
 									{/if}
@@ -631,6 +707,16 @@
 												bind:value={$inputs.composeContent.value}
 												error={$inputs.composeContent.error ?? undefined}
 												readOnly={!canEditCompose}
+												bind:hasErrors={composeHasErrors}
+												bind:validationReady={composeValidationReady}
+												fileId={`project:${projectId}:compose`}
+												originalValue={originalComposeContent}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -640,6 +726,16 @@
 												bind:value={$inputs.envContent.value}
 												error={$inputs.envContent.error ?? undefined}
 												readOnly={!canEditEnv}
+												bind:hasErrors={envHasErrors}
+												bind:validationReady={envValidationReady}
+												fileId={`project:${projectId}:env`}
+												originalValue={originalEnvContent}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -649,6 +745,16 @@
 													title={includeFile.relativePath}
 													language="yaml"
 													bind:value={includeFilesState[includeFile.relativePath]}
+													bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+													bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+													fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+													originalValue={originalIncludeFiles[includeFile.relativePath]}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											{/if}
 										{/if}
@@ -686,6 +792,16 @@
 											title={includeFile.relativePath}
 											language="yaml"
 											bind:value={includeFilesState[includeFile.relativePath]}
+											bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+											bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+											fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+											originalValue={originalIncludeFiles[includeFile.relativePath]}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{/if}
 								{:else}
@@ -697,6 +813,16 @@
 											bind:value={$inputs.composeContent.value}
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
+											bind:hasErrors={composeHasErrors}
+											bind:validationReady={composeValidationReady}
+											fileId={`project:${projectId}:compose`}
+											originalValue={originalComposeContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 										<CodePanel
 											bind:open={envOpen}
@@ -705,6 +831,16 @@
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
+											bind:hasErrors={envHasErrors}
+											bind:validationReady={envValidationReady}
+											fileId={`project:${projectId}:env`}
+											originalValue={originalEnvContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									</div>
 
@@ -729,6 +865,16 @@
 													bind:value={$inputs.composeContent.value}
 													error={$inputs.composeContent.error ?? undefined}
 													readOnly={!canEditCompose}
+													bind:hasErrors={composeHasErrors}
+													bind:validationReady={composeValidationReady}
+													fileId={`project:${projectId}:compose`}
+													originalValue={originalComposeContent}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											</div>
 										{/snippet}
@@ -742,6 +888,16 @@
 													bind:value={$inputs.envContent.value}
 													error={$inputs.envContent.error ?? undefined}
 													readOnly={!canEditEnv}
+													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+													fileId={`project:${projectId}:env`}
+													originalValue={originalEnvContent}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											</div>
 										{/snippet}

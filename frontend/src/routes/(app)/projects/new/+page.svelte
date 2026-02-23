@@ -59,6 +59,16 @@
 	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
+
+	let hasEditorErrors = $derived(!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -67,6 +77,11 @@
 	}
 
 	async function handleCreateProject() {
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) return;
 
@@ -124,6 +139,11 @@
 	}
 
 	async function handleCreateTemplate() {
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) return;
 
@@ -197,20 +217,23 @@
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
-								<ArcaneButton
-									action="create"
-									tone="ghost"
-									disabled={!$inputs.name.value ||
-										!$inputs.composeContent.value ||
-										saving ||
-										converting ||
-										isLoadingTemplateContent}
-									onclick={() => handleSubmit()}
-									class={`${templateBtnClass} gap-2 rounded-r-none`}
-									loading={saving}
-									customLabel={m.compose_create_project()}
-									loadingLabel={m.common_action_creating()}
-								/>
+								{#if !hasEditorErrors}
+									<ArcaneButton
+										action="create"
+										tone="ghost"
+										disabled={!$inputs.name.value ||
+											!$inputs.composeContent.value ||
+											hasEditorErrors ||
+											saving ||
+											converting ||
+											isLoadingTemplateContent}
+										onclick={() => handleSubmit()}
+										class={`${templateBtnClass} gap-2 rounded-r-none`}
+										loading={saving}
+										customLabel={m.compose_create_project()}
+										loadingLabel={m.common_action_creating()}
+									/>
+								{/if}
 							</span>
 						</ArcaneTooltip.Trigger>
 						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
@@ -265,6 +288,7 @@
 									class={dropdownItemClass}
 									disabled={!$inputs.name.value ||
 										!$inputs.composeContent.value ||
+										hasEditorErrors ||
 										saving ||
 										converting ||
 										creatingTemplate ||
@@ -312,6 +336,14 @@
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
 							error={$inputs.composeContent.error ?? undefined}
+							bind:hasErrors={composeHasErrors}
+							bind:validationReady={composeValidationReady}
+							fileId="projects:new:compose"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
 						/>
 					</div>
 
@@ -322,6 +354,14 @@
 							language="env"
 							bind:value={$inputs.envContent.value}
 							error={$inputs.envContent.error ?? undefined}
+							bind:hasErrors={envHasErrors}
+							bind:validationReady={envValidationReady}
+							fileId="projects:new:env"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
 						/>
 					</div>
 				</form>
