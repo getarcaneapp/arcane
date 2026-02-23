@@ -108,6 +108,16 @@
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
 
+	let composeHasErrors = $state(true);
+	let envHasErrors = $state(true);
+	let includeFilesHasErrors = $state<Record<string, boolean>>({});
+
+	let hasAnyErrors = $derived(
+		composeHasErrors || envHasErrors || Object.values(includeFilesHasErrors).some((hasError) => hasError)
+	);
+
+	let canSave = $derived(hasChanges && !hasAnyErrors);
+
 	const tabItems = $derived<TabItem[]>([
 		{
 			value: 'services',
@@ -177,6 +187,9 @@
 				if (!(file.relativePath in includeFilesPanelStates)) {
 					includeFilesPanelStates[file.relativePath] = true;
 				}
+				if (!(file.relativePath in includeFilesHasErrors)) {
+					includeFilesHasErrors[file.relativePath] = true;
+				}
 			});
 			includeFilesState = newIncludeState;
 			originalIncludeFiles = { ...newIncludeState };
@@ -185,6 +198,10 @@
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
+		if (hasAnyErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
 
 		const formValues = form.data();
 		const validated = isGitOpsManaged ? formValues : form.validate();
@@ -366,12 +383,12 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges}
+				{#if hasChanges && !hasAnyErrors}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
 						onclick={handleSaveChanges}
-						disabled={!hasChanges}
+						disabled={!canSave}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
 						class="hidden xl:inline-flex"
@@ -382,7 +399,7 @@
 						showLabel={false}
 						loading={isLoading.saving}
 						onclick={handleSaveChanges}
-						disabled={!hasChanges}
+						disabled={!canSave}
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
 						class="xl:hidden"
@@ -536,6 +553,7 @@
 											bind:value={$inputs.composeContent.value}
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
+											bind:hasErrors={composeHasErrors}
 										/>
 									{:else if selectedFile === 'env'}
 										<CodePanel
@@ -545,6 +563,7 @@
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
+											bind:hasErrors={envHasErrors}
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -554,6 +573,7 @@
 												title={includeFile.relativePath}
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
+												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 											/>
 										{/if}
 									{/if}
@@ -631,6 +651,7 @@
 												bind:value={$inputs.composeContent.value}
 												error={$inputs.composeContent.error ?? undefined}
 												readOnly={!canEditCompose}
+												bind:hasErrors={composeHasErrors}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -640,6 +661,7 @@
 												bind:value={$inputs.envContent.value}
 												error={$inputs.envContent.error ?? undefined}
 												readOnly={!canEditEnv}
+												bind:hasErrors={envHasErrors}
 											/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -649,6 +671,7 @@
 													title={includeFile.relativePath}
 													language="yaml"
 													bind:value={includeFilesState[includeFile.relativePath]}
+													bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 												/>
 											{/if}
 										{/if}
@@ -686,6 +709,7 @@
 											title={includeFile.relativePath}
 											language="yaml"
 											bind:value={includeFilesState[includeFile.relativePath]}
+											bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 										/>
 									{/if}
 								{:else}
@@ -697,6 +721,7 @@
 											bind:value={$inputs.composeContent.value}
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
+											bind:hasErrors={composeHasErrors}
 										/>
 										<CodePanel
 											bind:open={envOpen}
@@ -705,6 +730,7 @@
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
+											bind:hasErrors={envHasErrors}
 										/>
 									</div>
 
@@ -729,6 +755,7 @@
 													bind:value={$inputs.composeContent.value}
 													error={$inputs.composeContent.error ?? undefined}
 													readOnly={!canEditCompose}
+													bind:hasErrors={composeHasErrors}
 												/>
 											</div>
 										{/snippet}
@@ -742,6 +769,7 @@
 													bind:value={$inputs.envContent.value}
 													error={$inputs.envContent.error ?? undefined}
 													readOnly={!canEditEnv}
+													bind:hasErrors={envHasErrors}
 												/>
 											</div>
 										{/snippet}

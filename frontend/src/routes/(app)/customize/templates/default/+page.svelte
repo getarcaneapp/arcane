@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
-	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { createForm } from '$lib/utils/form.utils';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -23,6 +23,9 @@
 	let originalComposeContent = $state(untrack(() => data.composeTemplate));
 	let originalEnvContent = $state(untrack(() => data.envTemplate));
 
+	let composeHasErrors = $state(true);
+	let envHasErrors = $state(true);
+
 	const formSchema = z.object({
 		composeContent: z.string().min(1, m.compose_compose_content_required()),
 		envContent: z.string().optional().default('')
@@ -39,7 +42,14 @@
 		$inputs.composeContent.value !== originalComposeContent || $inputs.envContent.value !== originalEnvContent
 	);
 
+	const canSave = $derived(hasChanges && !composeHasErrors && !envHasErrors);
+
 	async function handleSave() {
+		if (composeHasErrors || envHasErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) {
 			toast.error(m.templates_validation_error());
@@ -110,13 +120,15 @@
 				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving || isLoadingTemplate}>
 					{m.common_reset()}
 				</ArcaneButton>
-				<ArcaneButton
-					action="save"
-					onclick={handleSave}
-					disabled={!hasChanges || isLoadingTemplate}
-					loading={saving}
-					loadingLabel={m.common_action_saving()}
-				/>
+				{#if !composeHasErrors && !envHasErrors}
+					<ArcaneButton
+						action="save"
+						onclick={handleSave}
+						disabled={!canSave || isLoadingTemplate}
+						loading={saving}
+						loadingLabel={m.common_action_saving()}
+					/>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -138,6 +150,7 @@
 						language="yaml"
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
+						bind:hasErrors={composeHasErrors}
 					/>
 				</div>
 			</Card.Content>
@@ -166,6 +179,7 @@
 						language="env"
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
+						bind:hasErrors={envHasErrors}
 					/>
 				</div>
 			</Card.Content>
