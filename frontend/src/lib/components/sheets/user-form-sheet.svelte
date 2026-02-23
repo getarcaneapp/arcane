@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { User } from '$lib/types/user.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
@@ -30,7 +29,6 @@
 
 	let isEditMode = $derived(!!userToEdit);
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
-	let SubmitIcon = $derived(isEditMode ? SaveIcon : AddIcon);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
 
@@ -72,8 +70,8 @@
 			roles: [data.isAdmin ? 'admin' : 'user']
 		};
 
-		// Only include username if we're creating a new user
-		if (!isEditMode) {
+		// Only include username if we're creating a new user or if editing is allowed
+		if (!isEditMode || canEditUsername) {
 			userData.username = data.username;
 		}
 

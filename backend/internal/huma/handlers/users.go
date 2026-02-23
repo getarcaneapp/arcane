@@ -276,6 +276,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
 	}
 
+	if input.Body.Username != nil {
+		userModel.Username = *input.Body.Username
+	}
 	if input.Body.DisplayName != nil {
 		userModel.DisplayName = input.Body.DisplayName
 	}

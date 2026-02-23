@@ -12,6 +12,7 @@ type CreateUser struct {
 
 // UpdateUser represents the request body for updating a user.
 type UpdateUser struct {
+	Username    *string  `json:"username,omitempty" minLength:"1" maxLength:"255" doc:"Username of the user"`
 	DisplayName *string  `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
 	Email       *string  `json:"email,omitempty" format:"email" doc:"Email address of the user"`
 	Roles       []string `json:"roles,omitempty" doc:"Roles assigned to the user"`
