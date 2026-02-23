@@ -1203,10 +1203,23 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	if name != nil {
-		if newName := strings.TrimSpace(*name); newName != "" && proj.Name != newName {
-			proj.Name = newName
+	originalPath := proj.Path
+	originalDirName := proj.DirName
+	committed := false
+	defer func() {
+		if committed || proj.Path == originalPath {
+			return
 		}
+		if err := os.Rename(proj.Path, originalPath); err != nil {
+			slog.WarnContext(ctx, "failed to rollback project directory rename", "from", proj.Path, "to", originalPath, "error", err)
+			return
+		}
+		proj.Path = originalPath
+		proj.DirName = originalDirName
+	}()
+
+	if err := s.applyProjectRenameIfNeeded(&proj, name, projectsDirectory); err != nil {
+		return nil, err
 	}
 
 	switch {
@@ -1223,6 +1236,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
 		return nil, fmt.Errorf("failed to update project: %w", err)
 	}
+	committed = true
 
 	metadata := models.JSON{
 		"action":      "update",
@@ -1241,6 +1255,46 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil
+}
+
+func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
+	if name == nil {
+		return nil
+	}
+
+	newName := strings.TrimSpace(*name)
+	if newName == "" || proj.Name == newName {
+		return nil
+	}
+
+	if proj.Status != models.ProjectStatusStopped {
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+	}
+
+	newDirName := fs.SanitizeProjectName(newName)
+	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
+		return fmt.Errorf("invalid project name: results in empty directory name")
+	}
+
+	currentPath := filepath.Clean(proj.Path)
+	targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName))
+	if currentPath != targetPath {
+		if _, statErr := os.Stat(targetPath); statErr == nil {
+			return fmt.Errorf("project directory already exists: %s", targetPath)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("failed to check project directory rename target: %w", statErr)
+		}
+
+		if err := os.Rename(currentPath, targetPath); err != nil {
+			return fmt.Errorf("failed to rename project directory: %w", err)
+		}
+
+		proj.Path = targetPath
+	}
+
+	proj.DirName = &newDirName
+	proj.Name = newName
+	return nil
 }
 
 func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string, user models.User) error {
