@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 type NodeSummary struct {
@@ -72,6 +72,33 @@ type NodeSummary struct {
 	//
 	// Required: true
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type NodeUpdateRequest struct {
+	// Version is the node version index to update.
+	//
+	// Required: false
+	Version uint64 `json:"version,omitempty"`
+
+	// Name overrides the node name annotation.
+	//
+	// Required: false
+	Name *string `json:"name,omitempty"`
+
+	// Labels updates node labels.
+	//
+	// Required: false
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Role updates node role (manager or worker).
+	//
+	// Required: false
+	Role *swarm.NodeRole `json:"role,omitempty"`
+
+	// Availability updates node availability (active, pause, drain).
+	//
+	// Required: false
+	Availability *swarm.NodeAvailability `json:"availability,omitempty"`
 }
 
 func NewNodeSummary(node swarm.Node) NodeSummary {

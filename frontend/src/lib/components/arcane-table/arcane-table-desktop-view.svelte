@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Table as TableType, type Header, type Cell } from '@tanstack/table-core';
+	import { type Table as TableType, type Header, type Cell, type Row } from '@tanstack/table-core';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
@@ -8,7 +8,8 @@
 	import { cn } from '$lib/utils';
 	import type { ColumnWidth, ColumnAlign, GroupedData, GroupSelectionState } from './arcane-table.types.svelte.ts';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
-	import type { Component } from 'svelte';
+	import type { Component, Snippet } from 'svelte';
+	import { slide } from 'svelte/transition';
 
 	let {
 		table,
@@ -22,7 +23,10 @@
 		getGroupSelectionState,
 		onToggleGroupSelection,
 		onToggleRowSelection,
-		unstyled = false
+		unstyled = false,
+		expandedRowContent,
+		expandedRows,
+		onToggleRowExpanded
 	}: {
 		table: TableType<any>;
 		selectedIds: string[];
@@ -36,7 +40,12 @@
 		onToggleGroupSelection?: (groupItems: any[]) => void;
 		onToggleRowSelection?: (id: string, selected: boolean) => void;
 		unstyled?: boolean;
+		expandedRowContent?: Snippet<[{ row: Row<any>; item: any }]>;
+		expandedRows?: Set<string>;
+		onToggleRowExpanded?: (rowId: string) => void;
 	} = $props();
+
+	const hasExpand = $derived(!!expandedRowContent);
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
@@ -64,7 +73,12 @@
 	}
 
 	function handleRowClick(event: MouseEvent, rowId: string) {
-		if (selectionDisabled || shouldIgnoreRowClick(event)) return;
+		if (shouldIgnoreRowClick(event)) return;
+		if (hasExpand) {
+			onToggleRowExpanded?.(rowId);
+			return;
+		}
+		if (selectionDisabled) return;
 		const isSelected = (selectedIds ?? []).includes(rowId);
 		onToggleRowSelection?.(rowId, !isSelected);
 	}
@@ -103,6 +117,9 @@
 		<Table.Header>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<Table.Row>
+					{#if hasExpand}
+						<Table.Head class="w-8 px-2"></Table.Head>
+					{/if}
 					{#each headerGroup.headers as header (header.id)}
 						<Table.Head
 							colspan={header.colSpan}
@@ -166,10 +183,27 @@
 					{#if !isCollapsed}
 						{#each groupRows as row (row.id)}
 							{@const rowId = (row.original as any).id}
+							{@const isExpanded = expandedRows?.has(rowId) ?? false}
 							<Table.Row
 								data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
 								onclick={(event) => handleRowClick(event, rowId)}
+								class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 							>
+								{#if hasExpand}
+									<Table.Cell class="w-8 px-2" data-row-select-ignore>
+										<button
+											class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
+											class:rotate-90={isExpanded}
+											onclick={(e) => {
+												e.stopPropagation();
+												onToggleRowExpanded?.(rowId);
+											}}
+											aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+										>
+											<ArrowRightIcon class="size-4" />
+										</button>
+									</Table.Cell>
+								{/if}
 								{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
 									{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
 									<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
@@ -190,6 +224,18 @@
 									</Table.Cell>
 								{/each}
 							</Table.Row>
+
+							{#if hasExpand && isExpanded && expandedRowContent}
+								<Table.Row class="bg-primary/10 hover:bg-primary/10">
+									<Table.Cell colspan={columnsCount} class="p-0">
+										<div transition:slide={{ duration: 200 }}>
+											<div class="px-6 py-4">
+												{@render expandedRowContent({ row, item: row.original })}
+											</div>
+										</div>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
 						{/each}
 					{/if}
 				{/each}
@@ -215,10 +261,27 @@
 			{:else}
 				{#each table.getRowModel().rows as row (row.id)}
 					{@const rowId = (row.original as any).id}
+					{@const isExpanded = expandedRows?.has(rowId) ?? false}
 					<Table.Row
 						data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
 						onclick={(event) => handleRowClick(event, rowId)}
+						class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 					>
+						{#if hasExpand}
+							<Table.Cell class="w-8 px-2" data-row-select-ignore>
+								<button
+									class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
+									class:rotate-90={isExpanded}
+									onclick={(e) => {
+										e.stopPropagation();
+										onToggleRowExpanded?.(rowId);
+									}}
+									aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+								>
+									<ArrowRightIcon class="size-4" />
+								</button>
+							</Table.Cell>
+						{/if}
 						{#each row.getVisibleCells() as cell (cell.id)}
 							<Table.Cell class={getCellClasses(cell, false, false)}>
 								{#if cell.column.id === 'actions'}
@@ -238,6 +301,18 @@
 							</Table.Cell>
 						{/each}
 					</Table.Row>
+
+					{#if hasExpand && isExpanded && expandedRowContent}
+						<Table.Row class="bg-primary/10 hover:bg-primary/10">
+							<Table.Cell colspan={columnsCount} class="p-0">
+								<div transition:slide={{ duration: 200 }}>
+									<div class="px-6 py-4">
+										{@render expandedRowContent({ row, item: row.original })}
+									</div>
+								</div>
+							</Table.Cell>
+						</Table.Row>
+					{/if}
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columnsCount} class="h-48">

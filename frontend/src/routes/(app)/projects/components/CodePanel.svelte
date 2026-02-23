@@ -4,9 +4,7 @@
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import type { DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
-
-	type CodeLanguage = 'yaml' | 'env' | 'json';
+	import type { CodeLanguage, DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
 
 	let {
 		title,

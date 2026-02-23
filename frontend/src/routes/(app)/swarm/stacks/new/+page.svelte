@@ -43,7 +43,11 @@
 	});
 
 	const initialName = $derived(
-		data.selectedTemplate ? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-') : ''
+		data.sourceStackName
+			? data.sourceStackName
+			: data.selectedTemplate
+				? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-')
+				: ''
 	);
 
 	let formData = $derived({

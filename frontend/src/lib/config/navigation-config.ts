@@ -19,7 +19,9 @@ import {
 	SettingsIcon,
 	GitBranchIcon,
 	ShieldAlertIcon,
-	HammerIcon
+	HammerIcon,
+	TemplateIcon,
+	LockIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -47,10 +49,13 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
 	swarmItems: [
-		{ title: m.swarm_services_title(), url: '/swarm/services', icon: DockIcon },
-		{ title: m.swarm_nodes_title(), url: '/swarm/nodes', icon: UsersIcon },
-		{ title: m.swarm_tasks_title(), url: '/swarm/tasks', icon: JobsIcon },
-		{ title: m.swarm_stacks_title(), url: '/swarm/stacks', icon: LayersIcon }
+		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
+		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
+		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon },
+		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon },
+		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon },
+		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
+		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
 	],
 	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
