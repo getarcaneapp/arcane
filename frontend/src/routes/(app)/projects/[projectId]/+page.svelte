@@ -90,7 +90,6 @@
 		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(!isGitOpsManaged);
-	let canEditEnv = $derived(!isGitOpsManaged);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -544,7 +543,7 @@
 											language="env"
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
-											readOnly={!canEditEnv}
+ 
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -633,14 +632,13 @@
 												readOnly={!canEditCompose}
 											/>
 										{:else if selectedFile === 'env'}
-											<CodePanel
-												bind:open={envOpen}
-												title=".env"
-												language="env"
-												bind:value={$inputs.envContent.value}
-												error={$inputs.envContent.error ?? undefined}
-												readOnly={!canEditEnv}
-											/>
+										<CodePanel
+											bind:open={envOpen}
+											title=".env"
+											language="env"
+											bind:value={$inputs.envContent.value}
+											error={$inputs.envContent.error ?? undefined}
+										/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 											{#if includeFile}
@@ -704,7 +702,7 @@
 											language="env"
 											bind:value={$inputs.envContent.value}
 											error={$inputs.envContent.error ?? undefined}
-											readOnly={!canEditEnv}
+ 
 										/>
 									</div>
 
@@ -735,14 +733,13 @@
 
 										{#snippet second()}
 											<div class="flex min-h-0 flex-1 flex-col">
-												<CodePanel
-													bind:open={envOpen}
-													title=".env"
-													language="env"
-													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
-													readOnly={!canEditEnv}
-												/>
+										<CodePanel
+											bind:open={envOpen}
+											title=".env"
+											language="env"
+											bind:value={$inputs.envContent.value}
+											error={$inputs.envContent.error ?? undefined}
+										/>
 											</div>
 										{/snippet}
 									</ResizableSplit>

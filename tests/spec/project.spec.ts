@@ -411,37 +411,6 @@ test.describe("GitOps Managed Project", () => {
     expect(isReadOnly).toBe(true);
   });
 
-  test("should have env editor in read-only mode when GitOps managed", async ({ page }) => {
-    const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
-    test.skip(!gitOpsProject, "No GitOps-managed projects found");
-
-    await page.goto(`/projects/${gitOpsProject!.id}`);
-    await page.waitForLoadState("networkidle");
-
-    const configTab = page.getByRole("tab", { name: /Configuration|Config/i });
-    await configTab.click();
-    await page.waitForLoadState("networkidle");
-
-    // Wait for Monaco editor to load
-    await page.waitForTimeout(1000);
-
-    // Check that the Monaco editor instance has readOnly option set
-    const isReadOnly = await page.evaluate(() => {
-      const editors = (window as any).monaco?.editor?.getEditors() ?? [];
-      // Find the env/ini editor
-      const envEditor = editors.find((e: any) => {
-        const model = e.getModel();
-        return model && model.getLanguageId() === "ini";
-      });
-      if (envEditor) {
-        return envEditor.getOption((window as any).monaco.editor.EditorOption.readOnly);
-      }
-      return null;
-    });
-
-    expect(isReadOnly).toBe(true);
-  });
-
   test("should allow editing for non-GitOps managed projects", async ({ page }) => {
     const regularProject = realProjects.find((p) => !p.gitOpsManagedBy && p.status === "stopped");
     test.skip(!regularProject, "No regular (non-GitOps) stopped projects found");
