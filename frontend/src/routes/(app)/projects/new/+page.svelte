@@ -59,10 +59,16 @@
 	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
-	let composeHasErrors = $state(true);
-	let envHasErrors = $state(true);
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
 
-	let hasEditorErrors = $derived(composeHasErrors || envHasErrors);
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
+
+	let hasEditorErrors = $derived(!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -331,6 +337,13 @@
 							bind:value={$inputs.composeContent.value}
 							error={$inputs.composeContent.error ?? undefined}
 							bind:hasErrors={composeHasErrors}
+							bind:validationReady={composeValidationReady}
+							fileId="projects:new:compose"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
 						/>
 					</div>
 
@@ -342,6 +355,13 @@
 							bind:value={$inputs.envContent.value}
 							error={$inputs.envContent.error ?? undefined}
 							bind:hasErrors={envHasErrors}
+							bind:validationReady={envValidationReady}
+							fileId="projects:new:env"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
 						/>
 					</div>
 				</form>

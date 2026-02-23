@@ -60,6 +60,9 @@
 	let originalEnvContent = $state(untrack(() => data.editorState.originalEnvContent || ''));
 	let includeFilesState = $state<Record<string, string>>({});
 	let originalIncludeFiles = $state<Record<string, string>>({});
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
 
 	const formSchema = z.object({
 		name: z
@@ -108,12 +111,20 @@
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
 
-	let composeHasErrors = $state(true);
-	let envHasErrors = $state(true);
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
 	let includeFilesHasErrors = $state<Record<string, boolean>>({});
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+	let includeFilesValidationReady = $state<Record<string, boolean>>({});
 
 	let hasAnyErrors = $derived(
-		composeHasErrors || envHasErrors || Object.values(includeFilesHasErrors).some((hasError) => hasError)
+		!composeValidationReady ||
+			!envValidationReady ||
+			Object.values(includeFilesValidationReady).some((isReady) => !isReady) ||
+			composeHasErrors ||
+			envHasErrors ||
+			Object.values(includeFilesHasErrors).some((hasError) => hasError)
 	);
 
 	let canSave = $derived(hasChanges && !hasAnyErrors);
@@ -146,6 +157,7 @@
 		envOpen: boolean;
 		autoScroll: boolean;
 		layoutMode: 'classic' | 'tree';
+		selectedFile?: 'compose' | 'env' | string;
 	};
 
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
@@ -153,7 +165,8 @@
 		composeOpen: true,
 		envOpen: true,
 		autoScroll: true,
-		layoutMode: 'classic'
+		layoutMode: 'classic',
+		selectedFile: 'compose'
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
@@ -173,6 +186,7 @@
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
+		selectedFile = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 
 		// Auto-detect layout mode based on includeFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
@@ -188,7 +202,10 @@
 					includeFilesPanelStates[file.relativePath] = true;
 				}
 				if (!(file.relativePath in includeFilesHasErrors)) {
-					includeFilesHasErrors[file.relativePath] = true;
+					includeFilesHasErrors[file.relativePath] = false;
+				}
+				if (!(file.relativePath in includeFilesValidationReady)) {
+					includeFilesValidationReady[file.relativePath] = true;
 				}
 			});
 			includeFilesState = newIncludeState;
@@ -255,9 +272,21 @@
 			composeOpen,
 			envOpen,
 			autoScroll: autoScrollStackLogs,
-			layoutMode
+			layoutMode,
+			selectedFile
 		};
 	}
+
+	$effect(() => {
+		selectedFile;
+		if (layoutMode === 'tree') {
+			persistPrefs();
+		}
+	});
+
+	const allComposeContents = $derived.by(() => {
+		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
+	});
 
 	async function refreshProjectDetails() {
 		if (!projectId) return;
@@ -554,6 +583,15 @@
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
 											bind:hasErrors={composeHasErrors}
+											bind:validationReady={composeValidationReady}
+											fileId={`project:${projectId}:compose`}
+											originalValue={originalComposeContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{:else if selectedFile === 'env'}
 										<CodePanel
@@ -564,6 +602,15 @@
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
 											bind:hasErrors={envHasErrors}
+											bind:validationReady={envValidationReady}
+											fileId={`project:${projectId}:env`}
+											originalValue={originalEnvContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -574,6 +621,15 @@
 												language="yaml"
 												bind:value={includeFilesState[includeFile.relativePath]}
 												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+												originalValue={originalIncludeFiles[includeFile.relativePath]}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{/if}
 									{/if}
@@ -652,6 +708,15 @@
 												error={$inputs.composeContent.error ?? undefined}
 												readOnly={!canEditCompose}
 												bind:hasErrors={composeHasErrors}
+												bind:validationReady={composeValidationReady}
+												fileId={`project:${projectId}:compose`}
+												originalValue={originalComposeContent}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -662,6 +727,15 @@
 												error={$inputs.envContent.error ?? undefined}
 												readOnly={!canEditEnv}
 												bind:hasErrors={envHasErrors}
+												bind:validationReady={envValidationReady}
+												fileId={`project:${projectId}:env`}
+												originalValue={originalEnvContent}
+												enableDiff={true}
+												editorContext={{
+													envContent: $inputs.envContent.value,
+													composeContents: allComposeContents,
+													globalVariables: globalVariableMap
+												}}
 											/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -672,6 +746,15 @@
 													language="yaml"
 													bind:value={includeFilesState[includeFile.relativePath]}
 													bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+													bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+													fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+													originalValue={originalIncludeFiles[includeFile.relativePath]}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											{/if}
 										{/if}
@@ -710,6 +793,15 @@
 											language="yaml"
 											bind:value={includeFilesState[includeFile.relativePath]}
 											bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+											bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+											fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+											originalValue={originalIncludeFiles[includeFile.relativePath]}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									{/if}
 								{:else}
@@ -722,6 +814,15 @@
 											error={$inputs.composeContent.error ?? undefined}
 											readOnly={!canEditCompose}
 											bind:hasErrors={composeHasErrors}
+											bind:validationReady={composeValidationReady}
+											fileId={`project:${projectId}:compose`}
+											originalValue={originalComposeContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 										<CodePanel
 											bind:open={envOpen}
@@ -731,6 +832,15 @@
 											error={$inputs.envContent.error ?? undefined}
 											readOnly={!canEditEnv}
 											bind:hasErrors={envHasErrors}
+											bind:validationReady={envValidationReady}
+											fileId={`project:${projectId}:env`}
+											originalValue={originalEnvContent}
+											enableDiff={true}
+											editorContext={{
+												envContent: $inputs.envContent.value,
+												composeContents: allComposeContents,
+												globalVariables: globalVariableMap
+											}}
 										/>
 									</div>
 
@@ -756,6 +866,15 @@
 													error={$inputs.composeContent.error ?? undefined}
 													readOnly={!canEditCompose}
 													bind:hasErrors={composeHasErrors}
+													bind:validationReady={composeValidationReady}
+													fileId={`project:${projectId}:compose`}
+													originalValue={originalComposeContent}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											</div>
 										{/snippet}
@@ -770,6 +889,15 @@
 													error={$inputs.envContent.error ?? undefined}
 													readOnly={!canEditEnv}
 													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+													fileId={`project:${projectId}:env`}
+													originalValue={originalEnvContent}
+													enableDiff={true}
+													editorContext={{
+														envContent: $inputs.envContent.value,
+														composeContents: allComposeContents,
+														globalVariables: globalVariableMap
+													}}
 												/>
 											</div>
 										{/snippet}

@@ -23,8 +23,14 @@
 	let originalComposeContent = $state(untrack(() => data.composeTemplate));
 	let originalEnvContent = $state(untrack(() => data.envTemplate));
 
-	let composeHasErrors = $state(true);
-	let envHasErrors = $state(true);
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
 
 	const formSchema = z.object({
 		composeContent: z.string().min(1, m.compose_compose_content_required()),
@@ -42,10 +48,10 @@
 		$inputs.composeContent.value !== originalComposeContent || $inputs.envContent.value !== originalEnvContent
 	);
 
-	const canSave = $derived(hasChanges && !composeHasErrors && !envHasErrors);
+	const canSave = $derived(hasChanges && composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors);
 
 	async function handleSave() {
-		if (composeHasErrors || envHasErrors) {
+		if (!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors) {
 			toast.error(m.templates_validation_error());
 			return;
 		}
@@ -120,7 +126,7 @@
 				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving || isLoadingTemplate}>
 					{m.common_reset()}
 				</ArcaneButton>
-				{#if !composeHasErrors && !envHasErrors}
+				{#if composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors}
 					<ArcaneButton
 						action="save"
 						onclick={handleSave}
@@ -151,6 +157,15 @@
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
 						bind:hasErrors={composeHasErrors}
+						bind:validationReady={composeValidationReady}
+						fileId="templates:defaults:compose"
+						originalValue={originalComposeContent}
+						enableDiff={true}
+						editorContext={{
+							envContent: $inputs.envContent.value,
+							composeContents: [$inputs.composeContent.value],
+							globalVariables: globalVariableMap
+						}}
 					/>
 				</div>
 			</Card.Content>
@@ -180,6 +195,15 @@
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
 						bind:hasErrors={envHasErrors}
+						bind:validationReady={envValidationReady}
+						fileId="templates:defaults:env"
+						originalValue={originalEnvContent}
+						enableDiff={true}
+						editorContext={{
+							envContent: $inputs.envContent.value,
+							composeContents: [$inputs.composeContent.value],
+							globalVariables: globalVariableMap
+						}}
 					/>
 				</div>
 			</Card.Content>
