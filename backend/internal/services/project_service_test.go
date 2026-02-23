@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -333,4 +335,144 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 	assert.Len(t, plan, 2)
 	assert.Equal(t, imagePullModeAlways, plan["redis:latest"])
 	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
+}
+
+func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-1"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedName := "bar"
+	updated, err := svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	expectedPath := filepath.Join(projectsDir, "bar")
+	assert.Equal(t, "bar", updated.Name)
+	assert.Equal(t, expectedPath, updated.Path)
+	require.NotNil(t, updated.DirName)
+	assert.Equal(t, "bar", *updated.DirName)
+	assert.NoDirExists(t, originalPath)
+	assert.DirExists(t, expectedPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "bar", fromDB.Name)
+	assert.Equal(t, expectedPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	assert.Equal(t, "bar", *fromDB.DirName)
+}
+
+func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	targetPath := filepath.Join(projectsDir, "bar")
+	require.NoError(t, os.MkdirAll(targetPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-2"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedName := "bar"
+	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project directory already exists")
+	assert.DirExists(t, originalPath)
+	assert.DirExists(t, targetPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
+func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-3"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusRunning,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedName := "bar"
+	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	assert.Equal(t, "Foo", *fromDB.DirName)
 }
