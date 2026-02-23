@@ -11,10 +11,14 @@
 
 	let {
 		tasks = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		fetchTasks = (options: SearchPaginationSortRequest) => swarmService.getTasks(options),
+		persistKey = 'arcane-swarm-tasks-table'
 	}: {
 		tasks: Paginated<SwarmTaskSummary>;
 		requestOptions: SearchPaginationSortRequest;
+		fetchTasks?: (options: SearchPaginationSortRequest) => Promise<Paginated<SwarmTaskSummary>>;
+		persistKey?: string;
 	} = $props();
 
 	function stateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {
@@ -99,12 +103,12 @@
 {/snippet}
 
 <ArcaneTable
-	persistKey="arcane-swarm-tasks-table"
+	{persistKey}
 	items={tasks}
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => (tasks = await swarmService.getTasks(options))}
+	onRefresh={async (options) => (tasks = await fetchTasks(options))}
 	{columns}
 	{mobileFields}
 	mobileCard={TaskMobileCardSnippet}

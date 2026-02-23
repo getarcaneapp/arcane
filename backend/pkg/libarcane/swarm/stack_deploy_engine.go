@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,18 +17,24 @@ import (
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	dockerclient "github.com/docker/docker/client"
 	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
+	dockerclient "github.com/moby/moby/client"
 )
 
 type resourceMeta struct {
 	ID   string
 	Name string
 }
+
+const (
+	resolveImageAlways  = "always"
+	resolveImageChanged = "changed"
+	resolveImageNever   = "never"
+	stackImageLabel     = "com.docker.stack.image"
+)
 
 // StackDeployOptions controls how a swarm stack is deployed.
 type StackDeployOptions struct {
@@ -38,11 +46,31 @@ type StackDeployOptions struct {
 	ResolveImage     string
 }
 
+type StackRenderOptions struct {
+	Name           string
+	ComposeContent string
+	EnvContent     string
+}
+
+type StackRenderResult struct {
+	Name            string
+	RenderedCompose string
+	Services        []string
+	Networks        []string
+	Volumes         []string
+	Configs         []string
+	Secrets         []string
+}
+
 // DeployStack deploys a stack directly using the Docker Engine API
 func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
 	if stackName == "" {
 		return errors.New("stack name is required")
+	}
+	resolveMode, err := normalizeResolveImageMode(opts.ResolveImage)
+	if err != nil {
+		return err
 	}
 
 	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
@@ -84,16 +112,16 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		if err != nil {
 			return err
 		}
-		desiredServices[spec.Annotations.Name] = struct{}{}
+		desiredServices[spec.Name] = struct{}{}
 
-		if existing, ok := existingServices[spec.Annotations.Name]; ok {
-			if err := updateSwarmService(ctx, dockerClient, existing, spec); err != nil {
+		if existing, ok := existingServices[spec.Name]; ok {
+			if err := updateSwarmService(ctx, dockerClient, existing, spec, resolveMode); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if err := createSwarmService(ctx, dockerClient, spec, opts.WithRegistryAuth); err != nil {
+		if err := createSwarmService(ctx, dockerClient, spec, opts.WithRegistryAuth, resolveMode); err != nil {
 			return err
 		}
 	}
@@ -103,13 +131,43 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 			if _, ok := desiredServices[name]; ok {
 				continue
 			}
-			if err := dockerClient.ServiceRemove(ctx, svc.ID); err != nil {
+			if _, err := dockerClient.ServiceRemove(ctx, svc.ID, dockerclient.ServiceRemoveOptions{}); err != nil {
 				return fmt.Errorf("failed to remove swarm service %s: %w", name, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRenderResult, error) {
+	stackName := strings.TrimSpace(opts.Name)
+	if stackName == "" {
+		return nil, errors.New("stack name is required")
+	}
+
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
+	if err != nil {
+		return nil, err
+	}
+	if project.Name == "" {
+		project.Name = stackName
+	}
+
+	rendered, err := project.MarshalYAML()
+	if err != nil {
+		return nil, fmt.Errorf("failed to render compose project: %w", err)
+	}
+
+	return &StackRenderResult{
+		Name:            stackName,
+		RenderedCompose: string(rendered),
+		Services:        project.ServiceNames(),
+		Networks:        project.NetworkNames(),
+		Volumes:         project.VolumeNames(),
+		Configs:         project.ConfigNames(),
+		Secrets:         project.SecretNames(),
+	}, nil
 }
 
 func loadComposeProject(ctx context.Context, projectName, composeContent, envContent string) (*composegotypes.Project, error) {
@@ -151,15 +209,16 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 }
 
 func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, stackName string) (map[string]swarm.Service, error) {
-	filters := filters.NewArgs(filters.Arg("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName)))
-	services, err := dockerClient.ServiceList(ctx, swarm.ServiceListOptions{Filters: filters})
+	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm services: %w", err)
 	}
+	services := servicesResult.Items
 
 	byName := make(map[string]swarm.Service, len(services))
 	for _, service := range services {
-		byName[service.Spec.Annotations.Name] = service
+		byName[service.Spec.Name] = service
 	}
 	return byName, nil
 }
@@ -180,7 +239,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 		stackedName := stackScopedName(stackName, networkName)
 		result[key] = stackedName
 
-		_, err := dockerClient.NetworkInspect(ctx, stackedName, network.InspectOptions{Scope: "swarm"})
+		_, err := dockerClient.NetworkInspect(ctx, stackedName, dockerclient.NetworkInspectOptions{Scope: "swarm"})
 		if err == nil {
 			continue
 		}
@@ -194,7 +253,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 		}
 
 		labels := mergeLabels(cfg.Labels, stackLabels)
-		createOpts := network.CreateOptions{
+		createOpts := dockerclient.NetworkCreateOptions{
 			Driver:     driver,
 			Scope:      "swarm",
 			EnableIPv4: cfg.EnableIPv4,
@@ -279,7 +338,7 @@ func ensureConfig(ctx context.Context, dockerClient *dockerclient.Client, name s
 		Data: data,
 	}
 
-	resp, err := dockerClient.ConfigCreate(ctx, spec)
+	resp, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
 	if err != nil {
 		return resourceMeta{}, fmt.Errorf("failed to create config %s: %w", name, err)
 	}
@@ -307,7 +366,7 @@ func ensureSecret(ctx context.Context, dockerClient *dockerclient.Client, name s
 		Data: data,
 	}
 
-	resp, err := dockerClient.SecretCreate(ctx, spec)
+	resp, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
 	if err != nil {
 		return resourceMeta{}, fmt.Errorf("failed to create secret %s: %w", name, err)
 	}
@@ -315,18 +374,20 @@ func ensureSecret(ctx context.Context, dockerClient *dockerclient.Client, name s
 }
 
 func inspectConfig(ctx context.Context, dockerClient *dockerclient.Client, name string) (resourceMeta, error) {
-	config, _, err := dockerClient.ConfigInspectWithRaw(ctx, name)
+	configResult, err := dockerClient.ConfigInspect(ctx, name, dockerclient.ConfigInspectOptions{})
 	if err != nil {
 		return resourceMeta{}, err
 	}
+	config := configResult.Config
 	return resourceMeta{ID: config.ID, Name: config.Spec.Name}, nil
 }
 
 func inspectSecret(ctx context.Context, dockerClient *dockerclient.Client, name string) (resourceMeta, error) {
-	secret, _, err := dockerClient.SecretInspectWithRaw(ctx, name)
+	secretResult, err := dockerClient.SecretInspect(ctx, name, dockerclient.SecretInspectOptions{})
 	if err != nil {
 		return resourceMeta{}, err
 	}
+	secret := secretResult.Secret
 	return resourceMeta{ID: secret.ID, Name: secret.Spec.Name}, nil
 }
 
@@ -353,6 +414,9 @@ func buildServiceSpec(
 	serviceLabels := mergeLabels(nil, stackLabels)
 	if service.Deploy != nil {
 		serviceLabels = mergeLabels(service.Deploy.Labels, serviceLabels)
+	}
+	if service.Image != "" {
+		serviceLabels[stackImageLabel] = service.Image
 	}
 
 	spec := swarm.ServiceSpec{
@@ -391,7 +455,7 @@ func buildServiceSpec(
 
 	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
 		spec.TaskTemplate.ContainerSpec.DNSConfig = &swarm.DNSConfig{
-			Nameservers: []string(service.DNS),
+			Nameservers: parseIPList(service.DNS),
 			Search:      []string(service.DNSSearch),
 			Options:     service.DNSOpts,
 		}
@@ -403,22 +467,31 @@ func buildServiceSpec(
 	return spec, nil
 }
 
-func createSwarmService(ctx context.Context, dockerClient *dockerclient.Client, spec swarm.ServiceSpec, withRegistryAuth bool) error {
-	options := swarm.ServiceCreateOptions{}
-	if withRegistryAuth {
-		// TODO: Populate EncodedRegistryAuth for private registries.
-		options.QueryRegistry = true
-	}
-	if _, err := dockerClient.ServiceCreate(ctx, spec, options); err != nil {
-		return fmt.Errorf("failed to create swarm service %s: %w", spec.Annotations.Name, err)
+func createSwarmService(ctx context.Context, dockerClient *dockerclient.Client, spec swarm.ServiceSpec, withRegistryAuth bool, resolveMode string) error {
+	queryRegistry := withRegistryAuth || shouldQueryRegistryOnCreate(resolveMode)
+	if _, err := dockerClient.ServiceCreate(ctx, dockerclient.ServiceCreateOptions{
+		Spec:          spec,
+		QueryRegistry: queryRegistry,
+	}); err != nil {
+		return fmt.Errorf("failed to create swarm service %s: %w", spec.Name, err)
 	}
 	return nil
 }
 
-func updateSwarmService(ctx context.Context, dockerClient *dockerclient.Client, existing swarm.Service, spec swarm.ServiceSpec) error {
-	options := swarm.ServiceUpdateOptions{}
-	if _, err := dockerClient.ServiceUpdate(ctx, existing.ID, swarm.Version{Index: existing.Version.Index}, spec, options); err != nil {
-		return fmt.Errorf("failed to update swarm service %s: %w", spec.Annotations.Name, err)
+func updateSwarmService(ctx context.Context, dockerClient *dockerclient.Client, existing swarm.Service, spec swarm.ServiceSpec, resolveMode string) error {
+	queryRegistry := shouldQueryRegistryOnUpdate(resolveMode, existing, spec)
+	if !queryRegistry {
+		preserveExistingResolvedImage(&spec, existing)
+	}
+	// Do not force task rescheduling on no-op updates.
+	spec.TaskTemplate.ForceUpdate = existing.Spec.TaskTemplate.ForceUpdate
+
+	if _, err := dockerClient.ServiceUpdate(ctx, existing.ID, dockerclient.ServiceUpdateOptions{
+		Version:       existing.Version,
+		Spec:          spec,
+		QueryRegistry: queryRegistry,
+	}); err != nil {
+		return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, err)
 	}
 	return nil
 }
@@ -445,20 +518,20 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composegotypes.DeployCon
 		spec.UpdateConfig = &swarm.UpdateConfig{
 			Parallelism:     valueOrZero(deploy.UpdateConfig.Parallelism),
 			Delay:           time.Duration(deploy.UpdateConfig.Delay),
-			FailureAction:   deploy.UpdateConfig.FailureAction,
+			FailureAction:   swarm.FailureAction(deploy.UpdateConfig.FailureAction),
 			Monitor:         time.Duration(deploy.UpdateConfig.Monitor),
 			MaxFailureRatio: deploy.UpdateConfig.MaxFailureRatio,
-			Order:           deploy.UpdateConfig.Order,
+			Order:           swarm.UpdateOrder(deploy.UpdateConfig.Order),
 		}
 	}
 	if deploy.RollbackConfig != nil {
 		spec.RollbackConfig = &swarm.UpdateConfig{
 			Parallelism:     valueOrZero(deploy.RollbackConfig.Parallelism),
 			Delay:           time.Duration(deploy.RollbackConfig.Delay),
-			FailureAction:   deploy.RollbackConfig.FailureAction,
+			FailureAction:   swarm.FailureAction(deploy.RollbackConfig.FailureAction),
 			Monitor:         time.Duration(deploy.RollbackConfig.Monitor),
 			MaxFailureRatio: deploy.RollbackConfig.MaxFailureRatio,
-			Order:           deploy.RollbackConfig.Order,
+			Order:           swarm.UpdateOrder(deploy.RollbackConfig.Order),
 		}
 	}
 
@@ -506,7 +579,11 @@ func applyServiceMode(spec *swarm.ServiceSpec, mode string, scale *int) {
 	default:
 		replicas := uint64(1)
 		if scale != nil {
-			replicas = uint64(*scale)
+			if *scale <= 0 {
+				replicas = 0
+			} else {
+				replicas = uint64(*scale)
+			}
 		}
 		spec.Mode = swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &replicas}}
 	}
@@ -526,7 +603,7 @@ func applyServicePorts(spec *swarm.ServiceSpec, ports []composegotypes.ServicePo
 	for _, port := range ports {
 		entry := swarm.PortConfig{
 			Name:       port.Name,
-			Protocol:   swarm.PortConfigProtocol(strings.ToLower(port.Protocol)),
+			Protocol:   network.IPProtocol(strings.ToLower(port.Protocol)),
 			TargetPort: port.Target,
 		}
 		if port.Mode != "" {
@@ -704,16 +781,70 @@ func convertIPAM(cfg composegotypes.IPAMConfig) *network.IPAM {
 			if pool == nil {
 				continue
 			}
+			subnet, _ := parsePrefix(pool.Subnet)
+			ipRange, _ := parsePrefix(pool.IPRange)
+			gateway, _ := parseAddr(pool.Gateway)
 			pools = append(pools, network.IPAMConfig{
-				Subnet:     pool.Subnet,
-				Gateway:    pool.Gateway,
-				IPRange:    pool.IPRange,
-				AuxAddress: pool.AuxiliaryAddresses,
+				Subnet:     subnet,
+				Gateway:    gateway,
+				IPRange:    ipRange,
+				AuxAddress: parseAuxAddresses(pool.AuxiliaryAddresses),
 			})
 		}
 		result.Config = pools
 	}
 	return result
+}
+
+func parseIPList(values []string) []netip.Addr {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]netip.Addr, 0, len(values))
+	for _, value := range values {
+		addr, ok := parseAddr(value)
+		if ok {
+			out = append(out, addr)
+		}
+	}
+	return out
+}
+
+func parseAddr(value string) (netip.Addr, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return netip.Addr{}, false
+	}
+	addr, err := netip.ParseAddr(value)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr, true
+}
+
+func parsePrefix(value string) (netip.Prefix, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return netip.Prefix{}, false
+	}
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	return prefix, true
+}
+
+func parseAuxAddresses(values map[string]string) map[string]netip.Addr {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]netip.Addr, len(values))
+	for key, value := range values {
+		if addr, ok := parseAddr(value); ok {
+			out[key] = addr
+		}
+	}
+	return out
 }
 
 func convertEnv(env composegotypes.MappingWithEquals) []string {
@@ -778,12 +909,8 @@ func valueOrZero(value *uint64) uint64 {
 
 func mergeLabels(primary map[string]string, secondary map[string]string) map[string]string {
 	out := map[string]string{}
-	for key, value := range primary {
-		out[key] = value
-	}
-	for key, value := range secondary {
-		out[key] = value
-	}
+	maps.Copy(out, primary)
+	maps.Copy(out, secondary)
 	return out
 }
 
@@ -831,6 +958,52 @@ func toUint32FromInt64(value int64) (uint32, bool) {
 	return uint32(value), true
 }
 
+func normalizeResolveImageMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return resolveImageAlways, nil
+	}
+	switch mode {
+	case resolveImageAlways, resolveImageChanged, resolveImageNever:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
+	}
+}
+
+func shouldQueryRegistryOnCreate(resolveMode string) bool {
+	return resolveMode == resolveImageAlways || resolveMode == resolveImageChanged
+}
+
+func shouldQueryRegistryOnUpdate(resolveMode string, existing swarm.Service, desired swarm.ServiceSpec) bool {
+	switch resolveMode {
+	case resolveImageAlways:
+		return true
+	case resolveImageChanged:
+		desiredImage := resolveServiceImage(desired)
+		existingImage := existing.Spec.Labels[stackImageLabel]
+		return desiredImage != "" && desiredImage != existingImage
+	default:
+		return false
+	}
+}
+
+func resolveServiceImage(spec swarm.ServiceSpec) string {
+	if spec.TaskTemplate.ContainerSpec == nil {
+		return ""
+	}
+	return spec.TaskTemplate.ContainerSpec.Image
+}
+
+func preserveExistingResolvedImage(spec *swarm.ServiceSpec, existing swarm.Service) {
+	if spec.TaskTemplate.ContainerSpec == nil || existing.Spec.TaskTemplate.ContainerSpec == nil {
+		return
+	}
+	if resolveServiceImage(*spec) == existing.Spec.Labels[stackImageLabel] {
+		spec.TaskTemplate.ContainerSpec.Image = existing.Spec.TaskTemplate.ContainerSpec.Image
+	}
+}
+
 func parseEnvContent(envContent string) (map[string]string, error) {
 	env := make(map[string]string)
 	for _, entry := range os.Environ() {
@@ -851,8 +1024,8 @@ func parseEnvContent(envContent string) (map[string]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "export ") {
-			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		if after, ok := strings.CutPrefix(line, "export "); ok {
+			line = strings.TrimSpace(after)
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {

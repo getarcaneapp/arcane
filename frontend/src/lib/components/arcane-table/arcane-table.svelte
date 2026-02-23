@@ -66,7 +66,9 @@
 		groupIcon,
 		groupCollapsedState = $bindable<Record<string, boolean>>({}),
 		onGroupToggle,
-		imageNameFilterOptions
+		imageNameFilterOptions,
+		// Expandable row props
+		expandedRowContent
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -103,6 +105,8 @@
 		groupCollapsedState?: Record<string, boolean>;
 		onGroupToggle?: (groupName: string) => void;
 		imageNameFilterOptions?: string[];
+		// Expandable row props
+		expandedRowContent?: Snippet<[{ row: Row<TData>; item: TData }]>;
 	} = $props();
 
 	// Default page size constant
@@ -111,11 +115,24 @@
 	let rowSelection = $state<RowSelectionState>({});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let sorting = $state<SortingState>([]);
-	let globalFilter = $state<string>('');
+	let globalFilter = $state<string>(requestOptions?.search ?? '');
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
 	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
+
+	// Expandable row state
+	let expandedRows = $state<Set<string>>(new Set());
+
+	function toggleRowExpanded(rowId: string) {
+		const next = new Set(expandedRows);
+		if (next.has(rowId)) {
+			next.delete(rowId);
+		} else {
+			next.add(rowId);
+		}
+		expandedRows = next;
+	}
 
 	const passAllGlobal: (row: unknown, columnId: string, filterValue: unknown) => boolean = () => true;
 
@@ -169,22 +186,15 @@
 
 		const persistedSearch = snapshot.search;
 		const currentSearch = (requestOptions?.search ?? '').trim();
-		if (persistedSearch !== globalFilter) {
-			globalFilter = persistedSearch;
+		// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
+		const effectiveSearch = currentSearch || persistedSearch;
+		if (effectiveSearch !== globalFilter) {
+			globalFilter = effectiveSearch;
 		}
-		if (persistedSearch) {
-			if (persistedSearch !== currentSearch) {
-				requestOptions = {
-					...requestOptions,
-					search: persistedSearch,
-					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-				};
-				shouldRefresh = true;
-			}
-		} else if (currentSearch) {
+		if (effectiveSearch !== currentSearch) {
 			requestOptions = {
 				...requestOptions,
-				search: undefined,
+				search: effectiveSearch || undefined,
 				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 			};
 			shouldRefresh = true;
@@ -384,6 +394,9 @@
 	});
 
 	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
+
+	// Compute effective column count (add 1 for expand chevron column when expandable)
+	const effectiveColumnsCount = $derived(columnsDef.length + (expandedRowContent ? 1 : 0));
 
 	const table = createSvelteTable({
 		get data() {
@@ -659,7 +672,7 @@
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
-				columnsCount={columnsDef.length}
+				columnsCount={effectiveColumnsCount}
 				{groupedRows}
 				{groupIcon}
 				{groupCollapsedState}
@@ -669,6 +682,9 @@
 				{onToggleGroupSelection}
 				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
 				{unstyled}
+				{expandedRowContent}
+				{expandedRows}
+				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 
@@ -683,6 +699,9 @@
 					{groupCollapsedState}
 					onGroupToggle={handleGroupToggle}
 					{unstyled}
+					{expandedRowContent}
+					{expandedRows}
+					onToggleRowExpanded={toggleRowExpanded}
 				/>
 			</div>
 		</div>
@@ -715,7 +734,7 @@
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
-				columnsCount={columnsDef.length}
+				columnsCount={effectiveColumnsCount}
 				{groupedRows}
 				{groupIcon}
 				{groupCollapsedState}
@@ -724,6 +743,9 @@
 				{getGroupSelectionState}
 				{onToggleGroupSelection}
 				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
+				{expandedRowContent}
+				{expandedRows}
+				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 
@@ -736,6 +758,9 @@
 				{groupIcon}
 				{groupCollapsedState}
 				onGroupToggle={handleGroupToggle}
+				{expandedRowContent}
+				{expandedRows}
+				onToggleRowExpanded={toggleRowExpanded}
 			/>
 		</div>
 

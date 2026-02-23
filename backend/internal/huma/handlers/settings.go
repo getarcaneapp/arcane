@@ -94,6 +94,20 @@ func validateProjectsDirectoryValue(path string) error {
 	}
 }
 
+// validateAbsoluteDirectoryPath validates a plain absolute directory path allowing:
+// - Unix absolute paths (/...)
+// - Windows drive paths (C:/..., C:\...)
+func validateAbsoluteDirectoryPath(path string) error {
+	switch {
+	case pathmapper.IsWindowsDrivePath(path):
+		return nil
+	case strings.HasPrefix(path, "/"):
+		return nil
+	default:
+		return errors.New("must be an absolute path")
+	}
+}
+
 // RegisterSettings registers settings management routes using Huma.
 func RegisterSettings(api huma.API, settingsService *services.SettingsService, settingsSearchService *services.SettingsSearchService, environmentService *services.EnvironmentService, cfg *config.Config) {
 	h := &SettingsHandler{
@@ -306,58 +320,76 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, err
 	}
 
+	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
+		return nil, err
+	}
+
+	if input.EnvironmentID != "0" {
+		return h.updateSettingsForRemoteEnvironment(ctx, input)
+	}
+
+	return h.updateSettingsForLocalEnvironment(ctx, input.Body)
+}
+
+func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) error {
+
 	// Validate projects directory if provided and changed from current value.
 	// Skip validation when the value matches the current (possibly env-overridden) setting
 	// so that saving unrelated settings doesn't fail due to env-provided directory formats.
-	if input.Body.ProjectsDirectory != nil && *input.Body.ProjectsDirectory != "" {
+	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
 		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
-		if *input.Body.ProjectsDirectory != currentDir {
-			if err := validateProjectsDirectoryValue(*input.Body.ProjectsDirectory); err != nil {
-				return nil, huma.Error400BadRequest(err.Error())
+		if *input.ProjectsDirectory != currentDir {
+			if err := validateProjectsDirectoryValue(*input.ProjectsDirectory); err != nil {
+				return huma.Error400BadRequest(err.Error())
 			}
 		}
 	}
 
-	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
+	if input.SwarmStackSourcesDirectory != nil && *input.SwarmStackSourcesDirectory != "" {
+		currentDir := h.settingsService.GetSettingsConfig().SwarmStackSourcesDirectory.Value
+		if *input.SwarmStackSourcesDirectory != currentDir {
+			if err := validateAbsoluteDirectoryPath(*input.SwarmStackSourcesDirectory); err != nil {
+				return huma.Error400BadRequest("swarmStackSourcesDirectory " + err.Error())
+			}
 		}
-
-		// Check if trying to update auth settings on non-local environment
-		req := input.Body
-		if req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
-			req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
-			req.AuthOidcConfig != nil || req.OidcClientId != nil ||
-			req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
-			req.OidcScopes != nil || req.OidcAdminClaim != nil ||
-			req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
-			req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
-			req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil {
-			return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
-		}
-
-		body, err := json.Marshal(input.Body)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
-		}
-
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", body)
-		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
-		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-
-		var apiResp base.ApiResponse[[]settings.SettingDto]
-		if err := json.Unmarshal(respBody, &apiResp); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-
-		return &UpdateSettingsOutput{Body: apiResp}, nil
 	}
 
-	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input.Body)
+	return nil
+}
+
+func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("environment service not available")
+	}
+
+	// Check if trying to update auth settings on non-local environment.
+	if hasAuthSettingsUpdate(input.Body) {
+		return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
+	}
+
+	body, err := json.Marshal(input.Body)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+	}
+
+	respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", body)
+	if err != nil {
+		return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+	}
+	if statusCode != http.StatusOK {
+		return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
+	}
+
+	var apiResp base.ApiResponse[[]settings.SettingDto]
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
+	}
+
+	return &UpdateSettingsOutput{Body: apiResp}, nil
+}
+
+func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settings.Update) (*UpdateSettingsOutput, error) {
+	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsUpdateError{Err: err}).Error())
 	}
@@ -379,6 +411,17 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			Data:    settingDtos,
 		},
 	}, nil
+}
+
+func hasAuthSettingsUpdate(req settings.Update) bool {
+	return req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
+		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
+		req.AuthOidcConfig != nil || req.OidcClientId != nil ||
+		req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
+		req.OidcScopes != nil || req.OidcAdminClaim != nil ||
+		req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
+		req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
+		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil
 }
 
 // Search searches settings by query.

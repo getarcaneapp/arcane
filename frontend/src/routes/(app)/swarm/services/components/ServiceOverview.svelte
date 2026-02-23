@@ -1,0 +1,204 @@
+<script lang="ts">
+	import * as Card from '$lib/components/ui/card';
+	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { m } from '$lib/paraglide/messages';
+	import type { SwarmServiceInspect } from '$lib/types/swarm.type';
+	import { format, formatDistanceToNow } from 'date-fns';
+	import { InfoIcon, ConnectionIcon } from '$lib/icons';
+	import { truncateImageDigest } from '$lib/utils/string.utils';
+
+	interface Props {
+		service: SwarmServiceInspect;
+		serviceName: string;
+		serviceImage: string;
+		serviceMode: string;
+		desiredReplicas: number;
+		labels: Record<string, string>;
+	}
+
+	let { service, serviceName, serviceImage, serviceMode, desiredReplicas, labels }: Props = $props();
+
+	function formatDate(input: string | undefined | null, fmt = 'PP p'): string {
+		if (!input) return m.common_na();
+		try {
+			return format(new Date(input), fmt);
+		} catch {
+			return m.common_na();
+		}
+	}
+
+	function formatRelative(input: string | undefined | null): string {
+		if (!input) return m.common_na();
+		try {
+			return formatDistanceToNow(new Date(input), { addSuffix: true });
+		} catch {
+			return m.common_na();
+		}
+	}
+
+	const stackName = $derived(labels?.['com.docker.stack.namespace'] || '');
+	const nodes = $derived((service?.nodes as string[]) || []);
+	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
+	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
+</script>
+
+<Card.Root>
+	<Card.Header icon={InfoIcon}>
+		<div class="flex flex-col space-y-1.5">
+			<Card.Title>
+				<h2>{m.common_overview()}</h2>
+			</Card.Title>
+			<Card.Description>{m.common_details_description({ resource: m.swarm_service() })}</Card.Description>
+		</div>
+	</Card.Header>
+	<Card.Content class="p-4">
+		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+			<div>
+				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+					{m.common_name()}
+				</div>
+				<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all">
+					{serviceName}
+				</div>
+			</div>
+
+			<div>
+				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+					{m.swarm_stack()}
+				</div>
+				<div class="text-foreground text-base font-semibold">
+					{stackName || m.common_na()}
+				</div>
+			</div>
+
+			<div>
+				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+					{m.swarm_mode()} / {m.swarm_replicas()}
+				</div>
+				<div class="flex items-center gap-2">
+					<StatusBadge
+						variant={serviceMode === 'replicated' ? 'blue' : serviceMode === 'global' ? 'green' : 'gray'}
+						text={serviceMode}
+					/>
+					{#if serviceMode === 'replicated'}
+						<span class="text-foreground font-mono text-sm">
+							{desiredReplicas}
+							{m.swarm_replicas()}
+						</span>
+					{/if}
+				</div>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_image()}
+					</div>
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+						{truncateImageDigest(serviceImage) || m.common_na()}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_version()}
+					</div>
+					<div class="text-foreground font-mono text-sm font-medium">
+						{versionIndex}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_id()}
+					</div>
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+						{service.id}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_created()}
+					</div>
+					<div class="text-foreground text-sm font-medium">
+						{formatRelative(service.createdAt)}
+					</div>
+					<div class="text-muted-foreground text-xs">
+						{formatDate(service.createdAt)}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.common_updated()}
+					</div>
+					<div class="text-foreground text-sm font-medium">
+						{formatRelative(service.updatedAt)}
+					</div>
+					<div class="text-muted-foreground text-xs">
+						{formatDate(service.updatedAt)}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						{m.swarm_nodes_column()}
+					</div>
+					{#if nodes.length > 0}
+						<div class="flex flex-wrap gap-1.5">
+							{#each nodes as node}
+								<div class="flex items-center gap-1">
+									<ConnectionIcon class="text-muted-foreground size-3" />
+									<span class="text-foreground text-sm font-medium">{node}</span>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			{#if updateStatus?.State}
+				<Card.Root variant="subtle" class="sm:col-span-2">
+					<Card.Content class="flex flex-col gap-2 p-4">
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
+						<div class="flex items-center gap-2">
+							<StatusBadge
+								variant={updateStatus.State === 'completed'
+									? 'green'
+									: updateStatus.State === 'updating'
+										? 'amber'
+										: updateStatus.State === 'paused'
+											? 'amber'
+											: 'red'}
+								text={updateStatus.State}
+							/>
+							{#if updateStatus.Message}
+								<span class="text-muted-foreground text-sm">{updateStatus.Message}</span>
+							{/if}
+						</div>
+						{#if updateStatus.CompletedAt}
+							<div class="text-muted-foreground text-xs">
+								{formatRelative(updateStatus.CompletedAt)}
+							</div>
+						{/if}
+					</Card.Content>
+				</Card.Root>
+			{/if}
+		</div>
+	</Card.Content>
+</Card.Root>

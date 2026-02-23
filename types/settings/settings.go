@@ -37,6 +37,12 @@ type Update struct {
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
 
+	// SwarmStackSourcesDirectory is the directory path where swarm stack source files are stored.
+	// Must be an absolute path.
+	//
+	// Required: false
+	SwarmStackSourcesDirectory *string `json:"swarmStackSourcesDirectory,omitempty"`
+
 	// DiskUsagePath is the path to monitor for disk usage.
 	//
 	// Required: false

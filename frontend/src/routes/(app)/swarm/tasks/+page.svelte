@@ -12,13 +12,21 @@
 
 	let tasks = $state(untrack(() => data.tasks));
 	let requestOptions = $state(untrack(() => data.requestOptions));
+	let nodeId = $state(untrack(() => data.nodeId ?? ''));
 	let isLoading = $state({ refresh: false });
+
+	async function fetchTasks(options: typeof requestOptions) {
+		if (nodeId) {
+			return swarmService.getNodeTasks(nodeId, options);
+		}
+		return swarmService.getTasks(options);
+	}
 
 	async function refresh() {
 		await parallelRefresh(
 			{
 				tasks: {
-					fetch: () => swarmService.getTasks(requestOptions),
+					fetch: () => fetchTasks(requestOptions),
 					onSuccess: (data) => {
 						tasks = data;
 					},
@@ -54,8 +62,13 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.swarm_tasks_title()} subtitle={m.swarm_tasks_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout
+	title={m.swarm_tasks_title()}
+	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : m.swarm_tasks_subtitle()}
+	{actionButtons}
+	{statCards}
+>
 	{#snippet mainContent()}
-		<SwarmTasksTable bind:tasks bind:requestOptions />
+		<SwarmTasksTable bind:tasks bind:requestOptions {fetchTasks} />
 	{/snippet}
 </ResourcePageLayout>
