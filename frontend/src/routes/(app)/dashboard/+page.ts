@@ -1,4 +1,5 @@
 import { containerService } from '$lib/services/container-service';
+import { dashboardService } from '$lib/services/dashboard-service';
 import { imageService } from '$lib/services/image-service';
 import { settingsService } from '$lib/services/settings-service';
 import { systemService } from '$lib/services/system-service';
@@ -7,9 +8,10 @@ import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ parent }) => {
+export const load: PageLoad = async ({ parent, url }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
+	const debugAllGood = url.searchParams.get('debugAllGood') === 'true';
 
 	const containerRequestOptions: SearchPaginationSortRequest = {
 			pagination: {
@@ -47,7 +49,7 @@ export const load: PageLoad = async ({ parent }) => {
 		})
 	]);
 
-	const [dockerInfoResult, settingsResult] = await Promise.allSettled([
+	const [dockerInfoResult, settingsResult, imageUsageCountsResult, dashboardActionItemsResult] = await Promise.allSettled([
 		queryClient.fetchQuery({
 			queryKey: queryKeys.system.dockerInfo(envId),
 			queryFn: () => systemService.getDockerInfoForEnvironment(envId)
@@ -55,17 +57,30 @@ export const load: PageLoad = async ({ parent }) => {
 		queryClient.fetchQuery({
 			queryKey: queryKeys.settings.byEnvironment(envId),
 			queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.images.usageCounts(envId),
+			queryFn: () => imageService.getImageUsageCountsForEnvironment(envId)
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.dashboard.actionItems(envId, debugAllGood),
+			queryFn: () => dashboardService.getActionItemsForEnvironment(envId, { debugAllGood })
 		})
 	]);
 
 	const dockerInfo = dockerInfoResult.status === 'fulfilled' ? dockerInfoResult.value : null;
 	const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+	const imageUsageCounts = imageUsageCountsResult.status === 'fulfilled' ? imageUsageCountsResult.value : null;
+	const dashboardActionItems = dashboardActionItemsResult.status === 'fulfilled' ? dashboardActionItemsResult.value : null;
 
 	return {
 		dockerInfo,
 		containers,
 		images,
 		settings,
+		imageUsageCounts,
+		dashboardActionItems,
+		debugAllGood,
 		containerRequestOptions,
 		imageRequestOptions,
 		containerStatusCounts

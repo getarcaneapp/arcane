@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -133,15 +134,11 @@ func (c *Config) Clone() *Config {
 	out := *c
 	if c.ResourceLimits != nil {
 		out.ResourceLimits = make(map[string]int, len(c.ResourceLimits))
-		for k, v := range c.ResourceLimits {
-			out.ResourceLimits[k] = v
-		}
+		maps.Copy(out.ResourceLimits, c.ResourceLimits)
 	}
 	if c.Pagination.Resources != nil {
 		out.Pagination.Resources = make(map[string]PaginationResourceConfig, len(c.Pagination.Resources))
-		for k, v := range c.Pagination.Resources {
-			out.Pagination.Resources[k] = v
-		}
+		maps.Copy(out.Pagination.Resources, c.Pagination.Resources)
 	}
 	return &out
 }

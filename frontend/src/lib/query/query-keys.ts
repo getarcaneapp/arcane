@@ -74,6 +74,10 @@ export const queryKeys = {
 		versionInfo: (environmentId: string) => ['system', 'version-info', environmentId] as const,
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
 	},
+	dashboard: {
+		actionItems: (environmentId: string, debugAllGood = false) =>
+			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const
+	},
 	containers: {
 		all: ['containers'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>

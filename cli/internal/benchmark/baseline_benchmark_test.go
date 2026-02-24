@@ -15,7 +15,7 @@ import (
 func BenchmarkClientListMediumPayload(b *testing.B) {
 	payload := make(map[string]any, 0)
 	items := make([]map[string]any, 0, 200)
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		items = append(items, map[string]any{
 			"id":    fmt.Sprintf("id-%d", i),
 			"name":  fmt.Sprintf("name-%d", i),

@@ -152,6 +152,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		GitRepository:     appServices.GitRepository,
 		GitOpsSync:        appServices.GitOpsSync,
 		Vulnerability:     appServices.Vulnerability,
+		Dashboard:         appServices.Dashboard,
 		Config:            cfg,
 	}
 
