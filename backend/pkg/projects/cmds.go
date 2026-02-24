@@ -69,7 +69,6 @@ func ComposePull(ctx context.Context, proj *types.Project, services []string) er
 	return c.svc.Pull(ctx, proj, api.PullOptions{})
 }
 
-
 func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
 	c, err := NewClient(ctx)
 	if err != nil {

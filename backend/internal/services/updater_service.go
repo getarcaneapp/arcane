@@ -392,8 +392,6 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 
-
-
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
 
 	dcli, err := s.dockerService.GetClient()
