@@ -15,7 +15,6 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -29,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/project"
+	"github.com/moby/moby/api/types/container"
 	"gorm.io/gorm"
 )
 
@@ -298,7 +298,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	for _, c := range containers {
 		var health *string
 		if c.Health != "" {
-			health = new(c.Health)
+			health = new(string(c.Health))
 		}
 
 		var svcConfig *composetypes.ServiceConfig
@@ -309,7 +309,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		services = append(services, ProjectServiceInfo{
 			Name:          c.Service,
 			Image:         c.Image,
-			Status:        c.State,
+			Status:        string(c.State),
 			ContainerID:   c.ID,
 			ContainerName: c.Name,
 			Ports:         formatPorts(c.Publishers),
@@ -611,7 +611,7 @@ func formatPorts(publishers []api.PortPublisher) []string {
 	return ports
 }
 
-func formatDockerPorts(ports []container.Port) []string {
+func formatDockerPorts(ports []container.PortSummary) []string {
 	var res []string
 	for _, p := range ports {
 		if p.PublicPort == 0 {
@@ -713,7 +713,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 		var services []ProjectServiceInfo
 		for _, c := range projectContainers {
 			services = append(services, ProjectServiceInfo{
-				Status: c.State,
+				Status: string(c.State),
 			})
 		}
 
@@ -1623,7 +1623,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 		services = append(services, ProjectServiceInfo{
 			Name:          svcName,
 			Image:         c.Image,
-			Status:        state,
+			Status:        string(state),
 			ContainerID:   c.ID,
 			ContainerName: containerName,
 			Ports:         formatDockerPorts(c.Ports),

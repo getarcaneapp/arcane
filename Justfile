@@ -594,6 +594,7 @@ _utils-hotfix:
 utils target *args:
     @just "_utils-{{ target }}" {{ args }}
 
+
 # Build the frontend
 [group('build')]
 _build-frontend:
@@ -963,6 +964,34 @@ _lint-go: _lint-backend _lint-cli _lint-types
 [group('lint')]
 lint target="all":
     @just "_lint-{{ target }}"
+
+# Fix Go backend
+[group('fix')]
+_fix-backend:
+    cd backend && go fix ./...
+
+# Fix Go CLI
+[group('fix')]
+_fix-cli:
+    cd cli && go fix ./...
+
+# Fix Types
+[group('fix')]
+_fix-types:
+    cd types && go fix ./...
+
+# Fix all Go code
+[group('fix')]
+_fix-go: _fix-backend _fix-cli _fix-types
+
+[group('fix')]
+_fix-all:
+    @just _fix-go
+
+# Fix targets. Valid: "backend", "cli", "types", "go", "all".
+[group('fix')]
+fix target="all":
+    @just "_fix-{{ target }}"
 
 # Format frontend (Prettier) and Go modules (gofmt)
 [group('format')]

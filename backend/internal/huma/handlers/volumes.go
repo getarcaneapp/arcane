@@ -8,7 +8,6 @@ import (
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -16,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
+	"github.com/moby/moby/client"
 )
 
 // VolumeHandler provides Huma-based volume management endpoints.
@@ -725,7 +725,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	options := volume.CreateOptions{
+	options := client.VolumeCreateOptions{
 		Name:       input.Body.Name,
 		Driver:     input.Body.Driver,
 		Labels:     input.Body.Labels,

@@ -3,9 +3,9 @@ package services
 import (
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,16 +62,15 @@ func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		volumes      []*volume.Volume
+		volumes      []volume.Volume
 		usageVolumes []volume.Volume
 		wantLen      int
 		assertions   func(t *testing.T, got []volume.Volume)
 	}{
 		{
-			name: "attaches usage by name and skips nil volumes",
-			volumes: []*volume.Volume{
+			name: "attaches usage by name",
+			volumes: []volume.Volume{
 				{Name: "vol-a"},
-				nil,
 				{Name: "vol-b"},
 			},
 			usageVolumes: []volume.Volume{
@@ -88,7 +87,7 @@ func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
 		},
 		{
 			name: "keeps first usage entry when duplicate usage names exist",
-			volumes: []*volume.Volume{
+			volumes: []volume.Volume{
 				{Name: "vol-dup"},
 			},
 			usageVolumes: []volume.Volume{

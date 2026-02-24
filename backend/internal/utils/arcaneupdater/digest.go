@@ -6,9 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"github.com/moby/moby/client"
 )
 
 // DigestChecker provides methods to check if an image needs updating by comparing digests
@@ -132,10 +131,11 @@ func (c *DigestChecker) GetImageIDsForRef(ctx context.Context, ref string) ([]st
 	}
 
 	// Fall back to listing and filtering
-	images, err := c.dcli.ImageList(ctx, image.ListOptions{})
+	imageList, err := c.dcli.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return nil, err
 	}
+	images := imageList.Items
 
 	normalizedRef := normalizeRef(ref)
 	var ids []string

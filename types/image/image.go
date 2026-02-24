@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/image"
 	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
+	"github.com/moby/moby/api/types/image"
 )
 
 type UpdateInfo struct {

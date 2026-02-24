@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	dockertypesimage "github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -14,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
+	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"

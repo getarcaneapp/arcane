@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/docker/docker/api/types/image"
-	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
+	dockerregistry "github.com/moby/moby/api/types/registry"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -135,13 +135,13 @@ func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
 func TestShouldRetryAnonymousPullInternal_UnauthorizedWithAuth(t *testing.T) {
 	err := errors.New(`Error response from daemon: Head "registry-1.docker.io/v2/library/nginx/manifests/latest": unauthorized: incorrect username or password`)
 
-	assert.True(t, shouldRetryAnonymousPullInternal(image.PullOptions{RegistryAuth: "encoded-auth"}, err))
+	assert.True(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, err))
 }
 
 func TestShouldRetryAnonymousPullInternal_SkipsRetryWithoutUnauthorizedOrAuth(t *testing.T) {
 	nonAuthErr := errors.New("Error response from daemon: i/o timeout")
 	unauthorizedErr := errors.New("unauthorized: authentication required")
 
-	assert.False(t, shouldRetryAnonymousPullInternal(image.PullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))
-	assert.False(t, shouldRetryAnonymousPullInternal(image.PullOptions{}, unauthorizedErr))
+	assert.False(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))
+	assert.False(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{}, unauthorizedErr))
 }

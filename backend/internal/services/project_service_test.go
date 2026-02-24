@@ -8,8 +8,8 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/docker/docker/api/types/container"
 	glsqlite "github.com/glebarez/sqlite"
+	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -193,26 +193,26 @@ func TestProjectService_IncrementStatusCounts(t *testing.T) {
 func TestProjectService_FormatDockerPorts(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []container.Port
+		input    []container.PortSummary
 		expected []string
 	}{
 		{
 			name: "public port",
-			input: []container.Port{
+			input: []container.PortSummary{
 				{PublicPort: 8080, PrivatePort: 80, Type: "tcp"},
 			},
 			expected: []string{"8080:80/tcp"},
 		},
 		{
 			name: "private only",
-			input: []container.Port{
+			input: []container.PortSummary{
 				{PrivatePort: 80, Type: "tcp"},
 			},
 			expected: []string{"80/tcp"},
 		},
 		{
 			name:     "empty",
-			input:    []container.Port{},
+			input:    []container.PortSummary{},
 			expected: nil,
 		},
 	}

@@ -12,20 +12,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/stdcopy"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 type ContainerService struct {
@@ -63,7 +61,7 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 		fmt.Printf("Could not log container start action: %s\n", err)
 	}
 
-	err = dockerClient.ContainerStart(ctx, containerID, container.StartOptions{})
+	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
 	}
@@ -88,7 +86,7 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 	}
 
 	timeout := 30
-	err = dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
+	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 	}
@@ -112,7 +110,7 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	err = dockerClient.ContainerRestart(ctx, containerID, container.StopOptions{})
+	_, err = dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 	}
@@ -125,12 +123,13 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	container, err := dockerClient.ContainerInspect(ctx, id)
+	containerInspect, err := dockerClient.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
 
-	return &container, nil
+	containerInfo := containerInspect.Container
+	return &containerInfo, nil
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {
@@ -143,9 +142,9 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		containerJSON, inspectErr := dockerClient.ContainerInspect(ctx, containerID)
+		containerJSON, inspectErr := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 		if inspectErr == nil {
-			for _, mount := range containerJSON.Mounts {
+			for _, mount := range containerJSON.Container.Mounts {
 				// Only collect named volumes (not bind mounts or tmpfs)
 				if mount.Type == "volume" && mount.Name != "" {
 					volumesToRemove = append(volumesToRemove, mount.Name)
@@ -154,7 +153,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 	}
 
-	err = dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{
+	_, err = dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
 		Force:         force,
 		RemoveVolumes: removeVolumes,
 		RemoveLinks:   false,
@@ -167,7 +166,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	// Remove named volumes if requested
 	if removeVolumes && len(volumesToRemove) > 0 {
 		for _, volumeName := range volumesToRemove {
-			if removeErr := dockerClient.VolumeRemove(ctx, volumeName, false); removeErr != nil {
+			if _, removeErr := dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false}); removeErr != nil {
 				// Log but don't fail if volume removal fails (might be in use by another container)
 				s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", volumeName, "", user.ID, user.Username, "0", removeErr, models.JSON{"action": "delete", "container": containerID})
 			}
@@ -202,7 +201,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 			slog.WarnContext(ctx, "Failed to get registry authentication for container image; proceeding without auth",
 				"image", config.Image,
 				"error", authErr.Error())
-			pullOptions = image.PullOptions{}
+			pullOptions = client.ImagePullOptions{}
 		}
 
 		settings := s.settingsService.GetSettingsConfig()
@@ -227,7 +226,12 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 	}
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, networkingConfig, nil, containerName)
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:           config,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+		Name:             containerName,
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "create"})
 		return nil, fmt.Errorf("failed to create container: %w", err)
@@ -242,19 +246,20 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		fmt.Printf("Could not log container stop action: %s\n", logErr)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "start"})
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
 
-	containerJSON, err := dockerClient.ContainerInspect(ctx, resp.ID)
+	containerJSON, err := dockerClient.ContainerInspect(ctx, resp.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)
 	}
 
-	return &containerJSON, nil
+	containerInfo := containerJSON.Container
+	return &containerInfo, nil
 }
 
 func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {
@@ -263,7 +268,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	stats, err := dockerClient.ContainerStats(ctx, containerID, true)
+	stats, err := dockerClient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
 		return fmt.Errorf("failed to start stats stream: %w", err)
 	}
@@ -301,7 +306,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	options := container.LogsOptions{
+	options := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     follow,
@@ -436,10 +441,11 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	dockerContainers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: includeAll})
+	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: includeAll})
 	if err != nil {
 		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
+	dockerContainers := containerList.Items
 
 	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := collectImageIDs(dockerContainers)
@@ -620,15 +626,15 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true,
+		TTY:          true,
 		Cmd:          cmd,
 	}
 
-	execResp, err := dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	execResp, err := dockerClient.ExecCreate(ctx, containerID, execConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec: %w", err)
 	}
@@ -640,7 +646,7 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 type ExecSession struct {
 	execID       string
 	containerID  string
-	hijackedResp types.HijackedResponse
+	hijackedResp client.HijackedResponse
 	dockerClient *client.Client
 	closeOnce    sync.Once
 }
@@ -673,8 +679,8 @@ func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID s
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	execAttach, err := dockerClient.ContainerExecAttach(ctx, execID, container.ExecAttachOptions{
-		Tty: true,
+	execAttach, err := dockerClient.ExecAttach(ctx, execID, client.ExecAttachOptions{
+		TTY: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to attach to exec: %w", err)
@@ -683,7 +689,7 @@ func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID s
 	return &ExecSession{
 		execID:       execID,
 		containerID:  containerID,
-		hijackedResp: execAttach,
+		hijackedResp: execAttach.HijackedResponse,
 		dockerClient: dockerClient,
 	}, nil
 }

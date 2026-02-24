@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
 	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 )
 
 // RestartPolicyCreate represents restart policy options for container creation.
@@ -735,7 +735,7 @@ func NewSummary(c container.Summary) Summary {
 	ports := make([]Port, 0, len(c.Ports))
 	for _, p := range c.Ports {
 		ports = append(ports, Port{
-			IP:          p.IP,
+			IP:          p.IP.String(),
 			PrivatePort: int(p.PrivatePort),
 			PublicPort:  int(p.PublicPort),
 			Type:        p.Type,
@@ -772,7 +772,7 @@ func NewSummary(c container.Summary) Summary {
 		Created: c.Created,
 		Ports:   ports,
 		Labels:  c.Labels,
-		State:   c.State,
+		State:   string(c.State),
 		Status:  c.Status,
 		HostConfig: HostConfig{
 			NetworkMode: c.HostConfig.NetworkMode,
@@ -789,7 +789,7 @@ func NewDetails(c *container.InspectResponse) Details {
 	ports := make([]Port, 0)
 	if c.NetworkSettings != nil && c.NetworkSettings.Ports != nil {
 		for p, bindings := range c.NetworkSettings.Ports {
-			privatePort, _ := strconv.Atoi(p.Port())
+			privatePort := int(p.Num())
 			typ := string(p.Proto())
 
 			// When no host bindings exist, still include the private port
@@ -803,7 +803,7 @@ func NewDetails(c *container.InspectResponse) Details {
 			for _, b := range bindings {
 				pub, _ := strconv.Atoi(b.HostPort)
 				ports = append(ports, Port{
-					IP:          b.HostIP,
+					IP:          b.HostIP.String(),
 					PrivatePort: privatePort,
 					PublicPort:  pub,
 					Type:        typ,
@@ -866,7 +866,7 @@ func NewDetails(c *container.InspectResponse) Details {
 	state := State{}
 	if c.State != nil {
 		state = State{
-			Status:     c.State.Status,
+			Status:     string(c.State.Status),
 			Running:    c.State.Running,
 			ExitCode:   c.State.ExitCode,
 			StartedAt:  c.State.StartedAt,
@@ -902,20 +902,40 @@ func mapEndpointSettings(n *network.EndpointSettings) NetworkEndpoint {
 		driverOpts = n.DriverOpts
 	}
 
+	gateway := ""
+	if n.Gateway.IsValid() {
+		gateway = n.Gateway.String()
+	}
+
+	ipAddress := ""
+	if n.IPAddress.IsValid() {
+		ipAddress = n.IPAddress.String()
+	}
+
+	ipv6Gateway := ""
+	if n.IPv6Gateway.IsValid() {
+		ipv6Gateway = n.IPv6Gateway.String()
+	}
+
+	globalIPv6Address := ""
+	if n.GlobalIPv6Address.IsValid() {
+		globalIPv6Address = n.GlobalIPv6Address.String()
+	}
+
 	return NetworkEndpoint{
 		IPAMConfig:          n.IPAMConfig,
 		Links:               n.Links,
 		Aliases:             n.Aliases,
-		MacAddress:          n.MacAddress,
+		MacAddress:          n.MacAddress.String(),
 		DriverOpts:          driverOpts,
 		GwPriority:          n.GwPriority,
 		NetworkID:           n.NetworkID,
 		EndpointID:          n.EndpointID,
-		Gateway:             n.Gateway,
-		IPAddress:           n.IPAddress,
+		Gateway:             gateway,
+		IPAddress:           ipAddress,
 		IPPrefixLen:         n.IPPrefixLen,
-		IPv6Gateway:         n.IPv6Gateway,
-		GlobalIPv6Address:   n.GlobalIPv6Address,
+		IPv6Gateway:         ipv6Gateway,
+		GlobalIPv6Address:   globalIPv6Address,
 		GlobalIPv6PrefixLen: n.GlobalIPv6PrefixLen,
 		DNSNames:            n.DNSNames,
 	}
