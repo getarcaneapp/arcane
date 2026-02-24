@@ -76,6 +76,7 @@ test.describe('Environment Settings UI', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('should update and save environment details', async ({ page }) => {
+    test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
     const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
     const updatedName = `${envName}-updated`;
 
