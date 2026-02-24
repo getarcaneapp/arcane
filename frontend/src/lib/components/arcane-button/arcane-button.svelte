@@ -81,6 +81,7 @@
 	this={href ? 'a' : 'button'}
 	{...rest}
 	data-slot="arcane-button"
+	data-action={action}
 	type={href ? undefined : type}
 	href={href && !disabled ? href : undefined}
 	disabled={href ? undefined : disabled || loading}
