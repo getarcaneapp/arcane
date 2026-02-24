@@ -84,7 +84,7 @@ test.describe('Notification settings', () => {
   test('should allow testing discord notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'discord');
 
-    await page.getByRole('tab', { name: 'Discord' }).click();
+    await page.locator('button[role="tab"][data-value="discord"]').click();
     await page.locator('#discord-enabled').click();
 
     // Discord split fields
@@ -106,7 +106,7 @@ test.describe('Notification settings', () => {
   test('should allow testing slack notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'slack');
 
-    await page.getByRole('tab', { name: 'Slack' }).click();
+    await page.locator('button[role="tab"][data-value="slack"]').click();
     await page.locator('#slack-enabled').click();
 
     // Slack OAuth token (xoxb- or xoxp- format)
@@ -127,7 +127,7 @@ test.describe('Notification settings', () => {
   test('should allow testing telegram notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'telegram');
 
-    await page.getByRole('tab', { name: 'Telegram' }).click();
+    await page.locator('button[role="tab"][data-value="telegram"]').click();
     await page.locator('#telegram-enabled').click();
 
     // Telegram fields (placeholders are hardcoded in component)
@@ -149,7 +149,7 @@ test.describe('Notification settings', () => {
   test('should allow testing generic webhook notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'generic');
 
-    await page.getByRole('tab', { name: 'Generic' }).click();
+    await page.locator('button[role="tab"][data-value="generic"]').click();
     await page.locator('#generic-enabled').click();
 
     await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
@@ -169,7 +169,7 @@ test.describe('Notification settings', () => {
   test('should allow testing signal notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'signal');
 
-    await page.getByRole('tab', { name: 'Signal' }).click();
+    await page.locator('button[role="tab"][data-value="signal"]').click();
     await page.locator('#signal-enabled').click();
 
     await page.getByPlaceholder('localhost').fill('signal-api.example.com');
@@ -192,7 +192,7 @@ test.describe('Notification settings', () => {
   test('should allow testing ntfy notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'ntfy');
 
-    await page.getByRole('tab', { name: 'Ntfy' }).click();
+    await page.locator('button[role="tab"][data-value="ntfy"]').click();
     await page.locator('#ntfy-enabled').click();
 
     await page.getByPlaceholder('ntfy.sh').fill('ntfy.sh');
