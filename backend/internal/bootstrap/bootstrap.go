@@ -250,32 +250,57 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 
 	listenAddr := cfg.ListenAddr()
 	httpHandler := router
+	useTLS := cfg.TLSEnabled
+	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
+	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
+
+	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
+		return fmt.Errorf("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+	}
 
 	var grpcServer *grpc.Server
 	if !cfg.AgentMode && tunnelServer != nil {
 		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
 		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
 
-		httpHandler = h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isTunnelGRPCRequestInternal(r) {
 				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
 				grpcServer.ServeHTTP(w, grpcReq)
 				return
 			}
 			router.ServeHTTP(w, r)
-		}), &http2.Server{})
+		})
 		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
+	}
+
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	if useTLS {
+		protocols.SetHTTP2(true)
+	} else {
+		protocols.SetUnencryptedHTTP2(true)
+		httpHandler = h2c.NewHandler(httpHandler, &http2.Server{})
 	}
 
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           httpHandler,
+		Protocols:         &protocols,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		slog.InfoContext(appCtx, "Starting HTTP server", "addr", listenAddr, "listen", cfg.Listen, "port", cfg.Port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.InfoContext(appCtx, "Starting HTTP server", "addr", listenAddr, "listen", cfg.Listen, "port", cfg.Port, "tls_enabled", useTLS)
+
+		var err error
+		if useTLS {
+			err = srv.ListenAndServeTLS(tlsCertFile, tlsKeyFile)
+		} else {
+			err = srv.ListenAndServe()
+		}
+
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.ErrorContext(appCtx, "Failed to start server", "error", err)
 		}
 	}()
