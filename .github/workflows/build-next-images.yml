@@ -114,7 +114,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.manager-meta.outputs.tags }}
           labels: ${{ steps.manager-meta.outputs.labels }}
@@ -151,7 +151,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile-agent
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.agent-meta.outputs.tags }}
           labels: ${{ steps.agent-meta.outputs.labels }}
