@@ -35,7 +35,16 @@ async function globalTeardown() {
         if (item === '.env.global' || item === 'test-project-static') continue;
 
         if (fs.lstatSync(itemPath).isDirectory()) {
-          fs.rmSync(itemPath, { recursive: true, force: true });
+          try {
+            fs.rmSync(itemPath, { recursive: true, force: true });
+          } catch (err: any) {
+            if (err.code === 'EACCES' || err.code === 'EPERM') {
+              // Arcane container creates files as root, fallback to docker to remove them
+              execSync(`docker run --rm -v "${projectsDir}:/projects" alpine sh -c "rm -rf /projects/${item}"`);
+            } else {
+              throw err;
+            }
+          }
           console.log(`   - Removed directory: ${item}`);
         } else if (item.startsWith('test-project-')) {
           fs.unlinkSync(itemPath);
