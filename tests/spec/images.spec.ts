@@ -174,6 +174,8 @@ test.describe('Images Page', () => {
   });
 
   test('should pull image via form', async ({ page }) => {
+    test.setTimeout(180_000); // Pulling images can take a long time on CI
+
     await navigateToImages(page);
 
     await page.getByRole('button', { name: 'Pull Image' }).click();
