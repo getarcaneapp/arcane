@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,13 +71,7 @@ var configShowCmd = &cobra.Command{
 		if cfg.Pagination.Resources != nil {
 			extras := make([]string, 0)
 			for k, v := range cfg.Pagination.Resources {
-				known := false
-				for _, resource := range clitypes.KnownPaginatedResources {
-					if resource == k {
-						known = true
-						break
-					}
-				}
+				known := slices.Contains(clitypes.KnownPaginatedResources, k)
 				if !known && v.Limit > 0 {
 					extras = append(extras, k)
 				}
@@ -312,13 +307,7 @@ func parseResourceLimitPair(pair string) (resource string, limit int, ok bool) {
 	if resource == "" {
 		return "", 0, false
 	}
-	known := false
-	for _, candidate := range clitypes.KnownPaginatedResources {
-		if candidate == resource {
-			known = true
-			break
-		}
-	}
+	known := slices.Contains(clitypes.KnownPaginatedResources, resource)
 	if !known {
 		return "", 0, false
 	}
@@ -509,12 +498,7 @@ func applyResourceLimitByKey(cfg *clitypes.Config, key, resourceValue, limitValu
 }
 
 func isKnownPaginatedResource(resource string) bool {
-	for _, candidate := range clitypes.KnownPaginatedResources {
-		if candidate == resource {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(clitypes.KnownPaginatedResources, resource)
 }
 
 func parseLimitValue(key, value string) (int, error) {

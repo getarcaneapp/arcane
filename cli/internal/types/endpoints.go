@@ -150,6 +150,9 @@ type ArcaneApiEndpoints struct {
 	DeploymentEndpoint string
 	HeartbeatEndpoint  string
 
+	// Dashboard
+	DashboardActionItemsEndpoint string
+
 	// Assets
 	AppImagesFaviconEndpoint string
 	AppImagesLogoEndpoint    string
@@ -309,6 +312,9 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	// Deployment & Heartbeat
 	DeploymentEndpoint: "/api/environments/%s/deployment",
 	HeartbeatEndpoint:  "/api/environments/%s/heartbeat",
+
+	// Dashboard
+	DashboardActionItemsEndpoint: "/api/environments/%s/dashboard/action-items",
 
 	// Assets
 	AppImagesFaviconEndpoint: "/api/app-images/favicon",
@@ -650,6 +656,11 @@ func (e ArcaneApiEndpoints) Deployment(envID string) string {
 
 func (e ArcaneApiEndpoints) Heartbeat(envID string) string {
 	return fmt.Sprintf(e.HeartbeatEndpoint, envID)
+}
+
+// Dashboard endpoints
+func (e ArcaneApiEndpoints) DashboardActionItems(envID string) string {
+	return fmt.Sprintf(e.DashboardActionItemsEndpoint, envID)
 }
 
 // Version & Health endpoints
