@@ -10,6 +10,8 @@ const MAX_SCHEMA_DIAGNOSTICS_DEFAULT = 30;
 const TAB_INDENT_REGEX = /(^|\n)(\t+)/g;
 const SECRET_NAME_REGEX = /(password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|aws_secret)/i;
 const SECRET_VALUE_REGEX = /(?:-----BEGIN [A-Z ]+-----|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Za-z0-9_\/-]{24,})/;
+const NON_SECRET_VALUE_KEYS = new Set(['image']);
+const NON_SECRET_VALUE_PARENT_KEYS = new Set(['x-arcane']);
 const VARIABLE_TOKEN_REGEX = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(?::[-?+])[^}]*)?\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 const LIST_FIELDS = ['volumes', 'ports', 'env_file', 'dns', 'tmpfs'];
 
@@ -350,18 +352,35 @@ function buildSecretDiagnostics(source: string): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
 	const lines = source.split('\n');
 	let offset = 0;
+	const keyStack: Array<{ key: string; indent: number }> = [];
 
 	for (const rawLine of lines) {
 		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-		const match = /^(\s*)([A-Za-z0-9_.-]+)\s*:\s*(.+)$/.exec(line);
+		const match = /^(\s*)([A-Za-z0-9_.-]+)\s*:\s*(.*)$/.exec(line);
 		if (!match) {
 			offset += rawLine.length + 1;
 			continue;
 		}
 
+		const indent = (match[1] ?? '').length;
+		while (keyStack.length > 0 && keyStack[keyStack.length - 1]!.indent >= indent) {
+			keyStack.pop();
+		}
+
 		const key = match[2] ?? '';
 		const value = (match[3] ?? '').trim();
-		if (!SECRET_NAME_REGEX.test(key) && !SECRET_VALUE_REGEX.test(value)) {
+		const isBlockKey = value === '';
+		const isSecretKey = SECRET_NAME_REGEX.test(key);
+		const lowerKey = key.toLowerCase();
+		const isArcaneExtensionKey = lowerKey.startsWith('x-arcane');
+		const inArcaneExtensionBlock = keyStack.some((entry) => NON_SECRET_VALUE_PARENT_KEYS.has(entry.key.toLowerCase()));
+		const shouldCheckValue = !NON_SECRET_VALUE_KEYS.has(lowerKey) && !isArcaneExtensionKey && !inArcaneExtensionBlock;
+		const isSecretValue = shouldCheckValue && SECRET_VALUE_REGEX.test(value);
+
+		if (!isSecretKey && !isSecretValue) {
+			if (isBlockKey) {
+				keyStack.push({ key, indent });
+			}
 			offset += rawLine.length + 1;
 			continue;
 		}
@@ -375,6 +394,10 @@ function buildSecretDiagnostics(source: string): Diagnostic[] {
 			severity: 'warning',
 			message: `"${key}" looks like a secret. Prefer Docker secrets or external secret managers.`
 		});
+
+		if (isBlockKey) {
+			keyStack.push({ key, indent });
+		}
 
 		offset += rawLine.length + 1;
 	}
