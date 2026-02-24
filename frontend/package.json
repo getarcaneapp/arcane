@@ -62,7 +62,7 @@
 		"clsx": "^2.1.1",
 		"formsnap": "^2.0.1",
 		"isomorphic-dompurify": "^3.0.0",
-		"knip": "^5.82.1",
+		"knip": "^5.85.0",
 		"mode-watcher": "^1.1.0",
 		"paneforge": "^1.0.2",
 		"runed": "^0.37.0",
