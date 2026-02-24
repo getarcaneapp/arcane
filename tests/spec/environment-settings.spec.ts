@@ -121,7 +121,7 @@ test.describe("Environment Settings UI", () => {
   }) => {
     await openLocalEnvironment(page);
 
-    await page.locator('[data-value="general"]').click();
+    await page.locator('button[role="tab"][data-value="general"]').click();
     const projectsDirectoryInput = page.locator("#projects-directory");
     await expect(projectsDirectoryInput).toBeVisible();
 
@@ -138,15 +138,11 @@ test.describe("Environment Settings UI", () => {
       );
 
       await page.reload();
-      await page.locator('[data-value="general"]').click();
-      await expect(page.locator("#projects-directory")).toHaveValue(
-        updatedProjectsDirectory,
-      );
+      await page.locator('button[role="tab"][data-value="general"]').click();
+      await expect(page.locator("#projects-directory")).toHaveValue(updatedProjectsDirectory);
     } finally {
-      await page.locator('[data-value="general"]').click();
-      const currentProjectsDirectory = await page
-        .locator("#projects-directory")
-        .inputValue();
+      await page.locator('button[role="tab"][data-value="general"]').click();
+      const currentProjectsDirectory = await page.locator("#projects-directory").inputValue();
       if (currentProjectsDirectory !== originalProjectsDirectory) {
         await page
           .locator("#projects-directory")
