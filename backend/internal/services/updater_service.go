@@ -391,9 +391,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
-
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
-
 	dcli, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)

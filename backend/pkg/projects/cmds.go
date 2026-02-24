@@ -47,7 +47,7 @@ func ComposePull(ctx context.Context, proj *types.Project, services []string) er
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// api.PullOptions has no Services field in compose v5.
 	// Create a shallow copy of the project with only the requested services
