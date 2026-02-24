@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { z } from 'zod/v4';
+	import { z } from 'zod';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
@@ -149,7 +149,8 @@
 		scheduledPruneNetworks: z.boolean(),
 		scheduledPruneBuildCache: z.boolean(),
 		vulnerabilityScanEnabled: z.boolean(),
-		autoUpdateExcludedContainers: z.string(),
+		autoUpdateExcludedContainers: z.string().optional(),
+		useComposeUpdate: z.boolean().optional(),
 		autoHealEnabled: z.boolean(),
 		autoHealExcludedContainers: z.string(),
 		autoHealMaxRestarts: z.coerce.number().int().min(1),
@@ -178,6 +179,7 @@
 		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
 		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
+		useComposeUpdate: settings?.useComposeUpdate ?? false,
 		autoHealEnabled: settings?.autoHealEnabled ?? false,
 		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
 		autoHealMaxRestarts: settings?.autoHealMaxRestarts ?? 5,
@@ -213,6 +215,7 @@
 				scheduledPruneBuildCache: formData.scheduledPruneBuildCache,
 				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
 				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
+				useComposeUpdate: formData.useComposeUpdate,
 				autoHealEnabled: formData.autoHealEnabled,
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
 				autoHealMaxRestarts: formData.autoHealMaxRestarts,

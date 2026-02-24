@@ -268,6 +268,17 @@
 
 												{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
 													<div class="border-border/20 space-y-3 border-t pt-3">
+														<div class="flex flex-row items-center justify-between rounded-lg border p-4">
+															<div class="space-y-0.5">
+																<Label class="text-base">Use compose update</Label>
+																<p class="text-muted-foreground text-sm">
+																	Apply updates using <code>docker compose pull</code>
+																	and <code>docker compose up -d</code> for containers belonging to a compose project.
+																</p>
+															</div>
+															<Switch bind:checked={$formInputs.useComposeUpdate.value} />
+														</div>
+
 														<div class="space-y-1">
 															<Label class="text-sm font-medium">
 																{m.auto_update_excluded_containers()}
