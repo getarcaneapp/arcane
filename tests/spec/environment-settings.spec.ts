@@ -121,7 +121,7 @@ test.describe("Environment Settings UI", () => {
   }) => {
     await openLocalEnvironment(page);
 
-    await page.getByRole("tab", { name: "General", exact: true }).click();
+    await page.locator('[data-value="general"]').click();
     const projectsDirectoryInput = page.locator("#projects-directory");
     await expect(projectsDirectoryInput).toBeVisible();
 
@@ -138,12 +138,12 @@ test.describe("Environment Settings UI", () => {
       );
 
       await page.reload();
-      await page.getByRole("tab", { name: "General", exact: true }).click();
+      await page.locator('[data-value="general"]').click();
       await expect(page.locator("#projects-directory")).toHaveValue(
         updatedProjectsDirectory,
       );
     } finally {
-      await page.getByRole("tab", { name: "General", exact: true }).click();
+      await page.locator('[data-value="general"]').click();
       const currentProjectsDirectory = await page
         .locator("#projects-directory")
         .inputValue();
