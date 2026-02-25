@@ -37,6 +37,7 @@ export type Settings = {
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
 	trivyImage: string;
+	trivyNetwork: string;
 	trivyResourceLimitsEnabled: boolean;
 	trivyCpuLimit: number;
 	trivyMemoryLimitMb: number;
