@@ -27,12 +27,13 @@ RUN pnpm -C frontend build
 # Stage 2: Build Backend
 FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS backend-builder
 ARG TARGETARCH
+ARG TARGETVARIANT
 ARG BUILD_TAGS
 ARG VERSION="dev"
 ARG REVISION="unknown"
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \ 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY go.work ./
@@ -49,7 +50,13 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
     if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
     BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ') && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
+    export GOARCH="${TARGETARCH}" && \
+    if [ "${TARGETARCH}" = "arm" ]; then \
+        GOARM="${TARGETVARIANT#v}"; \
+        if [ -z "${GOARM}" ]; then GOARM="7"; fi; \
+        export GOARM; \
+    fi && \
+    CGO_ENABLED=0 GOOS=linux \
     go build \
     -tags "${BUILD_TAGS}" \
     -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \

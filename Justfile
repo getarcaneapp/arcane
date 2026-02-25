@@ -594,6 +594,7 @@ _utils-hotfix:
 utils target *args:
     @just "_utils-{{ target }}" {{ args }}
 
+
 # Build the frontend
 [group('build')]
 _build-frontend:
@@ -606,13 +607,13 @@ _build-backend:
 
 # Build manager container image
 [group('build')]
-_build-image-manager tag="arcane:latest" flag='':
-    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
+_build-image-manager tag="ghcr.io/getarcaneapp/arcane:development" flag='':
+    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64,linux/arm/v7 -f 'docker/Dockerfile' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
 # Build agent container image
 [group('build')]
-_build-image-agent tag="arcane-agent:latest" flag='':
-    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
+_build-image-agent tag="ghcr.io/getarcaneapp/arcane-headless:development" flag='':
+    docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64,linux/arm/v7 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
 # Build both frontend and backend
 [group('build')]
@@ -963,6 +964,34 @@ _lint-go: _lint-backend _lint-cli _lint-types
 [group('lint')]
 lint target="all":
     @just "_lint-{{ target }}"
+
+# Fix Go backend
+[group('fix')]
+_fix-backend:
+    cd backend && go fix ./...
+
+# Fix Go CLI
+[group('fix')]
+_fix-cli:
+    cd cli && go fix ./...
+
+# Fix Types
+[group('fix')]
+_fix-types:
+    cd types && go fix ./...
+
+# Fix all Go code
+[group('fix')]
+_fix-go: _fix-backend _fix-cli _fix-types
+
+[group('fix')]
+_fix-all:
+    @just _fix-go
+
+# Fix targets. Valid: "backend", "cli", "types", "go", "all".
+[group('fix')]
+fix target="all":
+    @just "_fix-{{ target }}"
 
 # Format frontend (Prettier) and Go modules (gofmt)
 [group('format')]

@@ -395,7 +395,9 @@
 </script>
 
 <div class="flex min-h-full flex-col gap-4 pt-3 md:gap-5 md:pt-4">
-	<header class="border-border/70 bg-card rounded-xl border p-4 shadow-sm sm:p-5">
+	<header
+		class="border-border/70 bg-card/75 dark:border-surface/70 dark:bg-surface/25 rounded-xl border p-4 shadow-sm supports-[backdrop-filter]:backdrop-blur-sm sm:p-5"
+	>
 		<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 			<div class="space-y-1.5">
 				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>

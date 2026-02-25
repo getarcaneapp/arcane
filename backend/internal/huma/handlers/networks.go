@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	dockernetwork "github.com/docker/docker/api/types/network"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -17,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	networktypes "github.com/getarcaneapp/arcane/types/network"
+	dockernetwork "github.com/moby/moby/api/types/network"
 )
 
 type NetworkHandler struct {
@@ -286,13 +286,21 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	// Populate ContainersList
 	out.ContainersList = make([]networktypes.ContainerEndpoint, 0, len(out.Containers))
 	for id, container := range out.Containers {
+		ipv4Address := ""
+		if container.IPv4Address.IsValid() {
+			ipv4Address = container.IPv4Address.String()
+		}
+		ipv6Address := ""
+		if container.IPv6Address.IsValid() {
+			ipv6Address = container.IPv6Address.String()
+		}
 		out.ContainersList = append(out.ContainersList, networktypes.ContainerEndpoint{
 			ID:          id,
 			Name:        container.Name,
 			EndpointID:  container.EndpointID,
-			IPv4Address: container.IPv4Address,
-			IPv6Address: container.IPv6Address,
-			MacAddress:  container.MacAddress,
+			IPv4Address: ipv4Address,
+			IPv6Address: ipv6Address,
+			MacAddress:  container.MacAddress.String(),
 		})
 	}
 

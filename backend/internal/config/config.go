@@ -31,6 +31,9 @@ type Config struct {
 	DatabaseURL   string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
 	Port          string         `env:"PORT" default:"3552"`
 	Listen        string         `env:"LISTEN" default:""`
+	TLSEnabled    bool           `env:"TLS_ENABLED" default:"false"`
+	TLSCertFile   string         `env:"TLS_CERT_FILE" default:""`
+	TLSKeyFile    string         `env:"TLS_KEY_FILE" default:""`
 	Environment   AppEnvironment `env:"ENVIRONMENT" default:"production"`
 	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
 	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`

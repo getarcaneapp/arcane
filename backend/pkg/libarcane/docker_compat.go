@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 const NetworkScopedMacAddressMinAPIVersion = "1.44"
@@ -22,7 +22,7 @@ func DetectDockerAPIVersion(ctx context.Context, dockerClient *client.Client) st
 		return version
 	}
 
-	serverVersion, err := dockerClient.ServerVersion(ctx)
+	serverVersion, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
 		return ""
 	}
@@ -81,7 +81,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 
 		endpointCopy := *endpoint
 		if !keepPerNetworkMAC {
-			endpointCopy.MacAddress = ""
+			endpointCopy.MacAddress = nil
 		}
 
 		cloned[networkName] = &endpointCopy

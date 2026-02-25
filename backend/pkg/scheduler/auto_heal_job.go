@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/robfig/cron/v3"
 )
 
@@ -78,11 +79,12 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: false})
+	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to list containers", "error", err)
 		return
 	}
+	containers := containerList.Items
 
 	excludedContainers := j.parseExcludedContainers(ctx)
 	maxRestarts := j.settingsService.GetIntSetting(ctx, "autoHealMaxRestarts", 5)
@@ -103,17 +105,18 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		}
 
 		// Inspect to get health status
-		inspect, err := dockerClient.ContainerInspect(ctx, c.ID)
+		inspect, err := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
 			continue
 		}
+		containerInspect := inspect.Container
 
 		// Skip if no healthcheck configured or not unhealthy
-		if inspect.State == nil || inspect.State.Health == nil {
+		if containerInspect.State == nil || containerInspect.State.Health == nil {
 			continue
 		}
-		if inspect.State.Health.Status != "unhealthy" {
+		if containerInspect.State.Health.Status != container.Unhealthy {
 			continue
 		}
 
@@ -129,7 +132,7 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 
 		// Restart the container
 		slog.InfoContext(ctx, "auto-heal restarting unhealthy container", "container", containerName, "container_id", c.ID)
-		if err := dockerClient.ContainerRestart(ctx, c.ID, container.StopOptions{}); err != nil {
+		if _, err := dockerClient.ContainerRestart(ctx, c.ID, client.ContainerRestartOptions{}); err != nil {
 			slog.ErrorContext(ctx, "auto-heal failed to restart container", "container", containerName, "error", err)
 			continue
 		}

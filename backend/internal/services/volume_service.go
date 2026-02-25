@@ -17,20 +17,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/stdcopy"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 )
 
 type VolumeService struct {
@@ -71,7 +70,8 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	vol, err := dockerClient.VolumeInspect(ctx, name)
+	volResult, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	vol := volResult.Volume
 	if err != nil {
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
@@ -103,7 +103,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	return &v, nil
 }
 
-func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateOptions, user models.User) (*volumetypes.Volume, error) {
+func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user models.User) (*volumetypes.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
@@ -117,24 +117,24 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options volume.CreateO
 		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
-	vol, err := dockerClient.VolumeInspect(ctx, created.Name)
+	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Name, created.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
 	metadata := models.JSON{
 		"action": "create",
-		"driver": vol.Driver,
-		"name":   vol.Name,
+		"driver": vol.Volume.Driver,
+		"name":   vol.Volume.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Name, "error", logErr.Error())
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
 
-	dtoVol := volumetypes.NewSummary(vol)
+	dtoVol := volumetypes.NewSummary(vol.Volume)
 	return &dtoVol, nil
 }
 
@@ -146,7 +146,9 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	if err := dockerClient.VolumeRemove(ctx, name, force); err != nil {
+	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
+		Force: force,
+	}); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove volume: %w", err)
 	}
@@ -179,17 +181,9 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
 	// - With 'all=true' flag: Removes ALL unused volumes (both named and anonymous)
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
-	filterArgs := filters.NewArgs()
-	if all {
-		// The 'all' filter was added in Docker API v1.42
-		// This tells Docker to prune ALL unused volumes, not just anonymous ones
-		filterArgs.Add("all", "true")
-	}
-	// Other valid filters for volume prune:
-	// - label=<key> or label=<key>=<value>
-	// - label!=<key> or label!=<key>=<value>
-
-	report, err := dockerClient.VolumesPrune(ctx, filterArgs)
+	volumePruneResult, err := dockerClient.VolumePrune(ctx, client.VolumePruneOptions{
+		All: all,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune volumes: %w", err)
 	}
@@ -197,22 +191,22 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	metadata := models.JSON{
 		"action":         "prune",
 		"all":            all,
-		"volumesDeleted": len(report.VolumesDeleted),
-		"spaceReclaimed": report.SpaceReclaimed,
+		"volumesDeleted": len(volumePruneResult.Report.VolumesDeleted),
+		"spaceReclaimed": volumePruneResult.Report.SpaceReclaimed,
 	}
 	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
 
-	for _, volumeName := range report.VolumesDeleted {
+	for _, volumeName := range volumePruneResult.Report.VolumesDeleted {
 		s.removeHelperEntry(volumeName)
 	}
 
 	docker.InvalidateVolumeUsageCache()
 
 	return &volumetypes.PruneReport{
-		VolumesDeleted: report.VolumesDeleted,
-		SpaceReclaimed: report.SpaceReclaimed,
+		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
+		SpaceReclaimed: volumePruneResult.Report.SpaceReclaimed,
 	}, nil
 }
 
@@ -347,11 +341,14 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 	}
 
 	targetPath := path.Join("/volume", sanitizedPath)
-	reader, _, err := dockerClient.CopyFromContainer(ctx, containerID, targetPath)
+	copyResult, err := dockerClient.CopyFromContainer(ctx, containerID, client.CopyFromContainerOptions{
+		SourcePath: targetPath,
+	})
 	if err != nil {
 		cleanup()
 		return nil, 0, fmt.Errorf("failed to download: %w", err)
 	}
+	reader := copyResult.Content
 
 	tr := tar.NewReader(reader)
 	hdr, err := tr.Next()
@@ -411,15 +408,15 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context) (string, err
 func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, string, bool) {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
-		if inspect, err := dockerClient.ContainerInspect(ctx, hostname); err == nil && inspect.Config != nil && strings.TrimSpace(inspect.Config.Image) != "" {
-			return inspect.Config.Image, "hostname", true
+		if inspect, err := dockerClient.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+			return inspect.Container.Config.Image, "hostname", true
 		}
 	}
 
-	filter := filters.NewArgs()
-	filter.Add("label", "com.getarcaneapp.arcane=true")
-	if containers, err := dockerClient.ContainerList(ctx, container.ListOptions{Filters: filter, All: true}); err == nil && len(containers) > 0 && strings.TrimSpace(containers[0].Image) != "" {
-		return containers[0].Image, "arcane-label", true
+	filter := make(client.Filters)
+	filter = filter.Add("label", "com.getarcaneapp.arcane=true")
+	if containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true}); err == nil && len(containers.Items) > 0 && strings.TrimSpace(containers.Items[0].Image) != "" {
+		return containers.Items[0].Image, "arcane-label", true
 	}
 
 	return "", "", false
@@ -436,14 +433,14 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 		return ""
 	}
 
-	inspect, err := dockerClient.ContainerInspect(ctx, containerID)
+	inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return ""
 	}
 
 	hasBackups := false
 	hasRestores := false
-	for _, mount := range inspect.Mounts {
+	for _, mount := range inspect.Container.Mounts {
 		if mount.Destination == "/backups" {
 			hasBackups = true
 		}
@@ -462,25 +459,25 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, dockerClient *client.Client) string {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
-		if inspect, err := dockerClient.ContainerInspect(ctx, hostname); err == nil {
-			return inspect.ID
+		if inspect, err := dockerClient.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{}); err == nil {
+			return inspect.Container.ID
 		}
 	}
 
-	filter := filters.NewArgs()
-	filter.Add("label", "com.getarcaneapp.arcane=true")
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{Filters: filter, All: true})
-	if err != nil || len(containers) == 0 {
+	filter := make(client.Filters)
+	filter = filter.Add("label", "com.getarcaneapp.arcane=true")
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true})
+	if err != nil || len(containers.Items) == 0 {
 		return ""
 	}
 
-	for _, c := range containers {
-		if strings.EqualFold(strings.TrimSpace(c.State), "running") {
+	for _, c := range containers.Items {
+		if c.State == container.StateRunning {
 			return c.ID
 		}
 	}
 
-	return containers[0].ID
+	return containers.Items[0].ID
 }
 
 type cleanupReadCloser struct {
@@ -495,8 +492,8 @@ func buildVolumeHelperLabelsInternal() map[string]string {
 	}
 }
 
-func volumeHelperRemoveOptionsInternal() container.RemoveOptions {
-	return container.RemoveOptions{Force: true, RemoveVolumes: true}
+func volumeHelperRemoveOptionsInternal() client.ContainerRemoveOptions {
+	return client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}
 }
 
 func isLegacyVolumeHelperContainerInternal(c container.Summary) bool {
@@ -581,18 +578,21 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 		}()),
 	})
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, "")
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create temp container: %w", err)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 		return "", nil, fmt.Errorf("failed to start temp container: %w", err)
 	}
 
 	cleanup := func() {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 	}
 
 	if readOnly {
@@ -613,8 +613,8 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 		return "", false
 	}
 
-	inspect, err := dockerClient.ContainerInspect(ctx, containerID)
-	if err != nil || inspect.State == nil || !inspect.State.Running {
+	inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)
 		s.helperMu.Unlock()
@@ -642,7 +642,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 	s.helperMu.Unlock()
 
 	for _, containerID := range helperIDs {
-		if err := dockerClient.ContainerRemove(ctx, containerID, volumeHelperRemoveOptionsInternal()); err != nil {
+		if _, err := dockerClient.ContainerRemove(ctx, containerID, volumeHelperRemoveOptionsInternal()); err != nil {
 			slog.WarnContext(ctx, "failed to remove helper container", "container_id", containerID, "error", err.Error())
 		}
 	}
@@ -654,18 +654,18 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) error 
 		return fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
 	}
 
 	removedCount := 0
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		if !isVolumeHelperContainerInternal(c) {
 			continue
 		}
 
-		if err := dockerClient.ContainerRemove(ctx, c.ID, volumeHelperRemoveOptionsInternal()); err != nil {
+		if _, err := dockerClient.ContainerRemove(ctx, c.ID, volumeHelperRemoveOptionsInternal()); err != nil {
 			slog.WarnContext(ctx, "failed to remove orphaned volume helper container", "container_id", c.ID, "error", err.Error())
 			continue
 		}
@@ -693,18 +693,18 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 		return "", "", err
 	}
 
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          cmd,
 	}
 
-	execResp, err := dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+	execResp, err := dockerClient.ExecCreate(ctx, containerID, execConfig)
 	if err != nil {
 		return "", "", err
 	}
 
-	resp, err := dockerClient.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	resp, err := dockerClient.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{})
 	if err != nil {
 		return "", "", err
 	}
@@ -841,7 +841,10 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 	}
 
 	targetDir := path.Join("/volume", sanitizedPath)
-	err = dockerClient.CopyToContainer(ctx, containerID, targetDir, &buf, container.CopyToContainerOptions{})
+	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
+		DestinationPath: targetDir,
+		Content:         &buf,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to upload: %w", err)
 	}
@@ -869,9 +872,9 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 		return err
 	}
 
-	_, err = dockerClient.VolumeInspect(ctx, s.backupVolumeName)
+	_, err = dockerClient.VolumeInspect(ctx, s.backupVolumeName, client.VolumeInspectOptions{})
 	if err != nil {
-		_, err = dockerClient.VolumeCreate(ctx, volume.CreateOptions{
+		_, err = dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
 			Name: s.backupVolumeName,
 		})
 		if err != nil {
@@ -911,23 +914,26 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		fmt.Sprintf("%s:/backups", s.backupVolumeName),
 	})
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, "")
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup container: %w", err)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 		return nil, fmt.Errorf("failed to start backup container: %w", err)
 	}
 
-	statusCh, errCh := dockerClient.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {
-	case err := <-errCh:
+	case err := <-waitResult.Error:
 		if err != nil {
 			return nil, err
 		}
-	case status := <-statusCh:
+	case status := <-waitResult.Result:
 		if status.StatusCode != 0 {
 			return nil, fmt.Errorf("backup container exited with status %d", status.StatusCode)
 		}
@@ -1142,24 +1148,27 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		fmt.Sprintf("%s:/backups:ro", s.backupVolumeName),
 	})
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, "")
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 		return fmt.Errorf("failed to start restore container: %w", err)
 	}
 
-	statusCh, errCh := dockerClient.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	var waitBody container.WaitResponse
 	select {
-	case err := <-errCh:
+	case err := <-waitResult.Error:
 		if err != nil {
 			return err
 		}
-	case waitBody = <-statusCh:
+	case waitBody = <-waitResult.Result:
 	}
 
 	if waitBody.StatusCode != 0 {
@@ -1371,18 +1380,21 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		fmt.Sprintf("%s:/backups:ro", s.backupVolumeName),
 	})
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, "")
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 
-	if err := dockerClient.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 		return fmt.Errorf("failed to start restore container: %w", err)
 	}
 
 	cleanup := func() {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
 	}
 	defer cleanup()
 
@@ -1499,7 +1511,10 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to read buffered upload: %w", err)
 	}
-	err = dockerClient.CopyToContainer(ctx, containerID, tmpDir, tmpFile, container.CopyToContainerOptions{})
+	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
+		DestinationPath: tmpDir,
+		Content:         tmpFile,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
@@ -1548,12 +1563,12 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 		return false, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	vol, err := dockerClient.VolumeInspect(ctx, name)
+	vol, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err != nil {
 		return false, nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, vol.Name)
+	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to get containers using volume: %w", err)
 	}
@@ -1595,7 +1610,7 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 	return result, nil
 }
 
-func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []*volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
+func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
 	slog.Debug("volume service: enrich volumes with usage data", "volumes", len(volumes), "usage_volumes", len(usageVolumes))
 	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
 	for _, uv := range usageVolumes {
@@ -1610,26 +1625,24 @@ func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []*volume.Vol
 
 	result := make([]volume.Volume, 0, len(volumes))
 	for _, v := range volumes {
-		if v != nil {
-			if usageData, exists := usageByName[v.Name]; exists {
-				v.UsageData = usageData
-			}
-
-			result = append(result, *v)
+		if usageData, exists := usageByName[v.Name]; exists {
+			v.UsageData = usageData
 		}
+
+		result = append(result, v)
 	}
 	return result
 }
 
 func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
 	slog.DebugContext(ctx, "volume service: build volume container map")
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	volumeContainerMap := make(map[string][]string)
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		for _, m := range c.Mounts {
 			if m.Type == mount.TypeVolume && m.Name != "" {
 				volumeContainerMap[m.Name] = append(volumeContainerMap[m.Name], c.ID)
@@ -1802,7 +1815,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	// Run volume list and container list in parallel for better performance
 	type volumeListResult struct {
-		volumes []*volume.Volume
+		volumes []volume.Volume
 		err     error
 	}
 	type containerMapResult struct {
@@ -1818,8 +1831,8 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	defer cancel()
 
 	go func(ctx context.Context) {
-		volListBody, err := dockerClient.VolumeList(ctx, volume.ListOptions{})
-		volChan <- volumeListResult{volumes: volListBody.Volumes, err: err}
+		volListBody, err := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+		volChan <- volumeListResult{volumes: volListBody.Items, err: err}
 	}(apiCtx)
 
 	go func(ctx context.Context) {

@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	containertypes "github.com/docker/docker/api/types/container"
-	mounttypes "github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 )
 
 // GetHostPathForContainerPath attempts to discover the host-side path for a given container path
@@ -26,7 +26,7 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	}
 
 	// 2. Inspect self
-	inspect, err := dockerCli.ContainerInspect(ctx, hostname)
+	inspect, err := dockerCli.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{})
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
 		return "", err
@@ -35,8 +35,8 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	// 3. Find mount point for the target path
 	// We want to find the mount that most specifically matches our path
 	var bestMatch *containertypes.MountPoint
-	for i := range inspect.Mounts {
-		m := &inspect.Mounts[i]
+	for i := range inspect.Container.Mounts {
+		m := &inspect.Container.Mounts[i]
 		if strings.HasPrefix(containerPath, m.Destination) {
 			if bestMatch == nil || len(m.Destination) > len(bestMatch.Destination) {
 				bestMatch = m

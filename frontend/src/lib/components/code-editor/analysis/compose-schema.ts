@@ -17,8 +17,66 @@ type ComposeSchemaContext = {
 	message?: string;
 };
 
+type ArcaneCompletionSpec = {
+	label: string;
+	detail: string;
+	info: string;
+};
+
 let composeSchemaPromise: Promise<ComposeSchemaContext> | null = null;
 let composeSchemaContext: ComposeSchemaContext | null = null;
+
+const ARCANE_ROOT_EXTENSION_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'x-arcane',
+		detail: 'Arcane extension',
+		info: 'Arcane compose metadata block for project-level icon and URLs.'
+	},
+	{
+		label: 'x-arcane-icon',
+		detail: 'Arcane extension helper',
+		info: 'Optional extension key often used for YAML anchors/reuse of icon values.'
+	}
+];
+
+const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'icon',
+		detail: 'Arcane project icon',
+		info: 'Project icon URL or icon identifier.'
+	},
+	{
+		label: 'icons',
+		detail: 'Arcane project icon (alias)',
+		info: 'Alias for icon metadata; first non-empty value is used.'
+	},
+	{
+		label: 'urls',
+		detail: 'Arcane project URLs',
+		info: 'Additional project URLs (for example docs or homepage links).'
+	}
+];
+
+const ARCANE_SERVICE_EXTENSION_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'x-arcane',
+		detail: 'Arcane service extension',
+		info: 'Arcane service metadata block for service icon overrides.'
+	}
+];
+
+const ARCANE_SERVICE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'icon',
+		detail: 'Arcane service icon',
+		info: 'Service icon URL or icon identifier.'
+	},
+	{
+		label: 'icons',
+		detail: 'Arcane service icon (alias)',
+		info: 'Alias for service icon metadata; first non-empty value is used.'
+	}
+];
 
 function asSchemaObject(value: unknown): SchemaObject | null {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -205,6 +263,111 @@ function extractSchemaDoc(schema: SchemaObject): SchemaDoc {
 	};
 }
 
+function isRootPath(path: Array<string | number>): boolean {
+	return path.length === 0;
+}
+
+function isRootArcanePath(path: Array<string | number>): boolean {
+	return path.length === 1 && path[0] === 'x-arcane';
+}
+
+function isServicePath(path: Array<string | number>): boolean {
+	return path.length === 2 && path[0] === 'services' && typeof path[1] === 'string';
+}
+
+function isServiceArcanePath(path: Array<string | number>): boolean {
+	return path.length === 3 && path[0] === 'services' && typeof path[1] === 'string' && path[2] === 'x-arcane';
+}
+
+function toArcaneCompletion(spec: ArcaneCompletionSpec): Completion {
+	return {
+		label: spec.label,
+		type: 'property',
+		detail: spec.detail,
+		info: spec.info,
+		apply: `${spec.label}: `
+	};
+}
+
+function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix = ''): Completion[] {
+	const normalizedPrefix = prefix.toLowerCase();
+	let specs: ArcaneCompletionSpec[] = [];
+
+	if (isRootPath(path)) {
+		specs = ARCANE_ROOT_EXTENSION_COMPLETIONS;
+	} else if (isRootArcanePath(path)) {
+		specs = ARCANE_BLOCK_COMPLETIONS;
+	} else if (isServicePath(path)) {
+		specs = ARCANE_SERVICE_EXTENSION_COMPLETIONS;
+	} else if (isServiceArcanePath(path)) {
+		specs = ARCANE_SERVICE_BLOCK_COMPLETIONS;
+	}
+
+	return specs
+		.filter((item) => item.label.toLowerCase().includes(normalizedPrefix))
+		.sort((a, b) => a.label.localeCompare(b.label))
+		.map(toArcaneCompletion);
+}
+
+function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | null {
+	if (path.length === 1 && path[0] === 'x-arcane') {
+		return {
+			title: 'x-arcane',
+			description: 'Arcane extension block for project-level metadata such as icon and custom URLs.'
+		};
+	}
+
+	if (path.length === 1 && path[0] === 'x-arcane-icon') {
+		return {
+			title: 'x-arcane-icon',
+			description: 'Optional Arcane helper extension key, commonly used as a YAML anchor value for icon reuse.'
+		};
+	}
+
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon') {
+		return {
+			title: 'x-arcane.icon',
+			description: 'Project icon URL or icon identifier used for the stack/project display.'
+		};
+	}
+
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icons') {
+		return {
+			title: 'x-arcane.icons',
+			description: 'Alias for icon metadata. Arcane uses the first non-empty value between icon/icons.'
+		};
+	}
+
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'urls') {
+		return {
+			title: 'x-arcane.urls',
+			description: 'Additional project URLs (for example docs, homepage, or dashboards).'
+		};
+	}
+
+	if (path.length === 3 && path[0] === 'services' && typeof path[1] === 'string' && path[2] === 'x-arcane') {
+		return {
+			title: 'services.<name>.x-arcane',
+			description: 'Arcane extension block for service-level metadata.'
+		};
+	}
+
+	if (
+		path.length === 4 &&
+		path[0] === 'services' &&
+		typeof path[1] === 'string' &&
+		path[2] === 'x-arcane' &&
+		(path[3] === 'icon' || path[3] === 'icons')
+	) {
+		return {
+			title: `services.<name>.x-arcane.${String(path[3])}`,
+			description: 'Service icon URL or icon identifier override.'
+		};
+	}
+
+	return null;
+}
+
 export async function getComposeSchemaContext(): Promise<ComposeSchemaContext> {
 	if (composeSchemaContext) return composeSchemaContext;
 	if (composeSchemaPromise) return composeSchemaPromise;
@@ -259,15 +422,13 @@ export function getCompletionOptionsForPath(
 	path: Array<string | number>,
 	prefix = ''
 ): Completion[] {
-	if (!schema) return [];
-	const map = collectPropertySchemas(schema, path);
 	const normalizedPrefix = prefix.toLowerCase();
-
-	return Array.from(map.entries())
+	const propertyMap = schema ? collectPropertySchemas(schema, path) : new Map<string, SchemaObject>();
+	const schemaCompletions = Array.from(propertyMap.entries())
 		.filter(([key]) => key.toLowerCase().includes(normalizedPrefix))
 		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([key]) => {
-			const doc = extractSchemaDoc(map.get(key) ?? {});
+		.map(([key, propertySchema]) => {
+			const doc = extractSchemaDoc(propertySchema);
 			return {
 				label: key,
 				type: 'property',
@@ -276,6 +437,21 @@ export function getCompletionOptionsForPath(
 				apply: `${key}: `
 			} as Completion;
 		});
+
+	const arcaneCompletions = getArcaneCompletionOptionsForPath(path, prefix);
+	const merged = new Map<string, Completion>();
+
+	for (const completion of schemaCompletions) {
+		merged.set(completion.label, completion);
+	}
+
+	for (const completion of arcaneCompletions) {
+		if (!merged.has(completion.label)) {
+			merged.set(completion.label, completion);
+		}
+	}
+
+	return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
@@ -305,7 +481,8 @@ export function getEnumValueCompletions(schema: SchemaObject | null, path: Array
 }
 
 export function getSchemaDocForPath(schema: SchemaObject | null, path: Array<string | number>): SchemaDoc | null {
-	if (!schema) return null;
+	const arcaneDoc = getArcaneSchemaDocForPath(path);
+	if (!schema) return arcaneDoc;
 	const candidates = getPathCandidates(schema, path);
 	for (const candidate of candidates) {
 		const doc = extractSchemaDoc(candidate);
@@ -313,7 +490,7 @@ export function getSchemaDocForPath(schema: SchemaObject | null, path: Array<str
 			return doc;
 		}
 	}
-	return null;
+	return arcaneDoc;
 }
 
 export type { ComposeSchemaContext, SchemaObject };

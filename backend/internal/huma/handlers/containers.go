@@ -4,12 +4,10 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	dockercontainer "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -17,6 +15,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 )
 
 type ContainerHandler struct {
@@ -286,18 +286,12 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	}, nil
 }
 
-func parsePortSpec(spec string) (nat.Port, error) {
-	proto := "tcp"
-	port := spec
+func parsePortSpec(spec string) (network.Port, error) {
 	if strings.Contains(spec, "/") {
-		parts := strings.SplitN(spec, "/", 2)
-		port = parts[0]
-		if parts[1] != "" {
-			proto = parts[1]
-		}
+		return network.ParsePort(spec)
 	}
 
-	return nat.NewPort(proto, port)
+	return network.ParsePort(spec + "/tcp")
 }
 
 func resolveCreateCommand(body containertypes.Create) []string {
@@ -333,7 +327,7 @@ func buildContainerConfig(body containertypes.Create) *dockercontainer.Config {
 		WorkingDir:      body.WorkingDir,
 		User:            body.User,
 		Env:             resolveCreateEnv(body),
-		ExposedPorts:    nat.PortSet{},
+		ExposedPorts:    network.PortSet{},
 		Labels:          buildCreateLabels(body),
 		Hostname:        body.Hostname,
 		Domainname:      body.Domainname,
@@ -347,14 +341,14 @@ func buildContainerConfig(body containertypes.Create) *dockercontainer.Config {
 	}
 }
 
-func applyLegacyPortBindings(body containertypes.Create, config *dockercontainer.Config, portBindings nat.PortMap) error {
+func applyLegacyPortBindings(body containertypes.Create, config *dockercontainer.Config, portBindings network.PortMap) error {
 	for containerPort, hostPort := range body.Ports {
-		port, err := nat.NewPort("tcp", containerPort)
+		port, err := network.ParsePort(containerPort + "/tcp")
 		if err != nil {
 			return err
 		}
 		config.ExposedPorts[port] = struct{}{}
-		portBindings[port] = []nat.PortBinding{{HostPort: hostPort}}
+		portBindings[port] = []network.PortBinding{{HostPort: hostPort}}
 	}
 
 	return nil
@@ -372,7 +366,7 @@ func applyExposedPorts(exposedPorts map[string]struct{}, config *dockercontainer
 	return nil
 }
 
-func buildHostConfigBase(body containertypes.Create, portBindings nat.PortMap) *dockercontainer.HostConfig {
+func buildHostConfigBase(body containertypes.Create, portBindings network.PortMap) *dockercontainer.HostConfig {
 	return &dockercontainer.HostConfig{
 		Binds:         body.Volumes,
 		PortBindings:  portBindings,
@@ -382,7 +376,7 @@ func buildHostConfigBase(body containertypes.Create, portBindings nat.PortMap) *
 	}
 }
 
-func applyHostConfigPortBindings(config *dockercontainer.Config, portBindings nat.PortMap, bindings map[string][]containertypes.PortBindingCreate) error {
+func applyHostConfigPortBindings(config *dockercontainer.Config, portBindings network.PortMap, bindings map[string][]containertypes.PortBindingCreate) error {
 	for portSpec, bindingList := range bindings {
 		port, err := parsePortSpec(portSpec)
 		if err != nil {
@@ -390,10 +384,15 @@ func applyHostConfigPortBindings(config *dockercontainer.Config, portBindings na
 		}
 		config.ExposedPorts[port] = struct{}{}
 		for _, binding := range bindingList {
-			portBindings[port] = append(portBindings[port], nat.PortBinding{
-				HostPort: binding.HostPort,
-				HostIP:   binding.HostIP,
-			})
+			pb := network.PortBinding{HostPort: binding.HostPort}
+			if hostIP := strings.TrimSpace(binding.HostIP); hostIP != "" {
+				parsedIP, err := netip.ParseAddr(hostIP)
+				if err != nil {
+					return err
+				}
+				pb.HostIP = parsedIP
+			}
+			portBindings[port] = append(portBindings[port], pb)
 		}
 	}
 
@@ -440,7 +439,7 @@ func applyHostConfigSettings(hostConfig *dockercontainer.HostConfig, input *cont
 	}
 }
 
-func applyHostConfigOverrides(body containertypes.Create, config *dockercontainer.Config, hostConfig *dockercontainer.HostConfig, portBindings nat.PortMap) error {
+func applyHostConfigOverrides(body containertypes.Create, config *dockercontainer.Config, hostConfig *dockercontainer.HostConfig, portBindings network.PortMap) error {
 	if body.HostConfig == nil {
 		return nil
 	}
@@ -499,7 +498,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}
 
 	config := buildContainerConfig(input.Body)
-	portBindings := nat.PortMap{}
+	portBindings := network.PortMap{}
 	if err := applyLegacyPortBindings(input.Body, config, portBindings); err != nil {
 		return nil, huma.Error400BadRequest((&common.InvalidPortFormatError{Err: err}).Error())
 	}
@@ -524,7 +523,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		ID:      containerJSON.ID,
 		Name:    containerJSON.Name,
 		Image:   containerJSON.Config.Image,
-		Status:  containerJSON.State.Status,
+		Status:  string(containerJSON.State.Status),
 		Created: containerJSON.Created,
 	}
 

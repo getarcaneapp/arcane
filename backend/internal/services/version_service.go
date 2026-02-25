@@ -10,15 +10,14 @@ import (
 	"strings"
 	"time"
 
-	containertypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/types/version"
+	containertypes "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/mod/semver"
 )
@@ -294,11 +293,12 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 	}
 	slog.Debug("detectCurrentImageInfo: detected container", "containerId", containerId)
 
-	container, err := dockerClient.ContainerInspect(ctx, containerId)
+	inspectResult, err := dockerClient.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
 	if err != nil {
 		slog.Debug("detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
 		return "", "", ""
 	}
+	container := inspectResult.Container
 
 	// Parse tag from container config image (user-specified reference)
 	tag = s.extractTagFromImageRef(container.Config.Image)
@@ -329,17 +329,17 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 
 // findArcaneContainerByLabel searches for the Arcane container using labels
 func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
-	f := filters.NewArgs()
-	f.Add("label", arcaneupdater.LabelArcane+"=true")
-	list, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{All: true, Filters: f})
+	f := make(client.Filters)
+	f = f.Add("label", arcaneupdater.LabelArcane+"=true")
+	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)
 		return ""
 	}
-	slog.Debug("findArcaneContainerByLabel: found containers with arcane label", "count", len(list))
+	slog.Debug("findArcaneContainerByLabel: found containers with arcane label", "count", len(list.Items))
 
 	var fallbackID string
-	for _, c := range list {
+	for _, c := range list.Items {
 		slog.Debug("findArcaneContainerByLabel: checking container", "id", c.ID[:12], "state", c.State, "labels", c.Labels)
 		// Skip the upgrader helper container
 		if v, ok := c.Labels["com.getarcaneapp.arcane.upgrader"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
@@ -347,7 +347,7 @@ func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerC
 			continue
 		}
 		// Prefer running containers
-		if strings.EqualFold(strings.TrimSpace(c.State), "running") {
+		if c.State == containertypes.StateRunning {
 			slog.Debug("findArcaneContainerByLabel: found running container", "id", c.ID[:12])
 			return c.ID
 		}

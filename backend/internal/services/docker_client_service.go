@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/client"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 )
 
 type DockerClientService struct {
@@ -48,10 +48,9 @@ func (s *DockerClientService) GetClient() (*client.Client, error) {
 		return s.client, nil
 	}
 
-	cli, err := client.NewClientWithOpts(
+	cli, err := client.New(
 		client.WithHost(s.config.DockerHost),
-		client.WithVersionFromEnv(),
-		client.WithAPIVersionNegotiation(),
+		client.WithAPIVersionFromEnv(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
@@ -71,10 +70,11 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer cancel()
 
-	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
+	containers := containerList.Items
 
 	var running, stopped, total int
 	for _, c := range containers {
@@ -99,15 +99,17 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer cancel()
 
-	images, err := dockerClient.ImageList(apiCtx, image.ListOptions{All: true})
+	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker images: %w", err)
 	}
+	images := imageList.Items
 
-	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
+	containers := containerList.Items
 
 	inuse, unused, total := countImageUsageInternal(images, containers)
 
@@ -145,10 +147,11 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer cancel()
 
-	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
+	containers := containerList.Items
 	inUseByID := make(map[string]bool)
 	inUseByName := make(map[string]bool)
 	for _, c := range containers {
@@ -163,10 +166,11 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 		}
 	}
 
-	networks, err := dockerClient.NetworkList(apiCtx, network.ListOptions{})
+	networkList, err := dockerClient.NetworkList(apiCtx, client.NetworkListOptions{})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
+	networks := networkList.Items
 
 	var inuse, unused, total int
 	for _, n := range networks {
@@ -197,10 +201,11 @@ func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volu
 	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer cancel()
 
-	containers, err := dockerClient.ContainerList(apiCtx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
+	containers := containerList.Items
 	ref := make(map[string]int64, len(containers))
 	for _, c := range containers {
 		for _, m := range c.Mounts {
@@ -210,11 +215,15 @@ func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volu
 		}
 	}
 
-	volResp, err := dockerClient.VolumeList(apiCtx, volume.ListOptions{})
+	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}
-	volumes := volResp.Volumes
+	volumeItems := volResp.Items
+	volumes := make([]*volume.Volume, 0, len(volumeItems))
+	for i := range volumeItems {
+		volumes = append(volumes, &volumeItems[i])
+	}
 
 	var inuse, unused, total int
 	for _, v := range volumes {
