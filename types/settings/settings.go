@@ -182,6 +182,12 @@ type Update struct {
 	// Required: false
 	TrivyImage *string `json:"trivyImage,omitempty"`
 
+	// TrivyNetwork sets the Docker network mode/network name for Trivy scan containers.
+	// Defaults to "bridge".
+	//
+	// Required: false
+	TrivyNetwork *string `json:"trivyNetwork,omitempty"`
+
 	// TrivyResourceLimitsEnabled controls whether CPU and memory limits are applied to Trivy scan containers.
 	//
 	// Required: false
