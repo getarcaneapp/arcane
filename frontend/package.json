@@ -57,7 +57,7 @@
 		"@tanstack/eslint-plugin-query": "^5.91.4",
 		"@tanstack/svelte-query-devtools": "^6.0.4",
 		"@types/js-yaml": "^4.0.9",
-		"@types/node": "^25.0.10",
+		"@types/node": "^25.3.0",
 		"bits-ui": "^2.15.5",
 		"clsx": "^2.1.1",
 		"formsnap": "^2.0.1",
