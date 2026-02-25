@@ -256,12 +256,12 @@ func TestFormatSlogValue_Duration(t *testing.T) {
 	}
 }
 
-func TestTeeHandler_Enabled(t *testing.T) {
+func TestMultiHandler_Enabled(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
 	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
 	handler2 := newMessageOnlyHandler(&buf2, slog.LevelWarn)
 
-	tee := teeHandler{a: handler1, b: handler2}
+	multi := slog.NewMultiHandler(handler1, handler2)
 
 	tests := []struct {
 		name  string
@@ -292,60 +292,75 @@ func TestTeeHandler_Enabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tee.Enabled(context.Background(), tt.level); got != tt.want {
+			if got := multi.Enabled(context.Background(), tt.level); got != tt.want {
 				t.Errorf("Enabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestTeeHandler_Handle(t *testing.T) {
+func TestMultiHandler_Handle(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
 	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
 	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
 
-	tee := teeHandler{a: handler1, b: handler2}
+	multi := slog.NewMultiHandler(handler1, handler2)
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test message", 0)
-	if err := tee.Handle(context.Background(), record); err != nil {
+	if err := multi.Handle(context.Background(), record); err != nil {
 		t.Errorf("Handle() error = %v", err)
 	}
 
 	// Both handlers should have received the message
 	if !strings.Contains(buf1.String(), "Test message") {
-		t.Error("teeHandler did not write to first handler")
+		t.Error("multi handler did not write to first handler")
 	}
 	if !strings.Contains(buf2.String(), "Test message") {
-		t.Error("teeHandler did not write to second handler")
+		t.Error("multi handler did not write to second handler")
 	}
 }
 
-func TestTeeHandler_WithAttrs(t *testing.T) {
+func TestMultiHandler_WithAttrs(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
 	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
 	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
 
-	tee := teeHandler{a: handler1, b: handler2}
+	multi := slog.NewMultiHandler(handler1, handler2)
 
 	attrs := []slog.Attr{slog.String("key", "value")}
-	newTee := tee.WithAttrs(attrs)
+	withAttrs := multi.WithAttrs(attrs)
 
-	if _, ok := newTee.(teeHandler); !ok {
-		t.Error("WithAttrs() did not return teeHandler")
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	if err := withAttrs.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+	if !strings.Contains(buf1.String(), "key=\"value\"") {
+		t.Errorf("WithAttrs() missing attr in first handler output: %q", buf1.String())
+	}
+	if !strings.Contains(buf2.String(), "key=\"value\"") {
+		t.Errorf("WithAttrs() missing attr in second handler output: %q", buf2.String())
 	}
 }
 
-func TestTeeHandler_WithGroup(t *testing.T) {
+func TestMultiHandler_WithGroup(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
 	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
 	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
 
-	tee := teeHandler{a: handler1, b: handler2}
+	multi := slog.NewMultiHandler(handler1, handler2)
 
-	newTee := tee.WithGroup("testgroup")
+	withGroup := multi.WithGroup("testgroup")
 
-	if _, ok := newTee.(teeHandler); !ok {
-		t.Error("WithGroup() did not return teeHandler")
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	record.AddAttrs(slog.String("key", "value"))
+	if err := withGroup.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+	if !strings.Contains(buf1.String(), "testgroup.key=\"value\"") {
+		t.Errorf("WithGroup() missing grouped attr in first handler output: %q", buf1.String())
+	}
+	if !strings.Contains(buf2.String(), "testgroup.key=\"value\"") {
+		t.Errorf("WithGroup() missing grouped attr in second handler output: %q", buf2.String())
 	}
 }
 

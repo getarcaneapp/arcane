@@ -9,13 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -365,12 +366,12 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	images, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
 
-	return dedupeImageRefsFromSummariesInternal(images, limit), nil
+	return dedupeImageRefsFromSummariesInternal(imageList.Items, limit), nil
 }
 
 func dedupeImageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
@@ -430,7 +431,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		allDigests = []string{primaryDigest}
 	}
 
-	repo, tag := extractRepoAndTagFromImage(inspectResponse)
+	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
 
 	return &localImageSnapshot{
 		ImageID:       inspectResponse.ID,
@@ -626,7 +627,7 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 		return fmt.Errorf("failed to inspect image: %w", err)
 	}
 
-	repo, tag := extractRepoAndTagFromImage(dockerImage)
+	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
 	return s.savePreparedUpdateResultInternal(ctx, imageID, repo, tag, result)
 }
 
@@ -1116,10 +1117,11 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 	}
 
 	// Get all image IDs from Docker
-	dockerImages, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	dockerImagesResult, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list Docker images: %w", err)
 	}
+	dockerImages := dockerImagesResult.Items
 
 	dockerImageIDs := make([]string, 0, len(dockerImages))
 	for _, img := range dockerImages {
@@ -1150,10 +1152,11 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	dockerImages, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	dockerImagesResult, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
+	dockerImages := dockerImagesResult.Items
 
 	liveImageIDs := make([]string, 0, len(dockerImages))
 	for _, img := range dockerImages {

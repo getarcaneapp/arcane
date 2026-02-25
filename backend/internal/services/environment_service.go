@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/google/uuid"
+	"github.com/moby/moby/client"
 	"gorm.io/gorm"
 )
 
@@ -330,7 +331,7 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 		return "offline", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	_, err = dockerClient.Ping(reqCtx)
+	_, err = dockerClient.Ping(reqCtx, client.PingOptions{})
 	if err != nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		return "offline", fmt.Errorf("docker ping failed: %w", err)

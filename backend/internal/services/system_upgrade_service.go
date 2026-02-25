@@ -11,13 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	containertypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	imagetypes "github.com/docker/docker/api/types/image"
-	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 )
 
 var (
@@ -138,7 +137,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 	defer pullCancel()
 
-	pullReader, err := dockerClient.ImagePull(pullCtx, ArcaneUpgraderImage, imagetypes.PullOptions{})
+	pullReader, err := dockerClient.ImagePull(pullCtx, ArcaneUpgraderImage, client.ImagePullOptions{})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", ArcaneUpgraderImage)
@@ -189,14 +188,18 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	containerName = fmt.Sprintf("%s-upgrader-%d", containerName, time.Now().Unix())
 
-	resp, err := dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+		Name:       containerName,
+	})
 	if err != nil {
 		return fmt.Errorf("create upgrader container: %w", err)
 	}
 
 	// Start the upgrader container - it will run the upgrade and auto-remove
-	if err := dockerClient.ContainerStart(ctx, resp.ID, containertypes.StartOptions{}); err != nil {
-		_ = dockerClient.ContainerRemove(ctx, resp.ID, containertypes.RemoveOptions{Force: true})
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		return fmt.Errorf("start upgrader container: %w", err)
 	}
 
@@ -222,16 +225,16 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 	}
 
 	// Try to inspect the container directly
-	container, err := dockerClient.ContainerInspect(ctx, containerId)
+	container, err := dockerClient.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
 	if err == nil {
-		return container, nil
+		return container.Container, nil
 	}
 
 	// Fallback: search for containers with arcane image
-	filter := filters.NewArgs()
-	filter.Add("ancestor", "ghcr.io/getarcaneapp/arcane")
+	filter := make(client.Filters)
+	filter = filter.Add("ancestor", "ghcr.io/getarcaneapp/arcane")
 
-	containers, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
 		Filters: filter,
 	})
@@ -239,21 +242,29 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 		return containertypes.InspectResponse{}, err
 	}
 
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		if strings.HasPrefix(c.ID, containerId) {
-			return dockerClient.ContainerInspect(ctx, c.ID)
+			inspect, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			if inspectErr != nil {
+				return containertypes.InspectResponse{}, inspectErr
+			}
+			return inspect.Container, nil
 		}
 	}
 
 	// Try without filter - search all containers
-	allContainers, err := dockerClient.ContainerList(ctx, containertypes.ListOptions{All: true})
+	allContainers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return containertypes.InspectResponse{}, err
 	}
 
-	for _, c := range allContainers {
+	for _, c := range allContainers.Items {
 		if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
-			return dockerClient.ContainerInspect(ctx, c.ID)
+			inspect, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			if inspectErr != nil {
+				return containertypes.InspectResponse{}, inspectErr
+			}
+			return inspect.Container, nil
 		}
 	}
 

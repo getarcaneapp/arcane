@@ -1,6 +1,6 @@
 package dockerinfo
 
-import "github.com/docker/docker/api/types/system"
+import "github.com/moby/moby/api/types/system"
 
 type Info struct {
 	// Success indicates if the Docker daemon information was successfully retrieved.

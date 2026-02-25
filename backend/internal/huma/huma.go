@@ -13,103 +13,126 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	arcaneTypesPrefix = "github.com/getarcaneapp/arcane/types/"
+	dockerSDKPrefix   = "github.com/moby/moby"
+)
+
+var dockerSchemaPrefixes = map[string]string{
+	"types":     "DockerTypes",
+	"registry":  "DockerRegistry",
+	"system":    "DockerSystem",
+	"container": "DockerContainer",
+	"network":   "DockerNetwork",
+	"volume":    "DockerVolume",
+	"swarm":     "DockerSwarm",
+	"mount":     "DockerMount",
+	"filters":   "DockerFilters",
+	"blkiodev":  "DockerBlkiodev",
+	"strslice":  "DockerStrslice",
+	"events":    "DockerEvents",
+	"image":     "DockerImage",
+}
+
 // customSchemaNamer creates unique schema names using package prefix for types
 // from github.com/getarcaneapp/arcane/types to avoid conflicts between packages that have
 // types with the same name (e.g., image.Summary vs env.Summary).
 func customSchemaNamer(t reflect.Type, hint string) string {
 	name := huma.DefaultSchemaNamer(t, hint)
-
-	// Get the package path - for non-pointer types this gives the full import path
-	pkgPath := t.PkgPath()
-
-	// For pointer types, get the element's package path
-	if pkgPath == "" && t.Kind() == reflect.Pointer {
-		pkgPath = t.Elem().PkgPath()
-	}
-
-	// Use type string representation for package identification
-	// Format: "pkgname.TypeName" - we extract the pkgname part
 	typeStr := t.String()
-	var shortPkg string
-	if before, _, ok := strings.Cut(typeStr, "."); ok {
-		shortPkg = before
-	}
+	pkgPath := packagePathForType(t)
+	shortPkg := shortPackageFromTypeString(typeStr)
 
-	// For types from our types package, prefix with the package name
-	if strings.HasPrefix(pkgPath, "github.com/getarcaneapp/arcane/types/") {
-		// Extract package name (e.g., "image" from "github.com/getarcaneapp/arcane/types/image")
-		parts := strings.Split(pkgPath, "/")
-		if len(parts) > 0 {
-			pkgName := parts[len(parts)-1]
-			// Capitalize the package name and prefix it
-			pkgName = strings.ToUpper(pkgName[:1]) + pkgName[1:]
-			return pkgName + name
-		}
+	if pkgName, ok := arcanePackageName(pkgPath); ok {
+		name = pkgName + name
+	} else if dockerPrefix, ok := dockerSchemaPrefix(pkgPath, shortPkg); ok {
+		name = dockerPrefix + name
 	}
-
-	// Handle Docker SDK types that have name conflicts
-	// Docker has many packages with overlapping type names:
-	// types.ServiceConfig vs registry.ServiceConfig
-	// types.GenericResource vs swarm.GenericResource
-	// etc.
-	// We prefix ALL Docker types with their package name
-	dockerPackages := map[string]string{
-		"types":     "DockerTypes",
-		"registry":  "DockerRegistry",
-		"system":    "DockerSystem",
-		"container": "DockerContainer",
-		"network":   "DockerNetwork",
-		"volume":    "DockerVolume",
-		"swarm":     "DockerSwarm",
-		"mount":     "DockerMount",
-		"filters":   "DockerFilters",
-		"blkiodev":  "DockerBlkiodev",
-		"strslice":  "DockerStrslice",
-		"events":    "DockerEvents",
-		"image":     "DockerImage",
-	}
-
-	// Check if this is a Docker type based on pkgPath
-	if strings.Contains(pkgPath, "github.com/docker/docker") {
-		// Extract the last part of the package path
-		parts := strings.Split(pkgPath, "/")
-		lastPart := parts[len(parts)-1]
-		if prefix, ok := dockerPackages[lastPart]; ok {
-			return prefix + name
-		}
-	}
-
-	// Also check short package name from type string for nested/embedded types
-	if prefix, ok := dockerPackages[shortPkg]; ok {
-		return prefix + name
-	}
-
-	// Handle generic types like base.ApiResponse[T] where T is from github.com/getarcaneapp/arcane/types
-	// The name will be something like "BaseApiResponseUsageCounts" and we need to
-	// differentiate based on the inner type's package
-	if strings.HasPrefix(pkgPath, "github.com/getarcaneapp/arcane/types/base") {
-		// Check if this is a generic type by looking at string representation
-		typeName := t.String()
-		// For generics, Go's String() returns something like:
-		// "base.ApiResponse[github.com/getarcaneapp/arcane/types/volume.UsageCounts]"
-		if strings.Contains(typeName, "[") && strings.Contains(typeName, "github.com/getarcaneapp/arcane/types/") {
-			// Extract the inner package name
-			_, after, ok := strings.Cut(typeName, "github.com/getarcaneapp/arcane/types/")
-			if ok {
-				rest := after
-				before, _, ok := strings.Cut(rest, ".")
-				if ok {
-					innerPkg := before
-					innerPkg = strings.ToUpper(innerPkg[:1]) + innerPkg[1:]
-					// Insert the package name into the schema name
-					// BaseApiResponseUsageCounts -> BaseApiResponseVolumeUsageCounts
-					return strings.Replace(name, "UsageCounts", innerPkg+"UsageCounts", 1)
-				}
-			}
-		}
+	if innerPkg, ok := genericInnerPackageName(pkgPath, typeStr); ok {
+		return strings.Replace(name, "UsageCounts", innerPkg+"UsageCounts", 1)
 	}
 
 	return name
+}
+
+func packagePathForType(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	return t.PkgPath()
+}
+
+func shortPackageFromTypeString(typeStr string) string {
+	before, _, ok := strings.Cut(typeStr, ".")
+	if !ok {
+		return ""
+	}
+
+	return before
+}
+
+func arcanePackageName(pkgPath string) (string, bool) {
+	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix) {
+		return "", false
+	}
+
+	parts := strings.Split(pkgPath, "/")
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	pkg := parts[len(parts)-1]
+	if pkg == "" {
+		return "", false
+	}
+
+	return capitalizeFirst(pkg), true
+}
+
+func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
+	if strings.Contains(pkgPath, dockerSDKPrefix) {
+		parts := strings.Split(pkgPath, "/")
+		last := parts[len(parts)-1]
+		if prefix, ok := dockerSchemaPrefixes[last]; ok {
+			return prefix, true
+		}
+	}
+
+	prefix, ok := dockerSchemaPrefixes[shortPkg]
+	if !ok {
+		return "", false
+	}
+
+	return prefix, true
+}
+
+func genericInnerPackageName(pkgPath, typeName string) (string, bool) {
+	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix+"base") {
+		return "", false
+	}
+	if !strings.Contains(typeName, "[") || !strings.Contains(typeName, arcaneTypesPrefix) {
+		return "", false
+	}
+
+	_, after, ok := strings.Cut(typeName, arcaneTypesPrefix)
+	if !ok {
+		return "", false
+	}
+	before, _, ok := strings.Cut(after, ".")
+	if !ok || before == "" {
+		return "", false
+	}
+
+	return capitalizeFirst(before), true
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // Services holds all service dependencies needed by Huma handlers.

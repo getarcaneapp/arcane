@@ -8,9 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/docker/docker/api/types/build"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
@@ -18,6 +15,8 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/system"
 	"github.com/goccy/go-yaml"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -271,16 +270,16 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *system.Prun
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	filterArgs := filters.NewArgs()
+	filterArgs := make(client.Filters)
 
-	report, err := dockerClient.ContainersPrune(ctx, filterArgs)
+	report, err := dockerClient.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return fmt.Errorf("failed to prune containers: %w", err)
 	}
 
-	result.ContainersPruned = report.ContainersDeleted
-	result.SpaceReclaimed += report.SpaceReclaimed
-	result.ContainerSpaceReclaimed += report.SpaceReclaimed
+	result.ContainersPruned = report.Report.ContainersDeleted
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.ContainerSpaceReclaimed += report.Report.SpaceReclaimed
 	return nil
 }
 
@@ -292,26 +291,28 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	var filterArgs filters.Args
+	var filterArgs client.Filters
 
 	if danglingOnly {
 		slog.DebugContext(ctx, "Configured to prune only dangling images")
-		filterArgs = filters.NewArgs(filters.Arg("dangling", "true"))
+		filterArgs = make(client.Filters)
+		filterArgs = filterArgs.Add("dangling", "true")
 	} else {
 		slog.DebugContext(ctx, "Configured to prune all unused images (including non-dangling)")
-		filterArgs = filters.NewArgs(filters.Arg("dangling", "false"))
+		filterArgs = make(client.Filters)
+		filterArgs = filterArgs.Add("dangling", "false")
 	}
 
-	report, err := dockerClient.ImagesPrune(ctx, filterArgs)
+	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.ImagesDeleted), "bytes_reclaimed", report.SpaceReclaimed)
+	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.Report.ImagesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
 
 	// Collect IDs to delete from DB
 	var idsToDelete []string
-	for _, imgReport := range report.ImagesDeleted {
+	for _, imgReport := range report.Report.ImagesDeleted {
 		if imgReport.Deleted != "" {
 			idsToDelete = append(idsToDelete, imgReport.Deleted)
 		} else if imgReport.Untagged != "" {
@@ -327,8 +328,8 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 	}
 
 	result.ImagesDeleted = idsToDelete
-	result.SpaceReclaimed += report.SpaceReclaimed
-	result.ImageSpaceReclaimed += report.SpaceReclaimed
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.ImageSpaceReclaimed += report.Report.SpaceReclaimed
 	return nil
 }
 
@@ -340,7 +341,7 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 		return fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
 	}
 
-	options := build.CachePruneOptions{
+	options := client.BuildCachePruneOptions{
 		All: pruneAllCache,
 	}
 
@@ -352,10 +353,10 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 		return fmt.Errorf("failed to prune build cache: %w", err)
 	}
 
-	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.CachesDeleted), "bytes_reclaimed", report.SpaceReclaimed)
+	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.Report.CachesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
 
-	result.SpaceReclaimed += report.SpaceReclaimed
-	result.BuildCacheSpaceReclaimed += report.SpaceReclaimed
+	result.SpaceReclaimed += report.Report.SpaceReclaimed
+	result.BuildCacheSpaceReclaimed += report.Report.SpaceReclaimed
 	return nil
 }
 

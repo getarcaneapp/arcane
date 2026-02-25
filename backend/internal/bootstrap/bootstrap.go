@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -133,10 +134,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 			return err
 		}
 
-		// Force version negotiation before logging effective client API version.
-		dockerClient.NegotiateAPIVersion(ctx)
-
-		version, err := dockerClient.ServerVersion(ctx)
+		version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
 		if err != nil {
 			return err
 		}

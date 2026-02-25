@@ -13,36 +13,6 @@ import (
 	"time"
 )
 
-type teeHandler struct {
-	a slog.Handler
-	b slog.Handler
-}
-
-func (t teeHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return t.a.Enabled(ctx, level) || t.b.Enabled(ctx, level)
-}
-
-func (t teeHandler) Handle(ctx context.Context, r slog.Record) error {
-	var err error
-	if t.a.Enabled(ctx, r.Level) {
-		err = t.a.Handle(ctx, r)
-	}
-	if t.b.Enabled(ctx, r.Level) {
-		if err2 := t.b.Handle(ctx, r); err == nil {
-			err = err2
-		}
-	}
-	return err
-}
-
-func (t teeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return teeHandler{a: t.a.WithAttrs(attrs), b: t.b.WithAttrs(attrs)}
-}
-
-func (t teeHandler) WithGroup(name string) slog.Handler {
-	return teeHandler{a: t.a.WithGroup(name), b: t.b.WithGroup(name)}
-}
-
 type messageOnlyHandler struct {
 	mu       *sync.Mutex
 	w        io.Writer
@@ -188,7 +158,7 @@ func SetupMessageOnlyLogFile(dataDir string, filePrefix string, minLevel slog.Le
 	})
 	fileHandler := newMessageOnlyHandler(logFile, minLevel)
 
-	slog.SetDefault(slog.New(teeHandler{a: stdoutHandler, b: fileHandler}))
+	slog.SetDefault(slog.New(slog.NewMultiHandler(stdoutHandler, fileHandler)))
 
 	return logFile, nil
 }
