@@ -647,7 +647,7 @@
 	"vuln_details": "Schwachstellen-Details",
 	"vuln_package": "Paket",
 	"vuln_installed_version": "Installierte Version",
-	"vuln_fixed_version": "Feste Version",
+	"vuln_fixed_version": "Behoben in Version",
 	"vuln_no_fix": "Kein Fix verfügbar",
 	"vuln_references": "Referenzen",
 	"vuln_cvss_score": "CVSS Punktzahl",
