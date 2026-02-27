@@ -5,23 +5,16 @@ import "fmt"
 // ArcaneApiEndpoints holds the API endpoint path templates for the Arcane API.
 // Endpoint paths may contain format specifiers (e.g., %s) for environment IDs or resource IDs.
 type ArcaneApiEndpoints struct {
-	// Version & Health
-	AppVersionEndpoint string
-	VersionEndpoint    string
-	HealthEndpoint     string
+	// Version
+	VersionEndpoint string
 
 	// Authentication
-	AuthLoginEndpoint    string
 	AuthLogoutEndpoint   string
 	AuthMeEndpoint       string
 	AuthPasswordEndpoint string
 	AuthRefreshEndpoint  string
 
 	// OIDC
-	OIDCStatusEndpoint      string
-	OIDCConfigEndpoint      string
-	OIDCUrlEndpoint         string
-	OIDCCallbackEndpoint    string
 	OIDCDeviceCodeEndpoint  string
 	OIDCDeviceTokenEndpoint string
 
@@ -34,11 +27,9 @@ type ArcaneApiEndpoints struct {
 	UserEndpoint  string
 
 	// Environments
-	EnvironmentsEndpoint     string
-	EnvironmentEndpoint      string
-	EnvironmentPairEndpoint  string
-	EnvironmentAgentEndpoint string
-	EnvironmentTestEndpoint  string
+	EnvironmentsEndpoint    string
+	EnvironmentEndpoint     string
+	EnvironmentTestEndpoint string
 
 	// Containers
 	ContainersEndpoint       string
@@ -58,11 +49,10 @@ type ArcaneApiEndpoints struct {
 	ImagesUploadEndpoint string
 
 	// Image Updates
-	ImageUpdatesCheckEndpoint      string
-	ImageUpdatesCheckAllEndpoint   string
-	ImageUpdatesCheckBatchEndpoint string
-	ImageUpdatesCheckByIdEndpoint  string
-	ImageUpdatesSummaryEndpoint    string
+	ImageUpdatesCheckEndpoint     string
+	ImageUpdatesCheckAllEndpoint  string
+	ImageUpdatesCheckByIdEndpoint string
+	ImageUpdatesSummaryEndpoint   string
 
 	// Networks
 	NetworksEndpoint       string
@@ -88,18 +78,12 @@ type ArcaneApiEndpoints struct {
 	ProjectRestartEndpoint  string
 	ProjectRedeployEndpoint string
 	ProjectPullEndpoint     string
-	ProjectIncludesEndpoint string
 
 	// System
-	SystemPruneEndpoint                  string
-	SystemHealthEndpoint                 string
-	SystemDockerInfoEndpoint             string
-	SystemConvertEndpoint                string
-	SystemContainersStartAllEndpoint     string
-	SystemContainersStopAllEndpoint      string
-	SystemContainersStartStoppedEndpoint string
-	SystemUpgradeCheckEndpoint           string
-	SystemUpgradeEndpoint                string
+	SystemPruneEndpoint              string
+	SystemDockerInfoEndpoint         string
+	SystemContainersStartAllEndpoint string
+	SystemContainersStopAllEndpoint  string
 
 	// Updater
 	UpdaterStatusEndpoint  string
@@ -110,24 +94,17 @@ type ArcaneApiEndpoints struct {
 	JobSchedulesEndpoint string
 
 	// Settings
-	SettingsEndpoint           string
-	SettingsPublicEndpoint     string
-	SettingsCategoriesEndpoint string
-	SettingsSearchEndpoint     string
+	SettingsEndpoint string
 
 	// Notifications
-	NotificationsAppriseEndpoint     string
-	NotificationsAppriseTestEndpoint string
-	NotificationsSettingsEndpoint    string
-	NotificationSettingEndpoint      string
-	NotificationTestEndpoint         string
+	NotificationsAppriseEndpoint  string
+	NotificationsSettingsEndpoint string
 
 	// Container Registries
-	ContainerRegistriesEndpoint       string
-	ContainerRegistryEndpoint         string
-	ContainerRegistrySyncEndpoint     string
-	ContainerRegistryTestEndpoint     string
-	EnvironmentSyncRegistriesEndpoint string
+	ContainerRegistriesEndpoint   string
+	ContainerRegistryEndpoint     string
+	ContainerRegistrySyncEndpoint string
+	ContainerRegistryTestEndpoint string
 
 	// Events
 	EventsEndpoint            string
@@ -139,16 +116,10 @@ type ArcaneApiEndpoints struct {
 	TemplateEndpoint            string
 	TemplatesAllEndpoint        string
 	TemplatesDefaultEndpoint    string
-	TemplatesFetchEndpoint      string
 	TemplatesRegistriesEndpoint string
 	TemplateRegistryEndpoint    string
 	TemplatesVariablesEndpoint  string
 	TemplateContentEndpoint     string
-	TemplateDownloadEndpoint    string
-
-	// Deployment
-	DeploymentEndpoint string
-	HeartbeatEndpoint  string
 
 	// Dashboard
 	DashboardActionItemsEndpoint string
@@ -168,23 +139,16 @@ type ArcaneApiEndpoints struct {
 
 // Endpoints contains the defined API endpoints
 var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; auth-related names are not credentials
-	// Version & Health
-	AppVersionEndpoint: "/api/app-version",
-	VersionEndpoint:    "/api/version",
-	HealthEndpoint:     "/api/health",
+	// Version
+	VersionEndpoint: "/api/version",
 
 	// Authentication
-	AuthLoginEndpoint:    "/api/auth/login",
 	AuthLogoutEndpoint:   "/api/auth/logout",
 	AuthMeEndpoint:       "/api/auth/me",
 	AuthPasswordEndpoint: "/api/auth/password",
 	AuthRefreshEndpoint:  "/api/auth/refresh",
 
 	// OIDC
-	OIDCStatusEndpoint:      "/api/oidc/status",
-	OIDCConfigEndpoint:      "/api/oidc/config",
-	OIDCUrlEndpoint:         "/api/oidc/url",
-	OIDCCallbackEndpoint:    "/api/oidc/callback",
 	OIDCDeviceCodeEndpoint:  "/api/oidc/device/code",
 	OIDCDeviceTokenEndpoint: "/api/oidc/device/token",
 
@@ -197,11 +161,9 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	UserEndpoint:  "/api/users/%s",
 
 	// Environments
-	EnvironmentsEndpoint:     "/api/environments",
-	EnvironmentEndpoint:      "/api/environments/%s",
-	EnvironmentPairEndpoint:  "/api/environments/pair",
-	EnvironmentAgentEndpoint: "/api/environments/%s/agent/pair",
-	EnvironmentTestEndpoint:  "/api/environments/%s/test",
+	EnvironmentsEndpoint:    "/api/environments",
+	EnvironmentEndpoint:     "/api/environments/%s",
+	EnvironmentTestEndpoint: "/api/environments/%s/test",
 
 	// Containers
 	ContainersEndpoint:       "/api/environments/%s/containers",
@@ -221,11 +183,10 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	ImagesUploadEndpoint: "/api/environments/%s/images/upload",
 
 	// Image Updates
-	ImageUpdatesCheckEndpoint:      "/api/environments/%s/image-updates/check",
-	ImageUpdatesCheckAllEndpoint:   "/api/environments/%s/image-updates/check-all",
-	ImageUpdatesCheckBatchEndpoint: "/api/environments/%s/image-updates/check-batch",
-	ImageUpdatesCheckByIdEndpoint:  "/api/environments/%s/image-updates/check/%s",
-	ImageUpdatesSummaryEndpoint:    "/api/environments/%s/image-updates/summary",
+	ImageUpdatesCheckEndpoint:     "/api/environments/%s/image-updates/check",
+	ImageUpdatesCheckAllEndpoint:  "/api/environments/%s/image-updates/check-all",
+	ImageUpdatesCheckByIdEndpoint: "/api/environments/%s/image-updates/check/%s",
+	ImageUpdatesSummaryEndpoint:   "/api/environments/%s/image-updates/summary",
 
 	// Networks
 	NetworksEndpoint:       "/api/environments/%s/networks",
@@ -251,18 +212,12 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	ProjectRestartEndpoint:  "/api/environments/%s/projects/%s/restart",
 	ProjectRedeployEndpoint: "/api/environments/%s/projects/%s/redeploy",
 	ProjectPullEndpoint:     "/api/environments/%s/projects/%s/pull",
-	ProjectIncludesEndpoint: "/api/environments/%s/projects/%s/includes",
 
 	// System
-	SystemPruneEndpoint:                  "/api/environments/%s/system/prune",
-	SystemHealthEndpoint:                 "/api/environments/%s/system/health",
-	SystemDockerInfoEndpoint:             "/api/environments/%s/system/docker/info",
-	SystemConvertEndpoint:                "/api/environments/%s/system/convert",
-	SystemContainersStartAllEndpoint:     "/api/environments/%s/system/containers/start-all",
-	SystemContainersStopAllEndpoint:      "/api/environments/%s/system/containers/stop-all",
-	SystemContainersStartStoppedEndpoint: "/api/environments/%s/system/containers/start-stopped",
-	SystemUpgradeCheckEndpoint:           "/api/environments/%s/system/upgrade/check",
-	SystemUpgradeEndpoint:                "/api/environments/%s/system/upgrade",
+	SystemPruneEndpoint:              "/api/environments/%s/system/prune",
+	SystemDockerInfoEndpoint:         "/api/environments/%s/system/docker/info",
+	SystemContainersStartAllEndpoint: "/api/environments/%s/system/containers/start-all",
+	SystemContainersStopAllEndpoint:  "/api/environments/%s/system/containers/stop-all",
 
 	// Updater
 	UpdaterStatusEndpoint:  "/api/environments/%s/updater/status",
@@ -273,24 +228,17 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	JobSchedulesEndpoint: "/api/job-schedules",
 
 	// Settings
-	SettingsEndpoint:           "/api/environments/%s/settings",
-	SettingsPublicEndpoint:     "/api/environments/%s/settings/public",
-	SettingsCategoriesEndpoint: "/api/settings/categories",
-	SettingsSearchEndpoint:     "/api/settings/search",
+	SettingsEndpoint: "/api/environments/%s/settings",
 
 	// Notifications
-	NotificationsAppriseEndpoint:     "/api/environments/%s/notifications/apprise",
-	NotificationsAppriseTestEndpoint: "/api/environments/%s/notifications/apprise/test",
-	NotificationsSettingsEndpoint:    "/api/environments/%s/notifications/settings",
-	NotificationSettingEndpoint:      "/api/environments/%s/notifications/settings/%s",
-	NotificationTestEndpoint:         "/api/environments/%s/notifications/test/%s",
+	NotificationsAppriseEndpoint:  "/api/environments/%s/notifications/apprise",
+	NotificationsSettingsEndpoint: "/api/environments/%s/notifications/settings",
 
 	// Container Registries
-	ContainerRegistriesEndpoint:       "/api/container-registries",
-	ContainerRegistryEndpoint:         "/api/container-registries/%s",
-	ContainerRegistrySyncEndpoint:     "/api/container-registries/sync",
-	ContainerRegistryTestEndpoint:     "/api/container-registries/%s/test",
-	EnvironmentSyncRegistriesEndpoint: "/api/environments/%s/sync-registries",
+	ContainerRegistriesEndpoint:   "/api/container-registries",
+	ContainerRegistryEndpoint:     "/api/container-registries/%s",
+	ContainerRegistrySyncEndpoint: "/api/container-registries/sync",
+	ContainerRegistryTestEndpoint: "/api/container-registries/%s/test",
 
 	// Events
 	EventsEndpoint:            "/api/events",
@@ -302,16 +250,10 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	TemplateEndpoint:            "/api/templates/%s",
 	TemplatesAllEndpoint:        "/api/templates/all",
 	TemplatesDefaultEndpoint:    "/api/templates/default",
-	TemplatesFetchEndpoint:      "/api/templates/fetch",
 	TemplatesRegistriesEndpoint: "/api/templates/registries",
 	TemplateRegistryEndpoint:    "/api/templates/registries/%s",
 	TemplatesVariablesEndpoint:  "/api/templates/variables",
 	TemplateContentEndpoint:     "/api/templates/%s/content",
-	TemplateDownloadEndpoint:    "/api/templates/%s/download",
-
-	// Deployment & Heartbeat
-	DeploymentEndpoint: "/api/environments/%s/deployment",
-	HeartbeatEndpoint:  "/api/environments/%s/heartbeat",
 
 	// Dashboard
 	DashboardActionItemsEndpoint: "/api/environments/%s/dashboard/action-items",
@@ -330,17 +272,12 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 }
 
 // Auth endpoints
-func (e ArcaneApiEndpoints) AuthLogin() string    { return e.AuthLoginEndpoint }
 func (e ArcaneApiEndpoints) AuthLogout() string   { return e.AuthLogoutEndpoint }
 func (e ArcaneApiEndpoints) AuthMe() string       { return e.AuthMeEndpoint }
 func (e ArcaneApiEndpoints) AuthPassword() string { return e.AuthPasswordEndpoint }
 func (e ArcaneApiEndpoints) AuthRefresh() string  { return e.AuthRefreshEndpoint }
 
 // OIDC endpoints
-func (e ArcaneApiEndpoints) OIDCStatus() string      { return e.OIDCStatusEndpoint }
-func (e ArcaneApiEndpoints) OIDCConfig() string      { return e.OIDCConfigEndpoint }
-func (e ArcaneApiEndpoints) OIDCUrl() string         { return e.OIDCUrlEndpoint }
-func (e ArcaneApiEndpoints) OIDCCallback() string    { return e.OIDCCallbackEndpoint }
 func (e ArcaneApiEndpoints) OIDCDeviceCode() string  { return e.OIDCDeviceCodeEndpoint }
 func (e ArcaneApiEndpoints) OIDCDeviceToken() string { return e.OIDCDeviceTokenEndpoint }
 
@@ -357,10 +294,6 @@ func (e ArcaneApiEndpoints) Environments() string { return e.EnvironmentsEndpoin
 
 func (e ArcaneApiEndpoints) Environment(id string) string {
 	return fmt.Sprintf(e.EnvironmentEndpoint, id)
-}
-func (e ArcaneApiEndpoints) EnvironmentPair() string { return e.EnvironmentPairEndpoint }
-func (e ArcaneApiEndpoints) EnvironmentAgent(envID string) string {
-	return fmt.Sprintf(e.EnvironmentAgentEndpoint, envID)
 }
 
 func (e ArcaneApiEndpoints) EnvironmentTest(envID string) string {
@@ -426,10 +359,6 @@ func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string {
 
 func (e ArcaneApiEndpoints) ImageUpdatesCheckAll(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckAllEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) ImageUpdatesCheckBatch(envID string) string {
-	return fmt.Sprintf(e.ImageUpdatesCheckBatchEndpoint, envID)
 }
 
 func (e ArcaneApiEndpoints) ImageUpdatesCheckById(envID, imageID string) string {
@@ -519,25 +448,13 @@ func (e ArcaneApiEndpoints) ProjectPull(envID, projectID string) string {
 	return fmt.Sprintf(e.ProjectPullEndpoint, envID, projectID)
 }
 
-func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
-	return fmt.Sprintf(e.ProjectIncludesEndpoint, envID, projectID)
-}
-
 // System endpoints
 func (e ArcaneApiEndpoints) SystemPrune(envID string) string {
 	return fmt.Sprintf(e.SystemPruneEndpoint, envID)
 }
 
-func (e ArcaneApiEndpoints) SystemHealth(envID string) string {
-	return fmt.Sprintf(e.SystemHealthEndpoint, envID)
-}
-
 func (e ArcaneApiEndpoints) SystemDockerInfo(envID string) string {
 	return fmt.Sprintf(e.SystemDockerInfoEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) SystemConvert(envID string) string {
-	return fmt.Sprintf(e.SystemConvertEndpoint, envID)
 }
 
 func (e ArcaneApiEndpoints) SystemContainersStartAll(envID string) string {
@@ -546,18 +463,6 @@ func (e ArcaneApiEndpoints) SystemContainersStartAll(envID string) string {
 
 func (e ArcaneApiEndpoints) SystemContainersStopAll(envID string) string {
 	return fmt.Sprintf(e.SystemContainersStopAllEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) SystemContainersStartStopped(envID string) string {
-	return fmt.Sprintf(e.SystemContainersStartStoppedEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) SystemUpgradeCheck(envID string) string {
-	return fmt.Sprintf(e.SystemUpgradeCheckEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) SystemUpgrade(envID string) string {
-	return fmt.Sprintf(e.SystemUpgradeEndpoint, envID)
 }
 
 // Updater endpoints
@@ -581,31 +486,13 @@ func (e ArcaneApiEndpoints) Settings(envID string) string {
 	return fmt.Sprintf(e.SettingsEndpoint, envID)
 }
 
-func (e ArcaneApiEndpoints) SettingsPublic(envID string) string {
-	return fmt.Sprintf(e.SettingsPublicEndpoint, envID)
-}
-func (e ArcaneApiEndpoints) SettingsCategories() string { return e.SettingsCategoriesEndpoint }
-func (e ArcaneApiEndpoints) SettingsSearch() string     { return e.SettingsSearchEndpoint }
-
 // Notification endpoints
 func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
 	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
 }
 
-func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
-	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
-}
-
 func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
 	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) NotificationSetting(envID, provider string) string {
-	return fmt.Sprintf(e.NotificationSettingEndpoint, envID, provider)
-}
-
-func (e ArcaneApiEndpoints) NotificationTest(envID, provider string) string {
-	return fmt.Sprintf(e.NotificationTestEndpoint, envID, provider)
 }
 
 // Container Registry endpoints
@@ -617,10 +504,6 @@ func (e ArcaneApiEndpoints) ContainerRegistry(id string) string {
 func (e ArcaneApiEndpoints) ContainerRegistrySync() string { return e.ContainerRegistrySyncEndpoint }
 func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string {
 	return fmt.Sprintf(e.ContainerRegistryTestEndpoint, id)
-}
-
-func (e ArcaneApiEndpoints) EnvironmentSyncRegistries(envID string) string {
-	return fmt.Sprintf(e.EnvironmentSyncRegistriesEndpoint, envID)
 }
 
 // Event endpoints
@@ -635,7 +518,6 @@ func (e ArcaneApiEndpoints) Templates() string           { return e.TemplatesEnd
 func (e ArcaneApiEndpoints) Template(id string) string   { return fmt.Sprintf(e.TemplateEndpoint, id) }
 func (e ArcaneApiEndpoints) TemplatesAll() string        { return e.TemplatesAllEndpoint }
 func (e ArcaneApiEndpoints) TemplatesDefault() string    { return e.TemplatesDefaultEndpoint }
-func (e ArcaneApiEndpoints) TemplatesFetch() string      { return e.TemplatesFetchEndpoint }
 func (e ArcaneApiEndpoints) TemplatesRegistries() string { return e.TemplatesRegistriesEndpoint }
 func (e ArcaneApiEndpoints) TemplateRegistry(id string) string {
 	return fmt.Sprintf(e.TemplateRegistryEndpoint, id)
@@ -645,51 +527,7 @@ func (e ArcaneApiEndpoints) TemplateContent(id string) string {
 	return fmt.Sprintf(e.TemplateContentEndpoint, id)
 }
 
-func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
-	return fmt.Sprintf(e.TemplateDownloadEndpoint, id)
-}
-
-// Deployment & Heartbeat endpoints
-func (e ArcaneApiEndpoints) Deployment(envID string) string {
-	return fmt.Sprintf(e.DeploymentEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) Heartbeat(envID string) string {
-	return fmt.Sprintf(e.HeartbeatEndpoint, envID)
-}
-
 // Dashboard endpoints
 func (e ArcaneApiEndpoints) DashboardActionItems(envID string) string {
 	return fmt.Sprintf(e.DashboardActionItemsEndpoint, envID)
-}
-
-// Version & Health endpoints
-func (e ArcaneApiEndpoints) AppVersion() string { return e.AppVersionEndpoint }
-func (e ArcaneApiEndpoints) Version() string    { return e.VersionEndpoint }
-func (e ArcaneApiEndpoints) Health() string     { return e.HealthEndpoint }
-
-// Legacy methods for backwards compatibility
-func (e ArcaneApiEndpoints) FormatContainers(envID string) string {
-	return e.Containers(envID)
-}
-
-func (e ArcaneApiEndpoints) UseImageEndpoint(action string, envID string) string {
-	switch action {
-	case "list":
-		return e.Images(envID)
-	case "get":
-		return e.Images(envID)
-	case "pull":
-		return e.ImagesPull(envID)
-	case "delete":
-		return e.Images(envID)
-	case "prune":
-		return e.ImagesPrune(envID)
-	case "counts":
-		return e.ImagesCounts(envID)
-	case "upload":
-		return e.ImagesUpload(envID)
-	default:
-		return ""
-	}
 }
