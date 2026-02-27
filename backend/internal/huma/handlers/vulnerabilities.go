@@ -95,6 +95,15 @@ type ListAllVulnerabilitiesOutput struct {
 	Body base.Paginated[vulnerability.VulnerabilityWithImage]
 }
 
+type ListAllVulnerabilityImageOptionsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
+}
+
+type ListAllVulnerabilityImageOptionsOutput struct {
+	Body base.ApiResponse[[]string]
+}
+
 type GetScannerStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
@@ -220,6 +229,19 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"ApiKeyAuth": {}},
 		},
 	}, h.ListAllVulnerabilities)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-environment-vulnerability-image-options",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/vulnerabilities/image-options",
+		Summary:     "List vulnerability image options",
+		Description: "Retrieves available image filter options for environment vulnerabilities",
+		Tags:        []string{"Vulnerabilities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListAllVulnerabilityImageOptions)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "ignore-vulnerability",
@@ -462,6 +484,29 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 				ItemsPerPage:    paginationResp.ItemsPerPage,
 				GrandTotalItems: paginationResp.GrandTotalItems,
 			},
+		},
+	}, nil
+}
+
+// ListAllVulnerabilityImageOptions returns available image options for vulnerability filtering.
+func (h *VulnerabilityHandler) ListAllVulnerabilityImageOptions(ctx context.Context, input *ListAllVulnerabilityImageOptionsInput) (*ListAllVulnerabilityImageOptionsOutput, error) {
+	if h.vulnerabilityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	items, err := h.vulnerabilityService.ListAllVulnerabilityImageOptions(ctx, input.Severity)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+	}
+
+	if items == nil {
+		items = []string{}
+	}
+
+	return &ListAllVulnerabilityImageOptionsOutput{
+		Body: base.ApiResponse[[]string]{
+			Success: true,
+			Data:    items,
 		},
 	}, nil
 }
