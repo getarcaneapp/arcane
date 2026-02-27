@@ -145,6 +145,7 @@
 	}
 
 	const humanType = $derived(type === 'project' ? m.project() : m.container());
+	const selectedTargetId = $derived(type === 'project' ? projectId : containerId);
 
 	function buildWebSocketEndpoint(path: string): string {
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -152,8 +153,7 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
-		const currentEnv = environmentStore.selected;
-		const envId = currentEnv?.id || 'local';
+		const envId = await environmentStore.getCurrentEnvironmentId();
 		const basePath =
 			type === 'project'
 				? `/api/environments/${envId}/ws/projects/${projectId}/logs`
@@ -432,7 +432,7 @@
 	>
 		{#if logs.length === 0}
 			<div class="p-4 text-center text-gray-500">
-				{#if !containerId}
+				{#if !selectedTargetId}
 					{m.log_viewer_no_selection({ type: humanType })}
 				{:else if !isStreaming}
 					{m.log_viewer_no_logs_available()}

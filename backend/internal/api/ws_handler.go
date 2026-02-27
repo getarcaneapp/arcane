@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -314,7 +315,29 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 	lines := make(chan string, 256)
 	go func(ctx context.Context) {
 		defer close(lines)
-		_ = h.projectService.StreamProjectLogs(ctx, projectID, lines, follow, tail, since, timestamps)
+		if err := h.projectService.StreamProjectLogs(ctx, projectID, lines, follow, tail, since, timestamps); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			slog.Warn("project log stream failed", "projectID", projectID, "error", err)
+
+			if format == "json" {
+				msg := ws.LogMessage{
+					Seq:       ls.seq.Add(1),
+					Level:     "error",
+					Message:   "Failed to stream project logs: " + err.Error(),
+					Service:   "arcane",
+					Timestamp: ws.NowRFC3339(),
+				}
+				if b, merr := json.Marshal(msg); merr == nil {
+					ls.hub.Broadcast(b)
+				}
+				return
+			}
+
+			ls.hub.Broadcast([]byte("Failed to stream project logs: " + err.Error()))
+		}
 	}(ctx)
 
 	if format == "json" {

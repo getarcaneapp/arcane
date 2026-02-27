@@ -584,6 +584,13 @@ test.describe("Project Detail Page", () => {
       await expect(page.getByText(/Real-time project logs/i)).toBeVisible();
       await expect(page.getByRole("button", { name: /^(Start|Stop)$/i })).toBeVisible();
       await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
+
+      const startButton = page.getByRole("button", { name: "Start", exact: true });
+      if ((await startButton.count()) > 0) {
+        await startButton.click();
+      }
+
+      await expect(page.getByText(/No project selected/i)).not.toBeVisible();
     } else {
       await expect(logsTab).toBeEnabled();
     }
