@@ -594,7 +594,6 @@ _utils-hotfix:
 utils target *args:
     @just "_utils-{{ target }}" {{ args }}
 
-
 # Build the frontend
 [group('build')]
 _build-frontend:

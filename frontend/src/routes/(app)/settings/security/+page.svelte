@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { z } from 'zod/v4';
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -13,12 +13,14 @@
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon } from '$lib/icons';
+	import SearchableSelect from '$lib/components/form/searchable-select.svelte';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import * as Alert from '$lib/components/ui/alert';
+	import { networkService } from '$lib/services/network-service';
 
 	let { data }: { data: PageData } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -35,6 +37,7 @@
 				.max(1440, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			trivyImage: z.string(),
+			trivyNetwork: z.string(),
 			trivyResourceLimitsEnabled: z.boolean(),
 			trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
 			trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
@@ -71,6 +74,7 @@
 		authSessionTimeout: currentSettings.authSessionTimeout,
 		authPasswordPolicy: currentSettings.authPasswordPolicy,
 		trivyImage: currentSettings.trivyImage,
+		trivyNetwork: currentSettings.trivyNetwork || 'bridge',
 		trivyResourceLimitsEnabled: currentSettings.trivyResourceLimitsEnabled ?? true,
 		trivyCpuLimit: currentSettings.trivyCpuLimit ?? 1,
 		trivyMemoryLimitMb: currentSettings.trivyMemoryLimitMb ?? 0,
@@ -99,6 +103,7 @@
 				authSessionTimeout: ($settingsStore || data.settings!).authSessionTimeout,
 				authPasswordPolicy: ($settingsStore || data.settings!).authPasswordPolicy,
 				trivyImage: ($settingsStore || data.settings!).trivyImage,
+				trivyNetwork: ($settingsStore || data.settings!).trivyNetwork || 'bridge',
 				trivyResourceLimitsEnabled: ($settingsStore || data.settings!).trivyResourceLimitsEnabled ?? true,
 				trivyCpuLimit: ($settingsStore || data.settings!).trivyCpuLimit ?? 1,
 				trivyMemoryLimitMb: ($settingsStore || data.settings!).trivyMemoryLimitMb ?? 0,
@@ -126,6 +131,7 @@
 			$formInputs.authSessionTimeout.value !== currentSettings.authSessionTimeout ||
 			$formInputs.authPasswordPolicy.value !== currentSettings.authPasswordPolicy ||
 			$formInputs.trivyImage.value !== currentSettings.trivyImage ||
+			$formInputs.trivyNetwork.value !== (currentSettings.trivyNetwork || 'bridge') ||
 			$formInputs.trivyResourceLimitsEnabled.value !== (currentSettings.trivyResourceLimitsEnabled ?? true) ||
 			$formInputs.trivyCpuLimit.value !== (currentSettings.trivyCpuLimit ?? 1) ||
 			$formInputs.trivyMemoryLimitMb.value !== (currentSettings.trivyMemoryLimitMb ?? 0) ||
@@ -152,6 +158,64 @@
 		isOidcEnvForced ? currentSettings.oidcEnabled : $formInputs.oidcEnabled.value
 	);
 	const showOidcDetails = $derived($formInputs.oidcEnabled.value || isOidcForcedEnabled);
+	const baseTrivyNetworkOptions = [
+		{ value: 'bridge', label: 'bridge' },
+		{ value: 'host', label: 'host' },
+		{ value: 'none', label: 'none' }
+	];
+	let customTrivyNetworkOptions = $state<{ value: string; label: string; description?: string }[]>([]);
+
+	const trivyNetworkOptions = $derived.by(() => {
+		const options = new Map<string, { value: string; label: string; description?: string }>();
+		for (const option of baseTrivyNetworkOptions) {
+			options.set(option.value, option);
+		}
+		for (const option of customTrivyNetworkOptions) {
+			options.set(option.value, option);
+		}
+
+		const selectedNetwork = ($formInputs.trivyNetwork.value || '').trim();
+		if (selectedNetwork && !options.has(selectedNetwork)) {
+			options.set(selectedNetwork, {
+				value: selectedNetwork,
+				label: selectedNetwork,
+				description: m.security_trivy_network_current_value_note()
+			});
+		}
+
+		return [...options.values()];
+	});
+
+	async function loadTrivyNetworkOptions() {
+		try {
+			const response = await networkService.getNetworks({
+				pagination: {
+					page: 1,
+					limit: 1000
+				},
+				sort: {
+					column: 'name',
+					direction: 'asc'
+				}
+			});
+
+			const networkNames = [
+				...new Set(
+					response.data
+						.map((network) => network.name)
+						.filter((name) => !!name && !baseTrivyNetworkOptions.some((option) => option.value === name))
+				)
+			].sort((a, b) => a.localeCompare(b));
+
+			customTrivyNetworkOptions = networkNames.map((name) => ({
+				value: name,
+				label: name
+			}));
+		} catch (error) {
+			console.warn('Failed to load Trivy network options:', error);
+			toast.info(m.security_trivy_network_fetch_failed());
+		}
+	}
 
 	async function customSubmit() {
 		const formData = form.validate();
@@ -178,6 +242,7 @@
 				authSessionTimeout: formData.authSessionTimeout,
 				authPasswordPolicy: formData.authPasswordPolicy,
 				trivyImage: formData.trivyImage,
+				trivyNetwork: formData.trivyNetwork,
 				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
 				trivyCpuLimit,
 				trivyMemoryLimitMb,
@@ -252,6 +317,10 @@
 		$formInputs.oidcMergeAccounts.value = false;
 		showMergeAccountsAlert = false;
 	}
+
+	onMount(() => {
+		void loadTrivyNetworkOptions();
+	});
 
 	$effect(() => {
 		// Use custom submit/reset for security page
@@ -667,6 +736,30 @@
 									placeholder="ghcr.io/aquasecurity/trivy:latest"
 									type="text"
 								/>
+							</div>
+						</div>
+
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.security_trivy_network_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.security_trivy_network_description()}</p>
+								<p class="text-muted-foreground mt-2 text-xs">{m.security_trivy_network_help()}</p>
+							</div>
+							<div class="max-w-xs">
+								<SearchableSelect
+									triggerId="trivyNetwork"
+									items={trivyNetworkOptions.map((option) => ({
+										value: option.value,
+										label: option.label,
+										hint: option.description
+									}))}
+									bind:value={$formInputs.trivyNetwork.value}
+									onSelect={(value) => ($formInputs.trivyNetwork.value = value)}
+									class="w-full justify-between"
+								/>
+								{#if $formInputs.trivyNetwork.error}
+									<p class="text-destructive mt-2 text-sm">{$formInputs.trivyNetwork.error}</p>
+								{/if}
 							</div>
 						</div>
 
