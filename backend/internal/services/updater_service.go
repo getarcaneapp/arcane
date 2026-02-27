@@ -1397,7 +1397,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				}
 			}
 
-			if proj != nil && serviceName != "" && !arcaneupdater.IsArcaneContainer(labels) {
+			useComposeUpdate := s.settingsService.GetBoolSetting(ctx, "useComposeUpdate", false)
+			if useComposeUpdate && proj != nil && serviceName != "" && !arcaneupdater.IsArcaneContainer(labels) {
 				if _, done := updatedProjects[proj.ID]; !done {
 					svcs := projectToServices[proj.ID]
 					slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", svcs)
