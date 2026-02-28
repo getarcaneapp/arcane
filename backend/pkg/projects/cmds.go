@@ -42,6 +42,42 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
+func ComposePull(ctx context.Context, proj *types.Project, services []string) error {
+	c, err := NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	// api.PullOptions has no Services field in compose v5.
+	// Create a shallow copy of the project with only the requested services
+	// so that Pull only pulls images for those services.
+	if len(services) > 0 {
+		svcSet := make(map[string]bool, len(services))
+		for _, s := range services {
+			svcSet[s] = true
+		}
+		filtered := *proj // shallow copy
+		filtered.Services = make(types.Services)
+		for name, svc := range proj.Services {
+			if svcSet[name] {
+				filtered.Services[name] = svc
+			}
+		}
+		return c.svc.Pull(ctx, &filtered, api.PullOptions{})
+	}
+	return c.svc.Pull(ctx, proj, api.PullOptions{})
+}
+
+func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
+	c, err := NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return c.svc.Stop(ctx, proj.Name, api.StopOptions{Services: services})
+}
+
 func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool) error {
 	c, err := NewClient(ctx)
 	if err != nil {

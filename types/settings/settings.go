@@ -350,4 +350,9 @@ type Update struct {
 	//
 	// Required: false
 	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
+
+	// UseComposeUpdate indicates if Docker Compose should be used for project updates.
+	//
+	// Required: false
+	UseComposeUpdate *string `json:"useComposeUpdate,omitempty"`
 }

@@ -329,7 +329,7 @@ func vulnerabilitySummaryBodyPlainInternal(payload VulnerabilityNotificationPayl
 
 func vulnerabilitySummaryBodyMarkdownInternal(payload VulnerabilityNotificationPayload) string {
 	var sb strings.Builder
-	sb.WriteString("📊 **Daily Vulnerability Summary**\n\n")
+	sb.WriteString("**Daily Vulnerability Summary**\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
 		_, _ = fmt.Fprintf(&sb, "**Summary:** %s\n", payload.CVEID)
 	}
@@ -350,7 +350,7 @@ func vulnerabilitySummaryBodyMarkdownInternal(payload VulnerabilityNotificationP
 
 func vulnerabilitySummaryBodySlackInternal(payload VulnerabilityNotificationPayload) string {
 	var sb strings.Builder
-	sb.WriteString("📊 *Daily Vulnerability Summary*\n\n")
+	sb.WriteString("*Daily Vulnerability Summary*\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
 		_, _ = fmt.Fprintf(&sb, "*Summary:* %s\n", payload.CVEID)
 	}
@@ -371,7 +371,7 @@ func vulnerabilitySummaryBodySlackInternal(payload VulnerabilityNotificationPayl
 
 func vulnerabilitySummaryBodyHTMLInternal(payload VulnerabilityNotificationPayload) string {
 	var sb strings.Builder
-	sb.WriteString("📊 <b>Daily Vulnerability Summary</b>\n\n")
+	sb.WriteString("<b>Daily Vulnerability Summary</b>\n\n")
 	if strings.TrimSpace(payload.CVEID) != "" {
 		_, _ = fmt.Fprintf(&sb, "<b>Summary:</b> %s\n", payload.CVEID)
 	}
@@ -488,10 +488,10 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, image
 	// Build message content - Discord embeds via Shoutrrr are sent as formatted markdown
 	updateStatus := "No Update"
 	if updateInfo.HasUpdate {
-		updateStatus = "⚠️ Update Available"
+		updateStatus = "Update Available"
 	}
 
-	message := fmt.Sprintf("**🔔 Container Image Update Notification**\n\n"+
+	message := fmt.Sprintf("**Notification: Container Image Update**\n\n"+
 		"**Image:** %s\n"+
 		"**Status:** %s\n"+
 		"**Update Type:** %s\n",
@@ -541,11 +541,11 @@ func (s *NotificationService) sendTelegramNotification(ctx context.Context, imag
 	// HTML is easier to escape than Markdown and better supported
 	updateStatus := "No Update"
 	if updateInfo.HasUpdate {
-		updateStatus = "⚠️ Update Available"
+		updateStatus = "Update Available"
 	}
 
 	// Use HTML formatting - it's more reliable than Markdown
-	message := fmt.Sprintf("🔔 <b>Container Image Update Notification</b>\n\n"+
+	message := fmt.Sprintf("<b>Notification: Container Image Update</b>\n\n"+
 		"<b>Image:</b> %s\n"+
 		"<b>Status:</b> %s\n"+
 		"<b>Update Type:</b> %s\n",
@@ -689,11 +689,11 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 	}
 
 	// Build message content
-	message := fmt.Sprintf("**✅ Container Successfully Updated**\n\n"+
+	message := fmt.Sprintf("**Container Successfully Updated**\n\n"+
 		"Your container has been updated with the latest image version.\n\n"+
 		"**Container:** %s\n"+
 		"**Image:** %s\n"+
-		"**Status:** ✅ Updated Successfully\n",
+		"**Status:** Updated Successfully\n",
 		containerName, imageRef)
 
 	if oldDigest != "" {
@@ -737,11 +737,11 @@ func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx contex
 	}
 
 	// Build message content using HTML formatting
-	message := fmt.Sprintf("✅ <b>Container Successfully Updated</b>\n\n"+
+	message := fmt.Sprintf("<b>Container Successfully Updated</b>\n\n"+
 		"Your container has been updated with the latest image version.\n\n"+
 		"<b>Container:</b> %s\n"+
 		"<b>Image:</b> %s\n"+
-		"<b>Status:</b> ✅ Updated Successfully\n",
+		"<b>Status:</b> Updated Successfully\n",
 		containerName, imageRef)
 
 	if oldDigest != "" {

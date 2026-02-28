@@ -49,23 +49,17 @@
 		return result.data.data;
 	});
 
-	const excludedContainers = new SvelteSet<string>();
 	let searchTerm = $state('');
+	let autoHealSearchTerm = $state('');
 
-	$effect(() => {
+	const excludedContainers = $derived.by(() => {
 		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
-		const names = savedValue
-			.split(',')
-			.map((s: string) => normalizeContainerName(s.trim()))
-			.filter(Boolean);
-
-		// Synchronize the SvelteSet with the form input value
-		// Only update if there are actual changes to avoid unnecessary reactivity
-		const currentNames = Array.from(excludedContainers);
-		if (names.length !== currentNames.length || names.some((n: string) => !excludedContainers.has(n))) {
-			excludedContainers.clear();
-			names.forEach((n: string) => excludedContainers.add(n));
-		}
+		return new SvelteSet(
+			savedValue
+				.split(',')
+				.map((s: string) => normalizeContainerName(s.trim()))
+				.filter(Boolean)
+		);
 	});
 
 	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -96,46 +90,39 @@
 
 	function toggleContainerExclusion(containerName: string) {
 		const normalizedName = normalizeContainerName(containerName);
-		if (excludedContainers.has(normalizedName)) {
-			excludedContainers.delete(normalizedName);
+		const newSet = new SvelteSet(excludedContainers);
+		if (newSet.has(normalizedName)) {
+			newSet.delete(normalizedName);
 		} else {
-			excludedContainers.add(normalizedName);
+			newSet.add(normalizedName);
 		}
 
-		const newValue = Array.from(excludedContainers).join(',');
 		if ($formInputs.autoUpdateExcludedContainers) {
-			$formInputs.autoUpdateExcludedContainers.value = newValue;
+			$formInputs.autoUpdateExcludedContainers.value = Array.from(newSet).join(',');
 		}
 	}
 
-	const autoHealExcludedContainers = new SvelteSet<string>();
-	let autoHealSearchTerm = $state('');
-
-	$effect(() => {
+	const autoHealExcludedContainers = $derived.by(() => {
 		const savedValue = $formInputs.autoHealExcludedContainers?.value || '';
-		const names = savedValue
-			.split(',')
-			.map((s: string) => normalizeContainerName(s.trim()))
-			.filter(Boolean);
-
-		const currentNames = Array.from(autoHealExcludedContainers);
-		if (names.length !== currentNames.length || names.some((n: string) => !autoHealExcludedContainers.has(n))) {
-			autoHealExcludedContainers.clear();
-			names.forEach((n: string) => autoHealExcludedContainers.add(n));
-		}
+		return new SvelteSet(
+			savedValue
+				.split(',')
+				.map((s: string) => normalizeContainerName(s.trim()))
+				.filter(Boolean)
+		);
 	});
 
 	function toggleAutoHealContainerExclusion(containerName: string) {
 		const normalizedName = normalizeContainerName(containerName);
-		if (autoHealExcludedContainers.has(normalizedName)) {
-			autoHealExcludedContainers.delete(normalizedName);
+		const newSet = new SvelteSet(autoHealExcludedContainers);
+		if (newSet.has(normalizedName)) {
+			newSet.delete(normalizedName);
 		} else {
-			autoHealExcludedContainers.add(normalizedName);
+			newSet.add(normalizedName);
 		}
 
-		const newValue = Array.from(autoHealExcludedContainers).join(',');
 		if ($formInputs.autoHealExcludedContainers) {
-			$formInputs.autoHealExcludedContainers.value = newValue;
+			$formInputs.autoHealExcludedContainers.value = Array.from(newSet).join(',');
 		}
 	}
 
@@ -268,6 +255,16 @@
 
 												{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
 													<div class="border-border/20 space-y-3 border-t pt-3">
+														<div class="flex flex-row items-center justify-between rounded-lg border p-4">
+															<div class="space-y-0.5">
+																<Label class="text-base">{m.jobs_use_compose_update()}</Label>
+																<p class="text-muted-foreground text-sm">
+																	{m.jobs_use_compose_update_description()}
+																</p>
+															</div>
+															<Switch bind:checked={$formInputs.useComposeUpdate.value} />
+														</div>
+
 														<div class="space-y-1">
 															<Label class="text-sm font-medium">
 																{m.auto_update_excluded_containers()}

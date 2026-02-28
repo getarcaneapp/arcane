@@ -199,6 +199,67 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 	return &project, nil
 }
 
+func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
+	if name == "" {
+		return nil, fmt.Errorf("project name is empty")
+	}
+	normalized := normalizeComposeProjectName(name)
+
+	var proj models.Project
+	if err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("project not found: %s", name)
+		}
+		return nil, fmt.Errorf("failed to get project by name: %w", err)
+	}
+	return &proj, nil
+}
+
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
+	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	// 1. Load project
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirectory, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if err != nil {
+		projectsDirectory = "/app/data/projects"
+	}
+
+	pathMapper, _ := s.getPathMapper(ctx)
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	compProj, _, err := projects.LoadComposeProjectFromDir(ctx, projectFromDb.Path, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+
+	// 2. Set status to deploying/restarting
+	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+		return err
+	}
+
+	// 3. Pull images for specific services
+	if err := projects.ComposePull(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
+	}
+
+	// 4. Stop specific services
+	if err := projects.ComposeStop(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
+	}
+
+	// 5. Up specific services
+	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false); err != nil {
+		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		return fmt.Errorf("failed to up services: %w", err)
+	}
+
+	// 6. Finalize status
+	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+}
+
 func (s *ProjectService) getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
 	total = len(services)
 	for _, service := range services {
