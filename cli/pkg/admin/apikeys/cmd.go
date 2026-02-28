@@ -3,6 +3,7 @@ package apikeys
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
@@ -17,6 +18,12 @@ var (
 	limitFlag  int
 	forceFlag  bool
 	jsonOutput bool
+)
+
+var (
+	apikeyUpdateName        string
+	apikeyUpdateDescription string
+	apikeyUpdateExpiresAt   string
 )
 
 // ApiKeysCmd is the parent command for API key operations
@@ -254,10 +261,61 @@ var getCmd = &cobra.Command{
 	},
 }
 
+var updateCmd = &cobra.Command{
+	Use:          "update <id>",
+	Short:        "Update API key",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		var req apikey.UpdateApiKey
+		if cmd.Flags().Changed("name") {
+			req.Name = &apikeyUpdateName
+		}
+		if cmd.Flags().Changed("description") {
+			req.Description = &apikeyUpdateDescription
+		}
+		if cmd.Flags().Changed("expires-at") && apikeyUpdateExpiresAt != "" {
+			parsedTime, err := time.Parse(time.RFC3339, apikeyUpdateExpiresAt)
+			if err != nil {
+				return fmt.Errorf("invalid expires-at format (use RFC3339): %w", err)
+			}
+			req.ExpiresAt = &parsedTime
+		}
+
+		resp, err := c.Put(cmd.Context(), types.Endpoints.ApiKey(args[0]), req)
+		if err != nil {
+			return fmt.Errorf("failed to update API key: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to update API key: %w", err)
+		}
+
+		if jsonOutput {
+			var result base.ApiResponse[any]
+			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
+			}
+			return nil
+		}
+
+		output.Success("API key updated successfully")
+		return nil
+	},
+}
+
 func init() {
 	ApiKeysCmd.AddCommand(listCmd)
 	ApiKeysCmd.AddCommand(createCmd)
 	ApiKeysCmd.AddCommand(getCmd)
+	ApiKeysCmd.AddCommand(updateCmd)
 	ApiKeysCmd.AddCommand(deleteCmd)
 
 	// List command flags
@@ -271,6 +329,12 @@ func init() {
 
 	// Get command flags
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	// Update command flags
+	updateCmd.Flags().StringVar(&apikeyUpdateName, "name", "", "API key name")
+	updateCmd.Flags().StringVarP(&apikeyUpdateDescription, "description", "d", "", "API key description")
+	updateCmd.Flags().StringVar(&apikeyUpdateExpiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
+	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
