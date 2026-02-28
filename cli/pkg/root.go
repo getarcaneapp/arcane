@@ -58,6 +58,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/doctor"
 	"github.com/getarcaneapp/arcane/cli/pkg/environments"
 	"github.com/getarcaneapp/arcane/cli/pkg/generate"
+	"github.com/getarcaneapp/arcane/cli/pkg/gitops"
 	"github.com/getarcaneapp/arcane/cli/pkg/images"
 	"github.com/getarcaneapp/arcane/cli/pkg/jobs"
 	"github.com/getarcaneapp/arcane/cli/pkg/networks"
@@ -241,6 +242,7 @@ func init() {
 	rootCmd.AddCommand(system.SystemCmd)
 	rootCmd.AddCommand(updater.UpdaterCmd)
 	rootCmd.AddCommand(admin.AdminCmd)
+	rootCmd.AddCommand(gitops.GitopsCmd)
 }
 
 func renderCommandHelp(cmd *cobra.Command) {

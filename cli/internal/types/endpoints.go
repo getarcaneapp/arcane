@@ -148,6 +148,14 @@ type ArcaneApiEndpoints struct {
 	// Customization
 	CustomizeCategoriesEndpoint string
 	CustomizeSearchEndpoint     string
+
+	// GitOps Syncs
+	GitOpsSyncsEndpoint       string
+	GitOpsSyncEndpoint        string
+	GitOpsSyncStatusEndpoint  string
+	GitOpsSyncTriggerEndpoint string
+	GitOpsSyncFilesEndpoint   string
+	GitOpsSyncsImportEndpoint string
 }
 
 // Endpoints contains the defined API endpoints
@@ -295,6 +303,14 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	// Customization
 	CustomizeCategoriesEndpoint: "/api/customize/categories",
 	CustomizeSearchEndpoint:     "/api/customize/search",
+
+	// GitOps Syncs
+	GitOpsSyncsEndpoint:       "/api/environments/%s/gitops-syncs",
+	GitOpsSyncEndpoint:        "/api/environments/%s/gitops-syncs/%s",
+	GitOpsSyncStatusEndpoint:  "/api/environments/%s/gitops-syncs/%s/status",
+	GitOpsSyncTriggerEndpoint: "/api/environments/%s/gitops-syncs/%s/sync",
+	GitOpsSyncFilesEndpoint:   "/api/environments/%s/gitops-syncs/%s/files",
+	GitOpsSyncsImportEndpoint: "/api/environments/%s/gitops-syncs/import",
 }
 
 // Auth endpoints
@@ -601,4 +617,24 @@ func (e ArcaneApiEndpoints) TemplateFetch() string { return e.TemplateFetchEndpo
 // Dashboard endpoints
 func (e ArcaneApiEndpoints) DashboardActionItems(envID string) string {
 	return fmt.Sprintf(e.DashboardActionItemsEndpoint, envID)
+}
+
+// GitOps Sync endpoints
+func (e ArcaneApiEndpoints) GitOpsSyncs(envID string) string {
+	return fmt.Sprintf(e.GitOpsSyncsEndpoint, envID)
+}
+func (e ArcaneApiEndpoints) GitOpsSync(envID, syncID string) string {
+	return fmt.Sprintf(e.GitOpsSyncEndpoint, envID, syncID)
+}
+func (e ArcaneApiEndpoints) GitOpsSyncStatus(envID, syncID string) string {
+	return fmt.Sprintf(e.GitOpsSyncStatusEndpoint, envID, syncID)
+}
+func (e ArcaneApiEndpoints) GitOpsSyncTrigger(envID, syncID string) string {
+	return fmt.Sprintf(e.GitOpsSyncTriggerEndpoint, envID, syncID)
+}
+func (e ArcaneApiEndpoints) GitOpsSyncFiles(envID, syncID string) string {
+	return fmt.Sprintf(e.GitOpsSyncFilesEndpoint, envID, syncID)
+}
+func (e ArcaneApiEndpoints) GitOpsSyncsImport(envID string) string {
+	return fmt.Sprintf(e.GitOpsSyncsImportEndpoint, envID)
 }
