@@ -99,8 +99,11 @@ type ArcaneApiEndpoints struct {
 	SettingsEndpoint string
 
 	// Notifications
-	NotificationsAppriseEndpoint  string
-	NotificationsSettingsEndpoint string
+	NotificationsAppriseEndpoint     string
+	NotificationsAppriseTestEndpoint string
+	NotificationsSettingsEndpoint    string
+	NotificationSettingsProviderEndpoint string
+	NotificationsTestProviderEndpoint string
 
 	// Container Registries
 	ContainerRegistriesEndpoint   string
@@ -237,8 +240,11 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	SettingsEndpoint: "/api/environments/%s/settings",
 
 	// Notifications
-	NotificationsAppriseEndpoint:  "/api/environments/%s/notifications/apprise",
-	NotificationsSettingsEndpoint: "/api/environments/%s/notifications/settings",
+	NotificationsAppriseEndpoint:       "/api/environments/%s/notifications/apprise",
+	NotificationsAppriseTestEndpoint:   "/api/environments/%s/notifications/apprise/test",
+	NotificationsSettingsEndpoint:      "/api/environments/%s/notifications/settings",
+	NotificationSettingsProviderEndpoint: "/api/environments/%s/notifications/settings/%s",
+	NotificationsTestProviderEndpoint:  "/api/environments/%s/notifications/test/%s",
 
 	// Container Registries
 	ContainerRegistriesEndpoint:   "/api/container-registries",
@@ -507,8 +513,20 @@ func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
 	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
 }
 
+func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
+	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
+}
+
 func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
 	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
+}
+
+func (e ArcaneApiEndpoints) NotificationSettingsProvider(envID, provider string) string {
+	return fmt.Sprintf(e.NotificationSettingsProviderEndpoint, envID, provider)
+}
+
+func (e ArcaneApiEndpoints) NotificationsTestProvider(envID, provider string) string {
+	return fmt.Sprintf(e.NotificationsTestProviderEndpoint, envID, provider)
 }
 
 // Container Registry endpoints

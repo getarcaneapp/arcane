@@ -151,6 +151,56 @@ var listEnvCmd = &cobra.Command{
 	},
 }
 
+var getCmd = &cobra.Command{
+	Use:          "get <event-id>",
+	Short:        "Get event details",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.Endpoints.Event(args[0]))
+		if err != nil {
+			return fmt.Errorf("failed to get event: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[event.Event]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Header("Event Details")
+		output.KeyValue("ID", result.Data.ID)
+		output.KeyValue("Type", result.Data.Type)
+		output.KeyValue("Severity", result.Data.Severity)
+		output.KeyValue("Title", result.Data.Title)
+		if result.Data.Description != "" {
+			output.KeyValue("Description", result.Data.Description)
+		}
+		if result.Data.ResourceName != nil && result.Data.ResourceType != nil {
+			output.KeyValue("Resource", fmt.Sprintf("%s (%s)", *result.Data.ResourceName, *result.Data.ResourceType))
+		}
+		if result.Data.Username != nil {
+			output.KeyValue("User", *result.Data.Username)
+		}
+		output.KeyValue("Timestamp", result.Data.Timestamp.String())
+		return nil
+	},
+}
+
 var deleteCmd = &cobra.Command{
 	Use:          "delete <event-id>",
 	Aliases:      []string{"rm", "remove"},
@@ -191,6 +241,7 @@ var deleteCmd = &cobra.Command{
 func init() {
 	EventsCmd.AddCommand(listCmd)
 	EventsCmd.AddCommand(listEnvCmd)
+	EventsCmd.AddCommand(getCmd)
 	EventsCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
@@ -198,6 +249,8 @@ func init() {
 
 	listEnvCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
 	listEnvCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
 	deleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
