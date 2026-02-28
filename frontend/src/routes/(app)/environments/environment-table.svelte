@@ -20,6 +20,7 @@
 	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import {
 		EyeOnIcon,
 		TrashIcon,
@@ -132,6 +133,7 @@
 				else toast.error(m.environments_test_connection_error());
 				// Refresh to get updated status from backend
 				environments = await environmentManagementService.getEnvironments(requestOptions);
+				await environmentStore.initialize(environments.data);
 			}
 		});
 		isLoading.testing = false;
@@ -254,15 +256,18 @@
 </script>
 
 {#snippet EnvironmentCell({ item }: { item: Environment })}
+	{@const statusValue = resolveEnvironmentStatus(item)}
 	<div class="flex items-center gap-3">
 		<div class="relative">
 			<div class="bg-muted flex size-8 items-center justify-center rounded-lg">
 				<EnvironmentsIcon class="text-muted-foreground size-4" />
 			</div>
 			<div
-				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {item.status === 'online'
+				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {statusValue === 'online'
 					? 'bg-green-500'
-					: 'bg-red-500'}"
+					: statusValue === 'pending'
+						? 'bg-amber-500'
+						: 'bg-red-500'}"
 			></div>
 		</div>
 		{#if environmentStore.selected?.id === item.id}
@@ -284,14 +289,26 @@
 
 {#snippet StatusCell({ value }: { value: unknown })}
 	{@const statusValue = String(value)}
-	{@const variant = statusValue === 'online' ? 'green' : statusValue === 'pending' ? 'amber' : 'red'}
+	{@const variant = getEnvironmentStatusVariant(statusValue as Environment['status'])}
 	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
 {/snippet}
 
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
-	{@const typeLabel = !env.isEdge ? 'HTTP' : env.edgeTransport === 'websocket' ? 'WebSocket' : 'gRPC'}
-	{@const typeVariant = !env.isEdge ? 'gray' : env.edgeTransport === 'websocket' ? 'purple' : 'blue'}
+	{@const typeLabel = !env.isEdge
+		? 'HTTP'
+		: !env.connected || !env.edgeTransport
+			? 'Edge'
+			: env.edgeTransport === 'websocket'
+				? 'WebSocket'
+				: 'gRPC'}
+	{@const typeVariant = !env.isEdge
+		? 'gray'
+		: !env.connected || !env.edgeTransport
+			? 'gray'
+			: env.edgeTransport === 'websocket'
+				? 'purple'
+				: 'blue'}
 	<StatusBadge text={typeLabel} variant={typeVariant} />
 {/snippet}
 
@@ -321,8 +338,22 @@
 		]}
 		fields={[
 			{
+				label: m.common_status(),
+				getValue: (item: Environment) => capitalizeFirstLetter(resolveEnvironmentStatus(item)),
+				icon: StatsIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.status ?? true
+			},
+			{
 				label: m.common_type(),
-				getValue: (item: Environment) => (!item.isEdge ? 'HTTP' : item.edgeTransport === 'websocket' ? 'WebSocket' : 'gRPC'),
+				getValue: (item: Environment) =>
+					!item.isEdge
+						? 'HTTP'
+						: !item.connected || !item.edgeTransport
+							? 'Edge'
+							: item.edgeTransport === 'websocket'
+								? 'WebSocket'
+								: 'gRPC',
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.type ?? true
@@ -384,7 +415,7 @@
 				{#if item.id !== '0'}
 					<DropdownMenu.Separator />
 
-					{#if item.status === 'online'}
+					{#if isEnvironmentOnline(item)}
 						<DropdownMenu.Item
 							onclick={() => handleUpgradeClick(item)}
 							disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
@@ -427,7 +458,11 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (environments = await environmentManagementService.getEnvironments(options))}
+	onRefresh={async (options) => {
+		environments = await environmentManagementService.getEnvironments(options);
+		await environmentStore.initialize(environments.data);
+		return environments;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

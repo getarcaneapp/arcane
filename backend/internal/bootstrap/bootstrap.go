@@ -132,6 +132,12 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
 
+	if !cfg.AgentMode {
+		if err := appServices.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
+		}
+	}
+
 	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
 		dockerClient, err := dockerClientService.GetClient()
 		if err != nil {

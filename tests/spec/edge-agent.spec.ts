@@ -121,7 +121,7 @@ test.describe("Edge Agent Environment", () => {
         has: page.getByRole("button", { name: environmentName, exact: true }),
       });
       await expect(environmentRow.getByText("edge://edge-agent-").first()).toBeVisible();
-      await expect(environmentRow.getByText("gRPC", { exact: true })).toBeVisible();
+      await expect(environmentRow.getByText("Edge", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: environmentName, exact: true }).click();
       if (createdEnvironmentId) {
@@ -129,7 +129,8 @@ test.describe("Edge Agent Environment", () => {
       }
 
       await expect(page.locator("#api-url")).toHaveValue(/edge:\/\/edge-agent-/);
-      await expect(page.getByText("gRPC", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("Edge", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("Tunnel", { exact: true })).toBeVisible();
     } finally {
       if (createdEnvironmentId) {
         await page.request.delete(`/api/environments/${createdEnvironmentId}`);

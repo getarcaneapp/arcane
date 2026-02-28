@@ -1,6 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 
 test.describe('Notification settings', () => {
+  const openProviderTab = async (page: Page, name: string) => {
+    const tab = page.getByRole('tab', { name });
+    await tab.scrollIntoViewIfNeeded();
+    await expect(tab).toBeVisible();
+    await tab.click();
+  };
+
   // Shared setup for all notification tests
   const setupNotificationTest = async (page: Page, provider: string) => {
     const observedErrors: string[] = [];
@@ -84,7 +91,7 @@ test.describe('Notification settings', () => {
   test('should allow testing discord notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'discord');
 
-    await page.getByRole('tab', { name: 'Discord' }).click();
+    await openProviderTab(page, 'Discord');
     await page.locator('#discord-enabled').click();
 
     // Discord split fields
@@ -106,7 +113,7 @@ test.describe('Notification settings', () => {
   test('should allow testing slack notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'slack');
 
-    await page.getByRole('tab', { name: 'Slack' }).click();
+    await openProviderTab(page, 'Slack');
     await page.locator('#slack-enabled').click();
 
     // Slack OAuth token (xoxb- or xoxp- format)
@@ -127,7 +134,7 @@ test.describe('Notification settings', () => {
   test('should allow testing telegram notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'telegram');
 
-    await page.getByRole('tab', { name: 'Telegram' }).click();
+    await openProviderTab(page, 'Telegram');
     await page.locator('#telegram-enabled').click();
 
     // Telegram fields (placeholders are hardcoded in component)
@@ -149,7 +156,7 @@ test.describe('Notification settings', () => {
   test('should allow testing generic webhook notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'generic');
 
-    await page.getByRole('tab', { name: 'Generic' }).click();
+    await openProviderTab(page, 'Generic');
     await page.locator('#generic-enabled').click();
 
     await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
@@ -169,7 +176,7 @@ test.describe('Notification settings', () => {
   test('should allow testing signal notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'signal');
 
-    await page.getByRole('tab', { name: 'Signal' }).click();
+    await openProviderTab(page, 'Signal');
     await page.locator('#signal-enabled').click();
 
     await page.getByPlaceholder('localhost').fill('signal-api.example.com');
@@ -192,7 +199,7 @@ test.describe('Notification settings', () => {
   test('should allow testing ntfy notifications', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'ntfy');
 
-    await page.getByRole('tab', { name: 'Ntfy' }).click();
+    await openProviderTab(page, 'Ntfy');
     await page.locator('#ntfy-enabled').click();
 
     await page.getByPlaceholder('ntfy.sh').fill('ntfy.sh');

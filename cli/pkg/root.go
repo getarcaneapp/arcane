@@ -300,7 +300,7 @@ func renderCommandHelp(cmd *cobra.Command) {
 	examples := strings.TrimSpace(cmd.Example)
 	if examples != "" {
 		lipgloss.Println(helpSectionStyle.Render("Examples"))
-		for _, line := range strings.Split(examples, "\n") {
+		for line := range strings.SplitSeq(examples, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "" {
 				lipgloss.Println()

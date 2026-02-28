@@ -356,7 +356,7 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError((&common.EnvironmentListError{Err: err}).Error())
 	}
 	for i := range envs {
-		h.setEdgeTransportField(&envs[i])
+		h.applyEdgeRuntimeState(&envs[i])
 	}
 
 	return &ListEnvironmentsOutput{
@@ -447,7 +447,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.setEdgeTransportField(&out)
+	h.applyEdgeRuntimeState(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -487,7 +487,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *m
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.setEdgeTransportField(&out)
+	h.applyEdgeRuntimeState(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -514,7 +514,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.setEdgeTransportField(&out)
+	h.applyEdgeRuntimeState(&out)
 
 	return &GetEnvironmentOutput{
 		Body: base.ApiResponse[environment.Environment]{
@@ -559,7 +559,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.setEdgeTransportField(&out)
+	h.applyEdgeRuntimeState(&out)
 
 	// If regenerating API key, return the new key
 	var newApiKey *string
@@ -601,7 +601,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		if mapErr != nil {
 			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 		}
-		h.setEdgeTransportField(&out)
+		h.applyEdgeRuntimeState(&out)
 
 		newApiKey = new(apiKeyDto.Key)
 	}
@@ -617,18 +617,31 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}, nil
 }
 
-func (h *EnvironmentHandler) setEdgeTransportField(env *environment.Environment) {
+func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment) {
 	if env == nil || !env.IsEdge {
 		return
 	}
-	if activeTransport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
-		env.EdgeTransport = &activeTransport
+
+	connected := false
+	env.Connected = &connected
+	env.ConnectedAt = nil
+	env.LastHeartbeat = nil
+	env.EdgeTransport = nil
+
+	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID); ok {
+		connected = true
+		env.Connected = &connected
+		env.Status = string(models.EnvironmentStatusOnline)
+		env.ConnectedAt = runtimeState.ConnectedAt
+		env.LastHeartbeat = runtimeState.LastHeartbeat
+		if runtimeState.Transport != "" {
+			env.EdgeTransport = &runtimeState.Transport
+		}
 		return
 	}
 
-	if h != nil && h.cfg != nil {
-		transport := edge.NormalizeEdgeTransport(h.cfg.EdgeTransport)
-		env.EdgeTransport = &transport
+	if env.Status != string(models.EnvironmentStatusPending) {
+		env.Status = string(models.EnvironmentStatusOffline)
 	}
 }
 
