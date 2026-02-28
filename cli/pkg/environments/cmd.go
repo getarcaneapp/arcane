@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/config"

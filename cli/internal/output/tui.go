@@ -5,10 +5,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"go.withmatt.com/size"
 )
 
@@ -22,7 +21,6 @@ type spinnerModel struct {
 func newSpinnerModel(label string) spinnerModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(arcanePurple)
 	return spinnerModel{spinner: s, label: label}
 }
 
@@ -34,7 +32,7 @@ func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinnerDoneMsg:
 		return m, tea.Quit
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
@@ -46,8 +44,8 @@ func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m spinnerModel) View() string {
-	return fmt.Sprintf("%s %s", m.spinner.View(), m.label)
+func (m spinnerModel) View() tea.View {
+	return tea.NewView(fmt.Sprintf("%s %s", m.spinner.View(), m.label))
 }
 
 // Spinner renders a Bubble Tea spinner inline.
@@ -98,8 +96,7 @@ type progressModel struct {
 }
 
 func newProgressModel(label string, total int64) progressModel {
-	p := progress.New(progress.WithDefaultGradient())
-	p.Width = 40
+	p := progress.New(progress.WithDefaultBlend(), progress.WithWidth(40))
 	return progressModel{progress: p, label: label, total: total}
 }
 
@@ -118,26 +115,23 @@ func (m progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.label = string(msg)
 	case progressDoneMsg:
 		return m, tea.Quit
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
 		if msg.Width > 10 {
-			m.progress.Width = msg.Width - 10
+			m.progress.SetWidth(msg.Width - 10)
 		}
 	}
 
 	var cmd tea.Cmd
-	updated, cmd := m.progress.Update(msg)
-	if model, ok := updated.(progress.Model); ok {
-		m.progress = model
-	}
+	m.progress, cmd = m.progress.Update(msg)
 	return m, cmd
 }
 
-func (m progressModel) View() string {
+func (m progressModel) View() tea.View {
 	percent := 0.0
 	if m.total > 0 {
 		percent = float64(m.current) / float64(m.total)
@@ -150,9 +144,9 @@ func (m progressModel) View() string {
 
 	bar := m.progress.ViewAs(percent)
 	if m.total > 0 {
-		return fmt.Sprintf("%s\n%s %s/%s", m.label, bar, safeCapacity(m.current), safeCapacity(m.total))
+		return tea.NewView(fmt.Sprintf("%s\n%s %s/%s", m.label, bar, safeCapacity(m.current), safeCapacity(m.total)))
 	}
-	return fmt.Sprintf("%s\n%s", m.label, bar)
+	return tea.NewView(fmt.Sprintf("%s\n%s", m.label, bar))
 }
 
 func safeCapacity(value int64) size.Capacity {
