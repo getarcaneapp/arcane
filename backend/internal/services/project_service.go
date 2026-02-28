@@ -757,7 +757,73 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 // Project Actions
 
+type deployPullPolicy string
+
+const (
+	deployPullPolicyMissing deployPullPolicy = "missing"
+	deployPullPolicyAlways  deployPullPolicy = "always"
+)
+
+type deployOptions struct {
+	pullPolicy    deployPullPolicy
+	forceRecreate bool
+}
+
+func defaultDeployOptions() deployOptions {
+	return deployOptions{
+		pullPolicy:    deployPullPolicyMissing,
+		forceRecreate: false,
+	}
+}
+
+func normalizeDeployOptions(options *project.UpRequest) (deployOptions, error) {
+	normalized := defaultDeployOptions()
+	if options == nil {
+		return normalized, nil
+	}
+
+	switch options.PullPolicy {
+	case "", project.UpPullPolicyMissing:
+		normalized.pullPolicy = deployPullPolicyMissing
+	case project.UpPullPolicyAlways:
+		normalized.pullPolicy = deployPullPolicyAlways
+	default:
+		return deployOptions{}, fmt.Errorf("invalid pull policy: %q", options.PullPolicy)
+	}
+
+	normalized.forceRecreate = options.ForceRecreate
+
+	return normalized, nil
+}
+
+func hasComposePullPolicyOverride(composeProject *composetypes.Project) bool {
+	if composeProject == nil {
+		return false
+	}
+
+	for _, service := range composeProject.Services {
+		if strings.TrimSpace(string(service.PullPolicy)) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User) error {
+	return s.DeployProjectWithOptions(ctx, projectID, user, nil)
+}
+
+func (s *ProjectService) DeployProjectWithOptions(ctx context.Context, projectID string, user models.User, options *project.UpRequest) error {
+	normalizedOptions, err := normalizeDeployOptions(options)
+	if err != nil {
+		return err
+	}
+
+	return s.deployProject(ctx, projectID, user, normalizedOptions)
+}
+
+func (s *ProjectService) deployProject(ctx context.Context, projectID string, user models.User, options deployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
@@ -796,15 +862,30 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		progressWriter = io.Discard
 	}
 
-	if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, user, nil); perr != nil {
-		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
+	if hasComposePullPolicyOverride(project) {
+		slog.Info("compose pull_policy detected; skipping Arcane pre-pull behavior", "projectID", projectID, "projectName", project.Name)
+	} else {
+		switch options.pullPolicy {
+		case deployPullPolicyAlways:
+			if perr := s.PullProjectImages(ctx, projectID, progressWriter, user, nil); perr != nil {
+				slog.Warn("pull project images failed (continuing to compose up)", "projectID", projectID, "error", perr)
+			}
+		default:
+			if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, user, nil); perr != nil {
+				slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
+			}
+		}
 	}
 
 	removeOrphans := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
+	composeUpOptions := projects.ComposeUpOptions{
+		RemoveOrphans: removeOrphans,
+		ForceRecreate: options.forceRecreate,
+	}
 
-	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
+	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans, "pullPolicy", options.pullPolicy, "forceRecreate", options.forceRecreate)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, project, nil, removeOrphans); err != nil {
+	if err := projects.ComposeUp(ctx, project, nil, composeUpOptions); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)

@@ -286,6 +286,17 @@ type Update struct {
 	// Required: false
 	KeyboardShortcutsEnabled *string `json:"keyboardShortcutsEnabled,omitempty"`
 
+	// ProjectUpDefaultPullPolicy sets the default pull policy for project Up actions.
+	// Allowed values: "missing", "always".
+	//
+	// Required: false
+	ProjectUpDefaultPullPolicy *string `json:"projectUpDefaultPullPolicy,omitempty" binding:"omitempty,oneof=missing always"`
+
+	// ProjectUpDefaultForceRecreate sets whether project Up should force container recreation by default.
+	//
+	// Required: false
+	ProjectUpDefaultForceRecreate *string `json:"projectUpDefaultForceRecreate,omitempty"`
+
 	// DockerApiTimeout is the timeout for Docker API operations in seconds.
 	//
 	// Required: false

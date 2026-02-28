@@ -126,30 +126,32 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		TrivyMemoryLimitMb:            models.SettingVariable{Value: "0"},
 		TrivyConcurrentScanContainers: models.SettingVariable{Value: "1"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
-		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
-		OidcEnabled:                models.SettingVariable{Value: "false"},
-		OidcClientId:               models.SettingVariable{Value: ""},
-		OidcClientSecret:           models.SettingVariable{Value: ""},
-		OidcIssuerUrl:              models.SettingVariable{Value: ""},
-		OidcAuthorizationEndpoint:  models.SettingVariable{Value: ""},
-		OidcTokenEndpoint:          models.SettingVariable{Value: ""},
-		OidcUserinfoEndpoint:       models.SettingVariable{Value: ""},
-		OidcJwksEndpoint:           models.SettingVariable{Value: ""},
-		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
-		OidcAdminClaim:             models.SettingVariable{Value: ""},
-		OidcAdminValue:             models.SettingVariable{Value: ""},
-		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
-		OidcAutoRedirectToProvider: models.SettingVariable{Value: "false"},
-		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
-		OidcProviderName:           models.SettingVariable{Value: ""},
-		OidcProviderLogoUrl:        models.SettingVariable{Value: ""},
-		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
-		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
-		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
-		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
-		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
-		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
-		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
+		AuthOidcConfig:                models.SettingVariable{Value: "{}"},
+		OidcEnabled:                   models.SettingVariable{Value: "false"},
+		OidcClientId:                  models.SettingVariable{Value: ""},
+		OidcClientSecret:              models.SettingVariable{Value: ""},
+		OidcIssuerUrl:                 models.SettingVariable{Value: ""},
+		OidcAuthorizationEndpoint:     models.SettingVariable{Value: ""},
+		OidcTokenEndpoint:             models.SettingVariable{Value: ""},
+		OidcUserinfoEndpoint:          models.SettingVariable{Value: ""},
+		OidcJwksEndpoint:              models.SettingVariable{Value: ""},
+		OidcScopes:                    models.SettingVariable{Value: "openid email profile"},
+		OidcAdminClaim:                models.SettingVariable{Value: ""},
+		OidcAdminValue:                models.SettingVariable{Value: ""},
+		OidcSkipTlsVerify:             models.SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider:    models.SettingVariable{Value: "false"},
+		OidcMergeAccounts:             models.SettingVariable{Value: "false"},
+		OidcProviderName:              models.SettingVariable{Value: ""},
+		OidcProviderLogoUrl:           models.SettingVariable{Value: ""},
+		MobileNavigationMode:          models.SettingVariable{Value: "floating"},
+		MobileNavigationShowLabels:    models.SettingVariable{Value: "true"},
+		SidebarHoverExpansion:         models.SettingVariable{Value: "true"},
+		KeyboardShortcutsEnabled:      models.SettingVariable{Value: "true"},
+		ProjectUpDefaultPullPolicy:    models.SettingVariable{Value: "missing"},
+		ProjectUpDefaultForceRecreate: models.SettingVariable{Value: "false"},
+		AccentColor:                   models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
+		MaxImageUploadSize:            models.SettingVariable{Value: "500"},
+		EnvironmentHealthInterval:     models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
@@ -551,6 +553,12 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		var value string
 		if fieldValue.Kind() == reflect.Pointer {
 			value = fieldValue.Elem().String()
+		}
+
+		if key == "projectUpDefaultPullPolicy" && value != "" {
+			if value != "missing" && value != "always" {
+				return nil, false, false, false, false, nil, fmt.Errorf("invalid value for %s: %s", key, value)
+			}
 		}
 
 		// Validate cron settings

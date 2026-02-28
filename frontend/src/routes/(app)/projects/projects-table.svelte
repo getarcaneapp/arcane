@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/types/project.type';
+	import type { Project, ProjectUpOptions } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -19,6 +19,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
+	import settingsStore from '$lib/stores/config-store';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -65,21 +66,31 @@
 		return project.status.toLowerCase() === 'unknown' && project.statusReason ? project.statusReason : undefined;
 	}
 
+	const defaultUpOptions = $derived.by(
+		(): ProjectUpOptions => ({
+			pullPolicy: $settingsStore?.projectUpDefaultPullPolicy === 'always' ? 'always' : 'missing',
+			forceRecreate: $settingsStore?.projectUpDefaultForceRecreate === true
+		})
+	);
+
 	async function performProjectAction(action: string, id: string) {
+		if (action === 'start') {
+			handleApiResultWithCallbacks({
+				result: await tryCatch(projectService.deployProject(id, defaultUpOptions)),
+				message: m.compose_start_failed(),
+				setLoadingState: (value) => (isLoading.start = value),
+				onSuccess: async () => {
+					toast.success(m.compose_start_success());
+					await refreshProjects();
+				}
+			});
+			return;
+		}
+
 		isLoading[action as keyof typeof isLoading] = true;
 
 		try {
-			if (action === 'start') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.deployProject(id)),
-					message: m.compose_start_failed(),
-					setLoadingState: (value) => (isLoading.start = value),
-					onSuccess: async () => {
-						toast.success(m.compose_start_success());
-						await refreshProjects();
-					}
-				});
-			} else if (action === 'stop') {
+			if (action === 'stop') {
 				handleApiResultWithCallbacks({
 					result: await tryCatch(projectService.downProject(id)),
 					message: m.compose_stop_failed(),
@@ -168,35 +179,25 @@
 	async function handleBulkUp(ids: string[]) {
 		if (!ids || ids.length === 0) return;
 
-		openConfirmDialog({
-			title: m.projects_bulk_up_confirm_title({ count: ids.length }),
-			message: m.projects_bulk_up_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_up(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.up = true;
+		isBulkLoading.up = true;
 
-					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id)));
+		const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id, defaultUpOptions)));
 
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
+		const successCount = results.filter((r) => r.status === 'fulfilled').length;
+		const failureCount = results.length - successCount;
 
-					isBulkLoading.up = false;
+		isBulkLoading.up = false;
 
-					if (successCount === ids.length) {
-						toast.success(m.projects_bulk_up_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.projects_bulk_up_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.compose_start_failed());
-					}
+		if (successCount === ids.length) {
+			toast.success(m.projects_bulk_up_success({ count: successCount }));
+		} else if (successCount > 0) {
+			toast.warning(m.projects_bulk_up_partial({ success: successCount, total: ids.length, failed: failureCount }));
+		} else {
+			toast.error(m.compose_start_failed());
+		}
 
-					await refreshProjects();
-					selectedIds = [];
-				}
-			}
-		});
+		await refreshProjects();
+		selectedIds = [];
 	}
 
 	async function handleBulkDown(ids: string[]) {
@@ -427,6 +428,8 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Project })}
+	{@const runningCount = Number(item.runningCount ?? 0) || 0}
+	{@const serviceCount = Number(item.serviceCount ?? 0) || 0}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
@@ -459,16 +462,16 @@
 
 				<DropdownMenu.Separator />
 
-				{#if item.status !== 'running'}
-					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
-						{#if isLoading.start}
-							<Spinner class="size-4" />
-						{:else}
-							<StartIcon class="size-4" />
-						{/if}
-						{m.common_up()}
-					</DropdownMenu.Item>
-				{:else}
+				<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
+					{#if isLoading.start}
+						<Spinner class="size-4" />
+					{:else}
+						<StartIcon class="size-4" />
+					{/if}
+					{m.common_up()}
+				</DropdownMenu.Item>
+
+				{#if serviceCount > 0}
 					<DropdownMenu.Item onclick={() => performProjectAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
 						{#if isLoading.stop}
 							<Spinner class="size-4" />
@@ -477,7 +480,9 @@
 						{/if}
 						{m.common_down()}
 					</DropdownMenu.Item>
+				{/if}
 
+				{#if runningCount > 0}
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('restart', item.id)}
 						disabled={isLoading.restart || isAnyLoading}

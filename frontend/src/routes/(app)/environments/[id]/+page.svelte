@@ -136,6 +136,8 @@
 		pollingEnabled: z.boolean(),
 		autoUpdate: z.boolean(),
 		autoInjectEnv: z.boolean(),
+		projectUpDefaultPullPolicy: z.enum(['missing', 'always']),
+		projectUpDefaultForceRecreate: z.boolean(),
 		dockerPruneMode: z.enum(['all', 'dangling']),
 		defaultShell: z.string(),
 		projectsDirectory: z.string(),
@@ -164,6 +166,10 @@
 		pollingEnabled: settings?.pollingEnabled ?? false,
 		autoUpdate: settings?.autoUpdate ?? false,
 		autoInjectEnv: settings?.autoInjectEnv ?? false,
+		projectUpDefaultPullPolicy: (settings?.projectUpDefaultPullPolicy === 'always' ? 'always' : 'missing') as
+			| 'missing'
+			| 'always',
+		projectUpDefaultForceRecreate: settings?.projectUpDefaultForceRecreate ?? false,
 		dockerPruneMode: (settings?.dockerPruneMode as 'all' | 'dangling') || 'dangling',
 		defaultShell: settings?.defaultShell || '/bin/sh',
 		projectsDirectory: settings?.projectsDirectory || '/app/data/projects',
@@ -199,6 +205,8 @@
 				pollingEnabled: formData.pollingEnabled,
 				autoUpdate: formData.autoUpdate,
 				autoInjectEnv: formData.autoInjectEnv,
+				projectUpDefaultPullPolicy: formData.projectUpDefaultPullPolicy,
+				projectUpDefaultForceRecreate: formData.projectUpDefaultForceRecreate,
 				dockerPruneMode: formData.dockerPruneMode,
 				defaultShell: formData.defaultShell,
 				projectsDirectory: formData.projectsDirectory,

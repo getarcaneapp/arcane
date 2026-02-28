@@ -38,6 +38,7 @@
 		icon?: typeof DownloadIcon;
 		iconClass?: string;
 		preventCloseWhileLoading?: boolean;
+		openOnTriggerClick?: boolean;
 		onCancel?: () => void;
 		layers?: Record<string, LayerProgress>;
 		triggerClass?: string;
@@ -60,6 +61,7 @@
 		icon,
 		iconClass = 'size-5',
 		preventCloseWhileLoading = true,
+		openOnTriggerClick = true,
 		onCancel,
 		layers = {},
 		triggerClass,
@@ -136,6 +138,10 @@
 	});
 
 	function handleOpenChange(next: boolean) {
+		if (!openOnTriggerClick && next && !open) {
+			return;
+		}
+
 		if (preventCloseWhileLoading && !next && loading) {
 			open = true;
 			return;
