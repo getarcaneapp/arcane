@@ -141,14 +141,14 @@ jobs:
           provenance: true
 
       - name: Container image attestation (manager)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.MANAGER_IMAGE_NAME }}
           subject-digest: ${{ steps.manager-build.outputs.digest }}
           push-to-registry: true
 
       - name: Container image attestation (agent)
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.AGENT_IMAGE_NAME }}
           subject-digest: ${{ steps.agent-build.outputs.digest }}
