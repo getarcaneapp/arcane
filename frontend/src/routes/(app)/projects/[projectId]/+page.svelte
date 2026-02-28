@@ -89,6 +89,7 @@
 	);
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
+	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 	let canEditName = $derived(
 		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
 	);
@@ -439,6 +440,7 @@
 					name={project.name}
 					type="project"
 					itemState={project.status}
+					{hasBuildDirective}
 					desktopVariant="adaptive"
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}

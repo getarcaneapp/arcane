@@ -8,6 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/moby/moby/client"
+	ref "go.podman.io/image/v5/docker/reference"
 )
 
 // DigestChecker provides methods to check if an image needs updating by comparing digests
@@ -152,35 +153,41 @@ func (c *DigestChecker) GetImageIDsForRef(ctx context.Context, ref string) ([]st
 }
 
 // parseImageRef splits an image reference into registry, repository, and tag
-func parseImageRef(ref string) (registry, repository, tag string) {
-	// Strip digest if present
-	if i := strings.Index(ref, "@"); i != -1 {
-		ref = ref[:i]
+func parseImageRef(imageRef string) (registryHost, repository, tag string) {
+	named, err := ref.ParseNormalizedNamed(imageRef)
+	if err == nil {
+		registryHost = registry.NormalizeRegistryForComparison(ref.Domain(named))
+		repository = ref.Path(named)
+		tag = "latest"
+		if tagged, ok := named.(ref.NamedTagged); ok {
+			tag = tagged.Tag()
+		}
+		return registryHost, repository, tag
 	}
 
-	// Default tag
+	// Fallback for unexpected parser failures.
+	registryHost = registry.ExtractRegistryHost(imageRef)
+	if i := strings.Index(imageRef, "@"); i != -1 {
+		imageRef = imageRef[:i]
+	}
+
 	tag = "latest"
-	if i := strings.LastIndex(ref, ":"); i != -1 && strings.LastIndex(ref, "/") < i {
-		tag = ref[i+1:]
-		ref = ref[:i]
+	if i := strings.LastIndex(imageRef, ":"); i != -1 && strings.LastIndex(imageRef, "/") < i {
+		tag = imageRef[i+1:]
+		imageRef = imageRef[:i]
 	}
 
-	// Parse registry and repository
-	parts := strings.Split(ref, "/")
-	switch {
-	case len(parts) > 0 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost"):
-		registry = parts[0]
+	parts := strings.Split(imageRef, "/")
+	if len(parts) > 0 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
 		repository = strings.Join(parts[1:], "/")
-	default:
-		registry = "docker.io"
-		repository = ref
-		// Docker Hub official images are in library/
-		if !strings.Contains(repository, "/") {
+	} else {
+		repository = imageRef
+		if registryHost == "docker.io" && !strings.Contains(repository, "/") {
 			repository = "library/" + repository
 		}
 	}
 
-	return registry, repository, tag
+	return registry.NormalizeRegistryForComparison(registryHost), repository, tag
 }
 
 // normalizeRef normalizes an image reference for comparison
@@ -192,12 +199,6 @@ func normalizeRef(ref string) string {
 
 	// Parse and reconstruct
 	reg, repo, tag := parseImageRef(ref)
-
-	// Normalize docker.io variants
-	switch reg {
-	case "index.docker.io", "registry-1.docker.io":
-		reg = "docker.io"
-	}
 
 	return strings.ToLower(reg + "/" + repo + ":" + tag)
 }

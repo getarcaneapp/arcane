@@ -32,7 +32,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 
 	// Setup dependencies
 	settingsService, _ := NewSettingsService(ctx, db)
-	svc := NewProjectService(db, settingsService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
 
 	// Create test project
 	proj := &models.Project{
@@ -149,7 +149,7 @@ func TestProjectService_CalculateProjectStatus(t *testing.T) {
 func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	svc := NewProjectService(db, nil, nil, nil, nil)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil)
 
 	proj := &models.Project{
 		BaseModel: models.BaseModel{
@@ -336,7 +336,6 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 	assert.Equal(t, imagePullModeAlways, plan["redis:latest"])
 	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
 }
-
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -348,7 +347,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -397,7 +396,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -444,7 +443,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -475,4 +474,182 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
+func TestProjectService_MergeBuildTags(t *testing.T) {
+	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
+	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
+}
+
+func TestProjectService_BuildPlatformsFromCompose(t *testing.T) {
+	t.Run("uses service platform when build platforms missing", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{
+			Platform: "linux/amd64",
+			Build: &composetypes.BuildConfig{
+				Context: ".",
+			},
+		}
+
+		platforms := buildPlatformsFromCompose(svc)
+		assert.Equal(t, []string{"linux/amd64"}, platforms)
+	})
+
+	t.Run("keeps explicit build platforms", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{
+			Platform: "linux/amd64",
+			Build: &composetypes.BuildConfig{
+				Context:   ".",
+				Platforms: []string{"linux/arm64"},
+			},
+		}
+
+		platforms := buildPlatformsFromCompose(svc)
+		assert.Equal(t, []string{"linux/arm64"}, platforms)
+	})
+}
+
+func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:     "web",
+		Image:    "example/web:latest",
+		Platform: "linux/amd64",
+		Build: &composetypes.BuildConfig{
+			Context:    ".",
+			Dockerfile: "Dockerfile.custom",
+			Target:     "prod",
+			Args: composetypes.MappingWithEquals{
+				"FOO": new("bar"),
+			},
+			Tags:      []string{"example/web:sha", "example/web:latest"},
+			CacheFrom: []string{"example/cache:latest"},
+			CacheTo:   []string{"type=local,dest=/tmp/cache"},
+			NoCache:   true,
+			Pull:      true,
+			Network:   "host",
+			Isolation: "default",
+			ShmSize:   composetypes.UnitBytes(64 * 1024 * 1024),
+			Ulimits: map[string]*composetypes.UlimitsConfig{
+				"nofile": {Soft: 1024, Hard: 2048},
+			},
+			Entitlements: []string{"network.host"},
+			Privileged:   true,
+			ExtraHosts: composetypes.HostsList{
+				"registry.local": {"10.0.0.5"},
+			},
+			Labels: composetypes.Labels{
+				"com.example.team": "platform",
+			},
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"web",
+		serviceCfg,
+		ProjectBuildOptions{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/tmp/project", req.ContextDir)
+	assert.Equal(t, "Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "prod", req.Target)
+	assert.Equal(t, map[string]string{"FOO": "bar"}, req.BuildArgs)
+	assert.Equal(t, []string{"example/web:latest", "example/web:sha"}, req.Tags)
+	assert.Equal(t, []string{"linux/amd64"}, req.Platforms)
+	assert.Equal(t, []string{"example/cache:latest"}, req.CacheFrom)
+	assert.Equal(t, []string{"type=local,dest=/tmp/cache"}, req.CacheTo)
+	assert.True(t, req.NoCache)
+	assert.True(t, req.Pull)
+	assert.Equal(t, "host", req.Network)
+	assert.Equal(t, "default", req.Isolation)
+	assert.Equal(t, int64(64*1024*1024), req.ShmSize)
+	assert.Equal(t, map[string]string{"nofile": "1024:2048"}, req.Ulimits)
+	assert.Equal(t, []string{"network.host"}, req.Entitlements)
+	assert.True(t, req.Privileged)
+	assert.Equal(t, map[string]string{"com.example.team": "platform"}, req.Labels)
+	require.Len(t, req.ExtraHosts, 1)
+	assert.Contains(t, req.ExtraHosts[0], "registry.local")
+	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
+}
+
+func TestNormalizePullPolicy(t *testing.T) {
+	assert.Equal(t, "missing", normalizePullPolicy("if_not_present"))
+	assert.Equal(t, "build", normalizePullPolicy(" BUILD "))
+	assert.Equal(t, "", normalizePullPolicy(""))
+}
+
+func TestDecideDeployImageAction(t *testing.T) {
+	t.Run("build service with explicit build policy", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{
+			PullPolicy: "build",
+			Build:      &composetypes.BuildConfig{Context: "."},
+		}
+
+		decision := decideDeployImageAction(svc)
+		assert.True(t, decision.Build)
+		assert.False(t, decision.PullAlways)
+	})
+
+	t.Run("build service default policy uses pull then fallback build", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
+		decision := decideDeployImageAction(svc)
+		assert.True(t, decision.PullIfMissing)
+		assert.True(t, decision.FallbackBuildOnPullFail)
+		assert.False(t, decision.Build)
+	})
+
+	t.Run("non-build service never policy requires local only", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{PullPolicy: "never"}
+		decision := decideDeployImageAction(svc)
+		assert.True(t, decision.RequireLocalOnly)
+		assert.False(t, decision.PullIfMissing)
+	})
+}
+
+func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name: "web",
+		Build: &composetypes.BuildConfig{
+			Context: ".",
+		},
+	}
+
+	_, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"web",
+		serviceCfg,
+		ProjectBuildOptions{Provider: "depot"},
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must define an image when using depot")
+
+	push := true
+	_, _, _, err = svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"web",
+		serviceCfg,
+		ProjectBuildOptions{Provider: "local", Push: &push},
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must define an image when push is enabled")
+}
+
+//go:fix inline
+func ptr(v string) *string {
+	return new(v)
 }

@@ -12,7 +12,8 @@
 		ApiKeyIcon,
 		ApperanceIcon,
 		CloseIcon,
-		JobsIcon
+		JobsIcon,
+		CodeIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
@@ -39,7 +40,8 @@
 		bell: NotificationsIcon,
 		user: UserIcon,
 		apikey: ApiKeyIcon,
-		jobs: JobsIcon
+		jobs: JobsIcon,
+		code: CodeIcon
 	};
 
 	onMount(async () => {

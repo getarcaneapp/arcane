@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
+	import { navigationItems, getBuildAndDeploymentItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -63,7 +63,7 @@
 		}) ?? [];
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
+	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
 </script>
 
 <VersionInfoDialog
@@ -98,8 +98,9 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
+		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
+		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
 		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />

@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto } from '$lib/types/image.type';
+import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto, ImageBuildRecord } from '$lib/types/image.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/auto-update.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -85,6 +85,18 @@ export class ImageService extends BaseAPIService {
 				}
 			})
 		);
+	}
+
+	async getImageBuilds(options?: SearchPaginationSortRequest): Promise<Paginated<ImageBuildRecord>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/environments/${envId}/images/builds`, { params });
+		return res.data;
+	}
+
+	async getImageBuild(buildId: string): Promise<ImageBuildRecord> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.get(`/environments/${envId}/images/builds/${buildId}`));
 	}
 }
 

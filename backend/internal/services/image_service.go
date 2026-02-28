@@ -1,10 +1,7 @@
 package services
 
 import (
-	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,13 +11,14 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
@@ -190,32 +188,32 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 	defer func() { _ = reader.Close() }()
 
-	scanner := bufio.NewScanner(reader)
-	flusher, implementsFlusher := progressWriter.(http.Flusher)
+	streamWriter := progressWriter
+	if streamWriter == nil {
+		streamWriter = io.Discard
+	}
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if _, writeErr := progressWriter.Write(line); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_progress"})
-			return fmt.Errorf("error writing pull progress for %s: %w", imageName, writeErr)
+	flusher, implementsFlusher := streamWriter.(http.Flusher)
+	streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
+		if _, writeErr := streamWriter.Write(line); writeErr != nil {
+			return writeErr
 		}
-		if _, writeErr := progressWriter.Write([]byte("\n")); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_newline"})
-			return fmt.Errorf("error writing newline for %s: %w", imageName, writeErr)
+		if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
+			return writeErr
 		}
-
 		if implementsFlusher {
 			flusher.Flush()
 		}
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		if errors.Is(scanErr, context.Canceled) || strings.Contains(scanErr.Error(), "context canceled") {
-			slog.Debug("image pull stream canceled", "image", imageName, "err", scanErr)
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "canceled"})
-			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, scanErr)
+		return nil
+	})
+	if streamErr != nil {
+		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
+			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
+			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "canceled"})
+			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "read_stream"})
-		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, scanErr)
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "read_stream"})
+		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
 	slog.Debug("image pull stream completed", "image", imageName)
@@ -254,14 +252,22 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	defer func() { _ = loadResp.Close() }()
 
 	var result imagetypes.LoadResult
-	responseBytes, err := io.ReadAll(loadResp)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
-		return nil, fmt.Errorf("failed to read load response: %w", err)
+	var responseBuilder strings.Builder
+	streamErr := dockerutils.ConsumeJSONMessageStream(loadResp, func(line []byte) error {
+		if _, err := responseBuilder.Write(line); err != nil {
+			return err
+		}
+		if err := responseBuilder.WriteByte('\n'); err != nil {
+			return err
+		}
+		return nil
+	})
+	if streamErr != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
+		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
 	}
 
-	responseStr := string(responseBytes)
-	result.Stream = responseStr
+	result.Stream = responseBuilder.String()
 
 	metadata := models.JSON{
 		"action":   "load",
@@ -295,7 +301,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
 	pullOptions := client.ImagePullOptions{}
 
-	registryHost := s.extractRegistryHost(imageRef)
+	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
 
 	// Check external credentials first
 	for _, cred := range externalCreds {
@@ -303,8 +309,8 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 			continue
 		}
 
-		if s.isRegistryMatch(cred.URL, registryHost) {
-			authStr, err := s.createAuthHeader(cred.Username, cred.Token, s.normalizeRegistryURL(cred.URL))
+		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
+			authStr, err := utilsregistry.EncodeAuthHeader(cred.Username, cred.Token, utilsregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
 				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
 			}
@@ -319,108 +325,16 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 		return pullOptions, nil
 	}
 
-	// Check database registries
-	registries, err := s.registryService.GetEnabledRegistries(ctx)
+	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
 	if err != nil {
 		return pullOptions, fmt.Errorf("failed to get registry credentials: %w", err)
 	}
-
-	for _, reg := range registries {
-		if s.isRegistryMatch(reg.URL, registryHost) {
-			username := strings.TrimSpace(reg.Username)
-			if username == "" {
-				slog.DebugContext(ctx, "Skipping database credentials for image pull", "registry", registryHost, "configuredRegistry", reg.URL, "reason", "missing_username")
-				continue
-			}
-
-			decryptedToken, err := s.registryService.GetDecryptedToken(ctx, reg.ID)
-			if err != nil {
-				return pullOptions, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, err)
-			}
-			token := strings.TrimSpace(decryptedToken)
-			if token == "" {
-				slog.DebugContext(ctx, "Skipping database credentials for image pull", "registry", registryHost, "configuredRegistry", reg.URL, "reason", "missing_token")
-				continue
-			}
-
-			authStr, err := s.createAuthHeader(username, token, s.normalizeRegistryURL(reg.URL))
-			if err != nil {
-				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
-			}
-			pullOptions.RegistryAuth = authStr
-
-			slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost, "username", username)
-			break
-		}
+	if authStr != "" {
+		pullOptions.RegistryAuth = authStr
+		slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost)
 	}
 
 	return pullOptions, nil
-}
-
-func (s *ImageService) createAuthHeader(username, password, serverAddress string) (string, error) {
-	authConfig := &registry.AuthConfig{
-		Username:      username,
-		Password:      password,
-		ServerAddress: serverAddress,
-	}
-
-	authBytes, err := json.Marshal(authConfig)
-	if err != nil {
-		return "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(authBytes), nil
-}
-
-func (s *ImageService) extractRegistryHost(imageRef string) string {
-	if i := strings.IndexByte(imageRef, '@'); i != -1 {
-		imageRef = imageRef[:i]
-	}
-
-	hostCandidate, _, found := strings.Cut(imageRef, "/")
-	if !found {
-		return "docker.io"
-	}
-
-	if !strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") {
-		return "docker.io"
-	}
-	return hostCandidate
-}
-
-func (s *ImageService) isRegistryMatch(credURL, registryHost string) bool {
-	normalizedCred := s.normalizeRegistryForComparison(credURL)
-	normalizedHost := s.normalizeRegistryForComparison(registryHost)
-
-	return normalizedCred == normalizedHost
-}
-
-func (s *ImageService) normalizeRegistryForComparison(url string) string {
-	url = strings.TrimPrefix(url, "https://")
-	url = strings.TrimPrefix(url, "http://")
-	url = strings.TrimSuffix(url, "/")
-
-	if slash := strings.Index(url, "/"); slash != -1 {
-		url = url[:slash]
-	}
-
-	if url == "docker.io" || url == "registry-1.docker.io" || url == "index.docker.io" {
-		return "docker.io"
-	}
-	return url
-}
-
-func (s *ImageService) normalizeRegistryURL(url string) string {
-	normalized := s.normalizeRegistryForComparison(url)
-	if normalized == "docker.io" {
-		return "https://index.docker.io/v1/"
-	}
-
-	result := strings.TrimPrefix(url, "https://")
-	result = strings.TrimPrefix(result, "http://")
-	result = strings.TrimSuffix(result, "/")
-
-	return result
 }
 
 func shouldRetryAnonymousPullInternal(pullOptions client.ImagePullOptions, pullErr error) bool {

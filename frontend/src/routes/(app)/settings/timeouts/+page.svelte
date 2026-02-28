@@ -24,14 +24,25 @@
 		proxyRequestTimeout: z.coerce.number().int().min(10).max(600)
 	});
 
-	let { formInputs, registerOnMount } = $derived(
-		createSettingsForm({
-			schema: formSchema,
-			currentSettings,
-			getCurrentSettings: () => $settingsStore || data.settings!,
-			successMessage: m.timeouts_save()
-		})
-	);
+	const getFormDefaults = () => {
+		const settings = $settingsStore || data.settings!;
+		return {
+			dockerApiTimeout: settings.dockerApiTimeout,
+			dockerImagePullTimeout: settings.dockerImagePullTimeout,
+			trivyScanTimeout: settings.trivyScanTimeout,
+			gitOperationTimeout: settings.gitOperationTimeout,
+			httpClientTimeout: settings.httpClientTimeout,
+			registryTimeout: settings.registryTimeout,
+			proxyRequestTimeout: settings.proxyRequestTimeout
+		};
+	};
+
+	const { formInputs, registerOnMount } = createSettingsForm({
+		schema: formSchema,
+		currentSettings: getFormDefaults(),
+		getCurrentSettings: getFormDefaults,
+		successMessage: m.timeouts_save()
+	});
 
 	onMount(() => registerOnMount());
 </script>

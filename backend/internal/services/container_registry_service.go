@@ -18,8 +18,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
+	dockerregistry "github.com/moby/moby/api/types/registry"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 
@@ -190,6 +191,90 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 	return registries, nil
 }
 
+// GetRegistryAuthForImage returns X-Registry-Auth for the image's registry host.
+func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
+	registryHost, err := utilsregistry.GetRegistryAddress(imageRef)
+	if err != nil {
+		return "", err
+	}
+	return s.GetRegistryAuthForHost(ctx, registryHost)
+}
+
+// GetRegistryAuthForHost returns X-Registry-Auth for a configured and enabled registry.
+func (s *ContainerRegistryService) GetRegistryAuthForHost(ctx context.Context, registryHost string) (string, error) {
+	normalizedRegistryHost := utilsregistry.NormalizeRegistryForComparison(registryHost)
+	if normalizedRegistryHost == "" {
+		return "", nil
+	}
+
+	authConfigs, err := s.GetAllRegistryAuthConfigs(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(authConfigs) == 0 {
+		return "", nil
+	}
+
+	cfg, ok := authConfigs[normalizedRegistryHost]
+	if !ok {
+		return "", nil
+	}
+
+	return utilsregistry.EncodeAuthHeader(cfg.Username, cfg.Password, cfg.ServerAddress)
+}
+
+func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
+	registries, err := s.GetEnabledRegistries(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	authConfigs := make(map[string]dockerregistry.AuthConfig, len(registries))
+	for _, reg := range registries {
+		username := strings.TrimSpace(reg.Username)
+		if !reg.Enabled || username == "" || reg.Token == "" {
+			continue
+		}
+
+		decryptedToken, decryptErr := crypto.Decrypt(reg.Token)
+		if decryptErr != nil {
+			return nil, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, decryptErr)
+		}
+		token := strings.TrimSpace(decryptedToken)
+		if token == "" {
+			continue
+		}
+
+		normalizedHost := strings.TrimSpace(utilsregistry.NormalizeRegistryForComparison(reg.URL))
+		if normalizedHost == "" {
+			continue
+		}
+
+		serverAddress := normalizedHost
+		if normalizedHost == "docker.io" {
+			serverAddress = utilsregistry.NormalizeRegistryURL(reg.URL)
+		}
+		if serverAddress == "" {
+			continue
+		}
+
+		authConfig := dockerregistry.AuthConfig{
+			Username:      username,
+			Password:      token,
+			ServerAddress: serverAddress,
+		}
+		for _, key := range utilsregistry.RegistryAuthLookupKeys(normalizedHost) {
+			authConfigs[key] = authConfig
+		}
+	}
+
+	if len(authConfigs) == 0 {
+		return nil, nil
+	}
+
+	return authConfigs, nil
+}
+
 // GetImageDigest fetches the current digest for an image:tag from the registry
 // This is used for digest-based update detection for non-semver tags
 func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef string) (string, error) {
@@ -281,15 +366,8 @@ func (s *ContainerRegistryService) findCredentialsForRegistry(ctx context.Contex
 		return nil
 	}
 
-	// Normalize registry URL for comparison
-	normalizedURL := strings.TrimPrefix(registryURL, "https://")
-	normalizedURL = strings.TrimPrefix(normalizedURL, "http://")
-
 	for _, reg := range registries {
-		regURL := strings.TrimPrefix(reg.URL, "https://")
-		regURL = strings.TrimPrefix(regURL, "http://")
-
-		if strings.Contains(normalizedURL, regURL) || strings.Contains(regURL, normalizedURL) {
+		if utilsregistry.IsRegistryMatch(reg.URL, registryURL) {
 			token, err := crypto.Decrypt(reg.Token)
 			if err != nil {
 				slog.WarnContext(ctx, "Failed to decrypt registry token", "registry", reg.URL, "error", err)
@@ -521,13 +599,13 @@ func parseImageReference(imageRef string) (repository, tag string) {
 func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
 	named, err := ref.ParseNormalizedNamed(repository)
 	if err != nil {
-		return "https://registry-1.docker.io", "library/" + repository
+		return "https://" + utilsregistry.DefaultRegistry, "library/" + repository
 	}
 
 	domain := ref.Domain(named)
 	repoPath = ref.Path(named)
 
-	registryURL, err = registry.GetRegistryAddress(named.Name())
+	registryURL, err = utilsregistry.GetRegistryAddress(named.Name())
 	if err != nil {
 		registryURL = "https://" + domain
 	} else {
@@ -539,6 +617,6 @@ func parseRegistryAndRepo(repository string) (registryURL, repoPath string) {
 
 // parseWWWAuth parses the WWW-Authenticate header using the registry client
 func parseWWWAuth(header string) (realm, service string) {
-	c := registry.NewClient()
+	c := utilsregistry.NewClient()
 	return c.ParseAuthChallenge(header)
 }

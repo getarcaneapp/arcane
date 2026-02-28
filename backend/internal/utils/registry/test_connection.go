@@ -66,7 +66,7 @@ func TestRegistryConnection(ctx context.Context, registryURL string, creds *Cred
 }
 
 func normalizeRegistry(registryURL string) string {
-	reg := trimScheme(registryURL)
+	reg := NormalizeRegistryForComparison(registryURL)
 	if reg == "docker.io" {
 		return DefaultRegistry
 	}
@@ -225,11 +225,4 @@ func (t *registryConnectionTester) registryURL(path string) string {
 
 func (t *registryConnectionTester) addErrorf(format string, args ...any) {
 	t.result.Errors = append(t.result.Errors, fmt.Sprintf(format, args...))
-}
-
-func trimScheme(u string) string {
-	u = strings.TrimPrefix(u, "https://")
-	u = strings.TrimPrefix(u, "http://")
-	u = strings.TrimSuffix(u, "/")
-	return u
 }

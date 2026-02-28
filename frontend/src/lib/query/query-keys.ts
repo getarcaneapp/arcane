@@ -93,7 +93,12 @@ export const queryKeys = {
 			['images', environmentId, stableSerialize(options)] as const,
 		usageCounts: (environmentId: string) => ['images', 'usage-counts', environmentId] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
-		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const
+		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const,
+		builds: (environmentId: string) => ['images', environmentId, 'builds'] as const,
+		buildsList: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['images', environmentId, 'builds', stableSerialize(options)] as const,
+		buildRecord: (environmentId: string, buildId: string) => ['images', environmentId, 'builds', buildId] as const,
+		buildRun: (environmentId: string) => ['images', environmentId, 'build-run'] as const
 	},
 	projects: {
 		all: ['projects'] as const,
@@ -130,5 +135,12 @@ export const queryKeys = {
 			['vulnerabilities', 'all', environmentId, stableSerialize(request)] as const,
 		imageRows: (imageId: string, request: SearchPaginationSortRequest) =>
 			['vulnerabilities', 'image', imageId, stableSerialize(request)] as const
+	},
+	buildWorkspace: {
+		all: ['build-workspace'] as const,
+		listPrefix: (environmentId: string) => ['build-workspace', environmentId, 'list'] as const,
+		list: (environmentId: string, path: string) => ['build-workspace', environmentId, 'list', path] as const,
+		contentPrefix: (environmentId: string) => ['build-workspace', environmentId, 'content'] as const,
+		content: (environmentId: string, path: string) => ['build-workspace', environmentId, 'content', path] as const
 	}
 } as const;

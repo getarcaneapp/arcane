@@ -35,25 +35,29 @@
 			</Breadcrumb.Separator>
 			<Breadcrumb.Item>
 				{#if segments.length === 0}
-					<Breadcrumb.Page>{rootLabel}</Breadcrumb.Page>
+					<Breadcrumb.Page>
+						<span class="block max-w-[28ch] truncate" title={rootLabel}>{rootLabel}</span>
+					</Breadcrumb.Page>
 				{:else}
-					<Breadcrumb.Link onclick={() => onNavigate('/')} class="cursor-pointer">
-						{rootLabel}
+					<Breadcrumb.Link onclick={() => onNavigate('/')} class="cursor-pointer" title={rootLabel}>
+						<span class="block max-w-[28ch] truncate">{rootLabel}</span>
 					</Breadcrumb.Link>
 				{/if}
 			</Breadcrumb.Item>
 		{/if}
 
-		{#each segments as segment, i}
+		{#each segments as segment, i (segment.path)}
 			<Breadcrumb.Separator>
 				<ArrowRightIcon class="h-4 w-4" />
 			</Breadcrumb.Separator>
 			<Breadcrumb.Item>
 				{#if i === segments.length - 1}
-					<Breadcrumb.Page>{segment.name}</Breadcrumb.Page>
+					<Breadcrumb.Page>
+						<span class="block max-w-[28ch] truncate" title={segment.name}>{segment.name}</span>
+					</Breadcrumb.Page>
 				{:else}
-					<Breadcrumb.Link onclick={() => onNavigate(segment.path)} class="cursor-pointer">
-						{segment.name}
+					<Breadcrumb.Link onclick={() => onNavigate(segment.path)} class="cursor-pointer" title={segment.name}>
+						<span class="block max-w-[28ch] truncate">{segment.name}</span>
 					</Breadcrumb.Link>
 				{/if}
 			</Breadcrumb.Item>

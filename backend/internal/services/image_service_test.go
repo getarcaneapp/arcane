@@ -2,8 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -17,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
+	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -92,12 +91,9 @@ func createTestPullRegistry(t *testing.T, db *database.DB, url, username, token 
 func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
 	t.Helper()
 
-	raw, err := base64.StdEncoding.DecodeString(encoded)
+	cfg, err := dockerauthconfig.Decode(encoded)
 	require.NoError(t, err)
-
-	var cfg dockerregistry.AuthConfig
-	require.NoError(t, json.Unmarshal(raw, &cfg))
-	return cfg
+	return *cfg
 }
 
 func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyToken(t *testing.T) {

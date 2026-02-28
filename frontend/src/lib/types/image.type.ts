@@ -84,3 +84,41 @@ export interface ImageDetailSummaryDto {
 }
 
 export type ImageUpdateData = ImageUpdateInfoDto;
+
+export type ImageBuildStatus = 'running' | 'success' | 'failed';
+
+export interface ImageBuildRecord {
+	id: string;
+	environmentId: string;
+	userId?: string;
+	username?: string;
+	status: ImageBuildStatus;
+	provider?: string;
+	contextDir: string;
+	dockerfile?: string;
+	target?: string;
+	tags?: string[];
+	platforms?: string[];
+	buildArgs?: Record<string, string>;
+	labels?: Record<string, string>;
+	cacheFrom?: string[];
+	cacheTo?: string[];
+	noCache: boolean;
+	pull: boolean;
+	network?: string;
+	isolation?: string;
+	shmSize?: number;
+	ulimits?: Record<string, string>;
+	entitlements?: string[];
+	privileged: boolean;
+	extraHosts?: string[];
+	push: boolean;
+	load: boolean;
+	digest?: string;
+	errorMessage?: string;
+	output?: string;
+	outputTruncated: boolean;
+	completedAt?: string;
+	durationMs?: number;
+	createdAt: string;
+}

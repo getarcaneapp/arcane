@@ -3,7 +3,6 @@ package upgrade
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -328,9 +327,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	}
 	defer func() { _ = reader.Close() }()
 
-	// Copy output to discard but wait for completion
-	_, err = io.Copy(io.Discard, reader)
-	return err
+	return docker.ConsumeJSONMessageStream(reader, nil)
 }
 
 func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string) error {

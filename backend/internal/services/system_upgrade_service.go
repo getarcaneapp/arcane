@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -144,8 +143,11 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		}
 		return fmt.Errorf("pull upgrader image: %w", err)
 	}
-	// Drain the reader to complete the pull
-	_, _ = io.Copy(io.Discard, pullReader)
+	// Drain and validate the JSON stream to complete the pull.
+	if err := dockerutils.ConsumeJSONMessageStream(pullReader, nil); err != nil {
+		_ = pullReader.Close()
+		return fmt.Errorf("failed to complete upgrader image pull: %w", err)
+	}
 	if closeErr := pullReader.Close(); closeErr != nil {
 		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
 	}

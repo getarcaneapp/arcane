@@ -831,7 +831,7 @@ func (s *UpdaterService) normalizeRef(ref string) string {
 	domain := ""
 	switch {
 	case len(parts) > 0 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost"):
-		domain = strings.ToLower(parts[0])
+		domain = arcRegistry.NormalizeRegistryForComparison(parts[0])
 		parts = parts[1:]
 	default:
 		domain = "docker.io"
@@ -839,12 +839,6 @@ func (s *UpdaterService) normalizeRef(ref string) string {
 	repo := strings.Join(parts, "/")
 	if domain == "docker.io" && !strings.Contains(repo, "/") {
 		repo = "library/" + repo
-	}
-
-	// Canonical docker.io domain
-	switch domain {
-	case "index.docker.io", "registry-1.docker.io":
-		domain = "docker.io"
 	}
 	return strings.ToLower(domain + "/" + repo + ":" + tag)
 }

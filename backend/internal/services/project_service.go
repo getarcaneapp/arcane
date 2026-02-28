@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/project"
 	"github.com/moby/moby/api/types/container"
 	"gorm.io/gorm"
@@ -38,15 +41,17 @@ type ProjectService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	dockerService   *DockerClientService
+	buildService    *BuildService
 }
 
-func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService) *ProjectService {
 	return &ProjectService{
 		db:              db,
 		settingsService: settingsService,
 		eventService:    eventService,
 		imageService:    imageService,
 		dockerService:   dockerService,
+		buildService:    buildService,
 	}
 }
 
@@ -112,6 +117,21 @@ type ProjectServiceInfo struct {
 	Health        *string                     `json:"health,omitempty"`
 	IconURL       string                      `json:"icon_url,omitempty"`
 	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
+}
+
+type ProjectBuildOptions struct {
+	Services []string
+	Provider string
+	Push     *bool
+	Load     *bool
+}
+
+type deployImageDecision struct {
+	Build                   bool
+	PullAlways              bool
+	PullIfMissing           bool
+	FallbackBuildOnPullFail bool
+	RequireLocalOnly        bool
 }
 
 type imagePullMode int
@@ -361,6 +381,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.ComposeContent = composeContent
 	resp.EnvContent = envContent
+	resp.HasBuildDirective = false
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataFromPath(ctx, proj.Path)
@@ -456,10 +477,15 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 	if loadErr == nil && composeProj != nil {
 		// Convert map to slice
 		svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
+		hasBuildDirective := false
 		for _, svc := range composeProj.Services {
 			svcList = append(svcList, svc)
+			if svc.Build != nil {
+				hasBuildDirective = true
+			}
 		}
 		resp.Services = svcList
+		resp.HasBuildDirective = resp.HasBuildDirective || hasBuildDirective
 	}
 }
 
@@ -791,13 +817,8 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if progressWriter == nil {
-		progressWriter = io.Discard
-	}
-
-	if perr := s.EnsureProjectImagesPresent(ctx, projectID, progressWriter, user, nil); perr != nil {
-		slog.Warn("ensure images present failed (continuing to compose up)", "projectID", projectID, "error", perr)
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, io.Discard, nil, &user); perr != nil {
+		slog.Warn("prepare images for deploy failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
 	removeOrphans := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
@@ -1061,6 +1082,38 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	return nil
 }
 
+func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
+	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	composeFileFullPath, derr := projects.DetectComposeFile(projectFromDb.Path)
+	if derr != nil {
+		return fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
+	}
+
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if pdErr != nil {
+		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
+		projectsDirectory = "/app/data/projects"
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	if loadErr != nil {
+		return fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
+	}
+
+	return s.buildProjectServicesInternal(ctx, projectID, project, options, progressWriter, user)
+}
+
 // EnsureProjectImagesPresent checks all compose service images for the project and
 // pulls based on service pull policy:
 // - always/refresh: always pull
@@ -1093,6 +1146,10 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 
 	pullPlan := buildProjectImagePullPlan(compProj.Services)
 
+	return s.ensureImagesPresent(ctx, pullPlan, progressWriter, credentials, user)
+}
+
+func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]imagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 
 	for img, mode := range pullPlan {
@@ -1135,6 +1192,511 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		}
 	}
 	return nil
+}
+
+func (s *ProjectService) pullImageForService(ctx context.Context, imageRef string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
+	settings := s.settingsService.GetSettingsConfig()
+	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	defer pullCancel()
+
+	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, systemUser, credentials); err != nil {
+		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) prepareProjectImagesForDeploy(
+	ctx context.Context,
+	projectID string,
+	project *composetypes.Project,
+	progressWriter io.Writer,
+	credentials []containerregistry.Credential,
+	user *models.User,
+) error {
+	if project == nil {
+		return nil
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	for name, svc := range project.Services {
+		svc, imageName, updated := prepareDeployServiceConfig(projectID, project.Name, name, svc)
+		if updated {
+			project.Services[name] = svc
+		}
+
+		if imageName == "" {
+			continue
+		}
+
+		decision := decideDeployImageAction(svc)
+		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user, pathMapper); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func prepareDeployServiceConfig(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (composetypes.ServiceConfig, string, bool) {
+	if svc.Build == nil {
+		return svc, strings.TrimSpace(svc.Image), false
+	}
+
+	resolvedImage, updatedSvc, updated := ensureServiceImage(projectID, projectName, serviceName, svc)
+	return updatedSvc, resolvedImage, updated
+}
+
+func shouldPullDeployImage(decision deployImageDecision, exists bool) bool {
+	return decision.PullAlways || (decision.PullIfMissing && !exists)
+}
+
+func (s *ProjectService) ensureDeployServiceImageReady(
+	ctx context.Context,
+	projectID string,
+	project *composetypes.Project,
+	serviceName string,
+	svc composetypes.ServiceConfig,
+	imageName string,
+	decision deployImageDecision,
+	progressWriter io.Writer,
+	credentials []containerregistry.Credential,
+	user *models.User,
+	pathMapper *pathmapper.PathMapper,
+) error {
+	if decision.Build {
+		return s.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, user, pathMapper)
+	}
+
+	exists, err := s.imageService.ImageExistsLocally(ctx, imageName)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to check local image existence", "image", imageName, "error", err)
+	}
+
+	if decision.RequireLocalOnly {
+		if !exists {
+			return fmt.Errorf("image %s is not available locally and pull_policy is set to never", imageName)
+		}
+		return nil
+	}
+
+	if !shouldPullDeployImage(decision, exists) {
+		return nil
+	}
+
+	if err := s.pullImageForService(ctx, imageName, progressWriter, credentials); err == nil {
+		return nil
+	} else if svc.Build != nil && decision.FallbackBuildOnPullFail {
+		slog.WarnContext(ctx, "image pull failed, falling back to build", "service", serviceName, "image", imageName, "error", err)
+		return s.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, user, pathMapper)
+	} else {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+	}
+}
+
+func (s *ProjectService) buildServiceImageForDeploy(
+	ctx context.Context,
+	projectID string,
+	project *composetypes.Project,
+	serviceName string,
+	svc composetypes.ServiceConfig,
+	progressWriter io.Writer,
+	user *models.User,
+	pathMapper *pathmapper.PathMapper,
+) error {
+	if s.buildService == nil {
+		return fmt.Errorf("build service not available for service %s", serviceName)
+	}
+
+	buildReq, updatedSvc, updated, err := s.prepareServiceBuildRequest(ctx, projectID, project, serviceName, svc, ProjectBuildOptions{}, pathMapper)
+	if err != nil {
+		return err
+	}
+	if updated {
+		project.Services[serviceName] = updatedSvc
+	}
+
+	if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, serviceName, user); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func normalizeBuildSelections(services []string) map[string]struct{} {
+	selected := map[string]struct{}{}
+	for _, name := range services {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		selected[name] = struct{}{}
+	}
+	return selected
+}
+
+func serviceSelected(selected map[string]struct{}, name string) bool {
+	if len(selected) == 0 {
+		return true
+	}
+	_, ok := selected[name]
+	return ok
+}
+
+func ensureServiceImage(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (string, composetypes.ServiceConfig, bool) {
+	imageName := strings.TrimSpace(svc.Image)
+	if imageName == "" {
+		imageName = buildLocalImageTag(projectID, projectName, serviceName)
+		svc.Image = imageName
+		return imageName, svc, true
+	}
+	return imageName, svc, false
+}
+
+func normalizePullPolicy(policy string) string {
+	policy = strings.ToLower(strings.TrimSpace(policy))
+	if policy == "if_not_present" {
+		return "missing"
+	}
+	return policy
+}
+
+func isAlwaysPullPolicy(policy string) bool {
+	if policy == "always" || policy == "daily" || policy == "weekly" {
+		return true
+	}
+	return strings.HasPrefix(policy, "every_")
+}
+
+func decideDeployImageAction(svc composetypes.ServiceConfig) deployImageDecision {
+	policy := normalizePullPolicy(svc.PullPolicy)
+	buildEnabled := svc.Build != nil
+
+	if buildEnabled {
+		switch {
+		case policy == "build":
+			return deployImageDecision{Build: true}
+		case policy == "never":
+			return deployImageDecision{RequireLocalOnly: true}
+		case isAlwaysPullPolicy(policy):
+			return deployImageDecision{PullAlways: true}
+		case policy == "missing":
+			return deployImageDecision{PullIfMissing: true}
+		case policy == "":
+			return deployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
+		default:
+			return deployImageDecision{PullIfMissing: true}
+		}
+	}
+
+	switch {
+	case policy == "never":
+		return deployImageDecision{RequireLocalOnly: true}
+	case isAlwaysPullPolicy(policy):
+		return deployImageDecision{PullAlways: true}
+	default:
+		return deployImageDecision{PullIfMissing: true}
+	}
+}
+
+func resolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+	contextDir := strings.TrimSpace(svc.Build.Context)
+	if contextDir == "" {
+		contextDir = workingDir
+	} else if !filepath.IsAbs(contextDir) {
+		contextDir = filepath.Join(workingDir, contextDir)
+	}
+
+	if contextDir == "" {
+		return "", fmt.Errorf("build context not set for service %s", serviceName)
+	}
+
+	if pathMapper == nil {
+		return contextDir, nil
+	}
+
+	mapped, err := pathMapper.ContainerToHost(contextDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to map build context for %s: %w", serviceName, err)
+	}
+	return mapped, nil
+}
+
+func resolveDockerfilePath(svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+	dockerfilePath := strings.TrimSpace(svc.Build.Dockerfile)
+	if dockerfilePath == "" {
+		dockerfilePath = "Dockerfile"
+	}
+
+	if !filepath.IsAbs(dockerfilePath) || pathMapper == nil {
+		return dockerfilePath, nil
+	}
+
+	mapped, err := pathMapper.ContainerToHost(dockerfilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to map dockerfile path for %s: %w", serviceName, err)
+	}
+	return mapped, nil
+}
+
+func buildArgsFromCompose(args map[string]*string) map[string]string {
+	buildArgs := map[string]string{}
+	for key, value := range args {
+		if value == nil {
+			continue
+		}
+		buildArgs[key] = *value
+	}
+	return buildArgs
+}
+
+func (s *ProjectService) resolveEffectiveBuildProvider(override string) string {
+	provider := strings.ToLower(strings.TrimSpace(override))
+	if provider != "" {
+		return provider
+	}
+
+	if s.buildService != nil {
+		provider = strings.ToLower(strings.TrimSpace(s.buildService.BuildSettings().BuildProvider))
+	}
+
+	if provider == "" {
+		provider = "local"
+	}
+
+	return provider
+}
+
+func labelsFromCompose(labels composetypes.Labels) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	out := make(map[string]string, len(labels))
+	maps.Copy(out, labels)
+
+	return out
+}
+
+func ulimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[string]string {
+	if len(ulimits) == 0 {
+		return nil
+	}
+
+	out := make(map[string]string, len(ulimits))
+	for name, cfg := range ulimits {
+		if cfg == nil {
+			continue
+		}
+
+		switch {
+		case cfg.Single > 0:
+			out[name] = fmt.Sprintf("%d", cfg.Single)
+		case cfg.Soft > 0 || cfg.Hard > 0:
+			out[name] = fmt.Sprintf("%d:%d", cfg.Soft, cfg.Hard)
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
+}
+
+func mergeBuildTags(primaryImage string, composeTags []string) []string {
+	seen := map[string]struct{}{}
+	merged := make([]string, 0, len(composeTags)+1)
+
+	appendTag := func(tag string) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return
+		}
+		if _, ok := seen[tag]; ok {
+			return
+		}
+		seen[tag] = struct{}{}
+		merged = append(merged, tag)
+	}
+
+	appendTag(primaryImage)
+	for _, tag := range composeTags {
+		appendTag(tag)
+	}
+
+	return merged
+}
+
+func buildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
+	platforms := make([]string, 0, len(svc.Build.Platforms)+1)
+	for _, platform := range svc.Build.Platforms {
+		platform = strings.TrimSpace(platform)
+		if platform == "" {
+			continue
+		}
+		platforms = append(platforms, platform)
+	}
+
+	if len(platforms) == 0 {
+		if servicePlatform := strings.TrimSpace(svc.Platform); servicePlatform != "" {
+			platforms = append(platforms, servicePlatform)
+		}
+	}
+
+	return platforms
+}
+
+func (s *ProjectService) prepareServiceBuildRequest(
+	ctx context.Context,
+	projectID string,
+	project *composetypes.Project,
+	serviceName string,
+	svc composetypes.ServiceConfig,
+	options ProjectBuildOptions,
+	pathMapper *pathmapper.PathMapper,
+) (imagetypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
+	_ = ctx
+	imageName, updatedSvc, updated := ensureServiceImage(projectID, project.Name, serviceName, svc)
+	effectiveProvider := s.resolveEffectiveBuildProvider(options.Provider)
+
+	if updated && effectiveProvider == "depot" {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
+	}
+	if updated && options.Push != nil && *options.Push {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
+	}
+
+	contextDir, err := resolveBuildContext(project.WorkingDir, updatedSvc, serviceName, pathMapper)
+	if err != nil {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, err
+	}
+
+	dockerfilePath, err := resolveDockerfilePath(updatedSvc, serviceName, pathMapper)
+	if err != nil {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, err
+	}
+
+	buildReq := imagetypes.BuildRequest{
+		ContextDir: contextDir,
+		Dockerfile: dockerfilePath,
+		Tags:       mergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Target:     strings.TrimSpace(updatedSvc.Build.Target),
+		BuildArgs:  buildArgsFromCompose(updatedSvc.Build.Args),
+		Labels:     labelsFromCompose(updatedSvc.Build.Labels),
+		CacheFrom:  append([]string(nil), updatedSvc.Build.CacheFrom...),
+		CacheTo:    append([]string(nil), updatedSvc.Build.CacheTo...),
+		NoCache:    updatedSvc.Build.NoCache,
+		Pull:       updatedSvc.Build.Pull,
+		Network:    strings.TrimSpace(updatedSvc.Build.Network),
+		Isolation:  strings.TrimSpace(updatedSvc.Build.Isolation),
+		ShmSize:    int64(updatedSvc.Build.ShmSize),
+		Ulimits:    ulimitsFromCompose(updatedSvc.Build.Ulimits),
+		Entitlements: append(
+			[]string(nil),
+			updatedSvc.Build.Entitlements...,
+		),
+		Privileged: updatedSvc.Build.Privileged,
+		ExtraHosts: updatedSvc.Build.ExtraHosts.AsList(":"),
+		Platforms:  buildPlatformsFromCompose(updatedSvc),
+		Provider:   effectiveProvider,
+	}
+	if options.Push != nil {
+		buildReq.Push = *options.Push
+	}
+	if options.Load != nil {
+		buildReq.Load = *options.Load
+	}
+
+	return buildReq, updatedSvc, updated, nil
+}
+
+func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
+	if s.buildService == nil {
+		return nil
+	}
+	if project == nil {
+		return nil
+	}
+
+	selected := normalizeBuildSelections(options.Services)
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	buildCount := 0
+	for name, svc := range project.Services {
+		if svc.Build == nil {
+			continue
+		}
+		if !serviceSelected(selected, name) {
+			continue
+		}
+
+		buildReq, updatedSvc, updated, err := s.prepareServiceBuildRequest(ctx, projectID, project, name, svc, options, pathMapper)
+		if err != nil {
+			return err
+		}
+		if updated {
+			project.Services[name] = updatedSvc
+		}
+
+		buildCount++
+		if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, name, user); err != nil {
+			return err
+		}
+	}
+
+	if buildCount == 0 && len(selected) > 0 {
+		return fmt.Errorf("no build-enabled services matched: %s", strings.Join(options.Services, ", "))
+	}
+
+	return nil
+}
+
+func buildLocalImageTag(projectID, projectName, serviceName string) string {
+	shortID := strings.TrimSpace(projectID)
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	projectPart := sanitizeImageComponent(projectName)
+	if projectPart == "" {
+		projectPart = "project"
+	}
+	servicePart := sanitizeImageComponent(serviceName)
+	if servicePart == "" {
+		servicePart = "service"
+	}
+
+	return fmt.Sprintf("arcane.local/%s-%s/%s:latest", projectPart, shortID, servicePart)
+}
+
+func sanitizeImageComponent(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '-' || r == '_' || r == '.':
+			return r
+		default:
+			return '-'
+		}
+	}, value)
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, user models.User) error {

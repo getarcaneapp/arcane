@@ -147,6 +147,8 @@
 				return m.notifications_title();
 			case 'api-keys':
 				return m.api_key_page_title();
+			case 'build':
+				return 'Build';
 			default:
 				return m.sidebar_settings();
 		}
