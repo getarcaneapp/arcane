@@ -12,6 +12,8 @@
 	import { settingsService } from '$lib/services/settings-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { EnvironmentStatus } from '$lib/types/environment.type';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import DetailsTab from './components/DetailsTab.svelte';
@@ -118,13 +120,10 @@
 	let remoteVersion = $state<AppVersionInformation | null>(null);
 	let isLoadingVersion = $state(false);
 
-	// Track current status separately from environment data
-	let currentStatus = $state<'online' | 'offline' | 'error' | 'pending'>('offline');
-
-	// Initialize status from environment
-	$effect(() => {
-		currentStatus = environment.status;
-	});
+	// Only non-edge custom URL tests should temporarily override the displayed status.
+	let statusOverride = $state<EnvironmentStatus | null>(null);
+	let currentStatus = $derived(resolveEnvironmentStatus(environment, statusOverride));
+	let isCurrentlyOnline = $derived(isEnvironmentOnline(environment, statusOverride));
 
 	// Form schema combining environment info and settings
 	const formSchema = z.object({
@@ -275,7 +274,7 @@
 
 	// Fetch version when environment is online
 	$effect(() => {
-		if (environment.id !== '0' && currentStatus === 'online' && !remoteVersion && !isLoadingVersion) {
+		if (environment.id !== '0' && isCurrentlyOnline && !remoteVersion && !isLoadingVersion) {
 			fetchVersion();
 		}
 	});
@@ -295,10 +294,9 @@
 		if (isRefreshing) return;
 		try {
 			isRefreshing = true;
-			await invalidateAll();
-			currentStatus = environment.status;
-			// Reset version to trigger re-fetch if online
+			statusOverride = null;
 			remoteVersion = null;
+			await invalidateAll();
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
@@ -328,8 +326,8 @@
 			const customUrl = $formInputs.apiUrl.value !== environment.apiUrl ? $formInputs.apiUrl.value : undefined;
 			const result = await environmentManagementService.testConnection(environment.id, customUrl);
 
-			// Update current status based on test result
-			currentStatus = result.status;
+			const nextStatus = result.status as EnvironmentStatus;
+			statusOverride = customUrl && !environment.isEdge ? nextStatus : null;
 
 			if (result.status === 'online') {
 				toast.success(m.environments_test_connection_success());
@@ -342,8 +340,7 @@
 				await invalidateAll();
 			}
 		} catch (error) {
-			// Update status to offline on error
-			currentStatus = 'offline';
+			statusOverride = environment.isEdge ? null : 'offline';
 			toast.error(m.environments_test_connection_failed());
 			console.error(error);
 		} finally {
@@ -444,7 +441,7 @@
 			</div>
 		</div>
 
-		{#if !environment.enabled || currentStatus === 'offline' || !settings}
+		{#if !environment.enabled || currentStatus !== 'online' || !settings}
 			<div
 				class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
 			>
@@ -453,8 +450,12 @@
 					<p class="text-sm font-medium">
 						{#if !environment.enabled}
 							{m.environments_warning_disabled()}
-						{:else if currentStatus === 'offline'}
-							{m.environments_warning_offline()}
+						{:else if currentStatus !== 'online'}
+							{m.common_status()}: {currentStatus === 'pending'
+								? m.common_pending()
+								: currentStatus === 'error'
+									? m.common_error()
+									: m.common_offline()}
 						{:else if !settings}
 							{m.environments_warning_no_settings()}
 						{/if}

@@ -98,6 +98,45 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 	})
 }
 
+func TestGetTunnelRuntimeState(t *testing.T) {
+	t.Run("returns false when tunnel is missing", func(t *testing.T) {
+		state, ok := GetTunnelRuntimeState("env-missing-runtime")
+		assert.False(t, ok)
+		assert.Nil(t, state)
+	})
+
+	t.Run("returns runtime metadata for active tunnel", func(t *testing.T) {
+		envID := "env-runtime-live"
+		GetRegistry().Unregister(envID)
+		defer GetRegistry().Unregister(envID)
+
+		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
+		GetRegistry().Register(envID, tunnel)
+
+		state, ok := GetTunnelRuntimeState(envID)
+		assert.True(t, ok)
+		if assert.NotNil(t, state) {
+			assert.Equal(t, EdgeTransportGRPC, state.Transport)
+			assert.NotNil(t, state.ConnectedAt)
+			assert.NotNil(t, state.LastHeartbeat)
+		}
+	})
+
+	t.Run("returns false for closed tunnel", func(t *testing.T) {
+		envID := "env-runtime-closed"
+		GetRegistry().Unregister(envID)
+		defer GetRegistry().Unregister(envID)
+
+		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
+		_ = tunnel.Conn.Close()
+		GetRegistry().Register(envID, tunnel)
+
+		state, ok := GetTunnelRuntimeState(envID)
+		assert.False(t, ok)
+		assert.Nil(t, state)
+	})
+}
+
 type unknownTunnelConn struct{}
 
 func (u *unknownTunnelConn) Send(msg *TunnelMessage) error { return nil }

@@ -384,6 +384,53 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	return nil
 }
 
+// UpdateEnvironmentConnectionState updates runtime connectivity status without creating
+// a generic "environment updated" event. This is used for edge tunnel connect/disconnect.
+func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Context, id string, connected bool) error {
+	now := time.Now()
+
+	updates := map[string]any{
+		"updated_at": &now,
+	}
+	if connected {
+		updates["status"] = string(models.EnvironmentStatusOnline)
+		updates["last_seen"] = &now
+	} else {
+		updates["status"] = string(models.EnvironmentStatusOffline)
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update environment connection state: %w", err)
+	}
+
+	return nil
+}
+
+// ReconcileEdgeStatusesOnStartup resets edge environments to offline when the manager starts.
+// Live edge tunnels are process-local runtime state, so persisted "online" flags can be stale
+// after a restart until agents reconnect. Pending environments are left untouched.
+func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
+	now := time.Now()
+
+	result := s.db.WithContext(ctx).Model(&models.Environment{}).
+		Where("is_edge = ?", true).
+		Where("status <> ?", string(models.EnvironmentStatusPending)).
+		Where("status <> ?", string(models.EnvironmentStatusOffline)).
+		Updates(map[string]any{
+			"status":     string(models.EnvironmentStatusOffline),
+			"updated_at": &now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("failed to reconcile edge environment statuses: %w", result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.InfoContext(ctx, "Reconciled stale edge environment statuses on startup", "count", result.RowsAffected)
+	}
+
+	return nil
+}
+
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
