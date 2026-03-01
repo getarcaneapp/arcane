@@ -24,7 +24,8 @@
 		class?: string;
 		containerId?: string | null;
 		projectId?: string | null;
-		type?: 'container' | 'project';
+		serviceId?: string | null;
+		type?: 'container' | 'project' | 'service';
 		maxLines?: number;
 		autoScroll?: boolean;
 		showTimestamps?: boolean;
@@ -41,6 +42,7 @@
 		class: className,
 		containerId = null,
 		projectId = null,
+		serviceId = null,
 		type = 'container',
 		maxLines = 1000,
 		autoScroll = $bindable(true),
@@ -141,10 +143,12 @@
 	let streamSession = 0;
 	let currentStreamSession = 0;
 	function streamKey() {
-		return type === 'project' ? (projectId ? `project:${projectId}` : null) : containerId ? `ctr:${containerId}` : null;
+		if (type === 'project') return projectId ? `project:${projectId}` : null;
+		if (type === 'service') return serviceId ? `svc:${serviceId}` : null;
+		return containerId ? `ctr:${containerId}` : null;
 	}
 
-	const humanType = $derived(type === 'project' ? m.project() : m.container());
+	const humanType = $derived(type === 'project' ? m.project() : type === 'service' ? m.swarm_service() : m.container());
 
 	function buildWebSocketEndpoint(path: string): string {
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -157,12 +161,14 @@
 		const basePath =
 			type === 'project'
 				? `/api/environments/${envId}/ws/projects/${projectId}/logs`
-				: `/api/environments/${envId}/ws/containers/${containerId}/logs`;
+				: type === 'service'
+					? `/api/environments/${envId}/ws/swarm/services/${serviceId}/logs`
+					: `/api/environments/${envId}/ws/containers/${containerId}/logs`;
 		return buildWebSocketEndpoint(`${basePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
 	}
 
 	export async function startLogStream() {
-		const targetId = type === 'project' ? projectId : containerId;
+		const targetId = type === 'project' ? projectId : type === 'service' ? serviceId : containerId;
 
 		if (!targetId) {
 			error = type === 'project' ? m.log_stream_no_project_selected() : m.log_stream_no_container_selected();
@@ -432,7 +438,7 @@
 	>
 		{#if logs.length === 0}
 			<div class="p-4 text-center text-gray-500">
-				{#if !containerId}
+				{#if !(containerId || projectId || serviceId)}
 					{m.log_viewer_no_selection({ type: humanType })}
 				{:else if !isStreaming}
 					{m.log_viewer_no_logs_available()}

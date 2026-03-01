@@ -160,6 +160,7 @@ type Services struct {
 	Volume            *services.VolumeService
 	Container         *services.ContainerService
 	Network           *services.NetworkService
+	Swarm             *services.SwarmService
 	Notification      *services.NotificationService
 	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
@@ -322,6 +323,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var volumeSvc *services.VolumeService
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
+	var swarmSvc *services.SwarmService
 	var notificationSvc *services.NotificationService
 	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
@@ -358,6 +360,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		volumeSvc = svc.Volume
 		containerSvc = svc.Container
 		networkSvc = svc.Network
+		swarmSvc = svc.Swarm
 		notificationSvc = svc.Notification
 		appriseSvc = svc.Apprise
 		updaterSvc = svc.Updater
@@ -391,6 +394,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
 	handlers.RegisterContainers(api, containerSvc, dockerSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
+	handlers.RegisterSwarm(api, swarmSvc, eventSvc)
 	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
