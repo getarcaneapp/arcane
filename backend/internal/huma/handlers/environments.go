@@ -962,13 +962,17 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error400BadRequest("Environment does not have an API key configured")
 	}
 
-	// Generate snippets with placeholder for API key
+	if env.AccessToken == nil || *env.AccessToken == "" {
+		return nil, huma.Error400BadRequest("Environment is missing access token")
+	}
+	
+	// Generate snippets with API key
 	// Use edge snippets for edge environments
 	var snippets *services.DeploymentSnippets
 	if env.IsEdge {
-		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
+		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
 	} else {
-		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), "<YOUR_API_KEY>")
+		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentID", input.ID, "error", err.Error())
