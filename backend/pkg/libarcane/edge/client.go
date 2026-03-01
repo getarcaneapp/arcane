@@ -266,7 +266,7 @@ func (c *TunnelClient) handleRequest(ctx context.Context, msg *TunnelMessage) {
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 
-	slog.DebugContext(reqCtx, "Processing tunneled request", "id", msg.ID, "method", msg.Method, "path", msg.Path)
+	slog.DebugContext(reqCtx, "Processing tunneled request", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
 	// Build the request
 	var body io.Reader
@@ -293,8 +293,13 @@ func (c *TunnelClient) handleRequest(ctx context.Context, msg *TunnelMessage) {
 		}
 	}
 
-	// Set headers
+	// Set headers. Note: Go's net/http does not populate req.Host from
+	// Header.Set("Host", ...) — it must be set explicitly on the field.
 	for k, v := range msg.Headers {
+		if http.CanonicalHeaderKey(k) == "Host" {
+			req.Host = v
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -342,7 +347,7 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, msg *TunnelMe
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 
-	slog.DebugContext(reqCtx, "Processing tunneled request (streaming)", "id", msg.ID, "method", msg.Method, "path", msg.Path)
+	slog.DebugContext(reqCtx, "Processing tunneled request (streaming)", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
 	var body io.Reader
 	var bodyBytes []byte
@@ -368,7 +373,13 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, msg *TunnelMe
 		}
 	}
 
+	// Set headers. Note: Go's net/http does not populate req.Host from
+	// Header.Set("Host", ...) — it must be set explicitly on the field.
 	for k, v := range msg.Headers {
+		if http.CanonicalHeaderKey(k) == "Host" {
+			req.Host = v
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 
