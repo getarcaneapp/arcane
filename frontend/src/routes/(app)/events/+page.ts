@@ -2,6 +2,7 @@ import { eventService } from '$lib/services/event-service';
 import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
@@ -18,10 +19,15 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const events = await queryClient.fetchQuery({
-		queryKey: queryKeys.events.listGlobal(eventRequestOptions),
-		queryFn: () => eventService.getEvents(eventRequestOptions)
-	});
+	let events;
+	try {
+		events = await queryClient.fetchQuery({
+			queryKey: queryKeys.events.listGlobal(eventRequestOptions),
+			queryFn: () => eventService.getEvents(eventRequestOptions)
+		});
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load events');
+	}
 
 	return { events, eventRequestOptions };
 };
