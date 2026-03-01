@@ -18,6 +18,7 @@
 	import { truncateString } from '$lib/utils/string.utils';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
 	import {
 		InspectIcon,
 		FolderOpenIcon,
@@ -161,9 +162,18 @@
 </script>
 
 {#snippet NameCell({ item }: { item: Template })}
-	<a class="font-medium hover:underline" href="/customize/templates/{item.id}">
-		{item.name}
-	</a>
+	<div class="flex items-center gap-2">
+		<IconImage
+			src={item.metadata?.iconUrl}
+			alt={item.name}
+			fallback={item.isRemote ? GlobeIcon : FolderOpenIcon}
+			class="size-8"
+			containerClass="size-10"
+		/>
+		<a class="font-medium hover:underline" href="/customize/templates/{item.id}">
+			{item.name}
+		</a>
+	</div>
 {/snippet}
 
 {#snippet DescriptionCell({ item }: { item: Template })}
@@ -210,7 +220,9 @@
 		{item}
 		icon={(item) => ({
 			component: item.isRemote ? GlobeIcon : FolderOpenIcon,
-			variant: item.isRemote ? 'emerald' : 'blue'
+			variant: item.isRemote ? 'emerald' : 'blue',
+			imageUrl: item.metadata?.iconUrl,
+			alt: item.name
 		})}
 		title={(item) => item.name}
 		subtitle={(item) => ((mobileFieldVisibility.description ?? true) ? item.description : null)}
