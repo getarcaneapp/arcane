@@ -5,6 +5,7 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { Paginated } from '$lib/types/pagination.type';
 import type { VulnerabilityWithImage } from '$lib/types/vulnerability.type';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
 
 function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
@@ -67,16 +68,22 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const requestForApi = mapVulnerabilityRequest(vulnerabilityRequestOptions);
 
-	const [summary, vulnerabilities] = await Promise.all([
-		queryClient.fetchQuery({
-			queryKey: queryKeys.vulnerabilities.summaryByEnvironment(envId),
-			queryFn: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(envId)
-		}),
-		queryClient.fetchQuery({
-			queryKey: queryKeys.vulnerabilities.allByEnvironment(envId, requestForApi),
-			queryFn: () => vulnerabilityService.getAllVulnerabilitiesForEnvironment(envId, requestForApi)
-		})
-	]);
+	let summary;
+	let vulnerabilities;
+	try {
+		[summary, vulnerabilities] = await Promise.all([
+			queryClient.fetchQuery({
+				queryKey: queryKeys.vulnerabilities.summaryByEnvironment(envId),
+				queryFn: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(envId)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.vulnerabilities.allByEnvironment(envId, requestForApi),
+				queryFn: () => vulnerabilityService.getAllVulnerabilitiesForEnvironment(envId, requestForApi)
+			})
+		]);
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load security data');
+	}
 
 	return {
 		summary,

@@ -6,6 +6,7 @@ import { systemService } from '$lib/services/system-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent, url }) => {
@@ -34,20 +35,27 @@ export const load: PageLoad = async ({ parent, url }) => {
 			}
 		};
 
-	const [containers, images, containerStatusCounts] = await Promise.all([
-		queryClient.fetchQuery({
-			queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-			queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
-		}),
-		queryClient.fetchQuery({
-			queryKey: queryKeys.images.list(envId, imageRequestOptions),
-			queryFn: () => imageService.getImagesForEnvironment(envId, imageRequestOptions)
-		}),
-		queryClient.fetchQuery({
-			queryKey: queryKeys.containers.statusCounts(envId),
-			queryFn: () => containerService.getContainerStatusCountsForEnvironment(envId)
-		})
-	]);
+	let containers;
+	let images;
+	let containerStatusCounts;
+	try {
+		[containers, images, containerStatusCounts] = await Promise.all([
+			queryClient.fetchQuery({
+				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.images.list(envId, imageRequestOptions),
+				queryFn: () => imageService.getImagesForEnvironment(envId, imageRequestOptions)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.containers.statusCounts(envId),
+				queryFn: () => containerService.getContainerStatusCountsForEnvironment(envId)
+			})
+		]);
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load dashboard data');
+	}
 
 	const [dockerInfoResult, settingsResult, imageUsageCountsResult, dashboardActionItemsResult] = await Promise.allSettled([
 		queryClient.fetchQuery({

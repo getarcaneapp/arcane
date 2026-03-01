@@ -5,6 +5,7 @@ import type { PageLoad } from './$types';
 import { settingsService } from '$lib/services/settings-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
@@ -16,16 +17,22 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	// containers includes counts, settings is separate
-	const [containers, settings] = await Promise.all([
-		queryClient.fetchQuery({
-			queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-			queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
-		}),
-		queryClient.fetchQuery({
-			queryKey: queryKeys.settings.byEnvironment(envId),
-			queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
-		})
-	]);
+	let containers;
+	let settings;
+	try {
+		[containers, settings] = await Promise.all([
+			queryClient.fetchQuery({
+				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.settings.byEnvironment(envId),
+				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
+			})
+		]);
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load containers');
+	}
 
 	return {
 		containers,

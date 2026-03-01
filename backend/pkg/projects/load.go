@@ -64,7 +64,19 @@ func loadComposeProjectInternal(
 	pathMapper *pathmapper.PathMapper,
 	envOverride EnvMap,
 	configureLoader func(*loader.Options),
-) (*composetypes.Project, error) {
+) (project *composetypes.Project, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.WarnContext(ctx,
+				"panic while loading compose project; compose file may contain invalid syntax",
+				"path", composeFile,
+				"error", recovered,
+			)
+			err = fmt.Errorf("load compose project panic for %s: %v", composeFile, recovered)
+			project = nil
+		}
+	}()
+
 	workdir := filepath.Dir(composeFile)
 
 	projectsDir := projectsDirectory
@@ -99,7 +111,7 @@ func loadComposeProjectInternal(
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	project, err := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+	project, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 		if projectName != "" {
 			opts.SetProjectName(projectName, true)
 		}

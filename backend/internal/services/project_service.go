@@ -474,19 +474,26 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
-	if loadErr == nil && composeProj != nil {
-		// Convert map to slice
-		svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
-		hasBuildDirective := false
-		for _, svc := range composeProj.Services {
-			svcList = append(svcList, svc)
-			if svc.Build != nil {
-				hasBuildDirective = true
-			}
-		}
-		resp.Services = svcList
-		resp.HasBuildDirective = resp.HasBuildDirective || hasBuildDirective
+	if loadErr != nil {
+		slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)
+		return
 	}
+
+	if composeProj == nil {
+		return
+	}
+
+	// Convert map to slice
+	svcList := make([]composetypes.ServiceConfig, 0, len(composeProj.Services))
+	hasBuildDirective := false
+	for _, svc := range composeProj.Services {
+		svcList = append(svcList, svc)
+		if svc.Build != nil {
+			hasBuildDirective = true
+		}
+	}
+	resp.Services = svcList
+	resp.HasBuildDirective = resp.HasBuildDirective || hasBuildDirective
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
@@ -1786,6 +1793,27 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	switch {
 	case composeContent != nil:
+		// Validate compose content before writing to disk to surface syntax errors early.
+		// compose-go can panic on malformed inputs (e.g. invalid depends_on format), so we
+		// catch both returned errors and panics here.
+		var composeValidateErr error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					composeValidateErr = fmt.Errorf("compose file contains invalid syntax: %v", r)
+				}
+			}()
+			cfg := composetypes.ConfigDetails{
+				Version: api.ComposeVersion,
+				ConfigFiles: []composetypes.ConfigFile{
+					{Filename: "compose.yaml", Content: []byte(*composeContent)},
+				},
+			}
+			_, composeValidateErr = loader.LoadWithContext(ctx, cfg)
+		}()
+		if composeValidateErr != nil {
+			return nil, fmt.Errorf("invalid compose file: %w", composeValidateErr)
+		}
 		if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, proj.Path, *composeContent, envContent); err != nil {
 			return nil, fmt.Errorf("failed to save project files: %w", err)
 		}
