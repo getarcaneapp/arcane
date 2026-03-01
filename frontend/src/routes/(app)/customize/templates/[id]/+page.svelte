@@ -4,6 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
@@ -101,11 +102,20 @@
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
 		</ArcaneButton>
 
-		<div>
-			<h1 class="text-xl font-bold break-words sm:text-2xl">{template.name}</h1>
-			{#if template.description}
-				<p class="text-muted-foreground mt-1.5 text-sm break-words sm:text-base">{template.description}</p>
-			{/if}
+		<div class="flex min-w-0 items-start gap-3">
+			<IconImage
+				src={template.metadata?.iconUrl}
+				alt={template.name}
+				fallback={template.isRemote ? GlobeIcon : TemplateIcon}
+				class="size-6"
+				containerClass="size-9 bg-transparent ring-0"
+			/>
+			<div class="min-w-0 flex-1">
+				<h1 class="text-xl font-bold break-words sm:text-2xl">{template.name}</h1>
+				{#if template.description}
+					<p class="text-muted-foreground mt-1.5 text-sm break-words sm:text-base">{template.description}</p>
+				{/if}
+			</div>
 		</div>
 
 		<div class="flex flex-wrap items-center gap-2">
