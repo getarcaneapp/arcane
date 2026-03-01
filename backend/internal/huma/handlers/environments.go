@@ -965,7 +965,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 	if env.AccessToken == nil || *env.AccessToken == "" {
 		return nil, huma.Error400BadRequest("Environment is missing access token")
 	}
-	
+
 	// Generate snippets with API key
 	// Use edge snippets for edge environments
 	var snippets *services.DeploymentSnippets
