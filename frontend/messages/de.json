@@ -16,7 +16,7 @@
 	"error_connection_local_docker_desc": "Verbindung zum lokalen Docker-Daemon unter {host} nicht möglich. Bitte stelle sicher, dass Docker läuft und erreichbar ist.",
 	"error_connection_remote_environment": "Verbindung zur entfernten Umgebung „{name}“ nicht möglich",
 	"error_connection_remote_environment_desc": "Verbindung zur entfernten Umgebung „{name}“ unter {url} nicht möglich. Bitte prüfe, dass der Arcane-Agent läuft und die URL korrekt ist.",
-	"_comment_common_generic": "=== COMMON - GENERIC ==="
+	"_comment_common_generic": "=== COMMON - GENERIC ===",
 	"common_refresh": "Aktualisieren",
 	"common_unknown": "Unbekannt",
 	"common_remove": "Entfernen",
