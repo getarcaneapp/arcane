@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const LOCAL_ENV_ID = "0";
 
@@ -6,23 +6,36 @@ async function openEnvironment(page: Page, environmentId: string) {
   await page.goto(`/environments/${environmentId}`);
   await page.waitForLoadState("networkidle");
   await expect(page.locator("#env-name")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save", exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }).first(),
+  ).toBeVisible();
 }
 
-async function createDirectEnvironmentViaUI(page: Page, environmentName: string) {
+async function createDirectEnvironmentViaUI(
+  page: Page,
+  environmentName: string,
+) {
   await page.goto("/environments");
   await page.waitForLoadState("networkidle");
 
-  await page.getByRole("button", { name: "Add Environment", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add Environment", exact: true })
+    .click();
   await expect(page.getByText("Create New Agent Environment")).toBeVisible();
 
   await page.locator("input#name:visible").first().fill(environmentName);
   await page.locator("#new-agent-api-url").fill("localhost:3552");
-  await page.getByRole("button", { name: "Generate Agent Configuration", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Generate Agent Configuration", exact: true })
+    .click();
 
-  await expect(page.locator('[data-slot="sheet-title"]')).toContainText(/Environment Created/i);
+  await expect(page.locator('[data-slot="sheet-title"]')).toContainText(
+    /Environment Created/i,
+  );
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(page.getByRole("button", { name: environmentName, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: environmentName, exact: true }),
+  ).toBeVisible();
 }
 
 async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
@@ -40,7 +53,9 @@ async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
   await envRow.getByRole("button", { name: /open menu/i }).click();
   await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Remove", exact: true }).click();
-  await expect(page.getByRole("button", { name: environmentName, exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: environmentName, exact: true }),
+  ).toHaveCount(0);
 }
 
 async function openLocalEnvironment(page: Page) {
@@ -48,7 +63,9 @@ async function openLocalEnvironment(page: Page) {
 }
 
 async function saveAndWaitForPut(page: Page, expectedPath: string) {
-  const saveButton = page.getByRole("button", { name: "Save", exact: true }).first();
+  const saveButton = page
+    .getByRole("button", { name: "Save", exact: true })
+    .first();
   await expect(saveButton).toBeEnabled();
 
   const requestPromise = page.waitForRequest((request) => {
@@ -60,6 +77,20 @@ async function saveAndWaitForPut(page: Page, expectedPath: string) {
   await saveButton.click();
   await requestPromise;
   await expect(saveButton).toBeDisabled();
+}
+
+async function selectSettingOption(
+  page: Page,
+  trigger: Locator,
+  optionText: string,
+) {
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await page
+    .locator('[data-slot="select-item"]')
+    .filter({ hasText: optionText })
+    .first()
+    .click();
 }
 
 test.describe("Environment Settings UI", () => {
@@ -85,7 +116,9 @@ test.describe("Environment Settings UI", () => {
     }
   });
 
-  test("should update and save general environment settings", async ({ page }) => {
+  test("should update and save general environment settings", async ({
+    page,
+  }) => {
     await openLocalEnvironment(page);
 
     await page.getByRole("tab", { name: "General", exact: true }).click();
@@ -93,22 +126,35 @@ test.describe("Environment Settings UI", () => {
     await expect(projectsDirectoryInput).toBeVisible();
 
     const originalProjectsDirectory = await projectsDirectoryInput.inputValue();
-    const updatedProjectsDirectory =
-      originalProjectsDirectory.endsWith("-e2e") ? `${originalProjectsDirectory}-x` : `${originalProjectsDirectory}-e2e`;
+    const updatedProjectsDirectory = originalProjectsDirectory.endsWith("-e2e")
+      ? `${originalProjectsDirectory}-x`
+      : `${originalProjectsDirectory}-e2e`;
 
     try {
       await projectsDirectoryInput.fill(updatedProjectsDirectory);
-      await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+      await saveAndWaitForPut(
+        page,
+        `/api/environments/${LOCAL_ENV_ID}/settings`,
+      );
 
       await page.reload();
       await page.getByRole("tab", { name: "General", exact: true }).click();
-      await expect(page.locator("#projects-directory")).toHaveValue(updatedProjectsDirectory);
+      await expect(page.locator("#projects-directory")).toHaveValue(
+        updatedProjectsDirectory,
+      );
     } finally {
       await page.getByRole("tab", { name: "General", exact: true }).click();
-      const currentProjectsDirectory = await page.locator("#projects-directory").inputValue();
+      const currentProjectsDirectory = await page
+        .locator("#projects-directory")
+        .inputValue();
       if (currentProjectsDirectory !== originalProjectsDirectory) {
-        await page.locator("#projects-directory").fill(originalProjectsDirectory);
-        await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+        await page
+          .locator("#projects-directory")
+          .fill(originalProjectsDirectory);
+        await saveAndWaitForPut(
+          page,
+          `/api/environments/${LOCAL_ENV_ID}/settings`,
+        );
       }
     }
   });
@@ -120,8 +166,12 @@ test.describe("Environment Settings UI", () => {
     const originalName = await nameInput.inputValue();
     await nameInput.fill(`${originalName}-pending`);
 
-    const saveButton = page.getByRole("button", { name: "Save", exact: true }).first();
-    const resetButton = page.getByRole("button", { name: "Reset", exact: true }).first();
+    const saveButton = page
+      .getByRole("button", { name: "Save", exact: true })
+      .first();
+    const resetButton = page
+      .getByRole("button", { name: "Reset", exact: true })
+      .first();
 
     await expect(saveButton).toBeEnabled();
     await expect(resetButton).toBeVisible();
@@ -129,5 +179,56 @@ test.describe("Environment Settings UI", () => {
 
     await expect(nameInput).toHaveValue(originalName);
     await expect(saveButton).toBeDisabled();
+  });
+
+  test("should update and save the default deploy pull policy in Docker settings", async ({
+    page,
+  }) => {
+    await openLocalEnvironment(page);
+
+    const dockerTab = page.getByRole("tab", { name: /Docker/i }).first();
+    await dockerTab.click();
+    const pullPolicyTrigger = page.locator("#defaultDeployPullPolicy");
+    await expect(pullPolicyTrigger).toBeVisible();
+
+    const originalValue =
+      (await pullPolicyTrigger.textContent())?.trim() || "Missing";
+    const updatedValue = originalValue.includes("Always") ? "Never" : "Always";
+
+    try {
+      await selectSettingOption(page, pullPolicyTrigger, updatedValue);
+      await saveAndWaitForPut(
+        page,
+        `/api/environments/${LOCAL_ENV_ID}/settings`,
+      );
+
+      await page.reload();
+      await page
+        .getByRole("tab", { name: /Docker/i })
+        .first()
+        .click();
+      await expect(page.locator("#defaultDeployPullPolicy")).toContainText(
+        updatedValue,
+      );
+    } finally {
+      await page
+        .getByRole("tab", { name: /Docker/i })
+        .first()
+        .click();
+      const currentValue = (
+        (await page.locator("#defaultDeployPullPolicy").textContent()) || ""
+      ).trim();
+      if (!currentValue.includes(originalValue)) {
+        await selectSettingOption(
+          page,
+          page.locator("#defaultDeployPullPolicy"),
+          originalValue,
+        );
+        await saveAndWaitForPut(
+          page,
+          `/api/environments/${LOCAL_ENV_ID}/settings`,
+        );
+      }
+    }
   });
 });

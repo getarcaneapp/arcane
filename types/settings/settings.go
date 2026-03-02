@@ -77,6 +77,11 @@ type Update struct {
 	// Required: false
 	PruneMode *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
 
+	// DefaultDeployPullPolicy is the default image pull policy used for project deploys.
+	//
+	// Required: false
+	DefaultDeployPullPolicy *string `json:"defaultDeployPullPolicy,omitempty" binding:"omitempty,oneof=missing always never"`
+
 	// ScheduledPruneEnabled indicates if scheduled pruning is enabled.
 	//
 	// Required: false

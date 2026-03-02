@@ -5,6 +5,11 @@ import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 import BaseAPIService from './api-service';
 
+export type DeployProjectOptions = {
+	pullPolicy?: 'missing' | 'always' | 'never';
+	forceRecreate?: boolean;
+};
+
 export class ProjectService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
@@ -21,13 +26,25 @@ export class ProjectService extends BaseAPIService {
 		return res.data;
 	}
 
-	deployProject(projectId: string): Promise<Project>;
-	deployProject(projectId: string, onLine: (data: any) => void): Promise<Project>;
-	async deployProject(projectId: string, onLine?: (data: any) => void): Promise<Project> {
+	deployProject(projectId: string, options?: DeployProjectOptions): Promise<Project>;
+	deployProject(projectId: string, onLine: (data: any) => void, options?: DeployProjectOptions): Promise<Project>;
+	async deployProject(
+		projectId: string,
+		onLineOrOptions?: ((data: any) => void) | DeployProjectOptions,
+		maybeOptions?: DeployProjectOptions
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/up`;
+		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
+		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
 
-		const res = await fetch(url, { method: 'POST' });
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(options ?? {})
+		});
 		const status = String(res.status);
 		if (!res.ok || !res.body) {
 			throw new Error(m.progress_deploy_failed_to_start({ status }));

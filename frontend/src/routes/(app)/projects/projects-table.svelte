@@ -19,6 +19,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
+	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -71,7 +72,7 @@
 		try {
 			if (action === 'start') {
 				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.deployProject(id)),
+					result: await tryCatch(projectService.deployProject(id, deployOptionsStore.getRequestOptions())),
 					message: m.compose_start_failed(),
 					setLoadingState: (value) => (isLoading.start = value),
 					onSuccess: async () => {
@@ -177,7 +178,8 @@
 				action: async () => {
 					isBulkLoading.up = true;
 
-					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id)));
+					const deployOptions = deployOptionsStore.getRequestOptions();
+					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id, deployOptions)));
 
 					const successCount = results.filter((r) => r.status === 'fulfilled').length;
 					const failureCount = results.length - successCount;

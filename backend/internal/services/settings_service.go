@@ -97,6 +97,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AnalyticsHeartbeatInterval:    models.SettingVariable{Value: "0 0 0 * * *"},
 		AutoInjectEnv:                 models.SettingVariable{Value: "false"},
 		PruneMode:                     models.SettingVariable{Value: "dangling"},
+		DefaultDeployPullPolicy:       models.SettingVariable{Value: "missing"},
 		ScheduledPruneEnabled:         models.SettingVariable{Value: "false"},
 		ScheduledPruneInterval:        models.SettingVariable{Value: "0 0 0 * * *"},
 		ScheduledPruneContainers:      models.SettingVariable{Value: "true"},

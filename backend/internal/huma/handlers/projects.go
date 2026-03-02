@@ -59,6 +59,7 @@ type GetProjectStatusCountsOutput struct {
 type DeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *project.DeployOptions
 }
 
 type DeployProjectOutput struct {
@@ -448,7 +449,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 			}
 
 			deployCtx := context.WithValue(humaCtx.Context(), projects.ProgressWriterKey{}, writer)
-			if err := h.projectService.DeployProject(deployCtx, input.ProjectID, *user); err != nil {
+			if err := h.projectService.DeployProject(deployCtx, input.ProjectID, *user, input.Body); err != nil {
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()

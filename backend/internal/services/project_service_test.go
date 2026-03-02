@@ -591,14 +591,14 @@ func TestDecideDeployImageAction(t *testing.T) {
 			Build:      &composetypes.BuildConfig{Context: "."},
 		}
 
-		decision := decideDeployImageAction(svc)
+		decision := decideDeployImageAction(svc, "")
 		assert.True(t, decision.Build)
 		assert.False(t, decision.PullAlways)
 	})
 
 	t.Run("build service default policy uses pull then fallback build", func(t *testing.T) {
 		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
-		decision := decideDeployImageAction(svc)
+		decision := decideDeployImageAction(svc, "")
 		assert.True(t, decision.PullIfMissing)
 		assert.True(t, decision.FallbackBuildOnPullFail)
 		assert.False(t, decision.Build)
@@ -606,9 +606,16 @@ func TestDecideDeployImageAction(t *testing.T) {
 
 	t.Run("non-build service never policy requires local only", func(t *testing.T) {
 		svc := composetypes.ServiceConfig{PullPolicy: "never"}
-		decision := decideDeployImageAction(svc)
+		decision := decideDeployImageAction(svc, "")
 		assert.True(t, decision.RequireLocalOnly)
 		assert.False(t, decision.PullIfMissing)
+	})
+
+	t.Run("compose pull policy wins over deploy override", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{PullPolicy: "never"}
+		decision := decideDeployImageAction(svc, "always")
+		assert.True(t, decision.RequireLocalOnly)
+		assert.False(t, decision.PullAlways)
 	})
 }
 

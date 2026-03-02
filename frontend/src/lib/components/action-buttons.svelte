@@ -6,12 +6,14 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import DeploySplitButton from '$lib/components/deploy-split-button/deploy-split-button.svelte';
 	import ProgressPopover from '$lib/components/progress-popover.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
+	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 	import { containerService } from '$lib/services/container-service';
-	import { projectService } from '$lib/services/project-service';
+	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { sanitizeLogText } from '$lib/utils/log-text';
 	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
@@ -89,6 +91,12 @@
 		if (key === 'refresh') refreshLoading = value;
 	}
 
+	function handleDeployPullPolicyChange(value: string) {
+		if (value === 'missing' || value === 'always' || value === 'never') {
+			deployOptionsStore.setPullPolicy(value);
+		}
+	}
+
 	const uiLoading = $derived({
 		start: !!(isLoading.start || loading?.start || startLoading),
 		stop: !!(isLoading.stop || loading?.stop || stopLoading),
@@ -103,7 +111,12 @@
 
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.startContainer(id) : projectService.deployProject(id)),
+		mutationFn: () =>
+			tryCatch(
+				type === 'container'
+					? containerService.startContainer(id)
+					: projectService.deployProject(id, deployOptionsStore.getRequestOptions())
+			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => {
 			if (!deployPulling) {
@@ -367,7 +380,7 @@
 		});
 	}
 
-	async function handleDeploy() {
+	async function handleDeploy(options?: DeployProjectOptions) {
 		resetPullState();
 		setLoading('start', true);
 		let openedPopover = false;
@@ -583,7 +596,7 @@
 				}
 			};
 
-			await projectService.deployProject(id, handleDeployLine);
+			await projectService.deployProject(id, handleDeployLine, options ?? deployOptionsStore.getRequestOptions());
 
 			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
 
@@ -797,12 +810,11 @@
 							layers={deployPopoverLayers}
 							outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 						>
-							<ArcaneButton
-								action="deploy"
+							<DeploySplitButton
 								size={adaptiveIconOnly ? 'icon' : 'default'}
 								showLabel={!adaptiveIconOnly}
 								customLabel={deployButtonLabel}
-								onclick={() => handleDeploy()}
+								onDeploy={() => handleDeploy()}
 								loading={uiLoading.start}
 							/>
 						</ProgressPopover>
@@ -927,9 +939,29 @@
 										{m.common_start()}
 									</DropdownMenu.Item>
 								{:else}
-									<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
+									<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
 										{deployButtonLabel}
 									</DropdownMenu.Item>
+									{#if type === 'project'}
+										<DropdownMenu.Separator />
+										<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
+										<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
+											<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
+											<DropdownMenu.RadioItem value="always">
+												{m.common_always()}
+											</DropdownMenu.RadioItem>
+											<DropdownMenu.RadioItem value="never">
+												{m.common_never()}
+											</DropdownMenu.RadioItem>
+										</DropdownMenu.RadioGroup>
+										<DropdownMenu.Separator />
+										<DropdownMenu.CheckboxItem
+											checked={deployOptionsStore.forceRecreate}
+											onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
+										>
+											{m.deploy_force_recreate()}
+										</DropdownMenu.CheckboxItem>
+									{/if}
 								{/if}
 							{:else}
 								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
@@ -1045,12 +1077,7 @@
 						layers={deployPopoverLayers}
 						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 					>
-						<ArcaneButton
-							action="deploy"
-							customLabel={deployButtonLabel}
-							onclick={() => handleDeploy()}
-							loading={uiLoading.start}
-						/>
+						<DeploySplitButton customLabel={deployButtonLabel} onDeploy={() => handleDeploy()} loading={uiLoading.start} />
 					</ProgressPopover>
 				{/if}
 			{/if}
@@ -1133,9 +1160,29 @@
 									{m.common_start()}
 								</DropdownMenu.Item>
 							{:else}
-								<DropdownMenu.Item onclick={handleDeploy} disabled={uiLoading.start}>
+								<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
 									{deployButtonLabel}
 								</DropdownMenu.Item>
+								{#if type === 'project'}
+									<DropdownMenu.Separator />
+									<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
+									<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
+										<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
+										<DropdownMenu.RadioItem value="always">
+											{m.common_always()}
+										</DropdownMenu.RadioItem>
+										<DropdownMenu.RadioItem value="never">
+											{m.common_never()}
+										</DropdownMenu.RadioItem>
+									</DropdownMenu.RadioGroup>
+									<DropdownMenu.Separator />
+									<DropdownMenu.CheckboxItem
+										checked={deployOptionsStore.forceRecreate}
+										onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
+									>
+										{m.deploy_force_recreate()}
+									</DropdownMenu.CheckboxItem>
+								{/if}
 							{/if}
 						{:else}
 							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>

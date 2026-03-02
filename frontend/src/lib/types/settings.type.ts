@@ -10,6 +10,7 @@ export type Settings = {
 	pollingInterval: number;
 	environmentHealthInterval: number;
 	dockerPruneMode: 'all' | 'dangling';
+	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
 	scheduledPruneEnabled?: boolean;
 	scheduledPruneInterval?: number;
 	scheduledPruneContainers?: boolean;

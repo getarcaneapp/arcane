@@ -8,6 +8,12 @@
 	import { DockerBrandIcon } from '$lib/icons';
 
 	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions, pruneModeDescription, pruneModeOptions } = $props();
+
+	const deployPullPolicyOptions = [
+		{ value: 'missing', label: 'Missing', description: m.deploy_pull_policy_missing() },
+		{ value: 'always', label: m.common_always(), description: m.deploy_pull_policy_always() },
+		{ value: 'never', label: m.common_never(), description: m.deploy_pull_policy_never() }
+	];
 </script>
 
 <Card.Root class="flex flex-col">
@@ -60,6 +66,18 @@
 						/>
 					</div>
 				{/if}
+			</div>
+
+			<div class="space-y-2">
+				<SelectWithLabel
+					id="defaultDeployPullPolicy"
+					name="defaultDeployPullPolicy"
+					bind:value={$formInputs.defaultDeployPullPolicy.value}
+					label={m.settings_default_deploy_pull_policy()}
+					description={m.settings_default_deploy_pull_policy_description()}
+					options={deployPullPolicyOptions}
+					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
+				/>
 			</div>
 
 			<div class="space-y-4 rounded-lg border p-4">

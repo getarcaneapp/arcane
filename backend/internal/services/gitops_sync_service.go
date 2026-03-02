@@ -615,7 +615,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 
 	// Deploy the project immediately after creation
 	slog.InfoContext(ctx, "Deploying project after initial Git sync", "projectName", project.Name, "projectId", project.ID)
-	if err := s.projectService.DeployProject(ctx, project.ID, actor); err != nil {
+	if err := s.projectService.DeployProject(ctx, project.ID, actor, nil); err != nil {
 		slog.ErrorContext(ctx, "Failed to deploy project after initial Git sync", "error", err, "projectId", project.ID)
 	}
 

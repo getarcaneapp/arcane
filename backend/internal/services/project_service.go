@@ -790,10 +790,23 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 // Project Actions
 
-func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User) error {
+func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	resolvedPullPolicy := ""
+	forceRecreate := false
+	if options != nil {
+		resolvedPullPolicy = normalizeDeployPullPolicyInternal(options.PullPolicy)
+		forceRecreate = options.ForceRecreate
+	}
+	if resolvedPullPolicy == "" {
+		resolvedPullPolicy = normalizeDeployPullPolicyInternal(s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"))
+	}
+	if resolvedPullPolicy == "" {
+		resolvedPullPolicy = "missing"
 	}
 
 	composeFileFullPath, derr := projects.DetectComposeFile(projectFromDb.Path)
@@ -824,7 +837,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, io.Discard, nil, &user); perr != nil {
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, io.Discard, nil, &user, resolvedPullPolicy); perr != nil {
 		slog.Warn("prepare images for deploy failed (continuing to compose up)", "projectID", projectID, "error", perr)
 	}
 
@@ -832,7 +845,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, project, nil, removeOrphans); err != nil {
+	if err := projects.ComposeUp(ctx, project, nil, removeOrphans, forceRecreate); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
@@ -1031,7 +1044,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
 	}
 
-	return s.DeployProject(ctx, projectID, user)
+	return s.DeployProject(ctx, projectID, user, nil)
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
@@ -1223,6 +1236,7 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 	progressWriter io.Writer,
 	credentials []containerregistry.Credential,
 	user *models.User,
+	pullPolicyOverride string,
 ) error {
 	if project == nil {
 		return nil
@@ -1243,7 +1257,7 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 			continue
 		}
 
-		decision := decideDeployImageAction(svc)
+		decision := decideDeployImageAction(svc, pullPolicyOverride)
 		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user, pathMapper); err != nil {
 			return err
 		}
@@ -1375,6 +1389,16 @@ func normalizePullPolicy(policy string) string {
 	return policy
 }
 
+func normalizeDeployPullPolicyInternal(policy string) string {
+	normalized := normalizePullPolicy(policy)
+	switch normalized {
+	case "always", "missing", "never":
+		return normalized
+	default:
+		return ""
+	}
+}
+
 func isAlwaysPullPolicy(policy string) bool {
 	if policy == "always" || policy == "daily" || policy == "weekly" {
 		return true
@@ -1382,8 +1406,13 @@ func isAlwaysPullPolicy(policy string) bool {
 	return strings.HasPrefix(policy, "every_")
 }
 
-func decideDeployImageAction(svc composetypes.ServiceConfig) deployImageDecision {
+func decideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride string) deployImageDecision {
 	policy := normalizePullPolicy(svc.PullPolicy)
+	if policy == "" {
+		if override := normalizeDeployPullPolicyInternal(pullPolicyOverride); override != "" {
+			policy = override
+		}
+	}
 	buildEnabled := svc.Build != nil
 
 	if buildEnabled {

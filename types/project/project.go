@@ -59,6 +59,19 @@ type UpdateProject struct {
 	EnvContent *string `json:"envContent,omitempty"`
 }
 
+// DeployOptions configures project deploy behavior.
+type DeployOptions struct {
+	// PullPolicy overrides the image pull policy used during deploy.
+	//
+	// Required: false
+	PullPolicy string `json:"pullPolicy,omitempty" binding:"omitempty,oneof=missing always never"`
+
+	// ForceRecreate forces compose to recreate containers even when unchanged.
+	//
+	// Required: false
+	ForceRecreate bool `json:"forceRecreate,omitempty"`
+}
+
 // UpdateIncludeFile is used to update an include file within a project.
 type UpdateIncludeFile struct {
 	// RelativePath is the path to the include file relative to the project.

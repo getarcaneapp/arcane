@@ -42,7 +42,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool) error {
+func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) error {
 	c, err := NewClient(ctx)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 
 	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
 
-	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans)
+	upOptions, startOptions := composeUpOptions(proj, services, removeOrphans, forceRecreate)
 
 	// If we don't need progress, just run compose up normally.
 	if progressWriter == nil {
@@ -61,10 +61,15 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 	return composeUpWithProgress(ctx, c.svc, proj, api.UpOptions{Create: upOptions, Start: startOptions}, progressWriter)
 }
 
-func composeUpOptions(proj *types.Project, services []string, removeOrphans bool) (api.CreateOptions, api.StartOptions) {
+func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) (api.CreateOptions, api.StartOptions) {
+	recreatePolicy := api.RecreateDiverged
+	if forceRecreate {
+		recreatePolicy = api.RecreateForce
+	}
+
 	upOptions := api.CreateOptions{
 		Services:             services,
-		Recreate:             api.RecreateDiverged,
+		Recreate:             recreatePolicy,
 		RecreateDependencies: api.RecreateDiverged,
 		RemoveOrphans:        removeOrphans,
 	}
