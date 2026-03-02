@@ -30,6 +30,7 @@ export type Settings = {
 	defaultShell: string;
 	dockerHost: string;
 	accentColor: string;
+	oledMode: boolean;
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 

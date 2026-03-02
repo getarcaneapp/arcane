@@ -37,10 +37,7 @@
 	let { title, value, description, icon: Icon, badgeText, badgeVariant = 'red', ctaLabel, href }: Props = $props();
 </script>
 
-<Card.Root
-	variant="outlined"
-	class="border-border/70 bg-card/75 dark:border-surface/70 dark:bg-surface/25 shadow-sm supports-[backdrop-filter]:backdrop-blur-sm"
->
+<Card.Root variant="outlined" class="shadow-sm">
 	<Card.Content class="space-y-2.5 p-4">
 		<div class="flex items-center justify-between gap-2">
 			<div class="text-foreground/80 flex items-center gap-2 text-sm font-medium">
