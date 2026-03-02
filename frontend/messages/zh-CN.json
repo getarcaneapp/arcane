@@ -917,7 +917,7 @@
 	"events_warning_subtitle": "警告事件",
 	"events_error": "错误",
 	"events_error_subtitle": "错误事件",
-	"events_delete_item_failed": "Failed to delete event {id}",
+	"events_delete_item_failed": "删除事件{id}失败",
 	"events_col_severity": "严重程度",
 	"events_col_resource": "资源",
 	"events_col_time": "时间",
