@@ -1438,7 +1438,7 @@
 	"docker_info_storage_driver_label": "Storage-Treiber",
 	"docker_info_logging_driver_label": "Logging-Treiber",
 	"docker_info_cgroup_driver_label": "Cgroup-Treiber",
-	"docker_info_cgroup_version_label": "Cgroup-Version"
+	"docker_info_cgroup_version_label": "Cgroup-Version",
 	"docker_info_paused_label": "Pausiert",
 	"docker_info_images_label": "Images",
 	"docker_info_system_time": "Systemzeit",
