@@ -1773,7 +1773,7 @@
 	"notifications_signal_recipients_label": "Empfänger",
 	"notifications_signal_recipients_placeholder": "+1234567890, +0987654321, group_id_base64",
 	"notifications_signal_recipients_help": "Kommagetrennte Liste von Telefonnummern (mit +) oder Signal-Gruppen-IDs",
-	"notifications_signal_recipients_required": "Mindestens ein Empfänger ist erforderlich, wenn Signal aktiviert ist"
+	"notifications_signal_recipients_required": "Mindestens ein Empfänger ist erforderlich, wenn Signal aktiviert ist",
 	"notifications_signal_disable_tls_label": "TLS deaktivieren",
 	"notifications_signal_disable_tls_description": "TLS/SSL für die Signal-REST-API-Verbindung deaktivieren (für Produktion nicht empfohlen)",
 	"notifications_slack_title": "Slack-Benachrichtigungen",
