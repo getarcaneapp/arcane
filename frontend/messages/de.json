@@ -697,7 +697,7 @@
 	"volumes_backup_delete_confirm": "Möchtest du dieses Backup wirklich löschen?",
 	"volumes_backup_restore_title": "Volume wiederherstellen",
 	"volumes_backup_restore_message": "Dabei werden ALLE Daten im Volume „{volumeName}“ durch den Inhalt dieses Backups ersetzt.\n\nVor der Wiederherstellung wird automatisch ein Sicherheits-Backup erstellt, sodass du den Vorgang bei Bedarf rückgängig machen kannst.",
-	"volumes_backup_restore_in_use_warning": "\n\n⚠️ Warnung: Dieses Volume wird derzeit von {count} Container(n) verwendet. Eine Wiederherstellung, während Container laufen, kann zu Datenkorruption führen. Stoppe die Container zuerst oder nutze „Dateien wiederherstellen“, um nur bestimmte Dateien wiederherzustellen."
+	"volumes_backup_restore_in_use_warning": "\n\n⚠️ Warnung: Dieses Volume wird derzeit von {count} Container(n) verwendet. Eine Wiederherstellung, während Container laufen, kann zu Datenkorruption führen. Stoppe die Container zuerst oder nutze „Dateien wiederherstellen", um nur bestimmte Dateien wiederherzustellen.",
 	"volumes_backup_restore_success": "Volume erfolgreich wiederhergestellt. Vor der Wiederherstellung wurde ein Sicherheits-Backup erstellt.",
 	"volumes_backup_restore_files_success": "{count} Datei(en) erfolgreich wiederhergestellt. Vor der Wiederherstellung wurde ein Sicherheits-Backup erstellt.",
 	"volumes_backup_safety_info": "Vor der Wiederherstellung wird automatisch ein Sicherheits-Backup erstellt, sodass du den Vorgang bei Bedarf rückgängig machen kannst.",
