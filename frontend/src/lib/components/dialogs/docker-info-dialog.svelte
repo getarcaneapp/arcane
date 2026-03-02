@@ -44,13 +44,13 @@
 				{@render resourcesSection()}
 			</div>
 
-			<div class="grid gap-6 lg:grid-cols-3">
+			<div class="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
 				{@render systemSection()}
 				{@render versionSection()}
 				{@render configurationSection()}
 			</div>
 
-			<div class="grid gap-6 lg:grid-cols-3">
+			<div class="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
 				{@render networkSection()}
 				{@render securitySection()}
 				{@render pluginsSection()}
@@ -69,10 +69,10 @@
 			{m.docker_info_stats_section()}
 		</h3>
 		<div class="grid gap-3 sm:grid-cols-4">
-			{@render statCard(m.common_running(), dockerInfo?.ContainersRunning ?? 0, 'emerald', true)}
-			{@render statCard(m.docker_info_paused_label(), dockerInfo?.ContainersPaused ?? 0, 'amber', true)}
-			{@render statCard(m.common_stopped(), dockerInfo?.ContainersStopped ?? 0, 'red', true)}
-			{@render statCard(m.docker_info_images_label(), dockerInfo?.Images ?? 0, 'blue', true)}
+			{@render statCard(m.common_running(), dockerInfo?.ContainersRunning ?? 0, 'emerald')}
+			{@render statCard(m.docker_info_paused_label(), dockerInfo?.ContainersPaused ?? 0, 'amber')}
+			{@render statCard(m.common_stopped(), dockerInfo?.ContainersStopped ?? 0, 'red')}
+			{@render statCard(m.docker_info_images_label(), dockerInfo?.Images ?? 0, 'blue')}
 		</div>
 	</div>
 {/snippet}
@@ -84,13 +84,13 @@
 		</h3>
 		<div class="space-y-1.5 rounded-lg border p-3">
 			{@render infoRow(m.common_name(), dockerInfo?.Name)}
-			{@render infoRow(m.common_id(), dockerInfo?.ID, true, true)}
+			{@render infoRow(m.common_id(), dockerInfo?.ID, true)}
 			{@render infoRow(m.docker_info_os_label(), dockerInfo?.OperatingSystem)}
 			{@render infoRow(m.docker_info_os_type_label(), dockerInfo?.OSType)}
 			{@render infoRow(m.common_architecture(), dockerInfo?.Architecture)}
 			{@render infoRow(m.docker_info_kernel_version_label(), dockerInfo?.KernelVersion)}
 			{@render infoRow(m.docker_info_system_time(), formatTime(dockerInfo?.SystemTime), false)}
-			{@render infoRow(m.docker_info_root_dir(), dockerInfo?.DockerRootDir, true, true)}
+			{@render infoRow(m.docker_info_root_dir(), dockerInfo?.DockerRootDir, true)}
 		</div>
 	</div>
 {/snippet}
@@ -128,21 +128,21 @@
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.common_cpus()}</div>
 				<div class="flex items-center gap-2">
-					<Badge variant="secondary" class="text-sm font-bold">{dockerInfo?.NCPU ?? 0}</Badge>
+					<Badge variant="outline" class="text-sm font-bold">{dockerInfo?.NCPU ?? 0}</Badge>
 					<span class="text-muted-foreground text-[10px]">cores</span>
 				</div>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_memory_label()}</div>
-				<Badge variant="secondary" class="text-sm font-bold">{formattedMemory}</Badge>
+				<Badge variant="outline" class="text-sm font-bold">{formattedMemory}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_goroutines()}</div>
-				<Badge variant="secondary" class="text-sm font-bold">{dockerInfo?.NGoroutines ?? 0}</Badge>
+				<Badge variant="outline" class="text-sm font-bold">{dockerInfo?.NGoroutines ?? 0}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_file_descriptors()}</div>
-				<Badge variant="secondary" class="text-sm font-bold">{dockerInfo?.NFd ?? 0}</Badge>
+				<Badge variant="outline" class="text-sm font-bold">{dockerInfo?.NFd ?? 0}</Badge>
 			</div>
 		</div>
 	</div>
@@ -234,7 +234,7 @@
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_security_options()}</div>
 				<div class="flex flex-wrap gap-1">
 					{#each dockerInfo?.SecurityOptions ?? [] as opt}
-						<Badge variant="secondary" class="px-1.5 py-0 text-[10px]">{opt}</Badge>
+						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{opt}</Badge>
 					{:else}
 						<span class="text-muted-foreground text-xs">-</span>
 					{/each}
@@ -254,12 +254,7 @@
 	</div>
 {/snippet}
 
-{#snippet statCard(
-	label: string,
-	value: number,
-	color: 'emerald' | 'amber' | 'red' | 'blue' | 'neutral',
-	outline: boolean = false
-)}
+{#snippet statCard(label: string, value: number, color: 'emerald' | 'amber' | 'red' | 'blue' | 'neutral')}
 	{@const colors = {
 		emerald: {
 			bg: 'bg-emerald-500/5',
@@ -284,22 +279,16 @@
 	}}
 	<div class="rounded-lg border p-3 {colors[color].bg}">
 		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
-		{#if color === 'neutral'}
-			<Badge variant="secondary" class="rounded-md text-xl font-bold tabular-nums">
-				{value}
-			</Badge>
-		{:else}
-			<Badge variant={outline ? 'outline' : undefined} class="{colors[color].badge} rounded-md text-base font-bold">
-				{value}
-			</Badge>
-		{/if}
+		<Badge variant="outline" class="{colors[color].badge} rounded-md text-base font-bold tabular-nums">
+			{value}
+		</Badge>
 	</div>
 {/snippet}
 
-{#snippet infoRow(label: string, value: string | undefined | null, mono: boolean = true, truncate: boolean = false)}
-	<div class="flex items-center justify-between gap-4">
-		<span class="text-muted-foreground shrink-0 text-[10px] tracking-tight uppercase">{label}</span>
-		<span class="text-xs {mono ? 'font-mono' : ''} {truncate ? 'max-w-[180px] truncate' : ''}" title={value ?? ''}>
+{#snippet infoRow(label: string, value: string | undefined | null, mono: boolean = true)}
+	<div class="grid grid-cols-[minmax(112px,38%)_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
+		<span class="text-muted-foreground text-[10px] tracking-tight uppercase">{label}</span>
+		<span class="text-right text-xs [overflow-wrap:anywhere] {mono ? 'font-mono' : ''}">
 			{value || '-'}
 		</span>
 	</div>

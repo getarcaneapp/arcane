@@ -32,6 +32,11 @@ type TemplateMeta struct {
 	// Required: false
 	DocumentationURL *string `json:"documentationUrl,omitempty"`
 
+	// IconURL is the URL to the template icon extracted from x-arcane metadata.
+	//
+	// Required: false
+	IconURL *string `json:"iconUrl,omitempty"`
+
 	// UpdatedAt is the date and time when the template was last updated.
 	//
 	// Required: false

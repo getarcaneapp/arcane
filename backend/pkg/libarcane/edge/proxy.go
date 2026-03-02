@@ -167,12 +167,14 @@ func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	// Build headers map
+	// Build headers map, stripping hop-by-hop and browser-security headers.
+	// Browser-security headers (Origin, Referer, Cookie, etc.) must not be forwarded
+	// because gin-contrib/cors on the agent side will reject requests whose Origin
+	// doesn't match the agent's allowed origins, causing a 403 Forbidden.
 	headers := make(map[string]string)
 	for k, v := range c.Request.Header {
 		if len(v) > 0 {
-			// Skip hop-by-hop headers
-			if isHopByHopHeader(k) {
+			if isHopByHopHeader(k) || isBrowserSecurityHeader(k) {
 				continue
 			}
 			headers[k] = v[0]
@@ -183,6 +185,7 @@ func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 		"environment_id", tunnel.EnvironmentID,
 		"method", c.Request.Method,
 		"path", targetPath,
+		"bodyLength", len(body),
 	)
 
 	status, respHeaders, respBody, err := ProxyRequest(proxyCtx, tunnel, c.Request.Method, targetPath, c.Request.URL.RawQuery, headers, body)
@@ -226,6 +229,25 @@ func isHopByHopHeader(header string) bool {
 		"Upgrade":             true,
 	}
 	return hopByHop[http.CanonicalHeaderKey(header)]
+}
+
+// isBrowserSecurityHeader returns true for headers that are browser-enforced
+// security headers. These must NOT be forwarded through the edge tunnel because
+// gin-contrib/cors will reject requests whose Origin does not match the agent's
+// allowed origins, returning 403. The agent authenticates via X-Arcane-Agent-Token
+// instead of browser cookies/origin checks.
+func isBrowserSecurityHeader(header string) bool {
+	browserHeaders := map[string]bool{
+		"Origin":                         true,
+		"Referer":                        true,
+		"Cookie":                         true,
+		"Access-Control-Request-Method":  true,
+		"Access-Control-Request-Headers": true,
+		"Sec-Fetch-Mode":                 true,
+		"Sec-Fetch-Site":                 true,
+		"Sec-Fetch-Dest":                 true,
+	}
+	return browserHeaders[http.CanonicalHeaderKey(header)]
 }
 
 func stripInternalTunnelHeaders(headers map[string]string) map[string]string {

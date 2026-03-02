@@ -265,6 +265,11 @@ type Details struct {
 	// Required: false
 	RuntimeServices []RuntimeService `json:"runtimeServices,omitempty"`
 
+	// HasBuildDirective indicates whether any Compose service defines a build directive.
+	//
+	// Required: false
+	HasBuildDirective bool `json:"hasBuildDirective,omitempty"`
+
 	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
 	//
 	// Required: false

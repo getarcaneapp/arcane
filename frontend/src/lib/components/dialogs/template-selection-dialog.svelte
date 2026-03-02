@@ -10,6 +10,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import IconImage from '$lib/components/icon-image.svelte';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,
@@ -157,7 +158,16 @@
 	<Card class="hover:bg-muted/50 hover:border-primary/20 border transition-colors">
 		<div class="p-4">
 			<div class="mb-2 flex items-start justify-between gap-2">
-				<h4 class="truncate pr-2 font-semibold">{template.name}</h4>
+				<div class="flex min-w-0 items-start gap-3">
+					<IconImage
+						src={template.metadata?.iconUrl}
+						alt={template.name}
+						fallback={template.isRemote ? RegistryIcon : ProjectsIcon}
+						class="size-5"
+						containerClass="size-9"
+					/>
+					<h4 class="min-w-0 truncate pr-2 font-semibold">{template.name}</h4>
+				</div>
 				<div class="ml-2 flex flex-shrink-0 flex-wrap items-center gap-1">
 					{#if template.metadata?.version}
 						<Badge variant="outline" class="text-xs">v{template.metadata.version}</Badge>

@@ -30,6 +30,7 @@ export type Settings = {
 	defaultShell: string;
 	dockerHost: string;
 	accentColor: string;
+	oledMode: boolean;
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 
@@ -37,6 +38,7 @@ export type Settings = {
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
 	trivyImage: string;
+	trivyNetwork: string;
 	trivyResourceLimitsEnabled: boolean;
 	trivyCpuLimit: number;
 	trivyMemoryLimitMb: number;
@@ -66,6 +68,12 @@ export type Settings = {
 	httpClientTimeout: number;
 	registryTimeout: number;
 	proxyRequestTimeout: number;
+	buildProvider: 'local' | 'depot';
+	buildsDirectory: string;
+	buildTimeout: number;
+	depotProjectId: string;
+	depotToken?: string;
+	depotConfigured?: boolean;
 
 	registryCredentials: RegistryCredential[];
 	templateRegistries: TemplateRegistryConfig[];

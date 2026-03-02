@@ -2,6 +2,7 @@ import { networkService } from '$lib/services/network-service';
 import { queryKeys } from '$lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 
@@ -21,10 +22,15 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	// Single API call - counts are included in the response
-	const networks = await queryClient.fetchQuery({
-		queryKey: queryKeys.networks.list(envId, networkRequestOptions),
-		queryFn: () => networkService.getNetworksForEnvironment(envId, networkRequestOptions)
-	});
+	let networks;
+	try {
+		networks = await queryClient.fetchQuery({
+			queryKey: queryKeys.networks.list(envId, networkRequestOptions),
+			queryFn: () => networkService.getNetworksForEnvironment(envId, networkRequestOptions)
+		});
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load networks');
+	}
 
 	return {
 		networks,

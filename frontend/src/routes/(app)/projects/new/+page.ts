@@ -7,7 +7,7 @@ export const load: PageLoad = async ({ url, parent }) => {
 
 	const templateId = url.searchParams.get('templateId');
 
-	const [allTemplates, defaultTemplates, selectedTemplate] = await Promise.all([
+	const [allTemplates, defaultTemplates, selectedTemplate, globalVariables] = await Promise.all([
 		queryClient
 			.fetchQuery({
 				queryKey: queryKeys.templates.allTemplates(),
@@ -36,13 +36,23 @@ export const load: PageLoad = async ({ url, parent }) => {
 						console.warn('Failed to load selected template:', err);
 						return null;
 					})
-			: Promise.resolve(null)
+			: Promise.resolve(null),
+		queryClient
+			.fetchQuery({
+				queryKey: queryKeys.templates.globalVariables(),
+				queryFn: () => templateService.getGlobalVariables()
+			})
+			.catch((err) => {
+				console.warn('Failed to load global variables:', err);
+				return [];
+			})
 	]);
 
 	return {
 		composeTemplates: allTemplates,
 		envTemplate: selectedTemplate?.envContent || defaultTemplates.envTemplate,
 		defaultTemplate: selectedTemplate?.content || defaultTemplates.composeTemplate,
-		selectedTemplate: selectedTemplate?.template || null
+		selectedTemplate: selectedTemplate?.template || null,
+		globalVariables
 	};
 };

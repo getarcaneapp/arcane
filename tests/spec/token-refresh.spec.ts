@@ -110,7 +110,9 @@ test.describe("Token refresh behaviour", () => {
   test("failed token refresh redirects to /login", async ({ page }) => {
     await registerTokenSeeding(page);
 
+    let refreshCalled = false;
     await page.route(/\/api\/auth\/refresh$/, async (route) => {
+      refreshCalled = true;
       await route.fulfill({
         status: 401,
         contentType: "application/json",
@@ -118,14 +120,12 @@ test.describe("Token refresh behaviour", () => {
       });
     });
 
-    // Make /auth/me always 401 so the interceptor triggers the refresh flow on load.
-    await injectExpired401Always(page, /\/api\/auth\/me$/);
+    // Force a protected data endpoint to 401 so the axios interceptor always runs refresh logic.
+    await injectExpired401Always(page, /\/api\/environments\/0\/containers/);
 
-    await page.goto("/dashboard");
-    await page.waitForURL(/\/login/, { timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
-    await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByRole("button", { name: "Sign in to Arcane", exact: true })).toBeVisible();
+    await page.goto("/containers");
+    await expect.poll(() => refreshCalled).toBe(true);
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 15_000 });
   });
 
   test("unauthenticated users are redirected to /login", async ({ page }) => {

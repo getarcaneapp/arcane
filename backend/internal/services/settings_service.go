@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-uuid"
-	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -26,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -39,7 +39,7 @@ type SettingsService struct {
 	OnScheduledPruneSettingsChanged    func(ctx context.Context)
 	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
 	OnAutoHealSettingsChanged          func(ctx context.Context)
-	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings map[string]string)
+	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate)
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
@@ -114,12 +114,14 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		EnableGravatar:                models.SettingVariable{Value: "true"},
 		DefaultShell:                  models.SettingVariable{Value: "/bin/sh"},
 		DockerHost:                    models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		BuildsDirectory:               models.SettingVariable{Value: "/builds"},
 		AuthLocalEnabled:              models.SettingVariable{Value: "true"},
 		AuthSessionTimeout:            models.SettingVariable{Value: "1440"},
 		AuthPasswordPolicy:            models.SettingVariable{Value: "strong"},
 		VulnerabilityScanEnabled:      models.SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
 		TrivyImage:                    models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
+		TrivyNetwork:                  models.SettingVariable{Value: "bridge"},
 		TrivyResourceLimitsEnabled:    models.SettingVariable{Value: "true"},
 		TrivyCpuLimit:                 models.SettingVariable{Value: "1"},
 		TrivyMemoryLimitMb:            models.SettingVariable{Value: "0"},
@@ -147,6 +149,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
 		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
+		OledMode:                   models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
@@ -157,6 +160,10 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		HTTPClientTimeout:      models.SettingVariable{Value: "30"},
 		RegistryTimeout:        models.SettingVariable{Value: "30"},
 		ProxyRequestTimeout:    models.SettingVariable{Value: "60"},
+		BuildProvider:          models.SettingVariable{Value: "local"},
+		BuildTimeout:           models.SettingVariable{Value: "1800"},
+		DepotProjectId:         models.SettingVariable{Value: ""},
+		DepotToken:             models.SettingVariable{Value: ""},
 
 		InstanceID: models.SettingVariable{Value: ""},
 	}
@@ -510,23 +517,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	return settings.ToSettingVariableSlice(false, false), nil
 }
 
-// timeoutSettingKeys defines settings keys that should be synced to agents.
-// This currently includes timeout settings and Trivy runtime resource limits.
-var timeoutSettingKeys = []string{
-	"dockerApiTimeout",
-	"dockerImagePullTimeout",
-	"trivyScanTimeout",
-	"gitOperationTimeout",
-	"httpClientTimeout",
-	"registryTimeout",
-	"proxyRequestTimeout",
-	"trivyResourceLimitsEnabled",
-	"trivyCpuLimit",
-	"trivyMemoryLimitMb",
-	"trivyConcurrentScanContainers",
-}
-
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, map[string]string, error) {
+func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, []libarcane.SettingUpdate, error) {
 	rt := reflect.TypeFor[settings.Update]()
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]models.SettingVariable, 0)
@@ -536,28 +527,38 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedScheduledPrune := false
 	changedVulnerabilityScan := false
 	changedAutoHeal := false
-	changedTimeouts := make(map[string]string)
+	changedTimeouts := make([]libarcane.SettingUpdate, 0)
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		fieldValue := rv.Field(i)
 
-		if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
+		key, value, ok := extractUpdateValue(field, fieldValue)
+		if !ok {
 			continue
 		}
 
-		key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		var value string
-		if fieldValue.Kind() == reflect.Pointer {
-			value = fieldValue.Elem().String()
+		if key == libarcane.DepotTokenSettingKey {
+			// Sensitive token: only update when explicitly provided.
+			// Empty input preserves existing token.
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+
+			if err := cfg.UpdateField(key, value, false); err != nil {
+				return nil, false, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			}
+
+			valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: value})
+			if libarcane.IsTimeoutSettingKey(key) {
+				changedTimeouts = append(changedTimeouts, libarcane.SettingUpdate{Key: key, Value: value})
+			}
+
+			continue
 		}
 
-		// Validate cron settings
-		cronFields := []string{"scheduledPruneInterval", "autoUpdateInterval", "pollingInterval", "environmentHealthInterval", "eventCleanupInterval", "analyticsHeartbeatInterval", "vulnerabilityScanInterval", "gitopsSyncInterval", "autoHealInterval"}
-		if slices.Contains(cronFields, key) && value != "" {
-			if _, err := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow).Parse(value); err != nil {
-				return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
-			}
+		if err := libarcane.ValidateCronSetting(key, value); err != nil {
+			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 		}
 
 		var valueToSave string
@@ -574,14 +575,12 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 
 		if errors.Is(err, models.SettingSensitiveForbiddenError{}) {
 			continue
-		} else if err != nil {
+		}
+		if err != nil {
 			return nil, false, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
-		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{
-			Key:   key,
-			Value: valueToSave,
-		})
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
 
 		switch key {
 		case "pollingEnabled", "pollingInterval":
@@ -590,19 +589,36 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
 		case "autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow":
 			changedAutoHeal = true
 		}
 
-		// Track timeout setting changes
-		if slices.Contains(timeoutSettingKeys, key) {
-			changedTimeouts[key] = valueToSave
+		if libarcane.IsTimeoutSettingKey(key) {
+			changedTimeouts = append(changedTimeouts, libarcane.SettingUpdate{Key: key, Value: valueToSave})
 		}
 	}
 
 	return valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, nil
+}
+
+func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (string, string, bool) {
+	if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
+		return "", "", false
+	}
+
+	key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if key == "" {
+		return "", "", false
+	}
+
+	var value string
+	if fieldValue.Kind() == reflect.Pointer {
+		value = fieldValue.Elem().String()
+	}
+
+	return key, value, true
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
@@ -1025,6 +1041,56 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		slog.InfoContext(ctx, "Successfully normalized projects directory")
 	} else {
 		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
+	}
+
+	return nil
+}
+
+func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
+	const buildsKey = "buildsDirectory"
+	envVarName := stringutils.CamelCaseToScreamingSnakeCase(buildsKey)
+	if envVal, ok := os.LookupEnv(envVarName); ok && strings.TrimSpace(envVal) != "" {
+		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
+		return nil
+	}
+
+	var buildsDirSetting models.SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.DebugContext(ctx, "No buildsDirectory setting found, skipping normalization")
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to load buildsDirectory setting: %w", err)
+	}
+
+	value := strings.TrimSpace(buildsDirSetting.Value)
+	if value == "" {
+		slog.DebugContext(ctx, "buildsDirectory is empty, skipping normalization")
+		return nil
+	}
+
+	if !filepath.IsAbs(value) {
+		cwd, _ := os.Getwd()
+		absPath, absErr := filepath.Abs(value)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+		}
+		slog.InfoContext(ctx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
+
+		if err := s.UpdateSetting(ctx, buildsKey, absPath); err != nil {
+			return fmt.Errorf("failed to update buildsDirectory: %w", err)
+		}
+
+		if err := s.LoadDatabaseSettings(ctx); err != nil {
+			return fmt.Errorf("failed to reload settings after normalization: %w", err)
+		}
+
+		slog.InfoContext(ctx, "Successfully normalized builds directory")
+	} else {
+		slog.DebugContext(ctx, "Builds directory already normalized or custom, skipping", "value", buildsDirSetting.Value)
 	}
 
 	return nil

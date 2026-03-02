@@ -3,9 +3,9 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -39,8 +39,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Templates()
-		if limitFlag > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, limitFlag)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "templates", "limit", limitFlag, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -334,13 +335,11 @@ var deleteCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete template %s? (y/N): ", args[0])
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete template %s?", args[0]))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -356,6 +355,9 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete template: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to delete template: %w", err)
+		}
 
 		output.Success("Template deleted successfully")
 		return nil
@@ -369,13 +371,11 @@ var deleteRegistryCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !forceFlag {
-			fmt.Printf("Are you sure you want to delete template registry %s? (y/N): ", args[0])
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to delete template registry %s?", args[0]))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -391,6 +391,9 @@ var deleteRegistryCmd = &cobra.Command{
 			return fmt.Errorf("failed to delete registry: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to delete registry: %w", err)
+		}
 
 		output.Success("Template registry deleted successfully")
 		return nil

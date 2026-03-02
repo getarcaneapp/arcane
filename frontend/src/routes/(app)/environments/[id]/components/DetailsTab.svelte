@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { format } from 'date-fns';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -27,6 +28,10 @@
 			return { text: 'HTTP', variant: 'gray' };
 		}
 
+		if (!environment.connected || !environment.edgeTransport) {
+			return { text: 'Edge', variant: 'gray' };
+		}
+
 		if (environment.edgeTransport === 'websocket') {
 			return { text: 'WebSocket', variant: 'purple' };
 		}
@@ -41,6 +46,43 @@
 	let remoteDisplayVersion = $derived(
 		remoteVersion?.displayVersion || remoteVersion?.currentTag || remoteVersion?.currentVersion || ''
 	);
+
+	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {
+		switch (currentStatus) {
+			case 'online':
+				return { text: m.common_online(), variant: 'green' };
+			case 'pending':
+				return { text: m.common_pending(), variant: 'amber' };
+			case 'error':
+				return { text: m.common_error(), variant: 'red' };
+			default:
+				return { text: m.common_offline(), variant: 'red' };
+		}
+	});
+
+	let tunnelBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {
+		if (!environment.isEdge) {
+			return statusBadge;
+		}
+		if (environment.connected) {
+			return { text: m.common_online(), variant: 'green' };
+		}
+		if (currentStatus === 'pending') {
+			return { text: m.common_pending(), variant: 'amber' };
+		}
+		return { text: m.common_offline(), variant: 'red' };
+	});
+
+	function formatDateTime(value?: string): string {
+		if (!value) return m.common_never();
+
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return m.common_unknown();
+		}
+
+		return format(date, 'PP p');
+	}
 </script>
 
 <Card.Root class="flex flex-col">
@@ -138,10 +180,7 @@
 			<div>
 				<Label class="text-muted-foreground text-xs font-medium">{m.common_status()}</Label>
 				<div class="mt-1">
-					<StatusBadge
-						text={currentStatus === 'online' ? m.common_online() : m.common_offline()}
-						variant={currentStatus === 'online' ? 'green' : 'red'}
-					/>
+					<StatusBadge text={statusBadge.text} variant={statusBadge.variant} />
 				</div>
 			</div>
 			<div>
@@ -150,6 +189,22 @@
 					<StatusBadge text={transportBadge.text} variant={transportBadge.variant} />
 				</div>
 			</div>
+			{#if environment.isEdge}
+				<div>
+					<Label class="text-muted-foreground text-xs font-medium">Tunnel</Label>
+					<div class="mt-1">
+						<StatusBadge text={tunnelBadge.text} variant={tunnelBadge.variant} />
+					</div>
+				</div>
+				<div>
+					<Label class="text-muted-foreground text-xs font-medium">Connected Since</Label>
+					<div class="mt-1 font-mono text-sm">{formatDateTime(environment.connectedAt)}</div>
+				</div>
+				<div>
+					<Label class="text-muted-foreground text-xs font-medium">Last Heartbeat</Label>
+					<div class="mt-1 font-mono text-sm">{formatDateTime(environment.lastHeartbeat)}</div>
+				</div>
+			{/if}
 			<div class="col-span-2 border-t pt-4">
 				<Label class="text-muted-foreground text-xs font-medium">{m.version_info_version()}</Label>
 				<div class="mt-1 flex items-center gap-2">

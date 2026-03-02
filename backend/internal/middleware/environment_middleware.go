@@ -156,8 +156,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		return
 	}
 
-	// Build target URL and proxy the request
-	target := m.buildTargetURL(c, envID, apiURL)
+	isEdgeEnvironment := isEdgeEnvironmentURLInternal(apiURL)
 
 	// Check if this environment has an active edge tunnel
 	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
@@ -184,7 +183,7 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		return
 	}
 
-	if isEdgeEnvironmentURLInternal(apiURL) {
+	if isEdgeEnvironment {
 		tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edgeTunnelWaitTimeout)
 		if ok {
 			slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
@@ -205,15 +204,11 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 		}
 
 		slog.WarnContext(c.Request.Context(), "No active edge tunnel for environment", "environment_id", envID)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"success": false,
-			"data": gin.H{
-				"error": "Edge agent is not connected",
-			},
-		})
-		c.Abort()
+		m.abortEdgeTunnelUnavailable(c)
 		return
 	}
+
+	target := m.buildTargetURL(c, envID, apiURL)
 
 	if m.isWebSocketUpgrade(c) {
 		m.proxyWebSocket(c, target, accessToken, envID)
@@ -342,8 +337,24 @@ func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Cont
 	}
 }
 
+func (m *EnvironmentMiddleware) abortEdgeTunnelUnavailable(c *gin.Context) {
+	c.JSON(http.StatusBadGateway, gin.H{
+		"success": false,
+		"data": gin.H{
+			"error": "Edge agent is not connected",
+		},
+	})
+	c.Abort()
+}
+
 // proxyWebSocket handles WebSocket proxy requests.
 func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, accessToken *string, envID string) {
+	if isEdgeEnvironmentURLInternal(target) {
+		slog.WarnContext(c.Request.Context(), "Refusing direct websocket proxy to edge environment without active tunnel", "environment_id", envID, "target", target)
+		m.abortEdgeTunnelUnavailable(c)
+		return
+	}
+
 	wsTarget := remenv.HTTPToWebSocketURL(target)
 	headers := remenv.BuildWebSocketHeaders(c, accessToken)
 
@@ -355,6 +366,12 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, ac
 
 // proxyHTTP handles standard HTTP proxy requests.
 func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessToken *string) {
+	if isEdgeEnvironmentURLInternal(target) {
+		slog.WarnContext(c.Request.Context(), "Refusing direct HTTP proxy to edge environment without active tunnel", "target", target)
+		m.abortEdgeTunnelUnavailable(c)
+		return
+	}
+
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

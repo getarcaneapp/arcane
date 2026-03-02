@@ -182,6 +182,12 @@ type Update struct {
 	// Required: false
 	TrivyImage *string `json:"trivyImage,omitempty"`
 
+	// TrivyNetwork sets the Docker network mode/network name for Trivy scan containers.
+	// Defaults to "bridge".
+	//
+	// Required: false
+	TrivyNetwork *string `json:"trivyNetwork,omitempty"`
+
 	// TrivyResourceLimitsEnabled controls whether CPU and memory limits are applied to Trivy scan containers.
 	//
 	// Required: false
@@ -344,4 +350,34 @@ type Update struct {
 	//
 	// Required: false
 	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
+
+	// BuildProvider is the default build provider (local|depot).
+	//
+	// Required: false
+	BuildProvider *string `json:"buildProvider,omitempty"`
+
+	// BuildsDirectory is the root directory for manual build workspaces.
+	//
+	// Required: false
+	BuildsDirectory *string `json:"buildsDirectory,omitempty"`
+
+	// BuildTimeout is the timeout for BuildKit builds in seconds.
+	//
+	// Required: false
+	BuildTimeout *string `json:"buildTimeout,omitempty"`
+
+	// DepotProjectId is the Depot project identifier.
+	//
+	// Required: false
+	DepotProjectId *string `json:"depotProjectId,omitempty"`
+
+	// DepotToken is the Depot API token.
+	//
+	// Required: false
+	DepotToken *string `json:"depotToken,omitempty"`
+
+	// OledMode sets whether OLED dark mode is enabled or not.
+	//
+	// Required: false
+	OledMode *string `json:"oledMode,omitempty"`
 }

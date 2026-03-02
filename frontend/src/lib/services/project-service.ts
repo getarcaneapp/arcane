@@ -172,6 +172,62 @@ export class ProjectService extends BaseAPIService {
 		}
 	}
 
+	buildProjectImages(
+		projectId: string,
+		options?: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean }
+	): Promise<void>;
+	buildProjectImages(
+		projectId: string,
+		options: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean } | undefined,
+		onLine: (data: any) => void
+	): Promise<void>;
+	async buildProjectImages(
+		projectId: string,
+		options?: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean },
+		onLine?: (data: any) => void
+	): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const url = `/api/environments/${envId}/projects/${projectId}/build`;
+
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(options || {})
+		});
+		if (!res.ok || !res.body) {
+			throw new Error(`Failed to start project build (${res.status})`);
+		}
+
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (!trimmed) continue;
+				try {
+					const obj = JSON.parse(trimmed);
+					onLine?.(obj);
+					if (obj?.error) {
+						throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.build_failed());
+					}
+				} catch (err) {
+					if (err instanceof Error) throw err;
+				}
+			}
+		}
+	}
+
 	pullProjectImages(projectId: string): Promise<void>;
 	pullProjectImages(projectId: string, onLine: (data: any) => void): Promise<void>;
 	async pullProjectImages(projectId: string, onLine?: (data: any) => void): Promise<void> {

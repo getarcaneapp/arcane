@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -43,7 +44,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -55,6 +56,8 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanInterval":
 			require.Equal(t, "0 0 0 * * *", sv.Value)
+		case "trivyNetwork":
+			require.Equal(t, "bridge", sv.Value)
 		case "trivyResourceLimitsEnabled":
 			require.Equal(t, "true", sv.Value)
 		case "trivyCpuLimit":
@@ -166,6 +169,24 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.
 	require.False(t, settings2.TrivyResourceLimitsEnabled.IsTrue())
 	require.Equal(t, "2.5", settings2.TrivyCpuLimit.Value)
 	require.Equal(t, 2048, settings2.TrivyMemoryLimitMb.AsInt())
+}
+
+func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bridge", settings1.TrivyNetwork.Value)
+
+	t.Setenv("TRIVY_NETWORK", "arcane-external")
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "arcane-external", settings2.TrivyNetwork.Value)
 }
 
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
@@ -360,8 +381,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -370,7 +391,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "1200", callbackPayload["trivyScanTimeout"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
@@ -380,8 +401,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -396,9 +417,9 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "false", callbackPayload["trivyResourceLimitsEnabled"])
-	require.Equal(t, "2.5", callbackPayload["trivyCpuLimit"])
-	require.Equal(t, "3072", callbackPayload["trivyMemoryLimitMb"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyCpuLimit", Value: "2.5"})
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyMemoryLimitMb", Value: "3072"})
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
@@ -408,8 +429,8 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	var callbackPayload map[string]string
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings map[string]string) {
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
 	}
 
@@ -418,7 +439,43 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
-	require.Equal(t, "4", callbackPayload["trivyConcurrentScanContainers"])
+	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
+}
+
+func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	callbackCalled := false
+	svc.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
+		callbackCalled = true
+	}
+
+	trivyNetwork := "arcane-external"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	require.NoError(t, err)
+	require.True(t, callbackCalled)
+}
+
+func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+		callbackPayload = timeoutSettings
+	}
+
+	trivyNetwork := "arcane-external"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	require.NoError(t, err)
+	require.Nil(t, callbackPayload)
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {

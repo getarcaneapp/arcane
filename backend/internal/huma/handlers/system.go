@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -17,6 +18,8 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/system"
+	dockersystem "github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 )
 
 // SystemHandler handles system management endpoints.
@@ -251,7 +254,7 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 		return nil, huma.Error503ServiceUnavailable((&common.DockerConnectionError{Err: err}).Error())
 	}
 
-	_, err = dockerClient.Ping(ctx)
+	_, err = dockerClient.Ping(ctx, client.PingOptions{})
 	if err != nil {
 		return nil, huma.Error503ServiceUnavailable((&common.DockerPingError{Err: err}).Error())
 	}
@@ -270,15 +273,16 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 		return nil, huma.Error500InternalServerError((&common.DockerConnectionError{Err: err}).Error())
 	}
 
-	version, err := dockerClient.ServerVersion(ctx)
+	version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.DockerVersionError{Err: err}).Error())
 	}
 
-	info, err := dockerClient.Info(ctx)
+	infoResult, err := dockerClient.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.DockerInfoError{Err: err}).Error())
 	}
+	info := infoResult.Info
 
 	cpuCount := info.NCPU
 	memTotal := info.MemTotal
@@ -299,18 +303,47 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	info.NCPU = cpuCount
 	info.MemTotal = memTotal
 
+	gitCommit, goVersion, buildTime := extractVersionDetailsFromComponents(version.Components)
+
 	return &GetDockerInfoOutput{
 		Body: dockerinfo.Info{
 			Success:    true,
 			APIVersion: version.APIVersion,
-			GitCommit:  version.GitCommit,
-			GoVersion:  version.GoVersion,
+			GitCommit:  gitCommit,
+			GoVersion:  goVersion,
 			Os:         version.Os,
 			Arch:       version.Arch,
-			BuildTime:  version.BuildTime,
+			BuildTime:  buildTime,
 			Info:       info,
 		},
 	}, nil
+}
+
+func extractVersionDetailsFromComponents(components []dockersystem.ComponentVersion) (gitCommit, goVersion, buildTime string) {
+	for _, component := range components {
+		if component.Details == nil {
+			continue
+		}
+
+		for key, value := range component.Details {
+			switch strings.ToLower(key) {
+			case "gitcommit":
+				if gitCommit == "" {
+					gitCommit = value
+				}
+			case "goversion":
+				if goVersion == "" {
+					goVersion = value
+				}
+			case "buildtime":
+				if buildTime == "" {
+					buildTime = value
+				}
+			}
+		}
+	}
+
+	return gitCommit, goVersion, buildTime
 }
 
 // PruneAll removes unused Docker resources.

@@ -8,6 +8,9 @@ export type Environment = {
 	enabled: boolean;
 	isEdge: boolean;
 	edgeTransport?: 'grpc' | 'websocket';
+	connected?: boolean;
+	connectedAt?: string;
+	lastHeartbeat?: string;
 	lastSeen?: string;
 	apiKey?: string;
 };

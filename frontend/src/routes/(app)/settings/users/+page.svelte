@@ -149,6 +149,7 @@
 			roles={[]}
 			onSubmit={handleUserSubmit}
 			isLoading={isLoading.editing}
+			allowUsernameEdit={true}
 		/>
 	{/snippet}
 </SettingsPageLayout>

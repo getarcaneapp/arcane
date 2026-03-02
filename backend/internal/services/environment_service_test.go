@@ -56,6 +56,27 @@ func createTestEnvironment(t *testing.T, db *database.DB, id string, apiURL stri
 	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
 }
 
+func createTestEnvironmentWithState(t *testing.T, db *database.DB, id, apiURL, status string, isEdge bool, accessToken *string) {
+	t.Helper()
+
+	now := time.Now()
+	env := &models.Environment{
+		BaseModel: models.BaseModel{
+			ID:        id,
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+		Name:        "env-" + id,
+		ApiUrl:      apiURL,
+		Status:      status,
+		Enabled:     true,
+		IsEdge:      isEdge,
+		AccessToken: accessToken,
+	}
+
+	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
+}
+
 func createTestRegistry(t *testing.T, db *database.DB, id string) {
 	t.Helper()
 
@@ -182,4 +203,60 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to sync registries to 1 remote environment")
 	require.EqualValues(t, 1, successCalls.Load())
+}
+
+func TestEnvironmentService_ReconcileEdgeStatusesOnStartup(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	createTestEnvironmentWithState(t, db, "edge-online", "edge://online", string(models.EnvironmentStatusOnline), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-error", "edge://error", string(models.EnvironmentStatusError), true, nil)
+	createTestEnvironmentWithState(t, db, "edge-pending", "edge://pending", string(models.EnvironmentStatusPending), true, nil)
+	createTestEnvironmentWithState(t, db, "remote-http", "http://remote.example", string(models.EnvironmentStatusOnline), false, nil)
+
+	err := svc.ReconcileEdgeStatusesOnStartup(ctx)
+	require.NoError(t, err)
+
+	var edgeOnline models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-online").First(&edgeOnline).Error)
+	require.Equal(t, string(models.EnvironmentStatusOffline), edgeOnline.Status)
+
+	var edgeError models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-error").First(&edgeError).Error)
+	require.Equal(t, string(models.EnvironmentStatusOffline), edgeError.Status)
+
+	var edgePending models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-pending").First(&edgePending).Error)
+	require.Equal(t, string(models.EnvironmentStatusPending), edgePending.Status)
+
+	var remoteHTTP models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "remote-http").First(&remoteHTTP).Error)
+	require.Equal(t, string(models.EnvironmentStatusOnline), remoteHTTP.Status)
+}
+
+func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	createTestEnvironmentWithState(t, db, "edge-runtime", "edge://runtime", string(models.EnvironmentStatusOffline), true, nil)
+
+	err := svc.UpdateEnvironmentConnectionState(ctx, "edge-runtime", true)
+	require.NoError(t, err)
+
+	var env models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-runtime").First(&env).Error)
+	require.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
+	require.NotNil(t, env.LastSeen)
+
+	lastSeen := env.LastSeen
+
+	err = svc.UpdateEnvironmentConnectionState(ctx, "edge-runtime", false)
+	require.NoError(t, err)
+
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-runtime").First(&env).Error)
+	require.Equal(t, string(models.EnvironmentStatusOffline), env.Status)
+	require.NotNil(t, env.LastSeen)
+	require.Equal(t, *lastSeen, *env.LastSeen)
 }

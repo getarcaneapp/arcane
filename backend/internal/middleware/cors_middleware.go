@@ -20,6 +20,14 @@ func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
 }
 
 func (m *CORSMiddleware) Add() gin.HandlerFunc {
+	// Edge Agent mode: skip CORS entirely. The agent only receives server-to-server
+	// requests through the edge tunnel from the manager — never from browsers.
+	// CORS has no purpose here and actively causes 403 rejections when the
+	// manager forwards browser Origin headers through the tunnel.
+	if m.cfg != nil && m.cfg.EdgeAgent {
+		return func(c *gin.Context) { c.Next() }
+	}
+
 	conf := cors.DefaultConfig()
 	conf.AllowOrigins = deriveAllowedOrigins(m.cfg, m.customOrigins)
 	conf.AllowCredentials = true
@@ -37,6 +45,7 @@ func (m *CORSMiddleware) Add() gin.HandlerFunc {
 		"Origin",
 		"Referer",
 		"X-Arcane-Agent-Token",
+		"X-API-Key",
 	}
 	conf.ExposeHeaders = []string{
 		"Content-Length",

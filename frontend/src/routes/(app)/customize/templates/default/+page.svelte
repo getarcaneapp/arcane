@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
-	import CodeEditor from '$lib/components/monaco-code-editor/editor.svelte';
+	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { createForm } from '$lib/utils/form.utils';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
@@ -23,6 +23,15 @@
 	let originalComposeContent = $state(untrack(() => data.composeTemplate));
 	let originalEnvContent = $state(untrack(() => data.envTemplate));
 
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
+
 	const formSchema = z.object({
 		composeContent: z.string().min(1, m.compose_compose_content_required()),
 		envContent: z.string().optional().default('')
@@ -39,7 +48,14 @@
 		$inputs.composeContent.value !== originalComposeContent || $inputs.envContent.value !== originalEnvContent
 	);
 
+	const canSave = $derived(hasChanges && composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors);
+
 	async function handleSave() {
+		if (!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
 		const validated = form.validate();
 		if (!validated) {
 			toast.error(m.templates_validation_error());
@@ -110,13 +126,15 @@
 				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving || isLoadingTemplate}>
 					{m.common_reset()}
 				</ArcaneButton>
-				<ArcaneButton
-					action="save"
-					onclick={handleSave}
-					disabled={!hasChanges || isLoadingTemplate}
-					loading={saving}
-					loadingLabel={m.common_action_saving()}
-				/>
+				{#if composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors}
+					<ArcaneButton
+						action="save"
+						onclick={handleSave}
+						disabled={!canSave || isLoadingTemplate}
+						loading={saving}
+						loadingLabel={m.common_action_saving()}
+					/>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -138,6 +156,16 @@
 						language="yaml"
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
+						bind:hasErrors={composeHasErrors}
+						bind:validationReady={composeValidationReady}
+						fileId="templates:defaults:compose"
+						originalValue={originalComposeContent}
+						enableDiff={true}
+						editorContext={{
+							envContent: $inputs.envContent.value,
+							composeContents: [$inputs.composeContent.value],
+							globalVariables: globalVariableMap
+						}}
 					/>
 				</div>
 			</Card.Content>
@@ -166,6 +194,16 @@
 						language="env"
 						readOnly={saving || isLoadingTemplate}
 						fontSize="13px"
+						bind:hasErrors={envHasErrors}
+						bind:validationReady={envValidationReady}
+						fileId="templates:defaults:env"
+						originalValue={originalEnvContent}
+						enableDiff={true}
+						editorContext={{
+							envContent: $inputs.envContent.value,
+							composeContents: [$inputs.composeContent.value],
+							globalVariables: globalVariableMap
+						}}
 					/>
 				</div>
 			</Card.Content>

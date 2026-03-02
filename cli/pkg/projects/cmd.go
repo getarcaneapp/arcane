@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -46,8 +47,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Projects(c.EnvID())
-		if limitFlag > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, limitFlag)
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "projects", "limit", limitFlag, 20)
+		if effectiveLimit > 0 {
+			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -111,13 +113,11 @@ var destroyCmd = &cobra.Command{
 			if display == "" {
 				display = resolved.ID
 			}
-			fmt.Printf("Are you sure you want to destroy project %s? This will remove all containers! (y/N): ", display)
-			var response string
-			if _, err := fmt.Scanln(&response); err != nil {
-				fmt.Println("Cancelled")
-				return nil
+			confirmed, err := cmdutil.Confirm(cmd, fmt.Sprintf("Are you sure you want to destroy project %s? This will remove all containers!", display))
+			if err != nil {
+				return err
 			}
-			if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			if !confirmed {
 				fmt.Println("Cancelled")
 				return nil
 			}
@@ -128,6 +128,9 @@ var destroyCmd = &cobra.Command{
 			return fmt.Errorf("failed to destroy project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to destroy project: %w", err)
+		}
 
 		output.Success("Project %s destroyed successfully", resolved.Name)
 		return nil
@@ -205,6 +208,9 @@ var upCmd = &cobra.Command{
 			return fmt.Errorf("failed to start project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to start project: %w", err)
+		}
 
 		output.Success("Project %s started successfully", resolved.Name)
 		return nil
@@ -232,6 +238,9 @@ var downCmd = &cobra.Command{
 			return fmt.Errorf("failed to stop project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to stop project: %w", err)
+		}
 
 		output.Success("Project %s stopped successfully", resolved.Name)
 		return nil
@@ -259,6 +268,9 @@ var restartCmd = &cobra.Command{
 			return fmt.Errorf("failed to restart project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to restart project: %w", err)
+		}
 
 		output.Success("Project %s restarted successfully", resolved.Name)
 		return nil
@@ -289,6 +301,9 @@ var redeployCmd = &cobra.Command{
 			return fmt.Errorf("failed to redeploy project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to redeploy project: %w", err)
+		}
 
 		output.Success("Project %s redeployed successfully", resolved.Name)
 		return nil
@@ -319,6 +334,9 @@ var pullCmd = &cobra.Command{
 			return fmt.Errorf("failed to pull images: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to pull images: %w", err)
+		}
 
 		output.Success("Images pulled successfully for project %s", resolved.Name)
 		return nil

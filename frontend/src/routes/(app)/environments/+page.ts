@@ -3,6 +3,7 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import { queryKeys } from '$lib/query/query-keys';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
@@ -18,10 +19,15 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const environments = await queryClient.fetchQuery({
-		queryKey: queryKeys.environments.list(environmentRequestOptions),
-		queryFn: () => environmentManagementService.getEnvironments(environmentRequestOptions)
-	});
+	let environments;
+	try {
+		environments = await queryClient.fetchQuery({
+			queryKey: queryKeys.environments.list(environmentRequestOptions),
+			queryFn: () => environmentManagementService.getEnvironments(environmentRequestOptions)
+		});
+	} catch (err) {
+		throwPageLoadError(err, 'Failed to load environments');
+	}
 
 	return { environments, environmentRequestOptions };
 };

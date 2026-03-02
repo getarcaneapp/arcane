@@ -262,6 +262,37 @@ func TestConfig_ListenAddr(t *testing.T) {
 	}
 }
 
+func TestConfig_TLSSettings(t *testing.T) {
+	origTLSEnabled := os.Getenv("TLS_ENABLED")
+	origTLSCertFile := os.Getenv("TLS_CERT_FILE")
+	origTLSKeyFile := os.Getenv("TLS_KEY_FILE")
+	defer restoreEnv("TLS_ENABLED", origTLSEnabled)
+	defer restoreEnv("TLS_CERT_FILE", origTLSCertFile)
+	defer restoreEnv("TLS_KEY_FILE", origTLSKeyFile)
+
+	t.Run("defaults to tls disabled", func(t *testing.T) {
+		unsetEnv(t, "TLS_ENABLED")
+		unsetEnv(t, "TLS_CERT_FILE")
+		unsetEnv(t, "TLS_KEY_FILE")
+
+		cfg := Load()
+		assert.False(t, cfg.TLSEnabled)
+		assert.Equal(t, "", cfg.TLSCertFile)
+		assert.Equal(t, "", cfg.TLSKeyFile)
+	})
+
+	t.Run("loads tls settings from env", func(t *testing.T) {
+		setEnv(t, "TLS_ENABLED", "true")
+		setEnv(t, "TLS_CERT_FILE", "/etc/ssl/certs/fullchain.pem")
+		setEnv(t, "TLS_KEY_FILE", "/etc/ssl/private/privkey.pem")
+
+		cfg := Load()
+		assert.True(t, cfg.TLSEnabled)
+		assert.Equal(t, "/etc/ssl/certs/fullchain.pem", cfg.TLSCertFile)
+		assert.Equal(t, "/etc/ssl/private/privkey.pem", cfg.TLSKeyFile)
+	})
+}
+
 func TestConfig_GetManagerGRPCAddr(t *testing.T) {
 	t.Run("uses manager api url explicit port when present", func(t *testing.T) {
 		cfg := &Config{

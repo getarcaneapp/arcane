@@ -16,7 +16,8 @@ import {
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon,
-	ShieldAlertIcon
+	ShieldAlertIcon,
+	HammerIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -42,6 +43,7 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon, shortcut: ['mod', '7'] },
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
+	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
 	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
@@ -65,8 +67,9 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 					shortcut: ['mod', 'shift', '3']
 				},
 				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon, shortcut: ['mod', 'shift', '4'] },
-				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '5'] },
-				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '6'] }
+				{ title: m.builds(), url: '/settings/builds', icon: HammerIcon, shortcut: ['mod', 'shift', '5'] },
+				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '6'] },
+				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '7'] }
 			]
 		}
 	]
@@ -97,6 +100,10 @@ export function getAvailableMobileNavItems(): NavigationItem[] {
 		flatItems.push(...navigationItems.resourceItems);
 	}
 
+	if (navigationItems.deploymentItems) {
+		flatItems.push(...navigationItems.deploymentItems);
+	}
+
 	if (navigationItems.securityItems) {
 		flatItems.push(...navigationItems.securityItems);
 	}
@@ -122,9 +129,9 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getManagementItems(environmentId: string): NavigationItem[] {
+export function getBuildAndDeploymentItems(environmentId: string): NavigationItem[] {
 	return [
-		...navigationItems.managementItems,
+		...navigationItems.deploymentItems,
 		{
 			title: m.git_syncs_title(),
 			url: `/environments/${environmentId}/gitops`,

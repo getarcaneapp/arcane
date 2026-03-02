@@ -6,9 +6,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
+	"github.com/moby/moby/client"
 )
 
 // VolumeHandler provides Huma-based volume management endpoints.
@@ -173,13 +174,6 @@ type DownloadFileInput struct {
 	Path          string `query:"path" doc:"File path"`
 }
 
-type DownloadFileOutput struct {
-	ContentType        string `header:"Content-Type"`
-	ContentDisposition string `header:"Content-Disposition"`
-	ContentLength      int64  `header:"Content-Length"`
-	Body               io.ReadCloser
-}
-
 type UploadFileInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	VolumeName    string         `path:"volumeName" doc:"Volume name"`
@@ -287,13 +281,6 @@ type DeleteBackupOutput struct {
 type DownloadBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
-
-type DownloadBackupOutput struct {
-	ContentType        string `header:"Content-Type"`
-	ContentDisposition string `header:"Content-Disposition"`
-	ContentLength      int64  `header:"Content-Length"`
-	Body               io.ReadCloser
 }
 
 type UploadAndRestoreInput struct {
@@ -725,7 +712,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	options := volume.CreateOptions{
+	options := client.VolumeCreateOptions{
 		Name:       input.Body.Name,
 		Driver:     input.Body.Driver,
 		Labels:     input.Body.Labels,
@@ -903,7 +890,7 @@ func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileConten
 	}, nil
 }
 
-func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*DownloadFileOutput, error) {
+func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*huma.StreamResponse, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -911,11 +898,18 @@ func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInp
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DownloadFileOutput{
-		ContentType:        "application/octet-stream",
-		ContentDisposition: "attachment; filename=" + path.Base(input.Path),
-		ContentLength:      size,
-		Body:               reader,
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			defer func() { _ = reader.Close() }()
+
+			humaCtx.SetHeader("Content-Type", "application/octet-stream")
+			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+path.Base(input.Path))
+			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
+
+			writer := humaCtx.BodyWriter()
+			_, _ = io.Copy(writer, reader)
+		},
 	}, nil
 }
 
@@ -1154,7 +1148,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 	}, nil
 }
 
-func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*DownloadBackupOutput, error) {
+func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1163,11 +1157,18 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DownloadBackupOutput{
-		ContentType:        "application/x-gzip",
-		ContentDisposition: "attachment; filename=" + input.BackupID + ".tar.gz",
-		ContentLength:      size,
-		Body:               reader,
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			defer func() { _ = reader.Close() }()
+
+			humaCtx.SetHeader("Content-Type", "application/x-gzip")
+			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+input.BackupID+".tar.gz")
+			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
+
+			writer := humaCtx.BodyWriter()
+			_, _ = io.Copy(writer, reader)
+		},
 	}, nil
 }
 

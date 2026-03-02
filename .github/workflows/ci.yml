@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.module.name }}-coverage
           path: ${{ matrix.module.path }}/coverage.txt
@@ -150,7 +150,7 @@ jobs:
 
       - name: Delete comment if no deadcode found
         if: steps.deadcode.outputs.count == '0' && steps.fc.outputs.comment-id != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             github.rest.issues.deleteComment({
@@ -286,7 +286,7 @@ jobs:
 
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.database.name }}
           path: tests/.report

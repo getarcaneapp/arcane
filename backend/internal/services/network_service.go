@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	networktypes "github.com/getarcaneapp/arcane/types/network"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 type NetworkService struct {
@@ -35,15 +35,16 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	networkInspect, err := dockerClient.NetworkInspect(ctx, id, network.InspectOptions{})
+	networkInspect, err := dockerClient.NetworkInspect(ctx, id, client.NetworkInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("network not found: %w", err)
 	}
 
-	return &networkInspect, nil
+	inspect := networkInspect.Network
+	return &inspect, nil
 }
 
-func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options network.CreateOptions, user models.User) (*network.CreateResponse, error) {
+func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user models.User) (*network.CreateResponse, error) {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
@@ -65,7 +66,17 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		fmt.Printf("Could not log network creation action: %s\n", logErr)
 	}
 
-	return &response, nil
+	warning := ""
+	if len(response.Warning) > 0 {
+		warning = strings.Join(response.Warning, "; ")
+	}
+
+	out := network.CreateResponse{
+		ID:      response.ID,
+		Warning: warning,
+	}
+
+	return &out, nil
 }
 
 func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user models.User) error {
@@ -75,15 +86,15 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	networkInfo, err := dockerClient.NetworkInspect(ctx, id, network.InspectOptions{})
+	networkInfo, err := dockerClient.NetworkInspect(ctx, id, client.NetworkInspectOptions{})
 	var networkName string
 	if err == nil {
-		networkName = networkInfo.Name
+		networkName = networkInfo.Network.Name
 	} else {
 		networkName = id
 	}
 
-	if err := dockerClient.NetworkRemove(ctx, id); err != nil {
+	if _, err := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
 		return fmt.Errorf("failed to remove network: %w", err)
 	}
@@ -105,22 +116,23 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	filterArgs := filters.NewArgs()
+	filterArgs := make(client.Filters)
 
-	report, err := dockerClient.NetworksPrune(ctx, filterArgs)
+	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune networks: %w", err)
 	}
+	pruneReport := report.Report
 
 	metadata := models.JSON{
 		"action":          "prune",
-		"networksDeleted": len(report.NetworksDeleted),
+		"networksDeleted": len(pruneReport.NetworksDeleted),
 	}
 	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 		fmt.Printf("Could not log network prune action: %s\n", logErr)
 	}
 
-	return &report, nil
+	return &pruneReport, nil
 }
 
 func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, networktypes.UsageCounts, error) {
@@ -129,17 +141,19 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{All: true})
+	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
 	}
+	containers := containerList.Items
 
 	inUseByID, inUseByName := s.buildNetworkUsageMaps(containers)
 
-	rawNets, err := dockerClient.NetworkList(ctx, network.ListOptions{})
+	networkList, err := dockerClient.NetworkList(ctx, client.NetworkListOptions{})
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
+	rawNets := networkList.Items
 
 	items := s.convertToNetworkSummaries(rawNets, inUseByID, inUseByName)
 	config := s.buildNetworkPaginationConfig()

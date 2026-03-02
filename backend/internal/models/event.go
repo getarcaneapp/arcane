@@ -72,6 +72,8 @@ const (
 	EventTypeSystemUpgrade    EventType = "system.upgrade"
 
 	EventTypeEnvironmentCreate            EventType = "environment.create"
+	EventTypeEnvironmentConnect           EventType = "environment.connect"
+	EventTypeEnvironmentDisconnect        EventType = "environment.disconnect"
 	EventTypeEnvironmentUpdate            EventType = "environment.update"
 	EventTypeEnvironmentDelete            EventType = "environment.delete"
 	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"

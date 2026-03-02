@@ -1,10 +1,7 @@
 package services
 
 import (
-	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,16 +9,17 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/registry"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -65,19 +63,20 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 
 	g.Go(func() error {
 		var err error
-		inspect, err = dockerClient.ImageInspect(gctx, id)
+		inspectResult, err := dockerClient.ImageInspect(gctx, id)
 		if err != nil {
 			return fmt.Errorf("inspect not found: %w", err)
 		}
+		inspect = inspectResult.InspectResponse
 		return nil
 	})
 
 	g.Go(func() error {
-		imgs, err := dockerClient.ImageList(gctx, image.ListOptions{})
+		imageList, err := dockerClient.ImageList(gctx, client.ImageListOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to list images: %w", err)
 		}
-		for _, img := range imgs {
+		for _, img := range imageList.Items {
 			if img.ID == id {
 				listSize = img.Size
 				break
@@ -113,7 +112,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		imageName = id
 	}
 
-	options := image.RemoveOptions{
+	options := client.ImageRemoveOptions{
 		Force:         force,
 		PruneChildren: true,
 	}
@@ -169,43 +168,52 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	pullOptions, err := s.getPullOptionsWithAuth(ctx, imageName, externalCreds)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
-		pullOptions = image.PullOptions{}
+		pullOptions = client.ImagePullOptions{}
 	}
 
+	initialHasAuth := pullOptions.RegistryAuth != ""
+	retriedWithoutAuth := false
+
 	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
+	if err != nil && shouldRetryAnonymousPullInternal(pullOptions, err) {
+		retriedWithoutAuth = true
+		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; retrying anonymously", "image", imageName, "error", err.Error())
+		pullOptions = client.ImagePullOptions{}
+		reader, err = dockerClient.ImagePull(ctx, imageName, pullOptions)
+	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "error", err.Error())
+		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
 	defer func() { _ = reader.Close() }()
 
-	scanner := bufio.NewScanner(reader)
-	flusher, implementsFlusher := progressWriter.(http.Flusher)
+	streamWriter := progressWriter
+	if streamWriter == nil {
+		streamWriter = io.Discard
+	}
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if _, writeErr := progressWriter.Write(line); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_progress"})
-			return fmt.Errorf("error writing pull progress for %s: %w", imageName, writeErr)
+	flusher, implementsFlusher := streamWriter.(http.Flusher)
+	streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
+		if _, writeErr := streamWriter.Write(line); writeErr != nil {
+			return writeErr
 		}
-		if _, writeErr := progressWriter.Write([]byte("\n")); writeErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", writeErr, models.JSON{"action": "pull", "step": "write_newline"})
-			return fmt.Errorf("error writing newline for %s: %w", imageName, writeErr)
+		if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
+			return writeErr
 		}
-
 		if implementsFlusher {
 			flusher.Flush()
 		}
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		if errors.Is(scanErr, context.Canceled) || strings.Contains(scanErr.Error(), "context canceled") {
-			slog.Debug("image pull stream canceled", "image", imageName, "err", scanErr)
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "canceled"})
-			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, scanErr)
+		return nil
+	})
+	if streamErr != nil {
+		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
+			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
+			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "canceled"})
+			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", scanErr, models.JSON{"action": "pull", "step": "read_stream"})
-		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, scanErr)
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "read_stream"})
+		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
 	slog.Debug("image pull stream completed", "image", imageName)
@@ -241,17 +249,25 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName})
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
-	defer func() { _ = loadResp.Body.Close() }()
+	defer func() { _ = loadResp.Close() }()
 
 	var result imagetypes.LoadResult
-	responseBytes, err := io.ReadAll(loadResp.Body)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
-		return nil, fmt.Errorf("failed to read load response: %w", err)
+	var responseBuilder strings.Builder
+	streamErr := dockerutils.ConsumeJSONMessageStream(loadResp, func(line []byte) error {
+		if _, err := responseBuilder.Write(line); err != nil {
+			return err
+		}
+		if err := responseBuilder.WriteByte('\n'); err != nil {
+			return err
+		}
+		return nil
+	})
+	if streamErr != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
+		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
 	}
 
-	responseStr := string(responseBytes)
-	result.Stream = responseStr
+	result.Stream = responseBuilder.String()
 
 	metadata := models.JSON{
 		"action":   "load",
@@ -282,10 +298,10 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (image.PullOptions, error) {
-	pullOptions := image.PullOptions{}
+func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
+	pullOptions := client.ImagePullOptions{}
 
-	registryHost := s.extractRegistryHost(imageRef)
+	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
 
 	// Check external credentials first
 	for _, cred := range externalCreds {
@@ -293,8 +309,8 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 			continue
 		}
 
-		if s.isRegistryMatch(cred.URL, registryHost) {
-			authStr, err := s.createAuthHeader(cred.Username, cred.Token, s.normalizeRegistryURL(cred.URL))
+		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
+			authStr, err := utilsregistry.EncodeAuthHeader(cred.Username, cred.Token, utilsregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
 				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
 			}
@@ -309,97 +325,45 @@ func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef stri
 		return pullOptions, nil
 	}
 
-	// Check database registries
-	registries, err := s.registryService.GetEnabledRegistries(ctx)
+	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
 	if err != nil {
 		return pullOptions, fmt.Errorf("failed to get registry credentials: %w", err)
 	}
-
-	for _, reg := range registries {
-		if s.isRegistryMatch(reg.URL, registryHost) {
-			decryptedToken, err := s.registryService.GetDecryptedToken(ctx, reg.ID)
-			if err != nil {
-				return pullOptions, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, err)
-			}
-
-			authStr, err := s.createAuthHeader(reg.Username, decryptedToken, s.normalizeRegistryURL(reg.URL))
-			if err != nil {
-				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
-			}
-			pullOptions.RegistryAuth = authStr
-
-			slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost, "username", reg.Username)
-			break
-		}
+	if authStr != "" {
+		pullOptions.RegistryAuth = authStr
+		slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost)
 	}
 
 	return pullOptions, nil
 }
 
-func (s *ImageService) createAuthHeader(username, password, serverAddress string) (string, error) {
-	authConfig := &registry.AuthConfig{
-		Username:      username,
-		Password:      password,
-		ServerAddress: serverAddress,
+func shouldRetryAnonymousPullInternal(pullOptions client.ImagePullOptions, pullErr error) bool {
+	if pullOptions.RegistryAuth == "" || pullErr == nil {
+		return false
 	}
-
-	authBytes, err := json.Marshal(authConfig)
-	if err != nil {
-		return "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(authBytes), nil
+	return isUnauthorizedPullErrorInternal(pullErr)
 }
 
-func (s *ImageService) extractRegistryHost(imageRef string) string {
-	if i := strings.IndexByte(imageRef, '@'); i != -1 {
-		imageRef = imageRef[:i]
+func isUnauthorizedPullErrorInternal(err error) bool {
+	if err == nil {
+		return false
 	}
 
-	hostCandidate, _, found := strings.Cut(imageRef, "/")
-	if !found {
-		return "docker.io"
+	errLower := strings.ToLower(err.Error())
+	unauthorizedIndicators := []string{
+		"unauthorized",
+		"authentication required",
+		"incorrect username or password",
+		"no basic auth credentials",
+		"access denied",
 	}
 
-	if !strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") {
-		return "docker.io"
+	for _, indicator := range unauthorizedIndicators {
+		if strings.Contains(errLower, indicator) {
+			return true
+		}
 	}
-	return hostCandidate
-}
-
-func (s *ImageService) isRegistryMatch(credURL, registryHost string) bool {
-	normalizedCred := s.normalizeRegistryForComparison(credURL)
-	normalizedHost := s.normalizeRegistryForComparison(registryHost)
-
-	return normalizedCred == normalizedHost
-}
-
-func (s *ImageService) normalizeRegistryForComparison(url string) string {
-	url = strings.TrimPrefix(url, "https://")
-	url = strings.TrimPrefix(url, "http://")
-	url = strings.TrimSuffix(url, "/")
-
-	if slash := strings.Index(url, "/"); slash != -1 {
-		url = url[:slash]
-	}
-
-	if url == "docker.io" || url == "registry-1.docker.io" || url == "index.docker.io" {
-		return "docker.io"
-	}
-	return url
-}
-
-func (s *ImageService) normalizeRegistryURL(url string) string {
-	normalized := s.normalizeRegistryForComparison(url)
-	if normalized == "docker.io" {
-		return "https://index.docker.io/v1/"
-	}
-
-	result := strings.TrimPrefix(url, "https://")
-	result = strings.TrimPrefix(result, "http://")
-	result = strings.TrimSuffix(result, "/")
-
-	return result
+	return false
 }
 
 func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.PruneReport, error) {
@@ -408,19 +372,20 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	filterArgs := filters.NewArgs()
+	filterArgs := make(client.Filters)
 	if dangling {
-		filterArgs.Add("dangling", "true")
+		filterArgs = filterArgs.Add("dangling", "true")
 	} else {
-		filterArgs.Add("dangling", "false")
+		filterArgs = filterArgs.Add("dangling", "false")
 	}
 
-	report, err := dockerClient.ImagesPrune(ctx, filterArgs)
+	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
+	pruneReport := report.Report
 
-	idsToDelete := getPrunedImageIDsInternal(report)
+	idsToDelete := getPrunedImageIDsInternal(pruneReport)
 	s.cleanupImageUpdateRecordsAfterPruneInternal(ctx, idsToDelete)
 	s.cleanupVulnerabilityRecordsAfterPruneInternal(ctx, idsToDelete)
 	s.cleanupOrphanedImageUpdatesAfterPruneInternal(ctx)
@@ -428,14 +393,14 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 	metadata := models.JSON{
 		"action":         "prune",
 		"dangling":       dangling,
-		"imagesDeleted":  len(report.ImagesDeleted),
-		"spaceReclaimed": report.SpaceReclaimed,
+		"imagesDeleted":  len(pruneReport.ImagesDeleted),
+		"spaceReclaimed": pruneReport.SpaceReclaimed,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 		slog.Warn("could not log image prune action", "err", logErr)
 	}
 
-	return &report, nil
+	return &pruneReport, nil
 }
 
 func getPrunedImageIDsInternal(report image.PruneReport) []string {
@@ -525,20 +490,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	// Fetch Docker images
 	g.Go(func() error {
 		var err error
-		dockerImages, err = dockerClient.ImageList(groupCtx, image.ListOptions{})
+		imageList, err := dockerClient.ImageList(groupCtx, client.ImageListOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
+		dockerImages = imageList.Items
 		return nil
 	})
 
 	// Fetch containers to determine usage
 	g.Go(func() error {
 		var err error
-		containers, err = dockerClient.ContainerList(groupCtx, container.ListOptions{All: true})
+		containerList, err := dockerClient.ContainerList(groupCtx, client.ContainerListOptions{All: true})
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
+		containers = containerList.Items
 		return nil
 	})
 
@@ -598,13 +565,13 @@ func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	images, err := dockerClient.ImageList(ctx, image.ListOptions{})
+	imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	var total int64
-	for _, img := range images {
+	for _, img := range imageList.Items {
 		total += img.Size
 	}
 

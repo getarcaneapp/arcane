@@ -9,8 +9,8 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 // ProgressWriterKey can be set on a context to enable JSON-line progress updates.
@@ -138,7 +138,7 @@ func emitDeployContainerUpdate(w io.Writer, lastSig map[string]string, cs api.Co
 
 	phase := deployPhaseFromSummary(cs)
 	status := strings.TrimSpace(cs.Status)
-	sig := strings.Join([]string{phase, cs.State, cs.Health, status}, "|")
+	sig := strings.Join([]string{phase, string(cs.State), string(cs.Health), status}, "|")
 	if lastSig[name] == sig {
 		return
 	}
@@ -148,8 +148,8 @@ func emitDeployContainerUpdate(w io.Writer, lastSig map[string]string, cs api.Co
 		"type":    "deploy",
 		"phase":   phase,
 		"service": name,
-		"state":   cs.State,
-		"health":  cs.Health,
+		"state":   string(cs.State),
+		"health":  string(cs.Health),
 	}
 	if status != "" {
 		payload["status"] = status
@@ -158,8 +158,8 @@ func emitDeployContainerUpdate(w io.Writer, lastSig map[string]string, cs api.Co
 }
 
 func deployPhaseFromSummary(cs api.ContainerSummary) string {
-	state := strings.ToLower(strings.TrimSpace(cs.State))
-	health := strings.ToLower(strings.TrimSpace(cs.Health))
+	state := strings.ToLower(strings.TrimSpace(string(cs.State)))
+	health := strings.ToLower(strings.TrimSpace(string(cs.Health)))
 
 	switch {
 	case state == "running" && health == "healthy":
@@ -211,11 +211,16 @@ func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, erro
 	defer func() { _ = c.Close() }()
 
 	cli := c.dockerCli.Client()
-	filter := filters.NewArgs()
-	filter.Add("label", "com.docker.compose.project")
+	filter := make(client.Filters)
+	filter = filter.Add("label", "com.docker.compose.project")
 
-	return cli.ContainerList(ctx, container.ListOptions{
+	listResult, err := cli.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
 		Filters: filter,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return listResult.Items, nil
 }

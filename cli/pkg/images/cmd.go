@@ -31,7 +31,6 @@
 package images
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -47,6 +46,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/prompt"
@@ -58,11 +58,13 @@ import (
 )
 
 var (
-	imagesLimit  int
-	imagesStart  int
-	imagesSort   string
-	imagesOrder  string
-	imagesSearch string
+	imagesLimit      int
+	imagesStart      int
+	imagesSort       string
+	imagesOrder      string
+	imagesSearch     string
+	imagesInUseOnly  bool
+	imagesUnusedOnly bool
 )
 
 const maxPromptOptions = 20
@@ -81,9 +83,12 @@ var imagesListCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
+		}
+		if imagesInUseOnly && imagesUnusedOnly {
+			return fmt.Errorf("--inuse and --unused cannot be used together")
 		}
 
 		path := types.Endpoints.Images(c.EnvID())
@@ -95,8 +100,9 @@ var imagesListCmd = &cobra.Command{
 		}
 		q := u.Query()
 
-		if imagesLimit > 0 {
-			q.Set("limit", fmt.Sprintf("%d", imagesLimit))
+		effectiveLimit := cmdutil.EffectiveLimit(cmd, "images", "limit", imagesLimit, 0)
+		if effectiveLimit > 0 {
+			q.Set("limit", fmt.Sprintf("%d", effectiveLimit))
 		}
 		if imagesStart > 0 {
 			q.Set("start", fmt.Sprintf("%d", imagesStart))
@@ -129,7 +135,7 @@ var imagesListCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(body))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) && !imagesInUseOnly && !imagesUnusedOnly {
 			fmt.Println(string(body))
 			return nil
 		}
@@ -144,6 +150,17 @@ var imagesListCmd = &cobra.Command{
 
 		if err := json.Unmarshal(body, &result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
+		}
+		result.Data = filterImagesByUsage(result.Data, imagesInUseOnly, imagesUnusedOnly)
+		result.Pagination.TotalItems = int64(len(result.Data))
+
+		if cmdutil.JSONOutputEnabled(cmd) {
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
 		}
 
 		headers := []string{"ID", "REPOSITORY:TAG", "SIZE", "IN USE"}
@@ -176,12 +193,12 @@ var imagesGetCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		allowPrompt := !jsonOutput && prompt.IsInteractive()
 
 		imageID, err := resolveImageID(cmd.Context(), c, args[0], allowPrompt)
@@ -275,7 +292,7 @@ var imagesRemoveCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -304,6 +321,10 @@ var imagesRemoveCmd = &cobra.Command{
 			return fmt.Errorf("failed to remove image: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return fmt.Errorf("failed to remove image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -312,7 +333,7 @@ var imagesRemoveCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(body))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) {
 			fmt.Println(string(body))
 			return nil
 		}
@@ -341,7 +362,7 @@ var imagesPullCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -363,9 +384,13 @@ var imagesPullCmd = &cobra.Command{
 			return fmt.Errorf("failed to pull image: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return fmt.Errorf("failed to pull image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+		}
 
 		// Stream the response
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) {
 			_, err = io.Copy(cmd.OutOrStdout(), resp.Body)
 			if err != nil {
 				return fmt.Errorf("failed to read pull stream: %w", err)
@@ -455,7 +480,7 @@ var imagesPruneCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -468,7 +493,7 @@ var imagesPruneCmd = &cobra.Command{
 			"dangling": pruneDangling,
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		var spinner *output.Spinner
 
 		if !jsonOutput {
@@ -485,6 +510,10 @@ var imagesPruneCmd = &cobra.Command{
 			return fmt.Errorf("failed to prune images: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return fmt.Errorf("failed to prune images (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -493,7 +522,7 @@ var imagesPruneCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(body))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) {
 			fmt.Println(string(body))
 			return nil
 		}
@@ -522,7 +551,7 @@ var imagesCountsCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -544,7 +573,7 @@ var imagesCountsCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(body))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if cmdutil.JSONOutputEnabled(cmd) {
 			fmt.Println(string(body))
 			return nil
 		}
@@ -575,7 +604,7 @@ var imagesUploadCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log := logger.GetLogger()
-		c, err := client.NewFromConfig()
+		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
 			return err
 		}
@@ -594,37 +623,42 @@ var imagesUploadCmd = &cobra.Command{
 			return fmt.Errorf("failed to open file: %w", err)
 		}
 		defer func() { _ = file.Close() }()
-
-		// Create a multipart form
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-
-		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+		fileInfo, err := file.Stat()
 		if err != nil {
-			return fmt.Errorf("failed to create form file: %w", err)
+			return fmt.Errorf("failed to stat file: %w", err)
 		}
 
-		_, err = io.Copy(part, file)
-		if err != nil {
-			return fmt.Errorf("failed to copy file: %w", err)
-		}
-
-		err = writer.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close writer: %w", err)
-		}
+		pr, pw := io.Pipe()
+		writer := multipart.NewWriter(pw)
 
 		output.Info("Uploading image: %s", filePath)
 
-		var requestBody io.Reader = body
+		var requestBody io.Reader = pr
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := cmdutil.JSONOutputEnabled(cmd)
 		var progressUI *output.Progress
 		if !jsonOutput {
-			progressUI = output.StartProgress("Uploading", int64(body.Len()))
-			requestBody = output.NewProgressReader(body, progressUI)
+			progressUI = output.StartProgress("Uploading", fileInfo.Size())
+			requestBody = output.NewProgressReader(pr, progressUI)
 			defer progressUI.Stop()
 		}
+
+		go func() {
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
+				return
+			}
+			if _, err := io.Copy(part, file); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
+				return
+			}
+			if err := writer.Close(); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("failed to close multipart writer: %w", err))
+				return
+			}
+			_ = pw.Close()
+		}()
 
 		// Use client.RequestRaw to make the multipart request with correct headers
 		headers := map[string]string{
@@ -637,6 +671,11 @@ var imagesUploadCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return fmt.Errorf("failed to upload image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errorBody)))
+		}
+
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response: %w", err)
@@ -644,7 +683,7 @@ var imagesUploadCmd = &cobra.Command{
 
 		log.Debugf("Response body: %s", string(respBody))
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonOutput {
 			fmt.Println(string(respBody))
 			return nil
 		}
@@ -675,6 +714,8 @@ func init() {
 	imagesListCmd.Flags().StringVar(&imagesSort, "sort", "", "Field to sort by")
 	imagesListCmd.Flags().StringVar(&imagesOrder, "order", "", "Sort order (asc/desc)")
 	imagesListCmd.Flags().StringVar(&imagesSearch, "search", "", "Search query")
+	imagesListCmd.Flags().BoolVar(&imagesInUseOnly, "inuse", false, "Only show images currently in use")
+	imagesListCmd.Flags().BoolVar(&imagesUnusedOnly, "unused", false, "Only show images not in use")
 
 	ImagesCmd.AddCommand(imagesGetCmd)
 
@@ -894,4 +935,21 @@ func formatImageMatchOption(match image.Summary) string {
 		label = match.Repo + ":" + match.Tag
 	}
 	return fmt.Sprintf("%s (%s)", label, match.ID)
+}
+
+func filterImagesByUsage(items []image.Summary, inUseOnly, unusedOnly bool) []image.Summary {
+	if !inUseOnly && !unusedOnly {
+		return items
+	}
+	filtered := make([]image.Summary, 0, len(items))
+	for _, item := range items {
+		if inUseOnly && !item.InUse {
+			continue
+		}
+		if unusedOnly && item.InUse {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }

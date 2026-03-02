@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
-	dockertypesimage "github.com/docker/docker/api/types/image"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
+	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -789,7 +790,7 @@ func TestImageUpdateService_BuildCredentialMap_ExternalCredsDedupesEnabledRegist
 	// Enabled registry records used for auth fallback should be de-duplicated per host.
 	enabledByHost := make(map[string]models.ContainerRegistry, len(enabledRegs))
 	for _, reg := range enabledRegs {
-		host := svc.normalizeRegistryURL(reg.URL)
+		host := utilsregistry.NormalizeRegistryForComparison(reg.URL)
 		enabledByHost[host] = reg
 	}
 	require.Contains(t, enabledByHost, "ghcr.io")

@@ -2,9 +2,17 @@ package edge
 
 import (
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 )
+
+// TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
+type TunnelRuntimeState struct {
+	Transport     string
+	ConnectedAt   *time.Time
+	LastHeartbeat *time.Time
+}
 
 const (
 	// EdgeTransportWebSocket forces WebSocket tunnel transport.
@@ -62,4 +70,28 @@ func GetActiveTunnelTransport(envID string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// GetTunnelRuntimeState returns live metadata for an active tunnel.
+func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
+	tunnel, ok := GetRegistry().Get(envID)
+	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+		return nil, false
+	}
+
+	state := &TunnelRuntimeState{}
+
+	switch tunnel.Conn.(type) {
+	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
+		state.Transport = EdgeTransportGRPC
+	case *TunnelConn:
+		state.Transport = EdgeTransportWebSocket
+	}
+
+	connectedAt := tunnel.ConnectedAt
+	lastHeartbeat := tunnel.GetLastHeartbeat()
+	state.ConnectedAt = &connectedAt
+	state.LastHeartbeat = &lastHeartbeat
+
+	return state, true
 }

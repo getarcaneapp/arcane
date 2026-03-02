@@ -1,5 +1,7 @@
 package environment
 
+import "time"
+
 type Create struct {
 	// ApiUrl is the URL of the environment API.
 	//
@@ -126,6 +128,22 @@ type Environment struct {
 	//
 	// Required: false
 	EdgeTransport *string `json:"edgeTransport,omitempty"`
+
+	// Connected reports whether an edge environment currently has a live tunnel.
+	//
+	// Required: false
+	Connected *bool `json:"connected,omitempty"`
+
+	// ConnectedAt is when the current edge tunnel connection was established.
+	//
+	// Required: false
+	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
+
+	// LastHeartbeat is the timestamp of the most recent heartbeat received
+	// from the current edge tunnel connection.
+	//
+	// Required: false
+	LastHeartbeat *time.Time `json:"lastHeartbeat,omitempty"`
 
 	// ApiKey is returned only when creating or regenerating
 	//
