@@ -14,6 +14,7 @@
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
+	import { applyOledMode } from '$lib/utils/oled-mode-util';
 	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
@@ -28,7 +29,8 @@
 		sidebarHoverExpansion: z.boolean(),
 		keyboardShortcutsEnabled: z.boolean(),
 		accentColor: z.string(),
-		enableGravatar: z.boolean()
+		enableGravatar: z.boolean(),
+		oledMode: z.boolean()
 	});
 
 	// Track local override state using the shared store
@@ -48,7 +50,10 @@
 			currentSettings,
 			getCurrentSettings: () => $settingsStore || data.settings!,
 			successMessage: m.navigation_settings_saved(),
-			onReset: () => applyAccentColor(currentSettings.accentColor)
+			onReset: () => {
+				applyAccentColor(currentSettings.accentColor);
+				applyOledMode(currentSettings.oledMode ?? false);
+			}
 		})
 	);
 
@@ -92,6 +97,12 @@
 	const labelsIsLocal = $derived(persistedState.showLabels !== undefined);
 	const labelsDisplayValue = $derived(labelsIsLocal ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value);
 	const isDarkMode = $derived(mode.current === 'dark');
+
+	function handleOledModeChange(checked: boolean) {
+		$formInputs.oledMode.value = checked;
+		// Live preview: apply immediately so the user sees the effect
+		applyOledMode(checked);
+	}
 
 	function handleLabelsChange(checked: boolean) {
 		if (labelsIsLocal) {
@@ -198,6 +209,30 @@
 									{/if}
 									<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
 								</ArcaneButton>
+							</div>
+						</div>
+
+						<Separator />
+
+						<!-- OLED Mode -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.oled_mode()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.oled_mode_description()}</p>
+								{#if !isDarkMode}
+									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
+								{/if}
+							</div>
+							<div class="flex items-center gap-2">
+								<Switch
+									id="oledMode"
+									checked={$formInputs.oledMode.value}
+									disabled={isReadOnly}
+									onCheckedChange={handleOledModeChange}
+								/>
+								<Label for="oledMode" class="font-normal">
+									{$formInputs.oledMode.value ? m.oled_mode_enabled() : m.oled_mode_disabled()}
+								</Label>
 							</div>
 						</div>
 					</div>

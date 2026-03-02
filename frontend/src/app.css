@@ -117,6 +117,26 @@
 	--glass-shadow-color: oklch(0 0 0 / 0.32);
 }
 
+/* OLED dark mode — only activates when .dark is also present */
+.dark.oled {
+	--background: oklch(0 0 0);
+	--card: oklch(0 0 0 / 0.5); /* Deepen to near true black */
+	--popover: oklch(0.04 0.002 285);
+	--secondary: oklch(0.1 0.004 286 / 0.55);
+	--muted: oklch(0.1 0.004 286 / 0.55);
+	--accent: oklch(0.1 0.004 286 / 0.55);
+	--border: oklch(1 0 0 / 18%);
+	--input: oklch(1 0 0 / 18%);
+	--sidebar: oklch(0.02 0.001 285 / 0.8);
+	--sidebar-border: oklch(1 0 0 / 18%);
+	--sidebar-accent: oklch(0.1 0.004 286 / 0.55);
+	--surface: oklch(0.045 0.002 285.9);
+	--bg-surface: oklch(0.02 0.001 285);
+	--glass-base: oklch(0.02 0.001 285);
+	--glass-shadow-color: oklch(0 0 0 / 0.6);
+	--glass-noise-opacity: 0.015;
+}
+
 @theme inline {
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);

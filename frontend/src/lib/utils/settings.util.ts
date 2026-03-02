@@ -1,5 +1,6 @@
 export type LocalSettings = {
 	accentColor: string;
+	oledMode: boolean;
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
@@ -8,6 +9,7 @@ export type LocalSettings = {
 
 const LOCAL_SETTING_KEYS = new Set([
 	'accentColor',
+	'oledMode',
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',

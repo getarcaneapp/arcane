@@ -375,4 +375,9 @@ type Update struct {
 	//
 	// Required: false
 	DepotToken *string `json:"depotToken,omitempty"`
+
+	// OledMode sets whether OLED dark mode is enabled or not.
+	//
+	// Required: false
+	OledMode *string `json:"oledMode,omitempty"`
 }
