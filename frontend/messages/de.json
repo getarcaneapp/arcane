@@ -1089,7 +1089,7 @@
 	"jobs_cron_example_hourly": "Stündlich",
 	"jobs_cron_example_daily": "Täglich um Mitternacht",
 	"jobs_cron_example_every_6hours": "Alle 6 Stunden",
-	"jobs_schedule_update_unavailable": "Zeitplan-Updates sind für diesen Job nicht verfügbar"
+	"jobs_schedule_update_unavailable": "Zeitplan-Updates sind für diesen Job nicht verfügbar",
 	"_comment_settings_docker": "=== SETTINGS - DOCKER ===",
 	"docker_title": "Docker",
 	"docker_default_shell_label": "Standard-Shell",
