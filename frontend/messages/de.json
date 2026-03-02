@@ -368,7 +368,7 @@
 	"dashboard_meter_cpu_desc": "Prozessorauslastung",
 	"dashboard_meter_memory": "Speicherauslastung",
 	"dashboard_meter_memory_desc": "RAM-Auslastung",
-	"dashboard_meter_disk": "Festplattennutzung"
+	"dashboard_meter_disk": "Festplattennutzung",
 	"dashboard_meter_disk_desc": "Speicherauslastung",
 	"dashboard_meter_disk_used": "Belegt",
 	"dashboard_meter_disk_free": "Frei",
