@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Depot の個人アクセストークン（既存のままにするには空白のままにしてください）",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "既存のトークンを保存するには空白のままにしてください",
-	"build_history": "ビルド履歴"
+	"build_history": "ビルド履歴",
+	"deploy_pull_policy_missing": "存在しない場合はプル",
+	"deploy_pull_policy_always": "常に最新情報を取得する",
+	"deploy_pull_policy_never": "絶対に引っ張らない",
+	"deploy_force_recreate": "コンテナを強制的に再作成する",
+	"settings_default_deploy_pull_policy": "デフォルトのプルポリシー",
+	"settings_default_deploy_pull_policy_description": "プロジェクトをデプロイするときのデフォルトの画像プルポリシー"
 }
