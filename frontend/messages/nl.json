@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Persoonlijke toegangstoken voor Depot (laat leeg om te blijven bestaan).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Laat leeg om het bestaande token te behouden",
-	"build_history": "Bouw geschiedenis"
+	"build_history": "Bouw geschiedenis",
+	"deploy_pull_policy_missing": "Trek indien niet aanwezig",
+	"deploy_pull_policy_always": "Altijd nieuwste trekken",
+	"deploy_pull_policy_never": "Nooit trekken",
+	"deploy_force_recreate": "Forceer opnieuw containers",
+	"settings_default_deploy_pull_policy": "Standaard Deploy Pull Policy",
+	"settings_default_deploy_pull_policy_description": "Standaard afbeelding pull-policy bij het implementeren van projecten"
 }
