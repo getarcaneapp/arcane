@@ -25,8 +25,18 @@ var NotificationsCmd = &cobra.Command{
 	Short:   "Manage notifications",
 }
 
+var appriseCmd = &cobra.Command{
+	Use:   "apprise",
+	Short: "Manage Apprise configuration",
+}
+
+var settingsCmd = &cobra.Command{
+	Use:   "settings",
+	Short: "Manage notification settings",
+}
+
 var appriseGetCmd = &cobra.Command{
-	Use:          "apprise-get",
+	Use:          "get",
 	Short:        "Get Apprise configuration",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -66,7 +76,7 @@ var appriseGetCmd = &cobra.Command{
 }
 
 var settingsGetCmd = &cobra.Command{
-	Use:          "settings-get",
+	Use:          "get",
 	Short:        "Get notification settings",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -112,7 +122,7 @@ var settingsGetCmd = &cobra.Command{
 }
 
 var appriseTestCmd = &cobra.Command{
-	Use:          "apprise-test",
+	Use:          "test",
 	Short:        "Test Apprise notification",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -146,7 +156,7 @@ var appriseTestCmd = &cobra.Command{
 }
 
 var settingsDeleteCmd = &cobra.Command{
-	Use:          "settings-delete <provider>",
+	Use:          "delete <provider>",
 	Short:        "Delete notification provider settings",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -217,11 +227,15 @@ var testProviderCmd = &cobra.Command{
 }
 
 func init() {
-	NotificationsCmd.AddCommand(appriseGetCmd)
-	NotificationsCmd.AddCommand(appriseTestCmd)
-	NotificationsCmd.AddCommand(settingsGetCmd)
-	NotificationsCmd.AddCommand(settingsDeleteCmd)
+	NotificationsCmd.AddCommand(appriseCmd)
+	NotificationsCmd.AddCommand(settingsCmd)
 	NotificationsCmd.AddCommand(testProviderCmd)
+
+	appriseCmd.AddCommand(appriseGetCmd)
+	appriseCmd.AddCommand(appriseTestCmd)
+
+	settingsCmd.AddCommand(settingsGetCmd)
+	settingsCmd.AddCommand(settingsDeleteCmd)
 
 	appriseGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	appriseTestCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
