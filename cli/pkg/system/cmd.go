@@ -276,13 +276,21 @@ var upgradeCheckCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[any]
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to check for upgrades: %w", err)
+		}
+
+		var result struct {
+			CanUpgrade bool   `json:"canUpgrade"`
+			Error      bool   `json:"error"`
+			Message    string `json:"message"`
+		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -291,11 +299,11 @@ var upgradeCheckCmd = &cobra.Command{
 		}
 
 		output.Header("Upgrade Check")
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal result: %w", err)
+		output.KeyValue("Can Upgrade", fmt.Sprintf("%t", result.CanUpgrade))
+		output.KeyValue("Message", result.Message)
+		if result.Error {
+			output.KeyValue("Error", "true")
 		}
-		fmt.Println(string(resultBytes))
 		return nil
 	},
 }

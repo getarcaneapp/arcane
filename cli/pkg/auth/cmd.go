@@ -412,13 +412,17 @@ var oidcStatusCmd = &cobra.Command{
 			return fmt.Errorf("failed to get OIDC status: %w", err)
 		}
 
-		var result base.ApiResponse[any]
+		var result struct {
+			EnvForced     bool `json:"envForced"`
+			EnvConfigured bool `json:"envConfigured"`
+			MergeAccounts bool `json:"mergeAccounts"`
+		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -427,11 +431,9 @@ var oidcStatusCmd = &cobra.Command{
 		}
 
 		output.Header("OIDC Status")
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal OIDC status: %w", err)
-		}
-		fmt.Println(string(resultBytes))
+		output.KeyValue("Environment Forced", fmt.Sprintf("%t", result.EnvForced))
+		output.KeyValue("Environment Configured", fmt.Sprintf("%t", result.EnvConfigured))
+		output.KeyValue("Merge Accounts", fmt.Sprintf("%t", result.MergeAccounts))
 		return nil
 	},
 }

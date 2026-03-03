@@ -405,14 +405,26 @@ var versionCmd = &cobra.Command{
 			return fmt.Errorf("failed to get environment version: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to get environment version: %w", err)
+		}
 
-		var result base.ApiResponse[any]
+		var result struct {
+			CurrentVersion  string `json:"currentVersion"`
+			CurrentTag      string `json:"currentTag"`
+			Revision        string `json:"revision"`
+			ShortRevision   string `json:"shortRevision"`
+			GoVersion       string `json:"goVersion"`
+			BuildTime       string `json:"buildTime"`
+			DisplayVersion  string `json:"displayVersion"`
+			UpdateAvailable bool   `json:"updateAvailable"`
+		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -421,11 +433,13 @@ var versionCmd = &cobra.Command{
 		}
 
 		output.Header("Environment Version")
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal version data: %w", err)
-		}
-		fmt.Println(string(resultBytes))
+		output.KeyValue("Version", result.DisplayVersion)
+		output.KeyValue("Full Version", result.CurrentVersion)
+		output.KeyValue("Tag", result.CurrentTag)
+		output.KeyValue("Revision", result.ShortRevision)
+		output.KeyValue("Go Version", result.GoVersion)
+		output.KeyValue("Build Time", result.BuildTime)
+		output.KeyValue("Update Available", fmt.Sprintf("%t", result.UpdateAvailable))
 		return nil
 	},
 }
