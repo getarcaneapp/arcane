@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Персональный токен доступа для депо (оставьте пустым чтобы сохранить существующий).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Оставьте пустым, чтобы сохранить существующий токен",
-	"build_history": "История сборки"
+	"build_history": "История сборки",
+	"deploy_pull_policy_missing": "Потяните если нет",
+	"deploy_pull_policy_always": "Всегда получать последние",
+	"deploy_pull_policy_never": "Никогда не тянуть",
+	"deploy_force_recreate": "Принудительно пересоздать контейнеры",
+	"settings_default_deploy_pull_policy": "Политика установки Pull",
+	"settings_default_deploy_pull_policy_description": "Пульт изображений по умолчанию при развертывании проектов"
 }
