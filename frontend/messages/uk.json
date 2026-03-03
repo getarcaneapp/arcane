@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Персональний токен доступу для Сховища (залиште порожнім, щоб існувати).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Залиште порожнім, щоб зберегти існуючий токен",
-	"build_history": "Історія будівель"
+	"build_history": "Історія будівель",
+	"deploy_pull_policy_missing": "Потягніть, якщо немає",
+	"deploy_pull_policy_always": "Завжди отримувати останню версію",
+	"deploy_pull_policy_never": "Ніколи не тягувати",
+	"deploy_force_recreate": "Примусове перестворення контейнерів",
+	"settings_default_deploy_pull_policy": "Політика розгортання за замовчуванням",
+	"settings_default_deploy_pull_policy_description": "Схема за замовчуванням обов'язкова політика при розгортанні проектів"
 }
