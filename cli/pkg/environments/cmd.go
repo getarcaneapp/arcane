@@ -342,6 +342,9 @@ var updateCmd = &cobra.Command{
 		}
 
 		var req environment.Update
+		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
+			return fmt.Errorf("--enabled and --disabled are mutually exclusive")
+		}
 		if cmd.Flags().Changed("name") {
 			req.Name = &envUpdateName
 		}

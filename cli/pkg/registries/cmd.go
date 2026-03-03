@@ -218,6 +218,9 @@ var updateCmd = &cobra.Command{
 		}
 
 		req := make(map[string]any)
+		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
+			return fmt.Errorf("--enabled and --disabled are mutually exclusive")
+		}
 		if cmd.Flags().Changed("url") {
 			req["url"] = registryUpdateURL
 		}
