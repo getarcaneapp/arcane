@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "仓库的个人访问令牌(留空以保持存在)。",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "留空以保留现有令牌",
-	"build_history": "创建历史记录"
+	"build_history": "创建历史记录",
+	"deploy_pull_policy_missing": "不存在时下拉操作",
+	"deploy_pull_policy_always": "总是拉取最新的",
+	"deploy_pull_policy_never": "从不拉取",
+	"deploy_force_recreate": "强制重新创建容器",
+	"settings_default_deploy_pull_policy": "默认部署拉取策略",
+	"settings_default_deploy_pull_policy_description": "部署项目时的默认图像拉取策略"
 }
