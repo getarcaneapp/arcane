@@ -3,8 +3,10 @@ package users
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
@@ -114,6 +116,16 @@ var createCmd = &cobra.Command{
 		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
+		}
+
+		if userCreatePassword == "" {
+			fmt.Print("Password: ")
+			bytePassword, err := term.ReadPassword(os.Stdin.Fd())
+			if err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
+			}
+			userCreatePassword = string(bytePassword)
+			fmt.Println()
 		}
 
 		req := user.CreateUser{
@@ -304,13 +316,12 @@ func init() {
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	createCmd.Flags().StringVar(&userCreateUsername, "username", "", "Username")
-	createCmd.Flags().StringVar(&userCreatePassword, "password", "", "Password")
+	createCmd.Flags().StringVar(&userCreatePassword, "password", "", "Password (if omitted, will prompt securely)")
 	createCmd.Flags().StringVar(&userCreateDisplayName, "display-name", "", "Display name")
 	createCmd.Flags().StringVar(&userCreateEmail, "email", "", "Email address")
 	createCmd.Flags().StringArrayVar(&userCreateRoles, "role", nil, "User role")
 	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = createCmd.MarkFlagRequired("username")
-	_ = createCmd.MarkFlagRequired("password")
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
