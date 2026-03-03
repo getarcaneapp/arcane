@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Token di accesso personale per il deposito (lasciare vuoto per mantenere esistente).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Lascia vuoto per preservare il token esistente",
-	"build_history": "Cronologia Build"
+	"build_history": "Cronologia Build",
+	"deploy_pull_policy_missing": "Tirare se non presente",
+	"deploy_pull_policy_always": "Tira sempre più recente",
+	"deploy_pull_policy_never": "Non tirare mai",
+	"deploy_force_recreate": "Forza ricreazione contenitori",
+	"settings_default_deploy_pull_policy": "Politica Predefinita Pull Deploy",
+	"settings_default_deploy_pull_policy_description": "Criterio pull immagine predefinito quando si distribuiscono progetti"
 }
