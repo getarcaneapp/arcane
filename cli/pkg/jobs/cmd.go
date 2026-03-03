@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -31,11 +32,14 @@ var getCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.JobSchedules())
+		resp, err := c.Get(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()))
 		if err != nil {
 			return fmt.Errorf("failed to get job schedules: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to get job schedules: %w", err)
+		}
 
 		var cfg jobschedule.Config
 		if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
@@ -90,7 +94,7 @@ var updateCmd = &cobra.Command{
 			return fmt.Errorf("no updates provided (set at least one interval flag)")
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.JobSchedules(), req)
+		resp, err := c.Put(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()), req)
 		if err != nil {
 			return fmt.Errorf("failed to update job schedules: %w", err)
 		}

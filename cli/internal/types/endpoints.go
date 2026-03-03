@@ -261,7 +261,7 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	UpdaterHistoryEndpoint: "/api/environments/%s/updater/history",
 
 	// Job Schedules
-	JobSchedulesEndpoint: "/api/job-schedules",
+	JobSchedulesEndpoint: "/api/environments/%s/job-schedules",
 
 	// Settings
 	SettingsEndpoint:       "/api/environments/%s/settings",
@@ -562,7 +562,9 @@ func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string {
 }
 
 // Job schedule endpoints
-func (e ArcaneApiEndpoints) JobSchedules() string { return e.JobSchedulesEndpoint }
+func (e ArcaneApiEndpoints) JobSchedules(envID string) string {
+	return fmt.Sprintf(e.JobSchedulesEndpoint, envID)
+}
 
 // Settings endpoints
 func (e ArcaneApiEndpoints) Settings(envID string) string {
