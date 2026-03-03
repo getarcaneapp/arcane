@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Προσωπικό διακριτικό πρόσβασης για την Αποθήκη (αφήστε κενό για να διατηρήσετε την υπάρχουσα).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Αφήστε κενό για να διατηρηθεί το υπάρχον διακριτικό",
-	"build_history": "Ιστορικό Κατασκευής"
+	"build_history": "Ιστορικό Κατασκευής",
+	"deploy_pull_policy_missing": "Τραβήξτε εάν δεν υπάρχει",
+	"deploy_pull_policy_always": "Πάντα τραβήξτε το τελευταίο",
+	"deploy_pull_policy_never": "Ποτέ μην τραβάτε",
+	"deploy_force_recreate": "Αναδημιουργία εμπορευματοκιβωτίων",
+	"settings_default_deploy_pull_policy": "Προεπιλεγμένη Πολιτική Λήψης",
+	"settings_default_deploy_pull_policy_description": "Προεπιλεγμένη πολιτική έλξης εικόνας κατά την ανάπτυξη έργων"
 }
