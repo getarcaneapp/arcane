@@ -155,6 +155,9 @@ var startStoppedCmd = &cobra.Command{
 			return fmt.Errorf("failed to start stopped containers: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to start stopped containers: %w", err)
+		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
@@ -260,6 +263,9 @@ var upgradeCmd = &cobra.Command{
 			return fmt.Errorf("failed to upgrade system: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to upgrade system: %w", err)
+		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
