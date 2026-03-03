@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Jeton d'accès personnel pour Dépôt (laisser vide pour continuer à exister).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Laisser vide pour préserver le jeton existant",
-	"build_history": "Historique de la compilation"
+	"build_history": "Historique de la compilation",
+	"deploy_pull_policy_missing": "Tirer si non présent",
+	"deploy_pull_policy_always": "Toujours tirer la dernière version",
+	"deploy_pull_policy_never": "Ne jamais tirer",
+	"deploy_force_recreate": "Forcer la recréation des conteneurs",
+	"settings_default_deploy_pull_policy": "Règle de tirage de déploiement par défaut",
+	"settings_default_deploy_pull_policy_description": "Pull de l'image par défaut lors du déploiement de projets"
 }
