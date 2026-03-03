@@ -624,7 +624,7 @@
 	"vuln_scan": "Scannen",
 	"vuln_rescan": "Herscannen",
 	"vuln_scan_image": "Zoeken naar kwetsbaarheden",
-	"vuln_scanning": "Scanning…",
+	"vuln_scanning": "Scannen…",
 	"vuln_scan_started": "Kwetsbaarheid scan gestart",
 	"vuln_scan_completed": "Kwetsbaarheid scan voltooid",
 	"vuln_scan_failed": "Kwetsbaarheid scannen mislukt",
