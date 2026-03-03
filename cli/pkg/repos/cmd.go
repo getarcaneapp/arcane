@@ -598,7 +598,7 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Fallback: search via list endpoint.
-	listPath := fmt.Sprintf("%s?limit=100", types.Endpoints.GitRepositories())
+	listPath := fmt.Sprintf("%s?limit=200", types.Endpoints.GitRepositories())
 	listResp, err := c.Get(ctx, listPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search repositories: %w", err)
