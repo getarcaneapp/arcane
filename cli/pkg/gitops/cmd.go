@@ -25,6 +25,16 @@ var (
 	jsonOutput bool
 )
 
+var (
+	gitopsUpdateName        string
+	gitopsUpdateRepoID      string
+	gitopsUpdateBranch      string
+	gitopsUpdateComposePath string
+	gitopsUpdateProjectName string
+	gitopsUpdateAutoSync    bool
+	gitopsUpdateInterval    int
+)
+
 const maxPromptOptions = 20
 
 // GitopsCmd is the parent command for gitops sync operations
@@ -113,7 +123,7 @@ var createCmd = &cobra.Command{
 		}
 
 		name, _ := cmd.Flags().GetString("name")
-		repoID, _ := cmd.Flags().GetString("repo")
+		repoID, _ := cmd.Flags().GetString("repo-id")
 		branch, _ := cmd.Flags().GetString("branch")
 		composePath, _ := cmd.Flags().GetString("compose-path")
 		autoSync, _ := cmd.Flags().GetBool("auto-sync")
@@ -240,32 +250,25 @@ var updateCmd = &cobra.Command{
 
 		req := gitops.UpdateSyncRequest{}
 		if cmd.Flags().Changed("name") {
-			v, _ := cmd.Flags().GetString("name")
-			req.Name = &v
+			req.Name = &gitopsUpdateName
 		}
-		if cmd.Flags().Changed("repo") {
-			v, _ := cmd.Flags().GetString("repo")
-			req.RepositoryID = &v
+		if cmd.Flags().Changed("repo-id") {
+			req.RepositoryID = &gitopsUpdateRepoID
 		}
 		if cmd.Flags().Changed("branch") {
-			v, _ := cmd.Flags().GetString("branch")
-			req.Branch = &v
+			req.Branch = &gitopsUpdateBranch
 		}
 		if cmd.Flags().Changed("compose-path") {
-			v, _ := cmd.Flags().GetString("compose-path")
-			req.ComposePath = &v
+			req.ComposePath = &gitopsUpdateComposePath
 		}
 		if cmd.Flags().Changed("project-name") {
-			v, _ := cmd.Flags().GetString("project-name")
-			req.ProjectName = &v
+			req.ProjectName = &gitopsUpdateProjectName
 		}
 		if cmd.Flags().Changed("auto-sync") {
-			v, _ := cmd.Flags().GetBool("auto-sync")
-			req.AutoSync = &v
+			req.AutoSync = &gitopsUpdateAutoSync
 		}
 		if cmd.Flags().Changed("interval") {
-			v, _ := cmd.Flags().GetInt("interval")
-			req.SyncInterval = &v
+			req.SyncInterval = &gitopsUpdateInterval
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.GitOpsSync(c.EnvID(), resolved.ID), req)
@@ -492,7 +495,7 @@ var importCmd = &cobra.Command{
 		}
 
 		name, _ := cmd.Flags().GetString("name")
-		repo, _ := cmd.Flags().GetString("repo")
+		repo, _ := cmd.Flags().GetString("repo-url")
 		branch, _ := cmd.Flags().GetString("branch")
 		composePath, _ := cmd.Flags().GetString("compose-path")
 		autoSync, _ := cmd.Flags().GetBool("auto-sync")
@@ -559,7 +562,7 @@ func init() {
 
 	// Create command flags
 	createCmd.Flags().String("name", "", "Name of the sync configuration")
-	createCmd.Flags().String("repo", "", "Repository ID")
+	createCmd.Flags().String("repo-id", "", "Repository ID")
 	createCmd.Flags().String("branch", "", "Branch to sync from")
 	createCmd.Flags().String("compose-path", "", "Path to docker-compose file")
 	createCmd.Flags().Bool("auto-sync", false, "Enable automatic sync")
@@ -567,7 +570,7 @@ func init() {
 	createCmd.Flags().String("project-name", "", "Project name for the sync")
 	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = createCmd.MarkFlagRequired("name")
-	_ = createCmd.MarkFlagRequired("repo")
+	_ = createCmd.MarkFlagRequired("repo-id")
 	_ = createCmd.MarkFlagRequired("branch")
 	_ = createCmd.MarkFlagRequired("compose-path")
 
@@ -575,13 +578,13 @@ func init() {
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Update command flags
-	updateCmd.Flags().String("name", "", "Name of the sync configuration")
-	updateCmd.Flags().String("repo", "", "Repository ID")
-	updateCmd.Flags().String("branch", "", "Branch to sync from")
-	updateCmd.Flags().String("compose-path", "", "Path to docker-compose file")
-	updateCmd.Flags().String("project-name", "", "Project name for the sync")
-	updateCmd.Flags().Bool("auto-sync", false, "Enable automatic sync")
-	updateCmd.Flags().Int("interval", 0, "Sync interval in minutes")
+	updateCmd.Flags().StringVar(&gitopsUpdateName, "name", "", "Name of the sync configuration")
+	updateCmd.Flags().StringVar(&gitopsUpdateRepoID, "repo-id", "", "Repository ID")
+	updateCmd.Flags().StringVar(&gitopsUpdateBranch, "branch", "", "Branch to sync from")
+	updateCmd.Flags().StringVar(&gitopsUpdateComposePath, "compose-path", "", "Path to docker-compose file")
+	updateCmd.Flags().StringVar(&gitopsUpdateProjectName, "project-name", "", "Project name for the sync")
+	updateCmd.Flags().BoolVar(&gitopsUpdateAutoSync, "auto-sync", false, "Enable automatic sync")
+	updateCmd.Flags().IntVar(&gitopsUpdateInterval, "interval", 0, "Sync interval in minutes")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags
@@ -599,14 +602,14 @@ func init() {
 
 	// Import command flags
 	importCmd.Flags().String("name", "", "Name of the sync configuration")
-	importCmd.Flags().String("repo", "", "Git repository URL")
+	importCmd.Flags().String("repo-url", "", "Git repository URL")
 	importCmd.Flags().String("branch", "", "Branch to sync from")
 	importCmd.Flags().String("compose-path", "", "Path to docker-compose file")
 	importCmd.Flags().Bool("auto-sync", false, "Enable automatic sync")
 	importCmd.Flags().Int("interval", 5, "Sync interval in minutes")
 	importCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = importCmd.MarkFlagRequired("name")
-	_ = importCmd.MarkFlagRequired("repo")
+	_ = importCmd.MarkFlagRequired("repo-url")
 	_ = importCmd.MarkFlagRequired("branch")
 	_ = importCmd.MarkFlagRequired("compose-path")
 }
