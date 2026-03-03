@@ -373,16 +373,24 @@ var containersDeleteCmd = &cobra.Command{
 			}
 		}
 
-		path := types.Endpoints.Container(c.EnvID(), resolved.ID)
+		path := types.Endpoints.Container(c.EnvID(), resolved.ID) + "?force=true"
 		resp, err := c.Delete(cmd.Context(), path)
 		if err != nil {
 			return fmt.Errorf("failed to delete container: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[container.ActionResult]
+		var result base.ApiResponse[base.MessageResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if !result.Success {
+			msg := result.Data.Message
+			if msg == "" {
+				msg = "unknown error"
+			}
+			return fmt.Errorf("failed to delete container: %s", msg)
 		}
 
 		if jsonOutput {
