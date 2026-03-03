@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Token de acesso pessoal para o depósito (deixe em branco para manter).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Deixe em branco para preservar o token existente",
-	"build_history": "Histórico da Construção"
+	"build_history": "Histórico da Construção",
+	"deploy_pull_policy_missing": "Puxar se não estiver presente",
+	"deploy_pull_policy_always": "Sempre extrair o mais recente",
+	"deploy_pull_policy_never": "Nunca puxar",
+	"deploy_force_recreate": "Forçar contêineres recriados",
+	"settings_default_deploy_pull_policy": "Política de Pull de implantação padrão",
+	"settings_default_deploy_pull_policy_description": "Política padrão de pull de imagem ao implantar projetos"
 }
