@@ -504,13 +504,14 @@ var filesCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[[]gitops.FileTreeNode]
+		var result base.ApiResponse[gitops.BrowseResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
+		files := result.Data.Files
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(files, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -519,8 +520,8 @@ var filesCmd = &cobra.Command{
 		}
 
 		headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
-		rows := make([][]string, len(result.Data))
-		for i, node := range result.Data {
+		rows := make([][]string, len(files))
+		for i, node := range files {
 			size := ""
 			if node.Type == gitops.FileTreeNodeTypeFile {
 				size = fmt.Sprintf("%d", node.Size)
@@ -534,7 +535,7 @@ var filesCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d entries\n", len(result.Data))
+		fmt.Printf("\nTotal: %d entries\n", len(files))
 		return nil
 	},
 }
