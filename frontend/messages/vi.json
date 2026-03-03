@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Personal access token for Depot (leave blank to keep existing).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Leave blank to preserve the existing token",
-	"build_history": "Build History"
+	"build_history": "Build History",
+	"deploy_pull_policy_missing": "Pull if not present",
+	"deploy_pull_policy_always": "Always pull latest",
+	"deploy_pull_policy_never": "Never pull",
+	"deploy_force_recreate": "Force recreate containers",
+	"settings_default_deploy_pull_policy": "Default Deploy Pull Policy",
+	"settings_default_deploy_pull_policy_description": "Default image pull policy when deploying projects"
 }
