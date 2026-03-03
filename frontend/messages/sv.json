@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Personlig åtkomsttoken för Depot (lämna tomt för att fortsätta finnas).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Lämna tomt för att bevara den befintliga token",
-	"build_history": "Bygg historik"
+	"build_history": "Bygg historik",
+	"deploy_pull_policy_missing": "Dra om det inte finns",
+	"deploy_pull_policy_always": "Dra alltid senaste",
+	"deploy_pull_policy_never": "Dra aldrig",
+	"deploy_force_recreate": "Tvinga återskapa behållare",
+	"settings_default_deploy_pull_policy": "Standard distribuera Dra politik",
+	"settings_default_deploy_pull_policy_description": "Standardpolicy för bilddragning vid distribution av projekt"
 }
