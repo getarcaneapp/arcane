@@ -2159,5 +2159,11 @@
 	"build_settings_depot_token_description": "Token de acceso personal para el almacén (déjalo en blanco para seguir existiendo).",
 	"build_settings_depot_token_placeholder": "******",
 	"build_settings_depot_token_help": "Dejar en blanco para preservar el token existente",
-	"build_history": "Crear Historial"
+	"build_history": "Crear Historial",
+	"deploy_pull_policy_missing": "Tirar si no está presente",
+	"deploy_pull_policy_always": "Siempre tirar último",
+	"deploy_pull_policy_never": "Nunca tirar",
+	"deploy_force_recreate": "Forzar recrear contenedores",
+	"settings_default_deploy_pull_policy": "Despliegue por defecto Pull Policy",
+	"settings_default_deploy_pull_policy_description": "Política de extracción de imagen por defecto al desplegar proyectos"
 }
