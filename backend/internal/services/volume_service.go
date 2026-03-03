@@ -46,6 +46,26 @@ type VolumeService struct {
 
 const volumeHelperImage = "busybox:stable-musl"
 
+type backupStorageMode string
+
+const (
+	// backupStorageModeArcaneMount means backup helpers mirror an existing Arcane
+	// container mount at /backups. This intentionally covers any mount the Arcane
+	// container already has at /backups, not exclusively bind mounts.
+	backupStorageModeArcaneMount backupStorageMode = "arcane_mount"
+	// backupStorageModeNamedVolumeFallback means no suitable Arcane container
+	// mount was found, so Arcane's dedicated named backup volume is used.
+	backupStorageModeNamedVolumeFallback backupStorageMode = "named_volume_fallback"
+)
+
+const backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
+
+type backupStorageMountInternal struct {
+	mode           backupStorageMode
+	mount          mount.Mount
+	requiresEnsure bool
+}
+
 func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, backupVolumeName string) *VolumeService {
 	slog.Debug("volume service: new")
 	if strings.TrimSpace(backupVolumeName) == "" {
@@ -341,41 +361,17 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 	}
 
 	targetPath := path.Join("/volume", sanitizedPath)
-	copyResult, err := dockerClient.CopyFromContainer(ctx, containerID, client.CopyFromContainerOptions{
-		SourcePath: targetPath,
-	})
-	if err != nil {
-		cleanup()
-		return nil, 0, fmt.Errorf("failed to download: %w", err)
-	}
-	reader := copyResult.Content
-
-	tr := tar.NewReader(reader)
-	hdr, err := tr.Next()
-	if err != nil {
-		_ = reader.Close()
-		cleanup()
-		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
-	}
-	if hdr.FileInfo().IsDir() {
-		_ = reader.Close()
-		cleanup()
-		return nil, 0, fmt.Errorf("path is a directory")
-	}
-	size := hdr.Size
-
-	return &cleanupReadCloser{
-		Reader:  tr,
-		Closer:  reader,
-		cleanup: cleanup,
-	}, size, nil
+	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, targetPath, cleanup)
 }
 
-func (s *VolumeService) getHelperImageInternal(ctx context.Context) (string, error) {
+func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
-	dockerClient, err := s.dockerService.GetClient()
-	if err != nil {
-		return "", fmt.Errorf("failed to get docker client: %w", err)
+	var err error
+	if dockerClient == nil {
+		dockerClient, err = s.dockerService.GetClient()
+		if err != nil {
+			return "", fmt.Errorf("failed to get docker client: %w", err)
+		}
 	}
 
 	if _, err := dockerClient.ImageInspect(ctx, volumeHelperImage); err == nil {
@@ -422,6 +418,86 @@ func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, do
 	return "", "", false
 }
 
+func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) (backupStorageMountInternal, bool) {
+	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
+	if mirroredMount == nil {
+		return backupStorageMountInternal{}, false
+	}
+	// MountForDestination only returns non-nil for bind and named volume mounts.
+
+	if !readOnly && mirroredMount.ReadOnly {
+		slog.Warn("volume service: requested writable backup mount but source is read-only; writes may fail")
+	}
+	mirroredMount.ReadOnly = readOnly
+
+	return backupStorageMountInternal{
+		mode:  backupStorageModeArcaneMount,
+		mount: *mirroredMount,
+	}, true
+}
+
+func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (backupStorageMountInternal, error) {
+	if dockerClient != nil {
+		containerID := s.getArcaneContainerIDInternal(ctx, dockerClient)
+		if containerID != "" {
+			inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+			if err != nil {
+				slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "container_id", containerID, "error", err.Error())
+			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly); ok {
+				return resolved, nil
+			}
+		}
+	}
+
+	return backupStorageMountInternal{
+		mode: backupStorageModeNamedVolumeFallback,
+		mount: mount.Mount{
+			Type:     mount.TypeVolume,
+			Source:   s.backupVolumeName,
+			Target:   target,
+			ReadOnly: readOnly,
+		},
+		requiresEnsure: true,
+	}, nil
+}
+
+func (s *VolumeService) resolveUsableBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (backupStorageMountInternal, error) {
+	backupStorage, err := s.resolveBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
+	if err != nil {
+		return backupStorageMountInternal{}, err
+	}
+	if backupStorage.requiresEnsure {
+		if err := s.ensureBackupVolumeInternal(ctx); err != nil {
+			return backupStorageMountInternal{}, err
+		}
+	}
+	return backupStorage, nil
+}
+
+func backupMountWarningForStorageInternal(storage backupStorageMountInternal) string {
+	if storage.mode == backupStorageModeArcaneMount {
+		return ""
+	}
+	return backupMountMissingWarning
+}
+
+func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) string {
+	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true)
+	if ok {
+		return backupMountWarningForStorageInternal(backupStorage)
+	}
+
+	// Backward compatibility: historically either /backups or /restores mount
+	// suppressed the warning. Preserve that user-visible behavior.
+	for _, m := range mounts {
+		if m.Destination == "/restores" {
+			return ""
+		}
+	}
+
+	return backupMountMissingWarning
+}
+
 func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
@@ -430,6 +506,7 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 
 	containerID := s.getArcaneContainerIDInternal(ctx, dockerClient)
 	if containerID == "" {
+		// Cannot determine Arcane mount status (e.g. running outside Docker); suppress warning.
 		return ""
 	}
 
@@ -438,22 +515,7 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 		return ""
 	}
 
-	hasBackups := false
-	hasRestores := false
-	for _, mount := range inspect.Container.Mounts {
-		if mount.Destination == "/backups" {
-			hasBackups = true
-		}
-		if mount.Destination == "/restores" {
-			hasRestores = true
-		}
-	}
-
-	if hasBackups || hasRestores {
-		return ""
-	}
-
-	return "No volume is mounted at /backups or /restores in the Arcane container. Backups/restores will only live inside Docker unless you mount a host path."
+	return backupMountWarningFromArcaneMountsInternal(inspect.Container.Mounts)
 }
 
 func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, dockerClient *client.Client) string {
@@ -478,6 +540,67 @@ func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, docker
 	}
 
 	return containers.Items[0].ID
+}
+
+func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, backupMount mount.Mount) (string, func(), error) {
+	var err error
+	if dockerClient == nil {
+		dockerClient, err = s.dockerService.GetClient()
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return "", nil, err
+	}
+
+	config := &container.Config{
+		Image:           helperImage,
+		Cmd:             []string{"sleep", "infinity"},
+		NetworkDisabled: true,
+		Labels:          buildVolumeHelperLabelsInternal(),
+	}
+
+	hostConfig := s.buildHelperHostConfigInternal(helperImage, nil, []mount.Mount{backupMount})
+
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     config,
+		HostConfig: hostConfig,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
+	}
+
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+		return "", nil, fmt.Errorf("failed to start backup temp container: %w", err)
+	}
+
+	cleanup := func() {
+		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal())
+	}
+
+	return resp.ID, cleanup, nil
+}
+
+func (s *VolumeService) createBackupTempContainerInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error) {
+	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "read_only", readOnly)
+	var err error
+	if dockerClient == nil {
+		dockerClient, err = s.dockerService.GetClient()
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return s.createBackupTempContainerWithMountInternal(ctx, dockerClient, backupStorage.mount)
 }
 
 type cleanupReadCloser struct {
@@ -523,9 +646,10 @@ func (s *VolumeService) isArcaneFallbackHelperImageInternal(helperImage string) 
 	return !strings.EqualFold(strings.TrimSpace(helperImage), volumeHelperImage)
 }
 
-func (s *VolumeService) buildHelperHostConfigInternal(helperImage string, binds []string) *container.HostConfig {
+func (s *VolumeService) buildHelperHostConfigInternal(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
 	hostConfig := &container.HostConfig{
 		Binds:      binds,
+		Mounts:     mounts,
 		AutoRemove: true,
 	}
 
@@ -557,7 +681,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 		}
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx)
+	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return "", nil, err
 	}
@@ -576,7 +700,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 			}
 			return ""
 		}()),
-	})
+	}, nil)
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -886,19 +1010,23 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User) (*models.VolumeBackup, error) {
 	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID)
-	if err := s.ensureBackupVolumeInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	dockerClient, err := s.dockerService.GetClient()
 	if err != nil {
 		return nil, err
 	}
 
 	backupID := fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
-	filename := fmt.Sprintf("%s.tar.gz", backupID)
+	filename, err := s.backupArchiveFilenameInternal(backupID)
+	if err != nil {
+		return nil, err
+	}
 
-	helperImage, err := s.getHelperImageInternal(ctx)
+	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return nil, err
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/backups", false)
 	if err != nil {
 		return nil, err
 	}
@@ -911,8 +1039,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 
 	hostConfig := s.buildHelperHostConfigInternal(helperImage, []string{
 		fmt.Sprintf("%s:/volume:ro", volumeName),
-		fmt.Sprintf("%s:/backups", s.backupVolumeName),
-	})
+	}, []mount.Mount{backupStorage.mount})
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -939,7 +1066,11 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		}
 	}
 
-	tempContainerID, cleanup, err := s.createTempContainerInternal(ctx, s.backupVolumeName, true)
+	sizeCheckMount := backupStorage.mount
+	sizeCheckMount.Target = "/volume"
+	sizeCheckMount.ReadOnly = true
+
+	tempContainerID, cleanup, err := s.createBackupTempContainerWithMountInternal(ctx, dockerClient, sizeCheckMount)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,13 +1201,15 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	}
 
 	// Now delete the actual file - best effort since DB record is already gone
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, s.backupVolumeName, false)
+	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", false)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backup_id", backupID, "error", err.Error())
 	} else {
 		defer cleanup()
-		filename := fmt.Sprintf("%s.tar.gz", backupID)
-		if _, _, err = s.execInContainerInternal(ctx, containerID, []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
+		filename, filenameErr := s.backupArchiveFilenameInternal(backupID)
+		if filenameErr != nil {
+			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backup_id", backupID, "error", filenameErr.Error())
+		} else if _, _, err = s.execInContainerInternal(ctx, containerID, []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
 			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backup_id", backupID, "error", err.Error())
 		}
 	}
@@ -1126,9 +1259,17 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		return err
 	}
 
-	filename := fmt.Sprintf("%s.tar.gz", backupID)
+	filename, err := s.backupArchiveFilenameInternal(backupID)
+	if err != nil {
+		return err
+	}
 
-	helperImage, err := s.getHelperImageInternal(ctx)
+	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return err
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/backups", true)
 	if err != nil {
 		return err
 	}
@@ -1145,8 +1286,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 
 	hostConfig := s.buildHelperHostConfigInternal(helperImage, []string{
 		fmt.Sprintf("%s:/volume", volumeName),
-		fmt.Sprintf("%s:/backups:ro", s.backupVolumeName),
-	})
+	}, []mount.Mount{backupStorage.mount})
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -1205,6 +1345,26 @@ func (s *VolumeService) sanitizeBackupPathInternal(input string) (string, error)
 	return cleaned, nil
 }
 
+func (s *VolumeService) sanitizeBackupIDInternal(backupID string) (string, error) {
+	cleaned, err := s.sanitizeBackupPathInternal(backupID)
+	if err != nil {
+		return "", fmt.Errorf("invalid backup id: %w", err)
+	}
+	if strings.Contains(cleaned, "/") {
+		return "", fmt.Errorf("invalid backup id: path separators not allowed")
+	}
+	return cleaned, nil
+}
+
+func (s *VolumeService) backupArchiveFilenameInternal(backupID string) (string, error) {
+	sanitizedBackupID, err := s.sanitizeBackupIDInternal(backupID)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s.tar.gz", sanitizedBackupID), nil
+}
+
 // sanitizeBrowsePath validates and cleans a path for file browser operations.
 // It ensures the path stays within the volume boundary.
 func (s *VolumeService) sanitizeBrowsePathInternal(input string) (string, error) {
@@ -1230,11 +1390,11 @@ func (s *VolumeService) sanitizeBrowsePathInternal(input string) (string, error)
 
 func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, filePath string) (bool, error) {
 	slog.DebugContext(ctx, "volume service: backup has path", "backup_id", backupID, "path", filePath)
-	if err := s.ensureBackupVolumeInternal(ctx); err != nil {
+	cleaned, err := s.sanitizeBackupPathInternal(filePath)
+	if err != nil {
 		return false, err
 	}
-
-	cleaned, err := s.sanitizeBackupPathInternal(filePath)
+	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
 		return false, err
 	}
@@ -1244,13 +1404,13 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, file
 		return false, err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, s.backupVolumeName, true)
+	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", true)
 	if err != nil {
 		return false, err
 	}
 	defer cleanup()
 
-	archivePath := path.Join("/volume", fmt.Sprintf("%s.tar.gz", backupID))
+	archivePath := path.Join("/volume", filename)
 	cmd := []string{"tar", "-tzf", archivePath}
 	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
@@ -1276,7 +1436,8 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, file
 
 func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([]string, error) {
 	slog.DebugContext(ctx, "volume service: list backup files", "backup_id", backupID)
-	if err := s.ensureBackupVolumeInternal(ctx); err != nil {
+	filename, err := s.backupArchiveFilenameInternal(backupID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1285,13 +1446,13 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 		return nil, err
 	}
 
-	containerID, cleanup, err := s.createTempContainerInternal(ctx, s.backupVolumeName, true)
+	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", true)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	archivePath := path.Join("/volume", fmt.Sprintf("%s.tar.gz", backupID))
+	archivePath := path.Join("/volume", filename)
 	cmd := []string{"tar", "-tzf", archivePath}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
@@ -1324,6 +1485,10 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	slog.DebugContext(ctx, "volume service: restore backup files", "volume", volumeName, "backup_id", backupID, "paths_count", len(paths), "user", user.ID)
 	if len(paths) == 0 {
 		return fmt.Errorf("no paths provided")
+	}
+	filename, err := s.backupArchiveFilenameInternal(backupID)
+	if err != nil {
+		return err
 	}
 
 	var backup models.VolumeBackup
@@ -1363,7 +1528,12 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		return err
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx)
+	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return err
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/backups", true)
 	if err != nil {
 		return err
 	}
@@ -1377,8 +1547,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 
 	hostConfig := s.buildHelperHostConfigInternal(helperImage, []string{
 		fmt.Sprintf("%s:/volume", volumeName),
-		fmt.Sprintf("%s:/backups:ro", s.backupVolumeName),
-	})
+	}, []mount.Mount{backupStorage.mount})
 
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
@@ -1398,7 +1567,6 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	}
 	defer cleanup()
 
-	filename := fmt.Sprintf("%s.tar.gz", backupID)
 	cmd := append([]string{"tar", "-xzf", path.Join("/backups", filename), "-C", "/volume", "--"}, tarPaths...)
 	_, stderr, err := s.execInContainerInternal(ctx, resp.ID, cmd)
 	if err != nil {
@@ -1427,8 +1595,21 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 
 func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, user *models.User) (io.ReadCloser, int64, error) {
 	slog.DebugContext(ctx, "volume service: download backup", "backup_id", backupID)
-	filename := fmt.Sprintf("%s.tar.gz", backupID)
-	reader, size, err := s.DownloadFile(ctx, s.backupVolumeName, filename)
+	filename, err := s.backupArchiveFilenameInternal(backupID)
+	if err != nil {
+		return nil, 0, err
+	}
+	dockerClient, err := s.dockerService.GetClient()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, dockerClient, "/volume", true)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	reader, size, err := s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", filename), cleanup)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1886,4 +2067,40 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, counts, nil
+}
+
+func (s *VolumeService) downloadFileFromContainerInternal(
+	ctx context.Context,
+	dockerClient *client.Client,
+	containerID string,
+	containerPath string,
+	cleanup func(),
+) (io.ReadCloser, int64, error) {
+	copyResult, err := dockerClient.CopyFromContainer(ctx, containerID, client.CopyFromContainerOptions{
+		SourcePath: containerPath,
+	})
+	if err != nil {
+		cleanup()
+		return nil, 0, fmt.Errorf("failed to download: %w", err)
+	}
+	reader := copyResult.Content
+
+	tr := tar.NewReader(reader)
+	hdr, err := tr.Next()
+	if err != nil {
+		_ = reader.Close()
+		cleanup()
+		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
+	}
+	if hdr.FileInfo().IsDir() {
+		_ = reader.Close()
+		cleanup()
+		return nil, 0, fmt.Errorf("path is a directory")
+	}
+
+	return &cleanupReadCloser{
+		Reader:  tr,
+		Closer:  reader,
+		cleanup: cleanup,
+	}, hdr.Size, nil
 }
