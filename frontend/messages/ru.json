@@ -1365,7 +1365,7 @@
 	"git_sync_import_button": "Импорт синхронизации",
 	"git_sync_import_success": "Синхронизация {count} успешно импортирована.",
 	"git_sync_import_partial_success": "Импортирована синхронизация {successCount} с ошибками {failedCount}.",
-	"git_sync_import_failed_count": "Failed to import syncs. {count} errors.",
+	"git_sync_import_failed_count": "Не удалось импортировать синхронизацию. {count} ошибок.",
 	"git_sync_import_failed": "Не удалось импортировать",
 	"git_sync_import_open_button": "Импорт .JSON",
 	"git_sync_browse_files_title": "Просмотр файлов репозитория",
