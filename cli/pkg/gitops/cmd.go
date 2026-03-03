@@ -428,14 +428,14 @@ var syncCmd = &cobra.Command{
 
 		if result.Data.Success {
 			output.Success("Sync triggered successfully: %s", result.Data.Message)
-		} else {
-			errMsg := ""
-			if result.Data.Error != nil {
-				errMsg = *result.Data.Error
-			}
-			output.Error("Sync failed: %s %s", result.Data.Message, errMsg)
+			return nil
 		}
-		return nil
+
+		errMsg := ""
+		if result.Data.Error != nil {
+			errMsg = *result.Data.Error
+		}
+		return fmt.Errorf("sync failed: %s %s", result.Data.Message, errMsg)
 	},
 }
 
