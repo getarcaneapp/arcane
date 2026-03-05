@@ -27,16 +27,17 @@ const (
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
 // Available options: file, toLower, trimTrailingSlash
 type Config struct {
-	AppUrl        string         `env:"APP_URL" default:"http://localhost:3552"`
-	DatabaseURL   string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
-	Port          string         `env:"PORT" default:"3552"`
-	Listen        string         `env:"LISTEN" default:""`
-	TLSEnabled    bool           `env:"TLS_ENABLED" default:"false"`
-	TLSCertFile   string         `env:"TLS_CERT_FILE" default:""`
-	TLSKeyFile    string         `env:"TLS_KEY_FILE" default:""`
-	Environment   AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret     string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
-	EncryptionKey string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
+	AppUrl           string         `env:"APP_URL" default:"http://localhost:3552"`
+	DatabaseURL      string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	Port             string         `env:"PORT" default:"3552"`
+	Listen           string         `env:"LISTEN" default:""`
+	TLSEnabled       bool           `env:"TLS_ENABLED" default:"false"`
+	TLSCertFile      string         `env:"TLS_CERT_FILE" default:""`
+	TLSKeyFile       string         `env:"TLS_KEY_FILE" default:""`
+	Environment      AppEnvironment `env:"ENVIRONMENT" default:"production"`
+	JWTSecret        string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
+	JWTRefreshExpiry time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
+	EncryptionKey    string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 
 	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
 	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
@@ -123,7 +124,7 @@ func loadFromEnv(cfg *Config) {
 			envValue = defaultValue
 		}
 
-		setFieldValue(field, envValue)
+		setFieldValueInternal(field, fieldType, envValue)
 	})
 }
 
@@ -241,8 +242,8 @@ func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructFi
 	}
 }
 
-// setFieldValue sets a reflect.Value from a string based on the field's type.
-func setFieldValue(field reflect.Value, value string) {
+// setFieldValueInternal sets a reflect.Value from a string based on the field's type.
+func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, value string) {
 	if !field.CanSet() {
 		return
 	}
@@ -270,6 +271,37 @@ func setFieldValue(field reflect.Value, value string) {
 	if field.Kind() == reflect.Int {
 		if i, err := strconv.Atoi(value); err == nil {
 			field.SetInt(int64(i))
+		}
+		return
+	}
+
+	if field.Type() == reflect.TypeFor[time.Duration]() {
+		applyDurationDefault := func(reason string) {
+			envTag := fieldType.Tag.Get("env")
+			defaultValue := fieldType.Tag.Get("default")
+
+			if fallback, fallbackErr := time.ParseDuration(defaultValue); fallbackErr == nil {
+				slog.Warn(reason+", using tagged default",
+					"field", envTag,
+					"value", value,
+					"default", defaultValue)
+				field.SetInt(int64(fallback))
+			} else {
+				slog.Warn(reason+", and invalid tagged default",
+					"field", envTag,
+					"value", value,
+					"default", defaultValue)
+			}
+		}
+
+		if d, err := time.ParseDuration(value); err == nil {
+			if d > 0 {
+				field.SetInt(int64(d))
+			} else {
+				applyDurationDefault("Non-positive duration for config field")
+			}
+		} else {
+			applyDurationDefault("Invalid duration for config field")
 		}
 		return
 	}

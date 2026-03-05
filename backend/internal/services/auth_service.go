@@ -64,7 +64,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		settingsService: settingsService,
 		eventService:    eventService,
 		jwtSecret:       crypto.CheckOrGenerateJwtSecret(jwtSecret),
-		refreshExpiry:   7 * 24 * time.Hour,
+		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
 	}
 }
