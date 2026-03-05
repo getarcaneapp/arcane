@@ -2193,4 +2193,3 @@
 	"settings_default_deploy_pull_policy": "Default Deploy Pull Policy",
 	"settings_default_deploy_pull_policy_description": "Default image pull policy when deploying projects"
 }
-}
