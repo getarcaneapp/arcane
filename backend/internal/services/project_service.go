@@ -272,7 +272,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 5. Up specific services
-	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false); err != nil {
+	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
 		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
 		return fmt.Errorf("failed to up services: %w", err)
 	}
