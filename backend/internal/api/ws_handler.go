@@ -299,7 +299,7 @@ func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched,
 		format: format,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
 	ls.cancel = cancel
 
 	ls.hub.SetOnEmpty(func() {
@@ -439,7 +439,7 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 		format: format,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
 	ls.cancel = cancel
 
 	ls.hub.SetOnEmpty(func() {
@@ -522,7 +522,7 @@ func (h *WebSocketHandler) ContainerStats(c *gin.Context) {
 func (h *WebSocketHandler) startContainerStatsHub(containerID string, onEmptyHook func()) *ws.Hub {
 	hub := ws.NewHub(64)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
 
 	hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {

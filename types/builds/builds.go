@@ -21,7 +21,7 @@ type SettingsProvider interface {
 }
 
 type DockerClientProvider interface {
-	GetClient() (*dockerclient.Client, error)
+	GetClient(ctx context.Context) (*dockerclient.Client, error)
 }
 
 type RegistryAuthProvider interface {

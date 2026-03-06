@@ -49,7 +49,7 @@ func NewImageService(db *database.DB, dockerService *DockerClientService, regist
 // and ImageList concurrently so the size field reflects the same metric shown in the
 // image table (docker image ls / docker system df).
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -98,7 +98,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 }
 
 func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user models.User) error {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -157,7 +157,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 }
 
 func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []containerregistry.Credential) error {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -233,7 +233,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	// Wrap reader with size limit enforcement
 	limitedReader := io.LimitReader(reader, maxSizeBytes+1)
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, models.JSON{"action": "load"})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -281,7 +281,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 }
 
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -367,7 +367,7 @@ func isUnauthorizedPullErrorInternal(err error) bool {
 }
 
 func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.PruneReport, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -474,7 +474,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 }
 
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -560,7 +560,7 @@ func convertLabels(labels map[string]string) map[string]any {
 }
 
 func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

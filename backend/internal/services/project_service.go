@@ -82,7 +82,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
 	if hostDir == "" {
-		if dockerCli, derr := s.dockerService.GetClient(); derr == nil {
+		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
 			absContainerDir, _ := filepath.Abs(containerDirResolved)
 			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
 				hostDir = discovery

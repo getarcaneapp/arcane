@@ -73,7 +73,7 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
-	dockerClient, err := j.dockerClientService.GetClient()
+	dockerClient, err := j.dockerClientService.GetClient(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to get Docker client", "error", err)
 		return

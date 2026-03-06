@@ -57,7 +57,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	}
 
 	// Verify we can access Docker
-	_, err = s.dockerService.GetClient()
+	_, err = s.dockerService.GetClient(ctx)
 	if err != nil {
 		return false, ErrDockerSocketAccess
 	}
@@ -124,7 +124,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -221,7 +221,7 @@ func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
 
 // findArcaneContainer finds the container using the ID
 func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containerId string) (containertypes.InspectResponse, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return containertypes.InspectResponse{}, err
 	}

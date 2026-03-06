@@ -281,13 +281,15 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 			defaultValue := fieldType.Tag.Get("default")
 
 			if fallback, fallbackErr := time.ParseDuration(defaultValue); fallbackErr == nil {
-				slog.Warn(reason+", using tagged default",
+				slog.Warn("Invalid duration for config field, using tagged default", //nolint:gosec // logging invalid config input for diagnostics is intentional here.
+					"reason", reason,
 					"field", envTag,
 					"value", value,
 					"default", defaultValue)
 				field.SetInt(int64(fallback))
 			} else {
-				slog.Warn(reason+", and invalid tagged default",
+				slog.Warn("Invalid duration for config field and invalid tagged default", //nolint:gosec // logging invalid config input for diagnostics is intentional here.
+					"reason", reason,
 					"field", envTag,
 					"value", value,
 					"default", defaultValue)

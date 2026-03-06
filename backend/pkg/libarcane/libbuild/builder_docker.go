@@ -224,7 +224,7 @@ func copyContextTreeInternal(srcRoot, dstRoot string) error {
 			if err != nil {
 				return err
 			}
-			return os.Symlink(linkTarget, targetPath)
+			return os.Symlink(linkTarget, targetPath) //nolint:gosec // build context staging intentionally preserves symlinks from the user-selected source tree.
 		}
 
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
@@ -398,7 +398,7 @@ func (b *builder) buildWithDockerInternal(ctx context.Context, req imagetypes.Bu
 		return nil, errors.New("docker service not available")
 	}
 
-	dockerClient, err := b.dockerClientProvider.GetClient()
+	dockerClient, err := b.dockerClientProvider.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

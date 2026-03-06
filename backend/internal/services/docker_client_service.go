@@ -3,7 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -16,6 +19,8 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 )
+
+const dockerClientNegotiationTimeout = 5 * time.Second
 
 type DockerClientService struct {
 	db              *database.DB
@@ -33,25 +38,54 @@ func NewDockerClientService(db *database.DB, cfg *config.Config, settingsService
 	}
 }
 
-// GetClient returns a singleton Docker client instance.
-// It initializes the client on the first call.
-func (s *DockerClientService) GetClient() (*client.Client, error) {
-	if s.client != nil {
-		return s.client, nil
+func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
+	probeClient, err := client.New(
+		client.WithHost(host),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker probe client: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
+	defer cancel()
+
+	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
+	if err != nil {
+		if closeErr := probeClient.Close(); closeErr != nil {
+			slog.Warn("failed to close probe Docker client after ping failure", "error", closeErr)
+		}
+		return nil, fmt.Errorf("failed to negotiate Docker API version: %w", err)
+	}
+
+	apiVersion := strings.TrimSpace(pingResult.APIVersion)
+	if apiVersion == "" {
+		return probeClient, nil
+	}
+
+	_ = probeClient.Close()
+
+	configuredClient, err := client.New(
+		client.WithHost(host),
+		client.WithAPIVersion(apiVersion),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
+	}
+
+	return configuredClient, nil
+}
+
+// GetClient returns a singleton Docker client instance.
+// It initializes the client on the first call.
+func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Double-check locking
 	if s.client != nil {
 		return s.client, nil
 	}
 
-	cli, err := client.New(
-		client.WithHost(s.config.DockerHost),
-		client.WithAPIVersionFromEnv(),
-	)
+	cli, err := newDockerClientInternal(ctx, s.config.DockerHost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
@@ -61,7 +95,7 @@ func (s *DockerClientService) GetClient() (*client.Client, error) {
 }
 
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
-	dockerClient, err := s.GetClient()
+	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -90,7 +124,7 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 }
 
 func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, int, int, int, error) {
-	dockerClient, err := s.GetClient()
+	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -138,7 +172,7 @@ func countImageUsageInternal(images []image.Summary, containers []container.Summ
 }
 
 func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, inuseNetworks int, unusedNetworks int, totalNetworks int, error error) {
-	dockerClient, err := s.GetClient()
+	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -192,7 +226,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 }
 
 func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volume, int, int, int, error) {
-	dockerClient, err := s.GetClient()
+	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

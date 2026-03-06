@@ -85,7 +85,7 @@ func NewVolumeService(db *database.DB, dockerService *DockerClientService, event
 
 func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volumetypes.Volume, error) {
 	slog.DebugContext(ctx, "volume service: get volume", "volume", name)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -125,7 +125,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 
 func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user models.User) (*volumetypes.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -160,7 +160,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -192,7 +192,7 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneRep
 
 func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (*volumetypes.PruneReport, error) {
 	slog.DebugContext(ctx, "volume service: prune volumes with options", "all", all)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -350,7 +350,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 		return nil, 0, fmt.Errorf("invalid path: %w", err)
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -368,7 +368,7 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 	slog.DebugContext(ctx, "volume service: resolve helper image")
 	var err error
 	if dockerClient == nil {
-		dockerClient, err = s.dockerService.GetClient()
+		dockerClient, err = s.dockerService.GetClient(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to get docker client: %w", err)
 		}
@@ -499,7 +499,7 @@ func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) s
 }
 
 func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return ""
 	}
@@ -545,7 +545,7 @@ func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, docker
 func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, backupMount mount.Mount) (string, func(), error) {
 	var err error
 	if dockerClient == nil {
-		dockerClient, err = s.dockerService.GetClient()
+		dockerClient, err = s.dockerService.GetClient(ctx)
 		if err != nil {
 			return "", nil, err
 		}
@@ -589,7 +589,7 @@ func (s *VolumeService) createBackupTempContainerInternal(ctx context.Context, d
 	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "read_only", readOnly)
 	var err error
 	if dockerClient == nil {
-		dockerClient, err = s.dockerService.GetClient()
+		dockerClient, err = s.dockerService.GetClient(ctx)
 		if err != nil {
 			return "", nil, err
 		}
@@ -670,7 +670,7 @@ func (c *cleanupReadCloser) Close() error {
 
 func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeName string, readOnly bool) (string, func(), error) {
 	slog.DebugContext(ctx, "volume service: create temp container", "volume", volumeName, "read_only", readOnly)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", nil, err
 	}
@@ -749,7 +749,7 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 }
 
 func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to get docker client for helper cleanup", "error", err)
 		return
@@ -773,7 +773,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 }
 
 func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) error {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
 	}
@@ -812,7 +812,7 @@ func (s *VolumeService) removeHelperEntry(volumeName string) {
 
 func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID string, cmd []string) (string, string, error) {
 	slog.DebugContext(ctx, "volume service: exec in container", "container_id", containerID, "cmd", cmd)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -929,7 +929,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -991,7 +991,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 
 func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	slog.DebugContext(ctx, "volume service: ensure backup volume", "backup_volume", s.backupVolumeName)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -1010,7 +1010,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User) (*models.VolumeBackup, error) {
 	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1254,7 +1254,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -1523,7 +1523,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		tarPaths = append(tarPaths, "./"+p)
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -1599,7 +1599,7 @@ func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, use
 	if err != nil {
 		return nil, 0, err
 	}
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1669,7 +1669,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -1739,7 +1739,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, []string, error) {
 	slog.DebugContext(ctx, "volume service: get volume usage", "volume", name)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -1768,7 +1768,7 @@ type VolumeSizeData struct {
 // This is a slow operation as it calls Docker's DiskUsage API.
 func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
 	slog.DebugContext(ctx, "volume service: get volume sizes")
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -1989,7 +1989,7 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit, "include_internal", includeInternal)
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

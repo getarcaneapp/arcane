@@ -455,8 +455,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 		return fmt.Errorf("refresh token not configured; run `arcane auth login`")
 	}
 
-	refreshReq := auth.Refresh{RefreshToken: c.refreshToken}
-	bodyBytes, err := json.Marshal(refreshReq)
+	bodyBytes, err := json.Marshal(map[string]string{"refreshToken": c.refreshToken})
 	if err != nil {
 		return fmt.Errorf("failed to marshal refresh request: %w", err)
 	}

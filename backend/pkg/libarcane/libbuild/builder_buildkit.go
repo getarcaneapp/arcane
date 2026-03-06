@@ -183,7 +183,7 @@ func (b *builder) buildLoadExportInternal(ctx context.Context, tags []string) (b
 		return buildkit.ExportEntry{}, nil, errors.New("docker service not available")
 	}
 
-	dockerClient, err := b.dockerClientProvider.GetClient()
+	dockerClient, err := b.dockerClientProvider.GetClient(ctx)
 	if err != nil {
 		return buildkit.ExportEntry{}, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
