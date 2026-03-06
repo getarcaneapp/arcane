@@ -23,21 +23,26 @@ import (
 )
 
 type dockerBuildInput struct {
+	buildFilesystemInput
+	platform    string
+	buildArgs   map[string]*string
+	labels      map[string]string
+	cacheFrom   []string
+	noCache     bool
+	pullParent  bool
+	networkMode string
+	isolation   string
+	shmSize     int64
+	ulimits     []*dockercontainer.Ulimit
+	extraHosts  []string
+}
+
+type buildFilesystemInput struct {
 	contextDir           string
 	fullDockerfilePath   string
 	relDockerfile        string
 	dockerfileOutsideCtx bool
-	platform             string
-	buildArgs            map[string]*string
-	labels               map[string]string
-	cacheFrom            []string
-	noCache              bool
-	pullParent           bool
-	networkMode          string
-	isolation            string
-	shmSize              int64
-	ulimits              []*dockercontainer.Ulimit
-	extraHosts           []string
+	dockerfileInline     string
 }
 
 func parseUlimitsInternal(values map[string]string) []*dockercontainer.Ulimit {
@@ -79,19 +84,19 @@ func parseUlimitsInternal(values map[string]string) []*dockercontainer.Ulimit {
 	return out
 }
 
-func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildInput, bool, error) {
+func prepareBuildFilesystemInputInternal(req imagetypes.BuildRequest) (buildFilesystemInput, error) {
 	contextDir := filepath.Clean(req.ContextDir)
 	if contextDir == "" {
-		return dockerBuildInput{}, false, errors.New("contextDir is required")
+		return buildFilesystemInput{}, errors.New("contextDir is required")
 	}
 
-	if len(req.Platforms) > 1 {
-		return dockerBuildInput{}, true, fmt.Errorf("docker build fallback does not support multi-platform builds")
-	}
-
-	platform := ""
-	if len(req.Platforms) == 1 {
-		platform = strings.TrimSpace(req.Platforms[0])
+	if strings.TrimSpace(req.DockerfileInline) != "" {
+		return buildFilesystemInput{
+			contextDir:           contextDir,
+			relDockerfile:        ".arcane.inline.Dockerfile",
+			dockerfileOutsideCtx: true,
+			dockerfileInline:     req.DockerfileInline,
+		}, nil
 	}
 
 	dockerfilePath := strings.TrimSpace(req.Dockerfile)
@@ -110,6 +115,29 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 		relDockerfile = filepath.Base(fullDockerfilePath)
 	} else {
 		relDockerfile = filepath.ToSlash(relDockerfile)
+	}
+
+	return buildFilesystemInput{
+		contextDir:           contextDir,
+		fullDockerfilePath:   fullDockerfilePath,
+		relDockerfile:        relDockerfile,
+		dockerfileOutsideCtx: dockerfileOutsideCtx,
+	}, nil
+}
+
+func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildInput, bool, error) {
+	fsInput, err := prepareBuildFilesystemInputInternal(req)
+	if err != nil {
+		return dockerBuildInput{}, false, err
+	}
+
+	if len(req.Platforms) > 1 {
+		return dockerBuildInput{}, true, fmt.Errorf("docker build fallback does not support multi-platform builds")
+	}
+
+	platform := ""
+	if len(req.Platforms) == 1 {
+		platform = strings.TrimSpace(req.Platforms[0])
 	}
 
 	buildArgs := map[string]*string{}
@@ -155,10 +183,7 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 	}
 
 	return dockerBuildInput{
-		contextDir:           contextDir,
-		fullDockerfilePath:   fullDockerfilePath,
-		relDockerfile:        relDockerfile,
-		dockerfileOutsideCtx: dockerfileOutsideCtx,
+		buildFilesystemInput: fsInput,
 		platform:             platform,
 		buildArgs:            buildArgs,
 		labels:               labels,
@@ -235,8 +260,8 @@ func copyContextTreeInternal(srcRoot, dstRoot string) error {
 	})
 }
 
-func prepareDockerBuildContextInternal(input dockerBuildInput) (string, string, func(), error) {
-	if !input.dockerfileOutsideCtx {
+func prepareBuildContextInternal(input buildFilesystemInput) (string, string, func(), error) {
+	if input.dockerfileInline == "" && !input.dockerfileOutsideCtx {
 		return input.contextDir, input.relDockerfile, func() {}, nil
 	}
 
@@ -254,6 +279,20 @@ func prepareDockerBuildContextInternal(input dockerBuildInput) (string, string, 
 		return "", "", nil, fmt.Errorf("failed to stage build context: %w", err)
 	}
 
+	if input.dockerfileInline != "" {
+		stagedDockerfilePath := filepath.Join(stagingDir, filepath.FromSlash(input.relDockerfile))
+		if err := os.MkdirAll(filepath.Dir(stagedDockerfilePath), 0o755); err != nil {
+			cleanup()
+			return "", "", nil, fmt.Errorf("failed to create inline Dockerfile path: %w", err)
+		}
+		if err := os.WriteFile(stagedDockerfilePath, []byte(input.dockerfileInline), 0o600); err != nil {
+			cleanup()
+			return "", "", nil, fmt.Errorf("failed to stage inline Dockerfile: %w", err)
+		}
+
+		return stagingDir, filepath.ToSlash(input.relDockerfile), cleanup, nil
+	}
+
 	const stagedDockerfile = ".arcane.external.Dockerfile"
 	stagedDockerfilePath := filepath.Join(stagingDir, stagedDockerfile)
 	dockerfileInfo, err := os.Stat(input.fullDockerfilePath)
@@ -268,6 +307,10 @@ func prepareDockerBuildContextInternal(input dockerBuildInput) (string, string, 
 	}
 
 	return stagingDir, stagedDockerfile, cleanup, nil
+}
+
+func prepareDockerBuildContextInternal(input dockerBuildInput) (string, string, func(), error) {
+	return prepareBuildContextInternal(input.buildFilesystemInput)
 }
 
 func (b *builder) performDockerBuildInternal(

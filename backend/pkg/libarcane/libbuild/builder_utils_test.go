@@ -72,3 +72,30 @@ func TestValidateBuildRequestInternal_RespectsTrimmedValues(t *testing.T) {
 	err := validateBuildRequestInternal(req, "local")
 	assert.NoError(t, err)
 }
+
+func TestValidateBuildRequestInternal_AllowsInlineDockerfile(t *testing.T) {
+	contextDir := t.TempDir()
+	req := imagetypes.BuildRequest{
+		ContextDir:       contextDir,
+		DockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
+		Tags:             []string{"ghcr.io/getarcaneapp/arcane:test"},
+		Load:             true,
+	}
+
+	err := validateBuildRequestInternal(req, "local")
+	assert.NoError(t, err)
+}
+
+func TestValidateBuildRequestInternal_RejectsDockerfileAndInlineTogether(t *testing.T) {
+	contextDir := createBuildContextWithDockerfileInternal(t)
+	req := imagetypes.BuildRequest{
+		ContextDir:       contextDir,
+		Dockerfile:       "Dockerfile",
+		DockerfileInline: "FROM alpine:3.20\n",
+		Tags:             []string{"ghcr.io/getarcaneapp/arcane:test"},
+		Load:             true,
+	}
+
+	err := validateBuildRequestInternal(req, "local")
+	require.EqualError(t, err, "dockerfile and dockerfileInline are mutually exclusive")
+}

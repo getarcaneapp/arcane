@@ -99,21 +99,26 @@ func normalizeEntitlementsInternal(entitlements []string, privileged bool) []str
 	return out
 }
 
-func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.BuildRequest) (buildkit.SolveOpt, <-chan error, error) {
-	contextDir := filepath.Clean(req.ContextDir)
-
-	dockerfilePath := strings.TrimSpace(req.Dockerfile)
-	if dockerfilePath == "" {
-		dockerfilePath = "Dockerfile"
+func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.BuildRequest) (buildkit.SolveOpt, <-chan error, func(), error) {
+	fsInput, err := prepareBuildFilesystemInputInternal(req)
+	if err != nil {
+		return buildkit.SolveOpt{}, nil, nil, err
 	}
 
-	fullDockerfilePath := dockerfilePath
-	if !filepath.IsAbs(dockerfilePath) {
-		fullDockerfilePath = filepath.Join(contextDir, dockerfilePath)
+	contextDir, dockerfilePath, cleanup, err := prepareBuildContextInternal(fsInput)
+	if err != nil {
+		return buildkit.SolveOpt{}, nil, nil, err
+	}
+
+	dockerfileDir := contextDir
+	dockerfileFilename := dockerfilePath
+	if dockerfileRelDir := filepath.Dir(filepath.FromSlash(dockerfilePath)); dockerfileRelDir != "." {
+		dockerfileDir = filepath.Join(contextDir, dockerfileRelDir)
+		dockerfileFilename = filepath.Base(dockerfilePath)
 	}
 
 	frontendAttrs := map[string]string{
-		"filename": filepath.Base(fullDockerfilePath),
+		"filename": dockerfileFilename,
 	}
 	if strings.TrimSpace(req.Target) != "" {
 		frontendAttrs["target"] = strings.TrimSpace(req.Target)
@@ -143,7 +148,7 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		FrontendAttrs: frontendAttrs,
 		LocalDirs: map[string]string{
 			"context":    contextDir,
-			"dockerfile": filepath.Dir(fullDockerfilePath),
+			"dockerfile": dockerfileDir,
 		},
 		CacheImports:        parseBuildkitCacheEntriesInternal(req.CacheFrom),
 		CacheExports:        parseBuildkitCacheEntriesInternal(req.CacheTo),
@@ -165,7 +170,8 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 	if req.Load {
 		exportEntry, errCh, err := b.buildLoadExportInternal(ctx, req.Tags)
 		if err != nil {
-			return buildkit.SolveOpt{}, nil, err
+			cleanup()
+			return buildkit.SolveOpt{}, nil, nil, err
 		}
 		loadErrCh = errCh
 		exports = append(exports, exportEntry)
@@ -175,7 +181,7 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		solveOpt.Exports = exports
 	}
 
-	return solveOpt, loadErrCh, nil
+	return solveOpt, loadErrCh, cleanup, nil
 }
 
 func (b *builder) buildLoadExportInternal(ctx context.Context, tags []string) (buildkit.ExportEntry, chan error, error) {

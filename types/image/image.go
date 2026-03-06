@@ -257,6 +257,11 @@ type BuildRequest struct {
 	// Required: false
 	Dockerfile string `json:"dockerfile,omitempty" doc:"Dockerfile path"`
 
+	// DockerfileInline is the inline Dockerfile content staged into the build context.
+	//
+	// Required: false
+	DockerfileInline string `json:"dockerfileInline,omitempty" doc:"Inline Dockerfile content"`
+
 	// Tags are image tags to apply.
 	//
 	// Required: false

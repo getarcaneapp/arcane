@@ -837,8 +837,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, io.Discard, nil, &user, resolvedPullPolicy); perr != nil {
-		slog.Warn("prepare images for deploy failed (continuing to compose up)", "projectID", projectID, "error", perr)
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, nil, &user, resolvedPullPolicy); perr != nil {
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
+		return fmt.Errorf("failed to prepare project images for deploy: %w", perr)
 	}
 
 	removeOrphans := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
@@ -850,7 +852,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
-		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 
 		// Provide more helpful error messages
 		errMsg := err.Error()
@@ -1258,6 +1260,9 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 		}
 
 		decision := decideDeployImageAction(svc, pullPolicyOverride)
+		if updated {
+			decision = deployImageDecision{Build: true}
+		}
 		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user, pathMapper); err != nil {
 			return err
 		}
@@ -1442,7 +1447,7 @@ func decideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	}
 }
 
-func resolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConfig, serviceName string) (string, error) {
 	contextDir := strings.TrimSpace(svc.Build.Context)
 	if contextDir == "" {
 		contextDir = workingDir
@@ -1454,32 +1459,16 @@ func resolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 		return "", fmt.Errorf("build context not set for service %s", serviceName)
 	}
 
-	if pathMapper == nil {
-		return contextDir, nil
-	}
-
-	mapped, err := pathMapper.ContainerToHost(contextDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to map build context for %s: %w", serviceName, err)
-	}
-	return mapped, nil
+	return contextDir, nil
 }
 
-func resolveDockerfilePath(svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, error) {
 	dockerfilePath := strings.TrimSpace(svc.Build.Dockerfile)
 	if dockerfilePath == "" {
 		dockerfilePath = "Dockerfile"
 	}
 
-	if !filepath.IsAbs(dockerfilePath) || pathMapper == nil {
-		return dockerfilePath, nil
-	}
-
-	mapped, err := pathMapper.ContainerToHost(dockerfilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to map dockerfile path for %s: %w", serviceName, err)
-	}
-	return mapped, nil
+	return dockerfilePath, nil
 }
 
 func buildArgsFromCompose(args map[string]*string) map[string]string {
@@ -1610,31 +1599,40 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
-	contextDir, err := resolveBuildContext(project.WorkingDir, updatedSvc, serviceName, pathMapper)
+	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
 	}
 
-	dockerfilePath, err := resolveDockerfilePath(updatedSvc, serviceName, pathMapper)
-	if err != nil {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, err
+	dockerfileInline := updatedSvc.Build.DockerfileInline
+	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
+	}
+
+	dockerfilePath := ""
+	if strings.TrimSpace(dockerfileInline) == "" {
+		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
+		if err != nil {
+			return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		}
 	}
 
 	buildReq := imagetypes.BuildRequest{
-		ContextDir: contextDir,
-		Dockerfile: dockerfilePath,
-		Tags:       mergeBuildTags(imageName, updatedSvc.Build.Tags),
-		Target:     strings.TrimSpace(updatedSvc.Build.Target),
-		BuildArgs:  buildArgsFromCompose(updatedSvc.Build.Args),
-		Labels:     labelsFromCompose(updatedSvc.Build.Labels),
-		CacheFrom:  append([]string(nil), updatedSvc.Build.CacheFrom...),
-		CacheTo:    append([]string(nil), updatedSvc.Build.CacheTo...),
-		NoCache:    updatedSvc.Build.NoCache,
-		Pull:       updatedSvc.Build.Pull,
-		Network:    strings.TrimSpace(updatedSvc.Build.Network),
-		Isolation:  strings.TrimSpace(updatedSvc.Build.Isolation),
-		ShmSize:    int64(updatedSvc.Build.ShmSize),
-		Ulimits:    ulimitsFromCompose(updatedSvc.Build.Ulimits),
+		ContextDir:       contextDir,
+		Dockerfile:       dockerfilePath,
+		DockerfileInline: dockerfileInline,
+		Tags:             mergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Target:           strings.TrimSpace(updatedSvc.Build.Target),
+		BuildArgs:        buildArgsFromCompose(updatedSvc.Build.Args),
+		Labels:           labelsFromCompose(updatedSvc.Build.Labels),
+		CacheFrom:        append([]string(nil), updatedSvc.Build.CacheFrom...),
+		CacheTo:          append([]string(nil), updatedSvc.Build.CacheTo...),
+		NoCache:          updatedSvc.Build.NoCache,
+		Pull:             updatedSvc.Build.Pull,
+		Network:          strings.TrimSpace(updatedSvc.Build.Network),
+		Isolation:        strings.TrimSpace(updatedSvc.Build.Isolation),
+		ShmSize:          int64(updatedSvc.Build.ShmSize),
+		Ulimits:          ulimitsFromCompose(updatedSvc.Build.Ulimits),
 		Entitlements: append(
 			[]string(nil),
 			updatedSvc.Build.Entitlements...,
@@ -1652,6 +1650,30 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	}
 
 	return buildReq, updatedSvc, updated, nil
+}
+
+func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx context.Context, projectID string) {
+	services, err := s.GetProjectServices(ctx, projectID)
+	if err == nil {
+		serviceCount, runningCount := s.getServiceCounts(services)
+		status := s.calculateProjectStatus(services)
+		if updateErr := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+			"status":        status,
+			"service_count": serviceCount,
+			"running_count": runningCount,
+			"updated_at":    time.Now(),
+		}).Error; updateErr == nil {
+			return
+		} else {
+			slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectID", projectID, "error", updateErr)
+		}
+	} else {
+		slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectID", projectID, "error", err)
+	}
+
+	if updateErr := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); updateErr != nil {
+		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectID", projectID, "error", updateErr)
+	}
 }
 
 func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {

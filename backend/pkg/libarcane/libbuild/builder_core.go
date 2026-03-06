@@ -84,11 +84,12 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 		}
 	}()
 
-	solveOpt, loadErrCh, err := b.buildSolveOptInternal(buildCtx, req)
+	solveOpt, loadErrCh, cleanupSolveOpt, err := b.buildSolveOptInternal(buildCtx, req)
 	if err != nil {
 		buildErr = err
 		return nil, err
 	}
+	defer cleanupSolveOpt()
 
 	authProvider := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		AuthConfigProvider: buildkitAuthConfigProviderInternal(authprovider.LoadAuthConfig(config.LoadDefaultConfigFile(os.Stderr)), b.registryAuthProvider),

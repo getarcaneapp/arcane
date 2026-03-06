@@ -1,6 +1,8 @@
 package libbuild
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -64,4 +66,30 @@ func TestBuildDockerImageOptionsInternal_EmptyAuthConfigsBecomesNil(t *testing.T
 	buildOpts, err := buildDockerImageOptionsInternal(req, input, "Dockerfile", map[string]dockerregistry.AuthConfig{})
 	require.NoError(t, err)
 	assert.Nil(t, buildOpts.AuthConfigs)
+}
+
+func TestPrepareDockerBuildContextInternal_StagesInlineDockerfile(t *testing.T) {
+	contextDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(contextDir, "app.txt"), []byte("hello\n"), 0o644))
+
+	req := imagetypes.BuildRequest{
+		ContextDir:       contextDir,
+		DockerfileInline: "FROM alpine:3.20\nCOPY app.txt /app.txt\n",
+	}
+
+	input, reportProgress, err := prepareDockerBuildInputInternal(req)
+	require.NoError(t, err)
+	assert.False(t, reportProgress)
+
+	buildContextDir, dockerfileForBuild, cleanup, err := prepareDockerBuildContextInternal(input)
+	require.NoError(t, err)
+	defer cleanup()
+
+	contents, err := os.ReadFile(filepath.Join(buildContextDir, filepath.FromSlash(dockerfileForBuild)))
+	require.NoError(t, err)
+	assert.Equal(t, "FROM alpine:3.20\nCOPY app.txt /app.txt\n", string(contents))
+
+	appContents, err := os.ReadFile(filepath.Join(buildContextDir, "app.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(appContents))
 }
