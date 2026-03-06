@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/api/types/jsonstream"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	dockerclient "github.com/moby/moby/client"
+	"github.com/moby/patternmatcher"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -111,6 +112,13 @@ func prepareBuildFilesystemInputInternal(req imagetypes.BuildRequest) (buildFile
 
 	relDockerfile, relErr := filepath.Rel(contextDir, fullDockerfilePath)
 	dockerfileOutsideCtx := relErr != nil || strings.HasPrefix(relDockerfile, "..")
+	if !dockerfileOutsideCtx {
+		excluded, err := dockerfileExcludedByDockerignoreInternal(contextDir, relDockerfile)
+		if err != nil {
+			return buildFilesystemInput{}, err
+		}
+		dockerfileOutsideCtx = excluded
+	}
 	if dockerfileOutsideCtx {
 		relDockerfile = filepath.Base(fullDockerfilePath)
 	} else {
@@ -580,4 +588,28 @@ func readDockerignoreInternal(contextDir string) []string {
 	}
 
 	return patterns
+}
+
+func dockerfileExcludedByDockerignoreInternal(contextDir, dockerfilePath string) (bool, error) {
+	patterns := readDockerignoreInternal(contextDir)
+	if len(patterns) == 0 {
+		return false, nil
+	}
+
+	matcher, err := patternmatcher.New(patterns)
+	if err != nil {
+		return false, fmt.Errorf("invalid .dockerignore: %w", err)
+	}
+
+	relDockerfile := filepath.ToSlash(filepath.Clean(dockerfilePath))
+	if relDockerfile == "." || relDockerfile == "" {
+		return false, nil
+	}
+
+	excluded, err := matcher.MatchesOrParentMatches(relDockerfile)
+	if err != nil {
+		return false, fmt.Errorf("failed to evaluate .dockerignore for Dockerfile: %w", err)
+	}
+
+	return excluded, nil
 }

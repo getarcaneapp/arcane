@@ -247,10 +247,11 @@ type ProgressEvent struct {
 
 // BuildRequest contains options for building an image with BuildKit.
 type BuildRequest struct {
-	// ContextDir is the build context directory on the server.
+	// ContextDir is the build context source.
+	// This can be a local server directory or a supported Git URL.
 	//
 	// Required: true
-	ContextDir string `json:"contextDir" minLength:"1" doc:"Build context directory"`
+	ContextDir string `json:"contextDir" minLength:"1" doc:"Build context directory or Git URL"`
 
 	// Dockerfile is the path to the Dockerfile (relative to context or absolute).
 	//

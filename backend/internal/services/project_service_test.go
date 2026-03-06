@@ -942,6 +942,30 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	assert.NotContains(t, err.Error(), "failed to resolve reference \"arcane.local/")
 }
 
+func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
+	svc := composetypes.ServiceConfig{
+		Build: &composetypes.BuildConfig{
+			Context: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
+		},
+	}
+
+	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
+}
+
+func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.T) {
+	svc := composetypes.ServiceConfig{
+		Build: &composetypes.BuildConfig{
+			Context: "https://example.com/archive.tar.gz",
+		},
+	}
+
+	_, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only git repository URLs are supported")
+}
+
 //go:fix inline
 func ptr(v string) *string {
 	return new(v)

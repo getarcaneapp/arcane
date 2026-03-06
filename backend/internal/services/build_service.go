@@ -2,15 +2,19 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	buildgit "github.com/getarcaneapp/arcane/backend/internal/utils/git"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
@@ -24,17 +28,27 @@ type BuildService struct {
 	settings        *SettingsService
 	dockerService   *DockerClientService
 	registryService *ContainerRegistryService
+	gitRepository   *GitRepositoryService
 	builder         buildtypes.Builder
+	gitCloneFn      func(context.Context, string, string, buildgit.AuthConfig) (string, error)
+	gitCleanupFn    func(string) error
 }
 
 const buildHistoryOutputLimitBytes = 2 * 1024 * 1024
 
-func NewBuildService(db *database.DB, settings *SettingsService, dockerService *DockerClientService, registryService *ContainerRegistryService) *BuildService {
+func NewBuildService(
+	db *database.DB,
+	settings *SettingsService,
+	dockerService *DockerClientService,
+	registryService *ContainerRegistryService,
+	gitRepository *GitRepositoryService,
+) *BuildService {
 	svc := &BuildService{
 		db:              db,
 		settings:        settings,
 		dockerService:   dockerService,
 		registryService: registryService,
+		gitRepository:   gitRepository,
 	}
 	svc.builder = libbuild.NewBuilder(svc, dockerService, svc)
 
@@ -96,9 +110,25 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	}
 
 	startedAt := time.Now()
-	result, err := s.builder.BuildImage(ctx, req, writer, serviceName)
+	cleanupResolvedContext := func() error { return nil }
+	var (
+		result *imagetypes.BuildResult
+		err    error
+	)
+
+	if resolvedReq, cleanupFn, resolveErr := s.resolveBuildRequestInternal(ctx, req, writer, serviceName); resolveErr != nil {
+		err = resolveErr
+	} else {
+		cleanupResolvedContext = cleanupFn
+		result, err = s.builder.BuildImage(ctx, resolvedReq, writer, serviceName)
+	}
+
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
+
+	if cleanupErr := cleanupResolvedContext(); cleanupErr != nil {
+		slog.WarnContext(ctx, "failed to cleanup temporary git build context", "error", cleanupErr)
+	}
 
 	if s.db != nil && buildRecordID != "" {
 		output := logCapture.String()
@@ -132,6 +162,125 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	}
 
 	return result, err
+}
+
+func (s *BuildService) resolveBuildRequestInternal(
+	ctx context.Context,
+	req imagetypes.BuildRequest,
+	progressWriter io.Writer,
+	serviceName string,
+) (imagetypes.BuildRequest, func() error, error) {
+	source, ok, err := libbuild.ParseGitBuildContextSource(req.ContextDir)
+	if err != nil {
+		return imagetypes.BuildRequest{}, func() error { return nil }, err
+	}
+	if !ok || source == nil {
+		if libbuild.IsPotentialRemoteBuildContextSource(req.ContextDir) {
+			return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
+		}
+		return req, func() error { return nil }, nil
+	}
+
+	writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("resolving remote git context %s", source.RepositoryURL))
+
+	authConfig, matchedRepository, err := s.resolveGitBuildAuthInternal(ctx, source.RepositoryURL)
+	if err != nil {
+		return imagetypes.BuildRequest{}, func() error { return nil }, err
+	}
+	if matchedRepository {
+		writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("using saved git credentials for %s", source.RepositoryURL))
+	}
+
+	repoPath, err := s.cloneGitContextInternal(ctx, source.RepositoryURL, source.Ref, authConfig)
+	if err != nil {
+		return imagetypes.BuildRequest{}, func() error { return nil }, err
+	}
+
+	contextDir := repoPath
+	if source.Subdir != "" {
+		if err := buildgit.ValidatePath(repoPath, filepath.FromSlash(source.Subdir)); err != nil {
+			_ = s.cleanupGitContextInternal(repoPath)
+			return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("invalid git build context subdir: %w", err)
+		}
+		contextDir = filepath.Join(repoPath, filepath.FromSlash(source.Subdir))
+	}
+
+	info, err := os.Stat(contextDir)
+	if err != nil {
+		_ = s.cleanupGitContextInternal(repoPath)
+		return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to stat resolved git build context: %w", err)
+	}
+	if !info.IsDir() {
+		_ = s.cleanupGitContextInternal(repoPath)
+		return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("resolved git build context is not a directory")
+	}
+
+	writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("using remote build context %s", source.Raw))
+
+	resolvedReq := req
+	resolvedReq.ContextDir = contextDir
+
+	return resolvedReq, func() error { return s.cleanupGitContextInternal(repoPath) }, nil
+}
+
+func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL string) (buildgit.AuthConfig, bool, error) {
+	if s.gitRepository == nil {
+		return buildgit.AuthConfig{}, false, nil
+	}
+
+	repository, err := s.gitRepository.FindEnabledRepositoryByURL(ctx, rawURL)
+	if err != nil {
+		return buildgit.AuthConfig{}, false, fmt.Errorf("failed to resolve git repository credentials: %w", err)
+	}
+	if repository == nil {
+		return buildgit.AuthConfig{}, false, nil
+	}
+
+	authConfig, err := s.gitRepository.GetAuthConfig(ctx, repository)
+	if err != nil {
+		return buildgit.AuthConfig{}, true, fmt.Errorf("failed to load git repository credentials: %w", err)
+	}
+
+	return authConfig, true, nil
+}
+
+func (s *BuildService) cloneGitContextInternal(ctx context.Context, repositoryURL, ref string, authConfig buildgit.AuthConfig) (string, error) {
+	if s.gitCloneFn != nil {
+		return s.gitCloneFn(ctx, repositoryURL, ref, authConfig)
+	}
+
+	if s.gitRepository != nil && s.gitRepository.gitClient != nil {
+		return s.gitRepository.gitClient.Clone(ctx, repositoryURL, ref, authConfig)
+	}
+
+	return buildgit.NewClient("").Clone(ctx, repositoryURL, ref, authConfig)
+}
+
+func (s *BuildService) cleanupGitContextInternal(repoPath string) error {
+	if repoPath == "" {
+		return nil
+	}
+	if s.gitCleanupFn != nil {
+		return s.gitCleanupFn(repoPath)
+	}
+	if s.gitRepository != nil && s.gitRepository.gitClient != nil {
+		return s.gitRepository.gitClient.Cleanup(repoPath)
+	}
+	return buildgit.NewClient("").Cleanup(repoPath)
+}
+
+func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, status string) {
+	if progressWriter == nil || strings.TrimSpace(status) == "" {
+		return
+	}
+
+	if err := json.NewEncoder(progressWriter).Encode(imagetypes.ProgressEvent{
+		Type:    "build",
+		Service: serviceName,
+		Status:  status,
+	}); err != nil {
+		slog.Debug("failed to write build progress status", "error", err)
+	}
 }
 
 func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]imagetypes.BuildRecord, pagination.Response, error) {

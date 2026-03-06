@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
@@ -1451,7 +1452,11 @@ func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConf
 	contextDir := strings.TrimSpace(svc.Build.Context)
 	if contextDir == "" {
 		contextDir = workingDir
-	} else if !filepath.IsAbs(contextDir) {
+	} else if _, isGitContext, err := libbuild.ParseGitBuildContextSource(contextDir); err != nil {
+		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
+	} else if libbuild.IsPotentialRemoteBuildContextSource(contextDir) && !isGitContext {
+		return "", fmt.Errorf("unsupported remote build context for service %s: only git repository URLs are supported", serviceName)
+	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
 
