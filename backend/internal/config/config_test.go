@@ -220,6 +220,25 @@ func TestConfig_OptionsToLower(t *testing.T) {
 	})
 }
 
+func TestConfig_AllowDowngrade(t *testing.T) {
+	origAllowDowngrade := os.Getenv("ALLOW_DOWNGRADE")
+	defer restoreEnv("ALLOW_DOWNGRADE", origAllowDowngrade)
+
+	t.Run("defaults to false", func(t *testing.T) {
+		unsetEnv(t, "ALLOW_DOWNGRADE")
+
+		cfg := Load()
+		assert.False(t, cfg.AllowDowngrade)
+	})
+
+	t.Run("loads explicit true from env", func(t *testing.T) {
+		setEnv(t, "ALLOW_DOWNGRADE", "true")
+
+		cfg := Load()
+		assert.True(t, cfg.AllowDowngrade)
+	})
+}
+
 func TestConfig_ListenAddr(t *testing.T) {
 	tests := []struct {
 		name     string

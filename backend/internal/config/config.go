@@ -29,6 +29,7 @@ const (
 type Config struct {
 	AppUrl           string         `env:"APP_URL" default:"http://localhost:3552"`
 	DatabaseURL      string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	AllowDowngrade   bool           `env:"ALLOW_DOWNGRADE" default:"false"`
 	Port             string         `env:"PORT" default:"3552"`
 	Listen           string         `env:"LISTEN" default:""`
 	TLSEnabled       bool           `env:"TLS_ENABLED" default:"false"`
