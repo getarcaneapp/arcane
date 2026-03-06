@@ -12,6 +12,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan []byte
+	onFirst    func()
 	onEmpty    func()
 }
 
@@ -22,6 +23,12 @@ func NewHub(buffer int) *Hub {
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, buffer),
 	}
+}
+
+func (h *Hub) SetOnFirstClient(fn func()) {
+	h.mu.Lock()
+	h.onFirst = fn
+	h.mu.Unlock()
 }
 
 func (h *Hub) SetOnEmpty(fn func()) {
@@ -38,9 +45,17 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case c := <-h.register:
+			var onFirst func()
 			h.mu.Lock()
 			h.clients[c] = struct{}{}
+			if len(h.clients) == 1 && h.onFirst != nil {
+				onFirst = h.onFirst
+				h.onFirst = nil
+			}
 			h.mu.Unlock()
+			if onFirst != nil {
+				onFirst()
+			}
 		case c := <-h.unregister:
 			// remove() handles the onEmpty callback when the last client disconnects.
 			h.remove(c)
