@@ -13,9 +13,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/robfig/cron/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 const AutoHealJobName = "auto-heal"
+const autoHealInspectConcurrency = 4
 
 // restartRecord tracks restart timestamps for a single container.
 type restartRecord struct {
@@ -30,6 +32,11 @@ type AutoHealJob struct {
 
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
+
+	getDockerClient  func() (*client.Client, error)
+	listContainers   func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
+	inspectContainer func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
+	restartContainer func(ctx context.Context, dockerClient *client.Client, containerID string) error
 }
 
 func NewAutoHealJob(
@@ -73,78 +80,107 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
-	dockerClient, err := j.dockerClientService.GetClient(ctx)
+	dockerClient, err := j.getDockerClientInternal()
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to get Docker client", "error", err)
 		return
 	}
 
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+	containerList, err := j.listContainersInternal(ctx, dockerClient)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to list containers", "error", err)
 		return
 	}
-	containers := containerList.Items
+	containers := containerList
 
 	excludedContainers := j.parseExcludedContainers(ctx)
 	maxRestarts := j.settingsService.GetIntSetting(ctx, "autoHealMaxRestarts", 5)
 	restartWindowMinutes := j.settingsService.GetIntSetting(ctx, "autoHealRestartWindow", 30)
 	restartWindow := time.Duration(restartWindowMinutes) * time.Minute
 
+	candidates := j.filterCandidatesInternal(containers, excludedContainers)
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(autoHealInspectConcurrency)
+
+	for _, candidate := range candidates {
+		g.Go(func() error {
+			j.processCandidateInternal(groupCtx, dockerClient, candidate, maxRestarts, restartWindow, restartWindowMinutes)
+			return nil
+		})
+	}
+
+	_ = g.Wait()
+}
+
+func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, excludedContainers map[string]struct{}) []container.Summary {
+	candidates := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
-		// Skip Arcane internal containers
 		if libarcane.IsInternalContainer(c.Labels) {
 			continue
 		}
 
 		containerName := j.getContainerName(c.Names)
-
-		// Skip excluded containers
 		if j.isExcluded(containerName, excludedContainers) {
 			continue
 		}
 
-		// Inspect to get health status
-		inspect, err := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
-		if err != nil {
-			slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
-			continue
-		}
-		containerInspect := inspect.Container
+		candidates = append(candidates, c)
+	}
 
-		// Skip if no healthcheck configured or not unhealthy
-		if containerInspect.State == nil || containerInspect.State.Health == nil {
-			continue
-		}
-		if containerInspect.State.Health.Status != container.Unhealthy {
-			continue
-		}
+	return candidates
+}
 
-		// Check restart-loop protection
-		if !j.canRestart(c.ID, maxRestarts, restartWindow) {
-			slog.WarnContext(ctx, "auto-heal restart-loop protection: skipping container",
-				"container", containerName,
-				"max_restarts", maxRestarts,
-				"window_minutes", restartWindowMinutes,
-			)
-			continue
-		}
+func (j *AutoHealJob) processCandidateInternal(ctx context.Context, dockerClient *client.Client, c container.Summary, maxRestarts int, restartWindow time.Duration, restartWindowMinutes int) {
+	containerName := j.getContainerName(c.Names)
 
-		// Restart the container
-		slog.InfoContext(ctx, "auto-heal restarting unhealthy container", "container", containerName, "container_id", c.ID)
-		if _, err := dockerClient.ContainerRestart(ctx, c.ID, client.ContainerRestartOptions{}); err != nil {
-			slog.ErrorContext(ctx, "auto-heal failed to restart container", "container", containerName, "error", err)
-			continue
-		}
+	inspect, err := j.inspectContainerInternal(ctx, dockerClient, c.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
+		return
+	}
 
-		// Record the restart
-		j.recordRestart(c.ID)
+	if !j.shouldRestartContainerInternal(ctx, c.ID, containerName, inspect, maxRestarts, restartWindow, restartWindowMinutes) {
+		return
+	}
 
-		// Log event
+	slog.InfoContext(ctx, "auto-heal restarting unhealthy container", "container", containerName, "container_id", c.ID)
+	if err := j.restartContainerInternal(ctx, dockerClient, c.ID); err != nil {
+		slog.ErrorContext(ctx, "auto-heal failed to restart container", "container", containerName, "error", err)
+		return
+	}
+
+	j.recordRestart(c.ID)
+	j.postRestartActionsInternal(ctx, c.ID, containerName)
+	slog.InfoContext(ctx, "auto-heal successfully restarted container", "container", containerName)
+}
+
+func (j *AutoHealJob) shouldRestartContainerInternal(ctx context.Context, containerID, containerName string, inspect container.InspectResponse, maxRestarts int, restartWindow time.Duration, restartWindowMinutes int) bool {
+	if inspect.State == nil || inspect.State.Health == nil {
+		return false
+	}
+	if inspect.State.Health.Status != container.Unhealthy {
+		return false
+	}
+
+	if j.canRestart(containerID, maxRestarts, restartWindow) {
+		return true
+	}
+
+	slog.WarnContext(ctx, "auto-heal restart-loop protection: skipping container",
+		"container", containerName,
+		"max_restarts", maxRestarts,
+		"window_minutes", restartWindowMinutes,
+	)
+	return false
+}
+
+func (j *AutoHealJob) postRestartActionsInternal(ctx context.Context, containerID, containerName string) {
+	if j.eventService != nil {
 		if err := j.eventService.LogContainerEvent(
 			ctx,
 			models.EventTypeContainerRestart,
-			c.ID,
+			containerID,
 			containerName,
 			"", // no user - system action
 			"system",
@@ -153,13 +189,12 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		); err != nil {
 			slog.WarnContext(ctx, "auto-heal failed to log event", "container", containerName, "error", err)
 		}
+	}
 
-		// Send notification
-		if err := j.notificationService.SendAutoHealNotification(ctx, containerName, c.ID); err != nil {
+	if j.notificationService != nil {
+		if err := j.notificationService.SendAutoHealNotification(ctx, containerName, containerID); err != nil {
 			slog.WarnContext(ctx, "auto-heal failed to send notification", "container", containerName, "error", err)
 		}
-
-		slog.InfoContext(ctx, "auto-heal successfully restarted container", "container", containerName)
 	}
 }
 
@@ -236,6 +271,49 @@ func (j *AutoHealJob) getContainerName(names []string) string {
 func (j *AutoHealJob) isExcluded(name string, excluded map[string]struct{}) bool {
 	_, ok := excluded[name]
 	return ok
+}
+
+func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+	if j.inspectContainer != nil {
+		return j.inspectContainer(ctx, dockerClient, containerID)
+	}
+
+	inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return container.InspectResponse{}, err
+	}
+
+	return inspect.Container, nil
+}
+
+func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) error {
+	if j.restartContainer != nil {
+		return j.restartContainer(ctx, dockerClient, containerID)
+	}
+
+	_, err := dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+	return err
+}
+
+func (j *AutoHealJob) getDockerClientInternal() (*client.Client, error) {
+	if j.getDockerClient != nil {
+		return j.getDockerClient()
+	}
+
+	return j.dockerClientService.GetClient()
+}
+
+func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+	if j.listContainers != nil {
+		return j.listContainers(ctx, dockerClient)
+	}
+
+	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+	if err != nil {
+		return nil, err
+	}
+
+	return containerList.Items, nil
 }
 
 // ResetRestartTracking clears all restart records (exported for testing).
