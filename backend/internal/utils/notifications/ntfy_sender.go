@@ -47,6 +47,10 @@ func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 	// Add query parameters
 	q := u.Query()
 
+	if config.Title != "" {
+		q.Set("title", config.Title)
+	}
+
 	if config.Priority != "" {
 		q.Set("priority", config.Priority)
 	}

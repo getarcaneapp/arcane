@@ -71,10 +71,11 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 		},
 		{
-			name: "config with priority and tags",
+			name: "config with title priority and tags",
 			config: models.NtfyConfig{
 				Host:     "ntfy.sh",
 				Topic:    "alerts",
+				Title:    "Arcane Update",
 				Priority: "high",
 				Tags:     []string{"warning", "server"},
 				Cache:    true,
@@ -82,7 +83,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://ntfy.sh/alerts?cache=yes&firebase=yes&priority=high&tags=warning%2Cserver"
+				return url == "ntfy://ntfy.sh/alerts?cache=yes&firebase=yes&priority=high&tags=warning%2Cserver&title=Arcane+Update"
 			},
 		},
 		{
@@ -100,6 +101,7 @@ func TestBuildNtfyURL(t *testing.T) {
 				Topic:                  "test",
 				Username:               "user",
 				Password:               "pass",
+				Title:                  "Arcane Alert",
 				Priority:               "max",
 				Tags:                   []string{"urgent"},
 				Icon:                   "https://example.com/icon.png",
@@ -109,7 +111,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://user:pass@ntfy.example.com:8080/test?cache=no&disabletls=yes&firebase=no&icon=https%3A%2F%2Fexample.com%2Ficon.png&priority=max&tags=urgent"
+				return url == "ntfy://user:pass@ntfy.example.com:8080/test?cache=no&disabletls=yes&firebase=no&icon=https%3A%2F%2Fexample.com%2Ficon.png&priority=max&tags=urgent&title=Arcane+Alert"
 			},
 		},
 	}

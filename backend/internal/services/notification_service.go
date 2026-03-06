@@ -3125,9 +3125,6 @@ func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, res
 		s.formatBytesInternal(result.VolumeSpaceReclaimed),
 		s.formatBytesInternal(result.BuildCacheSpaceReclaimed))
 
-	// Ntfy sends the title as part of the message or needs a separate header not currently in config
-	// For now, we omit the title attribute as it is not in the struct
-
 	return notifications.SendNtfy(ctx, ntfyConfig, message)
 }
 
