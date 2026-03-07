@@ -22,9 +22,10 @@ const (
 
 // Client represents a single WebSocket connection.
 type Client struct {
-	conn *websocket.Conn
-	send chan []byte
-	once sync.Once
+	conn     *websocket.Conn
+	send     chan []byte
+	once     sync.Once
+	onRemove func()
 }
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
@@ -39,7 +40,12 @@ func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 // ServeClient registers the client with the hub and starts read/write pumps.
 // Caller is responsible for creating/closing the websocket.Conn.
 func ServeClient(ctx context.Context, hub *Hub, conn *websocket.Conn) {
+	ServeClientWithOnRemove(ctx, hub, conn, nil)
+}
+
+func ServeClientWithOnRemove(ctx context.Context, hub *Hub, conn *websocket.Conn, onRemove func()) {
 	c := NewClient(conn, clientSendBuffer)
+	c.onRemove = onRemove
 	hub.register <- c
 
 	go c.writePump(ctx, hub)
@@ -48,6 +54,9 @@ func ServeClient(ctx context.Context, hub *Hub, conn *websocket.Conn) {
 
 func (c *Client) safeRemove(hub *Hub) {
 	c.once.Do(func() {
+		if c.onRemove != nil {
+			c.onRemove()
+		}
 		hub.remove(c)
 	})
 }
