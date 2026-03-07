@@ -11,8 +11,9 @@ import (
 
 const NetworkScopedMacAddressMinAPIVersion = "1.44"
 
-// DetectDockerAPIVersion returns the negotiated client API version when
-// available, and falls back to querying the daemon server version.
+// DetectDockerAPIVersion returns the configured client API version when
+// available, and falls back to the daemon-reported version only when the
+// client version is not yet set.
 func DetectDockerAPIVersion(ctx context.Context, dockerClient *client.Client) string {
 	if dockerClient == nil {
 		return ""
@@ -40,12 +41,12 @@ func SupportsDockerCreatePerNetworkMACAddress(apiVersion string) bool {
 // API versions (e.g. "1.43", "1.44.1"). Returns false when either version
 // cannot be parsed.
 func IsDockerAPIVersionAtLeast(current, minimum string) bool {
-	cur, ok := parseAPIVersion(current)
+	cur, ok := parseAPIVersionInternal(current)
 	if !ok {
 		return false
 	}
 
-	minV, ok := parseAPIVersion(minimum)
+	minV, ok := parseAPIVersionInternal(minimum)
 	if !ok {
 		return false
 	}
@@ -90,7 +91,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 	return cloned
 }
 
-func parseAPIVersion(version string) ([3]int, bool) {
+func parseAPIVersionInternal(version string) ([3]int, bool) {
 	parsed := [3]int{}
 
 	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))

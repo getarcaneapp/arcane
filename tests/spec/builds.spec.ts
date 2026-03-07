@@ -37,6 +37,10 @@ async function setRequiredBuildInputs(page: Page, tags = `e2e/build:${Date.now()
   await tagsInput.fill(tags);
 }
 
+async function switchContextMode(page: Page, mode: "Workspace" | "Remote Git"): Promise<void> {
+  await page.getByRole("button", { name: mode, exact: true }).first().click();
+}
+
 async function openAdvancedBuildOptions(page: Page) {
   const dockerfileInput = page.locator("#dockerfile");
   const alreadyVisible = await dockerfileInput.isVisible().catch(() => false);
@@ -131,6 +135,28 @@ async function mockDepotConfiguredSettings(page: Page) {
 }
 
 test.describe("Build workspace provider flows", () => {
+  test("submits remote git build context from the dedicated context mode", async ({ page }) => {
+    await navigateToBuildWorkspace(page);
+    await switchContextMode(page, "Remote Git");
+    await page.locator("#remote-context-url").fill("https://github.com/getarcaneapp/arcane.git#main:docker/app");
+    await setRequiredBuildInputs(page, `e2e/remote:${Date.now()}`);
+
+    let buildPayload: Record<string, unknown> | null = null;
+    await page.route("**/api/environments/*/images/build", async (route) => {
+      buildPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: STREAM_SUCCESS,
+      });
+    });
+
+    await getBuildButton(page).click();
+    await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
+
+    expect(buildPayload?.contextDir).toBe("https://github.com/getarcaneapp/arcane.git#main:docker/app");
+  });
+
   test("submits local provider build payload from UI controls", async ({ page }) => {
     await navigateToBuildWorkspace(page);
     await setRequiredBuildInputs(page);

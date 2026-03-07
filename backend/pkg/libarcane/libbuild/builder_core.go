@@ -65,6 +65,17 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 	}
 
 	if providerName == "local" {
+		requiresBuildkit, err := requiresLocalBuildkitInternal(req)
+		if err != nil {
+			return nil, err
+		}
+		if requiresBuildkit {
+			session, err := b.newLocalBuildkitSessionInternal(buildCtx)
+			if err != nil {
+				return nil, err
+			}
+			return b.buildWithBuildkitSessionInternal(buildCtx, req, progressWriter, serviceName, providerName, session)
+		}
 		return b.buildWithDockerInternal(buildCtx, req, progressWriter, serviceName)
 	}
 
@@ -77,6 +88,21 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 		return nil, err
 	}
 
+	return b.buildWithBuildkitSessionInternal(buildCtx, req, progressWriter, serviceName, providerName, session)
+}
+
+func (b *builder) buildWithBuildkitSessionInternal(
+	ctx context.Context,
+	req imagetypes.BuildRequest,
+	progressWriter io.Writer,
+	serviceName string,
+	providerName string,
+	session *buildSession,
+) (*imagetypes.BuildResult, error) {
+	if session == nil || session.Client == nil {
+		return nil, errors.New("build session not available")
+	}
+
 	var buildErr error
 	defer func() {
 		if cerr := session.Close(buildErr); cerr != nil {
@@ -84,11 +110,12 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 		}
 	}()
 
-	solveOpt, loadErrCh, err := b.buildSolveOptInternal(buildCtx, req)
+	solveOpt, loadErrCh, cleanupSolveOpt, err := b.buildSolveOptInternal(ctx, req)
 	if err != nil {
 		buildErr = err
 		return nil, err
 	}
+	defer cleanupSolveOpt()
 
 	authProvider := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		AuthConfigProvider: buildkitAuthConfigProviderInternal(authprovider.LoadAuthConfig(config.LoadDefaultConfigFile(os.Stderr)), b.registryAuthProvider),
@@ -98,7 +125,7 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 	statusCh := make(chan *buildkit.SolveStatus, 16)
 	streamErrCh := make(chan error, 1)
 	go func() {
-		streamErrCh <- streamSolveStatusInternal(buildCtx, statusCh, progressWriter, serviceName)
+		streamErrCh <- streamSolveStatusInternal(ctx, statusCh, progressWriter, serviceName)
 	}()
 
 	writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
@@ -108,7 +135,7 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 		Status:  "build started",
 	})
 
-	resp, err := session.Client.Solve(buildCtx, nil, solveOpt, statusCh)
+	resp, err := session.Client.Solve(ctx, nil, solveOpt, statusCh)
 	buildErr = err
 
 	if err != nil {

@@ -330,7 +330,7 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 }
 
 func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -361,7 +361,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -395,7 +395,7 @@ func dedupeImageRefsFromSummariesInternal(images []image.Summary, limit int) []s
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string) (*localImageSnapshot, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -598,7 +598,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 }
 
 func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response) error {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -641,7 +641,7 @@ func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Contex
 }
 
 func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef string) (string, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -1079,7 +1079,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		return nil
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -1115,7 +1115,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

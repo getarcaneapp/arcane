@@ -321,8 +321,8 @@ func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg
 	}
 
 	eventCopy := cloneTunnelEvent(msg.Event)
-	eventCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	go func() {
+		eventCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
 		if err := s.eventCallback(eventCtx, tunnel.EnvironmentID, eventCopy); err != nil {
 			slog.WarnContext(eventCtx, "Failed to process edge event", "environment_id", tunnel.EnvironmentID, "type", eventCopy.Type, "error", err)

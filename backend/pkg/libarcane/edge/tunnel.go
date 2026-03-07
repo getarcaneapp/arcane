@@ -436,14 +436,14 @@ func (s *cancelableGRPCManagerStream) Context() context.Context {
 
 func ensureSendRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
-		return context.WithTimeout(context.Background(), defaultSendRequestTimeout)
+		return context.WithTimeout(context.Background(), defaultSendRequestTimeout) //nolint:gosec // helper intentionally returns the cancel func to callers.
 	}
 
 	if _, hasDeadline := ctx.Deadline(); hasDeadline {
 		return ctx, func() {}
 	}
 
-	return context.WithTimeout(ctx, defaultSendRequestTimeout)
+	return context.WithTimeout(ctx, defaultSendRequestTimeout) //nolint:gosec // helper intentionally returns the cancel func to callers.
 }
 
 func isExpectedGRPCReceiveErrorInternal(err error) bool {

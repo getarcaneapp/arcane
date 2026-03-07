@@ -142,6 +142,7 @@ type NtfyConfig struct {
 	Topic                  string                         `json:"topic"`
 	Username               string                         `json:"username,omitempty"`
 	Password               string                         `json:"password,omitempty"` //nolint:gosec // JSON schema compatibility with external provider config
+	Title                  string                         `json:"title,omitempty"`
 	Priority               string                         `json:"priority,omitempty"`
 	Tags                   []string                       `json:"tags,omitempty"`
 	Icon                   string                         `json:"icon,omitempty"`

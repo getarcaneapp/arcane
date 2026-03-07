@@ -24,7 +24,7 @@ var onlyOneSignalHandler = make(chan struct{})
 func SignalContext(parentCtx context.Context) context.Context {
 	close(onlyOneSignalHandler) // Panics when called twice
 
-	ctx, cancel := context.WithCancel(parentCtx)
+	ctx, cancel := context.WithCancel(parentCtx) //nolint:gosec // cancel is intentionally triggered by the signal handler goroutine below.
 
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)

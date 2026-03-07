@@ -42,6 +42,8 @@
 		onCancel?: () => void;
 		layers?: Record<string, LayerProgress>;
 		outputLines?: string[];
+		showOutputPanel?: boolean;
+		outputPlaceholder?: string;
 		triggerClass?: string;
 		children: Snippet;
 	}
@@ -65,6 +67,8 @@
 		onCancel,
 		layers = {},
 		outputLines = [],
+		showOutputPanel = false,
+		outputPlaceholder = m.build_output_placeholder(),
 		triggerClass,
 		children
 	}: Props = $props();
@@ -83,6 +87,7 @@
 
 	const percent = $derived(Math.round(progress));
 	const isComplete = $derived(progress >= 100);
+	const hasStructuredProgress = $derived(Object.keys(layers).length > 0 || progress > 0);
 
 	// Track if we've ever reached complete state to prevent flashing back
 	let hasReachedComplete = $state(false);
@@ -103,8 +108,9 @@
 
 	// Check if we're in an indeterminate phase (extracting with no byte progress)
 	const isIndeterminate = $derived(isIndeterminatePhase(layers, progress));
-	const isIndeterminateGeneric = $derived(mode !== 'pull' && loading && !isComplete && !error);
+	const isIndeterminateGeneric = $derived(mode !== 'pull' && loading && !isComplete && !error && !hasStructuredProgress);
 	const cleanStatusText = $derived(sanitizeLogText(statusText));
+	const genericStatus = $derived(cleanStatusText || subtitle);
 
 	// Derive aggregate status for display
 	const aggregateStatus = $derived(getAggregateStatus(layers, cleanStatusText, hasReachedComplete || isComplete));
@@ -184,8 +190,17 @@
 			<Item.Description class={cn(error && 'line-clamp-none break-words whitespace-pre-wrap')}>
 				{#if error}
 					{error}
+				{:else if mode !== 'pull' && layerStats.total > 0}
+					{hasReachedComplete ? 100 : percent}% · {genericStatus}
+					<span class="text-muted-foreground">
+						· {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}</span
+					>
 				{:else if mode !== 'pull'}
-					{aggregateStatus || subtitle}
+					{#if hasStructuredProgress || loading || hasReachedComplete}
+						{hasReachedComplete ? 100 : percent}% · {genericStatus}
+					{:else}
+						{genericStatus}
+					{/if}
 				{:else if layerStats.total > 0}
 					{aggregateStatus || subtitle}
 					<span class="text-muted-foreground">
@@ -256,7 +271,7 @@
 		</Collapsible.Root>
 	{/if}
 
-	{#if outputLines.length > 0 && !error}
+	{#if (showOutputPanel || outputLines.length > 0) && !error}
 		<div class="mt-2 overflow-hidden rounded-md border border-white/10 bg-black/80">
 			<div class="flex items-center justify-between border-b border-white/10 px-2 py-1">
 				<span class="text-[10px] font-medium tracking-wide text-emerald-300/80 uppercase">{m.build_output()}</span>
@@ -264,9 +279,9 @@
 			</div>
 			<pre
 				bind:this={outputContainer}
-				class="max-h-40 overflow-y-auto px-2 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-emerald-200">{#each outputLines as line, i (i)}<span
-						class="block break-words">{line}</span
-					>{/each}</pre>
+				class="max-h-40 overflow-y-auto px-2 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-emerald-200">{#if outputLines.length > 0}{#each outputLines as line, i (i)}<span
+							class="block break-words">{line}</span
+						>{/each}{:else}<span class="text-emerald-300/60">{outputPlaceholder}</span>{/if}</pre>
 		</div>
 	{/if}
 {/snippet}

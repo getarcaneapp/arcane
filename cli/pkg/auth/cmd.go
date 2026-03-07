@@ -133,7 +133,13 @@ var loginCmd = &cobra.Command{
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-				resultBytes, err := json.MarshalIndent(tokenResult, "", "  ")
+				resultBytes, err := json.MarshalIndent(map[string]any{
+					"success":      tokenResult.Success,
+					"token":        tokenResult.Token,
+					"refreshToken": tokenResult.RefreshToken,
+					"expiresAt":    tokenResult.ExpiresAt,
+					"user":         tokenResult.User,
+				}, "", "  ")
 				if err != nil {
 					return fmt.Errorf("failed to marshal JSON: %w", err)
 				}
@@ -344,11 +350,7 @@ var refreshCmd = &cobra.Command{
 			return err
 		}
 
-		refreshReq := auth.Refresh{
-			RefreshToken: refreshToken,
-		}
-
-		reqBody, err := json.Marshal(refreshReq)
+		reqBody, err := json.Marshal(map[string]string{"refreshToken": refreshToken})
 		if err != nil {
 			return fmt.Errorf("failed to marshal request: %w", err)
 		}
@@ -368,7 +370,11 @@ var refreshCmd = &cobra.Command{
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(map[string]any{
+				"token":        result.Data.Token,
+				"refreshToken": result.Data.RefreshToken,
+				"expiresAt":    result.Data.ExpiresAt,
+			}, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}

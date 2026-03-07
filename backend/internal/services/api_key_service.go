@@ -58,6 +58,14 @@ func (s *ApiKeyService) validateApiKeyHash(hash, key string) error {
 	return s.userService.ValidatePassword(hash, key)
 }
 
+func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
+	go func(keyID string) {
+		bgCtx := context.WithoutCancel(ctx)
+		now := time.Now()
+		s.db.WithContext(bgCtx).Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
+	}(keyID)
+}
+
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
@@ -271,12 +279,7 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 				return nil, ErrApiKeyExpired
 			}
 
-			// Update last_used_at asynchronously to avoid blocking auth flow
-			go func(keyID string) {
-				bgCtx := context.WithoutCancel(ctx)
-				now := time.Now()
-				s.db.WithContext(bgCtx).Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
-			}(apiKey.ID)
+			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, apiKey.UserID)
 			if err != nil {
@@ -307,6 +310,8 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
 				return nil, ErrApiKeyExpired
 			}
+
+			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
 			return apiKey.EnvironmentID, nil
 		}

@@ -280,7 +280,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 		return "", "", ""
 	}
 
-	dockerClient, err := s.dockerService.GetClient()
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		slog.Debug("detectCurrentImageInfo: failed to get docker client", "error", err)
 		return "", "", ""

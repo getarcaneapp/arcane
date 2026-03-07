@@ -402,9 +402,6 @@
 			<div class="space-y-1.5">
 				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
 				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{dashboardHeroGreeting}</h1>
-				<p class="text-muted-foreground text-sm">
-					{m.dashboard_hero_summary({ running: runningContainers, total: totalContainers, images: images.pagination.totalItems })}
-				</p>
 			</div>
 
 			<QuickActions

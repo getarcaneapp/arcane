@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
@@ -82,6 +83,41 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
 	return &repository, nil
+}
+
+func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, rawURL string) (*models.GitRepository, error) {
+	if s == nil || s.db == nil {
+		return nil, nil
+	}
+
+	normalizedURL := libbuild.NormalizeGitBuildContextSourceForMatch(rawURL)
+	if normalizedURL == "" {
+		return nil, nil
+	}
+
+	likePrefix := normalizedURL
+	if idx := strings.Index(likePrefix, "#"); idx >= 0 {
+		likePrefix = likePrefix[:idx]
+	}
+	likePrefix = strings.TrimSuffix(likePrefix, "/")
+
+	var repositories []models.GitRepository
+	query := s.db.WithContext(ctx).Where("enabled = ?", true)
+	if likePrefix != "" {
+		query = query.Where("url = ? OR url = ? OR url LIKE ? OR url LIKE ?", rawURL, normalizedURL, likePrefix+"%", likePrefix+"/%")
+	}
+	if err := query.Find(&repositories).Error; err != nil {
+		return nil, fmt.Errorf("failed to list repositories: %w", err)
+	}
+
+	for i := range repositories {
+		if libbuild.NormalizeGitBuildContextSourceForMatch(repositories[i].URL) == normalizedURL {
+			repository := repositories[i]
+			return &repository, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.CreateGitRepositoryRequest, actor models.User) (*models.GitRepository, error) {

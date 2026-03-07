@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
@@ -82,7 +83,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
 	if hostDir == "" {
-		if dockerCli, derr := s.dockerService.GetClient(); derr == nil {
+		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
 			absContainerDir, _ := filepath.Abs(containerDirResolved)
 			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
 				hostDir = discovery
@@ -898,8 +899,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
 	}
 
-	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, io.Discard, nil, &user, resolvedPullPolicy); perr != nil {
-		slog.Warn("prepare images for deploy failed (continuing to compose up)", "projectID", projectID, "error", perr)
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, nil, &user, resolvedPullPolicy); perr != nil {
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
+		return fmt.Errorf("failed to prepare project images for deploy: %w", perr)
 	}
 
 	removeOrphans := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
@@ -911,7 +914,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
-		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 
 		// Provide more helpful error messages
 		errMsg := err.Error()
@@ -1319,6 +1322,9 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 		}
 
 		decision := decideDeployImageAction(svc, pullPolicyOverride)
+		if updated {
+			decision = deployImageDecision{Build: true}
+		}
 		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user, pathMapper); err != nil {
 			return err
 		}
@@ -1503,11 +1509,15 @@ func decideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 	}
 }
 
-func resolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConfig, serviceName string) (string, error) {
 	contextDir := strings.TrimSpace(svc.Build.Context)
 	if contextDir == "" {
 		contextDir = workingDir
-	} else if !filepath.IsAbs(contextDir) {
+	} else if _, isGitContext, err := libbuild.ParseGitBuildContextSource(contextDir); err != nil {
+		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
+	} else if libbuild.IsPotentialRemoteBuildContextSource(contextDir) && !isGitContext {
+		return "", fmt.Errorf("unsupported remote build context for service %s: only git repository URLs are supported", serviceName)
+	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
 
@@ -1515,32 +1525,16 @@ func resolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 		return "", fmt.Errorf("build context not set for service %s", serviceName)
 	}
 
-	if pathMapper == nil {
-		return contextDir, nil
-	}
-
-	mapped, err := pathMapper.ContainerToHost(contextDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to map build context for %s: %w", serviceName, err)
-	}
-	return mapped, nil
+	return contextDir, nil
 }
 
-func resolveDockerfilePath(svc composetypes.ServiceConfig, serviceName string, pathMapper *pathmapper.PathMapper) (string, error) {
+func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, error) {
 	dockerfilePath := strings.TrimSpace(svc.Build.Dockerfile)
 	if dockerfilePath == "" {
 		dockerfilePath = "Dockerfile"
 	}
 
-	if !filepath.IsAbs(dockerfilePath) || pathMapper == nil {
-		return dockerfilePath, nil
-	}
-
-	mapped, err := pathMapper.ContainerToHost(dockerfilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to map dockerfile path for %s: %w", serviceName, err)
-	}
-	return mapped, nil
+	return dockerfilePath, nil
 }
 
 func buildArgsFromCompose(args map[string]*string) map[string]string {
@@ -1671,31 +1665,40 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
-	contextDir, err := resolveBuildContext(project.WorkingDir, updatedSvc, serviceName, pathMapper)
+	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
 	}
 
-	dockerfilePath, err := resolveDockerfilePath(updatedSvc, serviceName, pathMapper)
-	if err != nil {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, err
+	dockerfileInline := updatedSvc.Build.DockerfileInline
+	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
+	}
+
+	dockerfilePath := ""
+	if strings.TrimSpace(dockerfileInline) == "" {
+		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
+		if err != nil {
+			return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		}
 	}
 
 	buildReq := imagetypes.BuildRequest{
-		ContextDir: contextDir,
-		Dockerfile: dockerfilePath,
-		Tags:       mergeBuildTags(imageName, updatedSvc.Build.Tags),
-		Target:     strings.TrimSpace(updatedSvc.Build.Target),
-		BuildArgs:  buildArgsFromCompose(updatedSvc.Build.Args),
-		Labels:     labelsFromCompose(updatedSvc.Build.Labels),
-		CacheFrom:  append([]string(nil), updatedSvc.Build.CacheFrom...),
-		CacheTo:    append([]string(nil), updatedSvc.Build.CacheTo...),
-		NoCache:    updatedSvc.Build.NoCache,
-		Pull:       updatedSvc.Build.Pull,
-		Network:    strings.TrimSpace(updatedSvc.Build.Network),
-		Isolation:  strings.TrimSpace(updatedSvc.Build.Isolation),
-		ShmSize:    int64(updatedSvc.Build.ShmSize),
-		Ulimits:    ulimitsFromCompose(updatedSvc.Build.Ulimits),
+		ContextDir:       contextDir,
+		Dockerfile:       dockerfilePath,
+		DockerfileInline: dockerfileInline,
+		Tags:             mergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Target:           strings.TrimSpace(updatedSvc.Build.Target),
+		BuildArgs:        buildArgsFromCompose(updatedSvc.Build.Args),
+		Labels:           labelsFromCompose(updatedSvc.Build.Labels),
+		CacheFrom:        append([]string(nil), updatedSvc.Build.CacheFrom...),
+		CacheTo:          append([]string(nil), updatedSvc.Build.CacheTo...),
+		NoCache:          updatedSvc.Build.NoCache,
+		Pull:             updatedSvc.Build.Pull,
+		Network:          strings.TrimSpace(updatedSvc.Build.Network),
+		Isolation:        strings.TrimSpace(updatedSvc.Build.Isolation),
+		ShmSize:          int64(updatedSvc.Build.ShmSize),
+		Ulimits:          ulimitsFromCompose(updatedSvc.Build.Ulimits),
 		Entitlements: append(
 			[]string(nil),
 			updatedSvc.Build.Entitlements...,
@@ -1713,6 +1716,30 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	}
 
 	return buildReq, updatedSvc, updated, nil
+}
+
+func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx context.Context, projectID string) {
+	services, err := s.GetProjectServices(ctx, projectID)
+	if err == nil {
+		serviceCount, runningCount := s.getServiceCounts(services)
+		status := s.calculateProjectStatus(services)
+		if updateErr := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+			"status":        status,
+			"service_count": serviceCount,
+			"running_count": runningCount,
+			"updated_at":    time.Now(),
+		}).Error; updateErr == nil {
+			return
+		} else {
+			slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectID", projectID, "error", updateErr)
+		}
+	} else {
+		slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectID", projectID, "error", err)
+	}
+
+	if updateErr := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusStopped); updateErr != nil {
+		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectID", projectID, "error", updateErr)
+	}
 }
 
 func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, projectID string, project *composetypes.Project, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
@@ -1942,19 +1969,39 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 }
 
 func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectPath, projectName, composeContent string, envContent *string) (err error) {
-	cleanup, err := prepareComposeValidationEnvFile(ctx, projectPath, envContent)
-	if err != nil {
-		return err
-	}
-	if cleanup != nil {
-		defer cleanup()
-	}
-
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %v", recovered)
 		}
 	}()
+
+	// Load safe environment variables for ${VAR} interpolation during validation.
+	// Only the project's own .env is used — host process env and .env.global are
+	// both intentionally excluded to prevent leaking Arcane secrets.
+	fullEnvMap := make(projects.EnvMap)
+	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
+		fullEnvMap["PWD"] = absWorkdir
+	}
+
+	// Prefer the provided new environment content if available, otherwise read from disk.
+	if envContent != nil {
+		if fileEnv, envErr := projects.ParseProjectEnvContent(*envContent, fullEnvMap); envErr != nil {
+			return fmt.Errorf("parse provided env content: %w", envErr)
+		} else {
+			for k, v := range fileEnv {
+				fullEnvMap[k] = v
+			}
+		}
+	} else {
+		projectEnvPath := filepath.Join(projectPath, ".env")
+		if fileEnv, envErr := projects.ParseProjectEnvFile(projectEnvPath, fullEnvMap); envErr != nil {
+			return fmt.Errorf("parse project env file: %w", envErr)
+		} else {
+			for k, v := range fileEnv {
+				fullEnvMap[k] = v
+			}
+		}
+	}
 
 	validationProjectName := normalizeComposeProjectName(projectName)
 	cfg := composetypes.ConfigDetails{
@@ -1963,41 +2010,63 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		ConfigFiles: []composetypes.ConfigFile{
 			{Filename: filepath.Join(projectPath, "compose.yaml"), Content: []byte(composeContent)},
 		},
+		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	_, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
-		if validationProjectName != "" {
-			opts.SetProjectName(validationProjectName, true)
-		}
+	err = withTransientValidationEnvFile(projectPath, envContent, func() error {
+		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+			if validationProjectName != "" {
+				opts.SetProjectName(validationProjectName, true)
+			}
+		})
+		return loadErr
 	})
 
 	return err
 }
 
-func prepareComposeValidationEnvFile(ctx context.Context, projectPath string, envContent *string) (func(), error) {
-	validationEnvPath := filepath.Join(projectPath, ".env")
-	if _, err := os.Stat(validationEnvPath); err == nil {
-		return nil, nil
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("failed to stat project env file: %w", err)
+func withTransientValidationEnvFile(projectPath string, envContent *string, run func() error) (err error) {
+	envPath := filepath.Join(projectPath, ".env")
+	originalContent, readErr := os.ReadFile(envPath)
+	originalExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return fmt.Errorf("prepare env file for compose validation: %w", readErr)
 	}
 
-	validationEnvContent := ""
-	if envContent != nil {
-		validationEnvContent = *envContent
-	}
-
-	if err := fs.WriteFileWithPerm(validationEnvPath, validationEnvContent, common.FilePerm); err != nil {
-		return nil, fmt.Errorf("failed to prepare env file for compose validation: %w", err)
-	}
-
-	cleanup := func() {
-		if err := os.Remove(validationEnvPath); err != nil && !os.IsNotExist(err) {
-			slog.WarnContext(ctx, "failed to remove temporary env file after compose validation", "path", validationEnvPath, "error", err)
+	shouldWrite := envContent != nil || !originalExists
+	if shouldWrite {
+		content := ""
+		if envContent != nil {
+			content = *envContent
 		}
+		if writeErr := fs.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
+			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
+		}
+
+		defer func() {
+			var restoreErr error
+			switch {
+			case originalExists:
+				restoreErr = fs.WriteEnvFile(projectPath, projectPath, string(originalContent))
+			case envContent != nil:
+				restoreErr = os.Remove(envPath)
+			default:
+				restoreErr = os.Remove(envPath)
+			}
+
+			if restoreErr != nil && !os.IsNotExist(restoreErr) {
+				if err == nil {
+					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
+				}
+			}
+		}()
 	}
 
-	return cleanup, nil
+	if run == nil {
+		return nil
+	}
+
+	return run()
 }
 
 func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {

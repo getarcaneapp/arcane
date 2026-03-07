@@ -206,7 +206,9 @@
 		}
 	});
 	const deployPopoverIcon = $derived(deployProgressPhase === 'build' ? HammerIcon : DownloadIcon);
-	const deployPopoverLayers = $derived.by(() => (deployProgressPhase === 'pull' ? layerProgress : {}));
+	const deployPopoverLayers = $derived.by(() =>
+		deployProgressPhase === 'pull' || deployProgressPhase === 'build' ? layerProgress : {}
+	);
 
 	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
 	// (which would duplicate portaled popovers when the same `open` state is bound twice).
@@ -295,6 +297,64 @@
 
 	function updatePullProgress() {
 		pullProgress = calculateOverallProgress(layerProgress);
+	}
+
+	function updateLayerProgressFromStreamData(data: any) {
+		const layerId = String(data?.id ?? '').trim();
+		if (!layerId) return;
+
+		const currentLayer = layerProgress[layerId] || { current: 0, total: 0, status: '' };
+		if (data?.status) {
+			currentLayer.status = String(data.status);
+		}
+
+		if (data?.progressDetail) {
+			const { current, total } = data.progressDetail;
+			if (typeof current === 'number') currentLayer.current = current;
+			if (typeof total === 'number') currentLayer.total = total;
+		}
+
+		layerProgress[layerId] = currentLayer;
+		updatePullProgress();
+	}
+
+	function handleBuildStreamLine(
+		data: any,
+		errorFallback: string,
+		errorFormatter: (message: string) => string,
+		onError?: (message: string) => void
+	): boolean {
+		if (!data) return false;
+
+		if (data.phase === 'begin') {
+			pullStatusText = m.progress_building_images_starting();
+			appendBuildOutputLine(m.build_phase_started(), data.service);
+		}
+
+		if (data.status) {
+			pullStatusText = String(data.status);
+			appendBuildOutputLine(data.status, data.service);
+		}
+
+		if (data.id) {
+			updateLayerProgressFromStreamData(data);
+		}
+
+		if (data.phase === 'complete') {
+			pullStatusText = m.build_completed();
+			pullProgress = 100;
+			appendBuildOutputLine(m.build_phase_completed(), data.service);
+		}
+
+		if (data.error) {
+			const errMsg = typeof data.error === 'string' ? data.error : data.error.message || errorFallback;
+			pullError = errMsg;
+			pullStatusText = errorFormatter(errMsg);
+			onError?.(errMsg);
+			return true;
+		}
+
+		return false;
 	}
 
 	async function handleRefresh() {
@@ -411,42 +471,19 @@
 						deployLastNonWaitingStatus = '';
 					}
 
-					if (deployData.phase === 'begin') {
-						pullStatusText = m.progress_building_images_starting();
-						appendBuildOutputLine(m.build_phase_started(), deployData.service);
-					} else if (deployData.phase === 'complete') {
-						pullStatusText = m.build_completed();
-						pullProgress = 100;
-						appendBuildOutputLine(m.build_phase_completed(), deployData.service);
-					}
-
-					if (deployData.status) {
-						pullStatusText = String(deployData.status);
-						appendBuildOutputLine(deployData.status, deployData.service);
-					}
-
-					if (deployData.error) {
-						const errMsg =
-							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
-						pullError = errMsg;
-						pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
-						hadError = true;
-						deployPulling = false;
+					if (
+						handleBuildStreamLine(
+							deployData,
+							m.progress_deploy_failed(),
+							(errMsg) => m.progress_deploy_failed_with_error({ error: errMsg }),
+							() => {
+								hadError = true;
+								deployPulling = false;
+							}
+						)
+					) {
 						return;
 					}
-
-					if (deployData.id) {
-						const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
-						currentLayer.status = deployData.status || currentLayer.status;
-						if (deployData.progressDetail) {
-							const { current, total } = deployData.progressDetail;
-							if (typeof current === 'number') currentLayer.current = current;
-							if (typeof total === 'number') currentLayer.total = total;
-						}
-						layerProgress[deployData.id] = currentLayer;
-					}
-
-					updatePullProgress();
 					return;
 				}
 
@@ -742,17 +779,7 @@
 				(data) => {
 					if (!data) return;
 
-					if (data.error) {
-						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.build_failed();
-						pullError = errMsg;
-						pullStatusText = m.build_failed_with_error({ error: errMsg });
-						return;
-					}
-
-					if (data.status) {
-						pullStatusText = data.status;
-						appendBuildOutputLine(data.status, data.service);
-					}
+					handleBuildStreamLine(data, m.build_failed(), (errMsg) => m.build_failed_with_error({ error: errMsg }));
 				}
 			);
 
@@ -808,6 +835,7 @@
 							loading={deployPulling}
 							icon={deployPopoverIcon}
 							layers={deployPopoverLayers}
+							showOutputPanel={deployProgressPhase === 'build'}
 							outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 						>
 							<DeploySplitButton
@@ -868,6 +896,8 @@
 								error={pullError}
 								loading={projectBuilding}
 								icon={HammerIcon}
+								layers={layerProgress}
+								showOutputPanel={projectBuilding}
 								outputLines={buildOutputLines}
 							>
 								<ArcaneButton
@@ -1018,6 +1048,7 @@
 						loading={deployPulling}
 						icon={deployPopoverIcon}
 						layers={deployPopoverLayers}
+						showOutputPanel={deployProgressPhase === 'build'}
 						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 						triggerClass="hidden"
 					>
@@ -1034,6 +1065,8 @@
 						error={pullError}
 						loading={projectBuilding}
 						icon={HammerIcon}
+						layers={layerProgress}
+						showOutputPanel={projectBuilding}
 						outputLines={buildOutputLines}
 						triggerClass="hidden"
 					>
@@ -1075,6 +1108,7 @@
 						loading={deployPulling}
 						icon={deployPopoverIcon}
 						layers={deployPopoverLayers}
+						showOutputPanel={deployProgressPhase === 'build'}
 						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
 					>
 						<DeploySplitButton customLabel={deployButtonLabel} onDeploy={() => handleDeploy()} loading={uiLoading.start} />
@@ -1109,6 +1143,8 @@
 							error={pullError}
 							loading={projectBuilding}
 							icon={HammerIcon}
+							layers={layerProgress}
+							showOutputPanel={projectBuilding}
 							outputLines={buildOutputLines}
 						>
 							<ArcaneButton action="build" onclick={() => handleProjectBuild()} loading={projectBuilding} />

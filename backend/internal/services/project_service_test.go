@@ -2,12 +2,17 @@ package services
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	buildtypes "github.com/getarcaneapp/arcane/types/builds"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +22,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
+
+type testBuildBuilder struct {
+	err error
+}
+
+func (b testBuildBuilder) BuildImage(_ context.Context, _ imagetypes.BuildRequest, _ io.Writer, _ string) (*imagetypes.BuildResult, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
+	return &imagetypes.BuildResult{Provider: "local"}, nil
+}
+
+var _ buildtypes.Builder = testBuildBuilder{}
 
 func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -608,6 +626,96 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	assert.Equal(t, "FOO=bar\n", string(envBytes))
 }
 
+func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+
+	dirName := "env-updated"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-new-env-file"},
+		Name:      "env-updated",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    env_file:
+      - .env
+`
+	env := "FOO=updated\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	envBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, env, string(envBytes))
+}
+
+func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+
+	dirName := "env-invalid"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-invalid-env-file"},
+		Name:      "env-invalid",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    environment:
+      - REQUIRED=${REQUIRED}
+`
+	env := "BROKEN=${UNTERMINATED\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, updated)
+	assert.Contains(t, err.Error(), "invalid compose file: parse provided env content")
+	assert.Contains(t, err.Error(), "parse env")
+}
+
 func TestProjectService_MergeBuildTags(t *testing.T) {
 	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
@@ -710,6 +818,64 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
 }
 
+func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
+	pm := pathmapper.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:  "web",
+		Image: "example/web:latest",
+		Build: &composetypes.BuildConfig{
+			Context:    ".",
+			Dockerfile: "/app/data/projects/demo/Dockerfile.custom",
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"web",
+		serviceCfg,
+		ProjectBuildOptions{},
+		pm,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
+	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+}
+
+func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:  "web",
+		Image: "example/web:latest",
+		Build: &composetypes.BuildConfig{
+			Context:          ".",
+			DockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"web",
+		serviceCfg,
+		ProjectBuildOptions{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/tmp/project", req.ContextDir)
+	assert.Empty(t, req.Dockerfile)
+	assert.Equal(t, "FROM alpine:3.20\nRUN echo inline\n", req.DockerfileInline)
+}
+
 func TestNormalizePullPolicy(t *testing.T) {
 	assert.Equal(t, "missing", normalizePullPolicy("if_not_present"))
 	assert.Equal(t, "build", normalizePullPolicy(" BUILD "))
@@ -786,6 +952,108 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when push is enabled")
+}
+
+func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	composeContent := "services:\n" +
+		"  web:\n" +
+		"    pull_policy: build\n" +
+		"    build:\n" +
+		"      context: .\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
+
+	proj := &models.Project{
+		BaseModel: models.BaseModel{ID: "p1"},
+		Name:      "demo",
+		Path:      projectDir,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(proj).Error)
+
+	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+
+	err = svc.DeployProject(ctx, "p1", models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to prepare project images for deploy")
+	assert.Contains(t, err.Error(), "boom build")
+
+	var updated models.Project
+	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
+	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
+}
+
+func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	composeContent := "services:\n" +
+		"  caddy:\n" +
+		"    build:\n" +
+		"      dockerfile_inline: |\n" +
+		"        FROM caddy:builder AS builder\n" +
+		"        RUN xcaddy build --with github.com/caddyserver/replace-response\n" +
+		"\n" +
+		"        FROM caddy:latest\n" +
+		"        COPY --from=builder /usr/bin/caddy /usr/bin/caddy\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
+
+	proj := &models.Project{
+		BaseModel: models.BaseModel{ID: "p-generated"},
+		Name:      "build-test",
+		Path:      projectDir,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(proj).Error)
+
+	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+
+	err = svc.DeployProject(ctx, proj.ID, models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to prepare project images for deploy")
+	assert.Contains(t, err.Error(), "boom build")
+	assert.NotContains(t, err.Error(), "failed to pull image arcane.local/")
+	assert.NotContains(t, err.Error(), "failed to resolve reference \"arcane.local/")
+}
+
+func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
+	svc := composetypes.ServiceConfig{
+		Build: &composetypes.BuildConfig{
+			Context: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
+		},
+	}
+
+	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
+}
+
+func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.T) {
+	svc := composetypes.ServiceConfig{
+		Build: &composetypes.BuildConfig{
+			Context: "https://example.com/archive.tar.gz",
+		},
+	}
+
+	_, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only git repository URLs are supported")
 }
 
 //go:fix inline

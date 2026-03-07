@@ -164,7 +164,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -375,7 +375,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -445,6 +445,34 @@ var versionCmd = &cobra.Command{
 		output.KeyValue("Update Available", fmt.Sprintf("%t", result.UpdateAvailable))
 		return nil
 	},
+}
+
+func buildEnvironmentPayloadInternal(env environment.Environment) map[string]any {
+	payload := map[string]any{
+		"id":      env.ID,
+		"name":    env.Name,
+		"apiUrl":  env.ApiUrl,
+		"status":  env.Status,
+		"enabled": env.Enabled,
+		"isEdge":  env.IsEdge,
+	}
+	if env.EdgeTransport != nil {
+		payload["edgeTransport"] = *env.EdgeTransport
+	}
+	if env.Connected != nil {
+		payload["connected"] = *env.Connected
+	}
+	if env.ConnectedAt != nil {
+		payload["connectedAt"] = *env.ConnectedAt
+	}
+	if env.LastHeartbeat != nil {
+		payload["lastHeartbeat"] = *env.LastHeartbeat
+	}
+	if env.ApiKey != nil {
+		payload["apiKey"] = *env.ApiKey
+	}
+
+	return payload
 }
 
 func init() {

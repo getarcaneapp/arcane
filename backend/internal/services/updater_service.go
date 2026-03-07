@@ -145,7 +145,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	// Pull images with ImageService (waits for completion)
 	// Only containers using the OLD image IDs will be restarted after pulls succeed.
 	// This prevents restarts when pulls fail or when the image digest didn't change.
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
@@ -390,7 +390,9 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
-	dcli, err := s.dockerService.GetClient()
+
+	dcli, err := s.dockerService.GetClient(ctx)
+
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
@@ -680,7 +682,7 @@ func (s *UpdaterService) pruneImageIDsWithInUseSetInternal(ctx context.Context, 
 
 	slog.DebugContext(ctx, "pruneImageIDs: attempting to prune image ids", "count", len(ids))
 
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("docker connect: %w", err)
 	}
@@ -737,7 +739,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 
 //nolint:gocognit
 func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summary, inspect container.InspectResponse, newRef string) error {
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("docker connect: %w", err)
 	}
@@ -944,7 +946,7 @@ func (s *UpdaterService) collectUsedImages(ctx context.Context) (map[string]stru
 	if s.dockerService == nil {
 		errs = append(errs, errors.New("docker service unavailable"))
 	} else {
-		dcli, err := s.dockerService.GetClient()
+		dcli, err := s.dockerService.GetClient(ctx)
 		if err != nil || dcli == nil {
 			if err == nil {
 				err = errors.New("docker client unavailable")
@@ -1125,7 +1127,7 @@ func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceRes
 func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref string) ([]string, error) {
 	slog.DebugContext(ctx, "resolveLocalImageIDsForRef: resolving local image ids for ref", "ref", ref)
 
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1141,7 +1143,7 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 
 //nolint:gocognit
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
@@ -1660,7 +1662,7 @@ func (s *UpdaterService) anyImageIDsStillInUse(ctx context.Context, ids []string
 
 	slog.DebugContext(ctx, "anyImageIDsStillInUse: checking ids", "ids", ids)
 
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return false, fmt.Errorf("docker connect: %w", err)
 	}
@@ -1709,7 +1711,7 @@ func anyImageIDsInUseSetInternal(ids []string, inUseSet map[string]struct{}) boo
 }
 
 func (s *UpdaterService) buildRunningImageIDSetInternal(ctx context.Context) (map[string]struct{}, error) {
-	dcli, err := s.dockerService.GetClient()
+	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}

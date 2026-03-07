@@ -81,11 +81,20 @@
 	});
 
 	let selectedContextPath = $state('/');
+	let contextMode = $state<'workspace' | 'remote'>('workspace');
+	let remoteContextSource = $state('');
 
-	const contextDir = $derived.by(() => {
+	const workspaceContextDir = $derived.by(() => {
 		const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
 		if (selectedContextPath === '/' || selectedContextPath === '') return root;
 		return `${root}${selectedContextPath.startsWith('/') ? '' : '/'}${selectedContextPath}`;
+	});
+
+	const contextDir = $derived.by(() => {
+		if (contextMode === 'remote') {
+			return remoteContextSource.trim();
+		}
+		return workspaceContextDir;
 	});
 
 	const formSchema = z.object({
@@ -338,7 +347,7 @@
 		return m.idle();
 	});
 	const buildMobileTabItems = $derived([
-		{ value: 'workspace', label: m.build_workspace_files() },
+		{ value: 'workspace', label: m.build_context() },
 		{ value: 'configuration', label: m.build_configuration() },
 		{ value: 'output', label: m.build_output() }
 	]);
@@ -365,7 +374,7 @@
 	const buildHistoryOutputEntries = $derived.by(() => parseBuildOutput(buildHistorySelected?.output ?? ''));
 
 	function getBuildTitle(build: ImageBuildRecord) {
-		return build.tags?.[0] || build.contextDir.split('/').pop() || build.contextDir;
+		return build.tags?.[0] || buildContextDisplayName(build.contextDir) || build.contextDir;
 	}
 
 	const buildHistoryColumns = [
@@ -595,7 +604,40 @@
 		return formatKeyValueMap(buildArgs);
 	}
 
+	function isGitBuildContextSource(value?: string): boolean {
+		const trimmed = value?.trim();
+		if (!trimmed) return false;
+		const base = trimmed.split('#', 1)[0]?.trim() ?? '';
+		if (!base) return false;
+		if (base.startsWith('git@')) return true;
+		try {
+			const parsed = new URL(base);
+			const protocol = parsed.protocol.toLowerCase();
+			if (protocol === 'ssh:' || protocol === 'git:') return true;
+			if (protocol === 'http:' || protocol === 'https:') {
+				return parsed.pathname.toLowerCase().endsWith('.git');
+			}
+		} catch {
+			return false;
+		}
+		return false;
+	}
+
+	function buildContextDisplayName(value?: string): string {
+		const trimmed = value?.trim();
+		if (!trimmed) return '';
+		if (!isGitBuildContextSource(trimmed)) {
+			return trimmed.split('/').pop() || trimmed;
+		}
+
+		const withoutFragment = trimmed.split('#', 1)[0] ?? trimmed;
+		const normalized = withoutFragment.endsWith('/') ? withoutFragment.slice(0, -1) : withoutFragment;
+		const repoName = normalized.split('/').pop() || normalized;
+		return repoName.replace(/\.git$/i, '');
+	}
+
 	function getContextPathFromBuild(build: ImageBuildRecord) {
+		if (isGitBuildContextSource(build.contextDir)) return '/';
 		const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
 		if (!build.contextDir || build.contextDir === root) return '/';
 		if (build.contextDir.startsWith(`${root}/`)) {
@@ -717,7 +759,14 @@
 			build.noCache ||
 			build.pull
 		);
-		selectedContextPath = getContextPathFromBuild(build);
+		if (isGitBuildContextSource(build.contextDir)) {
+			contextMode = 'remote';
+			remoteContextSource = build.contextDir;
+		} else {
+			contextMode = 'workspace';
+			remoteContextSource = '';
+			selectedContextPath = getContextPathFromBuild(build);
+		}
 		mainTab = 'build';
 		rightPanelTab = 'config';
 		buildTab = 'configuration';
@@ -729,7 +778,7 @@
 		if (!data) return;
 
 		if (!contextDir || contextDir.trim() === '') {
-			toast.error(m.build_context_required());
+			toast.error(contextMode === 'remote' ? m.build_remote_context_required() : m.build_context_required());
 			return;
 		}
 
@@ -1315,7 +1364,11 @@
 								<BuildWorkspacePanel
 									rootLabel={buildsRootLabel}
 									rootPath={buildsRoot}
+									{contextMode}
 									{contextDir}
+									remoteContext={remoteContextSource}
+									onModeChange={(mode) => (contextMode = mode)}
+									onRemoteContextChange={(value: string) => (remoteContextSource = value)}
 									onSelectContext={(path: string) => (selectedContextPath = path)}
 								/>
 							</Card.Root>
@@ -1389,7 +1442,11 @@
 									<BuildWorkspacePanel
 										rootLabel={buildsRootLabel}
 										rootPath={buildsRoot}
+										{contextMode}
 										{contextDir}
+										remoteContext={remoteContextSource}
+										onModeChange={(mode) => (contextMode = mode)}
+										onRemoteContextChange={(value: string) => (remoteContextSource = value)}
 										onSelectContext={(path: string) => (selectedContextPath = path)}
 									/>
 								</Card.Root>

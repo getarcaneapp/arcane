@@ -78,6 +78,7 @@ export interface NtfyFormValues extends BaseProviderFormValues {
 	topic: string;
 	username: string;
 	password: string;
+	title: string;
 	priority: string;
 	tags: string;
 	icon: string;
@@ -402,6 +403,7 @@ export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyF
 		topic: (cfg?.topic as string) || '',
 		username: (cfg?.username as string) || '',
 		password: (cfg?.password as string) || '',
+		title: (cfg?.title as string) || '',
 		priority: (cfg?.priority as string) || 'default',
 		tags: Array.isArray(cfg?.tags) ? (cfg.tags as string[]).join(', ') : '',
 		icon: (cfg?.icon as string) || '',
@@ -509,6 +511,7 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 			topic: values.topic,
 			username: values.username,
 			password: values.password,
+			title: values.title,
 			priority: values.priority,
 			tags: values.tags
 				.split(',')

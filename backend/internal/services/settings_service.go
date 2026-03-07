@@ -656,7 +656,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 			}
 		}
 
-		mergedBytes, err := json.Marshal(incoming)
+		mergedBytes, err := incoming.MarshalDocument()
 		if err != nil {
 			return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
 		}

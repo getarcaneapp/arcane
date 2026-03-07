@@ -139,7 +139,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	}
 
 	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
-		dockerClient, err := dockerClientService.GetClient()
+		dockerClient, err := dockerClientService.GetClient(ctx)
 		if err != nil {
 			return err
 		}
@@ -149,7 +149,11 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 			return err
 		}
 
-		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion)
+		effectiveAPIVersion := strings.TrimSpace(dockerClient.ClientVersion())
+		if effectiveAPIVersion == "" {
+			effectiveAPIVersion = strings.TrimSpace(version.APIVersion)
+		}
+		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
 		return nil
 	})
 

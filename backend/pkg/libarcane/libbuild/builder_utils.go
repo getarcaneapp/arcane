@@ -32,6 +32,10 @@ func validateBuildRequestInternal(req imagetypes.BuildRequest, providerName stri
 		return fmt.Errorf("build context not found: %w", err)
 	}
 
+	if strings.TrimSpace(req.Dockerfile) != "" && strings.TrimSpace(req.DockerfileInline) != "" {
+		return errors.New("dockerfile and dockerfileInline are mutually exclusive")
+	}
+
 	if providerName == "depot" && !req.Push {
 		return errors.New("depot builds must push images to a registry")
 	}
@@ -45,6 +49,9 @@ func validateBuildRequestInternal(req imagetypes.BuildRequest, providerName stri
 	}
 
 	dockerfilePath := strings.TrimSpace(req.Dockerfile)
+	if strings.TrimSpace(req.DockerfileInline) != "" {
+		return nil
+	}
 	if dockerfilePath == "" {
 		dockerfilePath = "Dockerfile"
 	}

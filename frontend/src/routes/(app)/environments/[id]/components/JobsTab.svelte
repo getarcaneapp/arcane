@@ -43,8 +43,11 @@
 	});
 
 	const containersPromise = $derived.by(async () => {
+		if (!environmentId) return [];
 		if (!$formInputs.autoUpdate.value && !$formInputs.autoHealEnabled.value) return [];
-		const result = await tryCatch(containerService.getContainers({ pagination: { page: 1, limit: 100 } }));
+		const result = await tryCatch(
+			containerService.getContainersForEnvironment(environmentId, { pagination: { page: 1, limit: 100 } })
+		);
 		if (result.error) throw result.error;
 		return result.data.data;
 	});

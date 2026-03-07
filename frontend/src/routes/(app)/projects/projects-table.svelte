@@ -6,11 +6,7 @@
 	import { EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
@@ -19,11 +15,11 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
-	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
+	import type { ActionStatus } from './projects-table.helpers';
+	import { createProjectActions } from './projects-table.actions';
 
 	let {
 		projects = $bindable(),
@@ -37,16 +33,7 @@
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
-	let isLoading = $state({
-		start: false,
-		stop: false,
-		restart: false,
-		remove: false,
-		destroy: false,
-		pull: false,
-		updating: false,
-		syncing: false
-	});
+	let actionStatus = $state<Record<string, ActionStatus>>({});
 
 	let isBulkLoading = $state({
 		up: false,
@@ -66,211 +53,23 @@
 		return project.status.toLowerCase() === 'unknown' && project.statusReason ? project.statusReason : undefined;
 	}
 
-	async function performProjectAction(action: string, id: string) {
-		isLoading[action as keyof typeof isLoading] = true;
+	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	const envId = $derived(environmentStore.selected?.id);
 
-		try {
-			if (action === 'start') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.deployProject(id, deployOptionsStore.getRequestOptions())),
-					message: m.compose_start_failed(),
-					setLoadingState: (value) => (isLoading.start = value),
-					onSuccess: async () => {
-						toast.success(m.compose_start_success());
-						await refreshProjects();
-					}
-				});
-			} else if (action === 'stop') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.downProject(id)),
-					message: m.compose_stop_failed(),
-					setLoadingState: (value) => (isLoading.stop = value),
-					onSuccess: async () => {
-						toast.success(m.compose_stop_success());
-						await refreshProjects();
-					}
-				});
-			} else if (action === 'restart') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.restartProject(id)),
-					message: m.compose_restart_failed(),
-					setLoadingState: (value) => (isLoading.restart = value),
-					onSuccess: async () => {
-						toast.success(m.compose_restart_success());
-						await refreshProjects();
-					}
-				});
-			} else if (action === 'redeploy') {
-				handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.redeployProject(id)),
-					message: m.compose_pull_failed(),
-					setLoadingState: (value) => (isLoading.pull = value),
-					onSuccess: async () => {
-						toast.success(m.compose_pull_success());
-						await refreshProjects();
-					}
-				});
-			} else if (action === 'destroy') {
-				openConfirmDialog({
-					title: m.common_confirm_removal_title(),
-					message: m.compose_confirm_removal_message(),
-					checkboxes: [
-						{
-							id: 'volumes',
-							label: m.confirm_remove_volumes_warning(),
-							initialState: false
-						},
-						{
-							id: 'files',
-							label: m.confirm_remove_project_files(),
-							initialState: false
-						}
-					],
-					confirm: {
-						label: m.compose_destroy(),
-						destructive: true,
-						action: async (result: any) => {
-							const removeVolumes = !!(result?.checkboxes?.volumes ?? result?.volumes);
-							const removeFiles = !!(result?.checkboxes?.files ?? result?.files);
-
-							handleApiResultWithCallbacks({
-								result: await tryCatch(projectService.destroyProject(id, removeVolumes, removeFiles)),
-								message: m.compose_destroy_failed(),
-								setLoadingState: (value) => (isLoading.destroy = value),
-								onSuccess: async () => {
-									toast.success(m.compose_destroy_success());
-									await refreshProjects();
-								}
-							});
-						}
-					}
-				});
-			}
-		} catch (error) {
-			toast.error(m.common_action_failed());
-		}
-	}
-
-	async function handleSyncFromGit(gitOpsSyncId: string) {
-		if (!envId) return;
-		isLoading.syncing = true;
-		const result = await tryCatch(gitOpsSyncService.performSync(envId, gitOpsSyncId));
-		handleApiResultWithCallbacks({
-			result,
-			message: m.git_sync_failed(),
-			setLoadingState: (value) => (isLoading.syncing = value),
-			onSuccess: async () => {
-				toast.success(m.git_sync_success());
-				await refreshProjects();
-			}
+	const { performProjectAction, handleDestroyProject, handleSyncFromGit, handleBulkUp, handleBulkDown, handleBulkRedeploy } =
+		createProjectActions({
+			getRequestOptions: () => requestOptions,
+			refreshProjects,
+			setSelectedIds: (next) => {
+				selectedIds = next;
+			},
+			actionStatus,
+			isBulkLoading,
+			getEnvId: () => envId
 		});
-	}
-
-	async function handleBulkUp(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.projects_bulk_up_confirm_title({ count: ids.length }),
-			message: m.projects_bulk_up_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_up(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.up = true;
-
-					const deployOptions = deployOptionsStore.getRequestOptions();
-					const results = await Promise.allSettled(ids.map((id) => projectService.deployProject(id, deployOptions)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.up = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.projects_bulk_up_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.projects_bulk_up_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.compose_start_failed());
-					}
-
-					await refreshProjects();
-					selectedIds = [];
-				}
-			}
-		});
-	}
-
-	async function handleBulkDown(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.projects_bulk_down_confirm_title({ count: ids.length }),
-			message: m.projects_bulk_down_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.common_down(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.down = true;
-
-					const results = await Promise.allSettled(ids.map((id) => projectService.downProject(id)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.down = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.projects_bulk_down_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.projects_bulk_down_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.compose_stop_failed());
-					}
-
-					await refreshProjects();
-					selectedIds = [];
-				}
-			}
-		});
-	}
-
-	async function handleBulkRedeploy(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
-			title: m.projects_bulk_redeploy_confirm_title({ count: ids.length }),
-			message: m.projects_bulk_redeploy_confirm_message({ count: ids.length }),
-			confirm: {
-				label: m.compose_pull_redeploy(),
-				destructive: false,
-				action: async () => {
-					isBulkLoading.redeploy = true;
-
-					const results = await Promise.allSettled(ids.map((id) => projectService.redeployProject(id)));
-
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.redeploy = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.projects_bulk_redeploy_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.projects_bulk_redeploy_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.compose_pull_failed());
-					}
-
-					await refreshProjects();
-					selectedIds = [];
-				}
-			}
-		});
-	}
 
 	const isAnyLoading = $derived(
-		Object.values(isLoading).some((loading) => loading) || Object.values(isBulkLoading).some((loading) => loading)
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
 	);
 
 	const columns = [
@@ -319,9 +118,6 @@
 			icon: RedeployIcon
 		}
 	]);
-
-	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	const envId = $derived(environmentStore.selected?.id);
 </script>
 
 {#snippet NameCell({ item }: { item: Project })}
@@ -429,6 +225,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Project })}
+	{@const status = actionStatus[item.id]}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
@@ -447,10 +244,10 @@
 
 				{#if item.gitOpsManagedBy}
 					<DropdownMenu.Item
-						onclick={() => handleSyncFromGit(item.gitOpsManagedBy!)}
-						disabled={isLoading.syncing || isAnyLoading}
+						onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
+						disabled={status === 'syncing' || isAnyLoading}
 					>
-						{#if isLoading.syncing}
+						{#if status === 'syncing'}
 							<Spinner class="size-4" />
 						{:else}
 							<RefreshIcon class="size-4" />
@@ -462,8 +259,11 @@
 				<DropdownMenu.Separator />
 
 				{#if item.status !== 'running'}
-					<DropdownMenu.Item onclick={() => performProjectAction('start', item.id)} disabled={isLoading.start || isAnyLoading}>
-						{#if isLoading.start}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('start', item.id)}
+						disabled={status === 'starting' || isAnyLoading}
+					>
+						{#if status === 'starting'}
 							<Spinner class="size-4" />
 						{:else}
 							<StartIcon class="size-4" />
@@ -471,8 +271,11 @@
 						{m.common_up()}
 					</DropdownMenu.Item>
 				{:else}
-					<DropdownMenu.Item onclick={() => performProjectAction('stop', item.id)} disabled={isLoading.stop || isAnyLoading}>
-						{#if isLoading.stop}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('stop', item.id)}
+						disabled={status === 'stopping' || isAnyLoading}
+					>
+						{#if status === 'stopping'}
 							<Spinner class="size-4" />
 						{:else}
 							<StopIcon class="size-4" />
@@ -482,9 +285,9 @@
 
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('restart', item.id)}
-						disabled={isLoading.restart || isAnyLoading}
+						disabled={status === 'restarting' || isAnyLoading}
 					>
-						{#if isLoading.restart}
+						{#if status === 'restarting'}
 							<Spinner class="size-4" />
 						{:else}
 							<RestartIcon class="size-4" />
@@ -493,8 +296,11 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item onclick={() => performProjectAction('redeploy', item.id)} disabled={isLoading.pull || isAnyLoading}>
-					{#if isLoading.pull}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('redeploy', item.id)}
+					disabled={status === 'redeploying' || isAnyLoading}
+				>
+					{#if status === 'redeploying'}
 						<Spinner class="size-4" />
 					{:else}
 						<RedeployIcon class="size-4" />
@@ -506,10 +312,10 @@
 
 				<DropdownMenu.Item
 					variant="destructive"
-					onclick={() => performProjectAction('destroy', item.id)}
-					disabled={isLoading.remove || isAnyLoading}
+					onclick={() => handleDestroyProject(item.id)}
+					disabled={status === 'destroying' || isAnyLoading}
 				>
-					{#if isLoading.remove}
+					{#if status === 'destroying'}
 						<Spinner class="size-4" />
 					{:else}
 						<TrashIcon class="size-4" />

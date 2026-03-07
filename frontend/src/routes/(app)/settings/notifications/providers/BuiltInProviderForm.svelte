@@ -277,6 +277,7 @@
 				topic: z.string(),
 				username: z.string(),
 				password: z.string(),
+				title: z.string(),
 				priority: z.string(),
 				tags: z.string(),
 				icon: z.string(),
@@ -758,6 +759,14 @@
 				placeholder: m.notifications_ntfy_password_placeholder(),
 				helpText: m.notifications_ntfy_password_help(),
 				inputType: 'password'
+			},
+			{
+				kind: 'input',
+				key: 'title',
+				id: 'ntfy-title',
+				label: m.notifications_ntfy_title_label(),
+				placeholder: m.notifications_ntfy_title_placeholder(),
+				helpText: m.notifications_ntfy_title_help()
 			},
 			{
 				kind: 'native-select',

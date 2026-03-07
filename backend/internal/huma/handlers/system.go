@@ -249,7 +249,7 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 		return nil, huma.Error503ServiceUnavailable("docker service not available")
 	}
 
-	dockerClient, err := h.dockerService.GetClient()
+	dockerClient, err := h.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, huma.Error503ServiceUnavailable((&common.DockerConnectionError{Err: err}).Error())
 	}
@@ -268,7 +268,7 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	dockerClient, err := h.dockerService.GetClient()
+	dockerClient, err := h.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.DockerConnectionError{Err: err}).Error())
 	}

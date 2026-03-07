@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/stretchr/testify/assert"
@@ -218,6 +220,25 @@ func TestConfig_OptionsToLower(t *testing.T) {
 	})
 }
 
+func TestConfig_AllowDowngrade(t *testing.T) {
+	origAllowDowngrade := os.Getenv("ALLOW_DOWNGRADE")
+	defer restoreEnv("ALLOW_DOWNGRADE", origAllowDowngrade)
+
+	t.Run("defaults to false", func(t *testing.T) {
+		unsetEnv(t, "ALLOW_DOWNGRADE")
+
+		cfg := Load()
+		assert.False(t, cfg.AllowDowngrade)
+	})
+
+	t.Run("loads explicit true from env", func(t *testing.T) {
+		setEnv(t, "ALLOW_DOWNGRADE", "true")
+
+		cfg := Load()
+		assert.True(t, cfg.AllowDowngrade)
+	})
+}
+
 func TestConfig_ListenAddr(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -351,6 +372,69 @@ func TestConfig_GetManagerBaseURL(t *testing.T) {
 		}
 		assert.Equal(t, "https://manager.example.com/arcane", cfg.GetManagerBaseURL())
 	})
+}
+
+func TestConfig_JWTRefreshExpiry(t *testing.T) {
+	origJWTRefreshExpiry := os.Getenv("JWT_REFRESH_EXPIRY")
+	defer restoreEnv("JWT_REFRESH_EXPIRY", origJWTRefreshExpiry)
+
+	t.Run("defaults to 7 days when not set", func(t *testing.T) {
+		unsetEnv(t, "JWT_REFRESH_EXPIRY")
+
+		cfg := Load()
+		assert.Equal(t, 7*24*time.Hour, cfg.JWTRefreshExpiry)
+	})
+
+	t.Run("parses custom duration from env var", func(t *testing.T) {
+		setEnv(t, "JWT_REFRESH_EXPIRY", "48h")
+
+		cfg := Load()
+		assert.Equal(t, 48*time.Hour, cfg.JWTRefreshExpiry)
+	})
+
+	t.Run("supports compound duration format", func(t *testing.T) {
+		setEnv(t, "JWT_REFRESH_EXPIRY", "24h30m")
+
+		cfg := Load()
+		assert.Equal(t, 24*time.Hour+30*time.Minute, cfg.JWTRefreshExpiry)
+	})
+
+	t.Run("falls back to default on invalid duration", func(t *testing.T) {
+		setEnv(t, "JWT_REFRESH_EXPIRY", "notaduration")
+
+		cfg := Load()
+		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
+	})
+
+	t.Run("falls back to default on zero duration", func(t *testing.T) {
+		setEnv(t, "JWT_REFRESH_EXPIRY", "0s")
+
+		cfg := Load()
+		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
+	})
+
+	t.Run("falls back to default on negative duration", func(t *testing.T) {
+		setEnv(t, "JWT_REFRESH_EXPIRY", "-1h")
+
+		cfg := Load()
+		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
+	})
+}
+
+func TestSetFieldValueInternal_DurationUsesFieldTagDefault(t *testing.T) {
+	type durationConfig struct {
+		SessionTimeout time.Duration `env:"SESSION_TIMEOUT" default:"2h"`
+	}
+
+	cfg := &durationConfig{}
+	v := reflect.ValueOf(cfg).Elem()
+	field := v.FieldByName("SessionTimeout")
+	fieldType, ok := v.Type().FieldByName("SessionTimeout")
+	require.True(t, ok)
+
+	setFieldValueInternal(field, fieldType, "invalid-duration")
+
+	assert.Equal(t, 2*time.Hour, cfg.SessionTimeout)
 }
 
 func restoreEnv(key, value string) {
