@@ -626,6 +626,52 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	assert.Equal(t, "FOO=bar\n", string(envBytes))
 }
 
+func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+
+	dirName := "env-updated"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-new-env-file"},
+		Name:      "env-updated",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    env_file:
+      - .env
+`
+	env := "FOO=updated\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	envBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, env, string(envBytes))
+}
+
 func TestProjectService_MergeBuildTags(t *testing.T) {
 	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)

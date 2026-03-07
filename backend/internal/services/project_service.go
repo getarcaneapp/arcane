@@ -1943,13 +1943,60 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	_, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
-		if validationProjectName != "" {
-			opts.SetProjectName(validationProjectName, true)
-		}
+	err = withTransientValidationEnvFile(projectPath, envContent, func() error {
+		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+			if validationProjectName != "" {
+				opts.SetProjectName(validationProjectName, true)
+			}
+		})
+		return loadErr
 	})
 
 	return err
+}
+
+func withTransientValidationEnvFile(projectPath string, envContent *string, run func() error) (err error) {
+	envPath := filepath.Join(projectPath, ".env")
+	originalContent, readErr := os.ReadFile(envPath)
+	originalExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return fmt.Errorf("prepare env file for compose validation: %w", readErr)
+	}
+
+	shouldWrite := envContent != nil || !originalExists
+	if shouldWrite {
+		content := ""
+		if envContent != nil {
+			content = *envContent
+		}
+		if writeErr := os.WriteFile(envPath, []byte(content), common.FilePerm); writeErr != nil {
+			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
+		}
+
+		defer func() {
+			var restoreErr error
+			switch {
+			case originalExists:
+				restoreErr = os.WriteFile(envPath, originalContent, common.FilePerm)
+			case envContent != nil:
+				restoreErr = os.Remove(envPath)
+			default:
+				restoreErr = os.Remove(envPath)
+			}
+
+			if restoreErr != nil && !os.IsNotExist(restoreErr) {
+				if err == nil {
+					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
+				}
+			}
+		}()
+	}
+
+	if run == nil {
+		return nil
+	}
+
+	return run()
 }
 
 func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
