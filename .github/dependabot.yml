@@ -1,36 +1,51 @@
 version: 2
 updates:
   - package-ecosystem: 'npm'
-    directories:
-      - '/'
-      - '/frontend'
-      - '/tests'
-      - '/email-templates'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'npm'
+    directory: '/frontend'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'npm'
+    directory: '/tests'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'npm'
+    directory: '/email-templates'
     schedule:
       interval: 'weekly'
 
   - package-ecosystem: 'gomod'
-    directories:
-      - '/backend'
-      - '/cli'
-      - '/types'
+    directory: '/backend'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'gomod'
+    directory: '/cli'
+    schedule:
+      interval: 'weekly'
+
+  - package-ecosystem: 'gomod'
+    directory: '/types'
     schedule:
       interval: 'weekly'
 
   - package-ecosystem: 'github-actions'
-    directories:
-      - '/'
+    directory: '/'
     schedule:
       interval: 'weekly'
 
   - package-ecosystem: 'docker'
-    directories:
-      - '/docker'
+    directory: '/docker'
     schedule:
       interval: 'weekly'
 
   - package-ecosystem: 'devcontainers'
-    directories:
-      - '/'
+    directory: '/'
     schedule:
       interval: 'weekly'
