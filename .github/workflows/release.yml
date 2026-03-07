@@ -66,7 +66,7 @@ jobs:
 
       - name: Manager image metadata
         id: manager-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.MANAGER_IMAGE_NAME }}
           tags: |
@@ -104,7 +104,7 @@ jobs:
 
       - name: Agent image metadata
         id: agent-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.AGENT_IMAGE_NAME }}
           tags: |
