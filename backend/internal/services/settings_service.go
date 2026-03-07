@@ -87,6 +87,7 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:             models.SettingVariable{Value: "/app/data/projects"},
+		SwarmStackSourcesDirectory:    models.SettingVariable{Value: "/app/data/swarm/sources"},
 		DiskUsagePath:                 models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                    models.SettingVariable{Value: "false"},
 		AutoUpdateInterval:            models.SettingVariable{Value: "0 0 0 * * *"},
