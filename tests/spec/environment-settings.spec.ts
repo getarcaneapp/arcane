@@ -95,6 +95,7 @@ async function selectSettingOption(
 
 test.describe("Environment Settings UI", () => {
   test("should update and save environment details", async ({ page }) => {
+    test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
     const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
     const updatedName = `${envName}-updated`;
 
@@ -121,7 +122,7 @@ test.describe("Environment Settings UI", () => {
   }) => {
     await openLocalEnvironment(page);
 
-    await page.getByRole("tab", { name: "General", exact: true }).click();
+    await page.locator('button[role="tab"][data-value="general"]').click();
     const projectsDirectoryInput = page.locator("#projects-directory");
     await expect(projectsDirectoryInput).toBeVisible();
 
@@ -138,15 +139,11 @@ test.describe("Environment Settings UI", () => {
       );
 
       await page.reload();
-      await page.getByRole("tab", { name: "General", exact: true }).click();
-      await expect(page.locator("#projects-directory")).toHaveValue(
-        updatedProjectsDirectory,
-      );
+      await page.locator('button[role="tab"][data-value="general"]').click();
+      await expect(page.locator("#projects-directory")).toHaveValue(updatedProjectsDirectory);
     } finally {
-      await page.getByRole("tab", { name: "General", exact: true }).click();
-      const currentProjectsDirectory = await page
-        .locator("#projects-directory")
-        .inputValue();
+      await page.locator('button[role="tab"][data-value="general"]').click();
+      const currentProjectsDirectory = await page.locator("#projects-directory").inputValue();
       if (currentProjectsDirectory !== originalProjectsDirectory) {
         await page
           .locator("#projects-directory")

@@ -44,7 +44,7 @@ async function removeVolumeViaUI(page: Page, volumeName: string) {
 
   await row.locator('a[href*="/volumes/"]').first().click();
   await expect(page).toHaveURL(/\/volumes\/.+/);
-  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.locator('button[data-slot="arcane-button"][data-action="remove"]').click();
   await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
   await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
 }
@@ -131,7 +131,7 @@ test.describe('Volumes Page', () => {
     await expect(row).toBeVisible();
     await row.locator('a[href*="/volumes/"]').first().click();
     await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
-    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.locator('button[data-slot="arcane-button"][data-action="remove"]').click();
     await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
 
     await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
