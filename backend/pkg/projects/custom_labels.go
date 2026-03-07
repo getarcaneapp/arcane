@@ -181,7 +181,7 @@ func loadComposeEnvironment(workdir string) map[string]string {
 		return envMap
 	}
 
-	fileEnv, err := parseEnvFileWithContext(envPath, envMap)
+	fileEnv, err := ParseProjectEnvFile(envPath, envMap)
 	if err != nil {
 		return envMap
 	}
@@ -214,7 +214,7 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) map[string]str
 		return merged
 	}
 
-	fileEnv, err := parseEnvFileWithContext(envPath, merged)
+	fileEnv, err := ParseProjectEnvFile(envPath, merged)
 	if err != nil {
 		return merged
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -109,7 +110,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 		return fmt.Errorf("path is a directory: %s", path)
 	}
 
-	globalEnv, err := parseEnvFileWithContext(path, envMap)
+	globalEnv, err := ParseProjectEnvFile(path, envMap)
 	if err != nil {
 		return fmt.Errorf("parse env file: %w", err)
 	}
@@ -142,7 +143,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 		return fmt.Errorf("path is a directory: %s", path)
 	}
 
-	projectEnv, err := parseEnvFileWithContext(path, envMap)
+	projectEnv, err := ParseProjectEnvFile(path, envMap)
 	if err != nil {
 		return fmt.Errorf("parse env file: %w", err)
 	}
@@ -158,16 +159,29 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-// parseEnvFileWithContext parses an env file using compose-go's dotenv parser with variable expansion.
-// The contextEnv map provides variables for expansion (e.g., from process env or previously loaded files).
-// This handles ${VAR} syntax and proper quote handling automatically via compose-go's dotenv package.
-func parseEnvFileWithContext(path string, contextEnv EnvMap) (EnvMap, error) {
+// ParseProjectEnvFile parses a project .env file with variable expansion using the provided
+// context map (e.g. process env). Returns nil without error when the file does not exist.
+// Only the specified file is read — global env files are intentionally not loaded here.
+func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil //nolint:nilerr // missing .env is not an error
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+	return parseEnvWithContext(f, contextEnv)
+}
 
+// ParseProjectEnvContent parses project .env content from a string with variable expansion.
+func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
+	return parseEnvWithContext(strings.NewReader(content), contextEnv)
+}
+
+// parseEnvWithContext parses environment variables from an io.Reader using compose-go's
+// dotenv parser with variable expansion using the provided context lookup map.
+func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
 	// Create lookup function for variable expansion
 	// Checks contextEnv first (previously loaded vars), then process environment
 	lookupFn := func(key string) (string, bool) {
@@ -178,9 +192,9 @@ func parseEnvFileWithContext(path string, contextEnv EnvMap) (EnvMap, error) {
 	}
 
 	// Use compose-go's dotenv parser with lookup support for variable expansion
-	envMap, err := dotenv.ParseWithLookup(f, lookupFn)
+	envMap, err := dotenv.ParseWithLookup(r, lookupFn)
 	if err != nil {
-		return nil, fmt.Errorf("parse env file: %w", err)
+		return nil, fmt.Errorf("parse env: %w", err)
 	}
 
 	return EnvMap(envMap), nil
