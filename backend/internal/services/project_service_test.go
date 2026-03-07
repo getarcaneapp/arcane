@@ -672,6 +672,50 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	assert.Equal(t, env, string(envBytes))
 }
 
+func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+
+	dirName := "env-invalid"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-invalid-env-file"},
+		Name:      "env-invalid",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    environment:
+      - REQUIRED=${REQUIRED}
+`
+	env := "BROKEN=${UNTERMINATED\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, updated)
+	assert.Contains(t, err.Error(), "invalid compose file: parse provided env content")
+	assert.Contains(t, err.Error(), "parse env")
+}
+
 func TestProjectService_MergeBuildTags(t *testing.T) {
 	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)

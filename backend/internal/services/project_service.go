@@ -1919,14 +1919,18 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 
 	// Prefer the provided new environment content if available, otherwise read from disk.
 	if envContent != nil {
-		if fileEnv, envErr := projects.ParseProjectEnvContent(*envContent, fullEnvMap); envErr == nil {
+		if fileEnv, envErr := projects.ParseProjectEnvContent(*envContent, fullEnvMap); envErr != nil {
+			return fmt.Errorf("parse provided env content: %w", envErr)
+		} else {
 			for k, v := range fileEnv {
 				fullEnvMap[k] = v
 			}
 		}
 	} else {
 		projectEnvPath := filepath.Join(projectPath, ".env")
-		if fileEnv, envErr := projects.ParseProjectEnvFile(projectEnvPath, fullEnvMap); envErr == nil {
+		if fileEnv, envErr := projects.ParseProjectEnvFile(projectEnvPath, fullEnvMap); envErr != nil {
+			return fmt.Errorf("parse project env file: %w", envErr)
+		} else {
 			for k, v := range fileEnv {
 				fullEnvMap[k] = v
 			}
