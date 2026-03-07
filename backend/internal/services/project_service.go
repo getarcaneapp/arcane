@@ -1969,7 +1969,7 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 		if envContent != nil {
 			content = *envContent
 		}
-		if writeErr := os.WriteFile(envPath, []byte(content), common.FilePerm); writeErr != nil {
+		if writeErr := fs.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
 			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
 		}
 
@@ -1977,7 +1977,7 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 			var restoreErr error
 			switch {
 			case originalExists:
-				restoreErr = os.WriteFile(envPath, originalContent, common.FilePerm)
+				restoreErr = fs.WriteEnvFile(projectPath, projectPath, string(originalContent))
 			case envContent != nil:
 				restoreErr = os.Remove(envPath)
 			default:
