@@ -7,12 +7,14 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -358,6 +360,126 @@ func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
 	assert.Equal(t, "value", headers.Get("X-Custom"))
 	assert.Equal(t, "agent-token", headers.Get("X-API-Key"))
 	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
+}
+
+func TestTunnelClient_buildLocalWebSocketHeadersInternal_FiltersBrowserHeaders(t *testing.T) {
+	client := NewTunnelClient(&config.Config{
+		AgentToken: "agent-token",
+	}, http.NotFoundHandler())
+
+	headers := client.buildLocalWebSocketHeadersInternal(&TunnelMessage{
+		Headers: map[string]string{
+			// Browser headers that should be stripped
+			"Origin":             "https://docker.example.com",
+			"Cookie":             "session=abc123",
+			"Authorization":      "Bearer browser-jwt",
+			"Referer":            "https://docker.example.com/environments/123",
+			"Sec-Fetch-Dest":     "websocket",
+			"Sec-Fetch-Mode":     "websocket",
+			"Sec-Fetch-Site":     "same-origin",
+			"Sec-Fetch-User":     "?1",
+			"Sec-Ch-Ua":          "\"Chromium\";v=\"130\"",
+			"Sec-Ch-Ua-Mobile":   "?0",
+			"Sec-Ch-Ua-Platform": "\"Linux\"",
+			// Headers that should be preserved
+			"X-Custom":               "value",
+			"Sec-WebSocket-Protocol": "binary",
+			"Accept-Language":        "en-US",
+		},
+	})
+
+	// Browser headers must be stripped
+	assert.Empty(t, headers.Get("Origin"), "Origin should be stripped")
+	assert.Empty(t, headers.Get("Cookie"), "Cookie should be stripped")
+	assert.Empty(t, headers.Get("Authorization"), "Authorization should be stripped")
+	assert.Empty(t, headers.Get("Referer"), "Referer should be stripped")
+	assert.Empty(t, headers.Get("Sec-Fetch-Dest"), "Sec-Fetch-Dest should be stripped")
+	assert.Empty(t, headers.Get("Sec-Fetch-Mode"), "Sec-Fetch-Mode should be stripped")
+	assert.Empty(t, headers.Get("Sec-Fetch-Site"), "Sec-Fetch-Site should be stripped")
+	assert.Empty(t, headers.Get("Sec-Fetch-User"), "Sec-Fetch-User should be stripped")
+	assert.Empty(t, headers.Get("Sec-Ch-Ua"), "Sec-Ch-Ua should be stripped")
+	assert.Empty(t, headers.Get("Sec-Ch-Ua-Mobile"), "Sec-Ch-Ua-Mobile should be stripped")
+	assert.Empty(t, headers.Get("Sec-Ch-Ua-Platform"), "Sec-Ch-Ua-Platform should be stripped")
+
+	// Non-browser headers must be preserved
+	assert.Equal(t, "value", headers.Get("X-Custom"))
+	assert.Equal(t, "binary", headers.Get("Sec-Websocket-Protocol"))
+	assert.Equal(t, "en-US", headers.Get("Accept-Language"))
+
+	// Agent token must override any manager-forwarded auth
+	assert.Equal(t, "agent-token", headers.Get("X-API-Key"))
+	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
+}
+
+func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testing.T) {
+	managerURL := "https://manager.internal.example.com"
+
+	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "agent-token" {
+			http.Error(w, "missing agent auth", http.StatusForbidden)
+			return
+		}
+
+		if origin := r.Header.Get("Origin"); origin != "" {
+			http.Error(w, "unexpected forwarded origin: "+origin, http.StatusForbidden)
+			return
+		}
+
+		if cookie := r.Header.Get("Cookie"); cookie != "" {
+			http.Error(w, "unexpected forwarded cookie", http.StatusForbidden)
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: httputil.ValidateWebSocketOrigin(managerURL),
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte("ok")))
+	}))
+	defer localServer.Close()
+
+	parsedURL, err := url.Parse(localServer.URL)
+	require.NoError(t, err)
+
+	client := NewTunnelClient(&config.Config{
+		AgentToken: "agent-token",
+		Listen:     parsedURL.Hostname(),
+		Port:       parsedURL.Port(),
+	}, http.NotFoundHandler())
+
+	msg := &TunnelMessage{
+		Path: "/",
+		Headers: map[string]string{
+			"Origin":            "https://public.browser.example.com",
+			"Cookie":            "session=browser-cookie",
+			"Authorization":     "Bearer browser-token",
+			"Sec-Fetch-Mode":    "websocket",
+			"Sec-Fetch-Site":    "same-origin",
+			"Sec-Websocket-Key": "forwarded-handshake-key",
+		},
+	}
+
+	headers := client.buildLocalWebSocketHeadersInternal(msg)
+	assert.Empty(t, headers.Get("Origin"))
+	assert.Empty(t, headers.Get("Cookie"))
+	assert.Empty(t, headers.Get("Authorization"))
+
+	ws, resp, err := client.dialLocalWebSocket(t.Context(), client.buildLocalWebSocketURLInternal(msg), headers)
+	require.NoError(t, err)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	defer func() { _ = ws.Close() }()
+
+	msgType, body, err := ws.ReadMessage()
+	require.NoError(t, err)
+	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, "ok", string(body))
 }
 
 func TestTunnelClient_IsGRPCConnectionInternal(t *testing.T) {

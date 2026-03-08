@@ -36,11 +36,15 @@ async function findVolumeRow(page: Page, volumeName: string, maxRetries = 10) {
 }
 
 async function removeVolumeViaUI(page: Page, volumeName: string) {
+  if (page.isClosed()) {
+    return;
+  }
+
   await page.goto('/volumes');
   await page.waitForLoadState('networkidle');
 
   const row = await findVolumeRow(page, volumeName, 4);
-  if ((await row.count()) === 0) return;
+  if (!(await row.isVisible().catch(() => false))) return;
 
   await row.locator('a[href*="/volumes/"]').first().click();
   await expect(page).toHaveURL(/\/volumes\/.+/);

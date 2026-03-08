@@ -6,6 +6,20 @@ test.describe('Notification settings', () => {
     await tab.scrollIntoViewIfNeeded();
     await expect(tab).toBeVisible();
     await tab.click();
+    await expect(page.locator('h3').filter({ hasText: name }).first()).toBeVisible();
+  };
+
+  const enableCurrentProvider = async (page: Page) => {
+    const toggle = page.getByRole('switch').first();
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(page.locator('[data-dropdown-menu-trigger]').last()).toBeVisible({ timeout: 10000 });
+  };
+
+  const openTestMenu = async (page: Page) => {
+    const trigger = page.locator('[data-dropdown-menu-trigger]').last();
+    await expect(trigger).toBeVisible({ timeout: 10000 });
+    await trigger.click();
   };
 
   // Shared setup for all notification tests
@@ -25,9 +39,17 @@ test.describe('Notification settings', () => {
     let saveEndpointCalled = false;
     let testEndpointCalled = false;
 
-    // Stub "save settings"
     await page.route('**/api/environments/*/notifications/settings', async (route) => {
       const req = route.request();
+      if (req.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([]),
+        });
+        return;
+      }
+
       if (req.method() === 'POST') {
         saveEndpointCalled = true;
         await route.fulfill({
@@ -37,6 +59,20 @@ test.describe('Notification settings', () => {
         });
         return;
       }
+
+      await route.continue();
+    });
+
+    await page.route('**/api/environments/*/notifications/apprise', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'not configured' }),
+        });
+        return;
+      }
+
       await route.continue();
     });
 
@@ -52,6 +88,8 @@ test.describe('Notification settings', () => {
 
     await page.goto('/settings/notifications');
     await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('tab', { name: 'Built-in' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 
     return {
       getErrorCheck: () => {
@@ -66,8 +104,8 @@ test.describe('Notification settings', () => {
   test('should allow testing email notifications without state_unsafe_mutation errors', async ({ page }) => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'email');
 
-    // Enable email notifications
-    await page.locator('#email-enabled').click();
+    await openProviderTab(page, 'Email');
+    await enableCurrentProvider(page);
 
     // Fill fields
     await page.getByPlaceholder('smtp.example.com').fill('smtp.example.com');
@@ -75,7 +113,7 @@ test.describe('Notification settings', () => {
     await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
 
     // Trigger test
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     // Handle Save & Test if needed
@@ -92,13 +130,13 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'discord');
 
     await openProviderTab(page, 'Discord');
-    await page.locator('#discord-enabled').click();
+    await enableCurrentProvider(page);
 
     // Discord split fields
     await page.getByPlaceholder('Enter webhook ID').fill('123456789');
     await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -114,12 +152,12 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'slack');
 
     await openProviderTab(page, 'Slack');
-    await page.locator('#slack-enabled').click();
+    await enableCurrentProvider(page);
 
     // Slack OAuth token (xoxb- or xoxp- format)
     await page.getByPlaceholder('xoxb-... or xoxp-...').fill('xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -135,13 +173,13 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'telegram');
 
     await openProviderTab(page, 'Telegram');
-    await page.locator('#telegram-enabled').click();
+    await enableCurrentProvider(page);
 
     // Telegram fields (placeholders are hardcoded in component)
     await page.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11').fill('123456:TEST-TOKEN');
     await page.getByPlaceholder('@channel, 123456789, @another_channel').fill('123456789');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -157,11 +195,11 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'generic');
 
     await openProviderTab(page, 'Generic');
-    await page.locator('#generic-enabled').click();
+    await enableCurrentProvider(page);
 
     await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -177,14 +215,14 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'signal');
 
     await openProviderTab(page, 'Signal');
-    await page.locator('#signal-enabled').click();
+    await enableCurrentProvider(page);
 
     await page.getByPlaceholder('localhost').fill('signal-api.example.com');
     await page.getByPlaceholder('8080').fill('8080');
     await page.locator('#signal-source').fill('+1234567890');
     await page.locator('#signal-recipients').fill('+1987654321');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -200,12 +238,12 @@ test.describe('Notification settings', () => {
     const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'ntfy');
 
     await openProviderTab(page, 'Ntfy');
-    await page.locator('#ntfy-enabled').click();
+    await enableCurrentProvider(page);
 
     await page.getByPlaceholder('ntfy.sh').fill('ntfy.sh');
     await page.getByPlaceholder('my-updates').fill('arcane-updates');
 
-    await page.locator('[data-dropdown-menu-trigger]').filter({ hasText: 'Test Provider' }).click();
+    await openTestMenu(page);
     await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
 
     const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });

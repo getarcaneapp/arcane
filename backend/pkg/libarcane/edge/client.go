@@ -404,7 +404,18 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, msg *TunnelMess
 		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to dial local WebSocket", "error", err, "url", localURL)
+		attrs := []any{"error", err, "url", localURL}
+		if resp != nil {
+			attrs = append(attrs, "status", resp.StatusCode)
+			if resp.Body != nil {
+				buf := make([]byte, 512)
+				n, _ := resp.Body.Read(buf)
+				if n > 0 {
+					attrs = append(attrs, "response_body", string(buf[:n]))
+				}
+			}
+		}
+		slog.ErrorContext(ctx, "Failed to dial local WebSocket", attrs...)
 		c.sendWebSocketClose(streamID)
 		return
 	}
@@ -450,18 +461,42 @@ func (c *TunnelClient) localWebSocketHostInternal() string {
 	}
 }
 
+// localDialSkipHeaders lists headers that must not be forwarded when the
+// agent dials its own local HTTP server for a proxied WebSocket stream.
+// This includes:
+//   - Standard WebSocket handshake headers (gorilla/websocket sets its own)
+//   - Browser-specific headers that were forwarded through the tunnel from
+//     the manager.  These cause handshake failures because the agent's
+//     WebSocket upgrader validates the Origin against localhost, not the
+//     browser's remote origin.
+var localDialSkipHeaders = map[string]bool{
+	// WebSocket handshake (gorilla/websocket adds its own)
+	"Sec-Websocket-Key":        true,
+	"Sec-Websocket-Version":    true,
+	"Sec-Websocket-Extensions": true,
+	"Upgrade":                  true,
+	"Connection":               true,
+
+	// Browser headers forwarded through the tunnel that are invalid
+	// for a server-to-server local dial.
+	"Origin":             true,
+	"Cookie":             true,
+	"Authorization":      true,
+	"Referer":            true,
+	"Sec-Fetch-Dest":     true,
+	"Sec-Fetch-Mode":     true,
+	"Sec-Fetch-Site":     true,
+	"Sec-Fetch-User":     true,
+	"Sec-Ch-Ua":          true,
+	"Sec-Ch-Ua-Mobile":   true,
+	"Sec-Ch-Ua-Platform": true,
+}
+
 func (c *TunnelClient) buildLocalWebSocketHeadersInternal(msg *TunnelMessage) http.Header {
 	headers := http.Header{}
-	wsHandshakeHeaders := map[string]bool{
-		"Sec-Websocket-Key":        true,
-		"Sec-Websocket-Version":    true,
-		"Sec-Websocket-Extensions": true,
-		"Upgrade":                  true,
-		"Connection":               true,
-	}
 	for k, v := range msg.Headers {
 		canonicalKey := http.CanonicalHeaderKey(k)
-		if !wsHandshakeHeaders[canonicalKey] {
+		if !localDialSkipHeaders[canonicalKey] {
 			headers.Set(canonicalKey, v)
 		}
 	}
