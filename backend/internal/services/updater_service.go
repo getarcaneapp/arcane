@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -759,27 +760,16 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		inspect.HostConfig.PublishAllPorts = false
 	}
 
-	var networkingConfig *network.NetworkingConfig
-	if !nm.IsContainer() {
-		apiVersion := libarcane.DetectDockerAPIVersion(ctx, dcli)
-		if apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
-			slog.InfoContext(ctx,
-				"updateContainer: daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
-				"containerId", cnt.ID,
-				"containerName", name,
-				"dockerAPIVersion", apiVersion,
-				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,
-			)
-		}
-
-		var endpoints map[string]*network.EndpointSettings
-		if inspect.NetworkSettings != nil {
-			endpoints = inspect.NetworkSettings.Networks
-		}
-
-		networkingConfig = &network.NetworkingConfig{
-			EndpointsConfig: libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
-		}
+	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dcli)
+	networkingConfig := buildUpdaterRecreateNetworkingConfigInternal(nm, inspect.NetworkSettings, apiVersion)
+	if networkingConfig != nil && apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
+		slog.InfoContext(ctx,
+			"updateContainer: daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
+			"containerId", cnt.ID,
+			"containerName", name,
+			"dockerAPIVersion", apiVersion,
+			"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,
+		)
 	}
 
 	// Use original name for new container
@@ -811,6 +801,36 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	slog.DebugContext(ctx, "updateContainer: update complete", "oldContainerId", cnt.ID, "newContainerId", resp.ID)
 	return nil
+}
+
+func buildUpdaterRecreateNetworkingConfigInternal(networkMode container.NetworkMode, settings *container.NetworkSettings, apiVersion string) *network.NetworkingConfig {
+	if networkMode.IsContainer() || settings == nil || len(settings.Networks) == 0 {
+		return nil
+	}
+
+	rawEndpointsConfig := make(map[string]*network.EndpointSettings, len(settings.Networks))
+	for networkName, endpoint := range settings.Networks {
+		if endpoint == nil {
+			rawEndpointsConfig[networkName] = &network.EndpointSettings{}
+			continue
+		}
+
+		rawEndpointsConfig[networkName] = &network.EndpointSettings{
+			IPAMConfig: endpoint.IPAMConfig.Copy(),
+			Links:      slices.Clone(endpoint.Links),
+			Aliases:    slices.Clone(endpoint.Aliases),
+			DriverOpts: maps.Clone(endpoint.DriverOpts),
+			GwPriority: endpoint.GwPriority,
+			MacAddress: endpoint.MacAddress,
+		}
+	}
+
+	sanitizedEndpointsConfig := libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(rawEndpointsConfig, apiVersion)
+	if len(sanitizedEndpointsConfig) == 0 {
+		return nil
+	}
+
+	return &network.NetworkingConfig{EndpointsConfig: sanitizedEndpointsConfig}
 }
 
 // normalizeRef returns a canonical "registry/repository:tag" without digest.

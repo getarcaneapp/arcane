@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -276,6 +279,152 @@ func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing
 	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
 	assert.Contains(t, out, svc.normalizeRef("redis:7"))
 	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+}
+
+func mustHardwareAddr(t *testing.T, value string) network.HardwareAddr {
+	t.Helper()
+
+	hw, err := net.ParseMAC(value)
+	require.NoError(t, err)
+
+	return network.HardwareAddr(hw)
+}
+
+func TestBuildUpdaterRecreateNetworkingConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		networkMode container.NetworkMode
+		settings    *container.NetworkSettings
+		apiVersion  string
+		assertions  func(t *testing.T, got *network.NetworkingConfig)
+	}{
+		{
+			name:        "skips container network mode",
+			networkMode: container.NetworkMode("container:db"),
+			apiVersion:  "1.44",
+			settings: &container.NetworkSettings{
+				Networks: map[string]*network.EndpointSettings{
+					"custom": {Aliases: []string{"app"}},
+				},
+			},
+			assertions: func(t *testing.T, got *network.NetworkingConfig) {
+				require.Nil(t, got)
+			},
+		},
+		{
+			name:        "returns nil for empty settings",
+			networkMode: container.NetworkMode("bridge"),
+			apiVersion:  "1.44",
+			settings:    &container.NetworkSettings{},
+			assertions: func(t *testing.T, got *network.NetworkingConfig) {
+				require.Nil(t, got)
+			},
+		},
+		{
+			name:        "preserves recreate-safe endpoint config and strips runtime fields",
+			networkMode: container.NetworkMode("bridge"),
+			apiVersion:  "1.43",
+			settings: &container.NetworkSettings{
+				Networks: map[string]*network.EndpointSettings{
+					"bridge": {
+						IPAMConfig: &network.EndpointIPAMConfig{
+							IPv4Address:  netip.MustParseAddr("172.18.0.50"),
+							LinkLocalIPs: []netip.Addr{netip.MustParseAddr("169.254.10.10")},
+						},
+						Links:       []string{"db:db"},
+						Aliases:     []string{"app", "app-1"},
+						DriverOpts:  map[string]string{"l2proxy": "true"},
+						GwPriority:  42,
+						MacAddress:  mustHardwareAddr(t, "02:42:ac:11:00:02"),
+						IPAddress:   netip.MustParseAddr("172.18.0.20"),
+						Gateway:     netip.MustParseAddr("172.18.0.1"),
+						IPPrefixLen: 16,
+					},
+					"synobridge": nil,
+				},
+			},
+			assertions: func(t *testing.T, got *network.NetworkingConfig) {
+				require.NotNil(t, got)
+				require.Len(t, got.EndpointsConfig, 2)
+
+				bridge := got.EndpointsConfig["bridge"]
+				require.NotNil(t, bridge)
+				require.NotNil(t, bridge.IPAMConfig)
+				assert.Equal(t, netip.MustParseAddr("172.18.0.50"), bridge.IPAMConfig.IPv4Address)
+				assert.Equal(t, []netip.Addr{netip.MustParseAddr("169.254.10.10")}, bridge.IPAMConfig.LinkLocalIPs)
+				assert.Equal(t, []string{"db:db"}, bridge.Links)
+				assert.Equal(t, []string{"app", "app-1"}, bridge.Aliases)
+				assert.Equal(t, map[string]string{"l2proxy": "true"}, bridge.DriverOpts)
+				assert.Equal(t, 42, bridge.GwPriority)
+				assert.Empty(t, bridge.MacAddress)
+				assert.False(t, bridge.IPAddress.IsValid())
+				assert.False(t, bridge.Gateway.IsValid())
+				assert.Zero(t, bridge.IPPrefixLen)
+
+				synobridge := got.EndpointsConfig["synobridge"]
+				require.NotNil(t, synobridge)
+				assert.Empty(t, synobridge.Aliases)
+			},
+		},
+		{
+			name:        "preserves network mac address when docker api supports it",
+			networkMode: container.NetworkMode("bridge"),
+			apiVersion:  "1.44",
+			settings: &container.NetworkSettings{
+				Networks: map[string]*network.EndpointSettings{
+					"custom": {
+						Aliases:    []string{"app"},
+						MacAddress: mustHardwareAddr(t, "02:42:ac:11:00:03"),
+					},
+				},
+			},
+			assertions: func(t *testing.T, got *network.NetworkingConfig) {
+				require.NotNil(t, got)
+				require.Len(t, got.EndpointsConfig, 1)
+
+				endpoint := got.EndpointsConfig["custom"]
+				require.NotNil(t, endpoint)
+				assert.Equal(t, []string{"app"}, endpoint.Aliases)
+				assert.Equal(t, "02:42:ac:11:00:03", endpoint.MacAddress.String())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildUpdaterRecreateNetworkingConfigInternal(tt.networkMode, tt.settings, tt.apiVersion)
+			tt.assertions(t, got)
+		})
+	}
+
+	t.Run("clones aliases slice", func(t *testing.T) {
+		settings := &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				"custom": {
+					IPAMConfig: &network.EndpointIPAMConfig{
+						IPv4Address: netip.MustParseAddr("10.10.0.5"),
+					},
+					Links:      []string{"db:db"},
+					Aliases:    []string{"app"},
+					DriverOpts: map[string]string{"mode": "l2"},
+				},
+			},
+		}
+
+		got := buildUpdaterRecreateNetworkingConfigInternal(container.NetworkMode("bridge"), settings, "1.44")
+		require.NotNil(t, got)
+
+		got.EndpointsConfig["custom"].IPAMConfig.IPv4Address = netip.MustParseAddr("10.10.0.99")
+		got.EndpointsConfig["custom"].Links[0] = "cache:cache"
+		got.EndpointsConfig["custom"].Aliases[0] = "changed"
+		got.EndpointsConfig["custom"].DriverOpts["mode"] = "l3"
+
+		require.NotNil(t, settings.Networks["custom"].IPAMConfig)
+		assert.Equal(t, netip.MustParseAddr("10.10.0.5"), settings.Networks["custom"].IPAMConfig.IPv4Address)
+		assert.Equal(t, []string{"db:db"}, settings.Networks["custom"].Links)
+		assert.Equal(t, []string{"app"}, settings.Networks["custom"].Aliases)
+		assert.Equal(t, map[string]string{"mode": "l2"}, settings.Networks["custom"].DriverOpts)
+	})
 }
 
 func setupUpdaterServiceTestDB(t *testing.T) *database.DB {
