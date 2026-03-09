@@ -2,6 +2,7 @@ import { PersistedState } from 'runed';
 import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import type { Environment } from '$lib/types/environment.type';
+import { isEnvironmentOnline } from '$lib/utils/environment-status';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
@@ -48,27 +49,36 @@ function createEnvironmentManagementStore() {
 		return sorted;
 	}
 
+	function _isAutoSelectableEnvironment(environment: Environment): boolean {
+		if (!environment.enabled) return false;
+		if (environment.id === LOCAL_DOCKER_ENVIRONMENT_ID) return true;
+		return isEnvironmentOnline(environment);
+	}
+
+	function _setSelectedEnvironment(environment: Environment): Environment {
+		_selectedEnvironment = environment;
+		selectedEnvironmentId.current = environment.id;
+		return environment;
+	}
+
 	function _selectInitialEnvironment(available: Environment[]): Environment | null {
 		const savedId = selectedEnvironmentId.current;
 
 		if (savedId) {
 			const found = available.find((env) => env.id === savedId);
-			if (found && found.enabled) {
-				_selectedEnvironment = found;
-				return found;
+			if (found && _isAutoSelectableEnvironment(found)) {
+				return _setSelectedEnvironment(found);
 			}
 		}
 
 		const localEnv = available.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID);
-		if (localEnv && localEnv.enabled) {
-			_selectedEnvironment = localEnv;
-			return localEnv;
+		if (localEnv && _isAutoSelectableEnvironment(localEnv)) {
+			return _setSelectedEnvironment(localEnv);
 		}
 
-		const firstEnabled = available.find((env) => env.enabled);
-		if (firstEnabled) {
-			_selectedEnvironment = firstEnabled;
-			return firstEnabled;
+		const firstReachable = available.find((env) => _isAutoSelectableEnvironment(env));
+		if (firstReachable) {
+			return _setSelectedEnvironment(firstReachable);
 		}
 
 		_selectedEnvironment = null;
