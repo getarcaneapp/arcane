@@ -67,7 +67,7 @@
     "paneforge": "^1.0.2",
     "runed": "^0.37.1",
     "svelte-check": "^4.4.5",
-    "svelte-sonner": "^1.0.8",
+    "svelte-sonner": "^1.1.0",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.30.0",
     "tailwind-merge": "^3.5.0",
