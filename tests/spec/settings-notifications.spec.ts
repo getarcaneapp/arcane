@@ -88,7 +88,7 @@ test.describe('Notification settings', () => {
 
     await page.goto('/settings/notifications');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('tab', { name: 'Built-in' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Built-in Notifications' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 
     return {

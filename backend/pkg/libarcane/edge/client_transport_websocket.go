@@ -45,6 +45,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	setActiveAgentTunnelConn(c.conn)
 	defer clearActiveAgentTunnelConn(c.conn)
 	slog.InfoContext(ctx, "WebSocket edge tunnel connected to manager", "manager_url", managerWSURL)
+	c.markTransportConnectedInternal(EdgeTransportWebSocket)
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()

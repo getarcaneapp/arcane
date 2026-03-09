@@ -421,10 +421,10 @@ test.describe('New Compose Project Page', () => {
 
       await expect(deployMenuTrigger).toBeVisible();
 
-      await deployMenuTrigger.click();
+      await deployMenuTrigger.click({ force: true });
       await page.getByRole('menuitemradio', { name: /Always/i }).click();
 
-      await deployMenuTrigger.click();
+      await deployMenuTrigger.click({ force: true });
       await page.getByRole('menuitemcheckbox', { name: /Force recreate containers/i }).click();
 
       await page.getByRole('button', { name: 'Up', exact: true }).click();

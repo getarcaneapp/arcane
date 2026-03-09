@@ -285,11 +285,14 @@
 		</div>
 	{/if}
 {/snippet}
-
 {#if isMobile.current}
 	<Dialog.Root bind:open onOpenChange={handleOpenChange}>
-		<Dialog.Trigger class={triggerClass}>
-			{@render children()}
+		<Dialog.Trigger>
+			{#snippet child({ props })}
+				<span {...props} class={cn('inline-flex w-fit', triggerClass)}>
+					{@render children()}
+				</span>
+			{/snippet}
 		</Dialog.Trigger>
 		<Dialog.Content class={cn('p-2', error && 'max-w-[600px]', className)} showCloseButton={!loading}>
 			{@render content()}
@@ -297,8 +300,12 @@
 	</Dialog.Root>
 {:else}
 	<Popover.Root bind:open onOpenChange={handleOpenChange}>
-		<Popover.Trigger class={triggerClass}>
-			{@render children()}
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<span {...props} class={cn('inline-flex w-fit', triggerClass)}>
+					{@render children()}
+				</span>
+			{/snippet}
 		</Popover.Trigger>
 
 		<Popover.Content class={cn('w-80 p-2', error && 'w-auto max-w-[600px]', className)} {align} {sideOffset}>

@@ -23,9 +23,10 @@ var (
 )
 
 const (
-	apiKeyPrefix    = "arc_"
-	apiKeyLength    = 32
-	apiKeyPrefixLen = 8
+	apiKeyPrefix              = "arc_"
+	apiKeyLength              = 32
+	apiKeyPrefixLen           = 8
+	apiKeyLastUsedWriteWindow = 5 * time.Minute
 )
 
 type ApiKeyService struct {
@@ -62,7 +63,11 @@ func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
 	go func(keyID string) {
 		bgCtx := context.WithoutCancel(ctx)
 		now := time.Now()
-		s.db.WithContext(bgCtx).Model(&models.ApiKey{}).Where("id = ?", keyID).Update("last_used_at", now)
+		cutoff := now.Add(-apiKeyLastUsedWriteWindow)
+		s.db.WithContext(bgCtx).
+			Model(&models.ApiKey{}).
+			Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
+			Update("last_used_at", now)
 	}(keyID)
 }
 

@@ -145,6 +145,12 @@ type Environment struct {
 	// Required: false
 	LastHeartbeat *time.Time `json:"lastHeartbeat,omitempty"`
 
+	// LastPollAt is the timestamp of the most recent poll control-plane check-in
+	// received from a poll-mode edge agent.
+	//
+	// Required: false
+	LastPollAt *time.Time `json:"lastPollAt,omitempty"`
+
 	// ApiKey is returned only when creating or regenerating
 	//
 	// Required: false

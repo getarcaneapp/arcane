@@ -204,12 +204,6 @@ func tokenFromMetadata(ctx context.Context) string {
 func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
 	slog.InfoContext(ctx, "Edge agent connected", "environment_id", tunnel.EnvironmentID)
 
-	s.registry.Register(tunnel.EnvironmentID, tunnel)
-
-	if s.statusCallback != nil {
-		s.statusCallback(callbackCtx, tunnel.EnvironmentID, true)
-	}
-
 	if _, ok := tunnel.Conn.(*GRPCManagerTunnelConn); ok {
 		if err := tunnel.Conn.Send(&TunnelMessage{
 			Type:          MessageTypeRegisterResponse,
@@ -217,7 +211,15 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 			EnvironmentID: tunnel.EnvironmentID,
 		}); err != nil {
 			slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
+			_ = tunnel.Close()
+			return
 		}
+	}
+
+	s.registry.Register(tunnel.EnvironmentID, tunnel)
+
+	if s.statusCallback != nil {
+		s.statusCallback(callbackCtx, tunnel.EnvironmentID, true)
 	}
 
 	defer func() {

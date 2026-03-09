@@ -626,7 +626,12 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 	env.Connected = &connected
 	env.ConnectedAt = nil
 	env.LastHeartbeat = nil
+	env.LastPollAt = nil
 	env.EdgeTransport = nil
+
+	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()); ok {
+		env.LastPollAt = pollState.LastPollAt
+	}
 
 	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID); ok {
 		connected = true
@@ -634,9 +639,16 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 		env.Status = string(models.EnvironmentStatusOnline)
 		env.ConnectedAt = runtimeState.ConnectedAt
 		env.LastHeartbeat = runtimeState.LastHeartbeat
-		if runtimeState.Transport != "" {
+		if transport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
+			env.EdgeTransport = &transport
+		} else if runtimeState.Transport != "" {
 			env.EdgeTransport = &runtimeState.Transport
 		}
+		return
+	}
+
+	if env.LastPollAt != nil {
+		env.Status = string(models.EnvironmentStatusStandby)
 		return
 	}
 
@@ -1009,7 +1021,9 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	// For edge environments, route through the tunnel
 	if env.IsEdge {
 		if !edge.HasActiveTunnel(input.ID) {
-			return nil, huma.Error503ServiceUnavailable("Edge agent is not connected")
+			if _, ok := edge.RequestTunnelAndWait(reqCtx, input.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
+				return nil, huma.Error503ServiceUnavailable("Edge agent is not connected")
+			}
 		}
 
 		statusCode, respBody, err := edge.DoRequest(reqCtx, input.ID, http.MethodGet, "/api/app-version", nil)

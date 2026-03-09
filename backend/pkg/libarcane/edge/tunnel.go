@@ -301,14 +301,20 @@ func (t *GRPCManagerTunnelConn) markClosed() {
 // GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.
 type GRPCAgentTunnelConn struct {
 	stream   grpcAgentStream
+	cancel   context.CancelFunc
 	mu       sync.Mutex
 	closed   bool
 	closedMu sync.RWMutex
 }
 
 // NewGRPCAgentTunnelConn creates an agent-side gRPC tunnel wrapper.
-func NewGRPCAgentTunnelConn(stream grpcAgentStream) *GRPCAgentTunnelConn {
-	return &GRPCAgentTunnelConn{stream: stream}
+func NewGRPCAgentTunnelConn(stream grpcAgentStream, cancelFns ...context.CancelFunc) *GRPCAgentTunnelConn {
+	var cancel context.CancelFunc
+	if len(cancelFns) > 0 {
+		cancel = cancelFns[0]
+	}
+
+	return &GRPCAgentTunnelConn{stream: stream, cancel: cancel}
 }
 
 // Send sends an agent->manager tunnel message over gRPC.
@@ -357,6 +363,12 @@ func (t *GRPCAgentTunnelConn) IsExpectedReceiveError(err error) bool {
 // Close closes the client send stream.
 func (t *GRPCAgentTunnelConn) Close() error {
 	t.markClosed()
+	if t.cancel != nil {
+		t.cancel()
+	}
+	if t.stream == nil {
+		return nil
+	}
 	return t.stream.CloseSend()
 }
 

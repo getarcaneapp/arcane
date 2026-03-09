@@ -58,17 +58,19 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
+	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		strings.ToLower(remenv.HeaderAgentToken), c.cfg.AgentToken,
 		strings.ToLower(remenv.HeaderAPIKey), c.cfg.AgentToken,
-	))
+	)))
+	defer streamCancel()
+
 	method := c.grpcConnectMethodInternal()
 	stream, err := c.openTunnelConnectStreamInternal(streamCtx, conn, method)
 	if err != nil {
 		return fmt.Errorf("failed to open tunnel stream: %w", err)
 	}
 
-	c.conn = NewGRPCAgentTunnelConn(stream)
+	c.conn = NewGRPCAgentTunnelConn(stream, streamCancel)
 	setActiveAgentTunnelConn(c.conn)
 	defer clearActiveAgentTunnelConn(c.conn)
 	if err := c.conn.Send(&TunnelMessage{
@@ -78,11 +80,74 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		return fmt.Errorf("failed to send register message: %w", err)
 	}
 
+	registerMsg, err := c.awaitGRPCRegistrationInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Edge gRPC tunnel connected to manager",
+		"manager_addr", c.managerGRPCAddr,
+		"environment_id", registerMsg.EnvironmentID,
+	)
+	c.markTransportConnectedInternal(EdgeTransportGRPC)
+
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()
 	go c.heartbeatLoop(heartbeatCtx)
 
 	return c.messageLoop(ctx)
+}
+
+func (c *TunnelClient) awaitGRPCRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
+	if c == nil || c.conn == nil {
+		return nil, fmt.Errorf("gRPC tunnel connection is not initialized")
+	}
+
+	type registrationResult struct {
+		msg *TunnelMessage
+		err error
+	}
+
+	timeout := c.grpcRegistrationTimeoutInternal()
+	recvCh := make(chan registrationResult, 1)
+	go func() {
+		msg, err := c.conn.Receive()
+		recvCh <- registrationResult{msg: msg, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		if err := c.conn.Close(); err != nil {
+			slog.DebugContext(ctx, "Failed to close gRPC edge tunnel after context cancellation", "error", err)
+		}
+		return nil, ctx.Err()
+	case <-timer.C:
+		slog.WarnContext(ctx, "Timed out waiting for gRPC edge tunnel registration response",
+			"manager_addr", c.managerGRPCAddr,
+			"timeout", timeout,
+		)
+		if err := c.conn.Close(); err != nil {
+			slog.DebugContext(ctx, "Failed to close gRPC edge tunnel after registration timeout", "error", err)
+		}
+		return nil, fmt.Errorf("timed out waiting for gRPC tunnel registration response after %s", timeout)
+	case result := <-recvCh:
+		if result.err != nil {
+			return nil, fmt.Errorf("failed to receive gRPC tunnel registration response: %w", result.err)
+		}
+		if result.msg == nil {
+			return nil, fmt.Errorf("received empty gRPC tunnel registration response")
+		}
+		if result.msg.Type != MessageTypeRegisterResponse {
+			return nil, fmt.Errorf("unexpected first gRPC tunnel message: %s", result.msg.Type)
+		}
+		if !result.msg.Accepted {
+			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
+		}
+		return result.msg, nil
+	}
 }
 
 func (c *TunnelClient) openTunnelConnectStreamInternal(

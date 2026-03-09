@@ -16,7 +16,16 @@ import (
 const (
 	// DefaultProxyTimeout is the default timeout for proxied requests
 	DefaultProxyTimeout = 5 * time.Minute
+	// DefaultTunnelAcquirePollEvery is how frequently the manager checks for a
+	// newly activated edge tunnel while waiting for poll mode to connect.
+	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
 )
+
+// DefaultTunnelAcquireTimeout returns a poll-aware wait timeout for acquiring
+// an on-demand edge tunnel.
+func DefaultTunnelAcquireTimeout() time.Duration {
+	return DefaultTunnelPollInterval + 2*time.Second
+}
 
 // ProxyRequest sends an HTTP request through an edge tunnel
 // Returns the response status, headers, and body
@@ -266,11 +275,52 @@ func stripInternalTunnelHeaders(headers map[string]string) map[string]string {
 
 // HasActiveTunnel checks if an environment has an active edge tunnel
 func HasActiveTunnel(envID string) bool {
+	_, ok := GetActiveTunnel(envID)
+	return ok
+}
+
+// GetActiveTunnel returns the active tunnel for an environment, if one exists.
+func GetActiveTunnel(envID string) (*AgentTunnel, bool) {
 	tunnel, ok := GetRegistry().Get(envID)
-	if !ok {
-		return false
+	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+		return nil, false
 	}
-	return !tunnel.Conn.IsClosed()
+	return tunnel, true
+}
+
+// WaitForActiveTunnel waits for an environment to establish a live tunnel.
+func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) (*AgentTunnel, bool) {
+	if timeout <= 0 {
+		return GetActiveTunnel(envID)
+	}
+
+	if tunnel, ok := GetActiveTunnel(envID); ok {
+		return tunnel, true
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(DefaultTunnelAcquirePollEvery)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-waitCtx.Done():
+			return nil, false
+		case <-ticker.C:
+			if tunnel, ok := GetActiveTunnel(envID); ok {
+				return tunnel, true
+			}
+		}
+	}
+}
+
+// RequestTunnelAndWait marks an edge environment as needed and waits for the
+// agent to establish a live tunnel.
+func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) (*AgentTunnel, bool) {
+	TouchTunnelDemand(envID, demandTTL)
+	return WaitForActiveTunnel(ctx, envID, timeout)
 }
 
 // DoRequest performs an HTTP request through an edge tunnel.

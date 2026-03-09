@@ -13,6 +13,7 @@ func TestNormalizeEdgeTransport(t *testing.T) {
 	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport(""))
 	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("grpc"))
 	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("GRPC"))
+	assert.Equal(t, EdgeTransportPoll, NormalizeEdgeTransport("poll"))
 	assert.Equal(t, EdgeTransportWebSocket, NormalizeEdgeTransport("websocket"))
 	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("invalid"))
 	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("auto"))
@@ -31,7 +32,17 @@ func TestUseWebSocketEdgeTransport(t *testing.T) {
 	assert.True(t, UseWebSocketEdgeTransport(&config.Config{EdgeTransport: ""}))
 	assert.True(t, UseWebSocketEdgeTransport(&config.Config{EdgeTransport: "auto"}))
 	assert.False(t, UseWebSocketEdgeTransport(&config.Config{EdgeTransport: "grpc"}))
+	assert.False(t, UseWebSocketEdgeTransport(&config.Config{EdgeTransport: "poll"}))
 	assert.True(t, UseWebSocketEdgeTransport(&config.Config{EdgeTransport: "websocket"}))
+}
+
+func TestUsePollEdgeTransport(t *testing.T) {
+	assert.False(t, UsePollEdgeTransport(nil))
+	assert.False(t, UsePollEdgeTransport(&config.Config{EdgeTransport: ""}))
+	assert.False(t, UsePollEdgeTransport(&config.Config{EdgeTransport: "auto"}))
+	assert.False(t, UsePollEdgeTransport(&config.Config{EdgeTransport: "grpc"}))
+	assert.False(t, UsePollEdgeTransport(&config.Config{EdgeTransport: "websocket"}))
+	assert.True(t, UsePollEdgeTransport(&config.Config{EdgeTransport: "poll"}))
 }
 
 func TestGetActiveTunnelTransport(t *testing.T) {

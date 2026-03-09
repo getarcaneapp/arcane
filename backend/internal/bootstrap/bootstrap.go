@@ -184,8 +184,8 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Confi
 
 	slog.InfoContext(appCtx, "Starting edge tunnel client",
 		"transport_mode", edge.NormalizeEdgeTransport(cfg.EdgeTransport),
-		"attempt_grpc", edge.UseGRPCEdgeTransport(cfg),
-		"attempt_websocket", edge.UseWebSocketEdgeTransport(cfg),
+		"live_tunnel_attempt_grpc", edge.UseGRPCEdgeTransport(cfg) || (edge.UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerGRPCAddr()) != ""),
+		"live_tunnel_attempt_websocket", edge.UseWebSocketEdgeTransport(cfg) || (edge.UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) != ""),
 		"manager_url", cfg.ManagerApiUrl,
 	)
 	errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)

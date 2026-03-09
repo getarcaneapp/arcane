@@ -9,11 +9,26 @@ test.beforeEach(async ({ page }) => {
   volumeCount = await fetchVolumeCountsWithRetry(page);
 });
 
-async function createVolumeViaUI(page: Page, volumeName: string) {
+async function openCreateVolumeSheet(page: Page) {
   await page.goto('/volumes');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Create Volume' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
+
+  const createButton = page.getByRole('button', { name: 'Create Volume' }).first();
+  if (await createButton.isVisible().catch(() => false)) {
+    await createButton.click();
+  } else {
+    const overflowButton = page.getByRole('button', { name: 'More actions' }).first();
+    await expect(overflowButton).toBeVisible();
+    await overflowButton.click();
+    await page.getByRole('menuitem', { name: 'Create Volume', exact: true }).click();
+  }
+
   await expect(page.getByRole('dialog')).toBeVisible();
+}
+
+async function createVolumeViaUI(page: Page, volumeName: string) {
+  await openCreateVolumeSheet(page);
   await page.getByRole('dialog').locator('input[type="text"]').first().fill(volumeName);
   await page.getByRole('dialog').getByRole('button', { name: 'Create Volume' }).click();
   await expect(page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')).toBeVisible();
@@ -89,11 +104,7 @@ test.describe('Volumes Page', () => {
   });
 
   test('Create Volume Sheet Opens', async ({ page }) => {
-    await page.goto('/volumes');
-    await page.waitForLoadState('networkidle');
-
-    await page.getByRole('button', { name: 'Create Volume' }).first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateVolumeSheet(page);
     await expect(page.getByText('Create New Volume')).toBeVisible();
   });
 

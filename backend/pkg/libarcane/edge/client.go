@@ -25,6 +25,13 @@ const (
 	DefaultWriteTimeout = 10 * time.Second
 	// DefaultRequestTimeout is the timeout for executing local requests
 	DefaultRequestTimeout = 5 * time.Minute
+	// DefaultGRPCRegistrationTimeout bounds how long the agent waits for the
+	// manager to acknowledge gRPC tunnel registration before treating it as a
+	// failed transport attempt.
+	DefaultGRPCRegistrationTimeout = 10 * time.Second
+	// DefaultWebSocketPreferenceTTL keeps websocket as the preferred transport
+	// for a short period after a successful auto-mode fallback.
+	DefaultWebSocketPreferenceTTL = 2 * time.Minute
 )
 
 // activeWSStream tracks an active WebSocket stream on the agent side.
@@ -43,17 +50,22 @@ type wsPayload struct {
 
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
-	cfg               *config.Config
-	handler           http.Handler
-	reconnectInterval time.Duration
-	heartbeatInterval time.Duration
-	managerURL        string
-	managerGRPCAddr   string
-	localPort         string // Port the agent is running on locally
-	conn              TunnelConnection
-	stopCh            chan struct{}
-	requestTimeout    time.Duration
-	activeStreams     sync.Map // map[string]*activeWSStream
+	cfg                     *config.Config
+	handler                 http.Handler
+	reconnectInterval       time.Duration
+	heartbeatInterval       time.Duration
+	grpcRegistrationTimeout time.Duration
+	websocketPreferenceTTL  time.Duration
+	managerURL              string
+	managerGRPCAddr         string
+	localPort               string // Port the agent is running on locally
+	httpClient              *http.Client
+	conn                    TunnelConnection
+	stopCh                  chan struct{}
+	requestTimeout          time.Duration
+	activeStreams           sync.Map // map[string]*activeWSStream
+	transportPreferenceMu   sync.RWMutex
+	preferWebSocketUntil    time.Time
 }
 
 // NewTunnelClient creates a new tunnel client
@@ -77,15 +89,18 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 	}
 
 	return &TunnelClient{
-		cfg:               cfg,
-		handler:           handler,
-		reconnectInterval: reconnectInterval,
-		heartbeatInterval: DefaultHeartbeatInterval,
-		managerURL:        managerURL,
-		managerGRPCAddr:   managerGRPCAddr,
-		localPort:         localPort,
-		stopCh:            make(chan struct{}),
-		requestTimeout:    DefaultRequestTimeout,
+		cfg:                     cfg,
+		handler:                 handler,
+		reconnectInterval:       reconnectInterval,
+		heartbeatInterval:       DefaultHeartbeatInterval,
+		grpcRegistrationTimeout: DefaultGRPCRegistrationTimeout,
+		websocketPreferenceTTL:  DefaultWebSocketPreferenceTTL,
+		managerURL:              managerURL,
+		managerGRPCAddr:         managerGRPCAddr,
+		localPort:               localPort,
+		httpClient:              &http.Client{},
+		stopCh:                  make(chan struct{}),
+		requestTimeout:          DefaultRequestTimeout,
 	}
 }
 
@@ -94,8 +109,8 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
 	slog.InfoContext(ctx, "Starting edge tunnel client",
 		"transport_mode", transport,
-		"attempt_grpc", UseGRPCEdgeTransport(c.cfg),
-		"attempt_websocket", UseWebSocketEdgeTransport(c.cfg),
+		"attempt_grpc", c.shouldAttemptGRPCTunnelInternal(),
+		"attempt_websocket", c.shouldAttemptWebSocketTunnelInternal(),
 		"manager_url", c.managerURL,
 	)
 	if errCh != nil {
@@ -137,8 +152,26 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 
 // connectAndServe establishes a connection and handles messages.
 func (c *TunnelClient) connectAndServe(ctx context.Context) error {
-	if UseGRPCEdgeTransport(c.cfg) {
+	if UsePollEdgeTransport(c.cfg) {
+		return c.connectAndServePoll(ctx)
+	}
+	return c.connectAndServeManagedTunnelInternal(ctx)
+}
+
+func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context) error {
+	if c.shouldAttemptGRPCTunnelInternal() {
+		if preferredUntil, ok := c.preferredWebSocketUntilInternal(time.Now()); ok {
+			slog.InfoContext(ctx, "Temporarily preferring websocket edge tunnel transport after recent websocket success",
+				"preferred_until", preferredUntil,
+				"manager_ws_url", c.managerWebSocketURLInternal(),
+			)
+			return c.connectAndServeWebSocket(ctx)
+		}
+
 		if err := c.connectAndServeGRPC(ctx); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if c.shouldFallbackToWebSocketInternal() {
 				managerWSURL := c.managerWebSocketURLInternal()
 				slog.WarnContext(ctx, "gRPC edge tunnel connection failed, falling back to websocket transport",
@@ -155,14 +188,37 @@ func (c *TunnelClient) connectAndServe(ctx context.Context) error {
 		}
 		return nil
 	}
-	return c.connectAndServeWebSocket(ctx)
+	if c.shouldAttemptWebSocketTunnelInternal() {
+		return c.connectAndServeWebSocket(ctx)
+	}
+	return fmt.Errorf("no edge tunnel transport is available")
 }
 
 func (c *TunnelClient) shouldFallbackToWebSocketInternal() bool {
-	if !UseWebSocketEdgeTransport(c.cfg) {
+	if !c.shouldAttemptWebSocketTunnelInternal() {
 		return false
 	}
 	return c.managerWebSocketURLInternal() != ""
+}
+
+func (c *TunnelClient) shouldAttemptGRPCTunnelInternal() bool {
+	if c == nil {
+		return false
+	}
+	if UsePollEdgeTransport(c.cfg) {
+		return strings.TrimSpace(c.managerGRPCAddr) != ""
+	}
+	return UseGRPCEdgeTransport(c.cfg)
+}
+
+func (c *TunnelClient) shouldAttemptWebSocketTunnelInternal() bool {
+	if c == nil {
+		return false
+	}
+	if UsePollEdgeTransport(c.cfg) {
+		return c.managerWebSocketURLInternal() != ""
+	}
+	return UseWebSocketEdgeTransport(c.cfg)
 }
 
 func (c *TunnelClient) managerWebSocketURLInternal() string {
@@ -180,6 +236,53 @@ func (c *TunnelClient) managerWebSocketURLInternal() string {
 		return ""
 	}
 	return remenv.HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
+}
+
+func (c *TunnelClient) grpcRegistrationTimeoutInternal() time.Duration {
+	if c == nil || c.grpcRegistrationTimeout <= 0 {
+		return DefaultGRPCRegistrationTimeout
+	}
+	return c.grpcRegistrationTimeout
+}
+
+func (c *TunnelClient) websocketPreferenceTTLInternal() time.Duration {
+	if c == nil || c.websocketPreferenceTTL <= 0 {
+		return DefaultWebSocketPreferenceTTL
+	}
+	return c.websocketPreferenceTTL
+}
+
+func (c *TunnelClient) preferredWebSocketUntilInternal(now time.Time) (time.Time, bool) {
+	if c == nil || !c.shouldAttemptGRPCTunnelInternal() || !c.shouldAttemptWebSocketTunnelInternal() {
+		return time.Time{}, false
+	}
+
+	c.transportPreferenceMu.RLock()
+	defer c.transportPreferenceMu.RUnlock()
+
+	if c.preferWebSocketUntil.IsZero() || !now.Before(c.preferWebSocketUntil) {
+		return time.Time{}, false
+	}
+
+	return c.preferWebSocketUntil, true
+}
+
+func (c *TunnelClient) markTransportConnectedInternal(transport string) {
+	if c == nil {
+		return
+	}
+
+	c.transportPreferenceMu.Lock()
+	defer c.transportPreferenceMu.Unlock()
+
+	switch transport {
+	case EdgeTransportGRPC:
+		c.preferWebSocketUntil = time.Time{}
+	case EdgeTransportWebSocket:
+		if c.shouldAttemptGRPCTunnelInternal() && c.shouldAttemptWebSocketTunnelInternal() {
+			c.preferWebSocketUntil = time.Now().Add(c.websocketPreferenceTTLInternal())
+		}
+	}
 }
 
 // heartbeatLoop sends periodic heartbeats
@@ -805,6 +908,10 @@ func StartTunnelClientWithErrors(ctx context.Context, cfg *config.Config, handle
 
 	if UseWebSocketEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
 		return nil, fmt.Errorf("MANAGER_API_URL is required for websocket transport")
+	}
+
+	if UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
+		return nil, fmt.Errorf("MANAGER_API_URL is required for poll transport")
 	}
 
 	if cfg.AgentToken == "" {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
@@ -12,7 +13,7 @@
 	import { settingsService } from '$lib/services/settings-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import type { EnvironmentStatus } from '$lib/types/environment.type';
+	import type { Environment, EnvironmentStatus } from '$lib/types/environment.type';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
@@ -35,6 +36,11 @@
 
 	let { data } = $props();
 	let { environment, settings, versionInformation } = $derived(data);
+	let refreshedEnvironment: Environment | null = $state(null);
+	let runtimeEnvironment: Environment = $derived.by(() => {
+		const refreshed = refreshedEnvironment;
+		return refreshed && refreshed.id === environment.id ? refreshed : environment;
+	});
 
 	let currentEnvironment = $derived(environmentStore.selected);
 
@@ -122,8 +128,9 @@
 
 	// Only non-edge custom URL tests should temporarily override the displayed status.
 	let statusOverride = $state<EnvironmentStatus | null>(null);
-	let currentStatus = $derived(resolveEnvironmentStatus(environment, statusOverride));
-	let isCurrentlyOnline = $derived(isEnvironmentOnline(environment, statusOverride));
+	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
+	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 
 	// Form schema combining environment info and settings
 	const formSchema = z.object({
@@ -281,6 +288,30 @@
 			fetchVersion();
 		}
 	});
+
+	onMount(() => {
+		if (environment.isEdge) {
+			void refreshRuntimeEnvironment();
+		}
+
+		const interval = window.setInterval(() => {
+			if (!environment.isEdge) return;
+			void refreshRuntimeEnvironment();
+		}, 5000);
+
+		return () => window.clearInterval(interval);
+	});
+
+	async function refreshRuntimeEnvironment() {
+		try {
+			const latestEnvironment = await environmentManagementService.get(environment.id);
+			if (latestEnvironment.id === environment.id) {
+				refreshedEnvironment = latestEnvironment;
+			}
+		} catch (error) {
+			console.debug('Failed to refresh environment runtime state:', error);
+		}
+	}
 
 	async function fetchVersion() {
 		try {
@@ -444,7 +475,16 @@
 			</div>
 		</div>
 
-		{#if !environment.enabled || currentStatus !== 'online' || !settings}
+		{#if environment.enabled && settings && isCurrentlyStandby}
+			<div
+				class="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-blue-900 dark:text-blue-200"
+			>
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-blue-600 dark:text-blue-400" />
+				<div class="flex-1 space-y-1">
+					<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
+				</div>
+			</div>
+		{:else if !environment.enabled || !isCurrentlyOnline || !settings}
 			<div
 				class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
 			>
@@ -453,7 +493,7 @@
 					<p class="text-sm font-medium">
 						{#if !environment.enabled}
 							{m.environments_warning_disabled()}
-						{:else if currentStatus !== 'online'}
+						{:else if !isCurrentlyOnline}
 							{m.common_status()}: {currentStatus === 'pending'
 								? m.common_pending()
 								: currentStatus === 'error'
@@ -475,7 +515,7 @@
 
 		<Tabs.Content value="details">
 			<DetailsTab
-				{environment}
+				environment={runtimeEnvironment}
 				{formInputs}
 				{currentStatus}
 				{isLoadingVersion}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	glsqlite "github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -75,6 +76,21 @@ func requireAPIKeyLastUsedEventually(t *testing.T, db *database.DB, keyID string
 	return apiKey
 }
 
+func assertAPIKeyLastUsedStable(t *testing.T, db *database.DB, keyID string, expected *time.Time, duration time.Duration) {
+	t.Helper()
+
+	assert.Never(t, func() bool {
+		apiKey := fetchAPIKey(t, db, keyID)
+		if expected == nil {
+			return apiKey.LastUsedAt != nil
+		}
+		if apiKey.LastUsedAt == nil {
+			return true
+		}
+		return apiKey.LastUsedAt.UTC().UnixNano() != expected.UTC().UnixNano()
+	}, duration, 10*time.Millisecond)
+}
+
 func invalidateAPIKey(rawKey string) string {
 	if rawKey == "" {
 		return rawKey
@@ -133,7 +149,7 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
 
-	time.Sleep(100 * time.Millisecond)
+	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
 	require.Nil(t, apiKey.LastUsedAt)
 }
@@ -153,7 +169,33 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	_, err = service.GetEnvironmentByApiKey(ctx, created.Key)
 	require.ErrorIs(t, err, ErrApiKeyExpired)
 
-	time.Sleep(100 * time.Millisecond)
+	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
 	require.Nil(t, apiKey.LastUsedAt)
+}
+
+func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-environment-recent")
+
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-456", user.ID)
+	require.NoError(t, err)
+
+	recent := time.Now().Add(-time.Minute)
+	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ApiKey.ID).Update("last_used_at", recent).Error
+	require.NoError(t, err)
+
+	before := fetchAPIKey(t, db, created.ApiKey.ID)
+	require.NotNil(t, before.LastUsedAt)
+
+	environmentID, err := service.GetEnvironmentByApiKey(ctx, created.Key)
+	require.NoError(t, err)
+	require.NotNil(t, environmentID)
+	require.Equal(t, "env-456", *environmentID)
+
+	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, before.LastUsedAt, 2*time.Second)
+	after := fetchAPIKey(t, db, created.ApiKey.ID)
+	require.NotNil(t, after.LastUsedAt)
+	require.Equal(t, before.LastUsedAt.UTC().Unix(), after.LastUsedAt.UTC().Unix())
 }

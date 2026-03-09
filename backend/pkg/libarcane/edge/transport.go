@@ -19,17 +19,24 @@ const (
 	EdgeTransportWebSocket = "websocket"
 	// EdgeTransportGRPC forces gRPC transport without WebSocket fallback.
 	EdgeTransportGRPC = "grpc"
-	// EdgeTransportAuto prefers gRPC and falls back to WebSocket automatically.
+	// EdgeTransportPoll uses an HTTP polling control plane with the existing
+	// websocket tunnel as an on-demand data plane.
+	EdgeTransportPoll = "poll"
+	// EdgeTransportAuto preserves the legacy managed tunnel behavior: try gRPC
+	// first and fall back to websocket when available.
 	EdgeTransportAuto = "auto"
 )
 
-// NormalizeEdgeTransport normalizes transport config and defaults to auto-negotiation.
+// NormalizeEdgeTransport normalizes transport config and defaults to the legacy
+// managed tunnel auto mode for backwards compatibility.
 func NormalizeEdgeTransport(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case EdgeTransportWebSocket:
 		return EdgeTransportWebSocket
 	case EdgeTransportGRPC:
 		return EdgeTransportGRPC
+	case EdgeTransportPoll:
+		return EdgeTransportPoll
 	case EdgeTransportAuto:
 		return EdgeTransportAuto
 	default:
@@ -37,7 +44,7 @@ func NormalizeEdgeTransport(value string) string {
 	}
 }
 
-// UseGRPCEdgeTransport reports whether gRPC should be attempted.
+// UseGRPCEdgeTransport reports whether gRPC managed tunnel mode should be attempted.
 func UseGRPCEdgeTransport(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
@@ -46,13 +53,22 @@ func UseGRPCEdgeTransport(cfg *config.Config) bool {
 	return transport == EdgeTransportGRPC || transport == EdgeTransportAuto
 }
 
-// UseWebSocketEdgeTransport reports whether WebSocket transport is allowed.
+// UseWebSocketEdgeTransport reports whether websocket managed tunnel mode is allowed.
 func UseWebSocketEdgeTransport(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
 	transport := NormalizeEdgeTransport(cfg.EdgeTransport)
 	return transport == EdgeTransportWebSocket || transport == EdgeTransportAuto
+}
+
+// UsePollEdgeTransport reports whether the Portainer-style polling control plane
+// should be used.
+func UsePollEdgeTransport(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportPoll
 }
 
 // GetActiveTunnelTransport returns the currently active tunnel transport for an environment.

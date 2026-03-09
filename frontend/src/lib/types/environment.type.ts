@@ -1,4 +1,4 @@
-export type EnvironmentStatus = 'online' | 'offline' | 'error' | 'pending';
+export type EnvironmentStatus = 'online' | 'standby' | 'offline' | 'error' | 'pending';
 
 export type Environment = {
 	id: string;
@@ -11,6 +11,7 @@ export type Environment = {
 	connected?: boolean;
 	connectedAt?: string;
 	lastHeartbeat?: string;
+	lastPollAt?: string;
 	lastSeen?: string;
 	apiKey?: string;
 };

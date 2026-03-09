@@ -58,8 +58,10 @@ func (c *EdgeAwareClient) DoForEnvironment(
 		return c.doViaTunnel(ctx, envID, method, path, headers, body)
 	}
 
-	// For edge environments without active tunnel, return error
 	if isEdge {
+		if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()); ok {
+			return c.doViaTunnel(ctx, envID, method, path, headers, body)
+		}
 		return nil, fmt.Errorf("edge agent is not connected (no active tunnel)")
 	}
 

@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -25,15 +24,7 @@ func registerEdgeTunnelRoutes(
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
 	resolver := func(ctx context.Context, token string) (string, error) {
-		// Use the ApiKeyService which properly validates the key hash
-		envID, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, token)
-		if err != nil {
-			return "", err
-		}
-		if envID == nil {
-			return "", errors.New("API key is not linked to an environment")
-		}
-		return *envID, nil
+		return appServices.Environment.ResolveEdgeEnvironmentByToken(ctx, token)
 	}
 
 	// Status callback to update environment status when agent connects/disconnects
@@ -93,8 +84,10 @@ func registerEdgeTunnelRoutes(
 	server := edge.NewTunnelServer(resolver, statusCallback)
 	server.SetEventCallback(eventCallback)
 	go server.StartCleanupLoop(ctx)
+	apiGroup.POST("/tunnel/poll", server.HandlePoll)
 	apiGroup.GET("/tunnel/connect", server.HandleConnect)
 	slog.InfoContext(ctx, "Configured edge tunnel server",
+		"poll_enabled", true,
 		"grpc_enabled", !cfg.AgentMode,
 		"websocket_enabled", true,
 	)

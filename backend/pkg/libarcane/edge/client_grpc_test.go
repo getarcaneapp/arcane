@@ -3,11 +3,14 @@ package edge
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +25,59 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
+
+type stallingTunnelService struct {
+	tunnelpb.UnimplementedTunnelServiceServer
+	connectCount atomic.Int32
+}
+
+type blockingRegistrationConn struct {
+	closeCount atomic.Int32
+	closedCh   chan struct{}
+}
+
+func newBlockingRegistrationConn() *blockingRegistrationConn {
+	return &blockingRegistrationConn{closedCh: make(chan struct{})}
+}
+
+func (c *blockingRegistrationConn) Send(*TunnelMessage) error { return nil }
+
+func (c *blockingRegistrationConn) Receive() (*TunnelMessage, error) {
+	<-c.closedCh
+	return nil, io.EOF
+}
+
+func (c *blockingRegistrationConn) IsExpectedReceiveError(error) bool { return false }
+
+func (c *blockingRegistrationConn) Close() error {
+	if c.closeCount.Add(1) == 1 {
+		close(c.closedCh)
+	}
+	return nil
+}
+
+func (c *blockingRegistrationConn) IsClosed() bool {
+	select {
+	case <-c.closedCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *blockingRegistrationConn) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *stallingTunnelService) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMessage, tunnelpb.ManagerMessage]) error {
+	s.connectCount.Add(1)
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
 
 func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -191,6 +247,45 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "manager rejected tunnel registration")
 	assert.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	service := &stallingTunnelService{}
+	managerURL, stopManager := startTestTunnelServiceOnAPIPathInternal(t, ctx, service)
+	defer stopManager()
+
+	client := NewTunnelClient(&config.Config{
+		EdgeTransport: EdgeTransportGRPC,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	err := client.connectAndServeGRPC(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out waiting for gRPC tunnel registration response")
+	assert.EqualValues(t, 1, service.connectCount.Load())
+	assert.True(t, client.conn == nil || client.conn.IsClosed())
+}
+
+func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	conn := newBlockingRegistrationConn()
+	client := &TunnelClient{
+		conn:                    conn,
+		grpcRegistrationTimeout: time.Second,
+	}
+
+	msg, err := client.awaitGRPCRegistrationInternal(ctx)
+	require.Nil(t, msg)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, conn.IsClosed())
+	assert.EqualValues(t, 1, conn.closeCount.Load())
 }
 
 func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
@@ -373,7 +468,7 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 	}
 }
 
-func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocket(t *testing.T) {
+func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocketWhenGRPCUnavailable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -413,11 +508,11 @@ func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocket(t *testi
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected websocket fallback connection for grpc-configured client")
+		t.Fatal("expected auto transport to fall back to websocket")
 	}
 }
 
-func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocket_WhenManagerURLUnset(t *testing.T) {
+func TestTunnelClient_connectAndServe_AutoTransportDerivesWebSocketFallbackURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -459,15 +554,66 @@ func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocket_WhenMana
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected websocket fallback connection when managerURL is unset")
+		t.Fatal("expected auto transport to derive websocket fallback URL")
 	}
+}
+
+func TestTunnelClient_connectAndServe_AutoTransportOpensGRPCWhenAvailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	envID := "env-auto-poll-grpc"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer tunnelServer.WaitForCleanupDone()
+
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopManager()
+
+	client := NewTunnelClient(&config.Config{
+		EdgeTransport: EdgeTransportAuto,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	require.Eventually(t, func() bool {
+		tunnel, ok := GetRegistry().Get(envID)
+		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+			return false
+		}
+		_, isGRPC := tunnel.Conn.(*GRPCManagerTunnelConn)
+		return isGRPC
+	}, 3*time.Second, 20*time.Millisecond)
+
+	err := <-errCh
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func startTestGRPCTunnelServerOnAPIPathInternal(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {
 	t.Helper()
+	return startTestTunnelServiceOnAPIPathInternal(t, ctx, tunnelServer)
+}
+
+func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer) (string, func()) {
+	t.Helper()
 
 	grpcServer := grpc.NewServer()
-	tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
+	tunnelpb.RegisterTunnelServiceServer(grpcServer, service)
 
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")

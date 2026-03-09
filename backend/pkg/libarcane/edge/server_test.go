@@ -360,3 +360,53 @@ func (f *fakeServerTunnelConn) IsClosed() bool { return false }
 func (f *fakeServerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
 	return nil, errors.New("not implemented")
 }
+
+type registerResponseOrderConn struct {
+	sendHook func(*TunnelMessage) error
+	recvErr  error
+}
+
+func (f *registerResponseOrderConn) Send(msg *TunnelMessage) error {
+	if f.sendHook != nil {
+		return f.sendHook(msg)
+	}
+	return nil
+}
+
+func (f *registerResponseOrderConn) Receive() (*TunnelMessage, error) {
+	if f.recvErr != nil {
+		return nil, f.recvErr
+	}
+	return nil, io.EOF
+}
+
+func (f *registerResponseOrderConn) IsExpectedReceiveError(error) bool { return false }
+
+func (f *registerResponseOrderConn) Close() error { return nil }
+
+func (f *registerResponseOrderConn) IsClosed() bool { return false }
+
+func (f *registerResponseOrderConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func TestTunnelServer_ManageConnectedTunnel_SendsGRPCRegisterResponseBeforeRegistering(t *testing.T) {
+	server := NewTunnelServer(nil, nil)
+	envID := "env-grpc-register-order"
+	server.registry.Unregister(envID)
+	t.Cleanup(func() { server.registry.Unregister(envID) })
+
+	conn := &registerResponseOrderConn{recvErr: io.EOF}
+	conn.sendHook = func(msg *TunnelMessage) error {
+		require.Equal(t, MessageTypeRegisterResponse, msg.Type)
+		_, ok := server.registry.Get(envID)
+		assert.False(t, ok, "gRPC tunnel should not be routable before register response is sent")
+		return nil
+	}
+
+	tunnel := NewAgentTunnelWithConn(envID, conn)
+	server.manageConnectedTunnel(context.Background(), context.Background(), tunnel)
+
+	_, ok := server.registry.Get(envID)
+	assert.False(t, ok)
+}

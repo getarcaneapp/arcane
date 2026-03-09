@@ -28,6 +28,10 @@
 			return { text: 'HTTP', variant: 'gray' };
 		}
 
+		if (environment.lastPollAt) {
+			return { text: m.environments_edge_polling_label(), variant: 'blue' };
+		}
+
 		if (!environment.connected || !environment.edgeTransport) {
 			return { text: 'Edge', variant: 'gray' };
 		}
@@ -39,6 +43,22 @@
 		return { text: 'gRPC', variant: 'blue' };
 	});
 
+	let controlPlaneBadge = $derived.by((): { text: string; variant: 'blue' | 'green' | 'gray' } | null => {
+		if (!environment.isEdge || !environment.lastPollAt) {
+			return null;
+		}
+
+		if (environment.connected) {
+			return { text: m.environments_edge_polling_active(), variant: 'green' };
+		}
+
+		if (currentStatus === 'standby') {
+			return { text: m.environments_edge_polling_standby(), variant: 'blue' };
+		}
+
+		return { text: m.environments_edge_polling_inactive(), variant: 'gray' };
+	});
+
 	let localDisplayVersion = $derived(
 		versionInformation?.displayVersion || versionInformation?.currentTag || versionInformation?.currentVersion || 'Unknown'
 	);
@@ -47,10 +67,12 @@
 		remoteVersion?.displayVersion || remoteVersion?.currentTag || remoteVersion?.currentVersion || ''
 	);
 
-	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {
+	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'blue' | 'amber' | 'red' } => {
 		switch (currentStatus) {
 			case 'online':
 				return { text: m.common_online(), variant: 'green' };
+			case 'standby':
+				return { text: m.common_standby(), variant: 'blue' };
 			case 'pending':
 				return { text: m.common_pending(), variant: 'amber' };
 			case 'error':
@@ -60,17 +82,36 @@
 		}
 	});
 
-	let tunnelBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {
+	let tunnelBadge = $derived.by((): { text: string; variant: 'green' | 'blue' | 'gray' | 'amber' | 'red' } => {
 		if (!environment.isEdge) {
 			return statusBadge;
 		}
 		if (environment.connected) {
-			return { text: m.common_online(), variant: 'green' };
+			return { text: m.environments_edge_tunnel_transmitting(), variant: 'green' };
+		}
+		if (currentStatus === 'standby') {
+			return { text: m.environments_edge_tunnel_dormant(), variant: 'gray' };
 		}
 		if (currentStatus === 'pending') {
-			return { text: m.common_pending(), variant: 'amber' };
+			return { text: m.environments_edge_tunnel_negotiating(), variant: 'amber' };
 		}
-		return { text: m.common_offline(), variant: 'red' };
+		return { text: m.environments_edge_tunnel_disconnected(), variant: 'red' };
+	});
+
+	let tunnelTypeBadge = $derived.by((): { text: string; variant: 'blue' | 'purple' | 'gray' } | null => {
+		if (!environment.isEdge || !environment.lastPollAt) {
+			return null;
+		}
+
+		if (environment.edgeTransport === 'websocket') {
+			return { text: 'WebSocket', variant: 'purple' };
+		}
+
+		if (environment.edgeTransport === 'grpc') {
+			return { text: 'gRPC', variant: 'blue' };
+		}
+
+		return { text: m.environments_edge_tunnel_type_inactive(), variant: 'gray' };
 	});
 
 	function formatDateTime(value?: string): string {
@@ -190,18 +231,38 @@
 				</div>
 			</div>
 			{#if environment.isEdge}
+				{#if controlPlaneBadge}
+					<div>
+						<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_control_plane_label()}</Label>
+						<div class="mt-1">
+							<StatusBadge text={controlPlaneBadge.text} variant={controlPlaneBadge.variant} />
+						</div>
+					</div>
+					<div>
+						<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_last_poll_label()}</Label>
+						<div class="mt-1 font-mono text-sm">{formatDateTime(environment.lastPollAt)}</div>
+					</div>
+				{/if}
 				<div>
-					<Label class="text-muted-foreground text-xs font-medium">Tunnel</Label>
+					<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_live_tunnel_label()}</Label>
 					<div class="mt-1">
 						<StatusBadge text={tunnelBadge.text} variant={tunnelBadge.variant} />
 					</div>
 				</div>
+				{#if tunnelTypeBadge}
+					<div>
+						<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_tunnel_type_label()}</Label>
+						<div class="mt-1">
+							<StatusBadge text={tunnelTypeBadge.text} variant={tunnelTypeBadge.variant} />
+						</div>
+					</div>
+				{/if}
 				<div>
-					<Label class="text-muted-foreground text-xs font-medium">Connected Since</Label>
+					<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_connected_since_label()}</Label>
 					<div class="mt-1 font-mono text-sm">{formatDateTime(environment.connectedAt)}</div>
 				</div>
 				<div>
-					<Label class="text-muted-foreground text-xs font-medium">Last Heartbeat</Label>
+					<Label class="text-muted-foreground text-xs font-medium">{m.environments_edge_last_heartbeat_label()}</Label>
 					<div class="mt-1 font-mono text-sm">{formatDateTime(environment.lastHeartbeat)}</div>
 				</div>
 			{/if}
@@ -235,8 +296,8 @@
 								</a>
 							{/if}
 						{/if}
-					{:else if currentStatus === 'online'}
-						<span class="text-muted-foreground text-sm">Version information unavailable</span>
+					{:else if currentStatus === 'online' || currentStatus === 'standby'}
+						<span class="text-muted-foreground text-sm">{m.environments_version_unavailable()}</span>
 					{:else}
 						<span class="text-muted-foreground text-sm">{m.common_offline()}</span>
 					{/if}

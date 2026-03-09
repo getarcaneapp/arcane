@@ -25,6 +25,7 @@ var (
 )
 
 var loggerSkipPatterns = []string{
+	"POST /api/tunnel/poll",
 	"GET /api/environments/*/ws/containers/*/logs",
 	"GET /api/environments/*/ws/containers/*/stats",
 	"GET /api/environments/*/ws/containers/*/terminal",
@@ -117,7 +118,6 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
 		envResolver,
-		appServices.Environment,
 		createAuthValidator(appServices),
 	))
 

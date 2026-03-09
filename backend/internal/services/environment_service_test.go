@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -259,4 +260,107 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	require.Equal(t, string(models.EnvironmentStatusOffline), env.Status)
 	require.NotNil(t, env.LastSeen)
 	require.Equal(t, *lastSeen, *env.LastSeen)
+}
+
+func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOnUpdate(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	oldToken := "edge-token-old"
+	newToken := "edge-token-new"
+	createTestEnvironmentWithState(t, db, "edge-auth", "edge://auth", string(models.EnvironmentStatusPending), true, &oldToken)
+
+	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
+	require.NoError(t, err)
+	require.Equal(t, "edge-auth", envID)
+
+	_, err = svc.UpdateEnvironment(ctx, "edge-auth", map[string]any{"access_token": newToken}, nil, nil)
+	require.NoError(t, err)
+
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+
+	envID, err = svc.ResolveEdgeEnvironmentByToken(ctx, newToken)
+	require.NoError(t, err)
+	require.Equal(t, "edge-auth", envID)
+
+	require.NoError(t, svc.DeleteEnvironment(ctx, "edge-auth", nil, nil))
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, newToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCache(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	oldToken := "edge-token-clear"
+	createTestEnvironmentWithState(t, db, "edge-auth-clear", "edge://auth-clear", string(models.EnvironmentStatusPending), true, &oldToken)
+
+	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
+	require.NoError(t, err)
+	require.Equal(t, "edge-auth-clear", envID)
+
+	_, err = svc.UpdateEnvironment(ctx, "edge-auth-clear", map[string]any{"access_token": nil}, nil, nil)
+	require.NoError(t, err)
+
+	cachedEnvID, ok := svc.getCachedEnvironmentIDForTokenInternal(oldToken, time.Now())
+	require.False(t, ok)
+	require.Empty(t, cachedEnvID)
+
+	svc.tokenCacheMu.RLock()
+	_, tokenStillCached := svc.tokenCache[oldToken]
+	_, reverseIndexStillCached := svc.tokenByEnvID["edge-auth-clear"]
+	svc.tokenCacheMu.RUnlock()
+
+	require.False(t, tokenStillCached)
+	require.False(t, reverseIndexStillCached)
+
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCleansReverseIndex(t *testing.T) {
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil)
+	now := time.Now()
+
+	svc.cacheEnvironmentTokenInternal("env-expired", "expired-token", now.Add(-2*edgeTokenCacheTTL))
+
+	envID, ok := svc.getCachedEnvironmentIDForTokenInternal("expired-token", now)
+	require.False(t, ok)
+	require.Empty(t, envID)
+
+	svc.tokenCacheMu.RLock()
+	_, tokenStillCached := svc.tokenCache["expired-token"]
+	_, reverseIndexStillCached := svc.tokenByEnvID["env-expired"]
+	svc.tokenCacheMu.RUnlock()
+
+	require.False(t, tokenStillCached)
+	require.False(t, reverseIndexStillCached)
+}
+
+func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTransport(t *testing.T) {
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil)
+
+	standard, err := svc.GenerateDeploymentSnippets(context.Background(), "env-1", "https://manager.example.com", "token-123")
+	require.NoError(t, err)
+	require.NotNil(t, standard)
+	require.NotContains(t, standard.DockerRun, "EDGE_TRANSPORT=websocket")
+	require.NotContains(t, standard.DockerCompose, "EDGE_TRANSPORT=websocket")
+	require.Contains(t, standard.DockerRun, "EDGE_TRANSPORT=poll")
+	require.Contains(t, standard.DockerCompose, "EDGE_TRANSPORT=poll")
+	require.True(t, strings.Contains(standard.DockerRun, "AGENT_TOKEN=token-123"))
+
+	edgeSnippets, err := svc.GenerateEdgeDeploymentSnippets(context.Background(), "env-2", "https://manager.example.com", "token-456")
+	require.NoError(t, err)
+	require.NotNil(t, edgeSnippets)
+	require.NotContains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=websocket")
+	require.NotContains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=websocket")
+	require.Contains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=poll")
+	require.Contains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=poll")
+	require.True(t, strings.Contains(edgeSnippets.DockerRun, "AGENT_TOKEN=token-456"))
 }

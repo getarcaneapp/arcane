@@ -21,6 +21,7 @@ type EnvironmentStatus string
 
 const (
 	EnvironmentStatusOnline  EnvironmentStatus = "online"
+	EnvironmentStatusStandby EnvironmentStatus = "standby"
 	EnvironmentStatusOffline EnvironmentStatus = "offline"
 	EnvironmentStatusError   EnvironmentStatus = "error"
 	EnvironmentStatusPending EnvironmentStatus = "pending"

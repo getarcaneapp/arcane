@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -32,7 +33,17 @@ type EnvironmentService struct {
 	dockerService   *DockerClientService
 	eventService    *EventService
 	settingsService *SettingsService
+	tokenCacheMu    sync.RWMutex
+	tokenCache      map[string]edgeTokenCacheEntry
+	tokenByEnvID    map[string]string
 }
+
+type edgeTokenCacheEntry struct {
+	EnvironmentID string
+	ExpiresAt     time.Time
+}
+
+const edgeTokenCacheTTL = time.Minute
 
 func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *EnvironmentService {
 	if httpClient == nil {
@@ -44,6 +55,120 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		dockerService:   dockerService,
 		eventService:    eventService,
 		settingsService: settingsService,
+		tokenCache:      make(map[string]edgeTokenCacheEntry),
+		tokenByEnvID:    make(map[string]string),
+	}
+}
+
+func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", errors.New("agent token required")
+	}
+
+	if envID, ok := s.getCachedEnvironmentIDForTokenInternal(token, time.Now()); ok {
+		return envID, nil
+	}
+
+	var env models.Environment
+	if err := s.db.WithContext(ctx).
+		Select("id", "access_token").
+		Where("is_edge = ?", true).
+		Where("access_token = ?", token).
+		First(&env).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("invalid agent token")
+		}
+		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
+	}
+
+	s.cacheEnvironmentTokenInternal(env.ID, token, time.Now())
+	return env.ID, nil
+}
+
+func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string, now time.Time) (string, bool) {
+	if s == nil || token == "" {
+		return "", false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	s.tokenCacheMu.RLock()
+	entry, ok := s.tokenCache[token]
+	s.tokenCacheMu.RUnlock()
+	if !ok {
+		return "", false
+	}
+	if entry.ExpiresAt.After(now) {
+		return entry.EnvironmentID, true
+	}
+
+	s.tokenCacheMu.Lock()
+	defer s.tokenCacheMu.Unlock()
+
+	entry, ok = s.tokenCache[token]
+	if !ok {
+		return "", false
+	}
+	if !entry.ExpiresAt.After(now) {
+		delete(s.tokenCache, token)
+		if currentToken, ok := s.tokenByEnvID[entry.EnvironmentID]; ok && currentToken == token {
+			delete(s.tokenByEnvID, entry.EnvironmentID)
+		}
+		return "", false
+	}
+
+	return entry.EnvironmentID, true
+}
+
+func (s *EnvironmentService) cacheEnvironmentTokenInternal(envID string, token string, now time.Time) {
+	if s == nil || envID == "" || token == "" {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	s.tokenCacheMu.Lock()
+	defer s.tokenCacheMu.Unlock()
+
+	if previousToken, ok := s.tokenByEnvID[envID]; ok && previousToken != token {
+		delete(s.tokenCache, previousToken)
+	}
+
+	s.tokenByEnvID[envID] = token
+	s.tokenCache[token] = edgeTokenCacheEntry{
+		EnvironmentID: envID,
+		ExpiresAt:     now.Add(edgeTokenCacheTTL),
+	}
+}
+
+func (s *EnvironmentService) invalidateEnvironmentTokenInternal(envID string) {
+	if s == nil || envID == "" {
+		return
+	}
+
+	s.tokenCacheMu.Lock()
+	defer s.tokenCacheMu.Unlock()
+
+	if token, ok := s.tokenByEnvID[envID]; ok {
+		delete(s.tokenByEnvID, envID)
+		delete(s.tokenCache, token)
+	}
+}
+
+func (s *EnvironmentService) syncEnvironmentTokenCacheInternal(envID string, token string) {
+	if s == nil || envID == "" {
+		return
+	}
+
+	s.invalidateEnvironmentTokenInternal(envID)
+
+	resolvedToken := strings.TrimSpace(token)
+
+	if resolvedToken != "" {
+		s.cacheEnvironmentTokenInternal(envID, resolvedToken, time.Now())
 	}
 }
 
@@ -215,6 +340,11 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 		return nil, err
 	}
 
+	if rawAccessToken, ok := updates["access_token"]; ok {
+		accessToken, _ := rawAccessToken.(string)
+		s.syncEnvironmentTokenCacheInternal(id, accessToken)
+	}
+
 	// Create event in background (skip for local environment)
 	if id != "0" {
 		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, models.EventTypeEnvironmentUpdate, "Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), models.EventSeverityInfo, userID, username)
@@ -233,6 +363,8 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	if err := s.db.WithContext(ctx).Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("failed to delete environment: %w", err)
 	}
+
+	s.invalidateEnvironmentTokenInternal(id)
 
 	// Create event in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, models.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), models.EventSeverityWarning, userID, username)
@@ -295,11 +427,11 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 
 // testEdgeConnection tests connection to an edge agent via its tunnel
 func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) (string, error) {
-	// Import edge package - this is a circular import issue, but we'll work around it
-	// by checking if there's an active tunnel using the registry
 	if !edge.HasActiveTunnel(id) {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
-		return "offline", fmt.Errorf("edge agent is not connected")
+		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+			return "offline", fmt.Errorf("edge agent is not connected")
+		}
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -432,6 +564,10 @@ func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context)
 }
 
 func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, envName string, eventType models.EventType, title, description string, severity models.EventSeverity, userID, username *string) {
+	if s == nil || s.eventService == nil {
+		return
+	}
+
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
@@ -458,6 +594,8 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("failed to update environment with new API key: %w", err)
 	}
+
+	s.syncEnvironmentTokenCacheInternal(envID, encryptedKey)
 
 	// Create event log in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, new(userID), new(username))
@@ -514,6 +652,7 @@ func (s *EnvironmentService) PairAndPersistAgentToken(ctx context.Context, envir
 		Update("access_token", token).Error; err != nil {
 		return "", fmt.Errorf("failed to persist agent token: %w", err)
 	}
+	s.syncEnvironmentTokenCacheInternal(environmentID, token)
 	return token, nil
 }
 
@@ -564,6 +703,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
   --name arcane-agent \
   --restart unless-stopped \
   -e AGENT_MODE=true \
+	-e EDGE_TRANSPORT=poll \
   -e AGENT_TOKEN=%s \
   -e MANAGER_API_URL=%s \
   -p 3553:3553 \
@@ -578,6 +718,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
     restart: unless-stopped
     environment:
       - AGENT_MODE=true
+		  - EDGE_TRANSPORT=poll
       - AGENT_TOKEN=%s
       - MANAGER_API_URL=%s
     ports:
@@ -604,6 +745,7 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
   --name arcane-edge-agent \
   --restart unless-stopped \
   -e EDGE_AGENT=true \
+	-e EDGE_TRANSPORT=poll \
   -e AGENT_TOKEN=%s \
   -e MANAGER_API_URL=%s \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -618,6 +760,7 @@ services:
     restart: unless-stopped
     environment:
       - EDGE_AGENT=true
+		  - EDGE_TRANSPORT=poll
       - AGENT_TOKEN=%s
       - MANAGER_API_URL=%s
     volumes:

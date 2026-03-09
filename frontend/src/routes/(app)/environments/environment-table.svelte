@@ -265,9 +265,11 @@
 			<div
 				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {statusValue === 'online'
 					? 'bg-green-500'
-					: statusValue === 'pending'
-						? 'bg-amber-500'
-						: 'bg-red-500'}"
+					: statusValue === 'standby'
+						? 'bg-blue-500'
+						: statusValue === 'pending'
+							? 'bg-amber-500'
+							: 'bg-red-500'}"
 			></div>
 		</div>
 		{#if environmentStore.selected?.id === item.id}
@@ -297,18 +299,22 @@
 	{@const env = value as Environment}
 	{@const typeLabel = !env.isEdge
 		? 'HTTP'
-		: !env.connected || !env.edgeTransport
-			? 'Edge'
-			: env.edgeTransport === 'websocket'
-				? 'WebSocket'
-				: 'gRPC'}
+		: env.lastPollAt
+			? m.environments_edge_polling_label()
+			: !env.connected || !env.edgeTransport
+				? 'Edge'
+				: env.edgeTransport === 'websocket'
+					? 'WebSocket'
+					: 'gRPC'}
 	{@const typeVariant = !env.isEdge
 		? 'gray'
-		: !env.connected || !env.edgeTransport
-			? 'gray'
-			: env.edgeTransport === 'websocket'
-				? 'purple'
-				: 'blue'}
+		: env.lastPollAt
+			? 'blue'
+			: !env.connected || !env.edgeTransport
+				? 'gray'
+				: env.edgeTransport === 'websocket'
+					? 'purple'
+					: 'blue'}
 	<StatusBadge text={typeLabel} variant={typeVariant} />
 {/snippet}
 
@@ -349,11 +355,13 @@
 				getValue: (item: Environment) =>
 					!item.isEdge
 						? 'HTTP'
-						: !item.connected || !item.edgeTransport
-							? 'Edge'
-							: item.edgeTransport === 'websocket'
-								? 'WebSocket'
-								: 'gRPC',
+						: item.lastPollAt
+							? m.environments_edge_polling_label()
+							: !item.connected || !item.edgeTransport
+								? 'Edge'
+								: item.edgeTransport === 'websocket'
+									? 'WebSocket'
+									: 'gRPC',
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.type ?? true

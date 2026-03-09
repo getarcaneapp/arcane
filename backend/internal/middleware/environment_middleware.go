@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
@@ -32,9 +31,6 @@ const (
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
 	proxyTimeout = 30 * time.Minute
-
-	edgeTunnelWaitTimeout = 2 * time.Second
-	edgeTunnelPollEvery   = 100 * time.Millisecond
 )
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
@@ -65,7 +61,6 @@ type EnvironmentMiddleware struct {
 	paramName     string
 	resolver      EnvResolver
 	authValidator AuthValidator
-	envService    *services.EnvironmentService
 	httpClient    *http.Client
 	registry      *edge.TunnelRegistry
 }
@@ -76,8 +71,8 @@ type EnvironmentMiddleware struct {
 // - resolver: function to resolve environment ID to connection details
 // - envService: environment service for additional lookups
 // - authValidator: function to validate authentication before proxying (required for security)
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, envService *services.EnvironmentService, authValidator AuthValidator) gin.HandlerFunc {
-	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, envService, authValidator, edge.GetRegistry())
+func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator) gin.HandlerFunc {
+	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, edge.GetRegistry())
 }
 
 // NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
@@ -85,7 +80,6 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	localID,
 	paramName string,
 	resolver EnvResolver,
-	envService *services.EnvironmentService,
 	authValidator AuthValidator,
 	registry *edge.TunnelRegistry,
 ) gin.HandlerFunc {
@@ -98,7 +92,6 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		paramName:     paramName,
 		resolver:      resolver,
 		authValidator: authValidator,
-		envService:    envService,
 		httpClient:    &http.Client{Timeout: proxyTimeout},
 		registry:      registry,
 	}
@@ -184,7 +177,8 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	}
 
 	if isEdgeEnvironment {
-		tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edgeTunnelWaitTimeout)
+		edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
+		tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edge.DefaultTunnelAcquireTimeout())
 		if ok {
 			slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
 			// Inject agent token headers for the recovered tunnel path.
@@ -315,14 +309,10 @@ func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Cont
 		return tunnel, true
 	}
 
-	waitCtx := ctx
-	cancel := func() {}
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		waitCtx, cancel = context.WithTimeout(ctx, timeout)
-	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(edgeTunnelPollEvery)
+	ticker := time.NewTicker(edge.DefaultTunnelAcquirePollEvery)
 	defer ticker.Stop()
 
 	for {

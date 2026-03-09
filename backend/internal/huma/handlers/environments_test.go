@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
@@ -99,5 +100,31 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 		}
 		assert.NotNil(t, env.ConnectedAt)
 		assert.NotNil(t, env.LastHeartbeat)
+	})
+
+	t.Run("marks recently polled edge environments standby without a live tunnel", func(t *testing.T) {
+		handler := &EnvironmentHandler{}
+		envID := "env-edge-polled"
+		edge.GetRegistry().Unregister(envID)
+		t.Cleanup(func() { edge.GetRegistry().Unregister(envID) })
+
+		edge.GetPollRuntimeRegistry().Update(envID, edge.DefaultTunnelPollInterval, time.Now())
+
+		env := envtypes.Environment{
+			ID:     envID,
+			Status: string(models.EnvironmentStatusOffline),
+			IsEdge: true,
+		}
+
+		handler.applyEdgeRuntimeState(&env)
+
+		assert.Equal(t, string(models.EnvironmentStatusStandby), env.Status)
+		if assert.NotNil(t, env.Connected) {
+			assert.False(t, *env.Connected)
+		}
+		assert.Nil(t, env.EdgeTransport)
+		assert.Nil(t, env.ConnectedAt)
+		assert.Nil(t, env.LastHeartbeat)
+		assert.NotNil(t, env.LastPollAt)
 	})
 }
