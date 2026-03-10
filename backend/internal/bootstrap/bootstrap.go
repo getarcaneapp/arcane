@@ -402,12 +402,5 @@ func isTunnelGRPCRequestInternal(r *http.Request) bool {
 	}
 
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
-	if strings.HasPrefix(contentType, "application/grpc") ||
-		strings.HasPrefix(contentType, "application/grpc+") ||
-		strings.HasPrefix(contentType, "application/grpc-web") {
-		return true
-	}
-
-	te := strings.ToLower(strings.TrimSpace(r.Header.Get("Te")))
-	return r.ProtoMajor >= 2 && strings.Contains(te, "trailers")
+	return strings.HasPrefix(contentType, "application/grpc")
 }
