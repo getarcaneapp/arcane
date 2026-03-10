@@ -354,6 +354,9 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.Contains(t, standard.DockerRun, "EDGE_TRANSPORT=poll")
 	require.Contains(t, standard.DockerCompose, "EDGE_TRANSPORT=poll")
 	require.True(t, strings.Contains(standard.DockerRun, "AGENT_TOKEN=token-123"))
+	require.Contains(t, standard.DockerRun, "-v arcane-data:/app/data")
+	require.Contains(t, standard.DockerCompose, "- arcane-data:/app/data")
+	require.NotContains(t, standard.DockerRun, "-v arcane-data:/data")
 
 	edgeSnippets, err := svc.GenerateEdgeDeploymentSnippets(context.Background(), "env-2", "https://manager.example.com", "token-456")
 	require.NoError(t, err)
@@ -363,4 +366,7 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.Contains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=poll")
 	require.Contains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=poll")
 	require.True(t, strings.Contains(edgeSnippets.DockerRun, "AGENT_TOKEN=token-456"))
+	require.Contains(t, edgeSnippets.DockerRun, "-v arcane-data:/app/data")
+	require.Contains(t, edgeSnippets.DockerCompose, "- arcane-data:/app/data")
+	require.NotContains(t, edgeSnippets.DockerRun, "-v arcane-data:/data")
 }

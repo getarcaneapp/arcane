@@ -695,40 +695,46 @@ type DeploymentSnippets struct {
 	DockerCompose string
 }
 
+const deploymentSnippetsDataPath = "/app/data"
+
 // GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
 func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, envAddress string, apiKey string) (*DeploymentSnippets, error) {
 	managerURL := strings.TrimRight(envAddress, "/")
 
-	dockerRun := fmt.Sprintf(`docker run -d \
-  --name arcane-agent \
-  --restart unless-stopped \
-  -e AGENT_MODE=true \
-	-e EDGE_TRANSPORT=poll \
-  -e AGENT_TOKEN=%s \
-  -e MANAGER_API_URL=%s \
-  -p 3553:3553 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v arcane-data:/data \
-  ghcr.io/getarcaneapp/arcane-headless:latest`, apiKey, managerURL)
+	dockerRun := strings.Join([]string{
+		"docker run -d \\",
+		"  --name arcane-agent \\",
+		"  --restart unless-stopped \\",
+		"  -e AGENT_MODE=true \\",
+		"  -e EDGE_TRANSPORT=poll \\",
+		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
+		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
+		"  -p 3553:3553 \\",
+		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
+		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
+		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+	}, "\n")
 
-	dockerCompose := fmt.Sprintf(`services:
-  arcane-agent:
-    image: ghcr.io/getarcaneapp/arcane-headless:latest
-    container_name: arcane-agent
-    restart: unless-stopped
-    environment:
-      - AGENT_MODE=true
-		  - EDGE_TRANSPORT=poll
-      - AGENT_TOKEN=%s
-      - MANAGER_API_URL=%s
-    ports:
-      - "3553:3553"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - arcane-data:/app/data
-
-volumes:
-  arcane-data:`, apiKey, managerURL)
+	dockerCompose := strings.Join([]string{
+		"services:",
+		"  arcane-agent:",
+		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    container_name: arcane-agent",
+		"    restart: unless-stopped",
+		"    environment:",
+		"      - AGENT_MODE=true",
+		"      - EDGE_TRANSPORT=poll",
+		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
+		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"    ports:",
+		"      - \"3553:3553\"",
+		"    volumes:",
+		"      - /var/run/docker.sock:/var/run/docker.sock",
+		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"",
+		"volumes:",
+		"  arcane-data:",
+	}, "\n")
 
 	return &DeploymentSnippets{
 		DockerRun:     dockerRun,
@@ -741,34 +747,38 @@ volumes:
 func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID string, managerURL string, apiKey string) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
 
-	dockerRun := fmt.Sprintf(`docker run -d \
-  --name arcane-edge-agent \
-  --restart unless-stopped \
-  -e EDGE_AGENT=true \
-	-e EDGE_TRANSPORT=poll \
-  -e AGENT_TOKEN=%s \
-  -e MANAGER_API_URL=%s \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v arcane-data:/app/data \
-  ghcr.io/getarcaneapp/arcane-headless:latest`, apiKey, managerURL)
+	dockerRun := strings.Join([]string{
+		"docker run -d \\",
+		"  --name arcane-edge-agent \\",
+		"  --restart unless-stopped \\",
+		"  -e EDGE_AGENT=true \\",
+		"  -e EDGE_TRANSPORT=poll \\",
+		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
+		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
+		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
+		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
+		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+	}, "\n")
 
-	dockerCompose := fmt.Sprintf(`# Edge agent - connects outbound, no exposed ports required
-services:
-  arcane-edge-agent:
-    image: ghcr.io/getarcaneapp/arcane-headless:latest
-    container_name: arcane-edge-agent
-    restart: unless-stopped
-    environment:
-      - EDGE_AGENT=true
-		  - EDGE_TRANSPORT=poll
-      - AGENT_TOKEN=%s
-      - MANAGER_API_URL=%s
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - arcane-data:/app/data
-
-volumes:
-  arcane-data:`, apiKey, managerURL)
+	dockerCompose := strings.Join([]string{
+		"# Edge agent - connects outbound, no exposed ports required",
+		"services:",
+		"  arcane-edge-agent:",
+		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    container_name: arcane-edge-agent",
+		"    restart: unless-stopped",
+		"    environment:",
+		"      - EDGE_AGENT=true",
+		"      - EDGE_TRANSPORT=poll",
+		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
+		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"    volumes:",
+		"      - /var/run/docker.sock:/var/run/docker.sock",
+		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"",
+		"volumes:",
+		"  arcane-data:",
+	}, "\n")
 
 	return &DeploymentSnippets{
 		DockerRun:     dockerRun,
