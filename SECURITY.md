@@ -31,4 +31,7 @@ We value responsible disclosure and are grateful for your contribution to the se
 
 ---
 
+> [!IMPORTANT]
+> If you are using AI to submit vulnerability, please follow the rules documented in [AI_POLICY.MD](https://github.com/getarcaneapp/arcane/blob/main/AI_POLICY.md).  CVE farming and other low-effort submissions are disrespectful and puts the burden of validation on the volunteer maintainers of this project.
+
 **Note:** For general bug reports, feature requests, or other non-security issues, please use our [GitHub issue tracker](https://github.com/getarcaneapp/arcane/issues).
