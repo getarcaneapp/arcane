@@ -143,7 +143,7 @@ function findContextInNode(
 }
 
 export function findYamlPositionContext(source: string, position: number): YamlPositionContext | null {
-	const doc = parseDocument(source, { strict: true, uniqueKeys: false });
+	const doc = parseDocument(source, { strict: true, uniqueKeys: false, merge: true });
 	return findContextInNode((doc.contents as ParsedNode | null) ?? null, position, []);
 }
 
@@ -171,7 +171,7 @@ function findKeyRangeInSource(source: string, key: string): { from: number; to: 
 	};
 }
 
-function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string): Diagnostic {
+function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string): Diagnostic | null {
 	const path = pointerToPath(error.instancePath || '');
 	const params = error.params as Record<string, unknown>;
 	const missingProperty = typeof params.missingProperty === 'string' ? params.missingProperty : null;
@@ -189,6 +189,7 @@ function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string
 		message = `Missing required property "${missingProperty}"`;
 	}
 	if (error.keyword === 'additionalProperties' && additionalProperty) {
+		if (additionalProperty === '<<') return null;
 		message = `Unsupported property "${additionalProperty}"`;
 	}
 
@@ -211,7 +212,7 @@ function collectDuplicateKeyDiagnostics(node: ParsedNode | null | undefined, dia
 			const key = scalarToKey(item.key);
 			if (key) {
 				const keyRange = getRange(item.key);
-				if (seen.has(key)) {
+				if (seen.has(key) && key !== '<<') {
 					duplicateCount += 1;
 					diagnostics.push({
 						from: keyRange?.[0] ?? 0,
@@ -473,7 +474,8 @@ export async function analyzeComposeContent(
 	const doc = parseDocument(source, {
 		lineCounter,
 		strict: true,
-		uniqueKeys: false
+		uniqueKeys: false,
+		merge: true
 	}) as unknown as YamlDocLike;
 
 	const diagnostics: Diagnostic[] = [];
@@ -505,7 +507,8 @@ export async function analyzeComposeContent(
 				const isValid = schemaContext.validate(parsedValue);
 				if (!isValid) {
 					for (const error of (schemaContext.validate.errors || []).slice(0, maxSchemaDiagnostics)) {
-						diagnostics.push(toSchemaDiagnostic(error, doc, source));
+						const diag = toSchemaDiagnostic(error, doc, source);
+						if (diag) diagnostics.push(diag);
 					}
 				}
 			}
