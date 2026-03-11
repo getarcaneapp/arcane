@@ -105,7 +105,6 @@ test.describe('Environment Settings UI', () => {
     const baseServerUrlInput = page.locator('#base-server-url');
     await expect(baseServerUrlInput).toBeVisible();
 
-<<<<<<< HEAD
     const originalBaseServerUrl = await baseServerUrlInput.inputValue();
     const updatedBaseServerUrl =
       originalBaseServerUrl.endsWith('/e2e') ? `${originalBaseServerUrl}-2` : `${originalBaseServerUrl}/e2e`;
