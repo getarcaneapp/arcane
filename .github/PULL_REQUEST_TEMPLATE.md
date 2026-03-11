@@ -1,15 +1,15 @@
+## Checklist
+
+- [ ] This PR is **not** opened from my fork’s `main` branch
+
 ## What This PR Implements
 
-**Related issue**
-<!-- If this is a bug fix, include “Fixes #1234” or “Closes #1234” -->
-<!-- Briefly describe what this PR accomplishes -->
-
-## Related Issue
+<!-- Overview of this change -->
 
 <!-- All PRs should reference an existing issue. Use “Fixes #1234” or “Addresses #1234”. -->
 <!-- For minor documentation fixes, explain why the change is needed. -->
 
-Fixes #
+Fixes: 
 
 ## Changes Made
 
@@ -29,10 +29,6 @@ Fixes #
 - [ ] Manual testing completed (describe):
 - [ ] No linting errors (e.g., `just lint all`)
 - [ ] Backend tests pass: `just test backend`
-
-## Checklist
-
-- [ ] This PR is **not** opened from my fork’s `main` branch
 
 ## AI Tool Used (if applicable)
 
