@@ -118,6 +118,91 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	return err
 }
 
+func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "redeploy"})
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	// Get container details
+	containerInspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "redeploy"})
+		return fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	imageName := containerInspect.Config.Image
+	containerName := strings.TrimPrefix(containerInspect.Name, "/")
+	labels := containerInspect.Config.Labels
+
+	metadata := models.JSON{
+		"action":      "redeploy",
+		"containerId": containerID,
+		"imageName":   imageName,
+	}
+
+	// Log the redeploy event
+	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, containerID, containerName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log container redeploy action", "error", logErr)
+	}
+
+	// Pull the latest image
+	pullReader, pullErr := dockerClient.ImagePull(ctx, imageName, client.ImagePullOptions{})
+	if pullErr != nil {
+		slog.WarnContext(ctx, "failed to pull image during redeploy", "image", imageName, "error", pullErr)
+	} else {
+		// Drain the pull response
+		io.Copy(io.Discard, pullReader)
+		pullReader.Close()
+	}
+
+	// Stop the container if running
+	if containerInspect.State.Running {
+		timeout := 30
+		if stopErr := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout}); stopErr != nil {
+			slog.WarnContext(ctx, "failed to stop container during redeploy", "error", stopErr)
+		}
+	}
+
+	// Remove the old container
+	removeOpts := client.ContainerRemoveOptions{
+		RemoveVolumes: false,
+		Force:         true,
+	}
+	if removeErr := dockerClient.ContainerRemove(ctx, containerID, removeOpts); removeErr != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", removeErr, models.JSON{"action": "redeploy"})
+		return fmt.Errorf("failed to remove old container: %w", removeErr)
+	}
+
+	// Recreate the container with the same configuration
+	createResp, createErr := dockerClient.ContainerCreate(
+		ctx,
+		containerInspect.Config,
+		containerInspect.HostConfig,
+		&network.NetworkingConfig{
+			EndpointsConfig: containerInspect.NetworkSettings.Networks,
+		},
+		nil,
+		containerName,
+	)
+	if createErr != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", createErr, models.JSON{"action": "redeploy"})
+		return fmt.Errorf("failed to recreate container: %w", createErr)
+	}
+
+	// Start the new container if the old one was running or set to restart
+	if containerInspect.State.Running || (containerInspect.HostConfig.RestartPolicy.Name != "" && containerInspect.HostConfig.RestartPolicy.Name != "no") {
+		if startErr := dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{}); startErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", createResp.ID, "", user.ID, user.Username, "0", startErr, models.JSON{"action": "redeploy"})
+			return fmt.Errorf("failed to start new container: %w", startErr)
+		}
+	}
+
+	slog.InfoContext(ctx, "container redeployed successfully", "oldContainerId", containerID, "newContainerId", createResp.ID, "image", imageName, "labels", labels)
+	return nil
+}
+
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {

@@ -190,6 +190,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 	}, h.RestartContainer)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "redeploy-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/redeploy",
+		Summary:     "Redeploy container",
+		Description: "Pull latest image and recreate container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.RedeployContainer)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "delete-container",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/containers/{containerId}",
@@ -617,6 +627,28 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container restarted successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	if err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
+	}
+
+	return &ContainerActionOutput{
+		Body: ContainerActionResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Container redeployed successfully"},
 		},
 	}, nil
 }

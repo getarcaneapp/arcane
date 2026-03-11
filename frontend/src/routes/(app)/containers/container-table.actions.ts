@@ -23,7 +23,7 @@ type ActionDeps = {
 	isBulkLoading: BulkLoadingState;
 };
 
-type ContainerActionKind = 'start' | 'stop' | 'restart';
+type ContainerActionKind = 'start' | 'stop' | 'restart' | 'redeploy';
 
 type ContainerActionConfig = {
 	status: ActionStatus;
@@ -62,6 +62,12 @@ const containerActionConfigs: Record<ContainerActionKind, ContainerActionConfig>
 		run: (id) => containerService.restartContainer(id),
 		success: () => m.containers_restart_success(),
 		failure: () => m.containers_restart_failed()
+	},
+	redeploy: {
+		status: 'redeploying',
+		run: (id) => containerService.redeployContainer(id),
+		success: () => m.compose_pull_success(),
+		failure: () => m.compose_pull_failed()
 	}
 };
 
@@ -174,6 +180,33 @@ export function createContainerActions({
 					} finally {
 						actionStatus[container.id] = '';
 					}
+				}
+			}
+		});
+	}
+
+	async function handleRedeployContainer(container: ContainerSummaryDto) {
+		const containerName = getContainerDisplayName(container);
+
+		openConfirmDialog({
+			title: m.projects_redeploy_confirm_title(),
+			message: m.projects_redeploy_confirm_message({ resource: containerName }),
+			confirm: {
+				label: m.compose_pull_redeploy(),
+				destructive: false,
+				action: async () => {
+					actionStatus[container.id] = 'redeploying';
+					handleApiResultWithCallbacks({
+						result: await tryCatch(containerService.redeployContainer(container.id)),
+						message: m.compose_pull_failed(),
+						setLoadingState: (value) => {
+							actionStatus[container.id] = value ? 'redeploying' : '';
+						},
+						async onSuccess() {
+							toast.success(m.compose_pull_success());
+							await refreshContainers();
+						}
+					});
 				}
 			}
 		});
@@ -304,6 +337,7 @@ export function createContainerActions({
 		performContainerAction,
 		handleRemoveContainer,
 		handleUpdateContainer,
+		handleRedeployContainer,
 		handleBulkStart,
 		handleBulkStop,
 		handleBulkRestart,

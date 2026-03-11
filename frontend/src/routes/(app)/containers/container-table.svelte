@@ -45,7 +45,8 @@
 		NetworksIcon,
 		ProjectsIcon,
 		InspectIcon,
-		UpdateIcon
+		UpdateIcon,
+		RedeployIcon
 	} from '$lib/icons';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -107,6 +108,7 @@
 		performContainerAction,
 		handleRemoveContainer,
 		handleUpdateContainer,
+		handleRedeployContainer,
 		handleBulkStart,
 		handleBulkStop,
 		handleBulkRestart,
@@ -597,6 +599,18 @@
 						{/if}
 						{m.common_restart()}
 					</DropdownMenu.Item>
+
+					<DropdownMenu.Item
+						onclick={() => handleRedeployContainer(item)}
+						disabled={status === 'redeploying' || isAnyLoading}
+					>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.compose_pull_redeploy()}
+					</DropdownMenu.Item}
 				{/if}
 
 				<DropdownMenu.Separator />
