@@ -38,6 +38,7 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 	}
 	diskUsage, err := dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
 		Volumes: true,
+		Verbose: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get disk usage: %w", err)
