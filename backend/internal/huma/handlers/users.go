@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -9,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/internal/utils/validation"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/user"
 )
@@ -194,6 +197,12 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, err
 	}
 
+	normalizedEmail, err := normalizeOptionalEmailInternal(input.Body.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	input.Body.Email = normalizedEmail
+
 	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.PasswordHashError{Err: err}).Error())
@@ -276,6 +285,12 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
 	}
 
+	normalizedEmail, err := normalizeOptionalEmailInternal(input.Body.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	input.Body.Email = normalizedEmail
+
 	if input.Body.Username != nil {
 		userModel.Username = *input.Body.Username
 	}
@@ -343,4 +358,21 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 			},
 		},
 	}, nil
+}
+
+func normalizeOptionalEmailInternal(email *string) (*string, error) {
+	if email == nil {
+		return nil, nil
+	}
+
+	trimmedEmail := strings.TrimSpace(*email)
+	if trimmedEmail == "" {
+		return nil, nil
+	}
+
+	if !validation.IsValidUserEmail(trimmedEmail) {
+		return nil, errors.New("must be a valid email")
+	}
+
+	return &trimmedEmail, nil
 }

@@ -6,6 +6,7 @@
 	import type { User } from '$lib/types/user.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { isValidUserEmail } from '$lib/utils/email.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { AddIcon, SaveIcon } from '$lib/icons';
 
@@ -36,7 +37,10 @@
 		username: z.string().min(1, m.common_username_required()),
 		password: z.string().optional(),
 		displayName: z.string().optional(),
-		email: z.email(m.common_invalid_email()).optional().or(z.literal('')),
+		email: z
+			.string()
+			.trim()
+			.refine((value) => value === '' || isValidUserEmail(value), m.common_invalid_email()),
 		isAdmin: z.boolean().default(false)
 	});
 
@@ -66,9 +70,12 @@
 
 		const userData: Partial<User> & { password?: string } = {
 			displayName: data.displayName,
-			email: data.email,
 			roles: [data.isAdmin ? 'admin' : 'user']
 		};
+
+		if (data.email) {
+			userData.email = data.email;
+		}
 
 		// Only include username if we're creating a new user or if editing is allowed
 		if (!isEditMode || canEditUsername) {
@@ -102,7 +109,7 @@
 	contentClass="sm:max-w-[500px]"
 >
 	{#snippet children()}
-		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
 			<FormInput
 				label={m.common_username()}
 				type="text"
@@ -136,9 +143,10 @@
 			/>
 			<FormInput
 				label={m.common_email()}
-				type="email"
+				type="text"
 				placeholder={m.users_email_placeholder()}
 				description={m.users_email_description()}
+				autocomplete="email"
 				disabled={isOidcUser}
 				bind:input={$inputs.email}
 			/>
