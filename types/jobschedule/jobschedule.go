@@ -7,30 +7,28 @@ import "time"
 // All fields are in minutes.
 // This makes conversion to time.Duration straightforward in the backend.
 type Config struct {
-	EnvironmentHealthInterval  string `json:"environmentHealthInterval"`
-	EventCleanupInterval       string `json:"eventCleanupInterval"`
-	AnalyticsHeartbeatInterval string `json:"analyticsHeartbeatInterval"`
-	AutoUpdateInterval         string `json:"autoUpdateInterval"`
-	PollingInterval            string `json:"pollingInterval"`
-	ScheduledPruneInterval     string `json:"scheduledPruneInterval"`
-	GitopsSyncInterval         string `json:"gitopsSyncInterval"`
-	VulnerabilityScanInterval  string `json:"vulnerabilityScanInterval"`
-	AutoHealInterval           string `json:"autoHealInterval"`
+	EnvironmentHealthInterval string `json:"environmentHealthInterval"`
+	EventCleanupInterval      string `json:"eventCleanupInterval"`
+	AutoUpdateInterval        string `json:"autoUpdateInterval"`
+	PollingInterval           string `json:"pollingInterval"`
+	ScheduledPruneInterval    string `json:"scheduledPruneInterval"`
+	GitopsSyncInterval        string `json:"gitopsSyncInterval"`
+	VulnerabilityScanInterval string `json:"vulnerabilityScanInterval"`
+	AutoHealInterval          string `json:"autoHealInterval"`
 }
 
 // Update is used to update job schedule intervals (in minutes).
 //
 // Any nil field is ignored.
 type Update struct {
-	EnvironmentHealthInterval  *string `json:"environmentHealthInterval,omitempty"`
-	EventCleanupInterval       *string `json:"eventCleanupInterval,omitempty"`
-	AnalyticsHeartbeatInterval *string `json:"analyticsHeartbeatInterval,omitempty"`
-	AutoUpdateInterval         *string `json:"autoUpdateInterval,omitempty"`
-	PollingInterval            *string `json:"pollingInterval,omitempty"`
-	ScheduledPruneInterval     *string `json:"scheduledPruneInterval,omitempty"`
-	GitopsSyncInterval         *string `json:"gitopsSyncInterval,omitempty"`
-	VulnerabilityScanInterval  *string `json:"vulnerabilityScanInterval,omitempty"`
-	AutoHealInterval           *string `json:"autoHealInterval,omitempty"`
+	EnvironmentHealthInterval *string `json:"environmentHealthInterval,omitempty"`
+	EventCleanupInterval      *string `json:"eventCleanupInterval,omitempty"`
+	AutoUpdateInterval        *string `json:"autoUpdateInterval,omitempty"`
+	PollingInterval           *string `json:"pollingInterval,omitempty"`
+	ScheduledPruneInterval    *string `json:"scheduledPruneInterval,omitempty"`
+	GitopsSyncInterval        *string `json:"gitopsSyncInterval,omitempty"`
+	VulnerabilityScanInterval *string `json:"vulnerabilityScanInterval,omitempty"`
+	AutoHealInterval          *string `json:"autoHealInterval,omitempty"`
 }
 
 // JobStatus represents the current status and metadata for a background job.

@@ -160,7 +160,7 @@
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
 	];
 
-	const hiddenJobIds = new Set(['gitops-sync', 'filesystem-watcher']);
+	const hiddenJobIds = new Set(['analytics-heartbeat', 'gitops-sync', 'filesystem-watcher']);
 
 	function getJobsByCategory(categoryId: string, jobs: JobStatus[]): JobStatus[] {
 		return jobs.filter((j) => {

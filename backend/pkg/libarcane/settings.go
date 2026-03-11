@@ -38,7 +38,6 @@ var cronSettingKeys = []string{
 	"pollingInterval",
 	"environmentHealthInterval",
 	"eventCleanupInterval",
-	"analyticsHeartbeatInterval",
 	"vulnerabilityScanInterval",
 }
 
