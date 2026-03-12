@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/validation"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/user"
@@ -229,7 +228,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error500InternalServerError((&common.UserCreationError{Err: err}).Error())
 	}
 
-	out, err := mapper.MapOne[*models.User, user.User](createdUser)
+	out, err := h.userService.ToUserResponseDto(ctx, *createdUser)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
@@ -257,7 +256,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
 	}
 
-	out, err := mapper.MapOne[*models.User, user.User](userModel)
+	out, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
@@ -320,10 +319,16 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 
 	updatedUser, err := h.userService.UpdateUser(ctx, userModel)
 	if err != nil {
+		if errors.Is(err, services.ErrCannotRemoveLastAdmin) {
+			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
+		}
+		if errors.Is(err, services.ErrUserNotFound) {
+			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
 	}
 
-	out, err := mapper.MapOne[*models.User, user.User](updatedUser)
+	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
@@ -347,6 +352,12 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	}
 
 	if err := h.userService.DeleteUser(ctx, input.UserID); err != nil {
+		if errors.Is(err, services.ErrCannotRemoveLastAdmin) {
+			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
+		}
+		if errors.Is(err, services.ErrUserNotFound) {
+			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.UserDeletionError{Err: err}).Error())
 	}
 

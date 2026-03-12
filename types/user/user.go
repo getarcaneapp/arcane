@@ -27,6 +27,7 @@ type User struct {
 	DisplayName            *string  `json:"displayName,omitempty" doc:"Display name of the user" example:"John Doe"`
 	Email                  *string  `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
 	Roles                  []string `json:"roles" doc:"Roles assigned to the user" example:"[\"user\", \"admin\"]"`
+	CanDelete              bool     `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	OidcSubjectId          *string  `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string  `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
 	CreatedAt              string   `json:"createdAt,omitempty" doc:"Date and time when the user was created"`

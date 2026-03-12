@@ -33,8 +33,18 @@
 		removing: false
 	});
 
+	function canDeleteUser(user: User) {
+		return user.canDelete !== false;
+	}
+
+	const selectedUsers = $derived.by(() =>
+		(selectedIds ?? []).map((id) => users.data.find((user) => user.id === id)).filter((user): user is User => Boolean(user))
+	);
+
+	const hasProtectedSelection = $derived.by(() => selectedUsers.some((user) => !canDeleteUser(user)));
+
 	async function handleDeleteSelected() {
-		if (selectedIds.length === 0) return;
+		if (selectedIds.length === 0 || hasProtectedSelection) return;
 
 		openConfirmDialog({
 			title: m.users_delete_selected_title({ count: selectedIds.length }),
@@ -82,8 +92,10 @@
 		});
 	}
 
-	async function handleDeleteUser(userId: string, username: string) {
-		const safeName = username?.trim() || m.common_unknown();
+	async function handleDeleteUser(user: User) {
+		if (!canDeleteUser(user)) return;
+
+		const safeName = user.username?.trim() || m.common_unknown();
 		openConfirmDialog({
 			title: m.users_delete_user_title({ username: safeName }),
 			message: m.users_delete_user_message({ username: safeName }),
@@ -93,7 +105,7 @@
 				action: async () => {
 					isLoading.removing = true;
 					handleApiResultWithCallbacks({
-						result: await tryCatch(userService.delete(userId)),
+						result: await tryCatch(userService.delete(user.id)),
 						message: m.users_delete_user_failed({ username: safeName }),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
@@ -136,7 +148,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: isLoading.removing || hasProtectedSelection,
 			icon: TrashIcon
 		}
 	]);
@@ -209,7 +221,11 @@
 					<DropdownMenu.Separator />
 				{/if}
 
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteUser(item.id, item.username)}>
+				<DropdownMenu.Item
+					variant="destructive"
+					disabled={!canDeleteUser(item) || isLoading.removing}
+					onclick={() => handleDeleteUser(item)}
+				>
 					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>
