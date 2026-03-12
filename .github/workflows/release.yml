@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: depot-ubuntu-24.04-32
+    runs-on: depot-ubuntu-latest
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   go-tests:
     name: Go Tests (${{ matrix.module.name }})
-    runs-on: depot-ubuntu-24.04-32
+    runs-on: depot-ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -77,7 +77,7 @@ jobs:
 
   go-linter:
     name: Go Linter (${{ matrix.module.name }})
-    runs-on: depot-ubuntu-24.04-16
+    runs-on: depot-ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -186,7 +186,7 @@ jobs:
 
   svelte-check:
     name: Svelte Type Check
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -218,7 +218,7 @@ jobs:
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
     if: ${{ github.head_ref != 'l10n_crowdin' }}
-    runs-on: depot-ubuntu-24.04-32
+    runs-on: depot-ubuntu-latest
     permissions:
       contents: read
       actions: write

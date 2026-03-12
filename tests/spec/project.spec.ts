@@ -406,11 +406,6 @@ test.describe('New Compose Project Page', () => {
         });
       });
 
-      const deployRequestPromise = page.waitForRequest((request) => {
-        if (request.method() !== 'POST') return false;
-        return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(new URL(request.url()).pathname);
-      });
-
       const deployButtonGroup = page
         .locator('[data-slot="button-group"]')
         .filter({ has: page.getByRole('button', { name: 'Up', exact: true }) })
@@ -421,11 +416,27 @@ test.describe('New Compose Project Page', () => {
 
       await expect(deployMenuTrigger).toBeVisible();
 
-      await deployMenuTrigger.click({ force: true });
-      await page.getByRole('menuitemradio', { name: /Always/i }).click();
+      // Open dropdown and select "Always" pull policy
+      await deployMenuTrigger.click();
+      const alwaysItem = page.getByRole('menuitemradio', { name: /Always/i });
+      await expect(alwaysItem).toBeVisible();
+      await alwaysItem.click();
+      // Wait for the dropdown to fully close before reopening
+      await expect(alwaysItem).not.toBeVisible();
 
-      await deployMenuTrigger.click({ force: true });
-      await page.getByRole('menuitemcheckbox', { name: /Force recreate containers/i }).click();
+      // Reopen dropdown and toggle "Force recreate containers"
+      await deployMenuTrigger.click();
+      const forceRecreateItem = page.getByRole('menuitemcheckbox', { name: /Force recreate containers/i });
+      await expect(forceRecreateItem).toBeVisible();
+      await forceRecreateItem.click();
+      // Wait for the dropdown to fully close
+      await expect(forceRecreateItem).not.toBeVisible();
+
+      // Set up request listener right before clicking to minimize timeout window
+      const deployRequestPromise = page.waitForRequest((request) => {
+        if (request.method() !== 'POST') return false;
+        return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(new URL(request.url()).pathname);
+      });
 
       await page.getByRole('button', { name: 'Up', exact: true }).click();
 
