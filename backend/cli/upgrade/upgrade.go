@@ -83,7 +83,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		containerName = strings.TrimPrefix(targetContainer.Name, "/")
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
-		inspectResult, inspectErr := dockerClient.ContainerInspect(ctx, containerName, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
 		targetContainer = inspectResult.Container
 		err = inspectErr
 		if err != nil {
@@ -134,7 +134,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		inspectResult, err := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
 		}

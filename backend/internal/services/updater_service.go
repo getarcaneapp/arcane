@@ -428,7 +428,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	slog.InfoContext(ctx, "UpdateSingleContainer: found container", "containerID", containerID, "name", containerName, "image", targetContainer.Image)
 
 	// Inspect container to get full config (needed for label-based controls)
-	inspectBeforeResult, err := dcli.ContainerInspect(ctx, targetContainer.ID, client.ContainerInspectOptions{})
+	inspectBeforeResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dcli, targetContainer.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
@@ -923,7 +923,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 			continue
 		}
 
-		inspectResult, err := dcli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dcli, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container inspect failed", "containerId", c.ID, "err", err)
 			continue
@@ -1255,7 +1255,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	if len(markedForRestart) > 0 {
 		for i := range containersWithDeps {
 			cwd := containersWithDeps[i]
-			inspectResult, ierr := dcli.ContainerInspect(ctx, cwd.Container.ID, client.ContainerInspectOptions{})
+			inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, cwd.Container.ID, client.ContainerInspectOptions{})
 			if ierr != nil {
 				continue
 			}
@@ -1317,7 +1317,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		name := cd.Name
 		labels := map[string]string{}
 		if p.inspect == nil {
-			inspectResult, ierr := dcli.ContainerInspect(ctx, p.cnt.ID, client.ContainerInspectOptions{})
+			inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, p.cnt.ID, client.ContainerInspectOptions{})
 			if ierr != nil {
 				res := updater.ResourceResult{
 					ResourceID:   p.cnt.ID,
@@ -1614,7 +1614,7 @@ func (s *UpdaterService) anyImageIDsStillInUse(ctx context.Context, ids []string
 	}
 	list := listResult.Items
 	for _, c := range list {
-		inspectResult, ierr := dcli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, c.ID, client.ContainerInspectOptions{})
 		if ierr != nil {
 			continue
 		}
@@ -1670,7 +1670,7 @@ func (s *UpdaterService) buildRunningImageIDSetInternal(ctx context.Context) (ma
 			continue
 		}
 
-		inspectResult, ierr := dcli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, c.ID, client.ContainerInspectOptions{})
 		inspect := inspectResult.Container
 		if ierr == nil && inspect.Image != "" {
 			inUseSet[inspect.Image] = struct{}{}

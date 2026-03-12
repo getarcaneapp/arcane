@@ -9,6 +9,8 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
 	composev2 "github.com/docker/compose/v5/pkg/compose"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/moby/moby/client"
 )
 
 type Client struct {
@@ -25,14 +27,36 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if err := cli.Initialize(opts); err != nil {
 		return nil, err
 	}
-	svc, err := composev2.NewComposeService(cli,
+
+	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
+	svc, err := composev2.NewComposeService(composeCLI,
 		composev2.WithPrompt(composev2.AlwaysOkPrompt()),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{svc: svc, dockerCli: cli}, nil
+	return &Client{svc: svc, dockerCli: composeCLI}, nil
+}
+
+type inspectCompatibleDockerCli struct {
+	command.Cli
+	apiClient client.APIClient
+}
+
+func (c *inspectCompatibleDockerCli) Client() client.APIClient {
+	return c.apiClient
+}
+
+func wrapDockerCLIWithInspectCompatibilityInternal(cli command.Cli) command.Cli {
+	if cli == nil {
+		return nil
+	}
+
+	return &inspectCompatibleDockerCli{
+		Cli:       cli,
+		apiClient: libarcane.WrapDockerAPIClientForInspectCompatibility(cli.Client()),
+	}
 }
 
 func (c *Client) Close() error {

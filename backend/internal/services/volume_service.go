@@ -404,7 +404,7 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, string, bool) {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
-		if inspect, err := dockerClient.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
 			return inspect.Container.Config.Image, "hostname", true
 		}
 	}
@@ -440,7 +440,7 @@ func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, d
 	if dockerClient != nil {
 		containerID := s.getArcaneContainerIDInternal(ctx, dockerClient)
 		if containerID != "" {
-			inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+			inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 			if err != nil {
 				slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "container_id", containerID, "error", err.Error())
 			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly); ok {
@@ -510,7 +510,7 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 		return ""
 	}
 
-	inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return ""
 	}
@@ -521,7 +521,7 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, dockerClient *client.Client) string {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
-		if inspect, err := dockerClient.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{}); err == nil {
+		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil {
 			return inspect.Container.ID
 		}
 	}
@@ -737,7 +737,7 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 		return "", false
 	}
 
-	inspect, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)

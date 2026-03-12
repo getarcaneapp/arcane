@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -293,7 +294,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 	}
 	slog.Debug("detectCurrentImageInfo: detected container", "containerId", containerId)
 
-	inspectResult, err := dockerClient.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
+	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err != nil {
 		slog.Debug("detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
 		return "", "", ""
