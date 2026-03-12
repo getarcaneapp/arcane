@@ -610,7 +610,6 @@
 							<RedeployIcon class="size-4" />
 					{m.compose_pull_redeploy()}
 					</DropdownMenu.Item>
-					</DropdownMenu.Item}
 				{/if}
 
 				<DropdownMenu.Separator />
