@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -26,7 +27,7 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	}
 
 	// 2. Inspect self
-	inspect, err := dockerCli.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{})
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, hostname, client.ContainerInspectOptions{})
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
 		return "", err

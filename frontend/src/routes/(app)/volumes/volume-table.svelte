@@ -21,6 +21,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';
 	import { onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	let {
 		volumes = $bindable(),
@@ -45,9 +46,10 @@
 	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
 		if (onRefreshData) {
 			await onRefreshData(options);
-			return;
+		} else {
+			volumes = await volumeService.getVolumes(options);
 		}
-		volumes = await volumeService.getVolumes(options);
+		void loadVolumeSizes();
 	}
 
 	function getCurrentLimit() {
@@ -74,18 +76,22 @@
 	const isBackupVolume = (item: VolumeSummaryDto) => isBackupVolumeName(item.name);
 
 	// Lazy load volume sizes - this is a slow operation
-	let volumeSizesPromise = $state<Promise<Map<string, VolumeSizeInfo>> | null>(null);
+	let sizesMap = new SvelteMap<string, VolumeSizeInfo>();
+	let sizesLoading = $state(false);
 
-	// Start loading sizes when component mounts or volumes change
-	$effect(() => {
-		if (volumes.data.length > 0) {
-			volumeSizesPromise = loadVolumeSizes();
+	async function loadVolumeSizes(): Promise<void> {
+		sizesLoading = true;
+		try {
+			const sizes = await volumeService.getVolumeSizes();
+			sizesMap.clear();
+			for (const s of sizes) {
+				sizesMap.set(s.name, s);
+			}
+		} catch (error) {
+			console.error('Failed to load volume sizes:', error);
+		} finally {
+			sizesLoading = false;
 		}
-	});
-
-	async function loadVolumeSizes(): Promise<Map<string, VolumeSizeInfo>> {
-		const sizes = await volumeService.getVolumeSizes();
-		return new Map(sizes.map((s) => [s.name, s]));
 	}
 
 	async function handleRemoveVolumeConfirm(name: string) {
@@ -207,6 +213,9 @@
 		const currentInternal = requestOptions?.includeInternal ?? false;
 		if (persistedInternal !== currentInternal) {
 			setShowInternal(persistedInternal);
+			// refreshVolumes (called by setShowInternal) already calls loadVolumeSizes
+		} else {
+			void loadVolumeSizes();
 		}
 	});
 </script>
@@ -226,31 +235,17 @@
 {/snippet}
 
 {#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
-	{#if volumeSizesPromise}
-		{#await volumeSizesPromise}
-			{#if item.size > 0}
-				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
-			{:else}
-				<span class="text-muted-foreground flex items-center gap-1 text-sm">
-					<Spinner class="size-4" />
-				</span>
-			{/if}
-		{:then sizesMap}
-			{@const sizeInfo = sizesMap.get(item.name)}
-			{#if sizeInfo && sizeInfo.size >= 0}
-				<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
-			{:else if item.size > 0}
-				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
-			{:else}
-				<span class="text-muted-foreground text-sm">-</span>
-			{/if}
-		{:catch}
-			{#if item.size > 0}
-				<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
-			{:else}
-				<span class="text-muted-foreground text-sm">-</span>
-			{/if}
-		{/await}
+	{@const sizeInfo = sizesMap.get(item.name)}
+	{#if sizeInfo && sizeInfo.size >= 0}
+		<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+	{:else if sizesLoading && sizesMap.size === 0}
+		{#if item.size > 0}
+			<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+		{:else}
+			<span class="text-muted-foreground flex items-center gap-1 text-sm">
+				<Spinner class="size-4" />
+			</span>
+		{/if}
 	{:else if item.size > 0}
 		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}

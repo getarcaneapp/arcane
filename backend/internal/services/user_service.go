@@ -44,6 +44,8 @@ type UserService struct {
 	argon2Params *Argon2Params
 }
 
+var ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
+
 func NewUserService(db *database.DB) *UserService {
 	return &UserService{
 		db:           db,
@@ -188,6 +190,27 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.User
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", user.ID).
+			First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return fmt.Errorf("failed to load user: %w", err)
+		}
+
+		if userHasRoleInternal(existing.Roles, "admin") && !userHasRoleInternal(user.Roles, "admin") {
+			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, user.ID)
+			if err != nil {
+				return err
+			}
+			if remainingAdmins == 0 {
+				return ErrCannotRemoveLastAdmin
+			}
+		}
+
 		if err := tx.Save(user).Error; err != nil {
 			return fmt.Errorf("failed to update user: %w", err)
 		}
@@ -292,6 +315,27 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.User
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", id).
+			First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return fmt.Errorf("failed to load user: %w", err)
+		}
+
+		if userHasRoleInternal(existing.Roles, "admin") {
+			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, id)
+			if err != nil {
+				return err
+			}
+			if remainingAdmins == 0 {
+				return ErrCannotRemoveLastAdmin
+			}
+		}
+
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
 			return fmt.Errorf("failed to delete user: %w", err)
 		}
@@ -340,25 +384,54 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result := make([]user.User, len(users))
-	for i, u := range users {
-		result[i] = toUserResponseDto(u)
+	result, err := s.toUserResponseDtosInternal(ctx, users)
+	if err != nil {
+		return nil, pagination.Response{}, err
 	}
 
 	return result, paginationResp, nil
 }
 
-func toUserResponseDto(u models.User) user.User {
+func (s *UserService) ToUserResponseDto(ctx context.Context, u models.User) (user.User, error) {
+	if !userHasRoleInternal(u.Roles, "admin") {
+		return toUserResponseDtoInternal(u, 0), nil
+	}
+
+	adminCount, err := s.adminUserCountInternal(ctx)
+	if err != nil {
+		return user.User{}, err
+	}
+
+	return toUserResponseDtoInternal(u, adminCount), nil
+}
+
+func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) ([]user.User, error) {
+	adminCount, err := s.adminUserCountInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]user.User, len(users))
+	for i, u := range users {
+		result[i] = toUserResponseDtoInternal(u, adminCount)
+	}
+
+	return result, nil
+}
+
+func toUserResponseDtoInternal(u models.User, adminCount int) user.User {
 	return user.User{
-		ID:            u.ID,
-		Username:      u.Username,
-		DisplayName:   u.DisplayName,
-		Email:         u.Email,
-		Roles:         u.Roles,
-		OidcSubjectId: u.OidcSubjectId,
-		Locale:        u.Locale,
-		CreatedAt:     u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
-		UpdatedAt:     u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
+		ID:                     u.ID,
+		Username:               u.Username,
+		DisplayName:            u.DisplayName,
+		Email:                  u.Email,
+		Roles:                  u.Roles,
+		CanDelete:              !userHasRoleInternal(u.Roles, "admin") || adminCount > 1,
+		OidcSubjectId:          u.OidcSubjectId,
+		Locale:                 u.Locale,
+		RequiresPasswordChange: u.RequiresPasswordChange,
+		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
+		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
 	}
 }
 
@@ -375,4 +448,50 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 		First(&user).
 		Error
 	return &user, err
+}
+
+func (s *UserService) remainingAdminCountExcludingUserInternal(tx *gorm.DB, excludedUserID string) (int, error) {
+	var count int64
+	if err := s.adminUsersScopeInternal(tx.Model(&models.User{}).Where("id <> ?", excludedUserID)).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count remaining admin users: %w", err)
+	}
+
+	return int(count), nil
+}
+
+func userHasRoleInternal(roles models.StringSlice, role string) bool {
+	for _, currentRole := range roles {
+		if strings.EqualFold(currentRole, role) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *UserService) adminUserCountInternal(ctx context.Context) (int, error) {
+	var count int64
+	if err := s.adminUsersScopeInternal(s.db.WithContext(ctx).Model(&models.User{})).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count admin users: %w", err)
+	}
+
+	return int(count), nil
+}
+
+func (s *UserService) adminUsersScopeInternal(query *gorm.DB) *gorm.DB {
+	switch s.db.Name() {
+	case "sqlite":
+		return query.Where(
+			"EXISTS (SELECT 1 FROM json_each(users.roles) WHERE lower(json_each.value) = ?)",
+			"admin",
+		)
+	case "postgres":
+		return query.Where(
+			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(users.roles::jsonb) AS role WHERE lower(role) = ?)",
+			"admin",
+		)
+	default:
+		slog.Warn("Using LIKE-based admin role query fallback for unsupported database dialect", "dialect", s.db.Name())
+		return query.Where("LOWER(roles) LIKE ?", `%\"admin\"%`)
+	}
 }

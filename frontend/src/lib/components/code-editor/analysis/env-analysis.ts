@@ -1,6 +1,7 @@
 import type { EditorView } from '@codemirror/view';
 import type { Diagnostic } from '@codemirror/lint';
 import type { AnalysisResult, EditorContext, OutlineItem } from './types';
+import { isOpenQuote } from './parse-env-utils';
 import { extractComposeVariables } from './vars-analysis';
 
 const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -32,6 +33,70 @@ function parseEnv(source: string): {
 	const lines = source.split('\n');
 	let offset = 0;
 
+	let multiLineKey: string | null = null;
+	let multiLineQuote: string | null = null;
+	let multiLineFrom = 0;
+	let multiLineTo = 0;
+	let multiLineKeyFrom = 0;
+	let multiLineKeyTo = 0;
+	let multiLineLineNumber = 0;
+	let multiLineParts: string[] = [];
+
+	function finalizeEntry(
+		key: string,
+		value: string,
+		lineNumber: number,
+		from: number,
+		to: number,
+		keyFrom: number,
+		keyTo: number
+	): void {
+		const parsed: ParsedEnvLine = { lineNumber, from, to: Math.max(from + 1, to), key, value, keyFrom, keyTo };
+
+		if (seen.has(key)) {
+			const previous = seen.get(key);
+			duplicateKeys += 1;
+			diagnostics.push({
+				from: keyFrom,
+				to: keyTo,
+				severity: 'warning',
+				message: `Duplicate variable "${key}". Last value wins.`,
+				actions: [
+					{
+						name: 'Remove earlier duplicate',
+						apply(view: EditorView) {
+							const doc = view.state.doc;
+							const target = previous ?? parsed;
+							let removeTo = target.to;
+							const nextChars = doc.sliceString(removeTo, Math.min(doc.length, removeTo + 2));
+							if (nextChars.startsWith('\r\n')) {
+								removeTo += 2;
+							} else if (nextChars.startsWith('\n')) {
+								removeTo += 1;
+							}
+							view.dispatch({
+								changes: { from: target.from, to: removeTo, insert: '' }
+							});
+						}
+					}
+				]
+			});
+		}
+
+		seen.set(key, parsed);
+		entries.push(parsed);
+
+		if (SECRET_NAME_REGEX.test(key) || SECRET_VALUE_REGEX.test(value)) {
+			secretWarnings += 1;
+			diagnostics.push({
+				from: keyFrom,
+				to: keyTo,
+				severity: 'warning',
+				message: `"${key}" looks like a secret. Consider using Docker secrets or external secret management.`
+			});
+		}
+	}
+
 	for (let index = 0; index < lines.length; index += 1) {
 		const rawLine = lines[index] ?? '';
 		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -40,6 +105,23 @@ function parseEnv(source: string): {
 		const lineTo = offset + line.length;
 
 		offset += rawLine.length + 1;
+
+		// Inside a multi-line quoted value — accumulate until closing quote
+		if (multiLineQuote !== null && multiLineKey !== null) {
+			multiLineParts.push(rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine);
+			multiLineTo = lineTo;
+
+			const trimmedEnd = line.trimEnd();
+			const isEscaped = trimmedEnd.length >= 2 && trimmedEnd[trimmedEnd.length - 2] === '\\';
+			if (trimmedEnd.endsWith(multiLineQuote) && !isEscaped) {
+				const fullValue = multiLineParts.join('\n');
+				finalizeEntry(multiLineKey, fullValue, multiLineLineNumber, multiLineFrom, multiLineTo, multiLineKeyFrom, multiLineKeyTo);
+				multiLineKey = null;
+				multiLineQuote = null;
+				multiLineParts = [];
+			}
+			continue;
+		}
 
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith('#')) continue;
@@ -73,54 +155,31 @@ function parseEnv(source: string): {
 			continue;
 		}
 
-		const parsed: ParsedEnvLine = {
-			lineNumber,
-			from: lineFrom,
-			to: Math.max(lineFrom + 1, lineTo),
-			key,
-			value,
-			keyFrom,
-			keyTo
-		};
-
-		if (seen.has(key)) {
-			const previous = seen.get(key);
-			duplicateKeys += 1;
-			diagnostics.push({
-				from: keyFrom,
-				to: keyTo,
-				severity: 'warning',
-				message: `Duplicate variable "${key}". Last value wins.`,
-				actions: [
-					{
-						name: 'Remove earlier duplicate',
-						apply(view: EditorView) {
-							const doc = view.state.doc;
-							const targetLineNumber = previous?.lineNumber ?? lineNumber;
-							if (targetLineNumber < 1 || targetLineNumber > doc.lines) return;
-							const lineInfo = doc.line(targetLineNumber);
-							const removeTo = lineInfo.number < doc.lines ? doc.line(targetLineNumber + 1).from : lineInfo.to;
-							view.dispatch({
-								changes: { from: lineInfo.from, to: removeTo, insert: '' }
-							});
-						}
-					}
-				]
-			});
+		// Check for multi-line quoted value
+		const openQuote = isOpenQuote(value);
+		if (openQuote) {
+			multiLineKey = key;
+			multiLineQuote = openQuote;
+			multiLineFrom = lineFrom;
+			multiLineTo = lineTo;
+			multiLineKeyFrom = keyFrom;
+			multiLineKeyTo = keyTo;
+			multiLineLineNumber = lineNumber;
+			multiLineParts = [value];
+			continue;
 		}
 
-		seen.set(key, parsed);
-		entries.push(parsed);
+		finalizeEntry(key, value, lineNumber, lineFrom, lineTo, keyFrom, keyTo);
+	}
 
-		if (SECRET_NAME_REGEX.test(key) || SECRET_VALUE_REGEX.test(value)) {
-			secretWarnings += 1;
-			diagnostics.push({
-				from: keyFrom,
-				to: keyTo,
-				severity: 'warning',
-				message: `"${key}" looks like a secret. Consider using Docker secrets or external secret management.`
-			});
-		}
+	// Unterminated multi-line quoted value at EOF
+	if (multiLineQuote !== null && multiLineKey !== null) {
+		diagnostics.push({
+			from: multiLineFrom,
+			to: Math.max(multiLineFrom + 1, multiLineTo),
+			severity: 'error',
+			message: `Unterminated quoted value for "${multiLineKey}". Missing closing ${multiLineQuote}.`
+		});
 	}
 
 	return { entries, diagnostics, duplicateKeys, secretWarnings };

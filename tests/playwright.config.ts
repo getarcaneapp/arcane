@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: '50%',
+  workers: 1,
   globalSetup: './setup/global-setup',
   globalTeardown: './setup/global-teardown',
   reporter:

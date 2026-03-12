@@ -8,8 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	backoff "github.com/cenkalti/backoff/v5"
@@ -18,20 +18,27 @@ import (
 )
 
 const (
-	AnalyticsJobName         = "analytics-heartbeat"
-	defaultHeartbeatEndpoint = "https://checkin.getarcane.app/heartbeat"
-	devHeartbeatEndpoint     = "http://localhost:8080/heartbeat"
+	AnalyticsJobName                 = "analytics-heartbeat"
+	defaultHeartbeatEndpoint         = "https://checkin.getarcane.app/heartbeat"
+	devHeartbeatEndpoint             = "http://localhost:8080/heartbeat"
+	analyticsHeartbeatLastAttemptKey = "analytics.heartbeat.last_attempt_at"
+	analyticsHeartbeatDedupeWindow   = 24 * time.Hour
+	analyticsHeartbeatCheckSchedule  = "0 0 * * * *"
 )
 
 type AnalyticsJob struct {
 	settingsService *services.SettingsService
+	kvService       *services.KVService
 	httpClient      *http.Client
 	heartbeatURL    string
 	cfg             *config.Config
+	runMu           sync.Mutex
+	now             func() time.Time
 }
 
 func NewAnalyticsJob(
 	settingsService *services.SettingsService,
+	kvService *services.KVService,
 	httpClient *http.Client,
 	cfg *config.Config,
 ) *AnalyticsJob {
@@ -44,9 +51,11 @@ func NewAnalyticsJob(
 	}
 	return &AnalyticsJob{
 		settingsService: settingsService,
+		kvService:       kvService,
 		httpClient:      httpClient,
 		heartbeatURL:    heartbeatURL,
 		cfg:             cfg,
+		now:             time.Now,
 	}
 }
 
@@ -54,27 +63,8 @@ func (j *AnalyticsJob) Name() string {
 	return AnalyticsJobName
 }
 
-func (j *AnalyticsJob) Schedule(ctx context.Context) string {
-	s := j.settingsService.GetStringSetting(ctx, "analyticsHeartbeatInterval", "0 0 0 * * *")
-	if s == "" {
-		return "0 0 0 * * *"
-	}
-
-	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(s); err == nil {
-		if i <= 0 {
-			i = 1440
-		}
-		if i%1440 == 0 {
-			return fmt.Sprintf("0 0 0 */%d * *", i/1440)
-		}
-		if i%60 == 0 {
-			return fmt.Sprintf("0 0 */%d * * *", i/60)
-		}
-		return fmt.Sprintf("0 */%d * * * *", i)
-	}
-
-	return s
+func (j *AnalyticsJob) Schedule(_ context.Context) string {
+	return analyticsHeartbeatCheckSchedule
 }
 
 func (j *AnalyticsJob) Run(ctx context.Context) {
@@ -84,6 +74,15 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 	}
 	if j.cfg.Environment.IsTestEnvironment() {
 		slog.DebugContext(ctx, "test environment; skipping heartbeat", "env", j.cfg.Environment)
+		return
+	}
+
+	allowed, err := j.claimHeartbeatAttemptWindowInternal(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to acquire analytics heartbeat send window", "error", err)
+		return
+	}
+	if !allowed {
 		return
 	}
 
@@ -188,8 +187,63 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 }
 
 func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling analytics heartbeat job in new scheduler; currently requires restart")
+	slog.InfoContext(ctx, "analytics heartbeat schedule is fixed and managed internally", "schedule", analyticsHeartbeatCheckSchedule)
 	return nil
+}
+
+func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) (bool, error) {
+	if j.kvService == nil {
+		return false, fmt.Errorf("analytics heartbeat kv service is not configured")
+	}
+
+	j.runMu.Lock()
+	defer j.runMu.Unlock()
+
+	now := j.now().UTC()
+	rawLastAttemptAt, ok, err := j.kvService.Get(ctx, analyticsHeartbeatLastAttemptKey)
+	if err != nil {
+		return false, fmt.Errorf("failed to load analytics heartbeat attempt state: %w", err)
+	}
+
+	if ok {
+		lastAttemptAt, parseErr := time.Parse(time.RFC3339Nano, rawLastAttemptAt)
+		if parseErr != nil {
+			slog.WarnContext(
+				ctx,
+				"invalid analytics heartbeat attempt timestamp; resetting dedupe window",
+				"key",
+				analyticsHeartbeatLastAttemptKey,
+				"value",
+				rawLastAttemptAt,
+				"error",
+				parseErr,
+			)
+		} else {
+			nextEligibleAt := lastAttemptAt.Add(analyticsHeartbeatDedupeWindow)
+			if now.Before(nextEligibleAt) {
+				slog.InfoContext(
+					ctx,
+					"skipping analytics heartbeat; already attempted within dedupe window",
+					"jobName",
+					AnalyticsJobName,
+					"lastAttemptAt",
+					lastAttemptAt,
+					"nextEligibleAt",
+					nextEligibleAt,
+				)
+				return false, nil
+			}
+		}
+	}
+
+	// Persist the attempt window before sending on purpose: the product behavior is
+	// best-effort at-most-once-per-24h check-ins, which avoids duplicate heartbeats
+	// after restarts or partially completed outbound requests.
+	if err := j.kvService.Set(ctx, analyticsHeartbeatLastAttemptKey, now.Format(time.RFC3339Nano)); err != nil {
+		return false, fmt.Errorf("failed to persist analytics heartbeat attempt state: %w", err)
+	}
+
+	return true, nil
 }
 
 func (j *AnalyticsJob) getServerType() string {

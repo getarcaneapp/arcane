@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	networktypes "github.com/getarcaneapp/arcane/types/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -35,7 +36,7 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	networkInspect, err := dockerClient.NetworkInspect(ctx, id, client.NetworkInspectOptions{})
+	networkInspect, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("network not found: %w", err)
 	}
@@ -86,7 +87,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	networkInfo, err := dockerClient.NetworkInspect(ctx, id, client.NetworkInspectOptions{})
+	networkInfo, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
 	var networkName string
 	if err == nil {
 		networkName = networkInfo.Network.Name

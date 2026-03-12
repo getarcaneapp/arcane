@@ -54,15 +54,14 @@ func (s *JobService) SetScheduler(scheduler JobRunner) {
 func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 	// Use SettingsService cache for fast reads.
 	return jobschedule.Config{
-		EnvironmentHealthInterval:  s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
-		EventCleanupInterval:       s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
-		AnalyticsHeartbeatInterval: s.settings.GetStringSetting(ctx, "analyticsHeartbeatInterval", "0 0 0 * * *"),
-		AutoUpdateInterval:         s.settings.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *"),
-		PollingInterval:            s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
-		ScheduledPruneInterval:     s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
-		GitopsSyncInterval:         s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */1 * * * *"),
-		VulnerabilityScanInterval:  s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", "0 0 0 * * *"),
-		AutoHealInterval:           s.settings.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *"),
+		EnvironmentHealthInterval: s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
+		EventCleanupInterval:      s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
+		AutoUpdateInterval:        s.settings.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *"),
+		PollingInterval:           s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
+		ScheduledPruneInterval:    s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
+		GitopsSyncInterval:        s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */1 * * * *"),
+		VulnerabilityScanInterval: s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", "0 0 0 * * *"),
+		AutoHealInterval:          s.settings.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *"),
 	}
 }
 
@@ -83,7 +82,6 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	}{
 		{key: "environmentHealthInterval", current: current.EnvironmentHealthInterval, update: updates.EnvironmentHealthInterval},
 		{key: "eventCleanupInterval", current: current.EventCleanupInterval, update: updates.EventCleanupInterval},
-		{key: "analyticsHeartbeatInterval", current: current.AnalyticsHeartbeatInterval, update: updates.AnalyticsHeartbeatInterval},
 		{key: "autoUpdateInterval", current: current.AutoUpdateInterval, update: updates.AutoUpdateInterval},
 		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
 		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
@@ -217,20 +215,23 @@ func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMe
 		return "continuous"
 	}
 
+	if meta.ID == "analytics-heartbeat" {
+		return "automatic (checked hourly; sent once per 24h)"
+	}
+
 	if meta.SettingsKey == "" {
 		return ""
 	}
 
 	defaultSchedules := map[string]string{
-		"environmentHealthInterval":  "0 */2 * * * *",
-		"eventCleanupInterval":       "0 0 */6 * * *",
-		"analyticsHeartbeatInterval": "0 0 0 * * *",
-		"autoUpdateInterval":         "0 0 0 * * *",
-		"pollingInterval":            "0 */15 * * * *",
-		"scheduledPruneInterval":     "0 0 0 * * *",
-		"gitopsSyncInterval":         "0 */1 * * * *",
-		"vulnerabilityScanInterval":  "0 0 0 * * *",
-		"autoHealInterval":           "*/30 * * * * *",
+		"environmentHealthInterval": "0 */2 * * * *",
+		"eventCleanupInterval":      "0 0 */6 * * *",
+		"autoUpdateInterval":        "0 0 0 * * *",
+		"pollingInterval":           "0 */15 * * * *",
+		"scheduledPruneInterval":    "0 0 0 * * *",
+		"gitopsSyncInterval":        "0 */1 * * * *",
+		"vulnerabilityScanInterval": "0 0 0 * * *",
+		"autoHealInterval":          "*/30 * * * * *",
 	}
 
 	defaultSchedule := defaultSchedules[meta.SettingsKey]

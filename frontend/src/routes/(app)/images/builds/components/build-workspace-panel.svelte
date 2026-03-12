@@ -38,15 +38,12 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="relative border-b border-zinc-800/50 bg-gradient-to-r from-zinc-900/50 to-transparent px-4 py-3">
-		<div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent"></div>
+	<div class="border-border/50 relative border-b px-4 py-3">
 		<div class="relative flex flex-col gap-3">
 			<div class="flex items-center justify-between gap-3">
 				<div class="flex items-center gap-3">
-					<div
-						class="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/10 ring-1 ring-blue-400/20"
-					>
-						<FolderOpenIcon class="size-4 text-blue-400" />
+					<div class="bg-primary/10 ring-primary/20 flex size-9 items-center justify-center rounded-lg ring-1">
+						<FolderOpenIcon class="text-primary size-4" />
 					</div>
 					<div>
 						<h2 class="text-sm font-semibold tracking-tight">{m.build_context()}</h2>
@@ -64,12 +61,12 @@
 				</ArcaneButton>
 			</div>
 
-			<div class="flex items-center gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/50 p-1">
+			<div class="border-border/70 bg-muted/50 flex items-center gap-2 rounded-lg border p-1">
 				<button
 					type="button"
 					class={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
 						contextMode === 'workspace'
-							? 'bg-blue-500/12 text-blue-100 ring-1 ring-blue-400/20'
+							? 'bg-primary/10 text-primary ring-primary/20 ring-1'
 							: 'text-muted-foreground hover:text-foreground'
 					}`}
 					onclick={() => onModeChange?.('workspace')}
@@ -80,7 +77,7 @@
 					type="button"
 					class={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
 						contextMode === 'remote'
-							? 'bg-emerald-500/12 text-emerald-100 ring-1 ring-emerald-400/20'
+							? 'bg-primary/10 text-primary ring-primary/20 ring-1'
 							: 'text-muted-foreground hover:text-foreground'
 					}`}
 					onclick={() => onModeChange?.('remote')}
@@ -96,18 +93,16 @@
 			{#if contextMode === 'workspace'}
 				<BuildWorkspaceBrowser {provider} {rootLabel} {rootPath} onSelectContext={(path: string) => onSelectContext?.(path)} />
 			{:else}
-				<div
-					class="flex h-full flex-col rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/8 via-zinc-950 to-zinc-950 p-5"
-				>
+				<div class="border-border/20 bg-card flex h-full flex-col rounded-2xl border p-5">
 					<div class="max-w-xl space-y-2">
-						<p class="text-sm font-semibold text-emerald-100">{m.build_remote_git_context_title()}</p>
+						<p class="text-foreground text-sm font-semibold">{m.build_remote_git_context_title()}</p>
 						<p class="text-muted-foreground text-sm">
 							{m.build_remote_git_context_description()}
 						</p>
 					</div>
 
 					<div class="mt-5 space-y-3">
-						<label for="remote-context-url" class="text-xs font-medium tracking-[0.12em] text-zinc-400 uppercase">
+						<label for="remote-context-url" class="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase">
 							{m.git_repository_url()}
 						</label>
 						<input
@@ -122,9 +117,9 @@
 						/>
 					</div>
 
-					<div class="mt-5 grid gap-3 text-xs text-zinc-400 sm:grid-cols-2">
-						<div class="rounded-xl border border-zinc-800/70 bg-zinc-950/60 p-3">
-							<div class="font-medium text-zinc-200">{m.build_remote_git_examples()}</div>
+					<div class="text-muted-foreground mt-5 grid gap-3 text-xs sm:grid-cols-2">
+						<div class="border-border/70 bg-muted/50 rounded-xl border p-3">
+							<div class="text-foreground font-medium">{m.build_remote_git_examples()}</div>
 							<div class="mt-2 font-mono leading-5 break-all">
 								https://github.com/owner/repo.git
 								<br />
@@ -133,8 +128,8 @@
 								https://github.com/owner/repo.git#main:docker/app
 							</div>
 						</div>
-						<div class="rounded-xl border border-zinc-800/70 bg-zinc-950/60 p-3">
-							<div class="font-medium text-zinc-200">{m.build_remote_git_credential_lookup_title()}</div>
+						<div class="border-border/70 bg-muted/50 rounded-xl border p-3">
+							<div class="text-foreground font-medium">{m.build_remote_git_credential_lookup_title()}</div>
 							<div class="mt-2 leading-5">
 								{m.build_remote_git_credential_lookup_description()}
 							</div>

@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -227,7 +228,7 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 	}
 
 	// Try to inspect the container directly
-	container, err := dockerClient.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
+	container, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err == nil {
 		return container.Container, nil
 	}
@@ -246,7 +247,7 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 
 	for _, c := range containers.Items {
 		if strings.HasPrefix(c.ID, containerId) {
-			inspect, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return containertypes.InspectResponse{}, inspectErr
 			}
@@ -262,7 +263,7 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 
 	for _, c := range allContainers.Items {
 		if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
-			inspect, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return containertypes.InspectResponse{}, inspectErr
 			}

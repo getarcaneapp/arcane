@@ -1,7 +1,6 @@
 export type JobSchedules = {
 	environmentHealthInterval: string;
 	eventCleanupInterval: string;
-	analyticsHeartbeatInterval: string;
 	autoUpdateInterval: string;
 	pollingInterval: string;
 	scheduledPruneInterval: string;

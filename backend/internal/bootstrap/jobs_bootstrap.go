@@ -23,7 +23,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		newScheduler.RegisterJob(environmentHealthJob)
 	}
 
-	analyticsJob := pkg_scheduler.NewAnalyticsJob(appServices.Settings, nil, appConfig)
+	analyticsJob := pkg_scheduler.NewAnalyticsJob(appServices.Settings, appServices.KV, nil, appConfig)
 	newScheduler.RegisterJob(analyticsJob)
 	// Send initial heartbeat on startup without blocking bootstrap.
 	go analyticsJob.Run(appCtx)
@@ -56,7 +56,6 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		imagePollingJob,
 		autoUpdateJob,
 		environmentHealthJob,
-		analyticsJob,
 		eventCleanupJob,
 		scheduledPruneJob,
 		gitOpsSyncJob,
@@ -74,7 +73,6 @@ func setupJobScheduleCallbacks(
 	imagePollingJob *pkg_scheduler.ImagePollingJob,
 	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
 	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
-	analyticsJob *pkg_scheduler.AnalyticsJob,
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
@@ -96,7 +94,6 @@ func setupJobScheduleCallbacks(
 				imagePollingJob,
 				autoUpdateJob,
 				environmentHealthJob,
-				analyticsJob,
 				eventCleanupJob,
 				scheduledPruneJob,
 				gitOpsSyncJob,
@@ -115,7 +112,6 @@ func handleJobScheduleChangeInternal(
 	imagePollingJob *pkg_scheduler.ImagePollingJob,
 	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
 	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
-	analyticsJob *pkg_scheduler.AnalyticsJob,
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
 	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
@@ -137,10 +133,6 @@ func handleJobScheduleChangeInternal(
 		}
 		if err := newScheduler.RescheduleJob(ctx, environmentHealthJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule environment-health job", "error", err)
-		}
-	case "analyticsHeartbeatInterval":
-		if err := newScheduler.RescheduleJob(ctx, analyticsJob); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule analytics heartbeat job", "error", err)
 		}
 	case "eventCleanupInterval":
 		if err := newScheduler.RescheduleJob(ctx, eventCleanupJob); err != nil {

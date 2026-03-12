@@ -51,9 +51,9 @@ var jobMetadataRegistry = map[string]JobMetadata{
 	"analytics-heartbeat": {
 		ID:             "analytics-heartbeat",
 		Name:           "Analytics Heartbeat",
-		Description:    "Sends usage statistics and telemetry data",
+		Description:    "Checks hourly and sends anonymous telemetry at most once per 24 hours",
 		Category:       "telemetry",
-		SettingsKey:    "analyticsHeartbeatInterval",
+		SettingsKey:    "",
 		ManagerOnly:    false,
 		IsContinuous:   false,
 		CanRunManually: true,

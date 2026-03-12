@@ -1251,24 +1251,24 @@
 	<div class="flex h-full flex-col">
 		<Tabs.Root bind:value={rightPanelTab} class="flex h-full flex-col">
 			<!-- Tabs header with refined styling -->
-			<div class="flex shrink-0 items-center justify-between border-b border-zinc-800/50 bg-zinc-950/40 px-3 py-2">
-				<Tabs.List class="flex items-center gap-1 rounded-lg border border-zinc-800/60 bg-zinc-950/60 p-1">
+			<div class="border-border/50 bg-muted/40 flex shrink-0 items-center justify-between border-b px-3 py-2">
+				<Tabs.List class="border-border/60 bg-muted/60 flex items-center gap-1 rounded-lg border p-1">
 					<Tabs.Trigger
 						value="config"
-						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-xs font-medium transition-colors data-[state=active]:bg-blue-500/10"
+						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
 					>
 						<CodeIcon class="mr-2 size-3.5" />
 						{m.build_configuration()}
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="output"
-						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-xs font-medium transition-colors data-[state=active]:bg-emerald-500/10"
+						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
 					>
 						<TerminalIcon class="mr-2 size-3.5" />
 						{m.build_output()}
 						{#if logLines.length > 0}
 							<span
-								class="ml-1.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-400/20"
+								class="bg-primary/15 text-primary ring-primary/20 ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1"
 							>
 								{logLines.length}
 							</span>
@@ -1330,16 +1330,16 @@
 		subtitle={m.manual_build_workspace_subtitle()}
 	>
 		<Tabs.Root bind:value={mainTab} class="flex h-[calc(100vh-12rem)] flex-col">
-			<Tabs.List class="mb-3 flex w-fit gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/60 p-1">
+			<Tabs.List class="border-border/60 bg-muted/60 mb-3 flex w-fit gap-2 rounded-lg border p-1">
 				<Tabs.Trigger
 					value="build"
-					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-sm font-medium data-[state=active]:bg-blue-500/10"
+					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-sm font-medium"
 				>
 					{m.manual_build_workspace()}
 				</Tabs.Trigger>
 				<Tabs.Trigger
 					value="history"
-					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-sm font-medium data-[state=active]:bg-amber-500/10"
+					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-sm font-medium"
 				>
 					{m.build_history()}
 				</Tabs.Trigger>

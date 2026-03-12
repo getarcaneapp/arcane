@@ -105,7 +105,7 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		}
 
 		// Inspect to get health status
-		inspect, err := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
 			continue

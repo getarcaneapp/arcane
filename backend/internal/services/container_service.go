@@ -234,7 +234,7 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containerInspect, err := dockerClient.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
@@ -253,7 +253,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		containerJSON, inspectErr := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		containerJSON, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 		if inspectErr == nil {
 			for _, mount := range containerJSON.Container.Mounts {
 				// Only collect named volumes (not bind mounts or tmpfs)
@@ -363,7 +363,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
 
-	containerJSON, err := dockerClient.ContainerInspect(ctx, resp.ID, client.ContainerInspectOptions{})
+	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{"action": "create", "image": config.Image, "step": "inspect"})
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)

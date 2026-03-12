@@ -7,6 +7,7 @@ export type User = {
 	displayName?: string;
 	email?: string;
 	roles: string[];
+	canDelete?: boolean;
 	createdAt: string;
 	lastLogin?: string;
 	updatedAt?: string;
