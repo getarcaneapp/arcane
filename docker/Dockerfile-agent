@@ -41,15 +41,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /out/arcane-agent \
     ./cmd/main.go
 
-FROM debian:trixie-slim AS agent
+FROM alpine:3.22 AS agent
 ARG TARGETARCH
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
-    vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates curl tzdata tar gzip
 
 WORKDIR /app
 RUN mkdir -p /app/data
@@ -64,7 +58,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     ROCR_VISIBLE_DEVICES=all \
     HIP_VISIBLE_DEVICES=all \
     ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
