@@ -82,7 +82,7 @@ export class ContainerService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
 	}
-	async redeployContainer(containerId: string): Promise<ContainerActionResponse> {
+	
 	async redeployContainer(containerId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));

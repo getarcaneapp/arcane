@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages';
 import type { ContainerSummaryDto } from '$lib/types/container.type';
 
-export type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
+export type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | 'redeploying' | '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
 
 export function parseImageRef(imageRef: string): { repo: string; tag: string } {
