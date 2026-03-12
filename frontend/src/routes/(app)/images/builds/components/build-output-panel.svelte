@@ -59,9 +59,7 @@
 
 <div class="flex h-full flex-col p-8">
 	<!-- Progress section with enhanced styling -->
-	<div
-		class="mb-6 shrink-0 space-y-4 rounded-2xl border border-zinc-800/50 bg-gradient-to-br from-zinc-900/50 to-zinc-900/30 p-5"
-	>
+	<div class="border-border/50 bg-card mb-6 shrink-0 space-y-4 rounded-2xl border p-5">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<div
@@ -108,12 +106,10 @@
 	<!-- Terminal output with refined styling -->
 	<div
 		use:autoScrollToBottom={{ enabled: autoScroll, key: logLines.length }}
-		class="group relative min-h-0 flex-1 overflow-auto rounded-2xl border border-zinc-900/50 bg-gradient-to-br from-zinc-950 via-zinc-950 to-black p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50"
+		class="group border-border/50 relative min-h-0 flex-1 overflow-auto rounded-2xl border bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
 	>
 		<!-- Subtle scanline effect overlay -->
-		<div
-			class="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-white/[0.02] to-transparent opacity-40"
-		></div>
+		<div class="pointer-events-none absolute inset-0 hidden"></div>
 
 		<div class="relative">
 			{#if logLines.length === 0}

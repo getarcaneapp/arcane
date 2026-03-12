@@ -185,26 +185,32 @@ func UpdateImplicitRestart(containers []ContainerWithDeps, markedForRestart map[
 		}
 
 		// Check if any dependency is marked for restart
-		allDeps := make([]string, 0, len(c.Links)+len(c.DependsOn)+len(c.NetworkDeps))
-		allDeps = append(allDeps, c.Links...)
-		allDeps = append(allDeps, c.DependsOn...)
-		allDeps = append(allDeps, c.NetworkDeps...)
-
-		for _, dep := range allDeps {
-			if markedForRestart[dep] {
-				// This container's dependency is restarting, so it needs to restart too
-				markedForRestart[c.Name] = true
-				if containers[i].Container.Labels == nil {
-					containers[i].Container.Labels = map[string]string{}
-				}
-				containers[i].Container.Labels["_arcane_implicit_restart"] = "true"
-				implicitRestarts = append(implicitRestarts, c.Name)
-				break
-			}
+		if !hasMarkedDependencyInternal(markedForRestart, c.Links) &&
+			!hasMarkedDependencyInternal(markedForRestart, c.DependsOn) &&
+			!hasMarkedDependencyInternal(markedForRestart, c.NetworkDeps) {
+			continue
 		}
+
+		// This container's dependency is restarting, so it needs to restart too
+		markedForRestart[c.Name] = true
+		if containers[i].Container.Labels == nil {
+			containers[i].Container.Labels = map[string]string{}
+		}
+		containers[i].Container.Labels["_arcane_implicit_restart"] = "true"
+		implicitRestarts = append(implicitRestarts, c.Name)
 	}
 
 	return implicitRestarts
+}
+
+func hasMarkedDependencyInternal(markedForRestart map[string]bool, deps []string) bool {
+	for _, dep := range deps {
+		if markedForRestart[dep] {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ExtractContainerName extracts a clean container name from the summary

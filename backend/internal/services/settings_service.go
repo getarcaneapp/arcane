@@ -94,7 +94,6 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		PollingEnabled:                models.SettingVariable{Value: "true"},
 		PollingInterval:               models.SettingVariable{Value: "0 0 * * * *"},
 		EventCleanupInterval:          models.SettingVariable{Value: "0 0 */6 * * *"},
-		AnalyticsHeartbeatInterval:    models.SettingVariable{Value: "0 0 0 * * *"},
 		AutoInjectEnv:                 models.SettingVariable{Value: "false"},
 		PruneMode:                     models.SettingVariable{Value: "dangling"},
 		DefaultDeployPullPolicy:       models.SettingVariable{Value: "missing"},

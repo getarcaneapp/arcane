@@ -126,7 +126,6 @@ func MigrateSchedulerCronValues(
 		{key: "scheduledPruneInterval", defaultUnit: time.Minute},
 		{key: "environmentHealthInterval", defaultUnit: time.Minute},
 		{key: "eventCleanupInterval", defaultUnit: time.Minute},
-		{key: "analyticsHeartbeatInterval", defaultUnit: time.Minute},
 	}
 
 	changed := false
