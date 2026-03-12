@@ -13,7 +13,6 @@ require (
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.2.1+incompatible
 	github.com/docker/compose/v5 v5.1.0
-	github.com/docker/distribution v2.8.3+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/types v1.15.3
@@ -37,6 +36,7 @@ require (
 	github.com/moby/moby/client v0.3.0
 	github.com/moby/patternmatcher v0.6.0
 	github.com/nicholas-fedor/shoutrrr v0.13.2
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/robfig/cron/v3 v3.0.1
@@ -161,7 +161,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect

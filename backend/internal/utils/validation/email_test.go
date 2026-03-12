@@ -13,7 +13,6 @@ func TestIsValidUserEmail_AllowsReportedFormats(t *testing.T) {
 	}
 
 	for _, email := range validEmails {
-		email := email
 		t.Run(email, func(t *testing.T) {
 			t.Parallel()
 			if !IsValidUserEmail(email) {
@@ -42,7 +41,6 @@ func TestIsValidUserEmail_RejectsMalformedAddresses(t *testing.T) {
 	}
 
 	for _, email := range invalidEmails {
-		email := email
 		t.Run(email, func(t *testing.T) {
 			t.Parallel()
 			if IsValidUserEmail(email) {

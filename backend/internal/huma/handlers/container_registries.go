@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -11,7 +11,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
@@ -364,16 +363,20 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		return nil, huma.Error500InternalServerError((&common.TokenDecryptionError{Err: err}).Error())
 	}
 
-	testResult, testErr := h.performRegistryTest(ctx, reg, decryptedToken)
-	if testErr != nil {
-		return nil, huma.Error400BadRequest((&common.RegistryTestError{Err: testErr}).Error())
+	if err := h.registryService.TestRegistry(ctx, reg.URL, reg.Username, decryptedToken); err != nil {
+		return nil, huma.Error400BadRequest((&common.RegistryTestError{Err: err}).Error())
+	}
+
+	msg := "Authentication succeeded"
+	if strings.TrimSpace(reg.Username) == "" && strings.TrimSpace(decryptedToken) == "" {
+		msg = "Registry saved (no credentials to test)"
 	}
 
 	return &TestContainerRegistryOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message: testResult["message"].(string),
+				Message: msg,
 			},
 		},
 	}, nil
@@ -407,32 +410,6 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 // ============================================================================
 // Helper Methods
 // ============================================================================
-
-func (h *ContainerRegistryHandler) performRegistryTest(ctx context.Context, registryModel *models.ContainerRegistry, decryptedToken string) (map[string]any, error) {
-	var creds *registry.Credentials
-	if registryModel.Username != "" && decryptedToken != "" {
-		creds = &registry.Credentials{
-			Username: registryModel.Username,
-			Token:    decryptedToken,
-		}
-	}
-
-	testResult, err := registry.TestRegistryConnection(ctx, registryModel.URL, creds)
-	if err != nil {
-		return nil, err
-	}
-
-	if !testResult.AuthSuccess {
-		if len(testResult.Errors) > 0 {
-			return nil, fmt.Errorf("%s", testResult.Errors[0])
-		}
-		return nil, fmt.Errorf("invalid credentials")
-	}
-
-	return map[string]any{
-		"message": "Authentication succeeded",
-	}, nil
-}
 
 func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) { //nolint:contextcheck // intentionally spawns background sync
 	if h.environmentService == nil {

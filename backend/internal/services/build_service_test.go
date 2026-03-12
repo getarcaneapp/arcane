@@ -22,7 +22,7 @@ func TestBuildService_GetRegistryAuthForHost_UsesDatabaseCredentials(t *testing.
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
-	svc := &BuildService{registryService: NewContainerRegistryService(db)}
+	svc := &BuildService{registryService: NewContainerRegistryService(db, nil)}
 
 	auth, err := svc.GetRegistryAuthForHost(context.Background(), "registry-1.docker.io")
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestBuildService_GetRegistryAuthForImage_UsesHostLookup(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://ghcr.io", "gh-user", "gh-token")
 
-	svc := &BuildService{registryService: NewContainerRegistryService(db)}
+	svc := &BuildService{registryService: NewContainerRegistryService(db, nil)}
 
 	auth, err := svc.GetRegistryAuthForImage(context.Background(), "ghcr.io/getarcaneapp/arcane:latest")
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestBuildService_GetAllRegistryAuthConfigs_UsesDatabaseCredentials(t *testi
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
-	svc := &BuildService{registryService: NewContainerRegistryService(db)}
+	svc := &BuildService{registryService: NewContainerRegistryService(db, nil)}
 
 	authConfigs, err := svc.GetAllRegistryAuthConfigs(context.Background())
 	require.NoError(t, err)

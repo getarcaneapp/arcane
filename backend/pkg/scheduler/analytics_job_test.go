@@ -205,12 +205,10 @@ func TestAnalyticsJob_Run_ConcurrentRunsSendOnce(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			job.Run(ctx)
-		}()
+		})
 	}
 
 	close(start)
