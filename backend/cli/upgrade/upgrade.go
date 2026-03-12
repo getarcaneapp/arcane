@@ -22,6 +22,8 @@ var (
 	autoDetect    bool
 )
 
+// UpgradeCmd recreates a running Arcane container with a newer image while
+// preserving its configuration.
 var UpgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade an Arcane container to the latest version",
@@ -338,11 +340,26 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	config := *oldContainer.Config
 	config.Image = newImage
 
-	hostConfig := oldContainer.HostConfig
+	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
+	if err != nil {
+		return fmt.Errorf("prepare host config: %w", err)
+	}
+	if sanitizedMemorySwappiness {
+		slog.Info("Stripped unsupported host config field for recreate",
+			"container", originalName,
+			"containerId", oldContainer.ID,
+			"engine", engineInfo.Name,
+			"cgroupVersion", engineInfo.CgroupVersion,
+			"field", "memorySwappiness",
+		)
+	}
 
 	// Fix for "conflicting options: hostname and the network mode"
 	// When network mode is "host" or "container:...", Hostname must be empty
-	nm := hostConfig.NetworkMode
+	var nm container.NetworkMode
+	if hostConfig != nil {
+		nm = hostConfig.NetworkMode
+	}
 	if nm.IsHost() || nm.IsContainer() {
 		config.Hostname = ""
 		config.Domainname = ""
@@ -359,8 +376,10 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// When network mode is "container:...", port mappings are not allowed
 	if nm.IsContainer() {
 		config.ExposedPorts = nil
-		hostConfig.PortBindings = nil
-		hostConfig.PublishAllPorts = false
+		if hostConfig != nil {
+			hostConfig.PortBindings = nil
+			hostConfig.PublishAllPorts = false
+		}
 	}
 
 	// Build network config - preserve all network settings including IP addresses

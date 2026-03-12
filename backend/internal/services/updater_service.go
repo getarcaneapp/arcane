@@ -26,6 +26,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
+// UpdaterService coordinates image update checks, container recreation, and
+// project redeploy flows for Arcane's auto-update system.
 type UpdaterService struct {
 	db                  *database.DB
 	settingsService     *SettingsService
@@ -43,6 +45,8 @@ type UpdaterService struct {
 	updatingProjects   map[string]bool
 }
 
+// NewUpdaterService constructs an UpdaterService with the dependencies needed
+// to plan, execute, and record container and project updates.
 func NewUpdaterService(
 	db *database.DB,
 	settings *SettingsService,
@@ -71,6 +75,10 @@ func NewUpdaterService(
 	}
 }
 
+// ApplyPending executes the currently pending image updates and returns a
+// per-resource result summary. When dryRun is true, it reports the planned
+// actions without mutating containers or projects.
+//
 //nolint:gocognit
 func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*updater.Result, error) {
 	start := time.Now()
@@ -680,8 +688,10 @@ func (s *UpdaterService) pruneImageIDsWithInUseSetInternal(ctx context.Context, 
 	return nil
 }
 
+// GetStatus returns the current in-memory update activity snapshot.
 func (s *UpdaterService) GetStatus() updater.Status { return s.statusSnapshotInternal() }
 
+// GetHistory returns the most recent auto-update history records, newest first.
 func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.AutoUpdateRecord, error) {
 	var rec []models.AutoUpdateRecord
 	q := s.db.WithContext(ctx).Order("start_time DESC")
@@ -744,9 +754,27 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	cfg := inspect.Config
 	cfg.Image = newRef
 
+	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dcli, inspect.HostConfig)
+	if err != nil {
+		return fmt.Errorf("prepare host config: %w", err)
+	}
+	if sanitizedMemorySwappiness {
+		slog.InfoContext(ctx,
+			"updateContainer: stripped unsupported host config field for recreate",
+			"containerId", cnt.ID,
+			"containerName", name,
+			"engine", engineInfo.Name,
+			"cgroupVersion", engineInfo.CgroupVersion,
+			"field", "memorySwappiness",
+		)
+	}
+
 	// Fix for "conflicting options: hostname and the network mode"
 	// When network mode is "host" or "container:...", Hostname must be empty
-	nm := inspect.HostConfig.NetworkMode
+	var nm container.NetworkMode
+	if hostConfig != nil {
+		nm = hostConfig.NetworkMode
+	}
 	if nm.IsHost() || nm.IsContainer() {
 		cfg.Hostname = ""
 		cfg.Domainname = ""
@@ -756,8 +784,10 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// When network mode is "container:...", port mappings are not allowed
 	if nm.IsContainer() {
 		cfg.ExposedPorts = nil
-		inspect.HostConfig.PortBindings = nil
-		inspect.HostConfig.PublishAllPorts = false
+		if hostConfig != nil {
+			hostConfig.PortBindings = nil
+			hostConfig.PublishAllPorts = false
+		}
 	}
 
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dcli)
@@ -777,7 +807,7 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	resp, err := dcli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           cfg,
-		HostConfig:       inspect.HostConfig,
+		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
 		Name:             containerName,
 	})
