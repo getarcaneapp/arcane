@@ -26,5 +26,5 @@ func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 	wrapped := wrapDockerCLIWithInspectCompatibilityInternal(baseCLI)
 	require.NotNil(t, wrapped)
 	require.NotSame(t, baseCLI, wrapped)
-	require.NotEqual(t, reflect.TypeOf(apiClient), reflect.TypeOf(wrapped.Client()))
+	require.NotEqual(t, reflect.TypeFor[*mobyclient.Client](), reflect.TypeOf(wrapped.Client()))
 }

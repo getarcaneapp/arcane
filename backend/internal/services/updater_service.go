@@ -158,15 +158,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
-	registryClient := arcRegistry.NewClient()
-	digestChecker := arcaneupdater.NewDigestChecker(dcli, registryClient)
-
-	enabledRegs := []models.ContainerRegistry{}
-	if s.registryService != nil {
-		if regs, rerr := s.registryService.GetEnabledRegistries(ctx); rerr == nil {
-			enabledRegs = regs
-		}
-	}
+	digestChecker := arcaneupdater.NewDigestChecker(dcli, s.registryService)
 
 	// track all old image IDs we saw for pulled updates so we can prune them after restart
 	oldIDSet := map[string]struct{}{}
@@ -202,9 +194,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		// Digest pre-check: if registry supports it and digests match, avoid pulling entirely.
 		// This also prevents unnecessary restarts when the update record is stale.
 		normNew := s.normalizeRef(p.newRef)
-		host, repo, tag := s.parseNormalizedRef(normNew)
-		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs)
-		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew, authHeader)
+		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew)
 		skipPull := false
 
 		if check.CheckedViaAPI && check.Error == nil && !check.NeedsUpdate {
@@ -533,8 +523,10 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	// Compare with pulled image to avoid unnecessary restart
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	// Compare with pulled image to avoid unnecessary restart.
+	// digestResolver is intentionally nil: CompareWithPulled only inspects local
+	// images and does not need remote registry access.
+	checker := arcaneupdater.NewDigestChecker(dcli, nil)
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
 	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
 		"containerID", containerID,
@@ -1140,7 +1132,8 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 		return nil, err
 	}
 
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	// digestResolver is intentionally nil: GetImageIDsForRef only inspects local images.
+	checker := arcaneupdater.NewDigestChecker(dcli, nil)
 	ids, err := checker.GetImageIDsForRef(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -1499,25 +1492,6 @@ func resolvePullableImageRefInternal(summaryImage, inspectConfigImage string, re
 	}
 
 	return "", ""
-}
-
-// parseNormalizedRef expects a normalized ref in the form "host/repository:tag".
-func (s *UpdaterService) parseNormalizedRef(ref string) (host, repository, tag string) {
-	// host/repo:tag
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) != 2 {
-		return "", "", ""
-	}
-	host = parts[0]
-	rest := parts[1]
-	tag = "latest"
-	if i := strings.LastIndex(rest, ":"); i != -1 && strings.LastIndex(rest, "/") < i {
-		tag = rest[i+1:]
-		repository = rest[:i]
-	} else {
-		repository = rest
-	}
-	return host, repository, tag
 }
 
 func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeverity, metadata models.JSON) {

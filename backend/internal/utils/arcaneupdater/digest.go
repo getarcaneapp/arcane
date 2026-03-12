@@ -6,22 +6,27 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
+
+	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 )
+
+type remoteDigestResolver interface {
+	GetImageDigest(ctx context.Context, imageRef string) (string, error)
+}
 
 // DigestChecker provides methods to check if an image needs updating by comparing digests
 type DigestChecker struct {
 	dcli           *client.Client
-	registryClient *registry.Client
+	digestResolver remoteDigestResolver
 }
 
 // NewDigestChecker creates a new DigestChecker
-func NewDigestChecker(dcli *client.Client, registryClient *registry.Client) *DigestChecker {
+func NewDigestChecker(dcli *client.Client, digestResolver remoteDigestResolver) *DigestChecker {
 	return &DigestChecker{
 		dcli:           dcli,
-		registryClient: registryClient,
+		digestResolver: digestResolver,
 	}
 }
 
@@ -36,17 +41,12 @@ type CheckResult struct {
 
 // CheckImageNeedsUpdate checks if an image has a newer version available without pulling
 // Returns true if the remote digest differs from the local digest
-func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef string, authToken string) CheckResult {
+func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef string) CheckResult {
 	result := CheckResult{}
-
-	// Parse image reference
-	registryHost, repository, tag := parseImageRef(imageRef)
 
 	slog.DebugContext(ctx, "CheckImageNeedsUpdate: checking image",
 		"imageRef", imageRef,
-		"registry", registryHost,
-		"repository", repository,
-		"tag", tag)
+		"normalizedRef", normalizeRef(imageRef))
 
 	// Get local digest
 	localDigest, err := c.getLocalDigest(ctx, imageRef)
@@ -61,10 +61,15 @@ func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef stri
 	}
 	result.LocalDigest = localDigest
 
-	// Get remote digest via HEAD request
-	remoteDigest, err := c.registryClient.GetLatestDigest(ctx, registryHost, repository, tag, authToken)
+	if c.digestResolver == nil {
+		result.Error = fmt.Errorf("remote digest resolver unavailable")
+		return result
+	}
+
+	// Get remote digest via the Docker daemon-backed registry path.
+	remoteDigest, err := c.digestResolver.GetImageDigest(ctx, imageRef)
 	if err != nil {
-		slog.DebugContext(ctx, "CheckImageNeedsUpdate: failed to get remote digest via HEAD",
+		slog.DebugContext(ctx, "CheckImageNeedsUpdate: failed to get remote digest",
 			"imageRef", imageRef,
 			"error", err)
 		// Can't determine remotely - caller should fall back to pull

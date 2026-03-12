@@ -65,7 +65,9 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
-	svcs.ContainerRegistry = services.NewContainerRegistryService(db)
+	svcs.ContainerRegistry = services.NewContainerRegistryService(db, func(ctx context.Context) (services.RegistryDaemonClient, error) {
+		return dockerClient.GetClient(ctx)
+	})
 	svcs.Notification = services.NewNotificationService(db, cfg)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
