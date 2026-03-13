@@ -36,6 +36,11 @@ jobs:
             timeout: 10
             gcc: false
             cgo_enabled: "1"
+          - name: types
+            path: types
+            timeout: 10
+            gcc: false
+            cgo_enabled: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6

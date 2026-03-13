@@ -853,13 +853,19 @@ _test-backend:
 _test-cli:
     cd cli && go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
 
+# Run shared types Go tests
+[group('tests')]
+_test-types:
+    cd types && go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+
 [group('tests')]
 _test-all:
     @just _test-e2e
     @just _test-backend
     @just _test-cli
+    @just _test-types
 
-# Run tests. Valid targets: "e2e", "backend", "cli", "all".
+# Run tests. Valid targets: "e2e", "backend", "cli", "types", "all".
 [group('tests')]
 test target="all":
     @just "_test-{{ target }}"
