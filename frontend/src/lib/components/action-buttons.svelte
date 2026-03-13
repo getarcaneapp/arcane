@@ -407,8 +407,8 @@
 			});
 		} else if (action === 'redeploy') {
 			openConfirmDialog({
-				title: m.common_confirm_redeploy_title(),
-				message: m.common_confirm_redeploy_message({ type }),
+				title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
+				message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
 				confirm: {
 					label: m.common_redeploy(),
 					action: async () => {
