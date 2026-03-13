@@ -141,7 +141,7 @@
 					action="base"
 					tone="ghost"
 					size="icon"
-					class="size-6 opacity-0 transition-opacity group-hover:opacity-100"
+					class="pointer-events-none size-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
 					customLabel="Edit name"
 					showLabel={false}
 					icon={EditIcon}
