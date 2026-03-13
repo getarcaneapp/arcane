@@ -22,6 +22,7 @@
 	import ContainerStorage from '../components/ContainerStorage.svelte';
 	import ContainerLogsPanel from '../components/ContainerLogsPanel.svelte';
 	import ContainerShell from '../components/ContainerShell.svelte';
+	import ContainerComposePanel from '../components/ContainerComposePanel.svelte';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -39,10 +40,6 @@
 		StatsIcon,
 		CodeIcon
 	} from '$lib/icons';
-	import CodePanel from '../../projects/components/CodePanel.svelte';
-	import { projectService } from '$lib/services/project-service';
-	import type { Project } from '$lib/types/project.type';
-
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -227,29 +224,8 @@
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
 
-	const composeLabelName = $derived(container?.labels?.['com.docker.compose.project'] ?? null);
-	const showCompose = $derived(!!composeLabelName);
-	let composeProject = $state<Project | null>(null);
-	let composeContent = $state('');
-	let composeOpen = $state(true);
-
-	$effect(() => {
-		const labelName = composeLabelName;
-		if (labelName) {
-			projectService
-				.getProject(labelName)
-				.then((proj) => {
-					composeProject = proj;
-					composeContent = proj.composeContent ?? '';
-				})
-				.catch((err) => {
-					console.error('Failed to load compose project:', err);
-				});
-		} else {
-			composeProject = null;
-			composeContent = '';
-		}
-	});
+	const project = $derived(data?.project ?? null);
+	const composeServiceName = $derived(container?.labels?.['com.docker.compose.service'] ?? '');
 
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
@@ -259,7 +235,7 @@
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
-		...(showCompose ? [{ value: 'compose', label: 'Compose', icon: CodeIcon }] : [])
+		...(project ? [{ value: 'compose', label: 'Compose', icon: CodeIcon }] : [])
 	]);
 
 	$effect(() => {
@@ -414,9 +390,9 @@
 				</Tabs.Content>
 			{/if}
 
-			{#if showCompose}
-				<Tabs.Content value="compose" class="h-full">
-					<CodePanel title="Compose File" bind:open={composeOpen} language="yaml" bind:value={composeContent} readOnly={true} />
+			{#if project}
+				<Tabs.Content value="compose" class="h-full min-h-0">
+					<ContainerComposePanel {project} serviceName={composeServiceName} />
 				</Tabs.Content>
 			{/if}
 		{/snippet}

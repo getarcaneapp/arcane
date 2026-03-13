@@ -2,6 +2,7 @@ import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { containerService } from '$lib/services/container-service';
 import { settingsService } from '$lib/services/settings-service';
+import { projectService } from '$lib/services/project-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
 
@@ -26,9 +27,27 @@ export const load: PageLoad = async ({ params, parent }) => {
 			throw error(404, 'Container not found');
 		}
 
+		let project = null;
+		const composeProjectName = container.labels?.['com.docker.compose.project'];
+		if (composeProjectName) {
+			try {
+				const projectsResult = await projectService.getProjectsForEnvironment(envId, { search: composeProjectName });
+				const matched = projectsResult.data.find((p) => p.name === composeProjectName);
+				if (matched) {
+					project = await queryClient.fetchQuery({
+						queryKey: queryKeys.projects.detail(envId, matched.id),
+						queryFn: () => projectService.getProjectForEnvironment(envId, matched.id)
+					});
+				}
+			} catch (err) {
+				console.warn('Failed to load compose project:', err);
+			}
+		}
+
 		return {
 			container,
-			settings
+			settings,
+			project
 		};
 	} catch (err: any) {
 		console.error('Failed to load container:', err);
