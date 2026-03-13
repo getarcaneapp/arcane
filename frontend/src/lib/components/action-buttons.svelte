@@ -408,7 +408,7 @@
 		} else if (action === 'redeploy') {
 			openConfirmDialog({
 				title: m.common_confirm_redeploy_title(),
-				message: m.common_confirm_redeploy_message(),
+				message: m.common_confirm_redeploy_message({ type }),
 				confirm: {
 					label: m.common_redeploy(),
 					action: async () => {

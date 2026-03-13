@@ -190,7 +190,7 @@ export function createContainerActions({
 
 		openConfirmDialog({
 			title: m.common_confirm_redeploy_title(),
-			message: m.common_confirm_redeploy_message(),
+			message: m.common_confirm_redeploy_message({ type: 'container' }),
 			confirm: {
 				label: m.compose_pull_redeploy(),
 				destructive: false,
