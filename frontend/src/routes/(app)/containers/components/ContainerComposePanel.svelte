@@ -57,8 +57,8 @@
 			<AlertIcon class="size-4" />
 			<Alert.Title>GitOps Managed — Read Only</Alert.Title>
 			<Alert.Description>
-				This project is managed by GitOps (<strong>{project.gitOpsManagedBy}</strong>). The compose
-				file is read-only and can only be changed via your Git repository.
+				This project is managed by GitOps (<strong>{project.gitOpsManagedBy}</strong>). The compose file is read-only and can only
+				be changed via your Git repository.
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
@@ -66,9 +66,8 @@
 	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
 		<span>
 			Editing <strong>{fileTitle}</strong> for project
-			<a href="/projects/{project.id}" class="text-primary font-medium hover:underline"
-				>{project.name}</a
-			>. This container runs as the <strong>{serviceName}</strong> service.
+			<a href="/projects/{project.id}" class="text-primary font-medium hover:underline">{project.name}</a>. This container runs as
+			the <strong>{serviceName}</strong> service.
 		</span>
 	</div>
 

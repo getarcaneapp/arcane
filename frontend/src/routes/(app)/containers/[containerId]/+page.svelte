@@ -426,11 +426,7 @@
 
 			{#if project && serviceComposeSource}
 				<Tabs.Content value="compose" class="h-full min-h-0">
-					<ContainerComposePanel
-						{project}
-						serviceName={composeServiceName}
-						includeFile={serviceComposeSource.includeFile}
-					/>
+					<ContainerComposePanel {project} serviceName={composeServiceName} includeFile={serviceComposeSource.includeFile} />
 				</Tabs.Content>
 			{/if}
 		{/snippet}
