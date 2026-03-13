@@ -55,11 +55,10 @@
 
 	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
 		<span>
-			This container is part of project
+			Editing the compose file for project
 			<a href="/projects/{project.id}" class="text-primary font-medium hover:underline"
 				>{project.name}</a
-			>, service <strong>{serviceName}</strong>. Changes to this file affect all services in the
-			project.
+			>. This container runs as the <strong>{serviceName}</strong> service.
 		</span>
 	</div>
 
