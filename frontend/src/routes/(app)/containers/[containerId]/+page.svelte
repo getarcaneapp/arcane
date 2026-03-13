@@ -36,8 +36,12 @@
 		NetworksIcon,
 		TerminalIcon,
 		ContainersIcon,
-		StatsIcon
+		StatsIcon,
+		CodeIcon
 	} from '$lib/icons';
+	import CodePanel from '../../projects/components/CodePanel.svelte';
+	import { projectService } from '$lib/services/project-service';
+	import type { Project } from '$lib/types/project.type';
 
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
@@ -223,6 +227,30 @@
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
 
+	const composeLabelName = $derived(container?.labels?.['com.docker.compose.project'] ?? null);
+	const showCompose = $derived(!!composeLabelName);
+	let composeProject = $state<Project | null>(null);
+	let composeContent = $state('');
+	let composeOpen = $state(true);
+
+	$effect(() => {
+		const labelName = composeLabelName;
+		if (labelName) {
+			projectService
+				.getProject(labelName)
+				.then((proj) => {
+					composeProject = proj;
+					composeContent = proj.composeContent ?? '';
+				})
+				.catch((err) => {
+					console.error('Failed to load compose project:', err);
+				});
+		} else {
+			composeProject = null;
+			composeContent = '';
+		}
+	});
+
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
@@ -230,7 +258,8 @@
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
-		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
+		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
+		...(showCompose ? [{ value: 'compose', label: 'Compose', icon: CodeIcon }] : [])
 	]);
 
 	$effect(() => {
@@ -382,6 +411,12 @@
 			{#if hasMounts}
 				<Tabs.Content value="storage" class="h-full">
 					<ContainerStorage {container} />
+				</Tabs.Content>
+			{/if}
+
+			{#if showCompose}
+				<Tabs.Content value="compose" class="h-full">
+					<CodePanel title="Compose File" bind:open={composeOpen} language="yaml" bind:value={composeContent} readOnly={true} />
 				</Tabs.Content>
 			{/if}
 		{/snippet}
