@@ -77,6 +77,30 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 	assert.True(t, localHandlerHit)
 }
 
+func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	middleware := newTestEnvironmentMiddleware()
+	router := gin.New()
+	api := router.Group("/api")
+	api.Use(middleware.Handle)
+
+	localHandlerHit := false
+	api.GET("/environments/:id/notifications/settings", func(c *gin.Context) {
+		localHandlerHit = true
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/notifications/settings", nil)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "\"success\":true")
+	assert.True(t, localHandlerHit)
+}
+
 func TestEnvironmentMiddleware_ProxyWebSocketRejectsEdgeTargetsWithoutTunnel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

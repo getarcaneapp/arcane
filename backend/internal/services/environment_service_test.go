@@ -26,7 +26,7 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Environment{}, &models.ContainerRegistry{}))
+	require.NoError(t, db.AutoMigrate(&models.Environment{}, &models.ContainerRegistry{}, &models.SettingVariable{}))
 
 	testCfg := &config.Config{
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -39,6 +39,11 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 
 func createTestEnvironment(t *testing.T, db *database.DB, id string, apiURL string, accessToken *string) {
 	t.Helper()
+	createNamedTestEnvironmentInternal(t, db, id, "env-"+id, apiURL, accessToken)
+}
+
+func createNamedTestEnvironmentInternal(t *testing.T, db *database.DB, id, name, apiURL string, accessToken *string) {
+	t.Helper()
 
 	now := time.Now()
 	env := &models.Environment{
@@ -47,7 +52,7 @@ func createTestEnvironment(t *testing.T, db *database.DB, id string, apiURL stri
 			CreatedAt: now,
 			UpdatedAt: &now,
 		},
-		Name:        "env-" + id,
+		Name:        name,
 		ApiUrl:      apiURL,
 		Status:      string(models.EnvironmentStatusOnline),
 		Enabled:     true,
@@ -341,6 +346,25 @@ func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCle
 
 	require.False(t, tokenStillCached)
 	require.False(t, reverseIndexStillCached)
+}
+
+func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	accessToken := "remote-token"
+	createNamedTestEnvironmentInternal(t, db, "env-remote", "Remote Alpha", "http://remote.example", &accessToken)
+
+	env, err := svc.ResolveEnvironmentByAccessToken(ctx, accessToken)
+	require.NoError(t, err)
+	require.NotNil(t, env)
+	require.Equal(t, "env-remote", env.ID)
+	require.Equal(t, "Remote Alpha", env.Name)
+
+	_, err = svc.ResolveEnvironmentByAccessToken(ctx, "missing-token")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidEnvironmentAccessToken)
 }
 
 func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTransport(t *testing.T) {

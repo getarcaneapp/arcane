@@ -6,6 +6,7 @@ import { sharedPreviewProps, sharedTemplateProps } from '../props';
 interface BatchImageUpdatesEmailProps {
   logoURL: string;
   appURL: string;
+  environment: string;
   updateCount: number;
   checkTime: string;
   imageList?: string[];
@@ -14,6 +15,7 @@ interface BatchImageUpdatesEmailProps {
 export const BatchImageUpdatesEmail = ({
   logoURL,
   appURL,
+  environment,
   updateCount,
   checkTime,
   imageList = [],
@@ -38,6 +40,17 @@ export const BatchImageUpdatesEmail = ({
       </Section>
 
       <Section style={infoSectionStyle}>
+        <Row style={infoRowStyle}>
+          <Column style={labelColumnStyle}>
+            <Text style={labelStyle}>Environment:</Text>
+          </Column>
+          <Column>
+            <Text style={valueStyle}>{environment}</Text>
+          </Column>
+        </Row>
+
+        <Hr style={dividerStyle} />
+
         <Row style={infoRowStyle}>
           <Column style={labelColumnStyle}>
             <Text style={labelStyle}>Updates Available:</Text>

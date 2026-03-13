@@ -45,6 +45,11 @@ type edgeTokenCacheEntry struct {
 
 const edgeTokenCacheTTL = time.Minute
 
+var (
+	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
+	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
+)
+
 func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -660,6 +665,25 @@ func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
 }
 
+func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrEnvironmentAccessTokenRequired
+	}
+
+	var env models.Environment
+	if err := s.db.WithContext(ctx).
+		Where("access_token = ?", token).
+		First(&env).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidEnvironmentAccessToken
+		}
+		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
+	}
+
+	return &env, nil
+}
+
 func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	var registries []models.ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
@@ -1046,7 +1070,6 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 		headers["X-Arcane-Agent-Token"] = *environment.AccessToken
 		headers["X-API-Key"] = *environment.AccessToken
 	}
-
 	// Use edge-aware client that routes through tunnel for edge environments
 	resp, err := edge.DoEdgeAwareRequest(proxyCtx, envID, environment.IsEdge, method, targetURL, path, headers, body)
 	if err != nil {

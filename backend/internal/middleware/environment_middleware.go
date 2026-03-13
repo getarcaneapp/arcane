@@ -151,49 +151,12 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 
 	isEdgeEnvironment := isEdgeEnvironmentURLInternal(apiURL)
 
-	// Check if this environment has an active edge tunnel
-	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
-		slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
-
-		// Inject agent token into request headers before proxying through the tunnel.
-		// ProxyHTTPRequest and ProxyWebSocketRequest copy headers from c.Request.Header,
-		// so setting the token here ensures the agent receives proper authentication.
-		// Without this, the agent's agentAuth middleware rejects requests with 401
-		// because the browser's session cookies are not valid on the agent.
-		if accessToken != nil && *accessToken != "" {
-			c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
-			c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
-		}
-
-		proxyPath := m.buildProxyPath(c, envID)
-		if m.isWebSocketUpgrade(c) {
-			// Route WebSocket through the edge tunnel
-			edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
-		} else {
-			edge.ProxyHTTPRequest(c, tunnel, proxyPath)
-		}
-		c.Abort()
+	if m.proxyActiveEdgeTunnelInternal(c, envID, accessToken) {
 		return
 	}
 
 	if isEdgeEnvironment {
-		edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
-		tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edge.DefaultTunnelAcquireTimeout())
-		if ok {
-			slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
-			// Inject agent token headers for the recovered tunnel path.
-			if accessToken != nil && *accessToken != "" {
-				c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
-				c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
-			}
-
-			proxyPath := m.buildProxyPath(c, envID)
-			if m.isWebSocketUpgrade(c) {
-				edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
-			} else {
-				edge.ProxyHTTPRequest(c, tunnel, proxyPath)
-			}
-			c.Abort()
+		if m.proxyRecoveredEdgeTunnelInternal(c, envID, accessToken) {
 			return
 		}
 
@@ -211,6 +174,51 @@ func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
 	}
 }
 
+func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c *gin.Context, envID string, accessToken *string) bool {
+	tunnel, ok := m.getActiveEdgeTunnelInternal(envID)
+	if !ok {
+		return false
+	}
+
+	slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
+	m.setProxyContextHeadersInternal(c, accessToken)
+	m.proxyThroughTunnelInternal(c, tunnel, envID)
+	return true
+}
+
+func (m *EnvironmentMiddleware) proxyRecoveredEdgeTunnelInternal(c *gin.Context, envID string, accessToken *string) bool {
+	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
+
+	tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edge.DefaultTunnelAcquireTimeout())
+	if !ok {
+		return false
+	}
+
+	slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
+	m.setProxyContextHeadersInternal(c, accessToken)
+	m.proxyThroughTunnelInternal(c, tunnel, envID)
+	return true
+}
+
+func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c *gin.Context, accessToken *string) {
+	// ProxyHTTPRequest and ProxyWebSocketRequest copy headers from c.Request.Header,
+	// so setting these here ensures the agent receives proper authentication.
+	if accessToken != nil && *accessToken != "" {
+		c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
+		c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
+	}
+}
+
+func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c *gin.Context, tunnel *edge.AgentTunnel, envID string) {
+	proxyPath := m.buildProxyPath(c, envID)
+	if m.isWebSocketUpgrade(c) {
+		edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
+	} else {
+		edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+	}
+	c.Abort()
+}
+
 // hasResourcePath reports whether the request targets a proxiable resource path.
 // Returns true for paths like /api/environments/{id}/containers (should be proxied).
 // Returns false for /api/environments/{id} exactly or any management endpoint.
@@ -219,8 +227,16 @@ func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bo
 	if !ok || len(suffix) <= 1 || suffix[0] != '/' {
 		return false
 	}
+	return !isManagementPathInternal(suffix)
+}
+
+func isManagementPathInternal(suffix string) bool {
+	if strings.HasPrefix(suffix, "/notifications") {
+		return true
+	}
+
 	_, isManagement := managementEndpointSet[suffix]
-	return !isManagement
+	return isManagement
 }
 
 // extractEnvironmentID gets the environment ID from the request.

@@ -874,7 +874,7 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environ
 		}(detachedCtx, environmentID, updated.Name)
 	}
 
-	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
+	if updated.AccessToken != nil && *updated.AccessToken != "" && (pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") || req.Name != nil) {
 		h.triggerEnvironmentResourceSync(ctx, environmentID, updated.Name, "environment update")
 	}
 }

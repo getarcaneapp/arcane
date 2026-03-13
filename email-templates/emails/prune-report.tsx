@@ -6,6 +6,7 @@ import { sharedPreviewProps, sharedTemplateProps } from '../props';
 interface PruneReportEmailProps {
   logoURL: string;
   appURL: string;
+  environment: string;
   totalSpaceReclaimed: string;
   containerSpaceReclaimed: string;
   imageSpaceReclaimed: string;
@@ -17,6 +18,7 @@ interface PruneReportEmailProps {
 export const PruneReportEmail = ({
   logoURL,
   appURL,
+  environment,
   totalSpaceReclaimed,
   containerSpaceReclaimed,
   imageSpaceReclaimed,
@@ -34,6 +36,17 @@ export const PruneReportEmail = ({
       </Section>
 
       <Section style={breakdownSectionStyle}>
+        <Row style={infoRowStyle}>
+          <Column style={labelColumnStyle}>
+            <Text style={labelStyle}>Environment:</Text>
+          </Column>
+          <Column>
+            <Text style={valueStyle}>{environment}</Text>
+          </Column>
+        </Row>
+
+        <Hr style={dividerStyle} />
+
         <Row style={infoRowStyle}>
           <Column style={labelColumnStyle}>
             <Text style={labelStyle}>Containers:</Text>

@@ -6,6 +6,7 @@ import { sharedPreviewProps, sharedTemplateProps } from '../props';
 interface ImageUpdateEmailProps {
   logoURL: string;
   appURL: string;
+  environment: string;
   imageRef: string;
   hasUpdate: boolean;
   updateType: string;
@@ -17,6 +18,7 @@ interface ImageUpdateEmailProps {
 export const ImageUpdateEmail = ({
   logoURL,
   appURL,
+  environment,
   imageRef,
   hasUpdate,
   updateType,
@@ -44,6 +46,17 @@ export const ImageUpdateEmail = ({
       </Section>
 
       <Section style={infoSectionStyle}>
+        <Row style={infoRowStyle}>
+          <Column style={labelColumnStyle}>
+            <Text style={labelStyle}>Environment:</Text>
+          </Column>
+          <Column>
+            <Text style={valueStyle}>{environment}</Text>
+          </Column>
+        </Row>
+
+        <Hr style={dividerStyle} />
+
         <Row style={infoRowStyle}>
           <Column style={labelColumnStyle}>
             <Text style={labelStyle}>Image:</Text>

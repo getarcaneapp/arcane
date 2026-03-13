@@ -475,13 +475,6 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
-			{#if isReadOnly}
-				<Alert.Root variant="default" class="mb-4 sm:mb-6">
-					<Alert.Title>{m.notifications_read_only_title()}</Alert.Title>
-					<Alert.Description>{m.notifications_read_only_description()}</Alert.Description>
-				</Alert.Root>
-			{/if}
-
 			<Tabs.Root bind:value={notificationsTab}>
 				<Tabs.List class="inline-flex w-auto">
 					<Tabs.Trigger value="built-in">{m.notifications_tab_built_in()}</Tabs.Trigger>

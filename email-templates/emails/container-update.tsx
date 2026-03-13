@@ -6,6 +6,7 @@ import { sharedPreviewProps, sharedTemplateProps } from '../props';
 interface ContainerUpdateEmailProps {
   logoURL: string;
   appURL: string;
+  environment: string;
   containerName: string;
   imageRef: string;
   oldDigest: string;
@@ -16,6 +17,7 @@ interface ContainerUpdateEmailProps {
 export const ContainerUpdateEmail = ({
   logoURL,
   appURL,
+  environment,
   containerName,
   imageRef,
   oldDigest,
@@ -38,6 +40,17 @@ export const ContainerUpdateEmail = ({
       </Section>
 
       <Section style={infoSectionStyle}>
+        <Row style={infoRowStyle}>
+          <Column style={labelColumnStyle}>
+            <Text style={labelStyle}>Environment:</Text>
+          </Column>
+          <Column>
+            <Text style={valueStyle}>{environment}</Text>
+          </Column>
+        </Row>
+
+        <Hr style={dividerStyle} />
+
         <Row style={infoRowStyle}>
           <Column style={labelColumnStyle}>
             <Text style={labelStyle}>Container:</Text>

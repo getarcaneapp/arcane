@@ -9,12 +9,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	"gorm.io/gorm"
 )
@@ -160,31 +160,19 @@ func (s *AppriseService) SendNotification(ctx context.Context, title, body, form
 	return nil
 }
 
-func (s *AppriseService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response) error {
-	title := fmt.Sprintf("Container Image Update Available: %s", imageRef)
-	body := fmt.Sprintf(
-		"Image: %s\nUpdate Type: %s\nCurrent Digest: %s\nLatest Digest: %s",
-		imageRef,
-		updateInfo.UpdateType,
-		updateInfo.CurrentDigest,
-		updateInfo.LatestDigest,
-	)
+func (s *AppriseService) SendImageUpdateNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response) error {
+	title := fmt.Sprintf("[%s] Container Image Update Available: %s", environmentName, imageRef)
+	body := notifications.BuildImageUpdateNotificationMessage(notifications.MessageFormatPlain, environmentName, imageRef, updateInfo)
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
 }
 
-func (s *AppriseService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
-	title := fmt.Sprintf("Container Updated: %s", containerName)
-	body := fmt.Sprintf(
-		"Container: %s\nImage: %s\nPrevious Version: %s\nCurrent Version: %s\nStatus: Updated Successfully",
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
+func (s *AppriseService) SendContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string) error {
+	title := fmt.Sprintf("[%s] Container Updated: %s", environmentName, containerName)
+	body := notifications.BuildContainerUpdateNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName, imageRef, oldDigest, newDigest)
 	return s.SendNotification(ctx, title, body, "text", models.NotificationEventContainerUpdate)
 }
 
-func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) error {
+func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response) error {
 	if len(updates) == 0 {
 		return nil
 	}
@@ -200,33 +188,23 @@ func (s *AppriseService) SendBatchImageUpdateNotification(ctx context.Context, u
 		return nil
 	}
 
-	title := fmt.Sprintf("%d Container Image Update(s) Available", len(updatesWithChanges))
-	var body strings.Builder
-	body.WriteString("The following images have updates available:\n\n")
+	title := fmt.Sprintf("[%s] %d Container Image Update(s) Available", environmentName, len(updatesWithChanges))
+	body := notifications.BuildBatchImageUpdateNotificationMessage(notifications.MessageFormatPlain, environmentName, updatesWithChanges)
 
-	for imageRef, update := range updatesWithChanges {
-		fmt.Fprintf(&body, "• %s\n  Type: %s\n  Current: %s\n  Latest: %s\n\n",
-			imageRef,
-			update.UpdateType,
-			update.CurrentDigest,
-			update.LatestDigest,
-		)
-	}
-
-	return s.SendNotification(ctx, title, body.String(), "text", models.NotificationEventImageUpdate)
+	return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
 }
 
-func (s *AppriseService) TestNotification(ctx context.Context, testType string) error {
+func (s *AppriseService) TestNotification(ctx context.Context, environmentName, testType string) error {
 	switch testType {
 	case "vulnerability-found":
-		title := "Vulnerability Summary Notification"
+		title := notifications.BuildEmailSubject(environmentName, "Vulnerability Summary Notification")
 		body := fmt.Sprintf(
 			"Summary Date: %s\nCritical: 1\nHigh: 3\nMedium: 2\nLow: 1\nUnknown: 0\nFixable vulnerabilities: 7\nExamples: CVE-2025-1234, CVE-2025-5678, CVE-2026-0001",
 			time.Now().UTC().Format("2006-01-02"),
 		)
 		return s.SendNotification(ctx, title, body, "text", models.NotificationEventVulnerabilityFound)
 	case "prune-report":
-		title := "System Prune Report"
+		title := notifications.BuildEmailSubject(environmentName, "System Prune Report")
 		body := "Containers pruned: 2\nImages deleted: 1\nVolumes deleted: 1\nNetworks deleted: 1\nSpace reclaimed: 3.56 GB"
 		return s.SendNotification(ctx, title, body, "text", models.NotificationEventPruneReport)
 	case "image-update":
@@ -238,7 +216,7 @@ func (s *AppriseService) TestNotification(ctx context.Context, testType string) 
 			CheckTime:      time.Now(),
 			ResponseTimeMs: 100,
 		}
-		return s.SendImageUpdateNotification(ctx, "nginx:latest", testUpdate)
+		return s.SendImageUpdateNotification(ctx, environmentName, "nginx:latest", testUpdate)
 	case "batch-image-update":
 		testUpdates := map[string]*imageupdate.Response{
 			"nginx:latest": {
@@ -266,9 +244,9 @@ func (s *AppriseService) TestNotification(ctx context.Context, testType string) 
 				ResponseTimeMs: 95,
 			},
 		}
-		return s.SendBatchImageUpdateNotification(ctx, testUpdates)
+		return s.SendBatchImageUpdateNotification(ctx, environmentName, testUpdates)
 	case "simple", "":
-		title := "Test Notification from Arcane"
+		title := notifications.BuildEmailSubject(environmentName, "Test Notification from Arcane")
 		body := "If you're reading this, your Apprise integration is working correctly!"
 		return s.SendNotification(ctx, title, body, "text", models.NotificationEventImageUpdate)
 	default:

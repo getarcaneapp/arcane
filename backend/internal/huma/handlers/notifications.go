@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -16,6 +18,7 @@ import (
 type NotificationHandler struct {
 	notificationService *services.NotificationService
 	appriseService      *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
+	config              *config.Config
 }
 
 type GetAllNotificationSettingsInput struct {
@@ -89,6 +92,15 @@ type TestAppriseNotificationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type DispatchNotificationInput struct {
+	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
+	Body   notification.DispatchRequest
+}
+
+type DispatchNotificationOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 var supportedNotificationTestTypes = map[string]struct{}{
 	"simple":              {},
 	"image-update":        {},
@@ -114,10 +126,11 @@ func isSupportedNotificationTestType(testType string) bool {
 // RegisterNotifications registers notification endpoints.
 //
 //nolint:staticcheck // AppriseService still functional, deprecated in favor of Shoutrrr
-func RegisterNotifications(api huma.API, notificationSvc *services.NotificationService, appriseSvc *services.AppriseService) {
+func RegisterNotifications(api huma.API, notificationSvc *services.NotificationService, appriseSvc *services.AppriseService, cfg *config.Config) {
 	h := &NotificationHandler{
 		notificationService: notificationSvc,
 		appriseService:      appriseSvc,
+		config:              cfg,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -191,10 +204,29 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.TestAppriseNotification)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "dispatch-notification",
+		Method:      http.MethodPost,
+		Path:        "/notifications/dispatch",
+		Summary:     "Dispatch notification from remote agent to manager",
+		Tags:        []string{"Notifications"},
+		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
+	}, h.DispatchNotification)
+}
+
+func (h *NotificationHandler) rejectIfAgentModeInternal() error {
+	if h.config != nil && h.config.AgentMode {
+		return huma.Error400BadRequest("notifications are managed on the Arcane manager")
+	}
+	return nil
 }
 
 func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
 	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
 	settings, err := h.notificationService.GetAllSettings(ctx)
@@ -219,6 +251,9 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 	if err := checkAdmin(ctx); err != nil {
 		return nil, err
 	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
@@ -238,6 +273,9 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
 	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
 	provider := models.NotificationProvider(input.Body.Provider)
@@ -269,6 +307,9 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	if err := checkAdmin(ctx); err != nil {
 		return nil, err
 	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
@@ -287,13 +328,16 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 	if err := checkAdmin(ctx); err != nil {
 		return nil, err
 	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
 	provider := models.NotificationProvider(input.Provider)
 	testType := normalizeNotificationTestType(input.Type)
 	if !isSupportedNotificationTestType(testType) {
 		return nil, huma.Error400BadRequest("invalid notification test type")
 	}
 
-	if err := h.notificationService.TestNotification(ctx, provider, testType); err != nil {
+	if err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType); err != nil {
 		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
 	}
 
@@ -307,6 +351,9 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 
 func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *GetAppriseSettingsInput) (*GetAppriseSettingsOutput, error) {
 	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
 	settings, err := h.appriseService.GetSettings(ctx)
@@ -330,6 +377,9 @@ func (h *NotificationHandler) GetAppriseSettings(ctx context.Context, input *Get
 
 func (h *NotificationHandler) CreateOrUpdateAppriseSettings(ctx context.Context, input *CreateOrUpdateAppriseSettingsInput) (*CreateOrUpdateAppriseSettingsOutput, error) {
 	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
 	if input.Body.Enabled && input.Body.APIURL == "" {
@@ -362,11 +412,18 @@ func (h *NotificationHandler) TestAppriseNotification(ctx context.Context, input
 	if err := checkAdmin(ctx); err != nil {
 		return nil, err
 	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
 	testType := normalizeNotificationTestType(input.Type)
 	if !isSupportedNotificationTestType(testType) {
 		return nil, huma.Error400BadRequest("invalid notification test type")
 	}
-	if err := h.appriseService.TestNotification(ctx, testType); err != nil {
+	target, err := h.notificationService.ResolveNotificationTarget(ctx, input.EnvironmentID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.AppriseTestError{Err: err}).Error())
+	}
+	if err := h.appriseService.TestNotification(ctx, target.EnvironmentName, testType); err != nil {
 		return nil, huma.Error500InternalServerError((&common.AppriseTestError{Err: err}).Error())
 	}
 
@@ -374,6 +431,31 @@ func (h *NotificationHandler) TestAppriseNotification(ctx context.Context, input
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Test notification sent successfully"},
+		},
+	}, nil
+}
+
+func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *DispatchNotificationInput) (*DispatchNotificationOutput, error) {
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.APIKey) == "" {
+		return nil, huma.Error401Unauthorized("missing remote environment access token")
+	}
+	if err := h.notificationService.DispatchNotification(ctx, input.APIKey, input.Body); err != nil {
+		if errors.Is(err, services.ErrUnsupportedDispatchKind) {
+			return nil, huma.Error400BadRequest("unsupported dispatch kind")
+		}
+		if errors.Is(err, services.ErrUnauthorizedNotificationDispatch) {
+			return nil, huma.Error401Unauthorized("unauthorized")
+		}
+		return nil, huma.Error500InternalServerError("dispatch failed")
+	}
+
+	return &DispatchNotificationOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Notification dispatched successfully"},
 		},
 	}, nil
 }
