@@ -393,10 +393,17 @@ test.describe('New Compose Project Page', () => {
   });
 
   test('should send selected deploy split-button options in the up request', async ({ page }) => {
+    // Use a wider viewport to prevent the header's project-name area from
+    // overlapping the deploy split-button trigger at the 1280px boundary.
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     const projectName = `test-deploy-options-${Date.now()}`;
 
     try {
       await createProjectViaUI(page, projectName);
+
+      // Reset scroll so the floating header doesn't appear from stale scroll state
+      await page.evaluate(() => window.scrollTo(0, 0));
 
       await page.route('**/api/environments/*/projects/*/up', async (route) => {
         await route.fulfill({
