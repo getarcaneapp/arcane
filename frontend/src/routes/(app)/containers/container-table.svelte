@@ -4,7 +4,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
@@ -13,12 +13,17 @@
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { containerService } from '$lib/services/container-service';
+	import {
+		containerService,
+		type ContainerListRequestOptions,
+		type ContainersPaginatedResponse
+	} from '$lib/services/container-service';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
+	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -28,8 +33,8 @@
 		getActionStatusMessage,
 		getContainerDisplayName,
 		getContainerIpAddress,
+		getProjectName,
 		getStateBadgeVariant,
-		groupContainerByProject,
 		parseImageRef,
 		type ActionStatus
 	} from './container-table.helpers';
@@ -54,12 +59,14 @@
 		containers = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		groupByProject = $bindable(false),
 		onRefreshData
 	}: {
-		containers: Paginated<ContainerSummaryDto>;
+		containers: ContainersPaginatedResponse;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		groupByProject?: boolean;
+		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
@@ -74,12 +81,21 @@
 
 	const statsManager = new ContainerStatsManager();
 
-	async function refreshContainers(options: SearchPaginationSortRequest) {
+	function buildGroupedRequest(options: SearchPaginationSortRequest, grouped = groupByProject): ContainerListRequestOptions {
+		return {
+			...options,
+			groupByProject: grouped
+		};
+	}
+
+	async function refreshContainers(options: SearchPaginationSortRequest, grouped = groupByProject) {
+		const request = buildGroupedRequest(options, grouped);
 		if (onRefreshData) {
-			await onRefreshData(options);
-			return containers;
+			const result = await onRefreshData(request);
+			containers = result;
+			return result;
 		}
-		const result = await containerService.getContainers(options);
+		const result = await containerService.getContainers(request);
 		containers = result;
 		return result;
 	}
@@ -112,13 +128,13 @@
 		handleBulkRestart,
 		handleBulkRemove
 	} = createContainerActions({
-		getRequestOptions: () => requestOptions,
 		setContainers: (next) => {
 			containers = next;
 		},
 		setSelectedIds: (next) => {
 			selectedIds = next;
 		},
+		refreshContainers: () => refreshContainers(requestOptions),
 		actionStatus,
 		isBulkLoading
 	});
@@ -135,6 +151,12 @@
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
+	const backendGroupedRows = $derived(
+		containers.groups?.map((group) => ({
+			groupName: group.groupName,
+			items: group.items
+		})) ?? null
+	);
 
 	const shouldConnect = $derived.by(() => {
 		const cpuVisible = columnVisibility.cpuUsage !== false;
@@ -151,11 +173,6 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 
-	$effect(() => {
-		statsManager.envId = currentEnvId;
-		statsManager.targetIds = shouldConnect;
-	});
-
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
 
@@ -165,17 +182,34 @@
 			setShowInternal(persistedInternal);
 		}
 
+		const persistedGroupByProject = (customSettings.groupByProject as boolean) ?? false;
+		if (persistedGroupByProject !== groupByProject) {
+			groupByProject = persistedGroupByProject;
+		}
+
+		if (persistedGroupByProject) {
+			const nextOptions: SearchPaginationSortRequest = {
+				...requestOptions,
+				pagination: { page: 1, limit: getCurrentLimit() }
+			};
+			requestOptions = nextOptions;
+			void refreshContainers(nextOptions, true);
+		}
+
 		return () => {
 			statsManager.destroy();
 		};
 	});
 
-	let groupByProject = $derived.by(() => {
-		return (customSettings.groupByProject as boolean) ?? false;
-	});
-
 	function setGroupByProject(value: boolean) {
 		customSettings = { ...customSettings, groupByProject: value };
+		groupByProject = value;
+		const nextOptions: SearchPaginationSortRequest = {
+			...requestOptions,
+			pagination: { page: 1, limit: getCurrentLimit() }
+		};
+		requestOptions = nextOptions;
+		void refreshContainers(nextOptions, value);
 	}
 
 	function toggleGroup(groupName: string) {
@@ -279,7 +313,13 @@
 	function getGroupIcon(_groupName: string) {
 		return ProjectsIcon;
 	}
+
+	function getGroupName(item: ContainerSummaryDto): string {
+		return getProjectName(item);
+	}
 </script>
+
+<ContainerStatsSync {statsManager} envId={currentEnvId} targetIds={shouldConnect} />
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
 	{@const ip = getContainerIpAddress(item)}
@@ -633,7 +673,8 @@
 	rowActions={RowActions}
 	mobileCard={ContainerMobileCardSnippet}
 	customViewOptions={CustomViewOptions}
-	groupBy={groupByProject ? groupContainerByProject : undefined}
+	groupedRows={groupByProject ? backendGroupedRows : null}
+	groupBy={groupByProject && !backendGroupedRows ? getGroupName : undefined}
 	groupIcon={groupByProject ? getGroupIcon : undefined}
 	groupCollapsedState={collapsedGroups}
 	onGroupToggle={toggleGroup}

@@ -35,6 +35,18 @@ type ContainerService struct {
 	settingsService *SettingsService
 }
 
+const (
+	containerGroupByProject = "project"
+	containerNoProjectGroup = "No Project"
+)
+
+type ContainerListResult struct {
+	Items      []containertypes.Summary
+	Groups     []containertypes.SummaryGroup
+	Pagination pagination.Response
+	Counts     containertypes.StatusCounts
+}
+
 func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService) *ContainerService {
 	return &ContainerService{
 		db:              db,
@@ -436,15 +448,21 @@ func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- strin
 	return nil
 }
 
-func (s *ContainerService) ListContainersPaginated(ctx context.Context, params pagination.QueryParams, includeAll bool, includeInternal bool) ([]containertypes.Summary, pagination.Response, containertypes.StatusCounts, error) {
+func (s *ContainerService) ListContainersPaginated(
+	ctx context.Context,
+	params pagination.QueryParams,
+	includeAll bool,
+	includeInternal bool,
+	groupBy string,
+) (ContainerListResult, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return ContainerListResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: includeAll})
 	if err != nil {
-		return nil, pagination.Response{}, containertypes.StatusCounts{}, fmt.Errorf("failed to list Docker containers: %w", err)
+		return ContainerListResult{}, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
 	dockerContainers := containerList.Items
 
@@ -454,11 +472,149 @@ func (s *ContainerService) ListContainersPaginated(ctx context.Context, params p
 	items := s.buildContainerSummaries(dockerContainers, updateInfoMap)
 
 	config := s.buildContainerPaginationConfig()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
 	counts := s.calculateContainerStatusCounts(items)
+
+	if groupBy == containerGroupByProject {
+		ungroupedParams := params
+		ungroupedParams.Start = 0
+		ungroupedParams.Limit = -1
+
+		result := pagination.SearchOrderAndPaginate(items, ungroupedParams, config)
+		groups, paginationResp := paginateContainerProjectGroupsInternal(result, params)
+		return ContainerListResult{
+			Items:      flattenContainerProjectGroupsInternal(groups),
+			Groups:     groups,
+			Pagination: paginationResp,
+			Counts:     counts,
+		}, nil
+	}
+
+	result := pagination.SearchOrderAndPaginate(items, params, config)
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
-	return result.Items, paginationResp, counts, nil
+	return ContainerListResult{
+		Items:      result.Items,
+		Pagination: paginationResp,
+		Counts:     counts,
+	}, nil
+}
+
+func paginateContainerProjectGroupsInternal(
+	result pagination.FilterResult[containertypes.Summary],
+	params pagination.QueryParams,
+) ([]containertypes.SummaryGroup, pagination.Response) {
+	groups := groupContainersByProjectInternal(result.Items)
+	groupedItems := flattenContainerProjectGroupsInternal(groups)
+	totalCount := len(groupedItems)
+
+	if params.Limit <= 0 {
+		return groups, pagination.Response{
+			TotalPages:      1,
+			TotalItems:      int64(totalCount),
+			CurrentPage:     1,
+			ItemsPerPage:    totalCount,
+			GrandTotalItems: result.TotalAvailable,
+		}
+	}
+
+	pages := partitionContainerProjectPagesInternal(groups, params.Limit)
+	requestedPage := 1
+	if params.Limit > 0 {
+		requestedPage = (params.Start / params.Limit) + 1
+	}
+
+	if requestedPage < 1 {
+		requestedPage = 1
+	}
+
+	totalPages := len(pages)
+	if totalPages == 0 {
+		totalPages = 1
+	}
+	if requestedPage > totalPages {
+		requestedPage = totalPages
+	}
+
+	pageGroups := []containertypes.SummaryGroup{}
+	if len(pages) > 0 {
+		pageGroups = pages[requestedPage-1]
+	}
+
+	return pageGroups, pagination.Response{
+		TotalPages:      int64(totalPages),
+		TotalItems:      int64(totalCount),
+		CurrentPage:     requestedPage,
+		ItemsPerPage:    params.Limit,
+		GrandTotalItems: result.TotalAvailable,
+	}
+}
+
+func groupContainersByProjectInternal(items []containertypes.Summary) []containertypes.SummaryGroup {
+	groups := make([]containertypes.SummaryGroup, 0)
+	groupIndexes := make(map[string]int)
+
+	for _, item := range items {
+		groupName := getContainerProjectNameInternal(item)
+		groupIndex, exists := groupIndexes[groupName]
+		if !exists {
+			groupIndex = len(groups)
+			groupIndexes[groupName] = groupIndex
+			groups = append(groups, containertypes.SummaryGroup{GroupName: groupName})
+		}
+
+		groups[groupIndex].Items = append(groups[groupIndex].Items, item)
+	}
+
+	return groups
+}
+
+func flattenContainerProjectGroupsInternal(groups []containertypes.SummaryGroup) []containertypes.Summary {
+	flattened := make([]containertypes.Summary, 0)
+	for _, group := range groups {
+		flattened = append(flattened, group.Items...)
+	}
+
+	return flattened
+}
+
+func partitionContainerProjectPagesInternal(groups []containertypes.SummaryGroup, limit int) [][]containertypes.SummaryGroup {
+	if len(groups) == 0 {
+		return [][]containertypes.SummaryGroup{{}}
+	}
+
+	pages := make([][]containertypes.SummaryGroup, 0)
+	currentPage := make([]containertypes.SummaryGroup, 0)
+	currentCount := 0
+
+	for _, group := range groups {
+		currentPage = append(currentPage, group)
+		currentCount += len(group.Items)
+
+		if currentCount >= limit {
+			pages = append(pages, currentPage)
+			currentPage = make([]containertypes.SummaryGroup, 0)
+			currentCount = 0
+		}
+	}
+
+	if len(currentPage) > 0 || len(pages) == 0 {
+		pages = append(pages, currentPage)
+	}
+
+	return pages
+}
+
+func getContainerProjectNameInternal(container containertypes.Summary) string {
+	if container.Labels == nil {
+		return containerNoProjectGroup
+	}
+
+	projectName := strings.TrimSpace(container.Labels["com.docker.compose.project"])
+	if projectName == "" {
+		return containerNoProjectGroup
+	}
+
+	return projectName
 }
 
 func filterInternalContainers(containers []container.Summary, includeInternal bool) []container.Summary {
