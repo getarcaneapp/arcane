@@ -94,7 +94,7 @@
 		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(!isGitOpsManaged);
-	let canEditEnv = $derived(!isGitOpsManaged);
+	let canEditEnv = true;
 
 	let autoScrollStackLogs = $state(true);
 
@@ -287,6 +287,11 @@
 
 	const allComposeContents = $derived.by(() => {
 		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
+	});
+	const codeEditorContext = $derived({
+		envContent: $inputs.envContent.value,
+		composeContents: allComposeContents,
+		globalVariables: globalVariableMap
 	});
 
 	async function refreshProjectDetails() {
@@ -589,11 +594,7 @@
 											fileId={`project:${projectId}:compose`}
 											originalValue={originalComposeContent}
 											enableDiff={true}
-											editorContext={{
-												envContent: $inputs.envContent.value,
-												composeContents: allComposeContents,
-												globalVariables: globalVariableMap
-											}}
+											editorContext={codeEditorContext}
 										/>
 									{:else if selectedFile === 'env'}
 										<CodePanel
@@ -608,11 +609,7 @@
 											fileId={`project:${projectId}:env`}
 											originalValue={originalEnvContent}
 											enableDiff={true}
-											editorContext={{
-												envContent: $inputs.envContent.value,
-												composeContents: allComposeContents,
-												globalVariables: globalVariableMap
-											}}
+											editorContext={codeEditorContext}
 										/>
 									{:else}
 										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -627,11 +624,7 @@
 												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
 												originalValue={originalIncludeFiles[includeFile.relativePath]}
 												enableDiff={true}
-												editorContext={{
-													envContent: $inputs.envContent.value,
-													composeContents: allComposeContents,
-													globalVariables: globalVariableMap
-												}}
+												editorContext={codeEditorContext}
 											/>
 										{/if}
 									{/if}
@@ -714,11 +707,7 @@
 												fileId={`project:${projectId}:compose`}
 												originalValue={originalComposeContent}
 												enableDiff={true}
-												editorContext={{
-													envContent: $inputs.envContent.value,
-													composeContents: allComposeContents,
-													globalVariables: globalVariableMap
-												}}
+												editorContext={codeEditorContext}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -733,11 +722,7 @@
 												fileId={`project:${projectId}:env`}
 												originalValue={originalEnvContent}
 												enableDiff={true}
-												editorContext={{
-													envContent: $inputs.envContent.value,
-													composeContents: allComposeContents,
-													globalVariables: globalVariableMap
-												}}
+												editorContext={codeEditorContext}
 											/>
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
@@ -752,11 +737,7 @@
 													fileId={`project:${projectId}:include:${includeFile.relativePath}`}
 													originalValue={originalIncludeFiles[includeFile.relativePath]}
 													enableDiff={true}
-													editorContext={{
-														envContent: $inputs.envContent.value,
-														composeContents: allComposeContents,
-														globalVariables: globalVariableMap
-													}}
+													editorContext={codeEditorContext}
 												/>
 											{/if}
 										{/if}
@@ -799,11 +780,7 @@
 											fileId={`project:${projectId}:include:${includeFile.relativePath}`}
 											originalValue={originalIncludeFiles[includeFile.relativePath]}
 											enableDiff={true}
-											editorContext={{
-												envContent: $inputs.envContent.value,
-												composeContents: allComposeContents,
-												globalVariables: globalVariableMap
-											}}
+											editorContext={codeEditorContext}
 										/>
 									{/if}
 								{:else}
@@ -820,11 +797,7 @@
 											fileId={`project:${projectId}:compose`}
 											originalValue={originalComposeContent}
 											enableDiff={true}
-											editorContext={{
-												envContent: $inputs.envContent.value,
-												composeContents: allComposeContents,
-												globalVariables: globalVariableMap
-											}}
+											editorContext={codeEditorContext}
 										/>
 										<CodePanel
 											bind:open={envOpen}
@@ -838,11 +811,7 @@
 											fileId={`project:${projectId}:env`}
 											originalValue={originalEnvContent}
 											enableDiff={true}
-											editorContext={{
-												envContent: $inputs.envContent.value,
-												composeContents: allComposeContents,
-												globalVariables: globalVariableMap
-											}}
+											editorContext={codeEditorContext}
 										/>
 									</div>
 
@@ -872,11 +841,7 @@
 													fileId={`project:${projectId}:compose`}
 													originalValue={originalComposeContent}
 													enableDiff={true}
-													editorContext={{
-														envContent: $inputs.envContent.value,
-														composeContents: allComposeContents,
-														globalVariables: globalVariableMap
-													}}
+													editorContext={codeEditorContext}
 												/>
 											</div>
 										{/snippet}
@@ -895,11 +860,7 @@
 													fileId={`project:${projectId}:env`}
 													originalValue={originalEnvContent}
 													enableDiff={true}
-													editorContext={{
-														envContent: $inputs.envContent.value,
-														composeContents: allComposeContents,
-														globalVariables: globalVariableMap
-													}}
+													editorContext={codeEditorContext}
 												/>
 											</div>
 										{/snippet}
