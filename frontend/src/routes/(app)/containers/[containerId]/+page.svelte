@@ -427,7 +427,7 @@
 
 			{#if project && serviceComposeSource}
 				<Tabs.Content value="compose" class="h-full min-h-0">
-					{#key serviceComposeSource?.includeFile?.relativePath ?? 'root'}
+					{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
 						<ContainerComposePanel {project} serviceName={composeServiceName} includeFile={serviceComposeSource.includeFile} />
 					{/key}
 				</Tabs.Content>
