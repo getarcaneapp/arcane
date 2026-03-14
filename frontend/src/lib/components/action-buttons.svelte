@@ -420,8 +420,10 @@
 								toast.success(m.common_redeploy_success({ type: name || type }));
 								if (type === 'container' && data?.containerId) {
 									goto(`/containers/${data.containerId}`);
-								} else {
+								} else if (type === 'container') {
 									goto('/containers');
+								} else {
+									onActionComplete('running');
 								}
 							}
 						});

@@ -225,8 +225,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if wasRunning {
-		timeout := 30
-		_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+		_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: func() *int { v := 30; return &v }()})
 		if err != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
 				"action": "redeploy",
@@ -266,7 +265,15 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return "", fmt.Errorf("failed to recreate container: %w", err)
 	}
 
-	if wasRunning {
+	shouldStart := wasRunning
+	if containerInfo.HostConfig != nil {
+		rp := containerInfo.HostConfig.RestartPolicy.Name
+		if rp == "always" || rp == "unless-stopped" || rp == "on-failure" {
+			shouldStart = true
+		}
+	}
+
+	if shouldStart {
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
 			_, _ = dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
