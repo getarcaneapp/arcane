@@ -57,7 +57,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 		case "vulnerabilityScanInterval":
 			require.Equal(t, "0 0 0 * * *", sv.Value)
 		case "trivyNetwork":
-			require.Equal(t, "bridge", sv.Value)
+			require.Equal(t, "", sv.Value)
 		case "trivySecurityOpts":
 			require.Equal(t, "", sv.Value)
 		case "trivyPrivileged":
@@ -187,7 +187,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 
 	settings1, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "bridge", settings1.TrivyNetwork.Value)
+	require.Equal(t, "", settings1.TrivyNetwork.Value)
 
 	t.Setenv("TRIVY_NETWORK", "arcane-external")
 	settings2, err := svc.GetSettings(ctx)

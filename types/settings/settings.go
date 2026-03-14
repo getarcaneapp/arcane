@@ -188,7 +188,7 @@ type Update struct {
 	TrivyImage *string `json:"trivyImage,omitempty"`
 
 	// TrivyNetwork sets the Docker network mode/network name for Trivy scan containers.
-	// Defaults to "bridge".
+	// Leave empty to inherit Arcane's network automatically, with bridge as the final fallback.
 	//
 	// Required: false
 	TrivyNetwork *string `json:"trivyNetwork,omitempty"`

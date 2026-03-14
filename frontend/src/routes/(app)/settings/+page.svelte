@@ -32,6 +32,7 @@
 	let isSearching = $state(false);
 	let settingsCategories = $state<SettingsCategory[]>([]);
 	let currentSearchRequest = $state(0);
+	const hiddenCategoryUrls = new Set(['/settings/security']);
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
@@ -48,7 +49,7 @@
 
 	onMount(async () => {
 		try {
-			settingsCategories = await settingsSearchService.getCategories();
+			settingsCategories = sortCategories((await settingsSearchService.getCategories()).filter(isVisibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -73,7 +74,7 @@
 		try {
 			const response = await settingsSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = response.results || [];
+				searchResults = sortCategories((response.results || []).filter(isVisibleCategory));
 				isSearching = false;
 			}
 		} catch (error) {
@@ -91,6 +92,14 @@
 
 	function navigateToCategory(categoryUrl: string) {
 		goto(categoryUrl);
+	}
+
+	function isVisibleCategory(category: SettingsCategory) {
+		return !hiddenCategoryUrls.has(category.url);
+	}
+
+	function sortCategories(categories: SettingsCategory[]) {
+		return [...categories].sort((a, b) => a.title.localeCompare(b.title));
 	}
 
 	function clearSearch() {

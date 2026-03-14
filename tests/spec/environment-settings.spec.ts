@@ -67,7 +67,10 @@ async function saveAndWaitForPut(page: Page, expectedPath: string) {
 async function selectSettingOption(page: Page, trigger: Locator, optionText: string) {
 	await expect(trigger).toBeVisible();
 	await trigger.click();
-	const option = page.locator('[data-slot="select-item"]').filter({ hasText: optionText }).first();
+	const option = page
+		.locator('[data-slot="select-item"], [data-slot="command-item"]')
+		.filter({ hasText: optionText })
+		.first();
 	await expect(option).toBeVisible();
 	await option.click();
 }
@@ -238,6 +241,52 @@ test.describe('Environment Settings UI', () => {
 						.getAttribute('aria-checked')) === 'true';
 				if (currentChecked !== originalChecked) {
 					await page.locator('#trivyPreserveCacheOnVolumePruneSwitch').click();
+					await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				}
+			}
+		}
+	});
+
+	test('should update and save the trivy network mode including auto', async ({ page }) => {
+		await openLocalEnvironment(page);
+		await page.getByRole('tab', { name: 'Security', exact: true }).click();
+
+		const trivyNetworkTrigger = page.locator('#trivyNetwork');
+		await expect(trivyNetworkTrigger).toBeVisible();
+
+		const originalValue = ((await trivyNetworkTrigger.textContent()) || '').trim();
+		const updatedValue = originalValue.includes('bridge') ? 'Auto' : 'bridge';
+
+		try {
+			await selectSettingOption(page, trivyNetworkTrigger, updatedValue);
+			await expect(trivyNetworkTrigger).toContainText(updatedValue);
+
+			const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+			await expect(saveButton).toBeEnabled();
+
+			const responsePromise = page.waitForResponse((response) => {
+				const request = response.request();
+				if (request.method() !== 'PUT') return false;
+				const url = new URL(response.url());
+				return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
+			});
+
+			await saveButton.click();
+			const response = await responsePromise;
+			expect(response.ok()).toBeTruthy();
+
+			const payload = response.request().postDataJSON() as Record<string, string>;
+			expect(payload.trivyNetwork).toBe(updatedValue === 'Auto' ? '' : updatedValue);
+
+			await page.reload();
+			await page.getByRole('tab', { name: 'Security', exact: true }).click();
+			await expect(page.locator('#trivyNetwork')).toContainText(updatedValue);
+		} finally {
+			if (!page.isClosed()) {
+				await page.getByRole('tab', { name: 'Security', exact: true }).click();
+				const currentValue = ((await page.locator('#trivyNetwork').textContent()) || '').trim();
+				if (!currentValue.includes(originalValue)) {
+					await selectSettingOption(page, page.locator('#trivyNetwork'), originalValue);
 					await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 				}
 			}

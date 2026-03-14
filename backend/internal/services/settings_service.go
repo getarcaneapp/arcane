@@ -121,7 +121,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		VulnerabilityScanEnabled:        models.SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
 		TrivyImage:                      models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
-		TrivyNetwork:                    models.SettingVariable{Value: "bridge"},
+		TrivyNetwork:                    models.SettingVariable{Value: ""},
 		TrivySecurityOpts:               models.SettingVariable{Value: ""},
 		TrivyPrivileged:                 models.SettingVariable{Value: "false"},
 		TrivyPreserveCacheOnVolumePrune: models.SettingVariable{Value: "true"},

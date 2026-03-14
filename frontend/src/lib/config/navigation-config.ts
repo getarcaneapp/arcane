@@ -3,7 +3,6 @@ import {
 	ApperanceIcon,
 	JobsIcon,
 	UsersIcon,
-	SecurityIcon,
 	LockIcon,
 	NotificationsIcon,
 	DashboardIcon,
@@ -73,7 +72,6 @@ export const navigationItems: Record<string, NavigationItem[]> = {
 					icon: NotificationsIcon,
 					shortcut: ['mod', 'shift', '4']
 				},
-				{ title: m.security_title(), url: '/settings/security', icon: SecurityIcon, shortcut: ['mod', 'shift', '5'] },
 				{ title: m.builds(), url: '/settings/builds', icon: HammerIcon, shortcut: ['mod', 'shift', '6'] },
 				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '7'] },
 				{ title: m.users_title(), url: '/settings/users', icon: UsersIcon, shortcut: ['mod', 'shift', '8'] }

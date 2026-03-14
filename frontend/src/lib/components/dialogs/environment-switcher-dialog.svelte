@@ -15,7 +15,7 @@
 	import { debounced } from '$lib/utils/utils';
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { tick } from 'svelte';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon } from '$lib/icons';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '$lib/icons';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	type Props = {
@@ -225,6 +225,11 @@
 		}
 	}
 
+	function handleOpenSettings(env: Environment) {
+		closeDialog();
+		goto(`/environments/${env.id}`);
+	}
+
 	function getConnectionString(env: Environment): string {
 		if (env.id === '0') {
 			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
@@ -281,39 +286,60 @@
 							{#each environments as env (env.id)}
 								{@const isActive = environmentStore.selected?.id === env.id}
 								{@const isDisabled = !env.enabled}
-								<button
-									type="button"
-									onclick={() => !isActive && !isDisabled && handleSelect(env)}
-									disabled={isDisabled}
+								<div
 									class={cn(
-										'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
-										isActive && 'bg-primary/10 border-primary border font-medium',
+										'flex items-center gap-2 rounded-lg border p-1 transition-colors',
+										isActive && 'bg-primary/10 border-primary font-medium',
 										!isActive && !isDisabled && 'hover:bg-muted/50',
-										isDisabled && 'cursor-not-allowed opacity-50'
+										!isActive && isDisabled && 'opacity-50'
 									)}
 								>
-									<div
+									<button
+										type="button"
+										onclick={() => !isActive && !isDisabled && handleSelect(env)}
+										disabled={isDisabled}
 										class={cn(
-											'flex size-8 shrink-0 items-center justify-center rounded-md border',
-											isActive ? 'bg-primary border-primary' : 'border-border'
+											'flex min-w-0 flex-1 items-center gap-3 rounded-md p-2 text-left',
+											isDisabled && 'cursor-not-allowed'
 										)}
 									>
-										{#if env.id === '0'}
-											<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-										{:else}
-											<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+										<div
+											class={cn(
+												'flex size-8 shrink-0 items-center justify-center rounded-md border',
+												isActive ? 'bg-primary border-primary' : 'border-border'
+											)}
+										>
+											{#if env.id === '0'}
+												<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+											{:else}
+												<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+											{/if}
+										</div>
+										<div class="flex min-w-0 flex-1 flex-col">
+											<span class="truncate">{env.name}</span>
+											<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
+												{getConnectionString(env)}
+											</span>
+										</div>
+									</button>
+									<div class="flex shrink-0 items-center gap-2 pr-2">
+										{#if isActive}
+											<span class="text-primary hidden text-xs font-medium sm:inline">
+												{m.environments_current_environment()}
+											</span>
 										{/if}
+										<ArcaneButton
+											action="base"
+											tone="ghost"
+											size="icon"
+											class="size-8"
+											icon={SettingsIcon}
+											showLabel={false}
+											customLabel={m.settings_title()}
+											onclick={() => handleOpenSettings(env)}
+										/>
 									</div>
-									<div class="flex min-w-0 flex-1 flex-col">
-										<span class="truncate">{env.name}</span>
-										<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
-											{getConnectionString(env)}
-										</span>
-									</div>
-									{#if isActive}
-										<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
-									{/if}
-								</button>
+								</div>
 							{/each}
 
 							{#if isLoadingMore}
