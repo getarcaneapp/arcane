@@ -276,7 +276,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	if shouldStart {
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
-			_, _ = dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, models.JSON{
+					"action": "redeploy",
+					"step":   "cleanup_failed_start",
+				})
+			}
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{
 				"action": "redeploy",
 				"step":   "start",
