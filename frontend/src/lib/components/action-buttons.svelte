@@ -1256,6 +1256,10 @@
 								{m.common_remove()}
 							</DropdownMenu.Item>
 						{:else}
+							<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+								{m.common_redeploy()}
+							</DropdownMenu.Item>
+
 							{#if type === 'project'}
 								{#if projectHasBuildDirective}
 									<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
