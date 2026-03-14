@@ -168,7 +168,6 @@ export interface ContainerConfigDto {
 export interface ComposeInfo {
 	projectName: string;
 	serviceName: string;
-	configFile?: string;
 	workingDir?: string;
 	configFiles?: string;
 }

@@ -23,15 +23,24 @@
 
 	let composeContent = $state(sourceContent);
 
-	// Update composeContent when source changes (e.g., switching containers)
-	// Only if there are no unsaved edits
+	// Track file identity to detect context switches (different container/file)
+	const fileIdentity = $derived(`${project.id}:${includeFile?.relativePath ?? 'compose.yml'}`);
+	let prevFileIdentity = $state(fileIdentity);
+
+	// Update composeContent when source changes
+	// Force reset on file identity change (context switch to different file)
+	// Skip update only if same file has unsaved edits (isDirty)
 	let prevSourceContent = $state(sourceContent);
 	const isDirty = $derived(composeContent !== sourceContent);
-	
+
 	$effect(() => {
-		if (sourceContent !== prevSourceContent && !isDirty) {
+		const identityChanged = fileIdentity !== prevFileIdentity;
+		const sourceChanged = sourceContent !== prevSourceContent;
+
+		if (identityChanged || (sourceChanged && !isDirty)) {
 			composeContent = sourceContent;
 			prevSourceContent = sourceContent;
+			prevFileIdentity = fileIdentity;
 		}
 	});
 

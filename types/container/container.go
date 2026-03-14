@@ -646,11 +646,6 @@ type ComposeInfo struct {
 	// Required: true
 	ServiceName string `json:"serviceName"`
 
-	// ConfigFile is the path to the compose config file.
-	//
-	// Required: false
-	ConfigFile string `json:"configFile,omitempty"`
-
 	// WorkingDir is the working directory of the Compose project.
 	//
 	// Required: false
@@ -928,9 +923,6 @@ func NewDetails(c *container.InspectResponse) Details {
 			composeInfo = &ComposeInfo{
 				ProjectName: projectName,
 				ServiceName: serviceName,
-			}
-			if configFile, ok := labels["com.docker.compose.config-files"]; ok {
-				composeInfo.ConfigFile = configFile
 			}
 			if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
 				composeInfo.WorkingDir = workingDir
