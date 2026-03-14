@@ -82,7 +82,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	}
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
-	if hostDir == "" {
+	if hostDir == "" && s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
 			absContainerDir, _ := filepath.Abs(containerDirResolved)
 			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
@@ -371,17 +371,26 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		return project.Details{}, err
 	}
 
-	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
+	composeContent, _, _ := s.GetProjectContent(ctx, projectID)
+	envState, err := projects.ReadProjectEnvState(proj.Path)
+	if err != nil {
+		return project.Details{}, fmt.Errorf("failed to read project env state: %w", err)
+	}
 
 	var resp project.Details
 	if err := mapper.MapStruct(proj, &resp); err != nil {
 		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
 	}
 
+	effectiveEnvContent, err := s.resolveStoredEffectiveEnvContentInternal(envState)
+	if err != nil {
+		return project.Details{}, err
+	}
+
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.ComposeContent = composeContent
-	resp.EnvContent = envContent
+	resp.EnvContent = effectiveEnvContent
 	resp.HasBuildDirective = false
 	resp.DirName = utils.DerefString(proj.DirName)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
@@ -1849,6 +1858,48 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	return &proj, nil
 }
 
+func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {
+	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	envUpdate, err := s.prepareGitSyncEnvUpdateInternal(proj.Path, gitEnvContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve git env state: %w", err)
+	}
+
+	if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
+		return nil, fmt.Errorf("invalid compose file: %w", err)
+	}
+
+	if err := fs.WriteComposeFile(projectsDirectory, proj.Path, composeContent); err != nil {
+		return nil, fmt.Errorf("failed to save compose file: %w", err)
+	}
+	if err := s.persistGitSyncEnvFilesInternal(proj.Path, projectsDirectory, envUpdate); err != nil {
+		return nil, fmt.Errorf("failed to sync git env files: %w", err)
+	}
+	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+		return nil, fmt.Errorf("failed to update project: %w", err)
+	}
+
+	metadata := models.JSON{
+		"action":         "git_sync_update",
+		"projectID":      proj.ID,
+		"projectName":    proj.Name,
+		"composeUpdated": true,
+		"envUpdated":     gitEnvContent != nil,
+	}
+	if gitEnvContent == nil {
+		metadata["envSourceRemoved"] = true
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log git sync project update action", "error", logErr)
+	}
+
+	return &proj, nil
+}
+
 func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, string, error) {
 	var proj models.Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
@@ -1892,14 +1943,25 @@ func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *mo
 func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *models.Project, projectsDirectory string, composeContent, envContent *string) error {
 	switch {
 	case composeContent != nil:
-		if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, *composeContent, envContent); err != nil {
+		effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
+		if err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
-		if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, proj.Path, *composeContent, envContent); err != nil {
+		if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
+			return fmt.Errorf("invalid compose file: %w", err)
+		}
+		if err := fs.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
+			return fmt.Errorf("failed to save project files: %w", err)
+		}
+		if envContent != nil {
+			if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
+				return fmt.Errorf("failed to save project files: %w", err)
+			}
+		} else if err := s.ensureEffectiveEnvFileInternal(proj.Path, projectsDirectory); err != nil {
 			return fmt.Errorf("failed to save project files: %w", err)
 		}
 	case envContent != nil:
-		if err := fs.WriteEnvFile(projectsDirectory, proj.Path, *envContent); err != nil {
+		if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
 			return err
 		}
 	}
@@ -1907,7 +1969,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 	return nil
 }
 
-func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectPath, projectName, composeContent string, envContent *string) (err error) {
+func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %v", recovered)
@@ -1922,9 +1984,9 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		fullEnvMap["PWD"] = absWorkdir
 	}
 
-	// Prefer the provided new environment content if available, otherwise read from disk.
-	if envContent != nil {
-		if fileEnv, envErr := projects.ParseProjectEnvContent(*envContent, fullEnvMap); envErr != nil {
+	// Prefer the provided effective environment content if available, otherwise read from disk.
+	if effectiveEnvContent != nil {
+		if fileEnv, envErr := projects.ParseProjectEnvContent(*effectiveEnvContent, fullEnvMap); envErr != nil {
 			return fmt.Errorf("parse provided env content: %w", envErr)
 		} else {
 			maps.Copy(fullEnvMap, fileEnv)
@@ -1948,7 +2010,7 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	err = withTransientValidationEnvFile(projectPath, envContent, func() error {
+	err = withTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, true)
@@ -1960,7 +2022,7 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	return err
 }
 
-func withTransientValidationEnvFile(projectPath string, envContent *string, run func() error) (err error) {
+func withTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
 	envPath := filepath.Join(projectPath, ".env")
 	originalContent, readErr := os.ReadFile(envPath)
 	originalExists := readErr == nil
@@ -1968,11 +2030,11 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 		return fmt.Errorf("prepare env file for compose validation: %w", readErr)
 	}
 
-	shouldWrite := envContent != nil || !originalExists
+	shouldWrite := effectiveEnvContent != nil || !originalExists
 	if shouldWrite {
 		content := ""
-		if envContent != nil {
-			content = *envContent
+		if effectiveEnvContent != nil {
+			content = *effectiveEnvContent
 		}
 		if writeErr := fs.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
 			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
@@ -1983,7 +2045,7 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 			switch {
 			case originalExists:
 				restoreErr = fs.WriteEnvFile(projectPath, projectPath, string(originalContent))
-			case envContent != nil:
+			case effectiveEnvContent != nil:
 				restoreErr = os.Remove(envPath)
 			default:
 				restoreErr = os.Remove(envPath)
@@ -2002,6 +2064,226 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 	}
 
 	return run()
+}
+
+func (s *ProjectService) resolveEffectiveEnvContentForUpdateInternal(projectPath string, envContent *string) (*string, error) {
+	if envContent != nil {
+		return envContent, nil
+	}
+
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("read project env state: %w", err)
+	}
+
+	effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+	if err != nil {
+		return nil, err
+	}
+	if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
+		return nil, nil
+	}
+
+	return &effectiveContent, nil
+}
+
+func (s *ProjectService) resolveStoredEffectiveEnvContentInternal(state projects.ProjectEnvState) (string, error) {
+	if state.HasEffective {
+		return state.EffectiveContent, nil
+	}
+	if state.HasGitSource || state.HasOverride {
+		effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+		if err != nil {
+			return "", fmt.Errorf("build effective env content: %w", err)
+		}
+		return effectiveContent, nil
+	}
+	return state.DirectContent, nil
+}
+
+func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envContent string) error {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return fmt.Errorf("read project env state: %w", err)
+	}
+
+	if !state.HasGitSource {
+		if state.HasOverride {
+			if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+		}
+		return fs.WriteEnvFile(projectsDirectory, projectPath, envContent)
+	}
+
+	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
+	if err != nil {
+		return fmt.Errorf("build override env content: %w", err)
+	}
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent)
+	if err != nil {
+		return fmt.Errorf("build effective env content: %w", err)
+	}
+
+	if err := fs.WriteEnvFile(projectsDirectory, projectPath, effectiveContent); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(overrideContent) == "" {
+		if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			return err
+		}
+	} else if err := fs.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, overrideContent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDirectory string) error {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return fmt.Errorf("read project env state: %w", err)
+	}
+
+	if !state.HasGitSource {
+		if state.HasOverride {
+			if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+			effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+			if err != nil {
+				return err
+			}
+			return fs.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+		}
+		return fs.EnsureEnvFile(projectsDirectory, projectPath)
+	}
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+	if err != nil {
+		return fmt.Errorf("build effective env content: %w", err)
+	}
+
+	return fs.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+}
+
+type gitSyncEnvUpdateInternal struct {
+	state            projects.ProjectEnvState
+	gitEnvContent    *string
+	overrideContent  string
+	effectiveContent *string
+}
+
+func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, gitEnvContent *string) (gitSyncEnvUpdateInternal, error) {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("read project env state: %w", err)
+	}
+
+	update := gitSyncEnvUpdateInternal{
+		state:         state,
+		gitEnvContent: gitEnvContent,
+	}
+
+	if gitEnvContent == nil {
+		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+		if err != nil {
+			return gitSyncEnvUpdateInternal{}, err
+		}
+		if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
+			return update, nil
+		}
+		update.effectiveContent = &effectiveContent
+		return update, nil
+	}
+
+	overrideContent, err := s.resolveOverrideContentForGitSyncInternal(state, *gitEnvContent)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, err
+	}
+	update.overrideContent = overrideContent
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("build effective env content: %w", err)
+	}
+	update.effectiveContent = &effectiveContent
+
+	return update, nil
+}
+
+func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects.ProjectEnvState, gitEnvContent string) (string, error) {
+	switch {
+	case state.HasGitSource:
+		overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	case state.HasOverride:
+		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+		if err != nil {
+			return "", err
+		}
+		overrideContent, err := projects.BuildOverrideEnvContent(gitEnvContent, effectiveContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	case strings.TrimSpace(state.DirectContent) != "":
+		overrideContent, err := projects.BuildAdditiveOverrideEnvContent(gitEnvContent, state.DirectContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	default:
+		return "", nil
+	}
+}
+
+func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDirectory string, update gitSyncEnvUpdateInternal) error {
+	if update.gitEnvContent == nil {
+		if update.state.HasGitSource {
+			if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
+				return err
+			}
+		}
+		if update.state.HasOverride {
+			if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+		}
+		if update.effectiveContent != nil || update.state.HasEffective || update.state.HasGitSource || update.state.HasOverride {
+			effectiveContent := ""
+			if update.effectiveContent != nil {
+				effectiveContent = *update.effectiveContent
+			}
+			return fs.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+		}
+		return fs.EnsureEnvFile(projectsDirectory, projectPath)
+	}
+
+	if update.effectiveContent == nil {
+		return fmt.Errorf("missing effective env content for git sync update")
+	}
+
+	if err := fs.WriteEnvFile(projectsDirectory, projectPath, *update.effectiveContent); err != nil {
+		return err
+	}
+	if err := fs.WriteProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, *update.gitEnvContent); err != nil {
+		return err
+	}
+	if strings.TrimSpace(update.overrideContent) == "" {
+		if err := fs.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			return err
+		}
+	} else if err := fs.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.overrideContent); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
