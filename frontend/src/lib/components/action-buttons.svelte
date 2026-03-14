@@ -418,8 +418,8 @@
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
 							onSuccess: async (data) => {
 								toast.success(m.common_redeploy_success({ type: name || type }));
-								if (type === 'container' && data?.containerId) {
-									goto(`/containers/${data.containerId}`);
+								if (type === 'container' && data?.data?.containerId) {
+									goto(`/containers/${data.data.containerId}`);
 								} else if (type === 'container') {
 									goto('/containers');
 								} else {
