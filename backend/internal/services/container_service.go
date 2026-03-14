@@ -220,7 +220,8 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if wasRunning {
-		_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: func() *int { v := 30; return &v }()})
+		timeout := 30
+		_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
 		if err != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
 				"action": "redeploy",
