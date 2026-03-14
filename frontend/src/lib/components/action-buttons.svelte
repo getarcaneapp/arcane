@@ -12,8 +12,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
-	import { containerService } from '$lib/services/container-service';
+	import { containerService, type ContainerRedeployResponse } from '$lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
+	import type { Project } from '$lib/types/project.type';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { sanitizeLogText } from '$lib/utils/log-text';
 	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
@@ -141,7 +142,7 @@
 
 	const redeployMutation = createMutation(() => ({
 		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)),
+		mutationFn: () => tryCatch((type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<ContainerRedeployResponse | Project>),
 		onMutate: () => setLoading('redeploy', true),
 		onSettled: () => setLoading('redeploy', false)
 	}));
@@ -418,8 +419,9 @@
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
 							onSuccess: async (data) => {
 								toast.success(m.common_redeploy_success({ type: name || type }));
-								if (type === 'container' && data?.data?.containerId) {
-									goto(`/containers/${data.data.containerId}`);
+								const containerData = data as ContainerRedeployResponse;
+								if (type === 'container' && containerData?.data?.containerId) {
+									goto(`/containers/${containerData.data.containerId}`);
 								} else if (type === 'container') {
 									goto('/containers');
 								} else {
