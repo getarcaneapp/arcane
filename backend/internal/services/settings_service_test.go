@@ -44,7 +44,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -62,6 +62,8 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "", sv.Value)
 		case "trivyPrivileged":
 			require.Equal(t, "false", sv.Value)
+		case "trivyPreserveCacheOnVolumePrune":
+			require.Equal(t, "true", sv.Value)
 		case "trivyResourceLimitsEnabled":
 			require.Equal(t, "true", sv.Value)
 		case "trivyCpuLimit":
@@ -544,6 +546,45 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeou
 		TrivySecurityOpts: &securityOpts,
 		TrivyPrivileged:   &privileged,
 	})
+	require.NoError(t, err)
+	require.Nil(t, callbackPayload)
+}
+
+func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	preserveCache := "false"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
+	require.NoError(t, err)
+
+	current, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.False(t, current.TrivyPreserveCacheOnVolumePrune.IsTrue())
+
+	var stored models.SettingVariable
+	err = svc.db.WithContext(ctx).Where("key = ?", "trivyPreserveCacheOnVolumePrune").First(&stored).Error
+	require.NoError(t, err)
+	require.Equal(t, "false", stored.Value)
+}
+
+func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePruneDoesNotTriggerTimeoutCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+		callbackPayload = timeoutSettings
+	}
+
+	preserveCache := "false"
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }

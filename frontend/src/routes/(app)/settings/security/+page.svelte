@@ -26,6 +26,7 @@
 		trivyNetwork: z.string(),
 		trivySecurityOpts: z.string(),
 		trivyPrivileged: z.boolean(),
+		trivyPreserveCacheOnVolumePrune: z.boolean(),
 		trivyResourceLimitsEnabled: z.boolean(),
 		trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
 		trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
@@ -37,6 +38,7 @@
 		trivyNetwork: currentSettings.trivyNetwork || 'bridge',
 		trivySecurityOpts: currentSettings.trivySecurityOpts || '',
 		trivyPrivileged: currentSettings.trivyPrivileged ?? false,
+		trivyPreserveCacheOnVolumePrune: currentSettings.trivyPreserveCacheOnVolumePrune ?? true,
 		trivyResourceLimitsEnabled: currentSettings.trivyResourceLimitsEnabled ?? true,
 		trivyCpuLimit: currentSettings.trivyCpuLimit ?? 1,
 		trivyMemoryLimitMb: currentSettings.trivyMemoryLimitMb ?? 0,
@@ -52,6 +54,7 @@
 				trivyNetwork: ($settingsStore || data.settings!).trivyNetwork || 'bridge',
 				trivySecurityOpts: ($settingsStore || data.settings!).trivySecurityOpts || '',
 				trivyPrivileged: ($settingsStore || data.settings!).trivyPrivileged ?? false,
+				trivyPreserveCacheOnVolumePrune: ($settingsStore || data.settings!).trivyPreserveCacheOnVolumePrune ?? true,
 				trivyResourceLimitsEnabled: ($settingsStore || data.settings!).trivyResourceLimitsEnabled ?? true,
 				trivyCpuLimit: ($settingsStore || data.settings!).trivyCpuLimit ?? 1,
 				trivyMemoryLimitMb: ($settingsStore || data.settings!).trivyMemoryLimitMb ?? 0,
@@ -66,6 +69,7 @@
 			$formInputs.trivyNetwork.value !== (currentSettings.trivyNetwork || 'bridge') ||
 			$formInputs.trivySecurityOpts.value !== (currentSettings.trivySecurityOpts || '') ||
 			$formInputs.trivyPrivileged.value !== (currentSettings.trivyPrivileged ?? false) ||
+			$formInputs.trivyPreserveCacheOnVolumePrune.value !== (currentSettings.trivyPreserveCacheOnVolumePrune ?? true) ||
 			$formInputs.trivyResourceLimitsEnabled.value !== (currentSettings.trivyResourceLimitsEnabled ?? true) ||
 			$formInputs.trivyCpuLimit.value !== (currentSettings.trivyCpuLimit ?? 1) ||
 			$formInputs.trivyMemoryLimitMb.value !== (currentSettings.trivyMemoryLimitMb ?? 0) ||
@@ -149,6 +153,7 @@
 				trivyNetwork: formData.trivyNetwork,
 				trivySecurityOpts: formData.trivySecurityOpts,
 				trivyPrivileged: formData.trivyPrivileged,
+				trivyPreserveCacheOnVolumePrune: formData.trivyPreserveCacheOnVolumePrune,
 				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
 				trivyCpuLimit,
 				trivyMemoryLimitMb,
@@ -283,6 +288,25 @@
 										</Alert.Description>
 									</Alert.Root>
 								{/if}
+							</div>
+						</div>
+
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.security_trivy_preserve_cache_on_volume_prune_label()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.security_trivy_preserve_cache_on_volume_prune_description()}</p>
+								<p class="text-muted-foreground mt-2 text-xs">{m.security_trivy_preserve_cache_on_volume_prune_note()}</p>
+							</div>
+							<div class="space-y-3">
+								<div class="flex items-center gap-2">
+									<Switch
+										id="trivyPreserveCacheOnVolumePruneSwitch"
+										bind:checked={$formInputs.trivyPreserveCacheOnVolumePrune.value}
+									/>
+									<Label for="trivyPreserveCacheOnVolumePruneSwitch" class="font-normal">
+										{$formInputs.trivyPreserveCacheOnVolumePrune.value ? m.common_enabled() : m.common_disabled()}
+									</Label>
+								</div>
 							</div>
 						</div>
 

@@ -122,6 +122,32 @@ func TestIsInternalVolumeInternal(t *testing.T) {
 	require.False(t, svc.isInternalVolumeInternal(volumetypes.Volume{Name: "user-volume"}))
 }
 
+func TestBuildVolumePruneOptionsInternal_PreservesTrivyCache(t *testing.T) {
+	options := buildVolumePruneOptionsInternal(true, true)
+
+	require.True(t, options.All)
+	require.NotNil(t, options.Filters)
+	require.True(t, options.Filters["label!"][trivyCacheVolumePruneFilterValue])
+}
+
+func TestBuildVolumePruneOptionsInternal_DisabledPreservationOmitsFilter(t *testing.T) {
+	options := buildVolumePruneOptionsInternal(true, false)
+
+	require.True(t, options.All)
+	require.Nil(t, options.Filters)
+}
+
+func TestBuildVolumePruneMetadataInternal(t *testing.T) {
+	metadata := buildVolumePruneMetadataInternal(true, 2, 4096, true)
+
+	require.Equal(t, "prune", metadata["action"])
+	require.Equal(t, true, metadata["all"])
+	require.Equal(t, 2, metadata["volumesDeleted"])
+	require.EqualValues(t, 4096, metadata["spaceReclaimed"])
+	require.Equal(t, true, metadata["preserveTrivyCache"])
+	require.Equal(t, trivyCacheVolumePruneFilterValue, metadata["trivyCacheFilterLabel"])
+}
+
 func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 	tests := []struct {
 		name         string

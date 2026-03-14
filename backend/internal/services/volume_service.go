@@ -59,6 +59,7 @@ const (
 )
 
 const backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
+const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
 type backupStorageMountInternal struct {
 	mode           backupStorageMode
@@ -197,23 +198,19 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	preserveTrivyCache := s.preserveTrivyCacheOnVolumePruneInternal()
+
 	// Docker's VolumesPrune behavior (API v1.42+):
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
 	// - With 'all=true' flag: Removes ALL unused volumes (both named and anonymous)
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
-	volumePruneResult, err := dockerClient.VolumePrune(ctx, client.VolumePruneOptions{
-		All: all,
-	})
+	volumePruneOptions := buildVolumePruneOptionsInternal(all, preserveTrivyCache)
+	volumePruneResult, err := dockerClient.VolumePrune(ctx, volumePruneOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune volumes: %w", err)
 	}
 
-	metadata := models.JSON{
-		"action":         "prune",
-		"all":            all,
-		"volumesDeleted": len(volumePruneResult.Report.VolumesDeleted),
-		"spaceReclaimed": volumePruneResult.Report.SpaceReclaimed,
-	}
+	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed, preserveTrivyCache)
 	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume prune action", "error", logErr.Error())
 	}
@@ -228,6 +225,40 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
 		SpaceReclaimed: volumePruneResult.Report.SpaceReclaimed,
 	}, nil
+}
+
+func (s *VolumeService) preserveTrivyCacheOnVolumePruneInternal() bool {
+	if s.settingsService == nil {
+		return true
+	}
+
+	return s.settingsService.GetSettingsConfig().TrivyPreserveCacheOnVolumePrune.IsTrue()
+}
+
+func buildVolumePruneOptionsInternal(all, preserveTrivyCache bool) client.VolumePruneOptions {
+	options := client.VolumePruneOptions{
+		All: all,
+	}
+	if !preserveTrivyCache {
+		return options
+	}
+
+	filters := make(client.Filters)
+	filters = filters.Add("label!", trivyCacheVolumePruneFilterValue)
+	options.Filters = filters
+
+	return options
+}
+
+func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaimed uint64, preserveTrivyCache bool) models.JSON {
+	return models.JSON{
+		"action":                "prune",
+		"all":                   all,
+		"volumesDeleted":        volumesDeleted,
+		"spaceReclaimed":        spaceReclaimed,
+		"preserveTrivyCache":    preserveTrivyCache,
+		"trivyCacheFilterLabel": trivyCacheVolumePruneFilterValue,
+	}
 }
 
 // --- Volume Browsing & Backup ---

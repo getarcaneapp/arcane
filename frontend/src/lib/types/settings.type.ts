@@ -42,6 +42,7 @@ export type Settings = {
 	trivyNetwork: string;
 	trivySecurityOpts: string;
 	trivyPrivileged: boolean;
+	trivyPreserveCacheOnVolumePrune: boolean;
 	trivyResourceLimitsEnabled: boolean;
 	trivyCpuLimit: number;
 	trivyMemoryLimitMb: number;

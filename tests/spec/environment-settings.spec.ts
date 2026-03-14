@@ -191,4 +191,56 @@ test.describe('Environment Settings UI', () => {
 			}
 		}
 	});
+
+	test('should update and save the trivy cache prune preservation setting', async ({ page }) => {
+		await openLocalEnvironment(page);
+		await page.getByRole('tab', { name: 'Security', exact: true }).click();
+
+		const preserveCacheSwitch = page.locator('#trivyPreserveCacheOnVolumePruneSwitch');
+		await expect(preserveCacheSwitch).toBeVisible();
+
+		const originalChecked = (await preserveCacheSwitch.getAttribute('aria-checked')) === 'true';
+		const updatedChecked = !originalChecked;
+
+		try {
+			await preserveCacheSwitch.click();
+			await expect(preserveCacheSwitch).toHaveAttribute('aria-checked', String(updatedChecked));
+
+			const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+			await expect(saveButton).toBeEnabled();
+
+			const responsePromise = page.waitForResponse((response) => {
+				const request = response.request();
+				if (request.method() !== 'PUT') return false;
+				const url = new URL(response.url());
+				return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
+			});
+
+			await saveButton.click();
+			const response = await responsePromise;
+			expect(response.ok()).toBeTruthy();
+
+			const payload = response.request().postDataJSON() as Record<string, string>;
+			expect(payload.trivyPreserveCacheOnVolumePrune).toBe(String(updatedChecked));
+
+			await page.reload();
+			await page.getByRole('tab', { name: 'Security', exact: true }).click();
+			await expect(page.locator('#trivyPreserveCacheOnVolumePruneSwitch')).toHaveAttribute(
+				'aria-checked',
+				String(updatedChecked)
+			);
+		} finally {
+			if (!page.isClosed()) {
+				await page.getByRole('tab', { name: 'Security', exact: true }).click();
+				const currentChecked =
+					(await page
+						.locator('#trivyPreserveCacheOnVolumePruneSwitch')
+						.getAttribute('aria-checked')) === 'true';
+				if (currentChecked !== originalChecked) {
+					await page.locator('#trivyPreserveCacheOnVolumePruneSwitch').click();
+					await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				}
+			}
+		}
+	});
 });
