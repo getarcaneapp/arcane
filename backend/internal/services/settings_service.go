@@ -122,6 +122,8 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		VulnerabilityScanInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
 		TrivyImage:                    models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
 		TrivyNetwork:                  models.SettingVariable{Value: "bridge"},
+		TrivySecurityOpts:             models.SettingVariable{Value: ""},
+		TrivyPrivileged:               models.SettingVariable{Value: "false"},
 		TrivyResourceLimitsEnabled:    models.SettingVariable{Value: "true"},
 		TrivyCpuLimit:                 models.SettingVariable{Value: "1"},
 		TrivyMemoryLimitMb:            models.SettingVariable{Value: "0"},
@@ -589,7 +591,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
 		case "autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow":
 			changedAutoHeal = true

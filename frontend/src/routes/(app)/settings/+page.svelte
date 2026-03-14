@@ -6,6 +6,7 @@
 		SettingsIcon,
 		UserIcon,
 		SecurityIcon,
+		LockIcon,
 		NotificationsIcon,
 		ArrowRightIcon,
 		DockerBrandIcon,
@@ -35,6 +36,7 @@
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
 		database: DockerBrandIcon,
+		lock: LockIcon,
 		shield: SecurityIcon,
 		appearance: ApperanceIcon,
 		bell: NotificationsIcon,

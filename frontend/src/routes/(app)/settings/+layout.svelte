@@ -137,6 +137,8 @@
 				return m.jobs_title();
 			case 'docker':
 				return m.docker_title();
+			case 'authentication':
+				return m.authentication_title();
 			case 'security':
 				return m.security_title();
 			case 'users':

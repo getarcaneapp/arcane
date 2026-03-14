@@ -193,6 +193,17 @@ type Update struct {
 	// Required: false
 	TrivyNetwork *string `json:"trivyNetwork,omitempty"`
 
+	// TrivySecurityOpts applies Docker security options to Trivy scan containers.
+	// Accepts comma-separated or newline-separated values.
+	//
+	// Required: false
+	TrivySecurityOpts *string `json:"trivySecurityOpts,omitempty"`
+
+	// TrivyPrivileged controls whether Trivy scan containers run in privileged mode.
+	//
+	// Required: false
+	TrivyPrivileged *string `json:"trivyPrivileged,omitempty"`
+
 	// TrivyResourceLimitsEnabled controls whether CPU and memory limits are applied to Trivy scan containers.
 	//
 	// Required: false

@@ -44,7 +44,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -58,6 +58,10 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "0 0 0 * * *", sv.Value)
 		case "trivyNetwork":
 			require.Equal(t, "bridge", sv.Value)
+		case "trivySecurityOpts":
+			require.Equal(t, "", sv.Value)
+		case "trivyPrivileged":
+			require.Equal(t, "false", sv.Value)
 		case "trivyResourceLimitsEnabled":
 			require.Equal(t, "true", sv.Value)
 		case "trivyCpuLimit":
@@ -187,6 +191,28 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	settings2, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "arcane-external", settings2.TrivyNetwork.Value)
+}
+
+func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", settings1.TrivySecurityOpts.Value)
+	require.False(t, settings1.TrivyPrivileged.IsTrue())
+
+	t.Setenv("TRIVY_SECURITY_OPTS", "label=disable,\nlabel=type:container_runtime_t")
+	t.Setenv("TRIVY_PRIVILEGED", "true")
+
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settings2.TrivySecurityOpts.Value)
+	require.True(t, settings2.TrivyPrivileged.IsTrue())
 }
 
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
@@ -474,6 +500,50 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 
 	trivyNetwork := "arcane-external"
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	require.NoError(t, err)
+	require.Nil(t, callbackPayload)
+}
+
+func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilityCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	callbackCalled := false
+	svc.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
+		callbackCalled = true
+	}
+
+	securityOpts := "label=disable"
+	privileged := "true"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivySecurityOpts: &securityOpts,
+		TrivyPrivileged:   &privileged,
+	})
+	require.NoError(t, err)
+	require.True(t, callbackCalled)
+}
+
+func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeoutCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var callbackPayload []libarcane.SettingUpdate
+	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+		callbackPayload = timeoutSettings
+	}
+
+	securityOpts := "label=disable"
+	privileged := "true"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivySecurityOpts: &securityOpts,
+		TrivyPrivileged:   &privileged,
+	})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }
