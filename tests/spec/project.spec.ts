@@ -35,8 +35,9 @@ async function createProjectViaUI(page: Page, projectName: string) {
   await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
   await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-  const composeEditor = page.locator('.cm-editor').first();
-  const envEditor = page.locator('.cm-editor').nth(1);
+  const visibleEditors = page.locator('.cm-editor:visible');
+  const composeEditor = visibleEditors.first();
+  const envEditor = visibleEditors.nth(1);
   await expect(composeEditor).toBeVisible();
   await expect(envEditor).toBeVisible();
 
@@ -271,7 +272,7 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).fill('syntax-check-project');
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-    const composeEditor = page.locator('.cm-editor').first();
+    const composeEditor = page.locator('.cm-editor:visible').first();
     await expect(composeEditor).toBeVisible();
 
     await setCodeMirrorValue(page, composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
@@ -288,8 +289,9 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).fill('env-check-project');
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-    const composeEditor = page.locator('.cm-editor').first();
-    const envEditor = page.locator('.cm-editor').nth(1);
+    const visibleEditors = page.locator('.cm-editor:visible');
+    const composeEditor = visibleEditors.first();
+    const envEditor = visibleEditors.nth(1);
     await expect(composeEditor).toBeVisible();
     await expect(envEditor).toBeVisible();
 
@@ -314,12 +316,12 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-    const composeEditor = page.locator('.cm-editor').first();
+    const composeEditor = page.locator('.cm-editor:visible').first();
     await expect(composeEditor).toBeVisible();
     await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
     await expect(composeEditor).toContainText(/redis/i);
 
-    const envEditor = page.locator('.cm-editor').nth(1);
+    const envEditor = page.locator('.cm-editor:visible').nth(1);
     await expect(envEditor).toBeVisible();
     await setCodeMirrorValue(page, envEditor, envFile);
     await expect(envEditor).toContainText(/redis/i);
@@ -477,7 +479,7 @@ test.describe('New Compose Project Page', () => {
     await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
     await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-    const composeEditor = page.locator('.cm-editor').first();
+    const composeEditor = page.locator('.cm-editor:visible').first();
     await expect(composeEditor).toBeVisible();
     await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
 
@@ -585,11 +587,11 @@ test.describe('GitOps Managed Project', () => {
     await page.waitForLoadState('networkidle');
 
     await page.waitForTimeout(800);
-    const composeContent = page.locator('.cm-editor').first().locator('.cm-content');
+    const composeContent = page.locator('.cm-editor:visible').first().locator('.cm-content');
     await expect(composeContent).toHaveAttribute('aria-readonly', 'true');
   });
 
-  test('should have env editor in read-only mode when GitOps managed', async ({ page }) => {
+  test('should allow editing env editor when GitOps managed in classic and tree view', async ({ page }) => {
     const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
     test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
@@ -601,8 +603,33 @@ test.describe('GitOps Managed Project', () => {
     await page.waitForLoadState('networkidle');
 
     await page.waitForTimeout(800);
-    const envContent = page.locator('.cm-editor').nth(1).locator('.cm-content');
-    await expect(envContent).toHaveAttribute('aria-readonly', 'true');
+    const envEditor = page.locator('.cm-editor:visible').nth(1);
+    const envContent = envEditor.locator('.cm-content');
+    const marker = `ARCANE_E2E_${Date.now()}`;
+    const originalEnv = await envContent.evaluate((node) => (node as HTMLElement).innerText ?? '');
+    const updatedEnv = `${originalEnv.trimEnd()}\n${marker}=1\n`;
+
+    await expect(envContent).not.toHaveAttribute('aria-readonly', 'true');
+    await setCodeMirrorValue(page, envEditor, updatedEnv);
+    await expect(envEditor).toContainText(marker);
+    await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
+
+    const layoutSwitch = page.getByRole('switch', {
+      name: /Classic|Tree View/i,
+    });
+    if (await layoutSwitch.count()) {
+      await layoutSwitch.click();
+      await page.waitForLoadState('networkidle');
+
+      const envFileButton = page.getByRole('button', { name: '.env' }).first();
+      await expect(envFileButton).toBeVisible();
+      await envFileButton.click();
+
+      const treeEnvEditor = page.locator('.cm-editor:visible').first();
+      const treeEnvContent = treeEnvEditor.locator('.cm-content');
+      await expect(treeEnvContent).not.toHaveAttribute('aria-readonly', 'true');
+      await expect(treeEnvEditor).toContainText(marker);
+    }
   });
 
   test('should allow editing for non-GitOps managed projects', async ({ page }) => {
