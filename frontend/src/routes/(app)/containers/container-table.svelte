@@ -650,7 +650,7 @@
 					{:else}
 						<RedeployIcon class="size-4" />
 					{/if}
-					{m.compose_pull_redeploy()}
+					{m.common_redeploy()}
 				</DropdownMenu.Item>
 
 				<DropdownMenu.Separator />
