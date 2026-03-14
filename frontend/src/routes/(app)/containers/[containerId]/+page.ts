@@ -31,7 +31,10 @@ export const load: PageLoad = async ({ params, parent }) => {
 		const composeProjectName = container.composeInfo?.projectName;
 		if (composeProjectName) {
 			try {
-				const projectsResult = await projectService.getProjectsForEnvironment(envId, { search: composeProjectName });
+				const projectsResult = await projectService.getProjectsForEnvironment(envId, { 
+					search: composeProjectName,
+					pagination: { page: 1, limit: 100 }  // Ensure we don't miss projects beyond default page size
+				});
 				const matched = projectsResult.data.find((p) => p.name === composeProjectName);
 				if (matched) {
 					project = await queryClient.fetchQuery({

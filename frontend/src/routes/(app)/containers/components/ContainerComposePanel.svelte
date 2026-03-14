@@ -21,26 +21,31 @@
 	const sourceContent = $derived(includeFile ? includeFile.content : (project.composeContent ?? ''));
 
 	let composeContent = $state(sourceContent);
+	let isDirty = $state(false);
 
 	// Update composeContent when source changes (e.g., switching containers)
+	// Only if there are no unsaved edits
 	let prevSourceContent = $state(sourceContent);
 	$effect(() => {
-		if (sourceContent !== prevSourceContent) {
+		if (sourceContent !== prevSourceContent && !isDirty) {
 			composeContent = sourceContent;
 			prevSourceContent = sourceContent;
 		}
 	});
 
+	// Track dirty state when content changes
+	$effect(() => {
+		isDirty = composeContent !== sourceContent;
+	});
+
 	let panelOpen = $state(true);
 	let isSaving = $state(false);
-	let saveError = $state('');
 
 	const isReadOnly = $derived(!!project.gitOpsManagedBy);
 	const fileTitle = $derived(includeFile ? includeFile.relativePath : 'compose.yml');
 
 	async function handleSave() {
 		isSaving = true;
-		saveError = '';
 		try {
 			if (includeFile) {
 				await projectService.updateProjectIncludeFile(project.id, includeFile.relativePath, composeContent);
@@ -48,9 +53,9 @@
 				await projectService.updateProject(project.id, undefined, composeContent);
 			}
 			toast.success(m.container_compose_save_success());
+			isDirty = false;
 		} catch (err: any) {
-			saveError = err?.message ?? m.container_compose_save_failed();
-			toast.error(saveError as string);
+			toast.error(err?.message ?? m.container_compose_save_failed());
 		} finally {
 			isSaving = false;
 		}
@@ -70,11 +75,17 @@
 
 	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
 		<span>
-			{@html m.container_compose_editing_info({
-				file: `<strong>${fileTitle}</strong>`,
-				project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${project.name}</a>`,
-				service: `<strong>${serviceName}</strong>`
-			})}
+			{@html isReadOnly
+				? m.container_compose_viewing_info({
+						file: `<strong>${fileTitle}</strong>`,
+						project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${project.name}</a>`,
+						service: `<strong>${serviceName}</strong>`
+					})
+				: m.container_compose_editing_info({
+						file: `<strong>${fileTitle}</strong>`,
+						project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${project.name}</a>`,
+						service: `<strong>${serviceName}</strong>`
+					})}
 		</span>
 	</div>
 
