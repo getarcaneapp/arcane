@@ -81,7 +81,7 @@
 
 	<div class="flex shrink-0 items-center gap-2">
 		{#if !isReadOnly}
-			<ArcaneButton action="save" loading={isSaving} onclick={handleSave} />
+			<ArcaneButton action="save" loading={isSaving} disabled={!isDirty} onclick={handleSave} />
 		{/if}
 		<ArcaneButton
 			action="base"
