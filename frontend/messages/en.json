@@ -244,6 +244,8 @@
 	"common_confirm_redeploy_message": "Are you sure you want to redeploy this project? This will pull the latest images and recreate the containers as needed.",
 	"container_confirm_redeploy_title": "Confirm Container Redeploy",
 	"container_confirm_redeploy_message": "Are you sure you want to redeploy this container? This will pull the latest image and recreate it as needed.",
+	"container_redeploy_success": "Container redeployed successfully.",
+	"container_redeploy_failed": "Failed to redeploy container",
 	"confirm_remove_project_files": "Remove project files",
 	"confirm_remove_volumes_warning": "Remove volumes (Warning: Data will be lost)",
 	"_comment_common_ui": "=== COMMON - UI COMPONENTS ===",

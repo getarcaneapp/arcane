@@ -45,7 +45,7 @@ func NewContainerService(db *database.DB, eventService *EventService, dockerServ
 	}
 }
 
-func buildCleanNetworkingConfig(containerInspect container.InspectResponse) *network.NetworkingConfig {
+func buildCleanNetworkingConfigInternal(containerInspect container.InspectResponse) *network.NetworkingConfig {
 	if containerInspect.NetworkSettings == nil || len(containerInspect.NetworkSettings.Networks) == 0 {
 		return nil
 	}
@@ -249,7 +249,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return fmt.Errorf("failed to remove old container: %w", err)
 	}
 
-	networkingConfig := buildCleanNetworkingConfig(containerInfo)
+	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo)
 
 	createResp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           containerInfo.Config,

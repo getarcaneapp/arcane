@@ -66,8 +66,8 @@ const containerActionConfigs: Record<ContainerActionKind, ContainerActionConfig>
 	redeploy: {
 		status: 'redeploying',
 		run: (id) => containerService.redeployContainer(id),
-		success: () => m.compose_pull_success(),
-		failure: () => m.compose_pull_failed()
+		success: () => m.container_redeploy_success(),
+		failure: () => m.container_redeploy_failed()
 	}
 };
 
@@ -198,12 +198,12 @@ export function createContainerActions({
 					actionStatus[container.id] = 'redeploying';
 					handleApiResultWithCallbacks({
 						result: await tryCatch(containerService.redeployContainer(container.id)),
-						message: m.compose_pull_failed(),
+						message: m.container_redeploy_failed(),
 						setLoadingState: (value) => {
 							actionStatus[container.id] = value ? 'redeploying' : '';
 						},
 						async onSuccess() {
-							toast.success(m.compose_pull_success());
+							toast.success(m.container_redeploy_success());
 							await refreshContainers();
 						}
 					});
