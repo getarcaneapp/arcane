@@ -183,11 +183,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		"image":         imageName,
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, containerID, containerName, user.ID, user.Username, "0", metadata)
-	if err != nil {
-		return "", fmt.Errorf("failed to log action: %w", err)
-	}
-
 	if imageName != "" {
 		settings := s.settingsService.GetSettingsConfig()
 		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
@@ -250,8 +245,13 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 
 	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo)
 
+	newConfig := *containerInfo.Config
+	if len(containerID) >= 12 && newConfig.Hostname == containerID[:12] {
+		newConfig.Hostname = ""
+	}
+
 	createResp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:           containerInfo.Config,
+		Config:           &newConfig,
 		HostConfig:       containerInfo.HostConfig,
 		NetworkingConfig: networkingConfig,
 		Name:             containerName,
@@ -297,6 +297,10 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		"containerName", containerName,
 		"image", imageName,
 	)
+
+	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, createResp.ID, containerName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
+	}
 
 	return createResp.ID, nil
 }
