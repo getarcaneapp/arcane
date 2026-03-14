@@ -520,6 +520,7 @@
 	"container_compose_save_success": "Compose file saved successfully",
 	"container_compose_save_failed": "Failed to save compose file",
 	"container_compose_view_project": "View Project",
+	"tabs_compose": "Compose",
 	"tabs_environment": "Environment",
 	"tabs_volumes": "Volumes",
 	"tabs_network_security": "Network & Security",

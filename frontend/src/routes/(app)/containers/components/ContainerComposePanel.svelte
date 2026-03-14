@@ -34,15 +34,6 @@
 		}
 	});
 
-	function escapeHtml(str: string): string {
-		return str
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#039;');
-	}
-
 	let panelOpen = $state(true);
 	let isSaving = $state(false);
 
@@ -72,24 +63,16 @@
 			<AlertIcon class="size-4" />
 			<Alert.Title>{m.container_compose_gitops_managed_title()}</Alert.Title>
 			<Alert.Description>
-				{@html m.container_compose_gitops_managed_description({ provider: `<strong>${escapeHtml(project.gitOpsManagedBy)}</strong>` })}
+				This project is managed by GitOps (<strong>{project.gitOpsManagedBy}</strong>). The compose file is read-only and can only be changed via your Git repository.
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
 
 	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
 		<span>
-			{@html isReadOnly
-				? m.container_compose_viewing_info({
-						file: `<strong>${escapeHtml(fileTitle)}</strong>`,
-						project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${escapeHtml(project.name)}</a>`,
-						service: `<strong>${escapeHtml(serviceName)}</strong>`
-					})
-				: m.container_compose_editing_info({
-						file: `<strong>${escapeHtml(fileTitle)}</strong>`,
-						project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${escapeHtml(project.name)}</a>`,
-						service: `<strong>${escapeHtml(serviceName)}</strong>`
-					})}
+			{isReadOnly ? 'Viewing' : 'Editing'} <strong>{fileTitle}</strong> for project
+			<a href="/projects/{project.id}" class="text-primary font-medium hover:underline">{project.name}</a>.
+			This container runs as the <strong>{serviceName}</strong> service.
 		</span>
 	</div>
 

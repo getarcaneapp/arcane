@@ -270,7 +270,7 @@
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
-		...(showComposeTab ? [{ value: 'compose', label: 'Compose', icon: CodeIcon }] : [])
+		...(showComposeTab ? [{ value: 'compose', label: m.tabs_compose(), icon: CodeIcon }] : [])
 	]);
 
 	$effect(() => {

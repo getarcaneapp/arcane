@@ -656,10 +656,10 @@ type ComposeInfo struct {
 	// Required: false
 	WorkingDir string `json:"workingDir,omitempty"`
 
-	// ProjectDir is the project directory of the Compose project.
+	// ConfigFiles is the list of Compose config file paths for the project.
 	//
 	// Required: false
-	ProjectDir string `json:"projectDir,omitempty"`
+	ConfigFiles string `json:"configFiles,omitempty"`
 }
 
 // SummaryGroup represents a group of container summaries.
@@ -935,8 +935,8 @@ func NewDetails(c *container.InspectResponse) Details {
 			if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
 				composeInfo.WorkingDir = workingDir
 			}
-			if projectDir, ok := labels["com.docker.compose.project.config_files"]; ok {
-				composeInfo.ProjectDir = projectDir
+			if configFiles, ok := labels["com.docker.compose.project.config_files"]; ok {
+				composeInfo.ConfigFiles = configFiles
 			}
 		}
 	}

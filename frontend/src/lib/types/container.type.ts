@@ -170,7 +170,7 @@ export interface ComposeInfo {
 	serviceName: string;
 	configFile?: string;
 	workingDir?: string;
-	projectDir?: string;
+	configFiles?: string;
 }
 
 export interface ContainerDetailsDto {
