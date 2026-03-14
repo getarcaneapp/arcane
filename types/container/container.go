@@ -634,6 +634,34 @@ type Summary struct {
 	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
 }
 
+// ComposeInfo contains Docker Compose project information extracted from container labels.
+type ComposeInfo struct {
+	// ProjectName is the name of the Docker Compose project.
+	//
+	// Required: true
+	ProjectName string `json:"projectName"`
+
+	// ServiceName is the name of the service within the Compose project.
+	//
+	// Required: true
+	ServiceName string `json:"serviceName"`
+
+	// ConfigFile is the path to the compose config file.
+	//
+	// Required: false
+	ConfigFile string `json:"configFile,omitempty"`
+
+	// WorkingDir is the working directory of the Compose project.
+	//
+	// Required: false
+	WorkingDir string `json:"workingDir,omitempty"`
+
+	// ProjectDir is the project directory of the Compose project.
+	//
+	// Required: false
+	ProjectDir string `json:"projectDir,omitempty"`
+}
+
 // Details represents detailed container information.
 type Details struct {
 	// ID is the unique identifier of the container.
@@ -695,6 +723,12 @@ type Details struct {
 	//
 	// Required: false
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// ComposeInfo contains Docker Compose project information.
+	// Only present if container is part of a Compose project.
+	//
+	// Required: false
+	ComposeInfo *ComposeInfo `json:"composeInfo,omitempty"`
 }
 
 // Created represents a newly created container.
@@ -874,6 +908,26 @@ func NewDetails(c *container.InspectResponse) Details {
 		}
 	}
 
+	// Extract Docker Compose information from labels if present
+	var composeInfo *ComposeInfo
+	if projectName, hasProject := labels["com.docker.compose.project"]; hasProject {
+		if serviceName, hasService := labels["com.docker.compose.service"]; hasService {
+			composeInfo = &ComposeInfo{
+				ProjectName: projectName,
+				ServiceName: serviceName,
+			}
+			if configFile, ok := labels["com.docker.compose.config-files"]; ok {
+				composeInfo.ConfigFile = configFile
+			}
+			if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
+				composeInfo.WorkingDir = workingDir
+			}
+			if projectDir, ok := labels["com.docker.compose.project.config_files"]; ok {
+				composeInfo.ProjectDir = projectDir
+			}
+		}
+	}
+
 	return Details{
 		ID:         c.ID,
 		Name:       name,
@@ -886,9 +940,10 @@ func NewDetails(c *container.InspectResponse) Details {
 		NetworkSettings: NetworkSettings{
 			Networks: networks,
 		},
-		Ports:  ports,
-		Mounts: mounts,
-		Labels: labels,
+		Ports:       ports,
+		Mounts:      mounts,
+		Labels:      labels,
+		ComposeInfo: composeInfo,
 	}
 }
 

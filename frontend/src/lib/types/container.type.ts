@@ -160,6 +160,14 @@ export interface ContainerConfigDto {
 	user?: string;
 }
 
+export interface ComposeInfo {
+	projectName: string;
+	serviceName: string;
+	configFile?: string;
+	workingDir?: string;
+	projectDir?: string;
+}
+
 export interface ContainerDetailsDto {
 	id: string;
 	name: string;
@@ -173,6 +181,7 @@ export interface ContainerDetailsDto {
 	ports: ContainerPorts[];
 	mounts: ContainerMounts[];
 	labels: Record<string, string>;
+	composeInfo?: ComposeInfo;
 }
 
 // Container Stats Types

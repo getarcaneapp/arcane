@@ -227,14 +227,15 @@
 	const showShell = $derived(!!container?.state?.running);
 
 	const project = $derived(data?.project ?? null);
-	const composeServiceName = $derived(container?.labels?.['com.docker.compose.service'] ?? '');
+	const composeInfo = $derived(container?.composeInfo ?? null);
+	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
 
 	// Find which file (root compose or an include file) directly defines this service.
 	// Returns { includeFile: null } for root compose, { includeFile: <file> } for a sub-file,
 	// or null if the service isn't found anywhere (hides the tab).
 	const serviceComposeSource = $derived(
 		(() => {
-			if (!project || !composeServiceName) return null;
+			if (!project || !composeServiceName || !composeInfo) return null;
 
 			const hasService = (content: string): boolean => {
 				try {
@@ -259,7 +260,7 @@
 		})()
 	);
 
-	const showComposeTab = $derived(!!serviceComposeSource);
+	const showComposeTab = $derived(!!composeInfo && !!serviceComposeSource);
 
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },

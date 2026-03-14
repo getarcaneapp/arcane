@@ -28,7 +28,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 		}
 
 		let project = null;
-		const composeProjectName = container.labels?.['com.docker.compose.project'];
+		const composeProjectName = container.composeInfo?.projectName;
 		if (composeProjectName) {
 			try {
 				const projectsResult = await projectService.getProjectsForEnvironment(envId, { search: composeProjectName });

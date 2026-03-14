@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { Project, IncludeFile } from '$lib/types/project.type';
 	import { AlertIcon, ExternalLinkIcon } from '$lib/icons';
-	import { untrack } from 'svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	let {
 		project,
@@ -20,9 +20,15 @@
 
 	const sourceContent = $derived(includeFile ? includeFile.content : (project.composeContent ?? ''));
 
-	let composeContent = $state(untrack(() => sourceContent));
+	let composeContent = $state(sourceContent);
+
+	// Update composeContent when source changes (e.g., switching containers)
+	let prevSourceContent = $state(sourceContent);
 	$effect(() => {
-		composeContent = sourceContent;
+		if (sourceContent !== prevSourceContent) {
+			composeContent = sourceContent;
+			prevSourceContent = sourceContent;
+		}
 	});
 
 	let panelOpen = $state(true);
@@ -41,9 +47,9 @@
 			} else {
 				await projectService.updateProject(project.id, undefined, composeContent);
 			}
-			toast.success('Compose file saved successfully');
+			toast.success(m.container_compose_save_success());
 		} catch (err: any) {
-			saveError = err?.message ?? 'Failed to save compose file';
+			saveError = err?.message ?? m.container_compose_save_failed();
 			toast.error(saveError as string);
 		} finally {
 			isSaving = false;
@@ -55,19 +61,20 @@
 	{#if project.gitOpsManagedBy}
 		<Alert.Root variant="default">
 			<AlertIcon class="size-4" />
-			<Alert.Title>GitOps Managed — Read Only</Alert.Title>
+			<Alert.Title>{m.container_compose_gitops_managed_title()}</Alert.Title>
 			<Alert.Description>
-				This project is managed by GitOps (<strong>{project.gitOpsManagedBy}</strong>). The compose file is read-only and can only
-				be changed via your Git repository.
+				{@html m.container_compose_gitops_managed_description({ provider: `<strong>${project.gitOpsManagedBy}</strong>` })}
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
 
 	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
 		<span>
-			Editing <strong>{fileTitle}</strong> for project
-			<a href="/projects/{project.id}" class="text-primary font-medium hover:underline">{project.name}</a>. This container runs as
-			the <strong>{serviceName}</strong> service.
+			{@html m.container_compose_editing_info({
+				file: `<strong>${fileTitle}</strong>`,
+				project: `<a href="/projects/${project.id}" class="text-primary font-medium hover:underline">${project.name}</a>`,
+				service: `<strong>${serviceName}</strong>`
+			})}
 		</span>
 	</div>
 
@@ -86,6 +93,11 @@
 		{#if !isReadOnly}
 			<ArcaneButton action="save" loading={isSaving} onclick={handleSave} />
 		{/if}
-		<ArcaneButton action="base" href="/projects/{project.id}" icon={ExternalLinkIcon} customLabel="View Project" />
+		<ArcaneButton
+			action="base"
+			href="/projects/{project.id}"
+			icon={ExternalLinkIcon}
+			customLabel={m.container_compose_view_project()}
+		/>
 	</div>
 </div>
