@@ -172,6 +172,14 @@ func (e *ContainerRestartError) Error() string {
 	return fmt.Sprintf("Failed to restart container: %v", e.Err)
 }
 
+type ContainerRedeployError struct {
+	Err error
+}
+
+func (e *ContainerRedeployError) Error() string {
+	return fmt.Sprintf("Failed to redeploy container: %v", e.Err)
+}
+
 type ContainerDeleteError struct {
 	Err error
 }

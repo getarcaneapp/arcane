@@ -18,6 +18,7 @@ const (
 	EventTypeContainerCreate  EventType = "container.create"
 	EventTypeContainerScan    EventType = "container.scan"
 	EventTypeContainerUpdate  EventType = "container.update"
+	EventTypeContainerDeploy  EventType = "container.deploy"
 	EventTypeContainerError   EventType = "container.error"
 
 	EventTypeImagePull              EventType = "image.pull"

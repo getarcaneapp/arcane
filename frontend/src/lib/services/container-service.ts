@@ -17,6 +17,14 @@ export type ContainerListRequestOptions = SearchPaginationSortRequest & {
 	groupByProject?: boolean;
 };
 
+export interface ContainerRedeployResponse {
+	success: boolean;
+	data: {
+		message: string;
+		containerId: string;
+	};
+}
+
 export class ContainerService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
@@ -90,6 +98,11 @@ export class ContainerService extends BaseAPIService {
 	async updateContainer(containerId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
+	}
+	
+	async redeployContainer(containerId: string): Promise<ContainerRedeployResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}
 }
 

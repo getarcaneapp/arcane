@@ -57,6 +57,31 @@ func NewContainerService(db *database.DB, eventService *EventService, dockerServ
 	}
 }
 
+func buildCleanNetworkingConfigInternal(containerInspect container.InspectResponse) *network.NetworkingConfig {
+	if containerInspect.NetworkSettings == nil || len(containerInspect.NetworkSettings.Networks) == 0 {
+		return nil
+	}
+
+	endpointsConfig := make(map[string]*network.EndpointSettings, len(containerInspect.NetworkSettings.Networks))
+	for netName, ep := range containerInspect.NetworkSettings.Networks {
+		if ep == nil {
+			continue
+		}
+
+		endpointsConfig[netName] = &network.EndpointSettings{
+			Aliases: append([]string(nil), ep.Aliases...),
+		}
+	}
+
+	if len(endpointsConfig) == 0 {
+		return nil
+	}
+
+	return &network.NetworkingConfig{
+		EndpointsConfig: endpointsConfig,
+	}
+}
+
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -128,6 +153,169 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 	}
 	return err
+}
+
+func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) (string, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "get_client",
+		})
+		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "inspect",
+		})
+		return "", fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	containerInfo := containerJSON.Container
+	if containerInfo.Config == nil {
+		err = errors.New("container config is nil")
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "validate_config",
+		})
+		return "", fmt.Errorf("failed to redeploy container: %w", err)
+	}
+
+	containerName := strings.TrimPrefix(containerInfo.Name, "/")
+	imageName := containerInfo.Config.Image
+	wasRunning := containerInfo.State != nil && containerInfo.State.Running
+
+	metadata := models.JSON{
+		"action":        "redeploy",
+		"containerId":   containerID,
+		"containerName": containerName,
+		"image":         imageName,
+	}
+
+	if imageName != "" {
+		settings := s.settingsService.GetSettingsConfig()
+		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+		defer pullCancel()
+
+		reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, client.ImagePullOptions{})
+		if pullErr != nil {
+			if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, models.JSON{
+					"action": "redeploy",
+					"step":   "pull_image_timeout",
+					"image":  imageName,
+				})
+				return "", fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
+			}
+
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, models.JSON{
+				"action": "redeploy",
+				"step":   "pull_image",
+				"image":  imageName,
+			})
+			return "", fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
+		}
+		defer func() { _ = reader.Close() }()
+
+		streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+		if streamErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, models.JSON{
+				"action": "redeploy",
+				"step":   "complete_pull",
+				"image":  imageName,
+			})
+			return "", fmt.Errorf("failed to complete image pull: %w", streamErr)
+		}
+	}
+
+	if wasRunning {
+		timeout := 30
+		_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+		if err != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+				"action": "redeploy",
+				"step":   "stop",
+			})
+			return "", fmt.Errorf("failed to stop container: %w", err)
+		}
+	}
+
+	_, err = dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
+		Force:         true,
+		RemoveVolumes: false,
+		RemoveLinks:   false,
+	})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "remove",
+		})
+		return "", fmt.Errorf("failed to remove old container: %w", err)
+	}
+
+	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo)
+
+	newConfig := *containerInfo.Config
+	if len(containerID) >= 12 && newConfig.Hostname == containerID[:12] {
+		newConfig.Hostname = ""
+	}
+
+	createResp, err := libarcane.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
+		Config:           &newConfig,
+		HostConfig:       containerInfo.HostConfig,
+		NetworkingConfig: networkingConfig,
+		Name:             containerName,
+	})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "create",
+			"image":  imageName,
+		})
+		return "", fmt.Errorf("failed to recreate container: %w", err)
+	}
+
+	shouldStart := wasRunning
+	if containerInfo.HostConfig != nil {
+		rp := containerInfo.HostConfig.RestartPolicy.Name
+		if rp == "always" || rp == "unless-stopped" || rp == "on-failure" {
+			shouldStart = true
+		}
+	}
+
+	if shouldStart {
+		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
+		if err != nil {
+			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, models.JSON{
+					"action": "redeploy",
+					"step":   "cleanup_failed_start",
+				})
+			}
+			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, models.JSON{
+				"action": "redeploy",
+				"step":   "start",
+				"image":  imageName,
+			})
+			return "", fmt.Errorf("failed to start new container: %w", err)
+		}
+	}
+
+	slog.InfoContext(ctx, "container redeployed successfully",
+		"oldContainerId", containerID,
+		"newContainerId", createResp.ID,
+		"containerName", containerName,
+		"image", imageName,
+	)
+
+	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, createResp.ID, containerName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
+	}
+
+	return createResp.ID, nil
 }
 
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {

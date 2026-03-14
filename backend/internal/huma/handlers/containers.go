@@ -109,6 +109,22 @@ type ContainerActionOutput struct {
 	Body ContainerActionResponse
 }
 
+// ContainerRedeployData includes the message and new container ID
+type ContainerRedeployData struct {
+	Message     string `json:"message" doc:"Response message"`
+	ContainerID string `json:"containerId" doc:"ID of the redeployed container"`
+}
+
+// ContainerRedeployResponse is a dedicated response type for redeploy
+type ContainerRedeployResponse struct {
+	Success bool                  `json:"success"`
+	Data    ContainerRedeployData `json:"data"`
+}
+
+type ContainerRedeployOutput struct {
+	Body ContainerRedeployResponse
+}
+
 type DeleteContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -190,6 +206,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.RestartContainer)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "redeploy-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/redeploy",
+		Summary:     "Redeploy container",
+		Description: "Pull latest image and recreate container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.RedeployContainer)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-container",
@@ -620,6 +646,32 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container restarted successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*ContainerRedeployOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	newContainerID, err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
+	}
+
+	return &ContainerRedeployOutput{
+		Body: ContainerRedeployResponse{
+			Success: true,
+			Data: ContainerRedeployData{
+				Message:     "Container redeployed successfully",
+				ContainerID: newContainerID,
+			},
 		},
 	}, nil
 }
