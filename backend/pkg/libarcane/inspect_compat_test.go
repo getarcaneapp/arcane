@@ -3,6 +3,7 @@ package libarcane
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -319,6 +320,76 @@ func TestWrapDockerAPIClientForInspectCompatibility(t *testing.T) {
 	result, err := wrapped.ContainerInspect(context.Background(), "test-container", client.ContainerInspectOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, netip.MustParseAddr("fdd0:0:0:c::1"), result.Container.NetworkSettings.Networks["bridge"].IPv6Gateway)
+}
+
+func TestWrapDockerAPIClientForInspectCompatibility_ContainerCreateLegacyNetworks(t *testing.T) {
+	type createRequest struct {
+		NetworkingConfig networktypes.NetworkingConfig `json:"NetworkingConfig"`
+	}
+	type connectRequest struct {
+		Container      string                         `json:"Container"`
+		EndpointConfig *networktypes.EndpointSettings `json:"EndpointConfig"`
+	}
+
+	var createPayload createRequest
+	connectPayloads := map[string]connectRequest{}
+
+	dockerClient := newTestDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			require.NoError(t, json.Unmarshal(body, &createPayload))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"new-container-id","Warnings":[]}`))
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/networks/") && strings.HasSuffix(r.URL.Path, "/connect"):
+			networkName := r.URL.Path
+			networkName = strings.TrimSuffix(networkName, "/connect")
+			networkName = networkName[strings.LastIndex(networkName, "/networks/")+len("/networks/"):]
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			var payload connectRequest
+			require.NoError(t, json.Unmarshal(body, &payload))
+			connectPayloads[networkName] = payload
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	wrapped := WrapDockerAPIClientForInspectCompatibility(dockerClient)
+	result, err := wrapped.ContainerCreate(context.Background(), client.ContainerCreateOptions{
+		Config: &containertypes.Config{
+			Image: "nginx:alpine",
+		},
+		HostConfig: &containertypes.HostConfig{
+			NetworkMode: containertypes.NetworkMode("synobridge"),
+		},
+		NetworkingConfig: &networktypes.NetworkingConfig{
+			EndpointsConfig: map[string]*networktypes.EndpointSettings{
+				"synobridge": {
+					Aliases: []string{"app"},
+				},
+				"nginx-proxy-manager_zbridge": {
+					Aliases: []string{"proxy"},
+				},
+			},
+		},
+		Name: "test-app",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "new-container-id", result.ID)
+
+	require.Len(t, createPayload.NetworkingConfig.EndpointsConfig, 1)
+	require.Contains(t, createPayload.NetworkingConfig.EndpointsConfig, "synobridge")
+	assert.Equal(t, []string{"app"}, createPayload.NetworkingConfig.EndpointsConfig["synobridge"].Aliases)
+
+	require.Len(t, connectPayloads, 1)
+	require.Contains(t, connectPayloads, "nginx-proxy-manager_zbridge")
+	assert.Equal(t, "new-container-id", connectPayloads["nginx-proxy-manager_zbridge"].Container)
+	require.NotNil(t, connectPayloads["nginx-proxy-manager_zbridge"].EndpointConfig)
+	assert.Equal(t, []string{"proxy"}, connectPayloads["nginx-proxy-manager_zbridge"].EndpointConfig.Aliases)
 }
 
 func newTestDockerClient(t *testing.T, handler http.HandlerFunc) *client.Client {

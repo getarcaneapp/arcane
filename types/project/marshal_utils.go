@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,7 +15,7 @@ import (
 
 // unitBytesType is used to detect compose-go fields that need string-or-number
 // normalization before they can be decoded by encoding/json.
-var unitBytesType = reflect.TypeOf(composetypes.UnitBytes(0))
+var unitBytesType = reflect.TypeFor[composetypes.UnitBytes]()
 
 // runtimeServiceJSON is an internal decode shape that lets RuntimeService
 // handle serviceConfig separately from the rest of the payload.
@@ -112,7 +113,7 @@ func unmarshalComposeServiceConfigJSONInternal(data []byte) (*composetypes.Servi
 		return nil, err
 	}
 
-	normalized, err := normalizeJSONValueForTypeInternal(raw, reflect.TypeOf(composetypes.ServiceConfig{}))
+	normalized, err := normalizeJSONValueForTypeInternal(raw, reflect.TypeFor[composetypes.ServiceConfig]())
 	if err != nil {
 		return nil, err
 	}
@@ -188,12 +189,9 @@ func normalizeJSONObjectForTypeInternal(value any, destType reflect.Type) (any, 
 	}
 
 	normalized := make(map[string]any, len(object))
-	for key, item := range object {
-		normalized[key] = item
-	}
+	maps.Copy(normalized, object)
 
-	for i := 0; i < destType.NumField(); i++ {
-		field := destType.Field(i)
+	for field := range destType.Fields() {
 		if field.PkgPath != "" {
 			continue
 		}

@@ -239,7 +239,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 	}
 
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+	resp, err := libarcane.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           config,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
