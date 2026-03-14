@@ -2,16 +2,10 @@ package integrationtest
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-
-	clipkg "github.com/getarcaneapp/arcane/cli/pkg"
 )
 
 func TestContainersListJSONContract(t *testing.T) {
@@ -32,46 +26,14 @@ func TestContainersListJSONContract(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "arcanecli.yml")
-	configContent := strings.Join([]string{
-		"server_url: " + srv.URL,
-		"api_key: arc_test_key",
-		"default_environment: \"0\"",
-		"log_level: info",
-		"",
-	}, "\n")
-	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	configPath := writeCLIIntegrationConfigInternal(t, srv.URL)
 
-	root := clipkg.RootCommand()
-	errOut := &strings.Builder{}
-	root.SetErr(errOut)
-	root.SetArgs([]string{"--config", configPath, "containers", "list", "--json"})
-
-	stdout := os.Stdout
-	r, w, err := os.Pipe()
+	outBuf, errOut, err := executeCLIIntegrationCommandInternal(
+		t,
+		[]string{"--config", configPath, "containers", "list", "--json"},
+	)
 	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	defer func() {
-		_ = w.Close()
-		os.Stdout = stdout
-	}()
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut.String())
-	}
-	_ = w.Close()
-	stdoutBytes, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	outBuf := string(stdoutBytes)
-	if runtime.GOOS == "windows" {
-		outBuf = strings.ReplaceAll(outBuf, "\r\n", "\n")
+		t.Fatalf("execute: %v (%s)", err, errOut)
 	}
 
 	var got map[string]any

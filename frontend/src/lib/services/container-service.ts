@@ -3,29 +3,38 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type {
 	ContainerStatusCounts,
 	ContainerSummaryDto,
+	ContainerSummaryGroupDto,
 	ContainerStats,
 	ContainerCreateRequest
 } from '$lib/types/container.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
-export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts>;
+export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
+	groups?: ContainerSummaryGroupDto[];
+};
+export type ContainerListRequestOptions = SearchPaginationSortRequest & {
+	groupByProject?: boolean;
+};
 
 export class ContainerService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}
 
-	async getContainers(options?: SearchPaginationSortRequest): Promise<ContainersPaginatedResponse> {
+	async getContainers(options?: ContainerListRequestOptions): Promise<ContainersPaginatedResponse> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getContainersForEnvironment(envId, options);
 	}
 
 	async getContainersForEnvironment(
 		environmentId: string,
-		options?: SearchPaginationSortRequest
+		options?: ContainerListRequestOptions
 	): Promise<ContainersPaginatedResponse> {
 		const params = transformPaginationParams(options);
+		if (options?.groupByProject) {
+			params.groupBy = 'project';
+		}
 		const res = await this.api.get(`/environments/${environmentId}/containers`, { params });
 		return res.data;
 	}

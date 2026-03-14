@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/compose-spec/compose-go/v2 v2.10.1
+	github.com/docker/go-units v0.5.0
 	github.com/moby/moby/api v1.54.0
 	github.com/moby/moby/client v0.3.0
 )
@@ -16,7 +17,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

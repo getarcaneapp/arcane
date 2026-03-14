@@ -75,6 +75,11 @@ export interface ContainerSummaryDto extends BaseContainer {
 	updateInfo?: ImageUpdateInfoDto;
 }
 
+export interface ContainerSummaryGroupDto {
+	groupName: string;
+	items: ContainerSummaryDto[];
+}
+
 export interface ContainerPorts {
 	ip?: string;
 	privatePort: number;

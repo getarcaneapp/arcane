@@ -61,6 +61,7 @@
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<VisibilityState>({}),
+		groupedRows = null,
 		// Grouping props
 		groupBy,
 		groupIcon,
@@ -97,6 +98,7 @@
 		>;
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: VisibilityState;
+		groupedRows?: GroupedData<TData>[] | null;
 		// Grouping props
 		groupBy?: (item: TData) => string;
 		groupIcon?: (groupName: string) => Component;
@@ -509,7 +511,8 @@
 	);
 
 	// Compute grouped rows when groupBy is provided
-	const groupedRows = $derived.by((): GroupedData<TData>[] | null => {
+	const effectiveGroupedRows = $derived.by((): GroupedData<TData>[] | null => {
+		if (groupedRows) return groupedRows;
 		if (!groupBy) return null;
 
 		const groups = new Map<string, TData[]>();
@@ -660,7 +663,7 @@
 				{table}
 				{selectedIds}
 				columnsCount={columnsDef.length}
-				{groupedRows}
+				groupedRows={effectiveGroupedRows}
 				{groupIcon}
 				{groupCollapsedState}
 				{selectionDisabled}
@@ -678,7 +681,7 @@
 					{table}
 					{mobileCard}
 					{mobileFieldVisibility}
-					{groupedRows}
+					groupedRows={effectiveGroupedRows}
 					{groupIcon}
 					{groupCollapsedState}
 					onGroupToggle={handleGroupToggle}
@@ -716,7 +719,7 @@
 				{table}
 				{selectedIds}
 				columnsCount={columnsDef.length}
-				{groupedRows}
+				groupedRows={effectiveGroupedRows}
 				{groupIcon}
 				{groupCollapsedState}
 				{selectionDisabled}
@@ -732,7 +735,7 @@
 				{table}
 				{mobileCard}
 				{mobileFieldVisibility}
-				{groupedRows}
+				groupedRows={effectiveGroupedRows}
 				{groupIcon}
 				{groupCollapsedState}
 				onGroupToggle={handleGroupToggle}

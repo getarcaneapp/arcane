@@ -35,6 +35,10 @@ type inspectCompatibilityClient struct {
 	client.APIClient
 }
 
+func (c *inspectCompatibilityClient) ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
+	return ContainerCreateWithCompatibility(ctx, c.APIClient, options)
+}
+
 func (c *inspectCompatibilityClient) ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	return ContainerInspectWithCompatibility(ctx, c.APIClient, containerID, options)
 }

@@ -26,10 +26,11 @@ type ContainerHandler struct {
 
 // Paginated response
 type ContainerPaginatedResponse struct {
-	Success    bool                        `json:"success"`
-	Data       []containertypes.Summary    `json:"data"`
-	Counts     containertypes.StatusCounts `json:"counts"`
-	Pagination base.PaginationResponse     `json:"pagination"`
+	Success    bool                          `json:"success"`
+	Data       []containertypes.Summary      `json:"data"`
+	Groups     []containertypes.SummaryGroup `json:"groups,omitempty"`
+	Counts     containertypes.StatusCounts   `json:"counts"`
+	Pagination base.PaginationResponse       `json:"pagination"`
 }
 
 type ListContainersInput struct {
@@ -39,6 +40,7 @@ type ListContainersInput struct {
 	Order           string `query:"order" default:"asc" doc:"Sort direction"`
 	Start           int    `query:"start" default:"0" doc:"Start index"`
 	Limit           int    `query:"limit" default:"20" doc:"Limit"`
+	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 }
@@ -222,7 +224,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		Filters: filters,
 	}
 
-	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal)
+	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.GroupBy)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerListError{Err: err}).Error())
 	}
@@ -230,14 +232,15 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	return &ListContainersOutput{
 		Body: ContainerPaginatedResponse{
 			Success: true,
-			Data:    containers,
-			Counts:  counts,
+			Data:    result.Items,
+			Groups:  result.Groups,
+			Counts:  result.Counts,
 			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
+				TotalPages:      result.Pagination.TotalPages,
+				TotalItems:      result.Pagination.TotalItems,
+				CurrentPage:     result.Pagination.CurrentPage,
+				ItemsPerPage:    result.Pagination.ItemsPerPage,
+				GrandTotalItems: result.Pagination.GrandTotalItems,
 			},
 		},
 	}, nil

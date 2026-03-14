@@ -662,6 +662,19 @@ type ComposeInfo struct {
 	ProjectDir string `json:"projectDir,omitempty"`
 }
 
+// SummaryGroup represents a group of container summaries.
+type SummaryGroup struct {
+	// GroupName is the group label, such as a compose project name.
+	//
+	// Required: true
+	GroupName string `json:"groupName"`
+
+	// Items contains the container summaries in the group.
+	//
+	// Required: true
+	Items []Summary `json:"items"`
+}
+
 // Details represents detailed container information.
 type Details struct {
 	// ID is the unique identifier of the container.

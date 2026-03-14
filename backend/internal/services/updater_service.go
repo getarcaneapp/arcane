@@ -797,12 +797,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// Use original name for new container
 	containerName := strings.TrimPrefix(originalName, "/")
 
-	resp, err := dcli.ContainerCreate(ctx, client.ContainerCreateOptions{
+	resp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dcli, client.ContainerCreateOptions{
 		Config:           cfg,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
 		Name:             containerName,
-	})
+	}, apiVersion)
 	if err != nil {
 		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", containerName, "err", err)
 		return fmt.Errorf("create: %w", err)

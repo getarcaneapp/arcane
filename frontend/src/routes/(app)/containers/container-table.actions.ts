@@ -1,8 +1,7 @@
 import { openConfirmDialog } from '$lib/components/confirm-dialog';
 import { m } from '$lib/paraglide/messages';
-import { containerService } from '$lib/services/container-service';
+import { containerService, type ContainersPaginatedResponse } from '$lib/services/container-service';
 import type { ContainerSummaryDto } from '$lib/types/container.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 import { tryCatch } from '$lib/utils/try-catch';
 import { toast } from 'svelte-sonner';
@@ -16,9 +15,9 @@ type BulkLoadingState = {
 };
 
 type ActionDeps = {
-	getRequestOptions: () => SearchPaginationSortRequest;
-	setContainers: (next: Paginated<ContainerSummaryDto>) => void;
+	setContainers: (next: ContainersPaginatedResponse) => void;
 	setSelectedIds: (next: string[]) => void;
+	refreshContainers: () => Promise<ContainersPaginatedResponse>;
 	actionStatus: Record<string, ActionStatus>;
 	isBulkLoading: BulkLoadingState;
 };
@@ -66,14 +65,14 @@ const containerActionConfigs: Record<ContainerActionKind, ContainerActionConfig>
 };
 
 export function createContainerActions({
-	getRequestOptions,
 	setContainers,
 	setSelectedIds,
+	refreshContainers,
 	actionStatus,
 	isBulkLoading
 }: ActionDeps) {
-	const refreshContainers = async () => {
-		const result = await containerService.getContainers(getRequestOptions());
+	const reloadContainers = async () => {
+		const result = await refreshContainers();
 		setContainers(result);
 		return result;
 	};
@@ -91,7 +90,7 @@ export function createContainerActions({
 				},
 				async onSuccess() {
 					toast.success(config.success());
-					await refreshContainers();
+					await reloadContainers();
 				}
 			});
 		} catch (error) {
@@ -132,7 +131,7 @@ export function createContainerActions({
 						},
 						async onSuccess() {
 							toast.success(m.containers_remove_success());
-							await refreshContainers();
+							await reloadContainers();
 						}
 					});
 				}
@@ -167,7 +166,7 @@ export function createContainerActions({
 							toast.info(m.image_update_up_to_date_title());
 						}
 
-						await refreshContainers();
+						await reloadContainers();
 					} catch (error) {
 						console.error('Container update failed:', error);
 						toast.error(m.containers_update_failed({ name: containerName }));
@@ -206,7 +205,7 @@ export function createContainerActions({
 						toast.error(config.failure());
 					}
 
-					await refreshContainers();
+					await reloadContainers();
 					setSelectedIds([]);
 				}
 			}
@@ -293,7 +292,7 @@ export function createContainerActions({
 						toast.error(m.containers_remove_failed());
 					}
 
-					await refreshContainers();
+					await reloadContainers();
 					setSelectedIds([]);
 				}
 			}
