@@ -143,14 +143,14 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	return err
 }
 
-func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) error {
+func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{
 			"action": "redeploy",
 			"step":   "get_client",
 		})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
@@ -159,7 +159,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "inspect",
 		})
-		return fmt.Errorf("failed to inspect container: %w", err)
+		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
 	containerInfo := containerJSON.Container
@@ -169,7 +169,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "validate_config",
 		})
-		return fmt.Errorf("failed to redeploy container: %w", err)
+		return "", fmt.Errorf("failed to redeploy container: %w", err)
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
@@ -185,7 +185,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 
 	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, containerID, containerName, user.ID, user.Username, "0", metadata)
 	if err != nil {
-		return fmt.Errorf("failed to log action: %w", err)
+		return "", fmt.Errorf("failed to log action: %w", err)
 	}
 
 	if imageName != "" {
@@ -201,7 +201,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 					"step":   "pull_image_timeout",
 					"image":  imageName,
 				})
-				return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
+				return "", fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
 			}
 
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, models.JSON{
@@ -209,7 +209,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"step":   "pull_image",
 				"image":  imageName,
 			})
-			return fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
+			return "", fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
 		}
 		defer func() { _ = reader.Close() }()
 
@@ -220,7 +220,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"step":   "complete_pull",
 				"image":  imageName,
 			})
-			return fmt.Errorf("failed to complete image pull: %w", streamErr)
+			return "", fmt.Errorf("failed to complete image pull: %w", streamErr)
 		}
 	}
 
@@ -232,7 +232,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"action": "redeploy",
 				"step":   "stop",
 			})
-			return fmt.Errorf("failed to stop container: %w", err)
+			return "", fmt.Errorf("failed to stop container: %w", err)
 		}
 	}
 
@@ -246,7 +246,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"action": "redeploy",
 			"step":   "remove",
 		})
-		return fmt.Errorf("failed to remove old container: %w", err)
+		return "", fmt.Errorf("failed to remove old container: %w", err)
 	}
 
 	networkingConfig := buildCleanNetworkingConfigInternal(containerInfo)
@@ -263,7 +263,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 			"step":   "create",
 			"image":  imageName,
 		})
-		return fmt.Errorf("failed to recreate container: %w", err)
+		return "", fmt.Errorf("failed to recreate container: %w", err)
 	}
 
 	if wasRunning {
@@ -275,7 +275,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"step":   "start",
 				"image":  imageName,
 			})
-			return fmt.Errorf("failed to start new container: %w", err)
+			return "", fmt.Errorf("failed to start new container: %w", err)
 		}
 	}
 
@@ -286,7 +286,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		"image", imageName,
 	)
 
-	return nil
+	return createResp.ID, nil
 }
 
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {

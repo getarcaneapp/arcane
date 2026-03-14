@@ -107,6 +107,22 @@ type ContainerActionOutput struct {
 	Body ContainerActionResponse
 }
 
+// ContainerRedeployData includes the message and new container ID
+type ContainerRedeployData struct {
+	Message     string `json:"message" doc:"Response message"`
+	ContainerID string `json:"containerId" doc:"ID of the redeployed container"`
+}
+
+// ContainerRedeployResponse is a dedicated response type for redeploy
+type ContainerRedeployResponse struct {
+	Success bool                  `json:"success"`
+	Data    ContainerRedeployData `json:"data"`
+}
+
+type ContainerRedeployOutput struct {
+	Body ContainerRedeployResponse
+}
+
 type DeleteContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -631,7 +647,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}, nil
 }
 
-func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*ContainerRedeployOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -641,14 +657,18 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user); err != nil {
+	newContainerID, err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user)
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
 	}
 
-	return &ContainerActionOutput{
-		Body: ContainerActionResponse{
+	return &ContainerRedeployOutput{
+		Body: ContainerRedeployResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container redeployed successfully"},
+			Data: ContainerRedeployData{
+				Message:     "Container redeployed successfully",
+				ContainerID: newContainerID,
+			},
 		},
 	}, nil
 }
