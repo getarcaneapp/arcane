@@ -125,6 +125,12 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 	}
 
 	if registryType == "ecr" {
+		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
+			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required for ECR registries"}
+		}
+		if strings.TrimSpace(req.AWSRegion) == "" {
+			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required for ECR registries"}
+		}
 		encryptedSecret, err := crypto.Encrypt(req.AWSSecretAccessKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", err)

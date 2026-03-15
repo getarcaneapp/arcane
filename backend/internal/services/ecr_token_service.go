@@ -23,7 +23,7 @@ const ecrTokenTTL = 12 * time.Hour
 // ECR API, persisted back to the DB, and returned.
 func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *models.ContainerRegistry) (username, password string, err error) {
 	// 1. Return cached token if still valid.
-	if reg.ECRTokenGeneratedAt != nil && time.Since(*reg.ECRTokenGeneratedAt) < ecrTokenTTL {
+	if reg.ECRTokenGeneratedAt != nil && time.Since(reg.ECRTokenGeneratedAt.UTC()) < ecrTokenTTL {
 		if reg.ECRToken != "" {
 			decrypted, decErr := crypto.Decrypt(reg.ECRToken)
 			if decErr == nil && strings.TrimSpace(decrypted) != "" {

@@ -25,18 +25,37 @@
 		{ value: 'ecr', label: m.registries_type_ecr() }
 	];
 
-	const formSchema = z.object({
-		registryType: z.enum(['generic', 'ecr']).default('generic'),
-		url: z.string().min(1, m.registries_url_required()),
-		username: z.string().optional(),
-		token: z.string().optional(),
-		description: z.string().optional(),
-		insecure: z.boolean().default(false),
-		enabled: z.boolean().default(true),
-		awsAccessKeyId: z.string().optional(),
-		awsSecretAccessKey: z.string().optional(),
-		awsRegion: z.string().optional()
-	});
+	const formSchema = z
+		.object({
+			registryType: z.enum(['generic', 'ecr']).default('generic'),
+			url: z.string().min(1, m.registries_url_required()),
+			username: z.string().optional(),
+			token: z.string().optional(),
+			description: z.string().optional(),
+			insecure: z.boolean().default(false),
+			enabled: z.boolean().default(true),
+			awsAccessKeyId: z.string().optional(),
+			awsSecretAccessKey: z.string().optional(),
+			awsRegion: z.string().optional()
+		})
+		.superRefine((data, ctx) => {
+			if (data.registryType === 'ecr') {
+				if (!data.awsAccessKeyId?.trim()) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: m.registries_aws_access_key_id_required(),
+						path: ['awsAccessKeyId']
+					});
+				}
+				if (!data.awsRegion?.trim()) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: m.registries_aws_region_required(),
+						path: ['awsRegion']
+					});
+				}
+			}
+		});
 
 	let formData = $derived({
 		registryType: (open && registryToEdit ? (registryToEdit.registryType ?? 'generic') : 'generic') as RegistryType,

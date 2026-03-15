@@ -1328,6 +1328,8 @@
 	"registries_type_generic": "Generic (Docker / OCI)",
 	"registries_type_ecr": "Amazon ECR",
 	"registries_username_key_label": "Username/Key",
+	"registries_aws_access_key_id_required": "AWS Access Key ID is required for ECR registries",
+	"registries_aws_region_required": "AWS Region is required for ECR registries",
 	"registries_aws_access_key_id": "AWS Access Key ID",
 	"registries_aws_secret_access_key": "AWS Secret Access Key",
 	"registries_aws_region": "AWS Region",
