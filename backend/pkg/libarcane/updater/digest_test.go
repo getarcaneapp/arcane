@@ -1,4 +1,4 @@
-package arcaneupdater
+package updater
 
 import (
 	"testing"

@@ -85,6 +85,7 @@ jobs:
             org.opencontainers.image.ref.name=arcane
             org.opencontainers.image.title=Arcane
             org.opencontainers.image.description=Modern Docker Management, Made for Everyone
+            com.getarcaneapp.arcane=true
 
       - name: Build and push manager image
         id: manager-build
@@ -123,6 +124,8 @@ jobs:
             org.opencontainers.image.ref.name=arcane-agent
             org.opencontainers.image.title=Arcane Agent
             org.opencontainers.image.description=Arcane Agent
+            com.getarcaneapp.arcane=true
+            com.getarcaneapp.arcane.agent=true
 
       - name: Build and push agent image
         id: agent-build
