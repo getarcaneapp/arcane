@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -18,10 +19,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	utilsdistribution "github.com/getarcaneapp/arcane/backend/pkg/utils/distribution"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
 )
 
 const (
@@ -50,17 +51,19 @@ type resolvedRegistryCredential struct {
 }
 
 type ContainerRegistryService struct {
-	db           *database.DB
-	dockerClient registryDaemonGetter
-	cache        map[string]*cache.Cache[string] // imageRef -> digest cache
-	cacheMu      sync.RWMutex
+	db                     *database.DB
+	dockerClient           registryDaemonGetter
+	distributionHTTPClient *http.Client
+	cache                  map[string]*cache.Cache[string] // imageRef -> digest cache
+	cacheMu                sync.RWMutex
 }
 
 func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter) *ContainerRegistryService {
 	return &ContainerRegistryService{
-		db:           db,
-		dockerClient: dockerClient,
-		cache:        make(map[string]*cache.Cache[string]),
+		db:                     db,
+		dockerClient:           dockerClient,
+		distributionHTTPClient: utilsdistribution.NewRegistryHTTPClient(),
+		cache:                  make(map[string]*cache.Cache[string]),
 	}
 }
 
@@ -346,11 +349,36 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 }
 
 func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
-	normalizedRef, registryHost, err := normalizeImageReferenceForDistributionInternal(imageRef)
+	parts, err := normalizeDistributionReferenceInternal(imageRef)
 	if err != nil {
 		return nil, err
 	}
 
+	result, err := s.inspectImageDigestViaDaemonInternal(ctx, parts.NormalizedRef, parts.RegistryHost, externalCreds)
+	if err == nil {
+		return result, nil
+	}
+	if !isDistributionFallbackEligibleInternal(err) {
+		return result, err
+	}
+
+	slog.WarnContext(ctx, "distribution inspect unavailable, falling back to direct registry digest lookup",
+		"imageRef", parts.NormalizedRef,
+		"registry", parts.RegistryHost,
+		"error", err.Error())
+
+	fallbackResult, fallbackErr := s.inspectImageDigestViaRegistryInternal(ctx, parts.RegistryHost, parts.Repository, parts.Tag, externalCreds)
+	if fallbackErr == nil {
+		return fallbackResult, nil
+	}
+
+	return fallbackResult, fmt.Errorf(
+		"daemon digest lookup failed; registry fallback failed: %w",
+		errors.Join(err, fallbackErr),
+	)
+}
+
+func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx context.Context, normalizedRef, registryHost string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
 	dockerClient, err := s.getDockerClientInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -375,7 +403,8 @@ func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Contex
 
 	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
 	if credErr != nil {
-		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, credErr
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
+			fmt.Errorf("distribution inspect: anonymous access unauthorized; credential lookup failed: %w", errors.Join(err, credErr))
 	}
 
 	lastErr := err
@@ -421,6 +450,55 @@ func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Contex
 		partial.UsedCredential = true
 	}
 	return partial, fmt.Errorf("distribution inspect failed for %s: %w", normalizedRef, lastErr)
+}
+
+func (s *ContainerRegistryService) inspectImageDigestViaRegistryInternal(ctx context.Context, registryHost, repository, tag string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
+	digest, err := s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, nil)
+	if err == nil {
+		return &registryDigestResult{
+			Digest:       digest,
+			AuthMethod:   "anonymous",
+			AuthRegistry: registryHost,
+		}, nil
+	}
+	if !isUnauthorizedRegistryErrorInternal(err) {
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
+			fmt.Errorf("registry manifest inspect failed for %s/%s:%s: %w", registryHost, repository, tag, err)
+	}
+
+	credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
+	if credErr != nil {
+		return &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
+			fmt.Errorf("registry manifest inspect: anonymous access unauthorized; credential lookup failed: %w", errors.Join(err, credErr))
+	}
+
+	lastErr := err
+	var lastCred resolvedRegistryCredential
+	for _, credential := range credentials {
+		lastCred = credential
+
+		digest, err = s.fetchDigestFromRegistryInternal(ctx, registryHost, repository, tag, &credential)
+		if err == nil {
+			return &registryDigestResult{
+				Digest:         digest,
+				AuthMethod:     "credential",
+				AuthUsername:   credential.Username,
+				AuthRegistry:   registryHost,
+				UsedCredential: true,
+			}, nil
+		}
+
+		lastErr = err
+	}
+
+	partial := &registryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}
+	if lastCred.Username != "" {
+		partial.AuthMethod = "credential"
+		partial.AuthUsername = lastCred.Username
+		partial.UsedCredential = true
+	}
+
+	return partial, fmt.Errorf("registry manifest inspect failed for %s/%s:%s: %w", registryHost, repository, tag, lastErr)
 }
 
 func (s *ContainerRegistryService) getDockerClientInternal(ctx context.Context) (RegistryDaemonClient, error) {
@@ -608,25 +686,17 @@ func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, e
 	return nil
 }
 
+func normalizeDistributionReferenceInternal(imageRef string) (*utilsdistribution.Reference, error) {
+	return utilsdistribution.NormalizeReference(imageRef)
+}
+
 func normalizeImageReferenceForDistributionInternal(imageRef string) (string, string, error) {
-	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(imageRef))
+	parts, err := normalizeDistributionReferenceInternal(imageRef)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid image reference %q: %w", imageRef, err)
+		return "", "", err
 	}
 
-	if _, ok := named.(ref.Digested); ok {
-		return "", "", fmt.Errorf("digest-pinned references are not supported for distribution inspect: %q", imageRef)
-	}
-
-	registryHost := utilsregistry.NormalizeRegistryForComparison(ref.Domain(named))
-	repository := ref.Path(named)
-
-	tag := "latest"
-	if tagged, ok := named.(ref.NamedTagged); ok {
-		tag = tagged.Tag()
-	}
-
-	return registryHost + "/" + repository + ":" + tag, registryHost, nil
+	return parts.NormalizedRef, parts.RegistryHost, nil
 }
 
 func normalizeRegistryServerAddressInternal(registryURL string) string {
@@ -662,6 +732,10 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 		"no basic auth credentials",
 		"access denied",
 		"incorrect username or password",
+		"status: 401",
+		"status 401",
+		"status: 403",
+		"status 403",
 	}
 
 	for _, indicator := range indicators {
@@ -671,4 +745,31 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 	}
 
 	return false
+}
+
+func isDistributionFallbackEligibleInternal(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return utilsdistribution.IsFallbackEligibleDaemonError(err)
+}
+
+func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {
+	var distributionCredential *utilsdistribution.Credentials
+	if credential != nil {
+		distributionCredential = &utilsdistribution.Credentials{
+			Username: strings.TrimSpace(credential.Username),
+			Token:    strings.TrimSpace(credential.Token),
+		}
+	}
+
+	return utilsdistribution.FetchDigestWithHTTPClient(
+		ctx,
+		registryHost,
+		repository,
+		tag,
+		distributionCredential,
+		s.distributionHTTPClient,
+	)
 }

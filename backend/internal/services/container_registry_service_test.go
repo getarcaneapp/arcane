@@ -2,7 +2,12 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -18,6 +23,12 @@ type fakeRegistryDaemonClient struct {
 	distributionInspectFn func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
 	if f.registryLoginFn == nil {
 		return client.RegistryLoginResult{}, nil
@@ -30,6 +41,29 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 		return client.DistributionInspectResult{}, nil
 	}
 	return f.distributionInspectFn(ctx, imageRef, options)
+}
+
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+	t.Helper()
+
+	httpClient := server.Client()
+	cli, err := client.New(
+		client.WithHost(server.URL),
+		client.WithVersion("1.41"),
+		client.WithHTTPClient(httpClient),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = cli.Close()
+	})
+
+	return cli
+}
+
+func TestNewContainerRegistryService_InitializesDistributionHTTPClient(t *testing.T) {
+	svc := NewContainerRegistryService(nil, nil)
+	require.NotNil(t, svc.distributionHTTPClient)
 }
 
 func TestContainerRegistryService_GetAllRegistryAuthConfigs_NormalizesHosts(t *testing.T) {
@@ -189,4 +223,231 @@ func TestContainerRegistryService_InspectImageDigest_RetriesWithStoredCredential
 	assert.Equal(t, "credential", result.AuthMethod)
 	assert.Equal(t, "docker-user", result.AuthUsername)
 	assert.True(t, result.UsedCredential)
+}
+
+func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNotFound(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
+			w.Header().Set("Docker-Content-Digest", "sha256:fallback404")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	var calls int
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	svc.distributionHTTPClient = server.Client()
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, "sha256:fallback404", result.Digest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+}
+
+func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionForbidden(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
+			w.Header().Set("Docker-Content-Digest", "sha256:fallback403")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	var calls int
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+			},
+		}, nil
+	})
+	svc.distributionHTTPClient = server.Client()
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, "sha256:fallback403", result.Digest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+}
+
+func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAfterRegistryAuth403(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+
+	var authHeaders []string
+	var tokenURL string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/team/app/manifests/1.2.3":
+			authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+			switch len(authHeaders) {
+			case 1:
+				w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
+				w.WriteHeader(http.StatusUnauthorized)
+			case 2:
+				w.WriteHeader(http.StatusForbidden)
+			case 3:
+				w.Header().Set("Docker-Content-Digest", "sha256:stored-credential")
+				w.WriteHeader(http.StatusOK)
+			default:
+				t.Fatalf("unexpected manifest call %d", len(authHeaders))
+			}
+		case "/token":
+			username, password, ok := r.BasicAuth()
+			if !ok {
+				require.Equal(t, "", r.Header.Get("Authorization"))
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+					"token": "anonymous-token",
+				}))
+				return
+			}
+
+			require.Equal(t, "stored-user", username)
+			require.Equal(t, "stored-token", password)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"token": "credential-token",
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	tokenURL = server.URL + "/token"
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	createTestPullRegistry(t, db, server.URL, "stored-user", "stored-token")
+
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	svc.distributionHTTPClient = server.Client()
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:stored-credential", result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.Equal(t, "stored-user", result.AuthUsername)
+	assert.True(t, result.UsedCredential)
+	require.Len(t, authHeaders, 3)
+	assert.Equal(t, "", authHeaders[0])
+	assert.Equal(t, "Bearer anonymous-token", authHeaders[1])
+	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[2])
+}
+
+func TestContainerRegistryService_InspectImageDigest_DoesNotFallbackOnTLSFailure(t *testing.T) {
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				assert.Equal(t, "registry.example.com/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")
+			},
+		}, nil
+	})
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), "registry.example.com/team/app:1.2.3", nil)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, strings.ToLower(err.Error()), "x509")
+	assert.NotContains(t, err.Error(), "registry fallback failed")
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, "registry.example.com", result.AuthRegistry)
+}
+
+func TestContainerRegistryService_InspectImageDigest_PreservesDaemonAndFallbackErrors(t *testing.T) {
+	daemonErr := errors.New("Error response from daemon: Not Found")
+	fallbackErr := errors.New("dial tcp: i/o timeout")
+
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, daemonErr
+			},
+		}, nil
+	})
+	svc.distributionHTTPClient = &http.Client{
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, fallbackErr
+		}),
+	}
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), "registry.example.com/team/app:1.2.3", nil)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.ErrorIs(t, err, daemonErr)
+	assert.ErrorIs(t, err, fallbackErr)
+}
+
+func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthorizedWhenCredentialLookupFails(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	sqlDB, err := db.DB.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	var tokenURL string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/team/app/manifests/1.2.3":
+			w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/token":
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"token": "anonymous-token",
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	tokenURL = server.URL + "/token"
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	svc.distributionHTTPClient = server.Client()
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Contains(t, err.Error(), "anonymous access unauthorized")
+	assert.Contains(t, err.Error(), "status: 401")
+	assert.Contains(t, err.Error(), "failed to load enabled registries")
 }
