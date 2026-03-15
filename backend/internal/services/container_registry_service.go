@@ -713,7 +713,7 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		needsUpdate = true
 	}
 
-	needsUpdate = utils.UpdateIfChanged(&existing.RegistryType, item.RegistryType) || needsUpdate
+	needsUpdate = utils.UpdateIfChanged(&existing.RegistryType, newType) || needsUpdate
 	credChanged := utils.UpdateIfChanged(&existing.AWSAccessKeyID, item.AWSAccessKeyID)
 	credChanged = utils.UpdateIfChanged(&existing.AWSRegion, item.AWSRegion) || credChanged
 

@@ -232,11 +232,14 @@
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
-				label: m.common_username(),
-				getValue: (item: ContainerRegistry) => item.username,
+				label: item.registryType === 'ecr' ? m.registries_username_key_label() : m.common_username(),
+				getValue: (item: ContainerRegistry) =>
+					item.registryType === 'ecr' ? maskAccessKeyId(item.awsAccessKeyId) : item.username,
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.username ?? true) && item.username !== undefined
+				show:
+					(mobileFieldVisibility.username ?? true) &&
+					(item.registryType === 'ecr' ? !!item.awsAccessKeyId : item.username !== undefined)
 			},
 			{
 				label: m.common_description(),
