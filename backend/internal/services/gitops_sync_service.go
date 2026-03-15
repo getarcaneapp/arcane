@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	bootstraputils "github.com/getarcaneapp/arcane/backend/internal/utils"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
@@ -611,6 +613,10 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", err.Error())
 	}
 
+	if _, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, actor); err != nil {
+		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to sync project env files", err.Error())
+	}
+
 	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
 
 	// Deploy the project immediately after creation
@@ -647,21 +653,16 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) error {
 	// Get current content to see if it changed
 	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
-	contentChanged := oldCompose != composeContent
-	if envContent != nil {
-		if oldEnv != *envContent {
-			contentChanged = true
-		}
-	} else if oldEnv != "" {
-		contentChanged = true
-	}
 
 	// Update existing project's compose and env files
-	_, err := s.projectService.UpdateProject(ctx, project.ID, nil, &composeContent, envContent, actor)
+	_, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, actor)
 	if err != nil {
 		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
 	}
 	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID)
+
+	newCompose, newEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
+	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv)
 
 	// If content changed and project is running, redeploy
 	if contentChanged {
@@ -675,4 +676,14 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	}
 
 	return nil
+}
+
+func envContentChangedInternal(oldEnv, newEnv string) bool {
+	oldEnvMap, oldErr := projects.ParseProjectEnvContent(oldEnv, nil)
+	newEnvMap, newErr := projects.ParseProjectEnvContent(newEnv, nil)
+	if oldErr != nil || newErr != nil {
+		return oldEnv != newEnv
+	}
+
+	return !maps.Equal(oldEnvMap, newEnvMap)
 }
