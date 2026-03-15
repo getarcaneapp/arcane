@@ -3,6 +3,10 @@ package services
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -30,6 +34,37 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 		return client.DistributionInspectResult{}, nil
 	}
 	return f.distributionInspectFn(ctx, imageRef, options)
+}
+
+func useRegistryHTTPTransport(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+
+	oldTransport := http.DefaultTransport
+	typedTransport, ok := transport.(*http.Transport)
+	require.True(t, ok, "expected *http.Transport, got %T", transport)
+
+	http.DefaultTransport = typedTransport.Clone()
+	t.Cleanup(func() {
+		http.DefaultTransport = oldTransport
+	})
+}
+
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+	t.Helper()
+
+	httpClient := server.Client()
+	cli, err := client.New(
+		client.WithHost(server.URL),
+		client.WithVersion("1.41"),
+		client.WithHTTPClient(httpClient),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = cli.Close()
+	})
+
+	return cli
 }
 
 func TestContainerRegistryService_GetAllRegistryAuthConfigs_NormalizesHosts(t *testing.T) {
@@ -189,4 +224,96 @@ func TestContainerRegistryService_InspectImageDigest_RetriesWithStoredCredential
 	assert.Equal(t, "credential", result.AuthMethod)
 	assert.Equal(t, "docker-user", result.AuthUsername)
 	assert.True(t, result.UsedCredential)
+}
+
+func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNotFound(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
+			w.Header().Set("Docker-Content-Digest", "sha256:fallback404")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	useRegistryHTTPTransport(t, server.Client().Transport)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	var calls int
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, "sha256:fallback404", result.Digest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+}
+
+func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionForbidden(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
+			w.Header().Set("Docker-Content-Digest", "sha256:fallback403")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	useRegistryHTTPTransport(t, server.Client().Transport)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	var calls int
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+			},
+		}, nil
+	})
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), serverURL.Host+"/team/app:1.2.3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, "sha256:fallback403", result.Digest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+}
+
+func TestContainerRegistryService_InspectImageDigest_DoesNotFallbackOnTLSFailure(t *testing.T) {
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				assert.Equal(t, "registry.example.com/team/app:1.2.3", imageRef)
+				assert.Empty(t, options.EncodedRegistryAuth)
+				return client.DistributionInspectResult{}, errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")
+			},
+		}, nil
+	})
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), "registry.example.com/team/app:1.2.3", nil)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, strings.ToLower(err.Error()), "x509")
+	assert.NotContains(t, err.Error(), "registry fallback failed")
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, "registry.example.com", result.AuthRegistry)
 }
