@@ -751,16 +751,16 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 		BaseModel: models.BaseModel{
 			ID: item.ID,
 		},
-		URL:          item.URL,
-		Username:     item.Username,
-		Description:  item.Description,
-		Insecure:     item.Insecure,
-		Enabled:      item.Enabled,
-		RegistryType: registryType,
+		URL:            item.URL,
+		Username:       item.Username,
+		Description:    item.Description,
+		Insecure:       item.Insecure,
+		Enabled:        item.Enabled,
+		RegistryType:   registryType,
 		AWSAccessKeyID: item.AWSAccessKeyID,
-		AWSRegion:    item.AWSRegion,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		AWSRegion:      item.AWSRegion,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	if item.Token != "" {
