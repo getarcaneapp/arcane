@@ -109,21 +109,45 @@ func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id strin
 }
 
 func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req models.CreateContainerRegistryRequest) (*models.ContainerRegistry, error) {
-	// Encrypt the token before storing
-	encryptedToken, err := crypto.Encrypt(req.Token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt token: %w", err)
+	registryType := strings.TrimSpace(req.RegistryType)
+	if registryType == "" {
+		registryType = "generic"
 	}
 
 	registry := &models.ContainerRegistry{
-		URL:         req.URL,
-		Username:    req.Username,
-		Token:       encryptedToken,
-		Description: req.Description,
-		Insecure:    req.Insecure != nil && *req.Insecure,
-		Enabled:     req.Enabled == nil || *req.Enabled,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		URL:          req.URL,
+		Description:  req.Description,
+		Insecure:     req.Insecure != nil && *req.Insecure,
+		Enabled:      req.Enabled == nil || *req.Enabled,
+		RegistryType: registryType,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if registryType == "ecr" {
+		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
+			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required for ECR registries"}
+		}
+		if strings.TrimSpace(req.AWSRegion) == "" {
+			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required for ECR registries"}
+		}
+		if strings.TrimSpace(req.AWSSecretAccessKey) == "" {
+			return nil, &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required for ECR registries"}
+		}
+		encryptedSecret, err := crypto.Encrypt(req.AWSSecretAccessKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
+		}
+		registry.AWSAccessKeyID = req.AWSAccessKeyID
+		registry.AWSSecretAccessKey = encryptedSecret
+		registry.AWSRegion = req.AWSRegion
+	} else {
+		encryptedToken, err := crypto.Encrypt(req.Token)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt token: %w", err)
+		}
+		registry.Username = req.Username
+		registry.Token = encryptedToken
 	}
 
 	if err := s.db.WithContext(ctx).Create(registry).Error; err != nil {
@@ -139,22 +163,65 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		return nil, err
 	}
 
-	// Update fields
+	// Update common fields
 	utils.UpdateIfChanged(&registry.URL, req.URL)
-	utils.UpdateIfChanged(&registry.Username, req.Username)
-
-	if req.Token != nil && *req.Token != "" {
-		// Encrypt the new token
-		encryptedToken, err := crypto.Encrypt(*req.Token)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt token: %w", err)
-		}
-		utils.UpdateIfChanged(&registry.Token, encryptedToken)
-	}
-
 	utils.UpdateIfChanged(&registry.Description, req.Description)
 	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
 	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
+
+	// Detect type switch and clear stale credentials from the old type
+	if req.RegistryType != nil && *req.RegistryType != "" && *req.RegistryType != registry.RegistryType {
+		if *req.RegistryType == "ecr" {
+			registry.Username = ""
+			registry.Token = ""
+		} else {
+			registry.AWSAccessKeyID = ""
+			registry.AWSSecretAccessKey = ""
+			registry.AWSRegion = ""
+			registry.ECRToken = ""
+			registry.ECRTokenGeneratedAt = nil
+		}
+		utils.UpdateIfChanged(&registry.RegistryType, req.RegistryType)
+	}
+
+	// If switching to or updating ECR fields
+	newType := registry.RegistryType
+
+	if newType == "ecr" {
+		utils.UpdateIfChanged(&registry.AWSAccessKeyID, req.AWSAccessKeyID)
+		utils.UpdateIfChanged(&registry.AWSRegion, req.AWSRegion)
+		if req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "" {
+			encryptedSecret, encErr := crypto.Encrypt(*req.AWSSecretAccessKey)
+			if encErr != nil {
+				return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", encErr)
+			}
+			utils.UpdateIfChanged(&registry.AWSSecretAccessKey, &encryptedSecret)
+		}
+		// Validate required ECR fields after applying updates
+		if strings.TrimSpace(registry.AWSAccessKeyID) == "" {
+			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required for ECR registries"}
+		}
+		if strings.TrimSpace(registry.AWSRegion) == "" {
+			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required for ECR registries"}
+		}
+		if strings.TrimSpace(registry.AWSSecretAccessKey) == "" {
+			return nil, &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required for ECR registries"}
+		}
+		// Reset ECR token cache when credentials change so next auth call fetches a fresh token
+		if req.AWSAccessKeyID != nil || req.AWSSecretAccessKey != nil || req.AWSRegion != nil {
+			registry.ECRToken = ""
+			registry.ECRTokenGeneratedAt = nil
+		}
+	} else {
+		utils.UpdateIfChanged(&registry.Username, req.Username)
+		if req.Token != nil && *req.Token != "" {
+			encryptedToken, encErr := crypto.Encrypt(*req.Token)
+			if encErr != nil {
+				return nil, fmt.Errorf("failed to encrypt token: %w", encErr)
+			}
+			utils.UpdateIfChanged(&registry.Token, encryptedToken)
+		}
+	}
 
 	registry.UpdatedAt = time.Now()
 
@@ -235,18 +302,9 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 	}
 
 	authConfigs := make(map[string]dockerregistry.AuthConfig, len(registries))
-	for _, reg := range registries {
-		username := strings.TrimSpace(reg.Username)
-		if !reg.Enabled || username == "" || reg.Token == "" {
-			continue
-		}
-
-		decryptedToken, decryptErr := crypto.Decrypt(reg.Token)
-		if decryptErr != nil {
-			return nil, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, decryptErr)
-		}
-		token := strings.TrimSpace(decryptedToken)
-		if token == "" {
+	for i := range registries {
+		reg := &registries[i]
+		if !reg.Enabled {
 			continue
 		}
 
@@ -261,6 +319,31 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 		}
 		if serverAddress == "" {
 			continue
+		}
+
+		var username, token string
+
+		if reg.RegistryType == "ecr" {
+			ecrUser, ecrPass, ecrErr := s.GetOrRefreshECRToken(ctx, reg)
+			if ecrErr != nil {
+				slog.WarnContext(ctx, "failed to get ECR token for auth configs", "registry", reg.URL, "error", ecrErr)
+				continue
+			}
+			username = ecrUser
+			token = ecrPass
+		} else {
+			username = strings.TrimSpace(reg.Username)
+			if username == "" || reg.Token == "" {
+				continue
+			}
+			decryptedToken, decryptErr := crypto.Decrypt(reg.Token)
+			if decryptErr != nil {
+				return nil, fmt.Errorf("failed to decrypt token for registry %s: %w", reg.URL, decryptErr)
+			}
+			token = strings.TrimSpace(decryptedToken)
+			if token == "" {
+				continue
+			}
 		}
 
 		authConfig := dockerregistry.AuthConfig{
@@ -298,6 +381,31 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 	})
 	if err != nil {
 		return fmt.Errorf("registry login failed: %w", err)
+	}
+
+	return nil
+}
+
+// TestECRRegistry tests connectivity for an ECR registry by generating an auth token
+// and attempting a Docker login.
+func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *models.ContainerRegistry) error {
+	ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
+	if err != nil {
+		return fmt.Errorf("failed to obtain ECR token: %w", err)
+	}
+
+	dockerClient, err := s.getDockerClientInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = dockerClient.RegistryLogin(ctx, client.RegistryLoginOptions{
+		Username:      ecrUser,
+		Password:      ecrPass,
+		ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
+	})
+	if err != nil {
+		return fmt.Errorf("ECR registry login failed: %w", err)
 	}
 
 	return nil
@@ -464,9 +572,24 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 		return nil, fmt.Errorf("failed to load enabled registries: %w", err)
 	}
 
-	credentials := make([]resolvedRegistryCredential, 0, len(registries))
-	for _, reg := range registries {
+	creds := make([]resolvedRegistryCredential, 0, len(registries))
+	for i := range registries {
+		reg := &registries[i]
 		if !utilsregistry.IsRegistryMatch(reg.URL, registryHost) {
+			continue
+		}
+
+		if reg.RegistryType == "ecr" {
+			ecrUser, ecrPass, ecrErr := s.GetOrRefreshECRToken(ctx, reg)
+			if ecrErr != nil {
+				slog.WarnContext(ctx, "failed to get ECR token", "registry", reg.URL, "error", ecrErr)
+				continue
+			}
+			creds = append(creds, resolvedRegistryCredential{
+				Username:      ecrUser,
+				Token:         ecrPass,
+				ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
+			})
 			continue
 		}
 
@@ -485,14 +608,14 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 			continue
 		}
 
-		credentials = append(credentials, resolvedRegistryCredential{
+		creds = append(creds, resolvedRegistryCredential{
 			Username:      username,
 			Token:         token,
 			ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
 		})
 	}
 
-	return credentials, nil
+	return creds, nil
 }
 
 // SyncRegistries syncs registries from a manager to this agent instance
@@ -558,36 +681,98 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
 
 	// Always update token as it comes decrypted from manager
-	encryptedToken, err := crypto.Encrypt(item.Token)
-	if err == nil {
-		needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+	if item.Token != "" {
+		encryptedToken, err := crypto.Encrypt(item.Token)
+		if err != nil {
+			slog.Warn("failed to encrypt token during sync, skipping field", "registry", existing.ID, "error", err)
+		} else {
+			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+		}
 	}
 
 	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Insecure, item.Insecure) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
 
+	// Clear stale credentials when registry type changes during sync
+	newType := strings.TrimSpace(item.RegistryType)
+	if newType == "" {
+		newType = "generic"
+	}
+	if newType != existing.RegistryType {
+		if newType == "ecr" {
+			existing.Username = ""
+			existing.Token = ""
+		} else {
+			existing.AWSAccessKeyID = ""
+			existing.AWSSecretAccessKey = ""
+			existing.AWSRegion = ""
+			existing.ECRToken = ""
+			existing.ECRTokenGeneratedAt = nil
+		}
+		needsUpdate = true
+	}
+
+	needsUpdate = utils.UpdateIfChanged(&existing.RegistryType, item.RegistryType) || needsUpdate
+	credChanged := utils.UpdateIfChanged(&existing.AWSAccessKeyID, item.AWSAccessKeyID)
+	credChanged = utils.UpdateIfChanged(&existing.AWSRegion, item.AWSRegion) || credChanged
+
+	// Encrypt and update AWS secret if provided
+	if item.AWSSecretAccessKey != "" {
+		encryptedSecret, err := crypto.Encrypt(item.AWSSecretAccessKey)
+		if err != nil {
+			slog.Warn("failed to encrypt AWS secret during sync, skipping field", "registry", existing.ID, "error", err)
+		} else {
+			credChanged = utils.UpdateIfChanged(&existing.AWSSecretAccessKey, encryptedSecret) || credChanged
+		}
+	}
+
+	// Invalidate cached ECR token when credentials change
+	if credChanged {
+		existing.ECRToken = ""
+		existing.ECRTokenGeneratedAt = nil
+	}
+	needsUpdate = credChanged || needsUpdate
+
 	return needsUpdate
 }
 
 func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context, item containerregistry.Sync) error {
-	encryptedToken, err := crypto.Encrypt(item.Token)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt token for new registry %s: %w", item.ID, err)
+	registryType := strings.TrimSpace(item.RegistryType)
+	if registryType == "" {
+		registryType = "generic"
 	}
 
 	newRegistry := &models.ContainerRegistry{
 		BaseModel: models.BaseModel{
 			ID: item.ID,
 		},
-		URL:         item.URL,
-		Username:    item.Username,
-		Token:       encryptedToken,
-		Description: item.Description,
-		Insecure:    item.Insecure,
-		Enabled:     item.Enabled,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		URL:          item.URL,
+		Username:     item.Username,
+		Description:  item.Description,
+		Insecure:     item.Insecure,
+		Enabled:      item.Enabled,
+		RegistryType: registryType,
+		AWSAccessKeyID: item.AWSAccessKeyID,
+		AWSRegion:    item.AWSRegion,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if item.Token != "" {
+		encryptedToken, err := crypto.Encrypt(item.Token)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt token for new registry %s: %w", item.ID, err)
+		}
+		newRegistry.Token = encryptedToken
+	}
+
+	if item.AWSSecretAccessKey != "" {
+		encryptedSecret, err := crypto.Encrypt(item.AWSSecretAccessKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt AWS secret for new registry %s: %w", item.ID, err)
+		}
+		newRegistry.AWSSecretAccessKey = encryptedSecret
 	}
 
 	if err := s.db.WithContext(ctx).Create(newRegistry).Error; err != nil {
