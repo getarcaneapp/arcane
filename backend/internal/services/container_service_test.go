@@ -79,8 +79,9 @@ func TestBuildCleanNetworkingConfigInternalPreservesEndpointSettings(t *testing.
 		NetworkSettings: &container.NetworkSettings{
 			Networks: map[string]*network.EndpointSettings{
 				"bridge": {
-					Aliases:   []string{"svc"},
-					IPAddress: netip.MustParseAddr("172.17.0.2"),
+					Aliases:    []string{"svc"},
+					IPAddress:  netip.MustParseAddr("172.17.0.2"),
+					IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.17.0.5")},
 				},
 			},
 		},
@@ -91,6 +92,7 @@ func TestBuildCleanNetworkingConfigInternalPreservesEndpointSettings(t *testing.
 	require.Contains(t, out.EndpointsConfig, "bridge")
 	require.Equal(t, []string{"svc"}, out.EndpointsConfig["bridge"].Aliases)
 	require.Equal(t, netip.MustParseAddr("172.17.0.2"), out.EndpointsConfig["bridge"].IPAddress)
+	require.Nil(t, out.EndpointsConfig["bridge"].IPAMConfig)
 }
 
 func newGroupedContainerSummary(name string, project string) containertypes.Summary {

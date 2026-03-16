@@ -63,6 +63,16 @@ func buildCleanNetworkingConfigInternal(containerInspect container.InspectRespon
 	}
 
 	endpointsConfig := libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
+	for networkName, endpoint := range endpointsConfig {
+		if endpoint == nil {
+			continue
+		}
+
+		endpointCopy := *endpoint
+		endpointCopy.IPAMConfig = nil
+		endpointsConfig[networkName] = &endpointCopy
+	}
+
 	if len(endpointsConfig) == 0 {
 		return nil
 	}
