@@ -1,10 +1,13 @@
 package services
 
 import (
+	"net/netip"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,6 +72,27 @@ func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
 	require.Len(t, groups[1].Items, 2)
 	require.Equal(t, containerNoProjectGroup, getContainerProjectNameInternal(groups[1].Items[0]))
 	require.Equal(t, containerNoProjectGroup, getContainerProjectNameInternal(groups[1].Items[1]))
+}
+
+func TestBuildCleanNetworkingConfigInternalPreservesEndpointSettings(t *testing.T) {
+	containerInspect := container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				"bridge": {
+					Aliases:    []string{"svc"},
+					IPAddress:  netip.MustParseAddr("172.17.0.2"),
+					IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.17.0.5")},
+				},
+			},
+		},
+	}
+
+	out := buildCleanNetworkingConfigInternal(containerInspect, "1.44")
+	require.NotNil(t, out)
+	require.Contains(t, out.EndpointsConfig, "bridge")
+	require.Equal(t, []string{"svc"}, out.EndpointsConfig["bridge"].Aliases)
+	require.Equal(t, netip.MustParseAddr("172.17.0.2"), out.EndpointsConfig["bridge"].IPAddress)
+	require.Nil(t, out.EndpointsConfig["bridge"].IPAMConfig)
 }
 
 func newGroupedContainerSummary(name string, project string) containertypes.Summary {
