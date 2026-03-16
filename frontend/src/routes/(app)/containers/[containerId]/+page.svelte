@@ -229,6 +229,12 @@
 	const project = $derived(data?.project ?? null);
 	const composeInfo = $derived(container?.composeInfo ?? null);
 	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
+	const rootComposeFilename = $derived.by(() => {
+		const cf = composeInfo?.configFiles;
+		if (!cf) return 'compose.yml';
+		const first = cf.split(',')[0].trim();
+		return first.split('/').pop() || 'compose.yml';
+	});
 
 	// Find which file (root compose or an include file) directly defines this service.
 	// Returns { includeFile: null } for root compose, { includeFile: <file> } for a sub-file,
@@ -428,7 +434,7 @@
 			{#if project && serviceComposeSource}
 				<Tabs.Content value="compose" class="h-full min-h-0">
 					{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
-						<ContainerComposePanel {project} serviceName={composeServiceName} includeFile={serviceComposeSource.includeFile} />
+						<ContainerComposePanel {project} serviceName={composeServiceName} includeFile={serviceComposeSource.includeFile} rootFilename={rootComposeFilename} />
 					{/key}
 				</Tabs.Content>
 			{/if}

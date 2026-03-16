@@ -11,11 +11,13 @@
 	let {
 		project,
 		serviceName,
-		includeFile = null
+		includeFile = null,
+		rootFilename = 'compose.yml'
 	}: {
 		project: Project;
 		serviceName: string;
 		includeFile?: IncludeFile | null;
+		rootFilename?: string;
 	} = $props();
 
 	const sourceContent = $derived(includeFile ? includeFile.content : (project.composeContent ?? ''));
@@ -28,7 +30,7 @@
 	let isSaving = $state(false);
 
 	const isReadOnly = $derived(!!project.gitOpsManagedBy);
-	const fileTitle = $derived(includeFile ? includeFile.relativePath : 'compose.yml');
+	const fileTitle = $derived(includeFile ? includeFile.relativePath : rootFilename);
 
 	async function handleSave() {
 		isSaving = true;
@@ -38,8 +40,8 @@
 			} else {
 				await projectService.updateProject(project.id, undefined, composeContent);
 			}
-			await invalidateAll();
 			toast.success(m.container_compose_save_success());
+			await invalidateAll();
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : m.container_compose_save_failed();
 			toast.error(message);
