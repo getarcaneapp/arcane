@@ -134,13 +134,13 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 
 	if registryType == registryTypeECR {
 		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
-			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required for ECR registries"}
+			return nil, &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required"}
 		}
 		if strings.TrimSpace(req.AWSRegion) == "" {
-			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required for ECR registries"}
+			return nil, &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required"}
 		}
 		if strings.TrimSpace(req.AWSSecretAccessKey) == "" {
-			return nil, &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required for ECR registries"}
+			return nil, &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required"}
 		}
 		encryptedSecret, err := crypto.Encrypt(req.AWSSecretAccessKey)
 		if err != nil {
@@ -150,6 +150,12 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 		registry.AWSSecretAccessKey = encryptedSecret
 		registry.AWSRegion = req.AWSRegion
 	} else {
+		if strings.TrimSpace(req.Username) == "" {
+			return nil, &models.ValidationError{Field: "username", Message: "Username is required"}
+		}
+		if strings.TrimSpace(req.Token) == "" {
+			return nil, &models.ValidationError{Field: "token", Message: "Token is required"}
+		}
 		encryptedToken, err := crypto.Encrypt(req.Token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt token: %w", err)
@@ -240,13 +246,13 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *mod
 	}
 
 	if strings.TrimSpace(registry.AWSAccessKeyID) == "" {
-		return &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required for ECR registries"}
+		return &models.ValidationError{Field: "awsAccessKeyId", Message: "AWS Access Key ID is required"}
 	}
 	if strings.TrimSpace(registry.AWSRegion) == "" {
-		return &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required for ECR registries"}
+		return &models.ValidationError{Field: "awsRegion", Message: "AWS Region is required"}
 	}
 	if strings.TrimSpace(registry.AWSSecretAccessKey) == "" {
-		return &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required for ECR registries"}
+		return &models.ValidationError{Field: "awsSecretAccessKey", Message: "AWS Secret Access Key is required"}
 	}
 
 	if req.AWSAccessKeyID != nil || req.AWSSecretAccessKey != nil || req.AWSRegion != nil {
@@ -260,15 +266,18 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *mod
 func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
 	utils.UpdateIfChanged(&registry.Username, req.Username)
 
-	if req.Token == nil || *req.Token == "" {
-		return nil
+	if req.Token != nil && *req.Token != "" {
+		encryptedToken, err := crypto.Encrypt(*req.Token)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt token: %w", err)
+		}
+		utils.UpdateIfChanged(&registry.Token, &encryptedToken)
 	}
 
-	encryptedToken, err := crypto.Encrypt(*req.Token)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt token: %w", err)
+	if strings.TrimSpace(registry.Username) == "" {
+		return &models.ValidationError{Field: "username", Message: "Username is required"}
 	}
-	utils.UpdateIfChanged(&registry.Token, encryptedToken)
+
 	return nil
 }
 

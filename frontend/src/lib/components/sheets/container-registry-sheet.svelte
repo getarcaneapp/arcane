@@ -66,6 +66,21 @@
 						path: ['awsSecretAccessKey']
 					});
 				}
+			} else {
+				if (!data.username?.trim()) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: m.registries_username_required(),
+						path: ['username']
+					});
+				}
+				if (!isEditMode && !data.token?.trim()) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: m.registries_token_required(),
+						path: ['token']
+					});
+				}
 			}
 		});
 

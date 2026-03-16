@@ -131,6 +131,95 @@ func TestContainerRegistryService_CreateRegistry_RejectsUnsupportedRegistryType(
 	assert.Equal(t, "registryType", validationErr.Field)
 }
 
+func TestContainerRegistryService_CreateRegistry_RejectsEmptyUsernameForGeneric(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	_, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "",
+		Token:    "my-token",
+	})
+	require.Error(t, err)
+
+	var validationErr *models.ValidationError
+	require.ErrorAs(t, err, &validationErr)
+	assert.Equal(t, "username", validationErr.Field)
+}
+
+func TestContainerRegistryService_CreateRegistry_RejectsEmptyTokenForGeneric(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	_, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "",
+	})
+	require.Error(t, err)
+
+	var validationErr *models.ValidationError
+	require.ErrorAs(t, err, &validationErr)
+	assert.Equal(t, "token", validationErr.Field)
+}
+
+func TestContainerRegistryService_CreateRegistry_AcceptsValidGenericCredentials(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "my-user", reg.Username)
+	assert.NotEmpty(t, reg.Token)
+}
+
+func TestContainerRegistryService_UpdateRegistry_RejectsBlankingUsername(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+
+	empty := ""
+	_, err = svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+		Username: &empty,
+	})
+	require.Error(t, err)
+
+	var validationErr *models.ValidationError
+	require.ErrorAs(t, err, &validationErr)
+	assert.Equal(t, "username", validationErr.Field)
+}
+
+func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvided(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+	originalToken := reg.Token
+
+	newUser := "updated-user"
+	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+		Username: &newUser,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "updated-user", updated.Username)
+	assert.Equal(t, originalToken, updated.Token)
+}
+
 func TestContainerRegistryService_SyncRegistries_ClearsGenericTokenWhenManagerSendsEmptyValue(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://registry.example.com", "registry-user", "old-token")
