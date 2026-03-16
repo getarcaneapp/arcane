@@ -968,6 +968,8 @@
 	"general_title": "一般",
 	"general_projects_directory_label": "專案目錄",
 	"general_projects_directory_help": "Docker Compose 檔案的儲存路徑（容器內），必須為絕對路徑！",
+	"general_follow_project_symlinks_label": "跟隨 Symlinks 專案",
+	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "基底伺服器網址",
 	"general_base_url_help": "Docker 主機的基底路徑，用於從服務連結開啟容器時",
 	"general_user_avatars_heading": "使用者頭像",
