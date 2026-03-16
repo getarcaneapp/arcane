@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/netip"
@@ -651,27 +650,26 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	// Fetch full container details to return (consistent with other endpoints)
-	containerInspect, err := h.containerService.GetContainerByID(ctx, newContainerID)
-	if err != nil {
-		// Container was redeployed successfully, but we couldn't fetch full details
-		// Return minimal response with just the ID so frontend can still navigate
-		slog.WarnContext(ctx, "Failed to fetch container details after redeploy", "containerId", newContainerID, "error", err.Error())
+	containerInspect, inspectErr := h.containerService.GetContainerByID(ctx, newContainerID)
+	if inspectErr == nil {
+		details := containertypes.NewDetails(containerInspect)
+
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,
-				Data: containertypes.Details{
-					ID: newContainerID,
-				},
+				Data:    details,
 			},
 		}, nil
 	}
 
-	details := containertypes.NewDetails(containerInspect)
-
+	// Container was redeployed successfully, but we couldn't fetch full details.
+	// Return minimal response with just the ID so frontend can still navigate.
 	return &GetContainerOutput{
 		Body: ContainerDetailsResponse{
 			Success: true,
-			Data:    details,
+			Data: containertypes.Details{
+				ID: newContainerID,
+			},
 		},
 	}, nil
 }

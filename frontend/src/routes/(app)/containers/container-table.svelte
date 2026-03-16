@@ -641,10 +641,7 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item
-					onclick={() => handleRedeployContainer(item)}
-					disabled={status === 'redeploying' || isAnyLoading}
-				>
+				<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
 					{#if status === 'redeploying'}
 						<Spinner class="size-4" />
 					{:else}

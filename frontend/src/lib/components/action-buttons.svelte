@@ -142,7 +142,12 @@
 
 	const redeployMutation = createMutation(() => ({
 		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: () => tryCatch((type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<ContainerDetailsResponse | Project>),
+		mutationFn: () =>
+			tryCatch(
+				(type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<
+					ContainerDetailsResponse | Project
+				>
+			),
 		onMutate: () => setLoading('redeploy', true),
 		onSettled: () => setLoading('redeploy', false)
 	}));
@@ -418,7 +423,9 @@
 							result,
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
 							onSuccess: async (data) => {
-								toast.success(type === 'container' ? m.container_redeploy_success() : m.common_redeploy_success({ type: name || type }));
+								toast.success(
+									type === 'container' ? m.container_redeploy_success() : m.common_redeploy_success({ type: name || type })
+								);
 								const containerData = data as ContainerDetailsResponse;
 								if (type === 'container' && containerData?.data?.id) {
 									goto(`/containers/${containerData.data.id}`);
@@ -876,7 +883,7 @@
 				{/if}
 
 				{#if type === 'container'}
-				    <ArcaneButton
+					<ArcaneButton
 						action="redeploy"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
@@ -1018,7 +1025,7 @@
 							{/if}
 
 							{#if type === 'container'}
-							    <DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+								<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
 									{m.common_redeploy()}
 								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
