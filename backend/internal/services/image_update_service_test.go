@@ -2,7 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -349,8 +356,123 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(glsqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
 	return &database.DB{DB: db}
+}
+
+func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remoteDigest string) *httptest.Server {
+	t.Helper()
+
+	repository := repositoryTag
+	tag := "latest"
+	if tagIndex := strings.LastIndex(repositoryTag, ":"); tagIndex > strings.LastIndex(repositoryTag, "/") {
+		repository = repositoryTag[:tagIndex]
+		tag = repositoryTag[tagIndex+1:]
+	}
+	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", repository, tag)
+
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			imageRef := r.Host + "/" + repositoryTag
+			repositoryRef := imageRef
+			if tagIndex := strings.LastIndex(imageRef, ":"); tagIndex > strings.LastIndex(imageRef, "/") {
+				repositoryRef = imageRef[:tagIndex]
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:          "sha256:local-image-id",
+				RepoTags:    []string{imageRef},
+				RepoDigests: []string{repositoryRef + "@" + localDigest},
+			}))
+			return
+		case r.URL.Path == manifestPath:
+			w.Header().Set("Docker-Content-Digest", remoteDigest)
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", "sha256:localdigest", "sha256:remotedigest")
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/team/app:1.2.3"
+
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	registryService.distributionHTTPClient = server.Client()
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.HasUpdate)
+	assert.Equal(t, "digest", result.UpdateType)
+	assert.Equal(t, "sha256:localdigest", result.CurrentDigest)
+	assert.Equal(t, "sha256:remotedigest", result.LatestDigest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
+	assert.Equal(t, "sha256:remotedigest", stringPtrToString(saved.LatestDigest))
+}
+
+func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", "sha256:batchlocal", "sha256:batchremote")
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/team/app:1.2.3"
+
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+			},
+		}, nil
+	})
+	registryService.distributionHTTPClient = server.Client()
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+
+	result := results[imageRef]
+	require.NotNil(t, result)
+	assert.True(t, result.HasUpdate)
+	assert.Equal(t, "sha256:batchlocal", result.CurrentDigest)
+	assert.Equal(t, "sha256:batchremote", result.LatestDigest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
+	assert.Equal(t, "sha256:batchremote", stringPtrToString(saved.LatestDigest))
 }
 
 // TestNotificationSentLogic tests the notification_sent flag behavior

@@ -12,10 +12,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/types/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -331,7 +331,7 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 // findArcaneContainerByLabel searches for the Arcane container using labels
 func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
 	f := make(client.Filters)
-	f = f.Add("label", arcaneupdater.LabelArcane+"=true")
+	f = f.Add("label", libupdater.LabelArcane+"=true")
 	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)

@@ -80,10 +80,11 @@ func createTestPullRegistry(t *testing.T, db *database.DB, url, username, token 
 	require.NoError(t, err)
 
 	reg := &models.ContainerRegistry{
-		URL:      url,
-		Username: username,
-		Token:    encryptedToken,
-		Enabled:  true,
+		URL:          url,
+		Username:     username,
+		Token:        encryptedToken,
+		Enabled:      true,
+		RegistryType: registryTypeGeneric,
 	}
 	require.NoError(t, db.WithContext(context.Background()).Create(reg).Error)
 }

@@ -10,8 +10,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/converter"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/system"
 	"github.com/goccy/go-yaml"
@@ -257,7 +257,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*containertypes.
 	return s.performBatchContainerAction(ctx, containers, "stop",
 		func(c container.Summary) bool {
 			// Skip Arcane container
-			return !arcaneupdater.IsArcaneContainer(c.Labels)
+			return !libupdater.IsArcaneContainer(c.Labels)
 		},
 		func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, systemUser)

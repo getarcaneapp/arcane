@@ -3,6 +3,7 @@ package services
 import (
 	"testing"
 
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,4 +150,37 @@ func TestSystemUpgradeService_AtomicOperations(t *testing.T) {
 	old := s.upgrading.Swap(true)
 	require.False(t, old)
 	require.True(t, s.upgrading.Load())
+}
+
+func TestDetermineUpgradeBinaryPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   string
+	}{
+		{
+			name: "agent container uses agent binary",
+			labels: map[string]string{
+				libupdater.LabelArcaneAgent: "true",
+			},
+			want: "/app/arcane-agent",
+		},
+		{
+			name: "main container uses main binary",
+			labels: map[string]string{
+				libupdater.LabelArcane: "true",
+			},
+			want: "/app/arcane",
+		},
+		{
+			name: "no labels defaults to main binary",
+			want: "/app/arcane",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, determineUpgradeBinaryPathInternal(tt.labels))
+		})
+	}
 }

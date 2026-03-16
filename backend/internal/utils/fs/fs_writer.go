@@ -1,9 +1,11 @@
 package fs
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 )
@@ -69,9 +71,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	return nil
 }
 
-// WriteEnvFile writes a .env file to the specified directory
-// projectsRoot is the allowed root directory to prevent path traversal attacks
-func WriteEnvFile(projectsRoot, dirPath, content string) error {
+func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	// Security: Validate dirPath is absolute and clean to prevent path traversal
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
@@ -87,19 +87,69 @@ func WriteEnvFile(projectsRoot, dirPath, content string) error {
 	rootAbs = filepath.Clean(rootAbs)
 
 	if !IsSafeSubdirectory(rootAbs, dirPath) {
-		return fmt.Errorf("refusing to write env file: path outside projects root")
+		return fmt.Errorf("refusing to write project file: path outside projects root")
 	}
 
 	if err := os.MkdirAll(dirPath, common.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	envPath := filepath.Join(dirPath, ".env")
-	if err := os.WriteFile(envPath, []byte(content), common.FilePerm); err != nil {
-		return fmt.Errorf("failed to write env file: %w", err)
+	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
+		return fmt.Errorf("invalid project file name %q", fileName)
+	}
+
+	targetPath := filepath.Join(dirPath, fileName)
+	if err := os.WriteFile(targetPath, []byte(content), common.FilePerm); err != nil {
+		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
 
 	return nil
+}
+
+func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
+	absPath, err := filepath.Abs(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve directory path: %w", err)
+	}
+	dirPath = filepath.Clean(absPath)
+
+	rootAbs, err := filepath.Abs(projectsRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve projects root: %w", err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	if !IsSafeSubdirectory(rootAbs, dirPath) {
+		return fmt.Errorf("refusing to remove project file: path outside projects root")
+	}
+
+	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
+		return fmt.Errorf("invalid project file name %q", fileName)
+	}
+
+	targetPath := filepath.Join(dirPath, fileName)
+	if err := os.Remove(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove project file %s: %w", fileName, err)
+	}
+
+	return nil
+}
+
+// WriteEnvFile writes a .env file to the specified directory
+// projectsRoot is the allowed root directory to prevent path traversal attacks
+func WriteEnvFile(projectsRoot, dirPath, content string) error {
+	return WriteProjectFile(projectsRoot, dirPath, ".env", content)
+}
+
+func EnsureEnvFile(projectsRoot, dirPath string) error {
+	envPath := filepath.Join(dirPath, ".env")
+	if _, err := os.Stat(envPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to stat env file: %w", err)
+	}
+
+	return WriteEnvFile(projectsRoot, dirPath, "")
 }
 
 // WriteProjectFiles writes both compose and env files to a project directory.
@@ -119,11 +169,8 @@ func WriteProjectFiles(projectsRoot, dirPath, composeContent string, envContent 
 			return err
 		}
 	} else {
-		envPath := filepath.Join(dirPath, ".env")
-		if _, err := os.Stat(envPath); os.IsNotExist(err) {
-			if err := WriteEnvFile(projectsRoot, dirPath, ""); err != nil {
-				return err
-			}
+		if err := EnsureEnvFile(projectsRoot, dirPath); err != nil {
+			return err
 		}
 	}
 
