@@ -968,6 +968,8 @@
 	"general_title": "Chung",
 	"general_projects_directory_label": "Thư mục Projects",
 	"general_projects_directory_help": "Thư mục chứa các tệp Docker Compose (thư mục này nằm bên trong container). PHẢI là đường dẫn tuyệt đối!",
+	"general_follow_project_symlinks_label": "Theo dõi các liên kết tượng trưng của Dự án",
+	"general_follow_project_symlinks_help": "Xử lý các thư mục con được liên kết tượng trưng bên trong thư mục projects như các dự án Docker Compose.",
 	"general_base_url_label": "Base Server URL",
 	"general_base_url_help": "URL cơ sở cho Docker host của bạn. Được dùng khi mở Container từ các liên kết dịch vụ",
 	"general_user_avatars_heading": "Ảnh đại diện người dùng",
