@@ -968,6 +968,8 @@
 	"general_title": "일반",
 	"general_projects_directory_label": "프로젝트 디렉토리",
 	"general_projects_directory_help": "Docker Compose 파일이 저장되는 디렉토리입니다(컨테이너 내부 경로). 반드시 절대 경로여야 합니다!",
+	"general_follow_project_symlinks_label": "Follow Project Symlinks",
+	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "기본 서버 URL",
 	"general_base_url_help": "Docker 호스트의 기본 URL입니다. 서비스 링크에서 컨테이너를 열 때 사용됩니다",
 	"general_user_avatars_heading": "사용자 아바타",
