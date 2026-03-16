@@ -10,7 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -63,7 +63,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		userService:     userService,
 		settingsService: settingsService,
 		eventService:    eventService,
-		jwtSecret:       crypto.CheckOrGenerateJwtSecret(jwtSecret),
+		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
 	}
@@ -509,13 +509,13 @@ func (s *AuthService) isAdminFromOidc(ctx context.Context, userInfo auth.OidcUse
 		return false
 	}
 
-	if v, ok := crypto.GetByPath(userInfo.Extra, claimKey); ok && crypto.EvalMatch(v, values) {
+	if v, ok := jwtclaims.GetByPath(userInfo.Extra, claimKey); ok && jwtclaims.EvalMatch(v, values) {
 		return true
 	}
 
 	if tokenResp != nil && tokenResp.IDToken != "" {
-		if claims := crypto.ParseJWTClaims(tokenResp.IDToken); claims != nil {
-			if v, ok := crypto.GetByPath(claims, claimKey); ok && crypto.EvalMatch(v, values) {
+		if claims := jwtclaims.ParseJWTClaims(tokenResp.IDToken); claims != nil {
+			if v, ok := jwtclaims.GetByPath(claims, claimKey); ok && jwtclaims.EvalMatch(v, values) {
 				return true
 			}
 		}

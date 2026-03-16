@@ -19,10 +19,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	arcRegistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	arcRegistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 

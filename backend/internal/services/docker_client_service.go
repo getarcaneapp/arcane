@@ -10,8 +10,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/mount"

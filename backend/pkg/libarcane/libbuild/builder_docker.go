@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/go-archive"
 	dockercontainer "github.com/moby/moby/api/types/container"

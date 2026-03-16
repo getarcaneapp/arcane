@@ -13,8 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	httputil "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,7 +62,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 	defer managerServer.Close()
 
 	// 3. Configure and Start Agent Client
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport:         EdgeTransportWebSocket,
 		ManagerApiUrl:         managerServer.URL,
 		AgentToken:            "test-token",
@@ -141,7 +140,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	defer managerServer.Close()
 
 	// 3. Configure Agent
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport: EdgeTransportWebSocket,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "test-token",
@@ -192,7 +191,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	}))
 	defer managerServer.Close()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport: EdgeTransportWebSocket,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "test-token",
@@ -223,7 +222,7 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		ManagerApiUrl: server.URL,
 		AgentToken:    "test-token",
 	}
@@ -320,7 +319,7 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			cfg := &config.Config{
+			cfg := &Config{
 				Listen: testCase.listen,
 				Port:   testCase.port,
 			}
@@ -335,12 +334,12 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 }
 
 func TestTunnelClient_GRPCConnectMethodInternal(t *testing.T) {
-	client := NewTunnelClient(&config.Config{}, http.NotFoundHandler())
+	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
 	assert.Equal(t, "/api/tunnel/connect", client.grpcConnectMethodInternal())
 }
 
 func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
 	}, http.NotFoundHandler())
 
@@ -363,7 +362,7 @@ func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
 }
 
 func TestTunnelClient_buildLocalWebSocketHeadersInternal_FiltersBrowserHeaders(t *testing.T) {
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
 	}, http.NotFoundHandler())
 
@@ -446,7 +445,7 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 	parsedURL, err := url.Parse(localServer.URL)
 	require.NoError(t, err)
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
 		Listen:     parsedURL.Hostname(),
 		Port:       parsedURL.Port(),
@@ -507,7 +506,7 @@ func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingR
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportGRPC,
 	}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}

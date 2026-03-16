@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -148,7 +147,7 @@ func TestHandleRequest_SetsHostField(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	client := NewTunnelClient(&config.Config{}, localHandler)
+	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
 	client.conn = conn
 
@@ -180,7 +179,7 @@ func TestHandleRequest_ForwardsBody(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"p1"}`))
 	})
 
-	client := NewTunnelClient(&config.Config{}, localHandler)
+	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
 	client.conn = conn
 
@@ -212,7 +211,7 @@ func TestHandleRequest_NoBrowserHeadersInTunnelMessage(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	client := NewTunnelClient(&config.Config{}, localHandler)
+	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
 	client.conn = conn
 

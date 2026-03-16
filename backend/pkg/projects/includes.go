@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/goccy/go-yaml"
 )
 
@@ -190,12 +190,12 @@ func WriteIncludeFile(projectDir, includePath, content string) error {
 
 	// Only create directory if it doesn't exist
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
 
-	if err := os.WriteFile(validatedPath, []byte(content), common.FilePerm); err != nil {
+	if err := os.WriteFile(validatedPath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write include file: %w", err)
 	}
 

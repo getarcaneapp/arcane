@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
-	wsutil "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	wsutil "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -204,8 +203,8 @@ func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c *gin.Context, a
 	// ProxyHTTPRequest and ProxyWebSocketRequest copy headers from c.Request.Header,
 	// so setting these here ensures the agent receives proper authentication.
 	if accessToken != nil && *accessToken != "" {
-		c.Request.Header.Set(remenv.HeaderAgentToken, *accessToken)
-		c.Request.Header.Set(remenv.HeaderAPIKey, *accessToken)
+		c.Request.Header.Set(edge.HeaderAgentToken, *accessToken)
+		c.Request.Header.Set(edge.HeaderAPIKey, *accessToken)
 	}
 }
 
@@ -294,8 +293,8 @@ func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
 	if websocket.IsWebSocketUpgrade(c.Request) {
 		return true
 	}
-	return strings.EqualFold(c.GetHeader(remenv.HeaderUpgrade), "websocket") ||
-		strings.Contains(strings.ToLower(c.GetHeader(remenv.HeaderConnection)), remenv.ConnectionUpgradeToken) ||
+	return strings.EqualFold(c.GetHeader(edge.HeaderUpgrade), "websocket") ||
+		strings.Contains(strings.ToLower(c.GetHeader(edge.HeaderConnection)), edge.ConnectionUpgradeToken) ||
 		c.GetHeader("Sec-Websocket-Key") != ""
 }
 
@@ -361,8 +360,8 @@ func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, ac
 		return
 	}
 
-	wsTarget := remenv.HTTPToWebSocketURL(target)
-	headers := remenv.BuildWebSocketHeaders(c, accessToken)
+	wsTarget := edge.HTTPToWebSocketURL(target)
+	headers := edge.BuildWebSocketHeaders(c, accessToken)
 
 	if err := wsutil.ProxyHTTP(c.Writer, c.Request, wsTarget, headers); err != nil {
 		slog.Error("websocket proxy failed", "err", err)
@@ -428,11 +427,11 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 		return nil, err
 	}
 
-	skip := remenv.GetSkipHeaders()
-	remenv.CopyRequestHeaders(c.Request.Header, req.Header, skip)
-	remenv.SetAuthHeader(req, c)
-	remenv.SetAgentToken(req, accessToken)
-	remenv.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
+	skip := edge.GetSkipHeaders()
+	edge.CopyRequestHeaders(c.Request.Header, req.Header, skip)
+	edge.SetAuthHeader(req, c)
+	edge.SetAgentToken(req, accessToken)
+	edge.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
 
 	// Set Content-Length based on actual body size
 	if len(bodyBytes) > 0 {
@@ -444,8 +443,8 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 
 // writeProxyResponse copies the proxy response back to the client.
 func (m *EnvironmentMiddleware) writeProxyResponse(c *gin.Context, resp *http.Response) {
-	hopByHop := remenv.BuildHopByHopHeaders(resp.Header)
-	remenv.CopyResponseHeaders(resp.Header, c.Writer.Header(), hopByHop)
+	hopByHop := edge.BuildHopByHopHeaders(resp.Header)
+	edge.CopyResponseHeaders(resp.Header, c.Writer.Header(), hopByHop)
 
 	c.Status(resp.StatusCode)
 	if c.Request.Method != http.MethodHead {
@@ -453,6 +452,6 @@ func (m *EnvironmentMiddleware) writeProxyResponse(c *gin.Context, resp *http.Re
 		// This is critical for streaming responses (e.g., JSON line streams) where
 		// clients expect incremental updates.
 		c.Writer.WriteHeaderNow()
-		remenv.CopyBodyWithFlush(c.Writer, resp.Body)
+		edge.CopyBodyWithFlush(c.Writer, resp.Body)
 	}
 }

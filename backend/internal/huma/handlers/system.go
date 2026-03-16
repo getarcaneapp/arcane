@@ -11,9 +11,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
@@ -83,11 +82,11 @@ type StopAllContainersOutput struct {
 
 type ConvertDockerRunInput struct {
 	EnvironmentID string                         `path:"id" doc:"Environment ID"`
-	Body          models.ConvertDockerRunRequest `doc:"Docker run command"`
+	Body          system.ConvertDockerRunRequest `doc:"Docker run command"`
 }
 
 type ConvertDockerRunOutput struct {
-	Body models.ConvertDockerRunResponse
+	Body system.ConvertDockerRunResponse
 }
 
 type CheckUpgradeInput struct {
@@ -471,7 +470,7 @@ func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDock
 	}
 
 	return &ConvertDockerRunOutput{
-		Body: models.ConvertDockerRunResponse{
+		Body: system.ConvertDockerRunResponse{
 			Success:       true,
 			DockerCompose: dockerCompose,
 			EnvVars:       envVars,

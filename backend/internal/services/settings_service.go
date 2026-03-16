@@ -23,9 +23,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -233,7 +233,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -242,7 +242,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 			continue
 		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
@@ -288,10 +288,10 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		}
 
 		// Check if environment variable is set
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 		}
 	}
 }
@@ -315,7 +315,7 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 			return false
 		}
 
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		val, ok := os.LookupEnv(envVarName)
 		return ok && val != ""
 	}
@@ -785,12 +785,12 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
 	}
-	envVal = stringutils.TrimQuotes(envVal)
+	envVal = utils.TrimQuotes(envVal)
 
 	return s.upsertEnvSetting(ctx, tx, key, envVal)
 }
@@ -1018,7 +1018,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		// Treat as mapping if the container side looks like an absolute Unix path
 		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
 		// first colon to not break on Windows drive letters.
-		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+		if strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value) {
 			isMapping = true
 		}
 	}
@@ -1051,7 +1051,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	const buildsKey = "buildsDirectory"
-	envVarName := stringutils.CamelCaseToScreamingSnakeCase(buildsKey)
+	envVarName := utils.CamelCaseToScreamingSnakeCase(buildsKey)
 	if envVal, ok := os.LookupEnv(envVarName); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil

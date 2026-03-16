@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -59,8 +58,8 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	defer func() { _ = conn.Close() }()
 
 	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		strings.ToLower(remenv.HeaderAgentToken), c.cfg.AgentToken,
-		strings.ToLower(remenv.HeaderAPIKey), c.cfg.AgentToken,
+		strings.ToLower(HeaderAgentToken), c.cfg.AgentToken,
+		strings.ToLower(HeaderAPIKey), c.cfg.AgentToken,
 	)))
 	defer streamCancel()
 

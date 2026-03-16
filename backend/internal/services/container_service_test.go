@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"

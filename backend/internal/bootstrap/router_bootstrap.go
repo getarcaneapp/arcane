@@ -14,8 +14,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/types"
 )
 

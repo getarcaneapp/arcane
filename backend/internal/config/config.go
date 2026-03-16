@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 type AppEnvironment string
@@ -98,6 +99,8 @@ func Load() *Config {
 	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
 	common.DirPerm = cfg.DirPerm
+	pkgutils.FilePerm = cfg.FilePerm
+	pkgutils.DirPerm = cfg.DirPerm
 
 	return cfg
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	glsqlite "github.com/glebarez/sqlite"
@@ -1186,7 +1186,7 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
-	pm := pathmapper.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
+	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
 
 	serviceCfg := composetypes.ServiceConfig{
 		Name:  "web",

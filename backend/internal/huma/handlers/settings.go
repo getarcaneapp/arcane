@@ -13,8 +13,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
@@ -74,7 +74,7 @@ type GetCategoriesOutput struct {
 // - Mapping format "container:host" where container is absolute Unix or Windows path
 func validateProjectsDirectoryValue(path string) error {
 	switch {
-	case pathmapper.IsWindowsDrivePath(path):
+	case projects.IsWindowsDrivePath(path):
 		return nil
 	case strings.Contains(path, ":"):
 		parts := strings.SplitN(path, ":", 2)
@@ -82,7 +82,7 @@ func validateProjectsDirectoryValue(path string) error {
 			return errors.New("projectsDirectory must be an absolute path or valid mapping format")
 		}
 		container := parts[0]
-		if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
+		if !strings.HasPrefix(container, "/") && !projects.IsWindowsDrivePath(container) {
 			return errors.New("projectsDirectory mapping format: container path must be absolute")
 		}
 		return nil

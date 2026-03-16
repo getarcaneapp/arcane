@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
+	"github.com/getarcaneapp/arcane/backend/pkg/fswatch"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 )
 
 type FilesystemWatcherJob struct {
 	projectService   *services.ProjectService
 	templateService  *services.TemplateService
 	settingsService  *services.SettingsService
-	projectsWatcher  *fs.Watcher
-	templatesWatcher *fs.Watcher
+	projectsWatcher  *fswatch.Watcher
+	templatesWatcher *fswatch.Watcher
 }
 
 func NewFilesystemWatcherJob(
@@ -47,12 +48,12 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
 	if err != nil {
 		return err
 	}
 
-	sw, err := fs.NewWatcher(projectsDirectory, fs.WatcherOptions{
+	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
 		Debounce: 3 * time.Second, // Wait 3 seconds after last change before syncing
 		OnChange: j.handleFilesystemChange,
 		MaxDepth: 1,
@@ -63,13 +64,13 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 
 	j.projectsWatcher = sw
 
-	templatesDir, err := fs.GetTemplatesDirectory(ctx)
+	templatesDir, err := projects.GetTemplatesDirectory(ctx)
 	if err != nil {
 		return err
 	}
 
 	if j.templateService != nil {
-		tw, err := fs.NewWatcher(templatesDir, fs.WatcherOptions{
+		tw, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
 			Debounce: 3 * time.Second,
 			OnChange: j.handleTemplatesChange,
 			MaxDepth: 1,
@@ -167,13 +168,13 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if err != nil {
 		return err
 	}
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
 	if err != nil {
 		return err
 	}
 
 	// Create a new watcher with the updated path
-	sw, err := fs.NewWatcher(projectsDirectory, fs.WatcherOptions{
+	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
 		Debounce: 3 * time.Second,
 		OnChange: j.handleFilesystemChange,
 		MaxDepth: 1,
