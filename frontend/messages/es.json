@@ -968,6 +968,8 @@
 	"general_title": "Configuración General",
 	"general_projects_directory_label": "Directorio de proyectos",
 	"general_projects_directory_help": "Directorio donde se almacenan los archivos de base Docker (esto está dentro del contenedor). ¡DEBE ser una ruta absoluta!",
+	"general_follow_project_symlinks_label": "Follow Project Symlinks",
+	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "URL del Servidor Base",
 	"general_base_url_help": "La URL base para su host docker. Utilizado al abrir contenedores desde los enlaces de servicio",
 	"general_user_avatars_heading": "Avatares de usuario",
