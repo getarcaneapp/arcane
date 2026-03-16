@@ -654,6 +654,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if err != nil {
 		// Container was redeployed successfully, but we couldn't fetch full details
 		// Return minimal response with just the ID so frontend can still navigate
+		//nolint:nilerr // Intentionally returning nil error - redeploy succeeded, only fetch failed
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,
