@@ -406,4 +406,9 @@ type Update struct {
 	//
 	// Required: false
 	OledMode *string `json:"oledMode,omitempty"`
+
+	// UseComposeUpdate indicates if Docker Compose should be used for project updates.
+	//
+	// Required: false
+	UseComposeUpdate *string `json:"useComposeUpdate,omitempty"`
 }

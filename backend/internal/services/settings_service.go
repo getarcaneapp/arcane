@@ -94,6 +94,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
 		PollingEnabled:                  models.SettingVariable{Value: "true"},
 		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		UseComposeUpdate:                models.SettingVariable{Value: "false"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
 		PruneMode:                       models.SettingVariable{Value: "dangling"},
