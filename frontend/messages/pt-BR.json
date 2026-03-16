@@ -968,6 +968,8 @@
 	"general_title": "Geral",
 	"general_projects_directory_label": "Diretório de projetos",
 	"general_projects_directory_help": "Diretório onde os arquivos do Docker Compose são armazenados (isso está dentro do container). DEVE ser um caminho absoluto!",
+	"general_follow_project_symlinks_label": "Siga o Project Symlinks",
+	"general_follow_project_symlinks_help": "Trate os diretórios filhos com links simbólicos dentro do diretório de projetos como projetos do Docker Compose.",
 	"general_base_url_label": "URL do servidor base",
 	"general_base_url_help": "A URL base para seu docker host. Usado quando acessando containers de links de serviço",
 	"general_user_avatars_heading": "Avatares do usuário",
