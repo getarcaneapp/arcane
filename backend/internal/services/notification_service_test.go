@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/notification"
@@ -38,7 +38,11 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 		Environment:   "test",
 	}
-	crypto.InitEncryption(testCfg)
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: testCfg.EncryptionKey,
+		Environment:   string(testCfg.Environment),
+		AgentMode:     testCfg.AgentMode,
+	})
 
 	return &database.DB{DB: db}
 }

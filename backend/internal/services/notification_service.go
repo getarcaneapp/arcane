@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/resources"
 	"github.com/getarcaneapp/arcane/types/imageupdate"

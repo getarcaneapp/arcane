@@ -22,8 +22,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/types/auth"
 )
 
@@ -189,9 +189,9 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		}
 	}
 
-	state := stringutils.GenerateRandomString(32)
-	nonce := stringutils.GenerateRandomString(32)
-	codeVerifier := stringutils.GenerateRandomString(128)
+	state := utils.GenerateRandomString(32)
+	nonce := utils.GenerateRandomString(32)
+	codeVerifier := utils.GenerateRandomString(128)
 
 	oauth2Config, err := s.getOauth2Config(config, provider, origin)
 	if err != nil {
@@ -545,7 +545,7 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 		return nil, nil, fmt.Errorf("failed to fetch user claims: %w", err)
 	}
 
-	subject := crypto.GetStringClaim(claims, "sub")
+	subject := jwtclaims.GetStringClaim(claims, "sub")
 	if subject == "" {
 		slog.Error("HandleCallback: missing required 'sub' claim")
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
@@ -553,15 +553,15 @@ func (s *OidcService) buildUserInfo(ctx context.Context, provider *oidc.Provider
 
 	userInfoDto := auth.OidcUserInfo{
 		Subject:           subject,
-		Name:              crypto.GetStringClaim(claims, "name"),
-		Email:             crypto.GetStringClaim(claims, "email"),
-		EmailVerified:     crypto.GetBoolClaim(claims, "email_verified"),
-		PreferredUsername: crypto.GetStringClaim(claims, "preferred_username"),
-		GivenName:         crypto.GetStringClaim(claims, "given_name"),
-		FamilyName:        crypto.GetStringClaim(claims, "family_name"),
-		Admin:             crypto.GetBoolClaim(claims, "admin"),
-		Roles:             crypto.GetStringSliceClaim(claims, "roles"),
-		Groups:            crypto.GetStringSliceClaim(claims, "groups"),
+		Name:              jwtclaims.GetStringClaim(claims, "name"),
+		Email:             jwtclaims.GetStringClaim(claims, "email"),
+		EmailVerified:     jwtclaims.GetBoolClaim(claims, "email_verified"),
+		PreferredUsername: jwtclaims.GetStringClaim(claims, "preferred_username"),
+		GivenName:         jwtclaims.GetStringClaim(claims, "given_name"),
+		FamilyName:        jwtclaims.GetStringClaim(claims, "family_name"),
+		Admin:             jwtclaims.GetBoolClaim(claims, "admin"),
+		Roles:             jwtclaims.GetStringSliceClaim(claims, "roles"),
+		Groups:            jwtclaims.GetStringSliceClaim(claims, "groups"),
 		Extra:             claims,
 	}
 
@@ -780,7 +780,7 @@ func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string
 
 	token := &oauth2.Token{
 		AccessToken: accessToken,
-		TokenType:   stringutils.GetStringOrDefault(tokenResp, "token_type", "Bearer"),
+		TokenType:   utils.GetStringOrDefault(tokenResp, "token_type", "Bearer"),
 	}
 	if refreshToken, ok := tokenResp["refresh_token"].(string); ok {
 		token.RefreshToken = refreshToken

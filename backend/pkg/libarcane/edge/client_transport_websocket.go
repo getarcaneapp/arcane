@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	"github.com/gorilla/websocket"
 )
 
@@ -25,8 +24,8 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	}
 
 	headers := http.Header{}
-	headers.Set(remenv.HeaderAgentToken, c.cfg.AgentToken)
-	headers.Set(remenv.HeaderAPIKey, c.cfg.AgentToken)
+	headers.Set(HeaderAgentToken, c.cfg.AgentToken)
+	headers.Set(HeaderAPIKey, c.cfg.AgentToken)
 
 	slog.DebugContext(ctx, "Dialing manager for websocket edge tunnel", "url", managerWSURL)
 

@@ -9,7 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
 	"github.com/getarcaneapp/arcane/types/base"
 )

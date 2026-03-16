@@ -11,8 +11,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	registry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	"github.com/moby/moby/api/types/image"

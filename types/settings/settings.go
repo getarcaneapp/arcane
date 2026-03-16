@@ -37,6 +37,11 @@ type Update struct {
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
 
+	// FollowProjectSymlinks controls whether symlinked child directories in the projects directory are discovered as projects.
+	//
+	// Required: false
+	FollowProjectSymlinks *string `json:"followProjectSymlinks,omitempty"`
+
 	// DiskUsagePath is the path to monitor for disk usage.
 	//
 	// Required: false

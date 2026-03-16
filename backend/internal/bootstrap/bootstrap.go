@@ -18,12 +18,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -102,18 +102,33 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		}
 	}
 
-	utils.LoadAgentToken(appCtx, cfg, appServices.Settings.GetStringSetting)
-	utils.EnsureEncryptionKey(appCtx, cfg, appServices.Settings.EnsureEncryptionKey)
-	crypto.InitEncryption(cfg)
-	utils.InitializeDefaultSettings(appCtx, cfg, appServices.Settings)
-	utils.MigrateSchedulerCronValues(
+	runtimeCfg := &startup.RuntimeConfig{
+		AgentMode:         cfg.AgentMode,
+		AgentToken:        cfg.AgentToken,
+		Environment:       string(cfg.Environment),
+		EncryptionKey:     cfg.EncryptionKey,
+		AutoLoginUsername: cfg.AutoLoginUsername,
+	}
+
+	startup.LoadAgentToken(appCtx, runtimeCfg, appServices.Settings.GetStringSetting)
+	startup.EnsureEncryptionKey(appCtx, runtimeCfg, appServices.Settings.EnsureEncryptionKey)
+	cfg.AgentToken = runtimeCfg.AgentToken
+	cfg.EncryptionKey = runtimeCfg.EncryptionKey
+
+	libcrypto.InitEncryption(&libcrypto.Config{
+		EncryptionKey: cfg.EncryptionKey,
+		Environment:   string(cfg.Environment),
+		AgentMode:     cfg.AgentMode,
+	})
+	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
+	startup.MigrateSchedulerCronValues(
 		appCtx,
 		appServices.Settings.GetStringSetting,
 		appServices.Settings.UpdateSetting,
 		appServices.Settings.LoadDatabaseSettings,
 	)
 	if appServices.GitOpsSync != nil {
-		utils.MigrateGitOpsSyncIntervals(
+		startup.MigrateGitOpsSyncIntervals(
 			appCtx,
 			appServices.GitOpsSync.ListSyncIntervalsRaw,
 			appServices.GitOpsSync.UpdateSyncIntervalMinutes,
@@ -138,7 +153,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		}
 	}
 
-	utils.TestDockerConnection(appCtx, func(ctx context.Context) error {
+	startup.TestDockerConnection(appCtx, func(ctx context.Context) error {
 		dockerClient, err := dockerClientService.GetClient(ctx)
 		if err != nil {
 			return err
@@ -157,16 +172,16 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		return nil
 	})
 
-	utils.InitializeNonAgentFeatures(appCtx, cfg,
+	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
 		appServices.User.CreateDefaultAdmin,
 		func(ctx context.Context) error {
-			utils.InitializeAutoLogin(ctx, cfg)
+			startup.InitializeAutoLogin(ctx, runtimeCfg)
 			return nil
 		},
 		appServices.Settings.MigrateOidcConfigToFields,
 		appServices.Notification.MigrateDiscordWebhookUrlToFields,
 	)
-	utils.CleanupUnknownSettings(appCtx, appServices.Settings)
+	startup.CleanupUnknownSettings(appCtx, appServices.Settings)
 
 	// Handle agent auto-pairing with API key.
 	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
@@ -182,13 +197,23 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Confi
 		return
 	}
 
+	edgeCfg := &edge.Config{
+		EdgeAgent:             cfg.EdgeAgent,
+		EdgeTransport:         cfg.EdgeTransport,
+		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
+		ManagerApiUrl:         cfg.ManagerApiUrl,
+		AgentToken:            cfg.AgentToken,
+		Port:                  cfg.Port,
+		Listen:                cfg.Listen,
+	}
+
 	slog.InfoContext(appCtx, "Starting edge tunnel client",
-		"transport_mode", edge.NormalizeEdgeTransport(cfg.EdgeTransport),
-		"live_tunnel_attempt_grpc", edge.UseGRPCEdgeTransport(cfg) || (edge.UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerGRPCAddr()) != ""),
-		"live_tunnel_attempt_websocket", edge.UseWebSocketEdgeTransport(cfg) || (edge.UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) != ""),
+		"transport_mode", edge.NormalizeEdgeTransport(edgeCfg.EdgeTransport),
+		"live_tunnel_attempt_grpc", edge.UseGRPCEdgeTransport(edgeCfg) || (edge.UsePollEdgeTransport(edgeCfg) && strings.TrimSpace(edgeCfg.GetManagerGRPCAddr()) != ""),
+		"live_tunnel_attempt_websocket", edge.UseWebSocketEdgeTransport(edgeCfg) || (edge.UsePollEdgeTransport(edgeCfg) && strings.TrimSpace(edgeCfg.GetManagerBaseURL()) != ""),
 		"manager_url", cfg.ManagerApiUrl,
 	)
-	errCh, err := edge.StartTunnelClientWithErrors(appCtx, cfg, router)
+	errCh, err := edge.StartTunnelClientWithErrors(appCtx, edgeCfg, router)
 	if err != nil {
 		slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
 		return

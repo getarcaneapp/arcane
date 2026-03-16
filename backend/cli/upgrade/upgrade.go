@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/moby/moby/api/types/container"

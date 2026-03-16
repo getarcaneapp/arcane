@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,17 +17,17 @@ func TestLoadEnvironment(t *testing.T) {
 	projectsDir := filepath.Join(tmpDir, "projects")
 	workdir := filepath.Join(projectsDir, "myproject")
 
-	err := os.MkdirAll(workdir, common.DirPerm)
+	err := os.MkdirAll(workdir, pkgutils.DirPerm)
 	require.NoError(t, err)
 
 	// Create .env.global
 	globalEnvContent := "GLOBAL_VAR=global_value\nSHARED_VAR=global_shared"
-	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), common.FilePerm)
+	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), pkgutils.FilePerm)
 	require.NoError(t, err)
 
 	// Create .env
 	projectEnvContent := "PROJECT_VAR=project_value\nSHARED_VAR=project_shared"
-	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), common.FilePerm)
+	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), pkgutils.FilePerm)
 	require.NoError(t, err)
 
 	t.Run("AutoInjectEnv=false", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestBuildOverrideEnvContent(t *testing.T) {
 func TestReadProjectEnvState(t *testing.T) {
 	t.Run("direct mode uses .env as editable source", func(t *testing.T) {
 		projectDir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(projectDir, EffectiveEnvFileName), []byte("FOO=bar\n"), common.FilePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, EffectiveEnvFileName), []byte("FOO=bar\n"), pkgutils.FilePerm))
 
 		state, err := ReadProjectEnvState(projectDir)
 		require.NoError(t, err)
@@ -153,9 +153,9 @@ func TestReadProjectEnvState(t *testing.T) {
 
 	t.Run("override mode exposes project.env and git source separately", func(t *testing.T) {
 		projectDir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(projectDir, EffectiveEnvFileName), []byte("A=1\nB=2\n"), common.FilePerm))
-		require.NoError(t, os.WriteFile(filepath.Join(projectDir, GitSourceEnvFileName), []byte("A=1\n"), common.FilePerm))
-		require.NoError(t, os.WriteFile(filepath.Join(projectDir, OverrideEnvFileName), []byte("B=2\n"), common.FilePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, EffectiveEnvFileName), []byte("A=1\nB=2\n"), pkgutils.FilePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, GitSourceEnvFileName), []byte("A=1\n"), pkgutils.FilePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, OverrideEnvFileName), []byte("B=2\n"), pkgutils.FilePerm))
 
 		state, err := ReadProjectEnvState(projectDir)
 		require.NoError(t, err)

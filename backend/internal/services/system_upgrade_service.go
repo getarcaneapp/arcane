@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"

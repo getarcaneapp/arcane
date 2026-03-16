@@ -7,9 +7,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	dockerutil "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	networktypes "github.com/getarcaneapp/arcane/types/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"

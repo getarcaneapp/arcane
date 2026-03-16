@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 )
 
 const defaultTunnelPollRequestTimeout = 15 * time.Second
@@ -176,8 +174,8 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 		return nil, fmt.Errorf("failed to create poll request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(remenv.HeaderAgentToken, c.cfg.AgentToken)
-	req.Header.Set(remenv.HeaderAPIKey, c.cfg.AgentToken)
+	req.Header.Set(HeaderAgentToken, c.cfg.AgentToken)
+	req.Header.Set(HeaderAPIKey, c.cfg.AgentToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

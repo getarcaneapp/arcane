@@ -12,7 +12,6 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
 )
 
 var ProjectFileCandidates = []string{
@@ -51,7 +50,7 @@ func DetectComposeFile(dir string) (string, error) {
 	return compose, nil
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, error) {
+func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
 	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil)
 }
 
@@ -61,7 +60,7 @@ func loadComposeProjectInternal(
 	projectName string,
 	projectsDirectory string,
 	autoInjectEnv bool,
-	pathMapper *pathmapper.PathMapper,
+	pathMapper *PathMapper,
 	envOverride EnvMap,
 	configureLoader func(*loader.Options),
 ) (project *composetypes.Project, err error) {
@@ -172,7 +171,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *pathmapper.PathMapper) (*composetypes.Project, string, error) {
+func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, string, error) {
 	composeFile, err := DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err

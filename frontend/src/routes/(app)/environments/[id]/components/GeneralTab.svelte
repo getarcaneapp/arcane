@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
+	import Label from '$lib/components/ui/label/label.svelte';
+	import { Switch } from '$lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { SettingsIcon } from '$lib/icons';
@@ -54,6 +56,17 @@
 					error={$formInputs.maxImageUploadSize.error}
 					helpText={m.docker_max_upload_size_description()}
 				/>
+			</div>
+			<div class="space-y-4 rounded-lg border p-4 sm:col-span-2">
+				<div class="flex items-center justify-between gap-4">
+					<div class="space-y-0.5">
+						<Label for="follow-project-symlinks" class="text-sm font-medium">
+							{m.general_follow_project_symlinks_label()}
+						</Label>
+						<div class="text-muted-foreground text-xs">{m.general_follow_project_symlinks_help()}</div>
+					</div>
+					<Switch id="follow-project-symlinks" bind:checked={$formInputs.followProjectSymlinks.value} />
+				</div>
 			</div>
 		</div>
 	</Card.Content>

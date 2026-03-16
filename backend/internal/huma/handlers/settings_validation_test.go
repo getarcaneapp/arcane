@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -78,7 +78,7 @@ func TestProjectsDirectoryValidation(t *testing.T) {
 			isValid := true
 
 			switch {
-			case pathmapper.IsWindowsDrivePath(path):
+			case projects.IsWindowsDrivePath(path):
 				// Valid Windows path
 			case strings.Contains(path, ":"):
 				// Mapping format (container:host)
@@ -88,7 +88,7 @@ func TestProjectsDirectoryValidation(t *testing.T) {
 					break
 				}
 				container := parts[0]
-				if !strings.HasPrefix(container, "/") && !pathmapper.IsWindowsDrivePath(container) {
+				if !strings.HasPrefix(container, "/") && !projects.IsWindowsDrivePath(container) {
 					isValid = false
 				}
 			default:

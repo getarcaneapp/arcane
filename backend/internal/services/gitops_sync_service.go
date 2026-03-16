@@ -12,10 +12,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	bootstraputils "github.com/getarcaneapp/arcane/backend/internal/utils"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
@@ -38,21 +38,21 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 	}
 }
 
-func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]bootstraputils.IntervalMigrationItem, error) {
+func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]startup.IntervalMigrationItem, error) {
 	rows, err := s.db.WithContext(ctx).Raw("SELECT id, sync_interval FROM gitops_syncs").Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load git sync intervals: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]bootstraputils.IntervalMigrationItem, 0)
+	items := make([]startup.IntervalMigrationItem, 0)
 	for rows.Next() {
 		var id string
 		var raw any
 		if err := rows.Scan(&id, &raw); err != nil {
 			return nil, fmt.Errorf("failed to scan git sync interval: %w", err)
 		}
-		items = append(items, bootstraputils.IntervalMigrationItem{
+		items = append(items, startup.IntervalMigrationItem{
 			ID:       id,
 			RawValue: strings.TrimSpace(fmt.Sprint(raw)),
 		})

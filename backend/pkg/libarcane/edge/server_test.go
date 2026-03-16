@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +51,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	// Test Success
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
 	headers := http.Header{}
-	headers.Set(remenv.HeaderAgentToken, "valid-token")
+	headers.Set(HeaderAgentToken, "valid-token")
 
 	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
 	require.NoError(t, err)
@@ -169,7 +168,7 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
 	headers := http.Header{}
-	headers.Set(remenv.HeaderAgentToken, "bad-token")
+	headers.Set(HeaderAgentToken, "bad-token")
 
 	_, resp, err := websocket.DefaultDialer.Dial(url, headers)
 	require.Error(t, err)
@@ -262,8 +261,8 @@ func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 func TestTokenFromMetadata(t *testing.T) {
 	t.Run("prefers agent token and trims whitespace", func(t *testing.T) {
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-			strings.ToLower(remenv.HeaderAgentToken), "  agent-token  ",
-			strings.ToLower(remenv.HeaderAPIKey), "api-token",
+			strings.ToLower(HeaderAgentToken), "  agent-token  ",
+			strings.ToLower(HeaderAPIKey), "api-token",
 		))
 
 		assert.Equal(t, "agent-token", tokenFromMetadata(ctx))
@@ -271,7 +270,7 @@ func TestTokenFromMetadata(t *testing.T) {
 
 	t.Run("falls back to api key", func(t *testing.T) {
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-			strings.ToLower(remenv.HeaderAPIKey), "api-token",
+			strings.ToLower(HeaderAPIKey), "api-token",
 		))
 
 		assert.Equal(t, "api-token", tokenFromMetadata(ctx))

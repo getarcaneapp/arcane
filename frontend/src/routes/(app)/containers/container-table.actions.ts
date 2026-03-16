@@ -185,8 +185,6 @@ export function createContainerActions({
 	}
 
 	async function handleRedeployContainer(container: ContainerSummaryDto) {
-		const containerName = getContainerDisplayName(container);
-
 		openConfirmDialog({
 			title: m.container_confirm_redeploy_title(),
 			message: m.container_confirm_redeploy_message(),

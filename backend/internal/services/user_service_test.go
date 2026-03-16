@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 

@@ -44,12 +44,14 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
 
 		switch key {
+		case "followProjectSymlinks":
+			require.Equal(t, "false", sv.Value)
 		case "autoUpdateExcludedContainers":
 			require.Equal(t, "", sv.Value)
 		case "vulnerabilityScanEnabled":
@@ -193,6 +195,24 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	settings2, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "arcane-external", settings2.TrivyNetwork.Value)
+}
+
+func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.False(t, settings1.FollowProjectSymlinks.IsTrue())
+
+	t.Setenv("FOLLOW_PROJECT_SYMLINKS", "true")
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.True(t, settings2.FollowProjectSymlinks.IsTrue())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing.T) {

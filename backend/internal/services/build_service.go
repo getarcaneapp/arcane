@@ -14,9 +14,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	buildgit "github.com/getarcaneapp/arcane/backend/internal/utils/git"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	buildgit "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
 	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"

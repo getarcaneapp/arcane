@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"

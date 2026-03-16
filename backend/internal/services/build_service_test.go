@@ -9,8 +9,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	buildgit "github.com/getarcaneapp/arcane/backend/internal/utils/git"
+	buildgit "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/types/image"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
