@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build-next-images:
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-8
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
@@ -49,6 +49,8 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
+        env:
+          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -143,6 +145,7 @@ jobs:
             org.opencontainers.image.ref.name=arcane-agent
             org.opencontainers.image.title=Arcane Agent
             org.opencontainers.image.description=Arcane Agent
+            com.getarcaneapp.arcane=true
             com.getarcaneapp.arcane.agent=true
 
       - name: Build and push agent image

@@ -1,4 +1,4 @@
-package arcaneupdater
+package updater
 
 import (
 	"testing"
@@ -60,12 +60,69 @@ func TestIsArcaneContainer(t *testing.T) {
 			labels: map[string]string{"COM.GETARCANEAPP.ARCANE": "true"},
 			want:   true,
 		},
+		{
+			name:   "agent label true",
+			labels: map[string]string{LabelArcaneAgent: "true"},
+			want:   true,
+		},
+		{
+			name:   "agent label with whitespace",
+			labels: map[string]string{LabelArcaneAgent: "  yes  "},
+			want:   true,
+		},
+		{
+			name:   "agent label false",
+			labels: map[string]string{LabelArcaneAgent: "false"},
+			want:   false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsArcaneContainer(tt.labels); got != tt.want {
 				t.Errorf("IsArcaneContainer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsArcaneAgentContainer(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   bool
+	}{
+		{
+			name:   "nil labels",
+			labels: nil,
+			want:   false,
+		},
+		{
+			name:   "agent label true",
+			labels: map[string]string{LabelArcaneAgent: "true"},
+			want:   true,
+		},
+		{
+			name:   "agent label case insensitive key",
+			labels: map[string]string{"COM.GETARCANEAPP.ARCANE.AGENT": "on"},
+			want:   true,
+		},
+		{
+			name:   "core arcane label only",
+			labels: map[string]string{LabelArcane: "true"},
+			want:   false,
+		},
+		{
+			name:   "agent label false",
+			labels: map[string]string{LabelArcaneAgent: "off"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsArcaneAgentContainer(tt.labels); got != tt.want {
+				t.Errorf("IsArcaneAgentContainer() = %v, want %v", got, tt.want)
 			}
 		})
 	}

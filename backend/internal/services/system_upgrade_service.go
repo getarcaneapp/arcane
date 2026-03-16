@@ -14,6 +14,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
 	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -95,10 +96,8 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	// Determine binary path based on container type (agent vs main)
 	binaryPath := "/app/arcane"
-	if currentContainer.Config != nil && currentContainer.Config.Labels != nil {
-		if _, isAgent := currentContainer.Config.Labels["com.getarcaneapp.arcane.agent"]; isAgent {
-			binaryPath = "/app/arcane-agent"
-		}
+	if currentContainer.Config != nil {
+		binaryPath = determineUpgradeBinaryPathInternal(currentContainer.Config.Labels)
 	}
 
 	// Log upgrade event
@@ -209,6 +208,14 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", containerName)
 
 	return nil
+}
+
+func determineUpgradeBinaryPathInternal(labels map[string]string) string {
+	if libupdater.IsArcaneAgentContainer(labels) {
+		return "/app/arcane-agent"
+	}
+
+	return "/app/arcane"
 }
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID

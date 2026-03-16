@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 )
 
 // mockSystemUpgradeService is a simple mock implementation for testing
@@ -54,7 +54,7 @@ func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
 	}
 
 	// Verify that IsArcaneContainer correctly identifies the label
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane, "IsArcaneContainer should return true for Arcane label")
 
 	// Simulate the logic from restartContainersUsingOldIDs:
@@ -65,6 +65,23 @@ func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
 
 	// Verify CLI upgrade was called
 	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane container")
+}
+
+func TestUpdaterService_ArcaneAgentLabel_TriggersCLIUpgrade(t *testing.T) {
+	ctx := context.Background()
+	mockUpgrade := &mockSystemUpgradeService{}
+	service := &UpdaterService{upgradeService: mockUpgrade}
+
+	labels := map[string]string{
+		libupdater.LabelArcaneAgent: "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
+
+	require.NoError(t, err)
+	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane agent container")
+	assert.NotNil(t, mockUpgrade.capturedUser)
+	assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
 }
 
 // TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI verifies that containers without
@@ -81,7 +98,7 @@ func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
 	}
 
 	// Verify that IsArcaneContainer returns false
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.False(t, isArcane, "IsArcaneContainer should return false for non-Arcane container")
 
 	// Simulate the logic from restartContainersUsingOldIDs
@@ -91,6 +108,22 @@ func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
 
 	// Verify CLI upgrade was NOT called
 	assert.False(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should not have been called for non-Arcane container")
+}
+
+func TestUpdaterService_TriggerSelfUpdateViaCLI_NonArcaneContainer(t *testing.T) {
+	ctx := context.Background()
+	mockUpgrade := &mockSystemUpgradeService{}
+	service := &UpdaterService{upgradeService: mockUpgrade}
+
+	labels := map[string]string{
+		"some.other.label": "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "not-arcane", labels)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container is not an Arcane self-update target")
+	assert.False(t, mockUpgrade.triggerCalled, "non-Arcane containers must not trigger the CLI upgrade path")
 }
 
 // TestUpdaterService_ArcaneLabelWithError_PropagatesError verifies that CLI upgrade errors
@@ -108,7 +141,7 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 		"com.getarcaneapp.arcane": "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane, "Should detect Arcane container")
 
 	// Call the upgrade method
@@ -126,19 +159,31 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 // TestUpdaterService_NilUpgradeService_GracefulHandling verifies graceful handling
 // when upgrade service is nil
 func TestUpdaterService_NilUpgradeService_GracefulHandling(t *testing.T) {
-	var mockUpgrade *mockSystemUpgradeService = nil
+	ctx := context.Background()
+	service := &UpdaterService{}
 
 	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
+		libupdater.LabelArcane: "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
-	assert.True(t, isArcane, "Should detect Arcane container")
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane", labels)
 
-	// When upgradeService is nil, ensure we don't attempt to call it.
-	assert.Nil(t, mockUpgrade, "Upgrade service should be nil; should not attempt to call it")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server self-update requires CLI upgrade service")
+}
 
-	// Test passes if no panic occurs
+func TestUpdaterService_ArcaneAgentLabel_MissingUpgradeServiceReturnsError(t *testing.T) {
+	ctx := context.Background()
+	service := &UpdaterService{}
+
+	labels := map[string]string{
+		libupdater.LabelArcaneAgent: "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent self-update requires CLI upgrade service")
 }
 
 // TestUpdaterService_ArcaneLabelVariations tests various label formats
@@ -189,7 +234,7 @@ func TestUpdaterService_ArcaneLabelVariations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			isArcane := arcaneupdater.IsArcaneContainer(tt.labels)
+			isArcane := libupdater.IsArcaneContainer(tt.labels)
 			assert.Equal(t, tt.expectedArcane, isArcane, tt.description)
 		})
 	}
@@ -205,7 +250,7 @@ func TestUpdaterService_CLICalledWithSystemUser(t *testing.T) {
 		"com.getarcaneapp.arcane": "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane)
 
 	if isArcane {
@@ -229,7 +274,7 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 
 	// Test with non-nil upgrade service
 	mockUpgrade := &mockSystemUpgradeService{}
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 
 	// This is the actual logic from restartContainersUsingOldIDs
 	if isArcane {
@@ -545,7 +590,7 @@ func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
 			Image: "redis:7",
 			Labels: map[string]string{
 				"com.docker.compose.project": "myapp",
-				arcaneupdater.LabelUpdater:   "false",
+				libupdater.LabelUpdater:      "false",
 			},
 		},
 		{

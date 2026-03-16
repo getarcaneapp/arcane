@@ -833,26 +833,47 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	slog.InfoContext(ctx, "Found registries to sync", "count", len(registries))
 
-	// Prepare sync items with decrypted tokens
+	// Prepare sync items with decrypted credentials
 	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
-		decryptedToken, err := crypto.Decrypt(reg.Token)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
-			continue
+		registryType, typeErr := normalizeRegistryTypeInternal(reg.RegistryType)
+		if typeErr != nil {
+			return fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
 		}
 
-		syncItems = append(syncItems, containerregistry.Sync{
-			ID:          reg.ID,
-			URL:         reg.URL,
-			Username:    reg.Username,
-			Token:       decryptedToken,
-			Description: reg.Description,
-			Insecure:    reg.Insecure,
-			Enabled:     reg.Enabled,
-			CreatedAt:   reg.CreatedAt,
-			UpdatedAt:   reg.UpdatedAt,
-		})
+		syncItem := containerregistry.Sync{
+			ID:           reg.ID,
+			URL:          reg.URL,
+			Description:  reg.Description,
+			Insecure:     reg.Insecure,
+			Enabled:      reg.Enabled,
+			RegistryType: registryType,
+			CreatedAt:    reg.CreatedAt,
+			UpdatedAt:    reg.UpdatedAt,
+		}
+
+		if registryType == registryTypeECR {
+			decryptedSecret, err := crypto.Decrypt(reg.AWSSecretAccessKey)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt ECR secret for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
+				continue
+			}
+
+			syncItem.AWSAccessKeyID = reg.AWSAccessKeyID
+			syncItem.AWSSecretAccessKey = decryptedSecret
+			syncItem.AWSRegion = reg.AWSRegion
+		} else {
+			decryptedToken, err := crypto.Decrypt(reg.Token)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
+				continue
+			}
+
+			syncItem.Username = reg.Username
+			syncItem.Token = decryptedToken
+		}
+
+		syncItems = append(syncItems, syncItem)
 	}
 
 	// Prepare the sync request

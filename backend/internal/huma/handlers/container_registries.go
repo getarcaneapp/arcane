@@ -358,6 +358,21 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryRetrievalError{Err: err}).Error())
 	}
 
+	// ECR registries use a different auth flow: generate a temporary token via AWS API.
+	if reg.RegistryType == "ecr" {
+		if err := h.registryService.TestECRRegistry(ctx, reg); err != nil {
+			return nil, huma.Error400BadRequest((&common.RegistryTestError{Err: err}).Error())
+		}
+		return &TestContainerRegistryOutput{
+			Body: base.ApiResponse[base.MessageResponse]{
+				Success: true,
+				Data: base.MessageResponse{
+					Message: "ECR authentication succeeded",
+				},
+			},
+		}, nil
+	}
+
 	decryptedToken, err := crypto.Decrypt(reg.Token)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.TokenDecryptionError{Err: err}).Error())
