@@ -55,11 +55,11 @@ type resolvedRegistryCredential struct {
 }
 
 type ContainerRegistryService struct {
-	db              *database.DB
-	dockerClient    registryDaemonGetter
-	cache           map[string]*cache.Cache[string] // imageRef -> digest cache
-	cacheMu         sync.RWMutex
-	ecrRefreshGroup singleflight.Group
+	db                     *database.DB
+	dockerClient           registryDaemonGetter
+	cache                  map[string]*cache.Cache[string] // imageRef -> digest cache
+	cacheMu                sync.RWMutex
+	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 }
 
