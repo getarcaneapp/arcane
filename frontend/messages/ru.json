@@ -968,6 +968,8 @@
 	"general_title": "Основное",
 	"general_projects_directory_label": "Каталог Проектов",
 	"general_projects_directory_help": "Каталог хранения файлов Docker Compose (это внутри контейнера). ДОЛЖНО быть абсолютным путем!",
+	"general_follow_project_symlinks_label": "Follow Project Symlinks",
+	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "Базовый URL сервера",
 	"general_base_url_help": "Базовый URL-адрес для вашего Docker хоста. Используется при открытии контейнеров из ссылок сервиса",
 	"general_user_avatars_heading": "Аватар пользователя",
