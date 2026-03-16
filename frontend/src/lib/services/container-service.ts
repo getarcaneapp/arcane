@@ -5,7 +5,8 @@ import type {
 	ContainerSummaryDto,
 	ContainerSummaryGroupDto,
 	ContainerStats,
-	ContainerCreateRequest
+	ContainerCreateRequest,
+	ContainerDetailsDto
 } from '$lib/types/container.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -17,12 +18,9 @@ export type ContainerListRequestOptions = SearchPaginationSortRequest & {
 	groupByProject?: boolean;
 };
 
-export interface ContainerRedeployResponse {
+export interface ContainerDetailsResponse {
 	success: boolean;
-	data: {
-		message: string;
-		containerId: string;
-	};
+	data: ContainerDetailsDto;
 }
 
 export class ContainerService extends BaseAPIService {
@@ -100,7 +98,7 @@ export class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
 	}
 	
-	async redeployContainer(containerId: string): Promise<ContainerRedeployResponse> {
+	async redeployContainer(containerId: string): Promise<ContainerDetailsResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}

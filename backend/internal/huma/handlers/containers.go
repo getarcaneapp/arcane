@@ -109,22 +109,6 @@ type ContainerActionOutput struct {
 	Body ContainerActionResponse
 }
 
-// ContainerRedeployData includes the message and new container ID
-type ContainerRedeployData struct {
-	Message     string `json:"message" doc:"Response message"`
-	ContainerID string `json:"containerId" doc:"ID of the redeployed container"`
-}
-
-// ContainerRedeployResponse is a dedicated response type for redeploy
-type ContainerRedeployResponse struct {
-	Success bool                  `json:"success"`
-	Data    ContainerRedeployData `json:"data"`
-}
-
-type ContainerRedeployOutput struct {
-	Body ContainerRedeployResponse
-}
-
 type DeleteContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -650,7 +634,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}, nil
 }
 
-func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*ContainerRedeployOutput, error) {
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -665,13 +649,27 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
 	}
 
-	return &ContainerRedeployOutput{
-		Body: ContainerRedeployResponse{
-			Success: true,
-			Data: ContainerRedeployData{
-				Message:     "Container redeployed successfully",
-				ContainerID: newContainerID,
+	// Fetch full container details to return (consistent with other endpoints)
+	containerInspect, err := h.containerService.GetContainerByID(ctx, newContainerID)
+	if err != nil {
+		// Container was redeployed successfully, but we couldn't fetch full details
+		// Return minimal response with just the ID so frontend can still navigate
+		return &GetContainerOutput{
+			Body: ContainerDetailsResponse{
+				Success: true,
+				Data: containertypes.Details{
+					ID: newContainerID,
+				},
 			},
+		}, nil
+	}
+
+	details := containertypes.NewDetails(containerInspect)
+
+	return &GetContainerOutput{
+		Body: ContainerDetailsResponse{
+			Success: true,
+			Data:    details,
 		},
 	}, nil
 }
