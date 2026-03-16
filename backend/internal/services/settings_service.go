@@ -87,6 +87,7 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
+		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
 		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                      models.SettingVariable{Value: "false"},
 		AutoUpdateInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
@@ -510,7 +511,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoHeal && s.OnAutoHealSettingsChanged != nil {
 		s.OnAutoHealSettingsChanged(ctx)
 	}
-	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool {
+		return sv.Key == "projectsDirectory" || sv.Key == "followProjectSymlinks"
+	}) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
 	if len(changedTimeouts) > 0 && s.OnTimeoutSettingsChanged != nil {

@@ -14,19 +14,21 @@ import (
 )
 
 type Watcher struct {
-	watcher     *fsnotify.Watcher
-	watchedPath string
-	maxDepth    int
-	onChange    func(ctx context.Context)
-	debounce    time.Duration
-	stopCh      chan struct{}
-	stoppedCh   chan struct{}
+	watcher        *fsnotify.Watcher
+	watchedPath    string
+	maxDepth       int
+	followSymlinks bool
+	onChange       func(ctx context.Context)
+	debounce       time.Duration
+	stopCh         chan struct{}
+	stoppedCh      chan struct{}
 }
 
 type WatcherOptions struct {
-	Debounce time.Duration
-	OnChange func(ctx context.Context)
-	MaxDepth int
+	Debounce          time.Duration
+	OnChange          func(ctx context.Context)
+	MaxDepth          int
+	FollowSymlinkDirs bool
 }
 
 func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
@@ -44,13 +46,14 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 	}
 
 	return &Watcher{
-		watcher:     watcher,
-		watchedPath: filepath.Clean(watchPath),
-		maxDepth:    opts.MaxDepth,
-		onChange:    opts.OnChange,
-		debounce:    opts.Debounce,
-		stopCh:      make(chan struct{}),
-		stoppedCh:   make(chan struct{}),
+		watcher:        watcher,
+		watchedPath:    filepath.Clean(watchPath),
+		maxDepth:       opts.MaxDepth,
+		followSymlinks: opts.FollowSymlinkDirs,
+		onChange:       opts.OnChange,
+		debounce:       opts.Debounce,
+		stopCh:         make(chan struct{}),
+		stoppedCh:      make(chan struct{}),
 	}, nil
 }
 
@@ -150,7 +153,7 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 
 func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(event.Name) {
 				if err := fw.watcher.Add(event.Name); err != nil {
 					slog.WarnContext(ctx, "Failed to add new directory to watcher",
@@ -171,7 +174,7 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 
 	// Watch for new directories, compose files, .env being manipulated.
 	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() || projects.IsProjectFile(name) {
+		if fw.isWatchableDirectory(event.Name) || projects.IsProjectFile(name) {
 			return true
 		}
 	}
@@ -180,7 +183,7 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 }
 
 func (fw *Watcher) addExistingDirectories(root string) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			slog.Warn("Error walking directory",
 				"path", path,
@@ -208,7 +211,35 @@ func (fw *Watcher) addExistingDirectories(root string) error {
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	if !fw.followSymlinks {
+		return nil
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		if !projects.IsProjectDirectoryEntry(entry, path, fw.followSymlinks) || entry.IsDir() {
+			continue
+		}
+		if !fw.shouldWatchDir(path) {
+			continue
+		}
+		if err := fw.watcher.Add(path); err != nil {
+			slog.Warn("Failed to add symlink directory to watcher",
+				"path", path,
+				"error", err)
+		}
+	}
+
+	return nil
 }
 
 func (fw *Watcher) dirDepth(path string) int {
@@ -236,4 +267,26 @@ func (fw *Watcher) shouldWatchDir(path string) bool {
 	}
 	depth := fw.dirDepth(path)
 	return depth > 0 && depth <= fw.maxDepth
+}
+
+func (fw *Watcher) isWatchableDirectory(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+
+	if info.IsDir() {
+		return true
+	}
+
+	if !fw.followSymlinks || info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+
+	resolvedInfo, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+
+	return resolvedInfo.IsDir()
 }

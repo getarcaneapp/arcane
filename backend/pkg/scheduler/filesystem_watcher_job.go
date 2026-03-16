@@ -52,11 +52,13 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
 
 	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
-		Debounce: 3 * time.Second, // Wait 3 seconds after last change before syncing
-		OnChange: j.handleFilesystemChange,
-		MaxDepth: 1,
+		Debounce:          3 * time.Second, // Wait 3 seconds after last change before syncing
+		OnChange:          j.handleFilesystemChange,
+		MaxDepth:          1,
+		FollowSymlinkDirs: followProjectSymlinks,
 	})
 	if err != nil {
 		return err
@@ -172,12 +174,14 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if err != nil {
 		return err
 	}
+	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
 
 	// Create a new watcher with the updated path
 	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
-		Debounce: 3 * time.Second,
-		OnChange: j.handleFilesystemChange,
-		MaxDepth: 1,
+		Debounce:          3 * time.Second,
+		OnChange:          j.handleFilesystemChange,
+		MaxDepth:          1,
+		FollowSymlinkDirs: followProjectSymlinks,
 	})
 	if err != nil {
 		return err

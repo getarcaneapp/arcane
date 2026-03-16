@@ -506,6 +506,7 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
 	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		slog.WarnContext(ctx, "unable to prepare projects directory", "error", err)
@@ -521,11 +522,11 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 
 	seen := map[string]struct{}{}
 	for _, e := range entries {
-		if !e.IsDir() {
+		dirPath := filepath.Join(projectsDir, e.Name())
+		if !projects.IsProjectDirectoryEntry(e, dirPath, followProjectSymlinks) {
 			continue
 		}
 		dirName := e.Name()
-		dirPath := filepath.Join(projectsDir, dirName)
 
 		// Only consider folders that contain a compose file
 		if _, derr := projects.DetectComposeFile(dirPath); derr != nil {
@@ -539,7 +540,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		seen[dirPath] = struct{}{}
 	}
 
-	if cerr := s.cleanupDBProjects(ctx, seen); cerr != nil {
+	if cerr := s.cleanupDBProjects(ctx, seen, followProjectSymlinks); cerr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", cerr)
 	}
 
@@ -598,7 +599,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return nil
 }
 
-func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]struct{}) error {
+func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool) error {
 	var all []models.Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
 		return fmt.Errorf("list projects for cleanup failed: %w", err)
@@ -610,16 +611,21 @@ func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]
 			continue
 		}
 
-		// Remove if path missing or compose file missing
-		if _, err := os.Stat(p.Path); err != nil {
+		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
+		if err != nil {
 			if os.IsNotExist(err) {
 				if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
 					slog.WarnContext(ctx, "failed to delete missing-path project", "projectID", p.ID, "error", derr)
 				}
 				continue
 			}
-			// On unexpected stat error, skip deletion but warn
 			slog.WarnContext(ctx, "stat error during cleanup", "path", p.Path, "error", err)
+			continue
+		}
+		if !validDir {
+			if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+				slog.WarnContext(ctx, "failed to delete non-project path", "projectID", p.ID, "path", p.Path, "error", derr)
+			}
 			continue
 		}
 
@@ -666,6 +672,7 @@ func formatDockerPorts(ports []container.PortSummary) []string {
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
 	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		return 0, fmt.Errorf("could not determine projects directory: %w", err)
@@ -691,10 +698,10 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 
 	count := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		dirPath := filepath.Join(projectsDir, e.Name())
+		if !projects.IsProjectDirectoryEntry(e, dirPath, followProjectSymlinks) {
 			continue
 		}
-		dirPath := filepath.Join(projectsDir, e.Name())
 		if _, err := projects.DetectComposeFile(dirPath); err == nil {
 			count++
 		}

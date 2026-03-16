@@ -134,6 +134,62 @@ test.describe('Environment Settings UI', () => {
 		}
 	});
 
+	test('should update and save the follow project symlinks setting from General', async ({
+		page
+	}) => {
+		await openLocalEnvironment(page);
+		await page.getByRole('tab', { name: 'General', exact: true }).click();
+
+		const followProjectSymlinksSwitch = page.locator('#follow-project-symlinks');
+		await expect(followProjectSymlinksSwitch).toBeVisible();
+
+		const originalChecked =
+			(await followProjectSymlinksSwitch.getAttribute('aria-checked')) === 'true';
+		const updatedChecked = !originalChecked;
+
+		try {
+			await followProjectSymlinksSwitch.click();
+			await expect(followProjectSymlinksSwitch).toHaveAttribute(
+				'aria-checked',
+				String(updatedChecked)
+			);
+
+			const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+			await expect(saveButton).toBeEnabled();
+
+			const responsePromise = page.waitForResponse((response) => {
+				const request = response.request();
+				if (request.method() !== 'PUT') return false;
+				const url = new URL(response.url());
+				return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
+			});
+
+			await saveButton.click();
+			const response = await responsePromise;
+			expect(response.ok()).toBeTruthy();
+
+			const payload = response.request().postDataJSON() as Record<string, string>;
+			expect(payload.followProjectSymlinks).toBe(String(updatedChecked));
+
+			await page.reload();
+			await page.getByRole('tab', { name: 'General', exact: true }).click();
+			await expect(page.locator('#follow-project-symlinks')).toHaveAttribute(
+				'aria-checked',
+				String(updatedChecked)
+			);
+		} finally {
+			if (!page.isClosed()) {
+				await page.getByRole('tab', { name: 'General', exact: true }).click();
+				const currentChecked =
+					(await page.locator('#follow-project-symlinks').getAttribute('aria-checked')) === 'true';
+				if (currentChecked !== originalChecked) {
+					await page.locator('#follow-project-symlinks').click();
+					await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				}
+			}
+		}
+	});
+
 	test('should reset unsaved environment detail changes', async ({ page }) => {
 		await openLocalEnvironment(page);
 

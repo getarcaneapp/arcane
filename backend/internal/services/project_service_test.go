@@ -1421,6 +1421,178 @@ func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.
 	assert.Contains(t, err.Error(), "only git repository URLs are supported")
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWhenDisabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "regular")
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "regular", items[0].Name)
+	assert.Equal(t, filepath.Join(projectsRoot, "regular"), items[0].Path)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWhenEnabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	linkPath := filepath.Join(projectsRoot, "linked")
+	require.NoError(t, os.Symlink(linkTarget, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "linked", items[0].Name)
+	assert.Equal(t, linkPath, items[0].Path)
+}
+
+func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "regular")
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	count, err = svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenDisabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	linkPath := filepath.Join(projectsRoot, "linked")
+	require.NoError(t, os.Symlink(linkTarget, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	_, statErr := os.Lstat(linkPath)
+	require.NoError(t, statErr)
+}
+
+func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	targetPath := createComposeProjectDir(t, targetRoot, "demo-target")
+	linkPath := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.Symlink(targetPath, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-symlink-update"},
+		Name:      "demo",
+		DirName:   ptr("demo"),
+		Path:      linkPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
+	updatedEnv := "FOO=updated\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(updatedCompose), ptr(updatedEnv), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, linkPath, updated.Path)
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(targetPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, updatedCompose, string(composeBytes))
+
+	envBytes, readErr := os.ReadFile(filepath.Join(targetPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, updatedEnv, string(envBytes))
+}
+
+func createComposeProjectDir(t *testing.T, root, name string) string {
+	t.Helper()
+
+	projectPath := filepath.Join(root, name)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+
+	return projectPath
+}
+
 //go:fix inline
 func ptr(v string) *string {
 	return new(v)
