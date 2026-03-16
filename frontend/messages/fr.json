@@ -968,6 +968,8 @@
 	"general_title": "Paramètres généraux",
 	"general_projects_directory_label": "Répertoire des projets",
 	"general_projects_directory_help": "Répertoire où sont stockés les fichiers Docker Compose (à l'intérieur du conteneur). DOIT être un chemin absolu !",
+	"general_follow_project_symlinks_label": "Follow Project Symlinks",
+	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "URL du serveur de base",
 	"general_base_url_help": "L'URL de base pour votre hôte docker. Utilisé lors de l'ouverture des conteneurs à partir des liens de service",
 	"general_user_avatars_heading": "Avatars de l’utilisateur",
