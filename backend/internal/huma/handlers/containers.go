@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/netip"
@@ -654,7 +655,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if err != nil {
 		// Container was redeployed successfully, but we couldn't fetch full details
 		// Return minimal response with just the ID so frontend can still navigate
-		//nolint:nilerr // Intentionally returning nil error - redeploy succeeded, only fetch failed
+		slog.WarnContext(ctx, "Failed to fetch container details after redeploy", "containerId", newContainerID, "error", err.Error())
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,
