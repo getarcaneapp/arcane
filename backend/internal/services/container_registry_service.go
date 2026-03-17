@@ -214,22 +214,10 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *mod
 		return err
 	}
 
-	if nextType == registry.RegistryType {
-		return nil
+	if nextType != registry.RegistryType {
+		return &models.ValidationError{Field: "registryType", Message: "Registry type cannot be changed after creation"}
 	}
 
-	if nextType == registryTypeECR {
-		registry.Username = ""
-		registry.Token = ""
-	} else {
-		registry.AWSAccessKeyID = ""
-		registry.AWSSecretAccessKey = ""
-		registry.AWSRegion = ""
-		registry.ECRToken = ""
-		registry.ECRTokenGeneratedAt = nil
-	}
-
-	registry.RegistryType = nextType
 	return nil
 }
 

@@ -130,6 +130,7 @@
 				label={m.registries_type_label()}
 				options={registryTypeOptions}
 				bind:value={$inputs.registryType.value}
+				disabled={isEditMode}
 			/>
 
 			<FormInput

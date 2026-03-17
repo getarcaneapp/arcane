@@ -220,6 +220,50 @@ func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvid
 	assert.Equal(t, originalToken, updated.Token)
 }
 
+func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+
+	ecrType := "ecr"
+	_, err = svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+		RegistryType: &ecrType,
+	})
+	require.Error(t, err)
+
+	var validationErr *models.ValidationError
+	require.ErrorAs(t, err, &validationErr)
+	assert.Equal(t, "registryType", validationErr.Field)
+}
+
+func TestContainerRegistryService_UpdateRegistry_AllowsSameRegistryType(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil)
+
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+
+	genericType := "generic"
+	newUser := "updated-user"
+	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+		RegistryType: &genericType,
+		Username:     &newUser,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "updated-user", updated.Username)
+	assert.Equal(t, "generic", updated.RegistryType)
+}
+
 func TestContainerRegistryService_SyncRegistries_ClearsGenericTokenWhenManagerSendsEmptyValue(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://registry.example.com", "registry-user", "old-token")
