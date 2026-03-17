@@ -7,7 +7,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import { capitalizeFirstLetter, truncateString } from '$lib/utils/string.utils';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -428,7 +428,7 @@
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
 			<span class="block w-full cursor-default truncate text-left">
-				{item.image}
+				{truncateString(item.image, 60)}
 			</span>
 		</ArcaneTooltip.Trigger>
 		<ArcaneTooltip.Content>
