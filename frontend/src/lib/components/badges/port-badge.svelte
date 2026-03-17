@@ -8,7 +8,7 @@
 	let {
 		ports = [] as ContainerPorts[],
 		collapsible = true,
-		maxVisible = 2
+		maxVisible = 3
 	} = $props<{
 		ports?: ContainerPorts[];
 		collapsible?: boolean;
@@ -127,12 +127,22 @@
 			</ArcaneTooltip.Root>
 		{/each}
 		{#if collapsible && allPorts.length > maxVisible}
-			<button
-				onclick={() => (expanded = !expanded)}
-				class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors cursor-pointer"
-			>
-				{expanded ? '−' : `+${hiddenCount}`}
-			</button>
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<button
+						onclick={() => (expanded = !expanded)}
+						aria-label={expanded ? 'Show fewer ports' : `Show ${hiddenCount} more ports`}
+						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors cursor-pointer"
+					>
+						{expanded ? '−' : `+${hiddenCount}`}
+					</button>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p class="text-xs">
+						{expanded ? 'Show fewer ports' : `Show ${hiddenCount} more ports`}
+					</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		{/if}
 	</div>
 {/if}
