@@ -1,9 +1,9 @@
 import { yaml } from '@codemirror/lang-yaml';
-import { StreamLanguage, getIndentation, indentString } from '@codemirror/language';
+import { StreamLanguage } from '@codemirror/language';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { EditorState, type Extension } from '@codemirror/state';
 import { MergeView } from '@codemirror/merge';
-import { keymap, EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import type { Action } from 'svelte/action';
 import type { CodeLanguage } from './analysis/types';
 
@@ -16,61 +16,13 @@ export type MergeActionParams = {
 
 type CreateMergeHostActionOptions = {
 	getTheme: () => Extension;
-	mergeEnterIndentKeymap: Extension;
 	getLanguageExtension: (lang: CodeLanguage, options?: { lightweight?: boolean }) => Extension[];
 	onValueChange: (nextValue: string) => void;
 	onPrimaryViewReady: (view: EditorView) => void;
 };
 
-export function createMergeEnterIndentKeymap(): Extension {
-	return keymap.of([
-		{
-			key: 'Enter',
-			run(view) {
-				const selection = view.state.selection.main;
-				if (!selection) return false;
-
-				const from = selection.from;
-				const to = selection.to;
-				const currentLine = view.state.doc.lineAt(from);
-				const isCursorAtLineEnd = from === to && from === currentLine.to;
-				const nextLine = currentLine.number < view.state.doc.lines ? view.state.doc.line(currentLine.number + 1) : null;
-				const hasNextNonEmptyLine = Boolean(nextLine && nextLine.text.trim().length > 0);
-				const lineBreakPos = from + 1;
-
-				const lineBreakTransaction = view.state.update({
-					changes: { from, to, insert: '\n' }
-				});
-				const lineBreakState = lineBreakTransaction.state;
-
-				let indentation = '';
-
-				if (isCursorAtLineEnd && hasNextNonEmptyLine) {
-					indentation = nextLine?.text.match(/^\s*/)?.[0] ?? '';
-				} else {
-					const computedIndent = getIndentation(lineBreakState, lineBreakPos);
-					if (computedIndent !== null) {
-						indentation = indentString(lineBreakState, computedIndent);
-					} else {
-						const textBeforeCursor = currentLine.text.slice(0, Math.max(0, from - currentLine.from));
-						indentation = textBeforeCursor.match(/^\s*/)?.[0] ?? '';
-					}
-				}
-
-				view.dispatch({
-					changes: { from, to, insert: `\n${indentation}` },
-					selection: { anchor: lineBreakPos + indentation.length },
-					userEvent: 'input'
-				});
-
-				return true;
-			}
-		}
-	]);
-}
-
 export function createMergeHostAction(options: CreateMergeHostActionOptions): Action<HTMLDivElement, MergeActionParams> {
-	const { getTheme, mergeEnterIndentKeymap, getLanguageExtension, onValueChange, onPrimaryViewReady } = options;
+	const { getTheme, getLanguageExtension, onValueChange, onPrimaryViewReady } = options;
 
 	return (node, params) => {
 		let currentParams = params;
@@ -94,7 +46,6 @@ export function createMergeHostAction(options: CreateMergeHostActionOptions): Ac
 					doc: currentParams.value,
 					extensions: [
 						...getLanguageExtension(currentParams.language, { lightweight: true }),
-						mergeEnterIndentKeymap,
 						theme,
 						EditorView.updateListener.of((update) => {
 							if (update.docChanged) {

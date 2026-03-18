@@ -8,10 +8,6 @@ import { getMissingComposeVariables, resolveVariableSource } from './vars-analys
 
 const MAX_SCHEMA_DIAGNOSTICS_DEFAULT = 30;
 const TAB_INDENT_REGEX = /(^|\n)(\t+)/g;
-const SECRET_NAME_REGEX = /(password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|aws_secret)/i;
-const SECRET_VALUE_REGEX = /(?:-----BEGIN [A-Z ]+-----|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[A-Za-z0-9_\/-]{24,})/;
-const NON_SECRET_VALUE_KEYS = new Set(['image']);
-const NON_SECRET_VALUE_PARENT_KEYS = new Set(['x-arcane']);
 const VARIABLE_TOKEN_REGEX = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(?::[-?+])[^}]*)?\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 const LIST_FIELDS = ['volumes', 'ports', 'env_file', 'dns', 'tmpfs'];
 
@@ -322,90 +318,6 @@ function buildComposeSemanticDiagnostics(parsedValue: unknown, doc: YamlDocLike)
 	return diagnostics;
 }
 
-function buildMissingVariableDiagnostics(
-	source: string,
-	context: EditorContext
-): { diagnostics: Diagnostic[]; unresolved: string[] } {
-	const unresolved = getMissingComposeVariables(context, source);
-	if (unresolved.length === 0) return { diagnostics: [], unresolved: [] };
-
-	const unresolvedSet = new Set(unresolved);
-	const diagnostics: Diagnostic[] = [];
-
-	for (const match of source.matchAll(VARIABLE_TOKEN_REGEX)) {
-		const whole = match[0] ?? '';
-		const name = match[1] || match[2];
-		if (!name || !unresolvedSet.has(name)) continue;
-		const from = match.index ?? 0;
-		const to = Math.max(from + 1, from + whole.length);
-		diagnostics.push({
-			from,
-			to,
-			severity: 'warning',
-			message: `Variable "${name}" is not defined in .env or global variables.`
-		});
-	}
-
-	return { diagnostics, unresolved };
-}
-
-function buildSecretDiagnostics(source: string): Diagnostic[] {
-	const diagnostics: Diagnostic[] = [];
-	const lines = source.split('\n');
-	let offset = 0;
-	const keyStack: Array<{ key: string; indent: number }> = [];
-
-	for (const rawLine of lines) {
-		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-		const match = /^(\s*)([A-Za-z0-9_.-]+)\s*:\s*(.*)$/.exec(line);
-		if (!match) {
-			offset += rawLine.length + 1;
-			continue;
-		}
-
-		const indent = (match[1] ?? '').length;
-		while (keyStack.length > 0 && keyStack[keyStack.length - 1]!.indent >= indent) {
-			keyStack.pop();
-		}
-
-		const key = match[2] ?? '';
-		const value = (match[3] ?? '').trim();
-		const isBlockKey = value === '';
-		const isSecretKey = SECRET_NAME_REGEX.test(key);
-		const lowerKey = key.toLowerCase();
-		const isArcaneExtensionKey = lowerKey.startsWith('x-arcane');
-		const inArcaneExtensionBlock = keyStack.some((entry) => NON_SECRET_VALUE_PARENT_KEYS.has(entry.key.toLowerCase()));
-		const shouldCheckValue = !NON_SECRET_VALUE_KEYS.has(lowerKey) && !isArcaneExtensionKey && !inArcaneExtensionBlock;
-		const isSecretValue = shouldCheckValue && SECRET_VALUE_REGEX.test(value);
-
-		if (!isSecretKey && !isSecretValue) {
-			if (isBlockKey) {
-				keyStack.push({ key, indent });
-			}
-			offset += rawLine.length + 1;
-			continue;
-		}
-
-		const keyIndex = line.indexOf(key);
-		const from = offset + Math.max(0, keyIndex);
-		const to = from + Math.max(1, key.length);
-		diagnostics.push({
-			from,
-			to,
-			severity: 'warning',
-			message: `"${key}" looks like a secret. Prefer Docker secrets or external secret managers.`
-		});
-
-		if (isBlockKey) {
-			keyStack.push({ key, indent });
-		}
-
-		offset += rawLine.length + 1;
-	}
-
-	return diagnostics;
-}
-
 function buildOutline(doc: YamlDocLike): OutlineItem[] {
 	const outline: OutlineItem[] = [];
 	const sections = ['services', 'networks', 'volumes', 'configs', 'secrets'];
@@ -466,7 +378,7 @@ export function findVariableReferenceAtPosition(
 export async function analyzeComposeContent(
 	view: EditorView,
 	schemaContext: ComposeSchemaContext,
-	editorContext: EditorContext,
+	_editorContext: EditorContext,
 	maxSchemaDiagnostics = MAX_SCHEMA_DIAGNOSTICS_DEFAULT
 ): Promise<AnalysisResult> {
 	const source = view.state.doc.toString();
@@ -492,11 +404,9 @@ export async function analyzeComposeContent(
 		});
 	}
 
-	const duplicateKeyWarnings = collectDuplicateKeyDiagnostics(doc.contents ?? null, diagnostics);
+	collectDuplicateKeyDiagnostics(doc.contents ?? null, diagnostics);
 
 	let outlineItems: OutlineItem[] = [];
-	let unresolvedVariables: string[] = [];
-	let secretWarnings = 0;
 
 	if (diagnostics.every((item) => item.severity !== 'error')) {
 		try {
@@ -514,14 +424,6 @@ export async function analyzeComposeContent(
 			}
 
 			diagnostics.push(...buildComposeSemanticDiagnostics(parsedValue, doc));
-
-			const missing = buildMissingVariableDiagnostics(source, editorContext);
-			unresolvedVariables = missing.unresolved;
-			diagnostics.push(...missing.diagnostics);
-
-			const secretDiagnostics = buildSecretDiagnostics(source);
-			secretWarnings = secretDiagnostics.length;
-			diagnostics.push(...secretDiagnostics);
 		} catch {
 			diagnostics.push({
 				from: 0,
@@ -535,11 +437,7 @@ export async function analyzeComposeContent(
 	return {
 		diagnostics,
 		outlineItems,
-		summaryPatch: {
-			duplicateKeyWarnings,
-			secretWarnings,
-			unresolvedVariables
-		}
+		summaryPatch: {}
 	};
 }
 

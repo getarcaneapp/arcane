@@ -25,6 +25,12 @@ async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
 	await page.keyboard.type(text, { delay: 0 });
 }
 
+async function getCodeMirrorValue(editor: Locator) {
+	const content = editor.locator('.cm-content').first();
+	await expect(content).toBeVisible();
+	return content.evaluate((node) => (node as HTMLElement).innerText ?? '');
+}
+
 async function createProjectViaUI(page: Page, projectName: string) {
 	const containerName = `test-redis-container-${Date.now()}`;
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
@@ -238,6 +244,24 @@ test.describe('New Compose Project Page', () => {
 		await expect(page.getByRole('button', { name: 'My New Project' })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Environment (.env)' })).toBeVisible();
+	});
+
+	test('should preserve YAML indentation when pressing Enter in compose editor', async ({
+		page
+	}) => {
+		const composeEditor = page.locator('.cm-editor:visible').first();
+		const composeContent = composeEditor.locator('.cm-content').first();
+
+		await expect(composeContent).toBeVisible();
+		await composeContent.click({ position: { x: 10, y: 10 } });
+		await composeContent.press('ControlOrMeta+A');
+		await page.keyboard.type('services:', { delay: 0 });
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('web:', { delay: 0 });
+
+		await expect
+			.poll(async () => (await getCodeMirrorValue(composeEditor)).replace(/\r/g, ''))
+			.toContain('services:\n  web:');
 	});
 
 	test('should validate required fields', async ({ page }) => {
