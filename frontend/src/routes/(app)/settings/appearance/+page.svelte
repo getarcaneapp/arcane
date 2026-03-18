@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { z } from 'zod/v4';
-	import { toast } from 'svelte-sonner';
 	import { mode, toggleMode } from 'mode-watcher';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
@@ -13,7 +13,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
+	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
+	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/application-theme-util';
 	import { applyOledMode } from '$lib/utils/oled-mode-util';
 	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
@@ -24,6 +26,7 @@
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
 
 	const formSchema = z.object({
+		applicationTheme: z.enum(APPLICATION_THEME_VALUES),
 		mobileNavigationMode: z.enum(['floating', 'docked']),
 		mobileNavigationShowLabels: z.boolean(),
 		sidebarHoverExpansion: z.boolean(),
@@ -50,12 +53,19 @@
 			currentSettings,
 			getCurrentSettings: () => $settingsStore || data.settings!,
 			successMessage: m.navigation_settings_saved(),
-			onReset: () => {
-				applyAccentColor(currentSettings.accentColor);
-				applyOledMode(currentSettings.oledMode ?? false);
-			}
+			onReset: restorePersistedAppearance
 		})
 	);
+
+	function restorePersistedAppearance() {
+		applyApplicationTheme(currentSettings.applicationTheme);
+		applyAccentColor(currentSettings.accentColor);
+		applyOledMode(currentSettings.oledMode ?? false);
+	}
+
+	onDestroy(() => {
+		restorePersistedAppearance();
+	});
 
 	function setLocalOverride(key: 'mode' | 'showLabels', value: any) {
 		const currentOverrides = navigationSettingsOverridesStore.current;
@@ -97,6 +107,7 @@
 	const labelsIsLocal = $derived(persistedState.showLabels !== undefined);
 	const labelsDisplayValue = $derived(labelsIsLocal ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value);
 	const isDarkMode = $derived(mode.current === 'dark');
+	const isDefaultApplicationTheme = $derived($formInputs.applicationTheme.value === 'default');
 
 	function handleOledModeChange(checked: boolean) {
 		$formInputs.oledMode.value = checked;
@@ -135,6 +146,23 @@
 				<h3 class="text-lg font-medium">{m.appearance_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
+						<!-- Accent Color -->
+						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+							<div>
+								<Label class="text-base">{m.application_theme()}</Label>
+								<p class="text-muted-foreground mt-1 text-sm">{m.application_theme_description()}</p>
+							</div>
+							<div>
+								<ApplicationThemePicker
+									bind:selectedTheme={$formInputs.applicationTheme.value}
+									accentColor={$formInputs.accentColor.value}
+									disabled={isReadOnly}
+								/>
+							</div>
+						</div>
+
+						<Separator />
+
 						<!-- Accent Color -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
@@ -219,7 +247,9 @@
 							<div>
 								<Label class="text-base">{m.oled_mode()}</Label>
 								<p class="text-muted-foreground mt-1 text-sm">{m.oled_mode_description()}</p>
-								{#if !isDarkMode}
+								{#if !isDefaultApplicationTheme}
+									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_default_theme()}</p>
+								{:else if !isDarkMode}
 									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
 								{/if}
 							</div>
@@ -227,7 +257,7 @@
 								<Switch
 									id="oledMode"
 									checked={$formInputs.oledMode.value}
-									disabled={isReadOnly}
+									disabled={isReadOnly || !isDefaultApplicationTheme}
 									onCheckedChange={handleOledModeChange}
 								/>
 								<Label for="oledMode" class="font-normal">

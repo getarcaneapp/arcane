@@ -1,4 +1,7 @@
+import type { ApplicationTheme } from '$lib/types/settings.type';
+
 export type LocalSettings = {
+	applicationTheme: ApplicationTheme;
 	accentColor: string;
 	oledMode: boolean;
 	mobileNavigationMode: string;
@@ -8,6 +11,7 @@ export type LocalSettings = {
 };
 
 const LOCAL_SETTING_KEYS = new Set([
+	'applicationTheme',
 	'accentColor',
 	'oledMode',
 	'mobileNavigationMode',
