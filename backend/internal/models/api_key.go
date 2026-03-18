@@ -9,6 +9,7 @@ type ApiKey struct {
 	Description   *string    `json:"description,omitempty" gorm:"column:description"`
 	KeyHash       string     `json:"-" gorm:"column:key_hash;not null"`
 	KeyPrefix     string     `json:"keyPrefix" gorm:"column:key_prefix;not null"`
+	ManagedBy     *string    `json:"-" gorm:"column:managed_by"`
 	UserID        string     `json:"userId" gorm:"column:user_id;not null"`
 	EnvironmentID *string    `json:"environmentId,omitempty" gorm:"column:environment_id"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty" gorm:"column:expires_at" sortable:"true"`

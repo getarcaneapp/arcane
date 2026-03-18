@@ -48,9 +48,10 @@ async function createProjectViaUI(page: Page, projectName: string) {
 	const createButton = page
 		.getByRole('button', { name: 'Create Project' })
 		.locator('[data-slot="arcane-button"]');
+	await expect(createButton).toBeEnabled();
 	await createButton.click();
 
-	await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+	await page.waitForURL(/\/projects\/(?!new$).+/, { timeout: 10000 });
 	await expect(page.getByRole('button', { name: projectName })).toBeVisible();
 
 	return new URL(page.url()).pathname.split('/').pop()!;

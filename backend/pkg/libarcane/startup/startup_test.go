@@ -256,25 +256,36 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 	t.Run("skips in agent mode", func(t *testing.T) {
 		cfg := &RuntimeConfig{AgentMode: true}
 		createAdminCalled := false
+		reconcileDefaultAdminAPIKeyCalled := false
 		createAdminFunc := func(ctx context.Context) error {
 			createAdminCalled = true
 			return nil
 		}
+		reconcileDefaultAdminAPIKeyFunc := func(ctx context.Context) error {
+			reconcileDefaultAdminAPIKeyCalled = true
+			return nil
+		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, nil, nil, nil)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, nil, nil, nil)
 
 		assert.False(t, createAdminCalled)
+		assert.False(t, reconcileDefaultAdminAPIKeyCalled)
 	})
 
 	t.Run("calls all functions in non-agent mode", func(t *testing.T) {
 		cfg := &RuntimeConfig{AgentMode: false}
 		createAdminCalled := false
+		reconcileDefaultAdminAPIKeyCalled := false
 		migrateOidcCalled := false
 		migrateDiscordCalled := false
 		autoLoginInitCalled := false
 
 		createAdminFunc := func(ctx context.Context) error {
 			createAdminCalled = true
+			return nil
+		}
+		reconcileDefaultAdminAPIKeyFunc := func(ctx context.Context) error {
+			reconcileDefaultAdminAPIKeyCalled = true
 			return nil
 		}
 		autoLoginInitFunc := func(ctx context.Context) error {
@@ -290,9 +301,10 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
 
 		assert.True(t, createAdminCalled)
+		assert.True(t, reconcileDefaultAdminAPIKeyCalled)
 		assert.True(t, migrateOidcCalled)
 		assert.True(t, migrateDiscordCalled)
 		assert.True(t, autoLoginInitCalled)
@@ -300,6 +312,9 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 
 	t.Run("handles errors gracefully", func(t *testing.T) {
 		cfg := &RuntimeConfig{AgentMode: false}
+		reconcileDefaultAdminAPIKeyFunc := func(ctx context.Context) error {
+			return errors.New("api key reconcile failed")
+		}
 		autoLoginInitFunc := func(ctx context.Context) error {
 			return errors.New("autologin init failed")
 		}
@@ -313,7 +328,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return errors.New("discord migration failed")
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
+		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc, migrateOidcFunc, migrateDiscordFunc)
 	})
 }
 

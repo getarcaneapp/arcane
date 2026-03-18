@@ -108,6 +108,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		Environment:       string(cfg.Environment),
 		EncryptionKey:     cfg.EncryptionKey,
 		AutoLoginUsername: cfg.AutoLoginUsername,
+		AdminStaticAPIKey: cfg.AdminStaticAPIKey,
 	}
 
 	startup.LoadAgentToken(appCtx, runtimeCfg, appServices.Settings.GetStringSetting)
@@ -174,6 +175,9 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
 		appServices.User.CreateDefaultAdmin,
+		func(ctx context.Context) error {
+			return appServices.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
+		},
 		func(ctx context.Context) error {
 			startup.InitializeAutoLogin(ctx, runtimeCfg)
 			return nil

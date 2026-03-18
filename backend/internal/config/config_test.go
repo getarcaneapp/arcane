@@ -68,6 +68,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	origJWTSecret := os.Getenv("JWT_SECRET")
 	origJWTSecretFile := os.Getenv("JWT_SECRET_FILE")
 	origJWTSecretDoubleFile := os.Getenv("JWT_SECRET__FILE")
+	origDefaultAPIKey := os.Getenv("ADMIN_STATIC_API_KEY")
+	origDefaultAPIKeyFile := os.Getenv("ADMIN_STATIC_API_KEY_FILE")
+	origDefaultAPIKeyDoubleFile := os.Getenv("ADMIN_STATIC_API_KEY__FILE")
 
 	defer func() {
 		restoreEnv("ENCRYPTION_KEY", origEncryptionKey)
@@ -76,6 +79,9 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		restoreEnv("JWT_SECRET", origJWTSecret)
 		restoreEnv("JWT_SECRET_FILE", origJWTSecretFile)
 		restoreEnv("JWT_SECRET__FILE", origJWTSecretDoubleFile)
+		restoreEnv("ADMIN_STATIC_API_KEY", origDefaultAPIKey)
+		restoreEnv("ADMIN_STATIC_API_KEY_FILE", origDefaultAPIKeyFile)
+		restoreEnv("ADMIN_STATIC_API_KEY__FILE", origDefaultAPIKeyDoubleFile)
 	}()
 
 	t.Run("Load sensitive field from _FILE env var", func(t *testing.T) {
@@ -131,6 +137,16 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		assert.Equal(t, directValue, cfg.EncryptionKey)
 	})
 
+	t.Run("Default admin API key supports direct env var", func(t *testing.T) {
+		directValue := "arc_directbootstrapkey1234567890"
+		setEnv(t, "ADMIN_STATIC_API_KEY", directValue)
+		unsetEnv(t, "ADMIN_STATIC_API_KEY_FILE")
+		unsetEnv(t, "ADMIN_STATIC_API_KEY__FILE")
+
+		cfg := Load()
+		assert.Equal(t, directValue, cfg.AdminStaticAPIKey)
+	})
+
 	t.Run("_FILE takes precedence over direct env var", func(t *testing.T) {
 		// Create a temp file with the secret
 		tmpDir := t.TempDir()
@@ -146,6 +162,21 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, fileValue, cfg.EncryptionKey)
+	})
+
+	t.Run("Default admin API key loads from _FILE env var", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		secretFile := filepath.Join(tmpDir, "default_api_key")
+		secretValue := "arc_filebootstrapkey1234567890"
+		err := os.WriteFile(secretFile, []byte(secretValue), 0o600)
+		require.NoError(t, err)
+
+		unsetEnv(t, "ADMIN_STATIC_API_KEY")
+		unsetEnv(t, "ADMIN_STATIC_API_KEY__FILE")
+		setEnv(t, "ADMIN_STATIC_API_KEY_FILE", secretFile)
+
+		cfg := Load()
+		assert.Equal(t, secretValue, cfg.AdminStaticAPIKey)
 	})
 
 	t.Run("__FILE takes precedence over _FILE", func(t *testing.T) {
@@ -167,6 +198,25 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, "double-underscore-value-32chars!!", cfg.JWTSecret)
+	})
+
+	t.Run("Default admin API key __FILE takes precedence over _FILE", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		singleFile := filepath.Join(tmpDir, "default_api_key_single")
+		err := os.WriteFile(singleFile, []byte("arc_singlebootstrapkey1234567890"), 0o600)
+		require.NoError(t, err)
+
+		doubleFile := filepath.Join(tmpDir, "default_api_key_double")
+		err = os.WriteFile(doubleFile, []byte("arc_doublebootstrapkey1234567890\n"), 0o600)
+		require.NoError(t, err)
+
+		unsetEnv(t, "ADMIN_STATIC_API_KEY")
+		setEnv(t, "ADMIN_STATIC_API_KEY_FILE", singleFile)
+		setEnv(t, "ADMIN_STATIC_API_KEY__FILE", doubleFile)
+
+		cfg := Load()
+		assert.Equal(t, "arc_doublebootstrapkey1234567890", cfg.AdminStaticAPIKey)
 	})
 
 	t.Run("Non-sensitive fields do not support _FILE suffix", func(t *testing.T) {

@@ -64,6 +64,15 @@ func fetchAPIKey(t *testing.T, db *database.DB, keyID string) models.ApiKey {
 	return apiKey
 }
 
+func listAPIKeysForUser(t *testing.T, db *database.DB, userID string) []models.ApiKey {
+	t.Helper()
+
+	var apiKeys []models.ApiKey
+	err := db.WithContext(context.Background()).Where("user_id = ?", userID).Order("created_at asc").Find(&apiKeys).Error
+	require.NoError(t, err)
+	return apiKeys
+}
+
 func requireAPIKeyLastUsedEventually(t *testing.T, db *database.DB, keyID string) models.ApiKey {
 	t.Helper()
 
@@ -101,6 +110,224 @@ func invalidateAPIKey(rawKey string) string {
 	}
 
 	return rawKey[:len(rawKey)-1] + "0"
+}
+
+func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *UserService) *models.User {
+	t.Helper()
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "default-admin-user"},
+		Username:  defaultAdminUsername,
+		Roles:     models.StringSlice{"admin"},
+	}
+
+	created, err := userService.CreateUser(ctx, user)
+	require.NoError(t, err)
+	return created
+}
+
+func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-default-admin")
+
+	rawKey := "arc_bootstrapprovidedkey1234567890"
+	created, err := service.CreateDefaultAdminAPIKey(ctx, user.ID, rawKey)
+	require.NoError(t, err)
+	require.Equal(t, rawKey, created.Key)
+	require.Equal(t, defaultAdminAPIKeyName, created.ApiKey.Name)
+	require.True(t, created.ApiKey.IsStatic)
+
+	stored := fetchAPIKey(t, db, created.ApiKey.ID)
+	require.NotEqual(t, rawKey, stored.KeyHash)
+	require.Equal(t, rawKey[:len(apiKeyPrefix)+apiKeyPrefixLen], stored.KeyPrefix)
+	require.NotNil(t, stored.ManagedBy)
+	require.Equal(t, managedByAdminBootstrap, *stored.ManagedBy)
+}
+
+func TestReconcileDefaultAdminAPIKeyCreatesManagedKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	rawKey := "arc_bootstrapcreate1234567890"
+	err := service.ReconcileDefaultAdminAPIKey(ctx, rawKey)
+	require.NoError(t, err)
+
+	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, apiKeys, 1)
+	require.Equal(t, defaultAdminAPIKeyName, apiKeys[0].Name)
+	require.NotNil(t, apiKeys[0].Description)
+	require.Equal(t, *defaultAdminAPIKeyDescription, *apiKeys[0].Description)
+	require.NotNil(t, apiKeys[0].ManagedBy)
+	require.Equal(t, managedByAdminBootstrap, *apiKeys[0].ManagedBy)
+
+	validatedUser, err := service.ValidateApiKey(ctx, rawKey)
+	require.NoError(t, err)
+	require.Equal(t, adminUser.ID, validatedUser.ID)
+}
+
+func TestDeleteApiKeyRejectsStaticKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapprotected1234567890")
+	require.NoError(t, err)
+
+	err = service.DeleteApiKey(ctx, created.ApiKey.ID)
+	require.ErrorIs(t, err, ErrApiKeyProtected)
+
+	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, apiKeys, 1)
+	require.Equal(t, created.ApiKey.ID, apiKeys[0].ID)
+}
+
+func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
+	require.NoError(t, err)
+
+	name := "renamed"
+	description := "updated description"
+	updated, err := service.UpdateApiKey(ctx, created.ApiKey.ID, apikey.UpdateApiKey{
+		Name:        &name,
+		Description: &description,
+	})
+	require.Nil(t, updated)
+	require.ErrorIs(t, err, ErrApiKeyProtected)
+
+	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, apiKeys, 1)
+	require.Equal(t, defaultAdminAPIKeyName, apiKeys[0].Name)
+	require.NotNil(t, apiKeys[0].Description)
+	require.Equal(t, *defaultAdminAPIKeyDescription, *apiKeys[0].Description)
+}
+
+func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	rawKey := "arc_bootstrapstable1234567890"
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+	first := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, first, 1)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+	second := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, second, 1)
+	require.Equal(t, first[0].ID, second[0].ID)
+}
+
+func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	oldKey := "arc_bootstrapoldvalue1234567890"
+	newKey := "arc_bootstrapnewvalue1234567890"
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, oldKey))
+	first := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, first, 1)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, newKey))
+	second := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, second, 1)
+	require.NotEqual(t, first[0].ID, second[0].ID)
+
+	_, err := service.ValidateApiKey(ctx, oldKey)
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+
+	validatedUser, err := service.ValidateApiKey(ctx, newKey)
+	require.NoError(t, err)
+	require.Equal(t, adminUser.ID, validatedUser.ID)
+}
+
+func TestReconcileDefaultAdminAPIKeyDeletesManagedKeyWhenUnset(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapdelete1234567890"))
+	require.Len(t, listAPIKeysForUser(t, db, adminUser.ID), 1)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, ""))
+	require.Empty(t, listAPIKeysForUser(t, db, adminUser.ID))
+}
+
+func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	userCreated, err := service.CreateApiKey(ctx, adminUser.ID, apikey.CreateApiKey{Name: "manual-key"})
+	require.NoError(t, err)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmanualsafe1234567890"))
+
+	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, apiKeys, 2)
+
+	foundUserKey := false
+	foundManagedKey := false
+	for _, apiKey := range apiKeys {
+		if apiKey.ID == userCreated.ApiKey.ID {
+			foundUserKey = true
+			require.Nil(t, apiKey.ManagedBy)
+			require.Equal(t, "manual-key", apiKey.Name)
+		}
+		if apiKey.ManagedBy != nil && *apiKey.ManagedBy == managedByAdminBootstrap {
+			foundManagedKey = true
+		}
+	}
+
+	require.True(t, foundUserKey)
+	require.True(t, foundManagedKey)
+}
+
+func TestReconcileDefaultAdminAPIKeyDeletesDuplicateManagedKeys(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	rawKey := "arc_bootstrapduplicate1234567890"
+	first, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, rawKey)
+	require.NoError(t, err)
+	_, err = service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, rawKey)
+	require.NoError(t, err)
+
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+
+	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
+	require.Len(t, apiKeys, 1)
+	require.Equal(t, first.ApiKey.ID, apiKeys[0].ID)
+}
+
+func TestReconcileDefaultAdminAPIKeySkipsWhenDefaultAdminMissing(t *testing.T) {
+	ctx := context.Background()
+	service, db, _ := setupAPIKeyService(t)
+
+	err := service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmissing1234567890")
+	require.NoError(t, err)
+
+	var count int64
+	err = db.WithContext(ctx).Model(&models.ApiKey{}).Count(&count).Error
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
+
+func TestReconcileDefaultAdminAPIKeyRejectsInvalidKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	adminUser := createDefaultAdminUser(t, ctx, userService)
+
+	err := service.ReconcileDefaultAdminAPIKey(ctx, "invalid-key")
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+	require.Empty(t, listAPIKeysForUser(t, db, adminUser.ID))
 }
 
 func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
@@ -152,6 +379,14 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
 	require.Nil(t, apiKey.LastUsedAt)
+}
+
+func TestValidateAPIKeyRejectsShortPrefixedInput(t *testing.T) {
+	ctx := context.Background()
+	service, _, _ := setupAPIKeyService(t)
+
+	_, err := service.ValidateApiKey(ctx, "arc_123")
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
 }
 
 func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
