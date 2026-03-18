@@ -639,14 +639,18 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 	}
 
 	composeTemplate := h.templateService.GetComposeTemplate()
+	swarmStackTemplate := h.templateService.GetSwarmStackTemplate()
+	swarmStackEnvTemplate := h.templateService.GetSwarmStackEnvTemplate()
 	envTemplate := h.templateService.GetEnvTemplate()
 
 	return &GetDefaultTemplatesOutput{
 		Body: base.ApiResponse[template.DefaultTemplatesResponse]{
 			Success: true,
 			Data: template.DefaultTemplatesResponse{
-				ComposeTemplate: composeTemplate,
-				EnvTemplate:     envTemplate,
+				ComposeTemplate:       composeTemplate,
+				SwarmStackTemplate:    swarmStackTemplate,
+				SwarmStackEnvTemplate: swarmStackEnvTemplate,
+				EnvTemplate:           envTemplate,
 			},
 		},
 	}, nil
