@@ -146,7 +146,7 @@
 				<h3 class="text-lg font-medium">{m.appearance_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<!-- Accent Color -->
+						<!-- Application Theme -->
 						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 							<div>
 								<Label class="text-base">{m.application_theme()}</Label>

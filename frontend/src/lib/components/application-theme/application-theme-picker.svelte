@@ -55,7 +55,7 @@
 	};
 
 	let carouselApi = $state<CarouselAPI | undefined>(undefined);
-	let hasInitializedCarouselPosition = $state(false);
+	let hasInitializedCarouselPosition = false;
 	const isDarkMode = $derived(mode.current === 'dark');
 
 	$effect(() => {
