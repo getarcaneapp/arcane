@@ -5,7 +5,6 @@ export type Settings = {
 	followProjectSymlinks: boolean;
 	diskUsagePath: string;
 	autoUpdate: boolean;
-	useComposeUpdate?: boolean;
 	autoUpdateInterval: number;
 	autoUpdateExcludedContainers?: string;
 	pollingEnabled: boolean;

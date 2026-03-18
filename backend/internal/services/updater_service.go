@@ -593,9 +593,8 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	// Update the container
 	projectName := inspect.Config.Labels["com.docker.compose.project"]
 	serviceName := inspect.Config.Labels["com.docker.compose.service"]
-	useComposeUpdate := s.settingsService.GetBoolSetting(ctx, "useComposeUpdate", false)
 
-	if useComposeUpdate && projectName != "" && serviceName != "" {
+	if projectName != "" && serviceName != "" {
 		slog.InfoContext(ctx, "UpdateSingleContainer: detected compose container, using project-based update", "containerID", containerID, "project", projectName, "service", serviceName)
 
 		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
@@ -1346,22 +1345,19 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	// We only group containers that are explicitly marked for restart (p.newRef != "").
 	projectToServices := make(map[string][]string) // projectID -> []serviceName
 	projectIDToObj := make(map[string]*models.Project)
-	useComposeUpdate := s.settingsService.GetBoolSetting(ctx, "useComposeUpdate", false)
 
-	if useComposeUpdate {
-		for _, cd := range sorted {
-			p := plansByName[cd.Name]
-			if p == nil || p.newRef == "" {
-				continue
-			}
-			projectName := p.inspect.Config.Labels["com.docker.compose.project"]
-			serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
-			if projectName != "" && serviceName != "" {
-				proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
-				if err == nil {
-					projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
-					projectIDToObj[proj.ID] = proj
-				}
+	for _, cd := range sorted {
+		p := plansByName[cd.Name]
+		if p == nil || p.newRef == "" {
+			continue
+		}
+		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+		if projectName != "" && serviceName != "" {
+			proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+			if err == nil {
+				projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
+				projectIDToObj[proj.ID] = proj
 			}
 		}
 	}
@@ -1436,8 +1432,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				}
 			}
 
-			useComposeUpdate := s.settingsService.GetBoolSetting(ctx, "useComposeUpdate", false)
-			if useComposeUpdate && proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
+			if proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
 				if _, done := updatedProjects[proj.ID]; !done {
 					svcs := projectToServices[proj.ID]
 					slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", svcs)

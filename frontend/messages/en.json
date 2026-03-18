@@ -1102,8 +1102,6 @@
 	"jobs_auto_update_description": "Automatically updates containers when new images are available",
 	"jobs_image_polling_name": "Image Polling",
 	"jobs_image_polling_description": "Checks container registries for new image versions",
-	"jobs_use_compose_update": "Use compose update",
-	"jobs_use_compose_update_description": "Apply updates using docker compose pull and docker compose up -d for containers belonging to a compose project.",
 	"jobs_scheduled_prune_name": "Scheduled Prune",
 	"jobs_scheduled_prune_description": "Removes unused containers, images, volumes, and networks",
 	"jobs_gitops_sync_name": "GitOps Sync",
