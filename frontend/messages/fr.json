@@ -642,7 +642,7 @@
 	"vuln_severity_low": "Bas",
 	"vuln_severity_unknown": "Inconnu",
 	"vuln_count_critical": "{count} critique",
-	"vuln_count_high": "{count} élevé",
+	"vuln_count_high": "{count} Élevé",
 	"vuln_count_medium": "{count} moyen",
 	"vuln_count_low": "{count} faible",
 	"vuln_count_unknown": "{count} inconnu",
