@@ -275,6 +275,10 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 	});
 
+	test('should have a head title', async ({ page }) => {
+		await expect(page).toHaveTitle('Arcane | Projects | My New Project');
+	});
+
 	test('should enable Create Project after entering a valid name', async ({ page }) => {
 		const observedErrors: string[] = [];
 		page.on('pageerror', (err) => observedErrors.push(String(err?.message ?? err)));
