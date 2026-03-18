@@ -17,6 +17,7 @@ type RuntimeConfig struct {
 	Environment       string
 	EncryptionKey     string
 	AutoLoginUsername string
+	AdminStaticAPIKey string
 }
 
 func LoadAgentToken(ctx context.Context, cfg *RuntimeConfig, getSettingFunc func(context.Context, string, string) string) {
@@ -82,13 +83,27 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
-func InitializeNonAgentFeatures(ctx context.Context, cfg *RuntimeConfig, createAdminFunc func(context.Context) error, autoLoginInitFunc func(context.Context) error, migrateOidcFunc func(context.Context) error, migrateDiscordFunc func(context.Context) error) {
+func InitializeNonAgentFeatures(
+	ctx context.Context,
+	cfg *RuntimeConfig,
+	createAdminFunc func(context.Context) error,
+	reconcileDefaultAdminAPIKeyFunc func(context.Context) error,
+	autoLoginInitFunc func(context.Context) error,
+	migrateOidcFunc func(context.Context) error,
+	migrateDiscordFunc func(context.Context) error,
+) {
 	if cfg.AgentMode {
 		return
 	}
 
 	if err := createAdminFunc(ctx); err != nil {
 		slog.WarnContext(ctx, "Failed to create default admin user", "error", err.Error())
+	}
+
+	if reconcileDefaultAdminAPIKeyFunc != nil {
+		if err := reconcileDefaultAdminAPIKeyFunc(ctx); err != nil {
+			slog.WarnContext(ctx, "Failed to reconcile default admin API key", "error", err.Error())
+		}
 	}
 
 	if err := autoLoginInitFunc(ctx); err != nil {

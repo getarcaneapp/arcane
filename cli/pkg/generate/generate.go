@@ -7,5 +7,5 @@ import (
 var GenerateCmd = &cobra.Command{
 	Use:     "generate",
 	Aliases: []string{"gen", "g"},
-	Short:   "Generate secrets for arcanes backend",
+	Short:   "Generate secrets and bootstrap credentials for Arcane",
 }

@@ -28,17 +28,21 @@
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { RefreshIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
+	import { useQueryClient } from '@tanstack/svelte-query';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
 	let project = $state(untrack(() => data.project));
-	let editorState = $derived(data.editorState);
+	const queryClient = useQueryClient();
+	const isTablet = new IsTablet();
 
 	let isLoading = $state({
 		deploying: false,
@@ -73,13 +77,13 @@
 		envContent: z.string().optional().default('')
 	});
 
-	let formData = $derived({
-		name: editorState.name,
-		composeContent: editorState.composeContent,
-		envContent: editorState.envContent || ''
-	});
+	const initialFormData = untrack(() => ({
+		name: data.editorState.originalName,
+		composeContent: data.editorState.originalComposeContent,
+		envContent: data.editorState.originalEnvContent || ''
+	}));
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
 
 	let hasChanges = $derived(
 		$inputs.name.value !== originalName ||
@@ -171,13 +175,123 @@
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
+	let lastAppliedProjectId = $state<string | null>(null);
+	let lastSeenProjectSignature = $state<string | null>(null);
+	let lastPrefsProjectId = $state<string | null>(null);
+
+	type ApplyProjectMode = 'initialize' | 'saved' | 'refresh';
+
+	function buildProjectSyncSignature(details: Project): string {
+		return JSON.stringify({
+			id: details.id,
+			name: details.name,
+			status: details.status,
+			statusReason: details.statusReason,
+			runningCount: details.runningCount,
+			serviceCount: details.serviceCount,
+			updatedAt: details.updatedAt,
+			composeContent: details.composeContent ?? '',
+			envContent: details.envContent ?? '',
+			includeFiles: (details.includeFiles ?? []).map((file) => ({
+				relativePath: file.relativePath,
+				content: file.content
+			})),
+			runtimeServices: (details.runtimeServices ?? []).map((service) => ({
+				name: service.name,
+				status: service.status,
+				containerId: service.containerId,
+				containerName: service.containerName
+			}))
+		});
+	}
+
+	function buildIncludeFilesMap(details: Project): Record<string, string> {
+		return Object.fromEntries((details.includeFiles ?? []).map((file) => [file.relativePath, file.content]));
+	}
+
+	function syncIncludeFileUiState(details: Project) {
+		const nextPanelStates: Record<string, boolean> = {};
+		const nextErrors: Record<string, boolean> = {};
+		const nextValidationReady: Record<string, boolean> = {};
+
+		for (const file of details.includeFiles ?? []) {
+			nextPanelStates[file.relativePath] = includeFilesPanelStates[file.relativePath] ?? true;
+			nextErrors[file.relativePath] = includeFilesHasErrors[file.relativePath] ?? false;
+			nextValidationReady[file.relativePath] = includeFilesValidationReady[file.relativePath] ?? true;
+		}
+
+		includeFilesPanelStates = nextPanelStates;
+		includeFilesHasErrors = nextErrors;
+		includeFilesValidationReady = nextValidationReady;
+
+		if (selectedIncludeTab && !(selectedIncludeTab in nextPanelStates)) {
+			selectedIncludeTab = null;
+		}
+		if (selectedFile !== 'compose' && selectedFile !== 'env' && !(selectedFile in nextPanelStates)) {
+			selectedFile = 'compose';
+		}
+	}
+
+	function applyProjectDetailsToEditor(details: Project, mode: ApplyProjectMode) {
+		project = details;
+		lastSeenProjectSignature = buildProjectSyncSignature(details);
+		syncIncludeFileUiState(details);
+
+		const nextName = details.name || '';
+		const nextComposeContent = details.composeContent || '';
+		const nextEnvContent = details.envContent || '';
+		const nextIncludeFiles = buildIncludeFilesMap(details);
+		const shouldSyncEditorState = mode === 'initialize' || mode === 'saved' || lastAppliedProjectId !== details.id || !hasChanges;
+
+		if (shouldSyncEditorState) {
+			originalName = nextName;
+			originalComposeContent = nextComposeContent;
+			originalEnvContent = nextEnvContent;
+			originalIncludeFiles = { ...nextIncludeFiles };
+			$inputs.name.value = nextName;
+			$inputs.composeContent.value = nextComposeContent;
+			$inputs.envContent.value = nextEnvContent;
+			includeFilesState = { ...nextIncludeFiles };
+		}
+
+		lastAppliedProjectId = details.id;
+	}
+
+	async function syncProjectQueries(updatedProject: Project) {
+		const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+
+		queryClient.setQueryData(queryKeys.projects.detail(currentEnvId, updatedProject.id), updatedProject);
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+		]);
+	}
 
 	$effect(() => {
-		project = data.project;
+		const incomingProject = data.project;
+		if (!incomingProject) return;
+
+		const incomingProjectSignature = buildProjectSyncSignature(incomingProject);
+		const previousSignature = untrack(() => lastSeenProjectSignature);
+		if (incomingProjectSignature === previousSignature) return;
+
+		lastSeenProjectSignature = incomingProjectSignature;
+
+		const projectChanged = untrack(() => lastAppliedProjectId) !== incomingProject.id;
+		if (projectChanged || !hasChanges) {
+			applyProjectDetailsToEditor(incomingProject, projectChanged ? 'initialize' : 'refresh');
+			return;
+		}
+
+		project = incomingProject;
+		syncIncludeFileUiState(incomingProject);
 	});
 
 	$effect(() => {
 		if (!project?.id) return;
+		if (lastPrefsProjectId === project.id) return;
+
+		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(`arcane.compose.ui:${project.id}`, defaultComposeUIPrefs, {
 			storage: 'session',
 			syncTabs: false
@@ -193,25 +307,6 @@
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const defaultMode = hasIncludes ? 'tree' : 'classic';
 		layoutMode = cur.layoutMode ?? defaultMode;
-
-		// Initialize include file states
-		if (project?.includeFiles) {
-			const newIncludeState: Record<string, string> = {};
-			project.includeFiles.forEach((file) => {
-				newIncludeState[file.relativePath] = file.content;
-				if (!(file.relativePath in includeFilesPanelStates)) {
-					includeFilesPanelStates[file.relativePath] = true;
-				}
-				if (!(file.relativePath in includeFilesHasErrors)) {
-					includeFilesHasErrors[file.relativePath] = false;
-				}
-				if (!(file.relativePath in includeFilesValidationReady)) {
-					includeFilesValidationReady[file.relativePath] = true;
-				}
-			});
-			includeFilesState = newIncludeState;
-			originalIncludeFiles = { ...newIncludeState };
-		}
 	});
 
 	async function handleSaveChanges() {
@@ -229,13 +324,13 @@
 		const namePayload = isGitOpsManaged ? undefined : name;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
 
-		// First update the main project files
 		handleApiResultWithCallbacks({
 			result: await tryCatch(projectService.updateProject(projectId, namePayload, composePayload, envContent)),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
-			onSuccess: async (updatedStack: Project) => {
-				// Then update any changed include files
+			onSuccess: async (updatedProject: Project) => {
+				let savedProject = updatedProject;
+
 				for (const relativePath of Object.keys(includeFilesState)) {
 					if (includeFilesState[relativePath] !== originalIncludeFiles[relativePath]) {
 						const includeResult = await tryCatch(
@@ -245,16 +340,13 @@
 							toast.error(includeResult.error.message || m.common_update_failed({ resource: relativePath }));
 							return;
 						}
+						savedProject = includeResult.data;
 					}
 				}
 
+				applyProjectDetailsToEditor(savedProject, 'saved');
+				await syncProjectQueries(savedProject);
 				toast.success(m.common_update_success({ resource: m.project() }));
-				originalName = updatedStack.name;
-				originalComposeContent = $inputs.composeContent.value;
-				originalEnvContent = $inputs.envContent.value;
-				originalIncludeFiles = { ...includeFilesState };
-				await new Promise((resolve) => setTimeout(resolve, 200));
-				await invalidateAll();
 			}
 		});
 	}
@@ -300,7 +392,13 @@
 			result: await tryCatch(projectService.getProject(projectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: (updatedProject) => {
-				project = updatedProject;
+				if (hasChanges && lastAppliedProjectId === updatedProject.id) {
+					project = updatedProject;
+					syncIncludeFileUiState(updatedProject);
+					return;
+				}
+
+				applyProjectDetailsToEditor(updatedProject, 'refresh');
 			}
 		});
 	}
@@ -532,118 +630,8 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<div class="flex h-full min-h-0 flex-col gap-4 lg:hidden">
-								<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-									<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
-										<Card.Title>
-											<h2>{m.project_files()}</h2>
-										</Card.Title>
-									</Card.Header>
-									<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
-										<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-											<TreeView.File
-												name="compose.yaml"
-												onclick={() => (selectedFile = 'compose')}
-												class={selectedFile === 'compose' ? 'bg-accent' : ''}
-											>
-												{#snippet icon()}
-													<FileTextIcon class="size-4 text-blue-500" />
-												{/snippet}
-											</TreeView.File>
-
-											<TreeView.File
-												name=".env"
-												onclick={() => (selectedFile = 'env')}
-												class={selectedFile === 'env' ? 'bg-accent' : ''}
-											>
-												{#snippet icon()}
-													<FileTextIcon class="size-4 text-green-500" />
-												{/snippet}
-											</TreeView.File>
-
-											{#if project?.includeFiles && project.includeFiles.length > 0}
-												<TreeView.Folder name={m.project_includes()}>
-													{#each project.includeFiles as includeFile (includeFile.relativePath)}
-														<TreeView.File
-															name={includeFile.relativePath}
-															onclick={() => (selectedFile = includeFile.relativePath)}
-															class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-														>
-															{#snippet icon()}
-																<FileTextIcon class="size-4 text-amber-500" />
-															{/snippet}
-														</TreeView.File>
-													{/each}
-												</TreeView.Folder>
-											{/if}
-										</TreeView.Root>
-									</Card.Content>
-								</Card.Root>
-
-								<div class="flex min-h-0 flex-1 flex-col">
-									{#if selectedFile === 'compose'}
-										<CodePanel
-											bind:open={composeOpen}
-											title="compose.yaml"
-											language="yaml"
-											bind:value={$inputs.composeContent.value}
-											error={$inputs.composeContent.error ?? undefined}
-											readOnly={!canEditCompose}
-											bind:hasErrors={composeHasErrors}
-											bind:validationReady={composeValidationReady}
-											fileId={`project:${projectId}:compose`}
-											originalValue={originalComposeContent}
-											enableDiff={true}
-											editorContext={codeEditorContext}
-										/>
-									{:else if selectedFile === 'env'}
-										<CodePanel
-											bind:open={envOpen}
-											title=".env"
-											language="env"
-											bind:value={$inputs.envContent.value}
-											error={$inputs.envContent.error ?? undefined}
-											readOnly={!canEditEnv}
-											bind:hasErrors={envHasErrors}
-											bind:validationReady={envValidationReady}
-											fileId={`project:${projectId}:env`}
-											originalValue={originalEnvContent}
-											enableDiff={true}
-											editorContext={codeEditorContext}
-										/>
-									{:else}
-										{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-										{#if includeFile}
-											<CodePanel
-												bind:open={includeFilesPanelStates[includeFile.relativePath]}
-												title={includeFile.relativePath}
-												language="yaml"
-												bind:value={includeFilesState[includeFile.relativePath]}
-												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-												originalValue={originalIncludeFiles[includeFile.relativePath]}
-												enableDiff={true}
-												editorContext={codeEditorContext}
-											/>
-										{/if}
-									{/if}
-								</div>
-							</div>
-
-							<ResizableSplit
-								class="hidden h-full min-h-0 lg:flex lg:gap-2"
-								firstClass="flex min-h-0 flex-col"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={treePaneWidth}
-								minSize={minTreePaneWidth}
-								minSecondSize={minEditorPaneWidth}
-								defaultRatio={0.3}
-								ariaLabel="Resize project files panel"
-								persistKey={`arcane.compose.split:${project.id}:tree`}
-								onResizeEnd={persistPrefs}
-							>
-								{#snippet first()}
+							{#if isTablet.current}
+								<div class="flex h-full min-h-0 flex-col gap-4">
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 											<Card.Title>
@@ -690,10 +678,8 @@
 											</TreeView.Root>
 										</Card.Content>
 									</Card.Root>
-								{/snippet}
 
-								{#snippet second()}
-									<div class="flex h-full min-h-0 flex-1 flex-col">
+									<div class="flex min-h-0 flex-1 flex-col">
 										{#if selectedFile === 'compose'}
 											<CodePanel
 												bind:open={composeOpen}
@@ -742,8 +728,122 @@
 											{/if}
 										{/if}
 									</div>
-								{/snippet}
-							</ResizableSplit>
+								</div>
+							{:else}
+								<ResizableSplit
+									class="h-full min-h-0 lg:gap-2"
+									firstClass="flex min-h-0 flex-col"
+									secondClass="flex min-h-0 flex-col"
+									bind:size={treePaneWidth}
+									minSize={minTreePaneWidth}
+									minSecondSize={minEditorPaneWidth}
+									defaultRatio={0.3}
+									ariaLabel="Resize project files panel"
+									persistKey={`arcane.compose.split:${project.id}:tree`}
+									onResizeEnd={persistPrefs}
+								>
+									{#snippet first()}
+										<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+											<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
+												<Card.Title>
+													<h2>{m.project_files()}</h2>
+												</Card.Title>
+											</Card.Header>
+											<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
+												<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
+													<TreeView.File
+														name="compose.yaml"
+														onclick={() => (selectedFile = 'compose')}
+														class={selectedFile === 'compose' ? 'bg-accent' : ''}
+													>
+														{#snippet icon()}
+															<FileTextIcon class="size-4 text-blue-500" />
+														{/snippet}
+													</TreeView.File>
+
+													<TreeView.File
+														name=".env"
+														onclick={() => (selectedFile = 'env')}
+														class={selectedFile === 'env' ? 'bg-accent' : ''}
+													>
+														{#snippet icon()}
+															<FileTextIcon class="size-4 text-green-500" />
+														{/snippet}
+													</TreeView.File>
+
+													{#if project?.includeFiles && project.includeFiles.length > 0}
+														<TreeView.Folder name={m.project_includes()}>
+															{#each project.includeFiles as includeFile (includeFile.relativePath)}
+																<TreeView.File
+																	name={includeFile.relativePath}
+																	onclick={() => (selectedFile = includeFile.relativePath)}
+																	class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
+																>
+																	{#snippet icon()}
+																		<FileTextIcon class="size-4 text-amber-500" />
+																	{/snippet}
+																</TreeView.File>
+															{/each}
+														</TreeView.Folder>
+													{/if}
+												</TreeView.Root>
+											</Card.Content>
+										</Card.Root>
+									{/snippet}
+
+									{#snippet second()}
+										<div class="flex h-full min-h-0 flex-1 flex-col">
+											{#if selectedFile === 'compose'}
+												<CodePanel
+													bind:open={composeOpen}
+													title="compose.yaml"
+													language="yaml"
+													bind:value={$inputs.composeContent.value}
+													error={$inputs.composeContent.error ?? undefined}
+													readOnly={!canEditCompose}
+													bind:hasErrors={composeHasErrors}
+													bind:validationReady={composeValidationReady}
+													fileId={`project:${projectId}:compose`}
+													originalValue={originalComposeContent}
+													enableDiff={true}
+													editorContext={codeEditorContext}
+												/>
+											{:else if selectedFile === 'env'}
+												<CodePanel
+													bind:open={envOpen}
+													title=".env"
+													language="env"
+													bind:value={$inputs.envContent.value}
+													error={$inputs.envContent.error ?? undefined}
+													readOnly={!canEditEnv}
+													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+													fileId={`project:${projectId}:env`}
+													originalValue={originalEnvContent}
+													enableDiff={true}
+													editorContext={codeEditorContext}
+												/>
+											{:else}
+												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+												{#if includeFile}
+													<CodePanel
+														bind:open={includeFilesPanelStates[includeFile.relativePath]}
+														title={includeFile.relativePath}
+														language="yaml"
+														bind:value={includeFilesState[includeFile.relativePath]}
+														bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+														bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+														fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+														originalValue={originalIncludeFiles[includeFile.relativePath]}
+														enableDiff={true}
+														editorContext={codeEditorContext}
+													/>
+												{/if}
+											{/if}
+										</div>
+									{/snippet}
+								</ResizableSplit>
+							{/if}
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if project?.includeFiles && project.includeFiles.length > 0}
@@ -783,8 +883,8 @@
 											editorContext={codeEditorContext}
 										/>
 									{/if}
-								{:else}
-									<div class="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
+								{:else if isTablet.current}
+									<div class="flex min-h-0 flex-1 flex-col gap-4">
 										<CodePanel
 											bind:open={composeOpen}
 											title="compose.yaml"
@@ -814,9 +914,9 @@
 											editorContext={codeEditorContext}
 										/>
 									</div>
-
+								{:else}
 									<ResizableSplit
-										class="hidden min-h-0 flex-1 lg:flex lg:gap-2"
+										class="min-h-0 flex-1 lg:gap-2"
 										firstClass="flex min-h-0 flex-col"
 										secondClass="flex min-h-0 flex-col"
 										bind:size={composeSplitWidth}
