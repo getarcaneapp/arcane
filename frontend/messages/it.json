@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Variabili dell'ambiente di esecuzione del tuo container",
 	"containers_no_env_vars": "Nessuna variabile d'ambiente",
 	"containers_no_ports": "Nessuna porta",
+	"containers_show_fewer_ports": "Mostra un minor numero di porte",
+	"containers_show_more_ports": "Mostra {count} altre porte",
 	"containers_no_labels_defined": "Nessuna label definita",
 	"containers_labels_description": "Inserisci le label dei metadati come coppie chiave=valore, una per riga",
 	"containers_networks_title": "Reti",
