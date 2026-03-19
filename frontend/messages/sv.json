@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Runtime environment variables for your container",
 	"containers_no_env_vars": "No environment variables",
 	"containers_no_ports": "No ports",
+	"containers_show_fewer_ports": "Visa färre portar",
+	"containers_show_more_ports": "Visa {count} fler portar",
 	"containers_no_labels_defined": "No labels defined",
 	"containers_labels_description": "Enter metadata labels as key=value pairs, one per line",
 	"containers_networks_title": "Networks",
