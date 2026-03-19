@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Переменные среды Runtime для контейнера",
 	"containers_no_env_vars": "Нет переменных окружения",
 	"containers_no_ports": "Нет портов",
+	"containers_show_fewer_ports": "Показать меньшее количество портов",
+	"containers_show_more_ports": "Показать {count} больше портов",
 	"containers_no_labels_defined": "Метки не определены",
 	"containers_labels_description": "Введите метки метаданных как пары ключ=значение, по одному в строке",
 	"containers_networks_title": "Сети",
