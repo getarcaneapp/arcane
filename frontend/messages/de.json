@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Runtime-Umgebungsvariablen für deinen Container",
 	"containers_no_env_vars": "Keine Umgebungsvariablen",
 	"containers_no_ports": "Keine Ports",
+	"containers_show_fewer_ports": "Weniger Häfen anzeigen",
+	"containers_show_more_ports": "{count} weitere Ports anzeigen",
 	"containers_no_labels_defined": "Keine Labels definiert",
 	"containers_labels_description": "Metadaten-Labels als key=value-Paare eingeben, eine pro Zeile",
 	"containers_networks_title": "Netzwerke",
