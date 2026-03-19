@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Runtime environment variables for your container",
 	"containers_no_env_vars": "Sem variáveis de ambiente",
 	"containers_no_ports": "Sem portas",
+	"containers_show_fewer_ports": "Mostrar menos portas",
+	"containers_show_more_ports": "Mostrar {count} mais portas",
 	"containers_no_labels_defined": "Nenhum rótulo definido",
 	"containers_labels_description": "Enter metadata labels as key=value pairs, one per line",
 	"containers_networks_title": "Redes",
