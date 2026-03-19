@@ -524,6 +524,8 @@
 	"container_compose_save_success": "Compose file saved successfully",
 	"container_compose_save_failed": "Failed to save compose file",
 	"container_compose_view_project": "View Project",
+	"compose_editor_editing_info": "Editing {file} for project {project}",
+	"compose_editor_viewing_info": "Viewing {file} for project {project}",
 	"tabs_compose": "Compose",
 	"tabs_environment": "Environment",
 	"tabs_volumes": "Volumes",
