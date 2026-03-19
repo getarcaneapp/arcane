@@ -152,6 +152,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
 		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
+		ApplicationTheme:           models.SettingVariable{Value: "default"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                   models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},

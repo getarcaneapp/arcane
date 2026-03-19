@@ -38,6 +38,7 @@
     "ansi-to-html": "^0.7.2",
     "axios": "^1.13.6",
     "date-fns": "^4.1.0",
+    "embla-carousel-svelte": "^8.6.0",
     "js-yaml": "^4.1.1",
     "prettier": "^3.8.1",
     "prettier-plugin-svelte": "^3.5.1",
