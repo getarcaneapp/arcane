@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Các biến môi trường runtime cho Container của bạn",
 	"containers_no_env_vars": "Không có biến môi trường",
 	"containers_no_ports": "Không có cổng",
+	"containers_show_fewer_ports": "Hiển thị ít cổng hơn",
+	"containers_show_more_ports": "Hiển thị {count} các cổng khác",
 	"containers_no_labels_defined": "Chưa định nghĩa Label nào",
 	"containers_labels_description": "Nhập Metadata Labels theo cặp key=value, mỗi cặp một dòng",
 	"containers_networks_title": "Networks",
