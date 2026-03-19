@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "컨테이너의 런타임 환경 변수",
 	"containers_no_env_vars": "환경 변수 없음",
 	"containers_no_ports": "포트 없음",
+	"containers_show_fewer_ports": "더 적은 포트 표시",
+	"containers_show_more_ports": "{count} 포트 더 보기",
 	"containers_no_labels_defined": "정의된 레이블 없음",
 	"containers_labels_description": "메타데이터 레이블을 줄당 하나씩 key=value 쌍으로 입력하세요",
 	"containers_networks_title": "네트워크",
