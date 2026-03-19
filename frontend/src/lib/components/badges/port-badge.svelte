@@ -131,7 +131,6 @@
 				<ArcaneTooltip.Trigger>
 					<button
 						onclick={() => (expanded = !expanded)}
-						aria-label={expanded ? 'Show fewer ports' : `Show ${hiddenCount} more ports`}
 						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors cursor-pointer"
 					>
 						{expanded ? '−' : `+${hiddenCount}`}
@@ -139,7 +138,7 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
-						{expanded ? 'Show fewer ports' : `Show ${hiddenCount} more ports`}
+						{expanded ? m.containers_show_fewer_ports() : m.containers_show_more_ports({ count: hiddenCount })}
 					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
