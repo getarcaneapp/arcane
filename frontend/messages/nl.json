@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Runtime omgevingsvariabelen voor je container",
 	"containers_no_env_vars": "Geen omgevingsvariabelen",
 	"containers_no_ports": "Geen poorten",
+	"containers_show_fewer_ports": "Minder poorten tonen",
+	"containers_show_more_ports": "Toon {count} meer poorten",
 	"containers_no_labels_defined": "Geen labels gedefinieerd",
 	"containers_labels_description": "Voer metadata labels in als key=value paren, één per regel",
 	"containers_networks_title": "Netwerken",
