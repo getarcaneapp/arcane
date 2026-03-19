@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Ejecutar variables de entorno para su contenedor",
 	"containers_no_env_vars": "No hay variables de entorno",
 	"containers_no_ports": "Sin puertos",
+	"containers_show_fewer_ports": "Mostrar menos puertos",
+	"containers_show_more_ports": "Mostrar {count} más puertos",
 	"containers_no_labels_defined": "No hay etiquetas definidas",
 	"containers_labels_description": "Introduzca las etiquetas de metadatos como pares clave=valor, una por línea",
 	"containers_networks_title": "Redes",
