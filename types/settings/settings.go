@@ -162,6 +162,11 @@ type Update struct {
 	// Required: false
 	AccentColor *string `json:"accentColor,omitempty"`
 
+	// ApplicationTheme is the overall application theme preset.
+	//
+	// Required: false
+	ApplicationTheme *string `json:"applicationTheme,omitempty"`
+
 	// AuthLocalEnabled indicates if local authentication is enabled.
 	//
 	// Required: false

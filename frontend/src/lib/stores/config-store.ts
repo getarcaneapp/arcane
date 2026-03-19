@@ -1,6 +1,7 @@
 import { settingsService } from '$lib/services/settings-service';
 import type { Settings } from '$lib/types/settings.type';
 import { applyAccentColor } from '$lib/utils/accent-color-util';
+import { applyApplicationTheme } from '$lib/utils/application-theme-util';
 import { applyOledMode } from '$lib/utils/oled-mode-util';
 import { get, writable } from 'svelte/store';
 
@@ -13,6 +14,7 @@ const reload = async () => {
 };
 
 const set = (settings: Settings) => {
+	applyApplicationTheme(settings.applicationTheme);
 	applyAccentColor(settings.accentColor);
 	applyOledMode(settings.oledMode ?? false);
 	settingsStore.set(settings);
