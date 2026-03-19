@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "Runtime environment variables for your container",
 	"containers_no_env_vars": "Χωρίς μεταβλητές περιβάλλοντος",
 	"containers_no_ports": "Χωρίς θύρες",
+	"containers_show_fewer_ports": "Εμφάνιση λιγότερων θυρών",
+	"containers_show_more_ports": "Εμφάνιση {count} περισσότερες θύρες",
 	"containers_no_labels_defined": "Δεν ορίστηκαν ετικέτες",
 	"containers_labels_description": "Enter metadata labels as key=value pairs, one per line",
 	"containers_networks_title": "Δίκτυα",
