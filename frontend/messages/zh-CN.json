@@ -497,6 +497,8 @@
 	"containers_env_vars_description": "您容器的运行环境变量",
 	"containers_no_env_vars": "无环境变量",
 	"containers_no_ports": "无端口",
+	"containers_show_fewer_ports": "显示更少的端口",
+	"containers_show_more_ports": "显示 {count} 更多端口",
 	"containers_no_labels_defined": "未定义标签",
 	"containers_labels_description": "以key=value键值对的格式输入元数据，每行一项",
 	"containers_networks_title": "网络",
