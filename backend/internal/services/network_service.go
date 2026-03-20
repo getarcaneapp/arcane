@@ -150,7 +150,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	inUseByID, inUseByName := s.buildNetworkUsageMaps(containers)
 
-	networkList, err := dockerClient.NetworkList(ctx, client.NetworkListOptions{})
+	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}

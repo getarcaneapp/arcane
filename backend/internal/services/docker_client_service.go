@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
@@ -200,7 +201,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.S
 		}
 	}
 
-	networkList, err := dockerClient.NetworkList(apiCtx, client.NetworkListOptions{})
+	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
