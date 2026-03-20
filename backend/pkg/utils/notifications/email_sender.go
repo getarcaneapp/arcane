@@ -4,57 +4,141 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
+	shoutrrrSMTP "github.com/nicholas-fedor/shoutrrr/pkg/services/email/smtp"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
-// BuildSMTPURL converts EmailConfig to Shoutrrr URL format
-// URL example: smtp://user:pass@host:port/?fromAddress=...&toAddresses=...&useHTML=yes
-func BuildSMTPURL(config models.EmailConfig) (string, error) {
-	u := &url.URL{
-		Scheme: "smtp",
-		Host:   fmt.Sprintf("%s:%d", config.SMTPHost, config.SMTPPort),
-		Path:   "/",
+const (
+	defaultSMTPClientHost = "localhost"
+	defaultSMTPTimeout    = 10 * time.Second
+)
+
+type smtpBuildOptions struct {
+	skipTLSVerify bool
+	timeout       time.Duration
+}
+
+func buildSMTPConfigInternal(config models.EmailConfig, options smtpBuildOptions) (*shoutrrrSMTP.Config, error) {
+	port, err := smtpPortFromConfigInternal(config.SMTPPort)
+	if err != nil {
+		return nil, err
+	}
+
+	smtpConfig := &shoutrrrSMTP.Config{
+		Host:          config.SMTPHost,
+		Port:          port,
+		Username:      config.SMTPUsername,
+		Password:      config.SMTPPassword,
+		FromAddress:   config.FromAddress,
+		ToAddresses:   config.ToAddresses,
+		Auth:          shoutrrrSMTP.AuthTypes.None,
+		Encryption:    shoutrrrSMTP.EncMethods.None,
+		UseStartTLS:   false,
+		UseHTML:       true,
+		ClientHost:    defaultSMTPClientHost,
+		Timeout:       smtpTimeoutFromOptionsInternal(options),
+		SkipTLSVerify: options.skipTLSVerify,
 	}
 
 	if config.SMTPUsername != "" || config.SMTPPassword != "" {
-		u.User = url.UserPassword(config.SMTPUsername, config.SMTPPassword)
+		smtpConfig.Auth = shoutrrrSMTP.AuthTypes.Plain
 	}
 
-	q := u.Query()
-	q.Set("fromAddress", config.FromAddress)
-	q.Set("toAddresses", strings.Join(config.ToAddresses, ","))
-	q.Set("useHTML", "yes")
-
-	// TLS Mode Mapping
-	// none -> encryption=None, useStartTLS=no
-	// starttls -> encryption=ExplicitTLS, useStartTLS=yes
-	// ssl -> encryption=ImplicitTLS, useStartTLS=no
 	switch config.TLSMode {
 	case models.EmailTLSModeNone:
-		q.Set("encryption", "None")
-		q.Set("useStartTLS", "no")
+		smtpConfig.Encryption = shoutrrrSMTP.EncMethods.None
+		smtpConfig.UseStartTLS = false
 	case models.EmailTLSModeStartTLS:
-		q.Set("encryption", "ExplicitTLS")
-		q.Set("useStartTLS", "yes")
+		smtpConfig.Encryption = shoutrrrSMTP.EncMethods.Auto
+		smtpConfig.UseStartTLS = true
+		smtpConfig.RequireStartTLS = true
 	case models.EmailTLSModeSSL:
-		q.Set("encryption", "ImplicitTLS")
-		q.Set("useStartTLS", "no")
+		smtpConfig.Encryption = shoutrrrSMTP.EncMethods.ImplicitTLS
 	default:
-		q.Set("encryption", "None")
-		q.Set("useStartTLS", "no")
+		smtpConfig.Encryption = shoutrrrSMTP.EncMethods.None
+		smtpConfig.UseStartTLS = false
 	}
 
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	return smtpConfig, nil
+}
+
+func smtpPortFromConfigInternal(port int) (uint16, error) {
+	if port < 1 || port > 65535 {
+		return 0, fmt.Errorf("invalid SMTP port: %d", port)
+	}
+
+	return uint16(port), nil
+}
+
+func smtpTimeoutFromOptionsInternal(options smtpBuildOptions) time.Duration {
+	if options.timeout > 0 {
+		return options.timeout
+	}
+
+	return defaultSMTPTimeout
+}
+
+func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {
+	options := smtpBuildOptions{}
+	if ctx == nil {
+		return options
+	}
+
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout := time.Until(deadline)
+		if timeout > 0 && timeout < defaultSMTPTimeout {
+			options.timeout = timeout
+		}
+	}
+
+	return options
+}
+
+func buildSMTPURLInternal(config models.EmailConfig, options smtpBuildOptions) (string, error) {
+	smtpConfig, err := buildSMTPConfigInternal(config, options)
+	if err != nil {
+		return "", fmt.Errorf("failed to build SMTP config: %w", err)
+	}
+
+	u := smtpConfig.GetURL()
+	if u == nil {
+		return "", fmt.Errorf("failed to build SMTP config URL")
+	}
+
+	parsedURL, err := url.Parse(u.String())
+	if err != nil {
+		return "", fmt.Errorf("failed to parse SMTP config URL: %w", err)
+	}
+
+	q := parsedURL.Query()
+	if q.Get("fromname") == "" {
+		q.Del("fromname")
+	}
+	if q.Get("subject") == "" {
+		q.Del("subject")
+	}
+	parsedURL.RawQuery = q.Encode()
+
+	return parsedURL.String(), nil
 }
 
 // SendEmail sends pre-rendered HTML via Shoutrrr
 func SendEmail(ctx context.Context, config models.EmailConfig, subject, htmlBody string) error {
-	shoutrrrURL, err := BuildSMTPURL(config)
+	return sendEmailInternal(ctx, config, subject, htmlBody, smtpBuildOptionsFromContextInternal(ctx))
+}
+
+func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, htmlBody string, options smtpBuildOptions) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("email send canceled: %w", err)
+		}
+	}
+
+	shoutrrrURL, err := buildSMTPURLInternal(config, options)
 	if err != nil {
 		return fmt.Errorf("failed to build shoutrrr URL: %w", err)
 	}
