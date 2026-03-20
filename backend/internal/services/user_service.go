@@ -9,14 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	arcstorage "github.com/getarcaneapp/arcane/backend/internal/storage"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/user"
 )
@@ -41,14 +41,22 @@ func DefaultArgon2Params() *Argon2Params {
 
 type UserService struct {
 	db           *database.DB
+	repo         arcstorage.UserRepository
 	argon2Params *Argon2Params
 }
 
 var ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
 
-func NewUserService(db *database.DB) *UserService {
+func NewUserService(db *database.DB, repo ...arcstorage.UserRepository) *UserService {
+	var selectedRepo arcstorage.UserRepository
+	if len(repo) > 0 && repo[0] != nil {
+		selectedRepo = repo[0]
+	} else if db != nil {
+		selectedRepo = arcstorage.NewSQLUserRepository(db)
+	}
 	return &UserService{
 		db:           db,
+		repo:         selectedRepo,
 		argon2Params: DefaultArgon2Params(),
 	}
 }
@@ -132,92 +140,75 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(user).Error; err != nil {
-			return fmt.Errorf("failed to create user: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	if err := s.repo.Create(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 	return user, nil
 }
 
 func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("username = ?", username).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
+	user, err := s.repo.GetByUsername(ctx, username)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-	return &user, nil
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-	return &user, nil
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }
 
 func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("oidc_subject_id = ?", subjectId).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
+	user, err := s.repo.GetByOidcSubjectID(ctx, subjectId)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-	return &user, nil
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }
 
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
+	user, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get user by email: %w", err)
 	}
-	return &user, nil
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing models.User
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", user.ID).
-			First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to load user: %w", err)
-		}
-
-		if userHasRoleInternal(existing.Roles, "admin") && !userHasRoleInternal(user.Roles, "admin") {
-			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, user.ID)
-			if err != nil {
-				return err
-			}
-			if remainingAdmins == 0 {
-				return ErrCannotRemoveLastAdmin
-			}
-		}
-
-		if err := tx.Save(user).Error; err != nil {
-			return fmt.Errorf("failed to update user: %w", err)
-		}
-		return nil
-	})
+	existing, err := s.repo.GetByID(ctx, user.ID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load user: %w", err)
+	}
+	if existing == nil {
+		return nil, ErrUserNotFound
+	}
+	if userHasRoleInternal(existing.Roles, "admin") && !userHasRoleInternal(user.Roles, "admin") {
+		remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		if remainingAdmins == 0 {
+			return nil, ErrCannotRemoveLastAdmin
+		}
+	}
+	if err := s.repo.Upsert(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 	return user, nil
 }
@@ -230,45 +221,27 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 // Note: The clause.Locking{Strength: "UPDATE"} statement is used to acquire a row-level lock.
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
 func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *models.User)) (*models.User, error) {
-	var out *models.User
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var u models.User
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", userID).
-			First(&u).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to load user for OIDC merge: %w", err)
-		}
-
-		// If already linked to a different subject, abort
-		if u.OidcSubjectId != nil && *u.OidcSubjectId != "" && *u.OidcSubjectId != subject {
-			return fmt.Errorf("user already linked to another OIDC subject")
-		}
-
-		// Link subject
-		u.OidcSubjectId = new(subject)
-
-		if updateFn != nil {
-			updateFn(&u)
-		}
-
-		if err := tx.Save(&u).Error; err != nil {
-			// Bubble up uniqueness violations with a clearer message
-			if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
-				return fmt.Errorf("oidc subject is already linked to another user: %w", err)
-			}
-			return fmt.Errorf("failed to persist OIDC merge: %w", err)
-		}
-		out = &u
-		return nil
-	})
+	u, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load user for OIDC merge: %w", err)
 	}
-	return out, nil
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	if u.OidcSubjectId != nil && *u.OidcSubjectId != "" && *u.OidcSubjectId != subject {
+		return nil, fmt.Errorf("user already linked to another OIDC subject")
+	}
+	u.OidcSubjectId = new(subject)
+	if updateFn != nil {
+		updateFn(u)
+	}
+	if err := s.repo.Upsert(ctx, u); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+			return nil, fmt.Errorf("oidc subject is already linked to another user: %w", err)
+		}
+		return nil, fmt.Errorf("failed to persist OIDC merge: %w", err)
+	}
+	return u, nil
 }
 
 func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
@@ -278,69 +251,55 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		return fmt.Errorf("failed to hash default admin password: %w", err)
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
-			return fmt.Errorf("failed to count users: %w", err)
-		}
-
-		if count > 0 {
-			slog.WarnContext(ctx, "Users already exist, skipping default admin creation")
-			return nil
-		}
-
-		email := "admin@localhost"
-		displayName := "Arcane Admin"
-		userModel := &models.User{
-			Username:               "arcane",
-			Email:                  new(email),
-			DisplayName:            new(displayName),
-			PasswordHash:           hashedPassword,
-			Roles:                  models.StringSlice{"admin"},
-			RequiresPasswordChange: true,
-		}
-
-		if err := tx.Create(userModel).Error; err != nil {
-			return fmt.Errorf("failed to create default admin user: %w", err)
-		}
-
-		slog.InfoContext(ctx, "👑 Default admin user created!")
-		slog.InfoContext(ctx, "🔑 Username: arcane")
-		slog.InfoContext(ctx, "🔑 Password: arcane-admin")
-		slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
-
+	users, err := s.repo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list users: %w", err)
+	}
+	if len(users) > 0 {
+		slog.WarnContext(ctx, "Users already exist, skipping default admin creation")
 		return nil
-	})
+	}
+
+	email := "admin@localhost"
+	displayName := "Arcane Admin"
+	userModel := &models.User{
+		Username:               "arcane",
+		Email:                  new(email),
+		DisplayName:            new(displayName),
+		PasswordHash:           hashedPassword,
+		Roles:                  models.StringSlice{"admin"},
+		RequiresPasswordChange: true,
+	}
+	if err := s.repo.Create(ctx, userModel); err != nil {
+		return fmt.Errorf("failed to create default admin user: %w", err)
+	}
+
+	slog.InfoContext(ctx, "👑 Default admin user created!")
+	slog.InfoContext(ctx, "🔑 Username: arcane")
+	slog.InfoContext(ctx, "🔑 Password: arcane-admin")
+	slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+
+	return nil
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing models.User
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", id).
-			First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to load user: %w", err)
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to load user: %w", err)
+	}
+	if existing == nil {
+		return ErrUserNotFound
+	}
+	if userHasRoleInternal(existing.Roles, "admin") {
+		remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(ctx, id)
+		if err != nil {
+			return err
 		}
-
-		if userHasRoleInternal(existing.Roles, "admin") {
-			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, id)
-			if err != nil {
-				return err
-			}
-			if remainingAdmins == 0 {
-				return ErrCannotRemoveLastAdmin
-			}
+		if remainingAdmins == 0 {
+			return ErrCannotRemoveLastAdmin
 		}
-
-		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
-		}
-		return nil
-	})
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func (s *UserService) HashPassword(password string) (string, error) {
@@ -357,34 +316,56 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 		return fmt.Errorf("failed to create new hash: %w", err)
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).
-			Where("id = ?", userID).
-			Update("password_hash", newHash).Error; err != nil {
-			return fmt.Errorf("failed to update password hash: %w", err)
-		}
-		return nil
-	})
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to load user for password upgrade: %w", err)
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+	user.PasswordHash = newHash
+	return s.repo.Upsert(ctx, user)
 }
 
 func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
-	var users []models.User
-	query := s.db.WithContext(ctx).Model(&models.User{})
-
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"username LIKE ? OR COALESCE(email, '') LIKE ? OR COALESCE(display_name, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern,
-		)
-	}
-
-	paginationResp, err := pagination.PaginateAndSortDB(params, query, &users)
+	users, err := s.repo.List(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list users: %w", err)
 	}
+	searchConfig := pagination.Config[models.User]{
+		SearchAccessors: []pagination.SearchAccessor[models.User]{
+			func(u models.User) (string, error) { return u.Username, nil },
+			func(u models.User) (string, error) {
+				if u.Email == nil {
+					return "", nil
+				}
+				return *u.Email, nil
+			},
+			func(u models.User) (string, error) {
+				if u.DisplayName == nil {
+					return "", nil
+				}
+				return *u.DisplayName, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[models.User]{
+			{Key: "username", Fn: func(a, b models.User) int {
+				return strings.Compare(strings.ToLower(a.Username), strings.ToLower(b.Username))
+			}},
+			{Key: "email", Fn: func(a, b models.User) int {
+				return strings.Compare(strings.ToLower(derefUserString(a.Email)), strings.ToLower(derefUserString(b.Email)))
+			}},
+			{Key: "display_name", Fn: func(a, b models.User) int {
+				return strings.Compare(strings.ToLower(derefUserString(a.DisplayName)), strings.ToLower(derefUserString(b.DisplayName)))
+			}},
+			{Key: "created_at", Fn: func(a, b models.User) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+			{Key: "updated_at", Fn: func(a, b models.User) int { return compareTimePointers(a.UpdatedAt, b.UpdatedAt) }},
+		},
+	}
+	filtered := pagination.SearchOrderAndPaginate(users, params, searchConfig)
+	paginationResp := pagination.BuildResponseFromFilterResult(filtered, params)
 
-	result, err := s.toUserResponseDtosInternal(ctx, users)
+	result, err := s.toUserResponseDtosInternal(ctx, filtered.Items)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -437,26 +418,28 @@ func toUserResponseDtoInternal(u models.User, adminCount int) user.User {
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*models.User, error) {
 	slog.Debug("GetUser called", "user_id", userID)
-	return s.getUserInternal(ctx, userID, s.db.DB)
+	return s.getUserInternal(ctx, userID)
 }
 
-func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*models.User, error) {
-	var user models.User
-	err := tx.
-		WithContext(ctx).
-		Where("id = ?", userID).
-		First(&user).
-		Error
-	return &user, err
+func (s *UserService) getUserInternal(ctx context.Context, userID string) (*models.User, error) {
+	return s.repo.GetByID(ctx, userID)
 }
 
-func (s *UserService) remainingAdminCountExcludingUserInternal(tx *gorm.DB, excludedUserID string) (int, error) {
-	var count int64
-	if err := s.adminUsersScopeInternal(tx.Model(&models.User{}).Where("id <> ?", excludedUserID)).Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count remaining admin users: %w", err)
+func (s *UserService) remainingAdminCountExcludingUserInternal(ctx context.Context, excludedUserID string) (int, error) {
+	users, err := s.repo.List(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list users: %w", err)
 	}
-
-	return int(count), nil
+	count := 0
+	for _, currentUser := range users {
+		if currentUser.ID == excludedUserID {
+			continue
+		}
+		if userHasRoleInternal(currentUser.Roles, "admin") {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func userHasRoleInternal(roles models.StringSlice, role string) bool {
@@ -470,28 +453,35 @@ func userHasRoleInternal(roles models.StringSlice, role string) bool {
 }
 
 func (s *UserService) adminUserCountInternal(ctx context.Context) (int, error) {
-	var count int64
-	if err := s.adminUsersScopeInternal(s.db.WithContext(ctx).Model(&models.User{})).Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count admin users: %w", err)
+	users, err := s.repo.List(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list users: %w", err)
 	}
-
-	return int(count), nil
+	count := 0
+	for _, currentUser := range users {
+		if userHasRoleInternal(currentUser.Roles, "admin") {
+			count++
+		}
+	}
+	return count, nil
 }
 
-func (s *UserService) adminUsersScopeInternal(query *gorm.DB) *gorm.DB {
-	switch s.db.Name() {
-	case "sqlite":
-		return query.Where(
-			"EXISTS (SELECT 1 FROM json_each(users.roles) WHERE lower(json_each.value) = ?)",
-			"admin",
-		)
-	case "postgres":
-		return query.Where(
-			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(users.roles::jsonb) AS role WHERE lower(role) = ?)",
-			"admin",
-		)
+func derefUserString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func compareTimePointers(a, b *time.Time) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return -1
+	case b == nil:
+		return 1
 	default:
-		slog.Warn("Using LIKE-based admin role query fallback for unsupported database dialect", "dialect", s.db.Name())
-		return query.Where("LOWER(roles) LIKE ?", `%\"admin\"%`)
+		return a.Compare(*b)
 	}
 }

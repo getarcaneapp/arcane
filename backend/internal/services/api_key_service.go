@@ -12,9 +12,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	arcstorage "github.com/getarcaneapp/arcane/backend/internal/storage"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
-	"gorm.io/gorm"
 )
 
 var (
@@ -42,13 +42,21 @@ var defaultAdminAPIKeyDescription = func() *string {
 
 type ApiKeyService struct {
 	db           *database.DB
+	repo         arcstorage.APIKeyRepository
 	userService  *UserService
 	argon2Params *Argon2Params
 }
 
-func NewApiKeyService(db *database.DB, userService *UserService) *ApiKeyService {
+func NewApiKeyService(db *database.DB, userService *UserService, repo ...arcstorage.APIKeyRepository) *ApiKeyService {
+	var selectedRepo arcstorage.APIKeyRepository
+	if len(repo) > 0 && repo[0] != nil {
+		selectedRepo = repo[0]
+	} else if db != nil {
+		selectedRepo = arcstorage.NewSQLAPIKeyRepository(db)
+	}
 	return &ApiKeyService{
 		db:           db,
+		repo:         selectedRepo,
 		userService:  userService,
 		argon2Params: DefaultArgon2Params(),
 	}
@@ -93,10 +101,15 @@ func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
 		bgCtx := context.WithoutCancel(ctx)
 		now := time.Now()
 		cutoff := now.Add(-apiKeyLastUsedWriteWindow)
-		s.db.WithContext(bgCtx).
-			Model(&models.ApiKey{}).
-			Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
-			Update("last_used_at", now)
+		apiKey, err := s.repo.GetByID(bgCtx, keyID)
+		if err != nil || apiKey == nil {
+			return
+		}
+		if apiKey.LastUsedAt != nil && !apiKey.LastUsedAt.Before(cutoff) {
+			return
+		}
+		apiKey.LastUsedAt = &now
+		_ = s.repo.Upsert(bgCtx, apiKey)
 	}(keyID)
 }
 
@@ -139,7 +152,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		ExpiresAt:     req.ExpiresAt,
 	}
 
-	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
+	if err := s.repo.Create(ctx, ak); err != nil {
 		return nil, fmt.Errorf("failed to create API key: %w", err)
 	}
 
@@ -189,22 +202,15 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*models.User, 
 	return adminUser, nil
 }
 
-func (s *ApiKeyService) listManagedAPIKeys(tx *gorm.DB, userID string) ([]models.ApiKey, error) {
-	var managedKeys []models.ApiKey
-	if err := tx.Where("user_id = ? AND managed_by = ?", userID, managedByAdminBootstrap).
-		Order("created_at asc, id asc").
-		Find(&managedKeys).Error; err != nil {
-		return nil, fmt.Errorf("failed to load managed API keys: %w", err)
-	}
-
-	return managedKeys, nil
+func (s *ApiKeyService) listManagedAPIKeys(ctx context.Context, userID string) ([]models.ApiKey, error) {
+	return s.repo.ListManagedByUser(ctx, userID, managedByAdminBootstrap)
 }
 
-func (s *ApiKeyService) deleteManagedAPIKeysByIDs(tx *gorm.DB, ids []string) error {
+func (s *ApiKeyService) deleteManagedAPIKeysByIDs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := tx.Delete(&models.ApiKey{}, "id IN ?", ids).Error; err != nil {
+	if err := s.repo.DeleteMany(ctx, ids); err != nil {
 		return fmt.Errorf("failed to delete managed API keys: %w", err)
 	}
 	return nil
@@ -230,20 +236,25 @@ func managedAPIKeyDeleteIDsInternal(managedKeys []models.ApiKey, keepIndex int) 
 	return deleteIDs
 }
 
-func (s *ApiKeyService) updateMatchingManagedAPIKey(tx *gorm.DB, apiKeyID string) error {
-	if err := tx.Model(&models.ApiKey{}).
-		Where("id = ?", apiKeyID).
-		Updates(map[string]any{
-			"name":        defaultAdminAPIKeyName,
-			"description": defaultAdminAPIKeyDescription,
-			"managed_by":  managedByAdminBootstrap,
-		}).Error; err != nil {
+func (s *ApiKeyService) updateMatchingManagedAPIKey(ctx context.Context, apiKeyID string) error {
+	apiKey, err := s.repo.GetByID(ctx, apiKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to load managed API key metadata: %w", err)
+	}
+	if apiKey == nil {
+		return ErrApiKeyNotFound
+	}
+	apiKey.Name = defaultAdminAPIKeyName
+	apiKey.Description = defaultAdminAPIKeyDescription
+	managedBy := managedByAdminBootstrap
+	apiKey.ManagedBy = &managedBy
+	if err := s.repo.Upsert(ctx, apiKey); err != nil {
 		return fmt.Errorf("failed to update managed API key metadata: %w", err)
 	}
 	return nil
 }
 
-func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, rawKey string) error {
+func (s *ApiKeyService) createManagedDefaultAdminAPIKey(ctx context.Context, userID, rawKey string) error {
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
 		return err
@@ -264,35 +275,35 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 		UserID:      userID,
 	}
 
-	if err := tx.Create(ak).Error; err != nil {
+	if err := s.repo.Create(ctx, ak); err != nil {
 		return fmt.Errorf("failed to create managed API key: %w", err)
 	}
 	return nil
 }
 
-func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID string, rawKey string) error {
-	managedKeys, err := s.listManagedAPIKeys(tx, userID)
+func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, userID string, rawKey string) error {
+	managedKeys, err := s.listManagedAPIKeys(ctx, userID)
 	if err != nil {
 		return err
 	}
 
 	if rawKey == "" {
-		return s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, -1))
+		return s.deleteManagedAPIKeysByIDs(ctx, managedAPIKeyDeleteIDsInternal(managedKeys, -1))
 	}
 
 	matchingIndex := s.findMatchingManagedAPIKey(rawKey, managedKeys)
 	if matchingIndex >= 0 {
-		if err := s.updateMatchingManagedAPIKey(tx, managedKeys[matchingIndex].ID); err != nil {
+		if err := s.updateMatchingManagedAPIKey(ctx, managedKeys[matchingIndex].ID); err != nil {
 			return err
 		}
-		return s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, matchingIndex))
+		return s.deleteManagedAPIKeysByIDs(ctx, managedAPIKeyDeleteIDsInternal(managedKeys, matchingIndex))
 	}
 
-	if err := s.deleteManagedAPIKeysByIDs(tx, managedAPIKeyDeleteIDsInternal(managedKeys, -1)); err != nil {
+	if err := s.deleteManagedAPIKeysByIDs(ctx, managedAPIKeyDeleteIDsInternal(managedKeys, -1)); err != nil {
 		return err
 	}
 
-	return s.createManagedDefaultAdminAPIKey(tx, userID, rawKey)
+	return s.createManagedDefaultAdminAPIKey(ctx, userID, rawKey)
 }
 
 func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
@@ -303,9 +314,7 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 		return err
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.reconcileManagedAPIKeys(tx, adminUser.ID, rawKey)
-	})
+	return s.reconcileManagedAPIKeys(ctx, adminUser.ID, rawKey)
 }
 
 func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string, userID string) (*apikey.ApiKeyCreatedDto, error) {
@@ -328,12 +337,12 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 }
 
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKey, error) {
-	var ak models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrApiKeyNotFound
-		}
+	ak, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get API key: %w", err)
+	}
+	if ak == nil {
+		return nil, ErrApiKeyNotFound
 	}
 
 	return &apikey.ApiKey{
@@ -342,7 +351,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 		Description: ak.Description,
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
-		IsStatic:    isStaticAPIKeyInternal(ak),
+		IsStatic:    isStaticAPIKeyInternal(*ak),
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
@@ -351,24 +360,32 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 }
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {
-	var apiKeys []models.ApiKey
-	query := s.db.WithContext(ctx).Model(&models.ApiKey{})
-
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		query = query.Where(
-			"name LIKE ? OR COALESCE(description, '') LIKE ?",
-			searchPattern, searchPattern,
-		)
-	}
-
-	paginationResp, err := pagination.PaginateAndSortDB(params, query, &apiKeys)
+	apiKeys, err := s.repo.List(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate API keys: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list API keys: %w", err)
 	}
+	searchConfig := pagination.Config[models.ApiKey]{
+		SearchAccessors: []pagination.SearchAccessor[models.ApiKey]{
+			func(ak models.ApiKey) (string, error) { return ak.Name, nil },
+			func(ak models.ApiKey) (string, error) {
+				if ak.Description == nil {
+					return "", nil
+				}
+				return *ak.Description, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[models.ApiKey]{
+			{Key: "name", Fn: func(a, b models.ApiKey) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) }},
+			{Key: "expires_at", Fn: func(a, b models.ApiKey) int { return compareTimePointers(a.ExpiresAt, b.ExpiresAt) }},
+			{Key: "last_used_at", Fn: func(a, b models.ApiKey) int { return compareTimePointers(a.LastUsedAt, b.LastUsedAt) }},
+			{Key: "created_at", Fn: func(a, b models.ApiKey) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		},
+	}
+	filtered := pagination.SearchOrderAndPaginate(apiKeys, params, searchConfig)
+	paginationResp := pagination.BuildResponseFromFilterResult(filtered, params)
 
-	result := make([]apikey.ApiKey, len(apiKeys))
-	for i, ak := range apiKeys {
+	result := make([]apikey.ApiKey, len(filtered.Items))
+	for i, ak := range filtered.Items {
 		result[i] = toAPIKeyDTOInternal(&ak)
 	}
 
@@ -376,14 +393,14 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 }
 
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
-	var ak models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrApiKeyNotFound
-		}
+	ak, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	if isStaticAPIKeyInternal(ak) {
+	if ak == nil {
+		return nil, ErrApiKeyNotFound
+	}
+	if isStaticAPIKeyInternal(*ak) {
 		return nil, ErrApiKeyProtected
 	}
 
@@ -397,7 +414,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.
 		ak.ExpiresAt = req.ExpiresAt
 	}
 
-	if err := s.db.WithContext(ctx).Save(&ak).Error; err != nil {
+	if err := s.repo.Upsert(ctx, ak); err != nil {
 		return nil, fmt.Errorf("failed to update API key: %w", err)
 	}
 
@@ -407,7 +424,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.
 		Description: ak.Description,
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
-		IsStatic:    isStaticAPIKeyInternal(ak),
+		IsStatic:    isStaticAPIKeyInternal(*ak),
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
@@ -416,25 +433,17 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.
 }
 
 func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
-	var apiKey models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&apiKey).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrApiKeyNotFound
-		}
+	apiKey, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		return fmt.Errorf("failed to load API key: %w", err)
 	}
-	if isStaticAPIKeyInternal(apiKey) {
-		return ErrApiKeyProtected
-	}
-
-	result := s.db.WithContext(ctx).Delete(&models.ApiKey{}, "id = ?", id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete API key: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
+	if apiKey == nil {
 		return ErrApiKeyNotFound
 	}
-	return nil
+	if isStaticAPIKeyInternal(*apiKey) {
+		return ErrApiKeyProtected
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*models.User, error) {
@@ -443,8 +452,8 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 		return nil, err
 	}
 
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+	apiKeys, err := s.repo.ListByKeyPrefix(ctx, keyPrefix)
+	if err != nil {
 		return nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 
@@ -475,8 +484,8 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 		return nil, err
 	}
 
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+	apiKeys, err := s.repo.ListByKeyPrefix(ctx, keyPrefix)
+	if err != nil {
 		return nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 

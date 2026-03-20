@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	arcstorage "github.com/getarcaneapp/arcane/backend/internal/storage"
 	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
@@ -48,15 +48,16 @@ type Services struct {
 	Dashboard         *services.DashboardService
 }
 
-func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
+func initializeServices(ctx context.Context, runtimeStorage *arcstorage.RuntimeStorage, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
 	svcs = &Services{}
+	db := runtimeStorage.DB
 
 	svcs.Event = services.NewEventService(db, cfg, httpClient)
-	svcs.Settings, err = services.NewSettingsService(ctx, db)
+	svcs.Settings, err = services.NewSettingsService(ctx, db, runtimeStorage.Repos.Settings)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to settings service: %w", err)
 	}
-	svcs.KV = services.NewKVService(db)
+	svcs.KV = services.NewKVService(db, runtimeStorage.Repos.KV)
 	svcs.JobSchedule = services.NewJobService(db, svcs.Settings, cfg)
 	svcs.SettingsSearch = services.NewSettingsSearchService()
 	svcs.CustomizeSearch = services.NewCustomizeSearchService()
@@ -64,7 +65,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Font = services.NewFontService(resources.FS)
 	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
-	svcs.User = services.NewUserService(db)
+	svcs.User = services.NewUserService(db, runtimeStorage.Repos.User)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db, func(ctx context.Context) (services.RegistryDaemonClient, error) {
 		return dockerClient.GetClient(ctx)
 	})
@@ -85,7 +86,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
-	svcs.ApiKey = services.NewApiKeyService(db, svcs.User)
+	svcs.ApiKey = services.NewApiKeyService(db, svcs.User, runtimeStorage.Repos.APIKey)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)

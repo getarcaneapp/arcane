@@ -6,17 +6,15 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
+	"github.com/getarcaneapp/arcane/backend/internal/storage"
 )
 
-func initializeDBAndMigrate(ctx context.Context, cfg *config.Config) (*database.DB, error) {
-	db, err := database.Initialize(ctx, cfg.DatabaseURL, database.MigrationOptions{
-		AllowDowngrade: cfg.AllowDowngrade,
-	})
+func initializeRuntimeStorage(ctx context.Context, cfg *config.Config) (*storage.RuntimeStorage, error) {
+	runtimeStorage, err := storage.InitializeRuntimeStorage(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
+		return nil, fmt.Errorf("failed to initialize runtime storage: %w", err)
 	}
 
-	slog.Info("Database initialized successfully")
-	return db, nil
+	slog.Info("Runtime storage initialized successfully", "backend", runtimeStorage.Backend)
+	return runtimeStorage, nil
 }

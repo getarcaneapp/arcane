@@ -2,46 +2,43 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	arcstorage "github.com/getarcaneapp/arcane/backend/internal/storage"
 )
 
 // KVService persists lightweight application state in the kv table.
 type KVService struct {
-	db *database.DB
+	db   *database.DB
+	repo arcstorage.KVRepository
 }
 
-func NewKVService(db *database.DB) *KVService {
-	return &KVService{db: db}
+func NewKVService(db *database.DB, repo ...arcstorage.KVRepository) *KVService {
+	var selectedRepo arcstorage.KVRepository
+	if len(repo) > 0 && repo[0] != nil {
+		selectedRepo = repo[0]
+	} else if db != nil {
+		selectedRepo = arcstorage.NewSQLKVRepository(db)
+	}
+
+	return &KVService{db: db, repo: selectedRepo}
 }
 
 func (s *KVService) Get(ctx context.Context, key string) (string, bool, error) {
-	var entry models.KVEntry
-	err := s.db.WithContext(ctx).Where("key = ?", key).First(&entry).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", false, nil
-	}
+	entry, err := s.repo.Get(ctx, key)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to load kv entry %q: %w", key, err)
+	}
+	if entry == nil {
+		return "", false, nil
 	}
 
 	return entry.Value, true, nil
 }
 
 func (s *KVService) Set(ctx context.Context, key, value string) error {
-	entry := models.KVEntry{Key: key, Value: value}
-	err := s.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "key"}},
-			DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
-		}).
-		Create(&entry).Error
-	if err != nil {
+	if err := s.repo.Set(ctx, key, value); err != nil {
 		return fmt.Errorf("failed to upsert kv entry %q: %w", key, err)
 	}
 

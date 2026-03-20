@@ -28,19 +28,30 @@ const (
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
 // Available options: file, toLower, trimTrailingSlash
 type Config struct {
-	AppUrl            string         `env:"APP_URL" default:"http://localhost:3552"`
-	DatabaseURL       string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
-	AllowDowngrade    bool           `env:"ALLOW_DOWNGRADE" default:"false"`
-	Port              string         `env:"PORT" default:"3552"`
-	Listen            string         `env:"LISTEN" default:""`
-	TLSEnabled        bool           `env:"TLS_ENABLED" default:"false"`
-	TLSCertFile       string         `env:"TLS_CERT_FILE" default:""`
-	TLSKeyFile        string         `env:"TLS_KEY_FILE" default:""`
-	Environment       AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret         string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
-	JWTRefreshExpiry  time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
-	EncryptionKey     string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
-	AdminStaticAPIKey string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
+	AppUrl                 string         `env:"APP_URL" default:"http://localhost:3552"`
+	DatabaseURL            string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	StorageBackend         string         `env:"STORAGE_BACKEND" default:"sql" options:"toLower"`
+	AllowDowngrade         bool           `env:"ALLOW_DOWNGRADE" default:"false"`
+	EtcdEndpoints          string         `env:"ETCD_ENDPOINTS" default:""`
+	EtcdDialTimeout        time.Duration  `env:"ETCD_DIAL_TIMEOUT" default:"5s"`
+	EtcdRequestTimeout     time.Duration  `env:"ETCD_REQUEST_TIMEOUT" default:"5s"`
+	EtcdUsername           string         `env:"ETCD_USERNAME" default:""`
+	EtcdPassword           string         `env:"ETCD_PASSWORD" default:"" options:"file"`
+	EtcdTLSCAFile          string         `env:"ETCD_TLS_CA_FILE" default:""`
+	EtcdTLSCertFile        string         `env:"ETCD_TLS_CERT_FILE" default:""`
+	EtcdTLSKeyFile         string         `env:"ETCD_TLS_KEY_FILE" default:""`
+	EtcdNamespace          string         `env:"ETCD_NAMESPACE" default:"arcane"`
+	EtcdImportFromDatabase bool           `env:"ETCD_IMPORT_FROM_DATABASE" default:"false"`
+	Port                   string         `env:"PORT" default:"3552"`
+	Listen                 string         `env:"LISTEN" default:""`
+	TLSEnabled             bool           `env:"TLS_ENABLED" default:"false"`
+	TLSCertFile            string         `env:"TLS_CERT_FILE" default:""`
+	TLSKeyFile             string         `env:"TLS_KEY_FILE" default:""`
+	Environment            AppEnvironment `env:"ENVIRONMENT" default:"production"`
+	JWTSecret              string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
+	JWTRefreshExpiry       time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
+	EncryptionKey          string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
+	AdminStaticAPIKey      string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
 
 	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
 	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
@@ -383,6 +394,37 @@ func (c *Config) GetManagerBaseURL() string {
 	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
 	managerURL = strings.TrimSuffix(managerURL, "/api")
 	return managerURL
+}
+
+func (c *Config) GetEtcdEndpoints() []string {
+	if c == nil {
+		return nil
+	}
+
+	parts := strings.Split(c.EtcdEndpoints, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func (c *Config) GetEtcdDialTimeout() time.Duration {
+	if c == nil || c.EtcdDialTimeout <= 0 {
+		return 5 * time.Second
+	}
+	return c.EtcdDialTimeout
+}
+
+func (c *Config) GetEtcdRequestTimeout() time.Duration {
+	if c == nil || c.EtcdRequestTimeout <= 0 {
+		return 5 * time.Second
+	}
+	return c.EtcdRequestTimeout
 }
 
 // GetManagerGRPCAddr returns the manager gRPC address in host:port form.

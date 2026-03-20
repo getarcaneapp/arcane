@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-uuid"
-	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	arcstorage "github.com/getarcaneapp/arcane/backend/internal/storage"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -31,6 +31,7 @@ import (
 
 type SettingsService struct {
 	db     *database.DB
+	repo   arcstorage.SettingsRepository
 	config atomic.Pointer[models.Settings]
 
 	OnImagePollingSettingsChanged      func(ctx context.Context)
@@ -42,9 +43,17 @@ type SettingsService struct {
 	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate)
 }
 
-func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
+func NewSettingsService(ctx context.Context, db *database.DB, repo ...arcstorage.SettingsRepository) (*SettingsService, error) {
+	var selectedRepo arcstorage.SettingsRepository
+	if len(repo) > 0 && repo[0] != nil {
+		selectedRepo = repo[0]
+	} else if db != nil {
+		selectedRepo = arcstorage.NewSQLSettingsRepository(db)
+	}
+
 	svc := &SettingsService{
-		db: db,
+		db:   db,
+		repo: selectedRepo,
 	}
 
 	err := svc.LoadDatabaseSettings(ctx)
@@ -174,20 +183,17 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 	}
 }
 
-func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *database.DB) (*models.Settings, error) {
+func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, _ *database.DB) (*models.Settings, error) {
 	if config.Load().UIConfigurationDisabled || config.Load().AgentMode {
 		slog.DebugContext(ctx, "loadDatabaseSettingsInternal: using env path", "UIConfigurationDisabled", config.Load().UIConfigurationDisabled, "AgentMode", config.Load().AgentMode, "Environment", config.Load().Environment)
-		return s.loadDatabaseConfigFromEnv(ctx, db)
+		return s.loadDatabaseConfigFromEnv(ctx, nil)
 	}
 
 	dest := s.getDefaultSettings()
 
-	var loaded []models.SettingVariable
 	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer queryCancel()
-	err := db.
-		WithContext(queryCtx).
-		Find(&loaded).Error
+	loaded, err := s.repo.List(queryCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
 	}
@@ -206,12 +212,12 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	return dest, nil
 }
 
-func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*models.Settings, error) {
+func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, _ *database.DB) (*models.Settings, error) {
 	dest := s.getDefaultSettings()
 
 	// Fetch all settings once to avoid N+1 queries for internal keys
-	var allSettings []models.SettingVariable
-	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
+	allSettings, err := s.repo.List(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
 	}
 	settingsMap := make(map[string]string, len(allSettings))
@@ -326,8 +332,7 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	var settingVars []models.SettingVariable
-	err := s.db.WithContext(ctx).Find(&settingVars).Error
+	settingVars, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -426,46 +431,17 @@ func (s *SettingsService) migrateOidcKeyNames(ctx context.Context) error {
 		"authOidcAdminValue":    "oidcAdminValue",
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for oldKey, newKey := range keyMappings {
-			// Check if old key exists
-			var oldSetting models.SettingVariable
-			if err := tx.Where("key = ?", oldKey).First(&oldSetting).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					continue // Old key doesn't exist, nothing to migrate
-				}
-				return fmt.Errorf("failed to check old key %s: %w", oldKey, err)
-			}
-
-			// Check if new key already exists
-			var newSetting models.SettingVariable
-			if err := tx.Where("key = ?", newKey).First(&newSetting).Error; err == nil {
-				// New key already exists, delete the old one
-				if err := tx.Delete(&oldSetting).Error; err != nil {
-					return fmt.Errorf("failed to delete old key %s: %w", oldKey, err)
-				}
-				slog.DebugContext(ctx, "Deleted duplicate legacy key", "oldKey", oldKey, "newKey", newKey)
-				continue
-			}
-
-			// Rename: update key from old to new
-			if err := tx.Model(&oldSetting).Update("key", newKey).Error; err != nil {
-				return fmt.Errorf("failed to rename key %s to %s: %w", oldKey, newKey, err)
-			}
-			slog.InfoContext(ctx, "Migrated OIDC setting key", "oldKey", oldKey, "newKey", newKey)
-		}
-		return nil
-	})
+	if err := s.repo.RenameKeys(ctx, keyMappings); err != nil {
+		return err
+	}
+	for oldKey, newKey := range keyMappings {
+		slog.InfoContext(ctx, "Migrated OIDC setting key", "oldKey", oldKey, "newKey", newKey)
+	}
+	return nil
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		settingVar := &models.SettingVariable{
-			Key:   key,
-			Value: value,
-		}
-		return tx.Save(settingVar).Error
-	})
+	return s.repo.Upsert(ctx, models.SettingVariable{Key: key, Value: value})
 }
 
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
@@ -629,14 +605,7 @@ func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (st
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, setting := range values {
-			if err := tx.Save(&setting).Error; err != nil {
-				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
-			}
-		}
-		return nil
-	})
+	return s.repo.UpsertMany(ctx, values)
 }
 
 func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates settings.Update) error {
@@ -699,26 +668,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	defaultSettings := s.getDefaultSettings()
 	defaultSettingVars := defaultSettings.ToSettingVariableSlice(true, false)
-
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, defaultSetting := range defaultSettingVars {
-			var existing models.SettingVariable
-			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
-
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if err := tx.Create(&defaultSetting).Error; err != nil {
-					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
-				}
-			} else if err != nil {
-				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	return s.repo.EnsureDefaults(ctx, defaultSettingVars)
 }
 
 func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
@@ -727,18 +677,13 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 		return nil
 	}
 
-	keys := make([]string, 0, len(allowedKeys))
-	for key := range allowedKeys {
-		keys = append(keys, key)
+	deleted, err := s.repo.DeleteUnknown(ctx, allowedKeys)
+	if err != nil {
+		return fmt.Errorf("failed to prune unknown settings: %w", err)
 	}
 
-	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to prune unknown settings: %w", result.Error)
-	}
-
-	if result.RowsAffected > 0 {
-		slog.InfoContext(ctx, "Pruned unknown settings", "count", result.RowsAffected)
+	if deleted > 0 {
+		slog.InfoContext(ctx, "Pruned unknown settings", "count", deleted)
 	}
 
 	return nil
@@ -749,19 +694,15 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 	appCfg := config.Load()
 	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for field := range rt.Fields() {
-			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
-				return err
-			}
+	for field := range rt.Fields() {
+		if err := s.processEnvField(ctx, field, isEnvOnlyMode); err != nil {
+			return err
 		}
-		return nil
-	}); err != nil {
+	}
+	if err := s.LoadDatabaseSettings(ctx); err != nil {
 		return err
 	}
-
-	// Reload settings after persisting env vars
-	return s.LoadDatabaseSettings(ctx)
+	return nil
 }
 
 func allowedSettingKeys() map[string]struct{} {
@@ -781,7 +722,7 @@ func allowedSettingKeys() map[string]struct{} {
 	return allowed
 }
 
-func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, field reflect.StructField, isEnvOnlyMode bool) error {
+func (s *SettingsService) processEnvField(ctx context.Context, field reflect.StructField, isEnvOnlyMode bool) error {
 	tag := field.Tag.Get("key")
 	key, attrs, _ := strings.Cut(tag, ",")
 
@@ -796,7 +737,7 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 	}
 	envVal = utils.TrimQuotes(envVal)
 
-	return s.upsertEnvSetting(ctx, tx, key, envVal)
+	return s.upsertEnvSetting(ctx, key, envVal)
 }
 
 func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
@@ -812,28 +753,22 @@ func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bo
 	return true
 }
 
-func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key, envVal string) error {
-	var existing models.SettingVariable
-	err := tx.Where("key = ?", key).First(&existing).Error
-
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		newVar := models.SettingVariable{Key: key, Value: envVal}
-		if err := tx.Create(&newVar).Error; err != nil {
-			return fmt.Errorf("persist env setting %s: %w", key, err)
-		}
-		slog.DebugContext(ctx, "Created setting from environment", "key", key)
-	case err != nil:
+func (s *SettingsService) upsertEnvSetting(ctx context.Context, key, envVal string) error {
+	existing, err := s.repo.Get(ctx, key)
+	if err != nil {
 		return fmt.Errorf("check setting %s: %w", key, err)
-	default:
-		if existing.Value != envVal {
-			if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
-				return fmt.Errorf("update env setting %s: %w", key, err)
-			}
-			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
-		}
 	}
-
+	if existing != nil && existing.Value == envVal {
+		return nil
+	}
+	if err := s.repo.Upsert(ctx, models.SettingVariable{Key: key, Value: envVal}); err != nil {
+		return fmt.Errorf("persist env setting %s: %w", key, err)
+	}
+	if existing == nil {
+		slog.DebugContext(ctx, "Created setting from environment", "key", key)
+	} else {
+		slog.DebugContext(ctx, "Updated setting from environment", "key", key)
+	}
 	return nil
 }
 
@@ -948,53 +883,24 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
 	const keyName = "encryptionKey"
-	var key string
-
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var sv models.SettingVariable
-		err := tx.Where("key = ?", keyName).First(&sv).Error
-
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to load encryption key: %w", err)
-		}
-
-		// If already present and non-empty, return it
-		if sv.Value != "" {
-			key = sv.Value
-			return nil
-		}
-
-		notFound := errors.Is(err, gorm.ErrRecordNotFound)
-
-		// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
-		u, genErr := uuid.GenerateUUID()
-		if genErr != nil {
-			return fmt.Errorf("failed to generate encryption key: %w", genErr)
-		}
-		sum := sha256.Sum256([]byte(u))
-		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
-		key = generatedKey
-
-		if notFound {
-			if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
-				return fmt.Errorf("failed to persist encryption key: %w", createErr)
-			}
-			return nil
-		}
-
-		// Record existed but empty value; update it
-		if updErr := tx.Model(&models.SettingVariable{}).
-			Where("key = ?", keyName).
-			Update("value", generatedKey).Error; updErr != nil {
-			return fmt.Errorf("failed to update encryption key: %w", updErr)
-		}
-		return nil
-	})
+	sv, err := s.repo.Get(ctx, keyName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to load encryption key: %w", err)
+	}
+	if sv != nil && sv.Value != "" {
+		return sv.Value, nil
 	}
 
-	return key, nil
+	u, genErr := uuid.GenerateUUID()
+	if genErr != nil {
+		return "", fmt.Errorf("failed to generate encryption key: %w", genErr)
+	}
+	sum := sha256.Sum256([]byte(u))
+	generatedKey := base64.StdEncoding.EncodeToString(sum[:])
+	if err := s.repo.Upsert(ctx, models.SettingVariable{Key: keyName, Value: generatedKey}); err != nil {
+		return "", fmt.Errorf("failed to persist encryption key: %w", err)
+	}
+	return generatedKey, nil
 }
 
 func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projectsDirEnv string) error {
@@ -1003,16 +909,13 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		return nil
 	}
 
-	var projectsDirSetting models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
-		return nil
-	}
-
+	projectsDirSetting, err := s.repo.Get(ctx, "projectsDirectory")
 	if err != nil {
 		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+	}
+	if projectsDirSetting == nil {
+		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
+		return nil
 	}
 
 	value := strings.TrimSpace(projectsDirSetting.Value)
@@ -1061,16 +964,13 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 
-	var buildsDirSetting models.SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No buildsDirectory setting found, skipping normalization")
-		return nil
-	}
-
+	buildsDirSetting, err := s.repo.Get(ctx, buildsKey)
 	if err != nil {
 		return fmt.Errorf("failed to load buildsDirectory setting: %w", err)
+	}
+	if buildsDirSetting == nil {
+		slog.DebugContext(ctx, "No buildsDirectory setting found, skipping normalization")
+		return nil
 	}
 
 	value := strings.TrimSpace(buildsDirSetting.Value)

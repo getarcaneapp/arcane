@@ -40,22 +40,22 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
 
-	db, err := initializeDBAndMigrate(appCtx, cfg)
+	runtimeStorage, err := initializeRuntimeStorage(appCtx, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 	defer func(ctx context.Context) {
 		// Use background context for shutdown as appCtx is already canceled
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:contextcheck
 		defer shutdownCancel()
-		if err := db.Close(); err != nil {
-			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err) //nolint:contextcheck
+		if err := runtimeStorage.Close(); err != nil {
+			slog.ErrorContext(shutdownCtx, "Error closing storage backend", "error", err) //nolint:contextcheck
 		}
 	}(appCtx)
 
 	httpClient := newConfiguredHTTPClient(cfg)
 
-	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
+	appServices, dockerClientService, err := initializeServices(appCtx, runtimeStorage, cfg, httpClient)
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}

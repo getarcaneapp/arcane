@@ -504,18 +504,25 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 
 func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id string) error {
 	now := time.Now()
+	cutoff := now.Add(-30 * time.Second)
 
-	// Use Exec with raw SQL for better performance
-	// Only update if last_seen is NULL or older than 30 seconds to reduce write frequency
-	result := s.db.WithContext(ctx).Exec(`
-		UPDATE environments 
-		SET last_seen = ?, status = ?, updated_at = ?
-		WHERE id = ? 
-		AND (last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(models.EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
+	var env models.Environment
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&env).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("environment not found")
+		}
+		return fmt.Errorf("failed to load environment heartbeat state: %w", err)
+	}
 
-	if result.Error != nil {
-		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
+	if env.LastSeen != nil && !env.LastSeen.Before(cutoff) {
+		return nil
+	}
+
+	env.LastSeen = &now
+	env.Status = string(models.EnvironmentStatusOnline)
+	env.UpdatedAt = &now
+	if err := s.db.WithContext(ctx).Save(&env).Error; err != nil {
+		return fmt.Errorf("failed to update environment heartbeat: %w", err)
 	}
 
 	return nil
