@@ -12,6 +12,10 @@ build
 data/
 dist/
 arcane
+/.tmp/
+*.key
+*.pem
+*.crt
 
 # OS
 .DS_Store

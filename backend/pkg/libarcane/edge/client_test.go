@@ -37,6 +37,17 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 		conn, _ := upgrader.Upgrade(w, r, nil)
 		defer func() { _ = conn.Close() }()
 
+		_, registerData, _ := conn.ReadMessage()
+		var registerMsg TunnelMessage
+		_ = json.Unmarshal(registerData, &registerMsg)
+		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-1",
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+
 		// Send a request to the agent
 		reqMsg := &TunnelMessage{
 			ID:     "req-1",
@@ -110,6 +121,17 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 		conn, _ := upgrader.Upgrade(w, r, nil)
 		defer func() { _ = conn.Close() }()
 
+		_, registerData, _ := conn.ReadMessage()
+		var registerMsg TunnelMessage
+		_ = json.Unmarshal(registerData, &registerMsg)
+		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-1",
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+
 		// Send WS Start
 		startMsg := &TunnelMessage{
 			ID:   "ws-1",
@@ -134,7 +156,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 		var resp TunnelMessage
 		_ = json.Unmarshal(respData, &resp)
 
-		assert.Equal(t, MessageTypeWebSocketData, resp.Type)
+		assert.Equal(t, MessageTypeStreamData, resp.Type)
 		assert.Equal(t, "local echo: hello", string(resp.Body))
 	}))
 	defer managerServer.Close()
@@ -162,6 +184,17 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 		upgrader := websocket.Upgrader{}
 		conn, _ := upgrader.Upgrade(w, r, nil)
 		defer func() { _ = conn.Close() }()
+
+		_, registerData, _ := conn.ReadMessage()
+		var registerMsg TunnelMessage
+		_ = json.Unmarshal(registerData, &registerMsg)
+		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-1",
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
 
 		// 1. Send request with invalid URL to trigger error
 		reqMsg := &TunnelMessage{
@@ -454,6 +487,7 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 	msg := &TunnelMessage{
 		Path: "/",
 		Headers: map[string]string{
+			"Host":              "manager.example.com",
 			"Origin":            "https://public.browser.example.com",
 			"Cookie":            "session=browser-cookie",
 			"Authorization":     "Bearer browser-token",
@@ -464,6 +498,7 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 	}
 
 	headers := client.buildLocalWebSocketHeadersInternal(msg)
+	assert.Empty(t, headers.Get("Host"))
 	assert.Empty(t, headers.Get("Origin"))
 	assert.Empty(t, headers.Get("Cookie"))
 	assert.Empty(t, headers.Get("Authorization"))

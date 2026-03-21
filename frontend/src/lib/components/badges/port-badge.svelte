@@ -72,9 +72,7 @@
 
 	const allPorts = $derived(uniquePorts(ports));
 	const visiblePorts = $derived(
-		collapsible && !expanded && allPorts.length > maxVisible
-			? allPorts.slice(0, maxVisible)
-			: allPorts
+		collapsible && !expanded && allPorts.length > maxVisible ? allPorts.slice(0, maxVisible) : allPorts
 	);
 	const published = $derived(visiblePorts.filter((p) => p.isPublished));
 	const exposedOnly = $derived(visiblePorts.filter((p) => !p.isPublished));
@@ -131,7 +129,7 @@
 				<ArcaneTooltip.Trigger>
 					<button
 						onclick={() => (expanded = !expanded)}
-						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors cursor-pointer"
+						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors"
 					>
 						{expanded ? '−' : `+${hiddenCount}`}
 					</button>

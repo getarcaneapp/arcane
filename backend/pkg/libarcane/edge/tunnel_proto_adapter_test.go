@@ -3,6 +3,7 @@ package edge
 import (
 	"testing"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +32,24 @@ func TestTunnelMessageToManagerProto_RoundTripRequest(t *testing.T) {
 	assert.Equal(t, original.Query, decoded.Query)
 	assert.Equal(t, original.Headers, decoded.Headers)
 	assert.Equal(t, original.Body, decoded.Body)
+}
+
+func TestTunnelMessageToManagerProto_StreamDataUsesWebSocketPayload(t *testing.T) {
+	original := &TunnelMessage{
+		ID:            "stream-1",
+		Type:          MessageTypeStreamData,
+		Body:          []byte("hello"),
+		WSMessageType: websocket.TextMessage,
+	}
+
+	protoMsg, err := tunnelMessageToManagerProto(original)
+	require.NoError(t, err)
+
+	wsData := protoMsg.GetWsData()
+	require.NotNil(t, wsData)
+	assert.Equal(t, original.ID, wsData.GetStreamId())
+	assert.Equal(t, original.Body, wsData.GetData())
+	assert.Equal(t, int32(original.WSMessageType), wsData.GetMessageType())
 }
 
 func TestTunnelMessageToAgentProto_RoundTripResponse(t *testing.T) {
@@ -109,4 +128,24 @@ func TestTunnelMessageToAgentProto_RoundTripEvent(t *testing.T) {
 func TestTunnelMessageToManagerProto_UnsupportedType(t *testing.T) {
 	_, err := tunnelMessageToManagerProto(&TunnelMessage{Type: MessageTypeResponse})
 	require.Error(t, err)
+}
+
+func TestTunnelMessageToAgentProto_RoundTripStreamDataPreservesWebSocketType(t *testing.T) {
+	original := &TunnelMessage{
+		ID:            "stream-1",
+		Type:          MessageTypeStreamData,
+		Body:          []byte(`{"cpu":10}`),
+		WSMessageType: websocket.TextMessage,
+	}
+
+	protoMsg, err := tunnelMessageToAgentProto(original)
+	require.NoError(t, err)
+
+	decoded, err := agentProtoToTunnelMessage(protoMsg)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.ID, decoded.ID)
+	assert.Equal(t, original.Type, decoded.Type)
+	assert.Equal(t, original.Body, decoded.Body)
+	assert.Equal(t, original.WSMessageType, decoded.WSMessageType)
 }

@@ -129,6 +129,27 @@ type Environment struct {
 	// Required: false
 	EdgeTransport *string `json:"edgeTransport,omitempty"`
 
+	// EdgeSecurityMode indicates how the current edge tunnel authenticated.
+	// Values include "token" and "mtls".
+	//
+	// Required: false
+	EdgeSecurityMode *string `json:"edgeSecurityMode,omitempty"`
+
+	// EdgeSessionID is the manager-issued ID for the current live edge session.
+	//
+	// Required: false
+	EdgeSessionID *string `json:"edgeSessionId,omitempty"`
+
+	// EdgeAgentInstance identifies the currently connected agent runtime instance.
+	//
+	// Required: false
+	EdgeAgentInstance *string `json:"edgeAgentInstance,omitempty"`
+
+	// EdgeCapabilities lists the commands advertised by the connected edge agent.
+	//
+	// Required: false
+	EdgeCapabilities []string `json:"edgeCapabilities,omitempty"`
+
 	// Connected reports whether an edge environment currently has a live tunnel.
 	//
 	// Required: false

@@ -41,7 +41,7 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 			var msg TunnelMessage
 			_ = json.Unmarshal(data, &msg)
 
-			if msg.Type == MessageTypeRequest {
+			if msg.Type == MessageTypeRequest || msg.Type == MessageTypeCommandRequest {
 				resp := handler(&msg)
 				respData, _ := json.Marshal(resp)
 				_ = conn.WriteMessage(websocket.TextMessage, respData)
@@ -56,7 +56,7 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 		defer func() { _ = resp.Body.Close() }()
 	}
 
-	tunnel := NewAgentTunnel("env-1", conn)
+	tunnel := newWebSocketAgentTunnel("env-1", conn)
 
 	// We need a loop to read responses from the tunnel and dispatch them to pending
 	go func() {
@@ -91,7 +91,7 @@ func TestProxyRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	status, headers, body, err := ProxyRequest(ctx, tunnel, "GET", "/api/test", "", nil, nil)
+	status, headers, body, err := ProxyRequest(ctx, tunnel, http.MethodGet, "/api/health", "", nil, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, status)
@@ -120,7 +120,7 @@ func TestProxyHTTPRequest(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString("request body"))
 	c.Request.Header.Set("X-Custom", "header")
 
-	ProxyHTTPRequest(c, tunnel, "/target/path")
+	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
@@ -176,9 +176,9 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 			return
 		}
 
-		req := msg.GetHttpRequest()
+		req := msg.GetCommandRequest()
 		if req == nil {
-			agentErrCh <- errors.New("expected http request")
+			agentErrCh <- errors.New("expected command request")
 			return
 		}
 
@@ -186,7 +186,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 			agentErrCh <- errors.New("unexpected method")
 			return
 		}
-		if req.GetPath() != "/target/path" {
+		if req.GetPath() != "/api/environments/0/projects" {
 			agentErrCh <- errors.New("unexpected path")
 			return
 		}
@@ -207,8 +207,15 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 			return
 		}
 
-		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HttpResponse{HttpResponse: &tunnelpb.HttpResponse{
-			RequestId: req.GetRequestId(),
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
+			CommandId: req.GetCommandId(),
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
+			CommandId: req.GetCommandId(),
 			Status:    http.StatusCreated,
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			Body:      []byte(`{"success":true}`),
@@ -228,7 +235,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	c.Request.Header.Set("X-Custom", "header")
 	c.Request.Header.Set("Connection", "keep-alive")
 
-	ProxyHTTPRequest(c, tunnel, "/target/path")
+	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
@@ -255,7 +262,7 @@ func TestDoRequest(t *testing.T) {
 	defer registry.Unregister("env-do-req")
 
 	ctx := context.Background()
-	status, body, err := DoRequest(ctx, "env-do-req", "GET", "/path", nil)
+	status, body, err := DoRequest(ctx, "env-do-req", "GET", "/api/health", nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, status)
@@ -271,7 +278,7 @@ func TestDoRequest_NoTunnel(t *testing.T) {
 func TestHasActiveTunnel(t *testing.T) {
 	conn := createTestConn(t)
 	defer func() { _ = conn.Close() }()
-	tunnel := NewAgentTunnel("env-active", conn)
+	tunnel := newWebSocketAgentTunnel("env-active", conn)
 
 	registry := GetRegistry()
 	registry.Register("env-active", tunnel)

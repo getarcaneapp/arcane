@@ -304,7 +304,7 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 			var msg TunnelMessage
 			_ = json.Unmarshal(data, &msg)
 
-			if msg.Type == MessageTypeRequest {
+			if msg.Type == MessageTypeRequest || msg.Type == MessageTypeCommandRequest {
 				receivedBody = string(msg.Body)
 				resp := &TunnelMessage{
 					ID:      msg.ID,
@@ -327,7 +327,7 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 
-	tunnel := NewAgentTunnel("env-body-test", wsConn)
+	tunnel := newWebSocketAgentTunnel("env-body-test", wsConn)
 	defer func() { _ = tunnel.Close() }()
 
 	go func() {
