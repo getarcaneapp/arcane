@@ -2116,7 +2116,7 @@
 	"notifications_event_auto_heal_description": "Notifica quando un contenitore non sano viene riavviato automaticamente",
 	"version_info_build_features": "Funzioni di Costruzione",
 	"builds_and_deployments": "Costruisce e distribuisce",
-	"builds": "Costruzioni",
+	"builds": "Compilazioni",
 	"manual_build_workspace": "Costruisci Workspace",
 	"manual_build_workspace_subtitle": "Costruisci immagini del contenitore per uso locale o invia a un registro",
 	"build_context_mode_workspace": "Spazio di lavoro",
