@@ -40,8 +40,8 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithTunnel(t *testing.T) {
 		envID,
 		true, // isEdge
 		"GET",
-		"http://ignored/api/path",
-		"/api/path",
+		"http://ignored/api/health",
+		"/api/health",
 		map[string]string{"X-H": "v"},
 		nil,
 	)
@@ -59,8 +59,8 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeNoTunnel(t *testing.T) {
 		"env-edge-missing",
 		true, // isEdge
 		"GET",
-		"http://ignored/api/path",
-		"/api/path",
+		"http://ignored/api/health",
+		"/api/health",
 		nil,
 		nil,
 	)
@@ -167,9 +167,9 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithGRPCTunnel(t *testing.T) {
 			return
 		}
 
-		req := msg.GetHttpRequest()
+		req := msg.GetCommandRequest()
 		if req == nil {
-			agentErrCh <- errors.New("expected http request")
+			agentErrCh <- errors.New("expected command request")
 			return
 		}
 
@@ -177,7 +177,7 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithGRPCTunnel(t *testing.T) {
 			agentErrCh <- errors.New("unexpected method")
 			return
 		}
-		if req.GetPath() != "/api/path" {
+		if req.GetPath() != "/api/environments/0/projects" {
 			agentErrCh <- errors.New("unexpected path")
 			return
 		}
@@ -194,8 +194,15 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithGRPCTunnel(t *testing.T) {
 			return
 		}
 
-		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HttpResponse{HttpResponse: &tunnelpb.HttpResponse{
-			RequestId: req.GetRequestId(),
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
+			CommandId: req.GetCommandId(),
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
+			CommandId: req.GetCommandId(),
 			Status:    http.StatusCreated,
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			Body:      []byte(`{"ok":true}`),
@@ -213,8 +220,8 @@ func TestEdgeAwareClient_DoForEnvironment_EdgeWithGRPCTunnel(t *testing.T) {
 		envID,
 		true,
 		http.MethodPost,
-		"http://ignored/api/path",
-		"/api/path",
+		"http://ignored/api/environments/0/projects",
+		"/api/environments/0/projects",
 		map[string]string{"X-H": "v", "Content-Type": "application/json"},
 		[]byte(`{"edge":true}`),
 	)

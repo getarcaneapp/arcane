@@ -70,14 +70,21 @@ func TestGRPCTunnel_RequestResponse(t *testing.T) {
 			return
 		}
 
-		req := msg.GetHttpRequest()
+		req := msg.GetCommandRequest()
 		if req == nil {
-			agentErrCh <- errors.New("expected http request")
+			agentErrCh <- errors.New("expected command request")
 			return
 		}
 
-		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HttpResponse{HttpResponse: &tunnelpb.HttpResponse{
-			RequestId: req.GetRequestId(),
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
+			CommandId: req.GetCommandId(),
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
+			CommandId: req.GetCommandId(),
 			Status:    200,
 			Headers:   map[string]string{"Content-Type": "text/plain"},
 			Body:      []byte("ok"),
@@ -149,39 +156,44 @@ func TestGRPCTunnel_RequestResponseStreamingChunks(t *testing.T) {
 			return
 		}
 
-		req := msg.GetHttpRequest()
+		req := msg.GetCommandRequest()
 		if req == nil {
-			agentErrCh <- errors.New("expected http request")
+			agentErrCh <- errors.New("expected command request")
 			return
 		}
 
-		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HttpResponse{HttpResponse: &tunnelpb.HttpResponse{
-			RequestId: req.GetRequestId(),
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
+			CommandId: req.GetCommandId(),
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandOutput{CommandOutput: &tunnelpb.CommandOutput{
+			CommandId: req.GetCommandId(),
+			Data:      []byte("hello "),
+			Sequence:  0,
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandOutput{CommandOutput: &tunnelpb.CommandOutput{
+			CommandId: req.GetCommandId(),
+			Data:      []byte("world"),
+			Sequence:  1,
+		}}}); err != nil {
+			agentErrCh <- err
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+
+		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
+			CommandId: req.GetCommandId(),
 			Status:    200,
 			Headers:   map[string]string{"Content-Type": "text/plain", "X-Arcane-Tunnel-Stream": "1"},
-		}}}); err != nil {
-			agentErrCh <- err
-			return
-		}
-
-		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamData{StreamData: &tunnelpb.StreamData{
-			RequestId: req.GetRequestId(),
-			Data:      []byte("hello "),
-		}}}); err != nil {
-			agentErrCh <- err
-			return
-		}
-
-		if err := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamData{StreamData: &tunnelpb.StreamData{
-			RequestId: req.GetRequestId(),
-			Data:      []byte("world"),
-		}}}); err != nil {
-			agentErrCh <- err
-			return
-		}
-
-		agentErrCh <- stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamEnd{StreamEnd: &tunnelpb.StreamEnd{
-			RequestId: req.GetRequestId(),
+			Streaming: true,
 		}}})
 	}()
 

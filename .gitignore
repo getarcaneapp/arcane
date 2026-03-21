@@ -17,6 +17,10 @@ dist/
 
 # Claude
 CLAUDE.md
+/.tmp/
+*.key
+*.pem
+*.crt
 
 # OS
 .DS_Store

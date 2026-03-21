@@ -1,10 +1,12 @@
 <script lang="ts">
+	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import type { ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
 	import { EllipsisIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
-	import type { ActionButton } from './types.js';
+	import { ArrowDownIcon } from '$lib/icons';
+	import type { ActionButton, ActionButtonMenuItem } from './types.js';
 
 	interface Props {
 		buttons?: ActionButton[];
@@ -19,7 +21,6 @@
 
 	let containerWidth = $state(0);
 	let buttonWidths = $state<number[]>([]);
-	let measurementNode: HTMLElement | null = null;
 
 	const visibleCount = $derived.by(() => {
 		const total = buttons.length;
@@ -46,34 +47,51 @@
 	const visibleButtons = $derived(buttons.slice(0, visibleCount));
 	const overflowButtons = $derived(buttons.slice(visibleCount));
 
-	function measureButtons(node: HTMLElement) {
-		measurementNode = node;
-		return {
-			destroy: () => {
-				measurementNode = null;
-			}
-		};
+	function handleOverflowAction(button: ActionButton) {
+		if (button.disabled || button.loading) return;
+		if (button.href) {
+			window.location.assign(button.href);
+			return;
+		}
+		button.onclick?.();
 	}
 
-	$effect(() => {
-		const actionButtons = buttons;
-		if (!measurementNode || actionButtons.length === 0) return;
+	function handleMenuItemAction(item: ActionButtonMenuItem) {
+		if (item.disabled) return;
+		if (item.href) {
+			window.location.assign(item.href);
+			return;
+		}
+		item.onclick?.();
+	}
 
-		const timeoutId = setTimeout(() => {
-			requestAnimationFrame(() => {
-				if (!measurementNode) return;
-				const widths: number[] = [];
-				for (const child of measurementNode.children) {
-					widths.push((child as HTMLElement).offsetWidth);
-				}
-				if (widths.length > 0 && widths.length === actionButtons.length) {
-					buttonWidths = widths;
-				}
-			});
-		}, 0);
+	function measureButtons(actionButtons: ActionButton[], currentSize: ArcaneButtonSize) {
+		void currentSize;
+		return (node: HTMLElement) => {
+			if (actionButtons.length === 0) {
+				buttonWidths = [];
+				return;
+			}
 
-		return () => clearTimeout(timeoutId);
-	});
+			let rafId: number | null = null;
+			const timeoutId = setTimeout(() => {
+				rafId = requestAnimationFrame(() => {
+					const widths: number[] = [];
+					for (const child of node.children) {
+						widths.push((child as HTMLElement).offsetWidth);
+					}
+					if (widths.length > 0 && widths.length === actionButtons.length) {
+						buttonWidths = widths;
+					}
+				});
+			}, 0);
+
+			return () => {
+				clearTimeout(timeoutId);
+				if (rafId) cancelAnimationFrame(rafId);
+			};
+		};
+	}
 
 	function observeWidth(node: HTMLElement) {
 		let rafId: number | null = null;
@@ -87,56 +105,115 @@
 			});
 		});
 		ro.observe(node);
-		return {
-			destroy: () => {
-				if (rafId) cancelAnimationFrame(rafId);
-				ro.disconnect();
-			}
+		return () => {
+			if (rafId) cancelAnimationFrame(rafId);
+			ro.disconnect();
 		};
 	}
 </script>
 
-{#if buttons.length > 0}
-	<div class={cn('flex min-w-0 flex-1 items-center justify-end gap-2', className)} use:observeWidth>
-		<div use:measureButtons class="pointer-events-none invisible fixed -left-[9999px] flex items-center gap-2" aria-hidden="true">
-			{#each buttons as button (button.id)}
-				<ArcaneButton
-					action={button.action}
-					customLabel={button.label}
-					loadingLabel={button.loadingLabel}
-					loading={button.loading}
-					disabled={button.disabled}
-					onclick={() => {}}
-					{size}
-					icon={button.icon}
+{#snippet buttonContent(button: ActionButton)}
+	{#if button.badge !== undefined}
+		<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
+			{button.badge}
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet splitButton(button: ActionButton, inert: boolean)}
+	<ButtonGroup.Root>
+		<ArcaneButton
+			action={button.action}
+			customLabel={button.label}
+			loadingLabel={button.loadingLabel}
+			loading={button.loading}
+			disabled={button.disabled}
+			onclick={inert ? () => {} : button.onclick}
+			href={button.href}
+			rel={button.rel}
+			{size}
+			icon={button.icon}
+		>
+			{@render buttonContent(button)}
+		</ArcaneButton>
+
+		{#if inert}
+			<ArcaneButton action="base" tone="outline" size="icon" onclick={() => {}} class={cn(size === 'sm' ? 'size-8' : 'size-9')}>
+				<ArrowDownIcon class="size-4" />
+			</ArcaneButton>
+		{:else}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class={cn(
+						'border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md border transition-colors outline-none',
+						size === 'sm' ? 'size-8' : 'size-9'
+					)}
+					aria-label="Open menu"
 				>
-					{#if button.badge !== undefined}
-						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
-							{button.badge}
-						</span>
-					{/if}
-				</ArcaneButton>
+					<ArrowDownIcon class="size-4" />
+				</DropdownMenu.Trigger>
+
+				<DropdownMenu.Content align="end" class="min-w-[180px]">
+					{#each button.menuItems ?? [] as item (item.id)}
+						<DropdownMenu.Item onclick={() => handleMenuItemAction(item)} disabled={item.disabled}>
+							{item.label}
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
+	</ButtonGroup.Root>
+{/snippet}
+
+{#if buttons.length > 0}
+	<div class={cn('flex min-w-0 flex-1 items-center justify-end gap-2', className)} {@attach observeWidth}>
+		<div
+			{@attach measureButtons(buttons, size)}
+			class="pointer-events-none invisible fixed -left-[9999px] flex items-center gap-2"
+			aria-hidden="true"
+		>
+			{#each buttons as button (button.id)}
+				{#if button.menuItems && button.menuItems.length > 0}
+					{@render splitButton(button, true)}
+				{:else}
+					<ArcaneButton
+						action={button.action}
+						customLabel={button.label}
+						loadingLabel={button.loadingLabel}
+						loading={button.loading}
+						disabled={button.disabled}
+						onclick={() => {}}
+						href={button.href}
+						rel={button.rel}
+						{size}
+						icon={button.icon}
+					>
+						{@render buttonContent(button)}
+					</ArcaneButton>
+				{/if}
 			{/each}
 		</div>
 
 		<div class="hidden items-center gap-2 lg:flex">
 			{#each visibleButtons as button (button.id)}
-				<ArcaneButton
-					action={button.action}
-					customLabel={button.label}
-					loadingLabel={button.loadingLabel}
-					loading={button.loading}
-					disabled={button.disabled}
-					onclick={button.onclick}
-					{size}
-					icon={button.icon}
-				>
-					{#if button.badge !== undefined}
-						<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
-							{button.badge}
-						</span>
-					{/if}
-				</ArcaneButton>
+				{#if button.menuItems && button.menuItems.length > 0}
+					{@render splitButton(button, false)}
+				{:else}
+					<ArcaneButton
+						action={button.action}
+						customLabel={button.label}
+						loadingLabel={button.loadingLabel}
+						loading={button.loading}
+						disabled={button.disabled}
+						onclick={button.onclick}
+						href={button.href}
+						rel={button.rel}
+						{size}
+						icon={button.icon}
+					>
+						{@render buttonContent(button)}
+					</ArcaneButton>
+				{/if}
 			{/each}
 
 			{#if overflowButtons.length > 0}
@@ -159,14 +236,41 @@
 					<DropdownMenu.Content align="end" class="min-w-[160px]">
 						<DropdownMenu.Group>
 							{#each overflowButtons as button (button.id)}
-								<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-									<div class="flex w-full items-center justify-between gap-2">
-										<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
-										{#if button.badge !== undefined}
-											<span class="text-muted-foreground text-[10px]">({button.badge})</span>
-										{/if}
-									</div>
-								</DropdownMenu.Item>
+								{#if button.menuItems && button.menuItems.length > 0}
+									<DropdownMenu.Sub>
+										<DropdownMenu.SubTrigger disabled={button.disabled || button.loading}>
+											<div class="flex w-full items-center justify-between gap-2">
+												<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+												{#if button.badge !== undefined}
+													<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+												{/if}
+											</div>
+										</DropdownMenu.SubTrigger>
+										<DropdownMenu.SubContent class="min-w-[180px]">
+											<DropdownMenu.Item
+												onclick={() => handleOverflowAction(button)}
+												disabled={button.disabled || button.loading}
+											>
+												{button.label}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+											{#each button.menuItems as item (item.id)}
+												<DropdownMenu.Item onclick={() => handleMenuItemAction(item)} disabled={item.disabled}>
+													{item.label}
+												</DropdownMenu.Item>
+											{/each}
+										</DropdownMenu.SubContent>
+									</DropdownMenu.Sub>
+								{:else}
+									<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
+										<div class="flex w-full items-center justify-between gap-2">
+											<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+											{#if button.badge !== undefined}
+												<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+											{/if}
+										</div>
+									</DropdownMenu.Item>
+								{/if}
 							{/each}
 						</DropdownMenu.Group>
 					</DropdownMenu.Content>
@@ -194,14 +298,38 @@
 				<DropdownMenu.Content align="end" class="min-w-[160px]">
 					<DropdownMenu.Group>
 						{#each buttons as button (button.id)}
-							<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-								<div class="flex w-full items-center justify-between gap-2">
-									<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
-									{#if button.badge !== undefined}
-										<span class="text-muted-foreground text-[10px]">({button.badge})</span>
-									{/if}
-								</div>
-							</DropdownMenu.Item>
+							{#if button.menuItems && button.menuItems.length > 0}
+								<DropdownMenu.Sub>
+									<DropdownMenu.SubTrigger disabled={button.disabled || button.loading}>
+										<div class="flex w-full items-center justify-between gap-2">
+											<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+											{#if button.badge !== undefined}
+												<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+											{/if}
+										</div>
+									</DropdownMenu.SubTrigger>
+									<DropdownMenu.SubContent class="min-w-[180px]">
+										<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
+											{button.label}
+										</DropdownMenu.Item>
+										<DropdownMenu.Separator />
+										{#each button.menuItems as item (item.id)}
+											<DropdownMenu.Item onclick={() => handleMenuItemAction(item)} disabled={item.disabled}>
+												{item.label}
+											</DropdownMenu.Item>
+										{/each}
+									</DropdownMenu.SubContent>
+								</DropdownMenu.Sub>
+							{:else}
+								<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
+									<div class="flex w-full items-center justify-between gap-2">
+										<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
+										{#if button.badge !== undefined}
+											<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+										{/if}
+									</div>
+								</DropdownMenu.Item>
+							{/if}
 						{/each}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>

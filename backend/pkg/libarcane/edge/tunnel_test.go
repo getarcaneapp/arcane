@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
+	return NewAgentTunnelWithConn(envID, NewTunnelConn(conn))
+}
+
 func TestTunnelMessage_MarshalJSON(t *testing.T) {
 	msg := &TunnelMessage{
 		ID:   "test-id",

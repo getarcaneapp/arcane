@@ -42,9 +42,14 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 
 	if c.useTLSForManagerGRPC() {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{ //nolint:gosec
-			MinVersion: tls.VersionTLS12,
-		})))
+		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		if err != nil {
+			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
+		}
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
+		}
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	} else {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
@@ -72,10 +77,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	c.conn = NewGRPCAgentTunnelConn(stream, streamCancel)
 	setActiveAgentTunnelConn(c.conn)
 	defer clearActiveAgentTunnelConn(c.conn)
-	if err := c.conn.Send(&TunnelMessage{
-		Type:       MessageTypeRegister,
-		AgentToken: c.cfg.AgentToken,
-	}); err != nil {
+	if err := c.conn.Send(c.registerMessageInternal()); err != nil {
 		return fmt.Errorf("failed to send register message: %w", err)
 	}
 
@@ -97,58 +99,6 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	return c.messageLoop(ctx)
 }
 
-func (c *TunnelClient) awaitGRPCRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
-	if c == nil || c.conn == nil {
-		return nil, fmt.Errorf("gRPC tunnel connection is not initialized")
-	}
-
-	type registrationResult struct {
-		msg *TunnelMessage
-		err error
-	}
-
-	timeout := c.grpcRegistrationTimeoutInternal()
-	recvCh := make(chan registrationResult, 1)
-	go func() {
-		msg, err := c.conn.Receive()
-		recvCh <- registrationResult{msg: msg, err: err}
-	}()
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		if err := c.conn.Close(); err != nil {
-			slog.DebugContext(ctx, "Failed to close gRPC edge tunnel after context cancellation", "error", err)
-		}
-		return nil, ctx.Err()
-	case <-timer.C:
-		slog.WarnContext(ctx, "Timed out waiting for gRPC edge tunnel registration response",
-			"manager_addr", c.managerGRPCAddr,
-			"timeout", timeout,
-		)
-		if err := c.conn.Close(); err != nil {
-			slog.DebugContext(ctx, "Failed to close gRPC edge tunnel after registration timeout", "error", err)
-		}
-		return nil, fmt.Errorf("timed out waiting for gRPC tunnel registration response after %s", timeout)
-	case result := <-recvCh:
-		if result.err != nil {
-			return nil, fmt.Errorf("failed to receive gRPC tunnel registration response: %w", result.err)
-		}
-		if result.msg == nil {
-			return nil, fmt.Errorf("received empty gRPC tunnel registration response")
-		}
-		if result.msg.Type != MessageTypeRegisterResponse {
-			return nil, fmt.Errorf("unexpected first gRPC tunnel message: %s", result.msg.Type)
-		}
-		if !result.msg.Accepted {
-			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
-		}
-		return result.msg, nil
-	}
-}
-
 func (c *TunnelClient) openTunnelConnectStreamInternal(
 	ctx context.Context,
 	conn *grpc.ClientConn,
@@ -163,6 +113,10 @@ func (c *TunnelClient) openTunnelConnectStreamInternal(
 
 func (c *TunnelClient) grpcConnectMethodInternal() string {
 	return "/api/tunnel/connect"
+}
+
+func (c *TunnelClient) awaitGRPCRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
+	return c.awaitRegistrationInternal(ctx)
 }
 
 func (c *TunnelClient) useTLSForManagerGRPC() bool {

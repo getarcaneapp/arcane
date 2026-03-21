@@ -27,6 +27,11 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 	if managerBaseURL == "" {
 		return fmt.Errorf("manager base URL is empty")
 	}
+	httpClient, err := NewManagerHTTPClient(c.cfg, 0)
+	if err != nil {
+		return fmt.Errorf("failed to configure edge poll client: %w", err)
+	}
+	c.httpClient = httpClient
 
 	pollURL := managerBaseURL + "/api/tunnel/poll"
 	interval := DefaultTunnelPollInterval

@@ -78,6 +78,10 @@ const (
 	EventTypeEnvironmentUpdate            EventType = "environment.update"
 	EventTypeEnvironmentDelete            EventType = "environment.delete"
 	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"
+	EventTypeEnvironmentMTLSCAGenerated   EventType = "environment.mtls.ca_generated"
+	EventTypeEnvironmentMTLSCertIssued    EventType = "environment.mtls.cert_issued"
+	EventTypeEnvironmentMTLSEnroll        EventType = "environment.mtls.enroll"
+	EventTypeEnvironmentMTLSDownload      EventType = "environment.mtls.download"
 
 	EventTypeWebhookCreate  EventType = "webhook.create"
 	EventTypeWebhookUpdate  EventType = "webhook.update"

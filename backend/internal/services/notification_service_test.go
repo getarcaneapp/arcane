@@ -423,7 +423,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
-	var unsupportedErr error = ErrUnsupportedDispatchKind
+	var unsupportedErr = ErrUnsupportedDispatchKind
 	require.True(t, errors.Is(err, unsupportedErr))
 	require.Contains(t, err.Error(), "bogus_kind")
 }

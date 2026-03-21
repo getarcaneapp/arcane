@@ -183,6 +183,50 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 	}, h.GetCategories)
 }
 
+func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
+	if !includeAuthenticatedOnly {
+		return settingsDto
+	}
+
+	uiConfigDisabled := false
+	if h.cfg != nil {
+		uiConfigDisabled = h.cfg.UIConfigurationDisabled
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "uiConfigDisabled",
+		Value: strconv.FormatBool(uiConfigDisabled),
+		Type:  "boolean",
+	})
+
+	backupVolumeName := "arcane-backups"
+	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+		backupVolumeName = h.cfg.BackupVolumeName
+	}
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "backupVolumeName",
+		Value: backupVolumeName,
+		Type:  "string",
+	})
+
+	settingsDto = append(settingsDto, settings.PublicSetting{
+		Key:   "edgeMTLSManagerCAAvailable",
+		Value: strconv.FormatBool(hasGeneratedEdgeMTLSCAInternal(h.cfg)),
+		Type:  "boolean",
+	})
+
+	if h.settingsService != nil {
+		cfg := h.settingsService.GetSettingsConfig()
+		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+		settingsDto = append(settingsDto, settings.PublicSetting{
+			Key:   "depotConfigured",
+			Value: strconv.FormatBool(depotConfigured),
+			Type:  "boolean",
+		})
+	}
+
+	return settingsDto
+}
+
 // GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPublicSettingsInput) (*GetPublicSettingsOutput, error) {
 	if h.settingsService == nil {
@@ -214,7 +258,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, false)}, nil
+	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, false)}, nil
 }
 
 // GetSettings returns all settings for an environment.
@@ -254,43 +298,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	return &GetSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, true)}, nil
-}
-
-func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
-	uiConfigDisabled := false
-	if includeAuthenticatedOnly && h.cfg != nil {
-		uiConfigDisabled = h.cfg.UIConfigurationDisabled
-	}
-	if includeAuthenticatedOnly {
-		settingsDto = append(settingsDto, settings.PublicSetting{
-			Key:   "uiConfigDisabled",
-			Value: strconv.FormatBool(uiConfigDisabled),
-			Type:  "boolean",
-		})
-
-		backupVolumeName := "arcane-backups"
-		if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
-			backupVolumeName = h.cfg.BackupVolumeName
-		}
-		settingsDto = append(settingsDto, settings.PublicSetting{
-			Key:   "backupVolumeName",
-			Value: backupVolumeName,
-			Type:  "string",
-		})
-
-		if h.settingsService != nil {
-			cfg := h.settingsService.GetSettingsConfig()
-			depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
-			settingsDto = append(settingsDto, settings.PublicSetting{
-				Key:   "depotConfigured",
-				Value: strconv.FormatBool(depotConfigured),
-				Type:  "boolean",
-			})
-		}
-	}
-
-	return settingsDto
+	return &GetSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, true)}, nil
 }
 
 // UpdateSettings updates settings for an environment.

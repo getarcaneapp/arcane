@@ -1,12 +1,15 @@
 package bootstrap
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
@@ -113,4 +116,20 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 		req.ProtoMajor = 2
 		assert.False(t, isTunnelGRPCRequestInternal(req))
 	})
+}
+
+func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
+	cfg := &config.Config{
+		AgentMode:     true,
+		EdgeMTLSMode:  "required",
+		ManagerApiUrl: "https://127.0.0.1:3552",
+	}
+
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(context.Background(), cfg)
+	require.NoError(t, err)
+	assert.False(t, useTLS)
+	assert.Empty(t, tlsCertFile)
+	assert.Empty(t, tlsKeyFile)
+	require.NotNil(t, edgeCfg)
+	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
 }
